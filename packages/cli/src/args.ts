@@ -27,11 +27,39 @@
  * not exist in this grammar at all.
  */
 import { readFileSync } from 'node:fs';
+import { resolveJournalClass } from './journal-stats.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
 
 /** Global options. They bind target, context, and output, never payload. */
+/**
+ * WHAT AN AGENT GETS WHEN IT ASKS FOR NOTHING.
+ *
+ * `--terse` (F5) shipped opt-in and, measured across 640 journaled sessions,
+ * was passed by 19 of them. Meanwhile `entity get` — the single most expensive
+ * command in the corpus at 40.2M est tokens — returns 67,669 bytes where its
+ * terse projection returns 32,071, and the fields it drops are decoration:
+ * counters, badges, spaceId, visibility, position, timestamps. `version` and
+ * `state` are never projected away, so the optimistic-concurrency guard and the
+ * work signals survive intact.
+ *
+ * An opt-in saving nobody opts into is not a saving. So for an AGENT-class
+ * invocation the projection is the default, and the three escapes that already
+ * existed still hold: `--full` restores the envelope in one flag, every
+ * projected node is stamped `projected: true` so no reader has to guess which
+ * shape it holds, and a HUMAN at their own terminal is untouched.
+ *
+ * TM8_NO_TERSE_DEFAULT=1 is the kill switch — one env var, no deploy, if the
+ * journal A/B says this costs an agent something it needed.
+ */
+function defaultRender(): 'full' | 'terse' {
+  if (process.env.TM8_NO_TERSE_DEFAULT === '1') return 'full';
+  // Same class heuristic the journal and the read-cache use, so the three
+  // subsystems can never disagree about who is running.
+  return resolveJournalClass(process.env, [], process.cwd()) === 'agent' ? 'terse' : 'full';
+}
+
 export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh', 'terse', 'full'] as const;
 
 /**
@@ -401,7 +429,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     color: !noColor,
     quiet,
     fresh,
-    render: full ? 'full' : terse ? 'terse' : 'full',
+    render: full ? 'full' : terse ? 'terse' : defaultRender(),
     help,
     version,
   };

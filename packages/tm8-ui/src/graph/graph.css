@@ -965,3 +965,30 @@
 @media (prefers-reduced-motion: reduce) {
   .gv-canvas[data-lod='far'] .gv-node[data-live='live']::after { animation: none; }
 }
+
+/* A wider popover for choices that carry a sentence of explanation — the
+   conversation control has to say what rolling up DOES, or the reader has to
+   try it to find out. */
+.gv-select__pop--wide { width: 290px; }
+
+.gv-select__row--tall {
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-2);
+}
+
+.gv-select__rowlabel {
+  display: block;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.gv-select__rowhint {
+  display: block;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+  margin-top: 2px;
+}

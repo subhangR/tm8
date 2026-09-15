@@ -39,7 +39,12 @@ const PROJECTOR_SRC = join(SERVER_ROOT, 'src', 'events', 'projector.ts');
  * files, in the same change as its contract entry; shrinking this list is the
  * only edit it should ever see.
  */
-const FROZEN_LEGACY_ENTITY_READ_GAP = new Set(['spell', 'skill', 'commit']);
+/* `commit` LEFT THIS SET on 2026-09-15. entity-read.ts now joins `public.commits`
+   and carries the same titleOf/stateOf arms the projector has, so the two twins
+   agree on it. The gap was costing more than parity: every commit reached the
+   API as `title:"commit"`, `state.fields:{}`, hiding a sha the database had for
+   all 396 rows. */
+const FROZEN_LEGACY_ENTITY_READ_GAP = new Set(['spell', 'skill']);
 
 /**
  * Kinds whose contract entry has landed but whose dispatch arms are still

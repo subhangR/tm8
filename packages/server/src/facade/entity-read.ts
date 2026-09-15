@@ -165,6 +165,9 @@ export const ENTITY_COLUMNS = `
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
   pr.url as pr_url, pr.fetched_at as pr_fetched_at,
+  cm.repo as commit_repo, cm.sha as commit_sha,
+  cm.message as commit_message, cm.committed_at as commit_committed_at,
+  cm.url as commit_url, cm.author as commit_author,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -337,6 +340,7 @@ export const ENTITY_FROM = `
   ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
+  left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
   left join public.containers ctr        on ctr.entity_id = e.id
@@ -536,6 +540,13 @@ export interface EntityRow {
   pr_head_ref?: string | null;
   pr_url?: string | null;
   pr_fetched_at?: Date | string | null;
+  /** commits mirror columns; optional for the same reason the pr_* ones are. */
+  commit_repo?: string | null;
+  commit_sha?: string | null;
+  commit_message?: string | null;
+  commit_committed_at?: Date | string | null;
+  commit_url?: string | null;
+  commit_author?: string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -1408,6 +1419,21 @@ export function titleOf(row: EntityRow): string {
       const repo = row.pr_repo ?? null;
       return row.pr_title ?? (repo !== null ? `${repo}#${String(row.pr_number ?? 0)}` : '');
     }
+    case 'commit': {
+      // MIRRORS the projector twin (projector.ts): the first line of the commit
+      // message is the conventional title. Without this arm every commit fell
+      // through to `default` and was titled with the literal word "commit", so a
+      // canvas showing eleven of them showed eleven identical cards.
+      //
+      // THE SUBJECT IS NOT ALWAYS A SUBJECT. On this node `commits.message` is
+      // populated with the sha for rows the observer never enriched, so a
+      // message that merely repeats the sha is no better than the kind string —
+      // fall through to the short sha, which at least IDENTIFIES the row.
+      const sha = row.commit_sha ?? '';
+      const subject = (row.commit_message ?? '').split('\n')[0]?.trim() ?? '';
+      if (subject !== '' && subject !== sha) return subject;
+      return sha === '' ? 'Commit' : sha.slice(0, 8);
+    }
     default:
       return row.kind;
   }
@@ -1777,6 +1803,20 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
+    case 'commit':
+      // MIRRORS the projector twin. This arm did not exist, so `commit` — a
+      // first-class kind — fell through to the `c:*` default below and every
+      // commit arrived as `fields: {}`, hiding a sha the database had all along
+      // (396 of 396 rows carry one).
+      return {
+        kind: 'commit',
+        repository: row.commit_repo ?? '',
+        sha: row.commit_sha ?? '',
+        message: row.commit_message ?? '',
+        committedAt: isoOrNull(row.commit_committed_at ?? null),
+        ...(row.commit_url ? { url: row.commit_url } : {}),
+        ...(row.commit_author ? { author: row.commit_author } : {}),
+      } as EntityState;
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than

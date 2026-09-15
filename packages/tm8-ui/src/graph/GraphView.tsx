@@ -926,28 +926,6 @@ export function GraphView(props: GraphViewProps) {
             </button>
           ))}
         </div>
-        {/* THE GROUPING DIMENSION. A third control rather than a lens mode: the
-            lens picks WHICH entities, the window picks HOW RECENT, and this
-            picks HOW THEY ARE ARRANGED — three orthogonal questions, and
-            folding any two together would silently remove combinations the
-            reader can currently ask for. Only dimensions that would actually
-            SPLIT this node set are offered; a "Priority" band on a canvas of
-            nothing but sessions is a partition of one, and the reader would
-            learn that only by spending a click. */}
-        <div className="gv-lens" role="group" aria-label="Graph grouping">
-          {GROUP_BYS.filter((spec) => offeredGroupBys.includes(spec.id)).map((spec) => (
-            <button
-              key={spec.id}
-              type="button"
-              className={spec.id === groupBy ? 'gv-lens__opt gv-lens__opt--on' : 'gv-lens__opt'}
-              aria-pressed={spec.id === groupBy}
-              title={spec.hint}
-              onClick={() => chooseGroupBy(spec.id)}
-            >
-              {spec.id === 'none' ? 'Islands' : spec.label}
-            </button>
-          ))}
-        </div>
         <span className="gv-toolbar__count">
           {model.placed.length} nodes · {model.edges.length} edges ·{' '}
           {model.groupBy === 'none' ? (
@@ -1060,6 +1038,47 @@ export function GraphView(props: GraphViewProps) {
             at its next wake): per-kind and per-edge chips became two compact
             MULTI-SELECT dropdowns — with every kind and edge type inlined the
             toolbar wrapped to multiple rows and taxed the canvas. */}
+        {/* THE GROUPING DIMENSION, on the right with the other view controls.
+            It began as a nine-wide button row beside the lens and window, which
+            put the widest control in the bar at its centre and pushed search
+            and the filters off the row. It is a refinement of HOW the canvas is
+            arranged, not of WHAT is on it, so it belongs with Entities and
+            Edges — and in their shape, which costs one line instead of nine. */}
+        <GroupSelect
+          value={groupBy}
+          options={GROUP_BYS.filter((spec) => offeredGroupBys.includes(spec.id))}
+          onChoose={chooseGroupBy}
+        />
+        {/* CONVERSATION — a real control, not a footnote.
+            Rolling messages onto their anchor is the single largest declutter
+            this canvas performs, and the way back was a click on a number in
+            the count line: discoverable only by someone who already knew it was
+            there. A reader whose question is "show me every message" must be
+            able to SEE that the option exists. It sits beside Group because it
+            is the same kind of decision — how the canvas is arranged, not what
+            the space contains. */}
+        <ChoiceSelect
+          face={`✉ ${rollUp ? 'Rolled up' : 'Every message'}`}
+          active={!rollUp}
+          label="Conversation"
+          options={[
+            {
+              id: 'rolled',
+              label: 'Rolled onto anchors',
+              hint: 'A message is drawn as a meter on the entity it is anchored to — count, voices and recency — rather than as its own card. Nothing is hidden: the anchor carries the total.',
+            },
+            {
+              id: 'every',
+              label: 'Every message as a node',
+              hint: 'Draw every message as its own card, with its anchored_to and authored_from edges. This is the whole graph, exactly as tm8 records it.',
+            },
+          ]}
+          value={rollUp ? 'rolled' : 'every'}
+          onChoose={(id) => {
+            frozenRef.current = null;
+            setRollUp(id === 'rolled');
+          }}
+        />
         <FilterSelect
           label="Entities"
           options={kindsPresent.map((kind) => {
@@ -1540,6 +1559,121 @@ export function GraphView(props: GraphViewProps) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * GroupSelect — the single-select twin of FilterSelect, for the grouping
+ * dimension. Same face, same popover, same dismiss behavior; one choice rather
+ * than a set, so it renders radios and closes on pick.
+ *
+ * Only DISCRIMINATING dimensions reach it (see `offeredGroupBys`): offering
+ * "Priority" on a canvas of nothing but sessions is offering a partition of one
+ * band, and the reader would learn that only by spending a click.
+ */
+function ChoiceSelect({
+  face,
+  active,
+  label,
+  options,
+  value,
+  onChoose,
+}: {
+  face: string;
+  active: boolean;
+  label: string;
+  options: readonly { id: string; label: string; hint: string }[];
+  value: string;
+  onChoose(id: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismissable(open, rootRef, () => setOpen(false));
+  const current = options.find((o) => o.id === value);
+  return (
+    <div className="gv-select" ref={rootRef}>
+      <button
+        type="button"
+        className={active ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={current?.hint}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {face} <span aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="gv-select__pop gv-select__pop--wide" role="listbox" aria-label={label}>
+          {options.map((opt) => (
+            <label key={opt.id} className="gv-select__row gv-select__row--tall" title={opt.hint}>
+              <input
+                type="radio"
+                name={`gv-choice-${label}`}
+                checked={opt.id === value}
+                onChange={() => {
+                  onChoose(opt.id);
+                  setOpen(false);
+                }}
+              />
+              <span>
+                <b className="gv-select__rowlabel">{opt.label}</b>
+                <span className="gv-select__rowhint">{opt.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GroupSelect({
+  value,
+  options,
+  onChoose,
+}: {
+  value: GroupById;
+  options: readonly { id: GroupById; label: string; hint: string }[];
+  onChoose(id: GroupById): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismissable(open, rootRef, () => setOpen(false));
+
+  const current = options.find((o) => o.id === value) ?? options[0];
+  const grouped = value !== 'none';
+
+  return (
+    <div className="gv-select" ref={rootRef}>
+      <button
+        type="button"
+        className={grouped ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={current?.hint}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Group · {value === 'none' ? 'islands' : current?.label.toLowerCase()} <span aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="gv-select__pop" role="listbox" aria-label="Graph grouping">
+          {options.map((opt) => (
+            <label key={opt.id} className="gv-select__row" title={opt.hint}>
+              <input
+                type="radio"
+                name="gv-group-by"
+                checked={opt.id === value}
+                onChange={() => {
+                  onChoose(opt.id);
+                  setOpen(false);
+                }}
+              />
+              <span>{opt.id === 'none' ? 'Islands' : opt.label}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
