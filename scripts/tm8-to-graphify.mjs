@@ -21,7 +21,7 @@
  *
  *   node scripts/tm8-to-graphify.mjs \
  *     --space <space-id> \
- *     --code packages/tm8-ui/graphify-out/graph.json \
+ *     --code graphify-out/graph.json \
  *     --out  graphify-out/tm8-work.json
  */
 import { execFileSync } from 'node:child_process';
@@ -32,7 +32,12 @@ const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
 
 const SPACE = flag('space', process.env.TM8_SPACE_ID);
-const CODE = flag('code', 'packages/tm8-ui/graphify-out/graph.json');
+// Repo-root by default, NOT a package: a commit touches files anywhere, and a
+// package-scoped code graph silently resolves most of them to nothing (measured:
+// 21 shas resolved, 13 crossing edges against tm8-ui alone). graphify writes to
+// `<path>/graphify-out`, which is gitignored and sits outside every package's
+// tsconfig `include`, so it cannot reach a build.
+const CODE = flag('code', 'graphify-out/graph.json');
 const OUT = flag('out', 'graphify-out/tm8-work.json');
 const LIMIT = flag('limit', '150');
 const REPO = flag('repo', process.cwd());
@@ -80,6 +85,48 @@ const resolveCode = (path) => {
   return null;
 };
 
+/* WHY A SECOND READ FOR COMMITS, AND ONLY FOR COMMITS.
+   `graph query` and `entity get` do not project a commit the same way. The
+   traversal returns `title: "commit"` and `state: { kind, fields: {} }` — no
+   sha, no subject, nothing to join on — while a direct read of the same id
+   returns the subject as the title and `state.sha`, `state.repository`,
+   `state.message`, `state.committedAt`. Without the sha the crossing edge, the
+   entire reason this exporter exists, is empty: measured on this space, 22
+   commits in, 0 edges out.
+
+   So: take the cheap field when the traversal carries it, and fall back to one
+   bounded `entity get` per COMMIT only when it does not. That is at most one
+   extra read per commit in the window, never per entity, and it disappears on
+   its own the day the traversal projects commits properly — the count of
+   fallbacks is printed so you can see when that happens. */
+const detailCache = new Map();
+const commitDetail = (e) => {
+  const cheap = e.state?.fields?.sha ?? e.state?.sha;
+  if (cheap) return { sha: cheap, message: e.state?.message ?? e.title };
+  if (/^[0-9a-f]{7,40}$/i.test(e.title)) return { sha: e.title, message: e.title };
+  if (detailCache.has(e.id)) return detailCache.get(e.id);
+  let got = null;
+  try {
+    const one = JSON.parse(
+      execFileSync('tm8', ['entity', 'get', e.id, '--format', 'json'],
+        { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }),
+    );
+    const body = one?.data ?? one;
+    if (body?.state?.sha) {
+      got = { sha: body.state.sha, message: body.state.message ?? body.title ?? e.title };
+      refetched += 1;
+    }
+  } catch { /* a commit we cannot read is a commit we do not draw an edge from */ }
+  detailCache.set(e.id, got);
+  return got;
+};
+
+let crossed = 0;
+let shaResolved = 0;
+let shaMissing = 0;
+let refetched = 0;
+let shaUnknownToGit = 0;
+
 /* -- 3 · project entities --------------------------------------------------- */
 
 const short = (id) => String(id).replace(/-/g, '').slice(0, 12);
@@ -109,14 +156,26 @@ const rolled = new Set(raw.nodes.filter((e) => typeof e.state?.anchorId === 'str
 for (const e of raw.nodes) {
   if (rolled.has(e.id)) continue;
   const thread = convo.get(e.id);
+  // A commit whose traversal title is the bare word "commit" gets its subject
+  // from the same fallback the crossing edge uses; the read is cached, so this
+  // costs nothing beyond what section 4 already pays. The short sha is prefixed
+  // because that is what a person types: `graphify explain aa305935` finds
+  // nothing if the label is only the subject line.
+  let label = e.title;
+  if (e.kind === 'commit') {
+    const d = commitDetail(e);
+    const subject = String(d?.message ?? e.title).split('\n')[0].trim();
+    label = d?.sha ? `${String(d.sha).slice(0, 8)} ${subject}`.trim() : subject;
+  }
   nodes.push({
     id: nodeId(e),
-    label: e.title,
+    label,
     file_type: 'concept',
     source_file: `tm8://${e.kind}/${e.id}`,
     source_location: '',
     _origin: 'tm8',
     tm8_kind: e.kind,
+    ...(e.kind === 'commit' && commitDetail(e)?.sha ? { tm8_sha: commitDetail(e).sha } : {}),
     tm8_status: e.state?.status ?? null,
     tm8_activity_at: e.activityAt,
     ...(e.state?.teammate?.displayName ? { tm8_holder: e.state.teammate.displayName } : {}),
@@ -144,21 +203,20 @@ for (const e of raw.edges) {
 
 /* -- 4 · THE CROSSING EDGE: commit -> the files it touched ------------------ */
 
-let crossed = 0;
-let shaResolved = 0;
-let shaMissing = 0;
-const commitSha = (e) =>
-  e.state?.fields?.sha ?? e.state?.sha ?? (/^[0-9a-f]{7,40}$/i.test(e.title) ? e.title : null);
-
 for (const e of raw.nodes) {
   if (e.kind !== 'commit') continue;
-  const sha = commitSha(e);
+  const detail = commitDetail(e);
+  const sha = detail?.sha ?? null;
   if (!sha) { shaMissing += 1; continue; }
   let files;
   try {
+    // stderr is silenced deliberately: a sha recorded by tm8 but absent from
+    // THIS checkout (a branch never fetched here, a rewritten history) is an
+    // ordinary outcome, not an error to shout about. It is counted instead.
     files = execFileSync('git', ['-C', REPO, 'show', '--name-only', '--pretty=format:', sha],
-      { encoding: 'utf8' }).split('\n').map((s) => s.trim()).filter(Boolean);
-  } catch { shaMissing += 1; continue; }
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').map((s) => s.trim()).filter(Boolean);
+  } catch { shaUnknownToGit += 1; continue; }
   shaResolved += 1;
   for (const f of files) {
     const target = resolveCode(f);
@@ -197,6 +255,13 @@ console.log(`  entities read     ${raw.nodes.length} (${rolled.size} messages ro
 console.log(`  work nodes        ${nodes.length}`);
 console.log(`  work links        ${links.length - crossed}`);
 console.log(`  commit->file      ${crossed} crossing edges from ${shaResolved} resolved sha(s)` +
-            (shaMissing ? `, ${shaMissing} commit(s) with no usable sha` : ''));
+            (shaMissing ? `, ${shaMissing} with no sha at all` : '') +
+            (shaUnknownToGit ? `, ${shaUnknownToGit} whose sha this checkout does not have` : ''));
+console.log(`  commit sha source ${refetched} re-read via \`entity get\`` +
+            (refetched ? ' (the traversal does not project commit state; this goes to 0 once it does)' : ''));
+if (crossed === 0 && shaResolved > 0) {
+  console.log(`  NOTE: shas resolved but no file matched the code graph — is ${CODE}`);
+  console.log(`        scoped to one package while these commits touch others?`);
+}
 console.log(`  LLM tokens spent  0`);
 console.log(`  wrote             ${OUT}`);
