@@ -218,8 +218,8 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
   { name: 'web_fetch', description: 'Fetch an HTTP(S) page as capped readable text.', inputSchema: objectSchema({ url: stringProp('Public HTTP(S) URL.'), maxBytes: integerProp('Maximum response bytes.', 1024, 500_000) }, ['url']), annotations: annotations(true, false, true) },
   { name: 'web_search', description: 'Search the public web and return links and snippets.', inputSchema: objectSchema({ query: stringProp('Search query.'), limit: integerProp('Maximum results.', 1, 10) }, ['query']), annotations: annotations(true, false, true) },
-  { name: 'memory_write', description: 'Write a durable Space memory graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('Decision or fact to remember.'), mechanism: stringProp('How it was established.'), subjectScope: stringProp('Scope the statement applies to.'), doesNotEstablish: stringProp('Explicit boundary of the claim.') }, ['spaceId', 'statement']), annotations: annotations(false) },
-  { name: 'memory_search', description: 'Search recent Space memories by words in their title/excerpt.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to match.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
+  { name: 'memory_write', description: 'Write a durable Space memory graph entity. All four text fields are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('Decision or fact to remember.'), mechanism: stringProp('How it was established.'), subjectScope: stringProp('Scope the statement applies to.'), doesNotEstablish: stringProp('Explicit boundary of the claim.') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
+  { name: 'memory_search', description: 'Search Space memories by words in their statement, mechanism, scope or boundary; any word matches, more matching words rank first.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to match.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
   { name: 'git_branch', description: 'Read branch, upstream, head and remote for the chat checkout.', inputSchema: objectSchema({}), annotations: annotations(true) },
   { name: 'git_status', description: 'Read git status for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true) },
   { name: 'git_diff', description: 'Read a capped diff for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.'), maxBytes: integerProp('Maximum diff bytes.', 1024, 500_000) }), annotations: annotations(true) },
@@ -1177,10 +1177,14 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
   const statement = requiredString(args.statement, 'statement');
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
+  // `create_memory` refuses a blank mechanism/subjectScope/doesNotEstablish
+  // with SQLSTATE 22023 (090:69-80), so the tool requires them up front: the
+  // schema above says so, and this holds the line for a caller that ignores
+  // the schema. Nothing is defaulted — the scope fields are what
+  // `memory_search` and staleness read, and a placeholder would persist.
   const content: Record<string, unknown> = { statement };
   for (const key of ['mechanism', 'subjectScope', 'doesNotEstablish'] as const) {
-    const value = optionalString(args[key], key);
-    if (value) content[key] = value;
+    content[key] = requiredString(args[key], key);
   }
   const data = await context.transport.invoke('entities.create', { body: {
     spaceId, kind: 'memory', title: statement.slice(0, 200),
@@ -1194,15 +1198,24 @@ async function memorySearch(args: Record<string, unknown>, context: DirectToolCo
   const limit = integer(args.limit, 'limit', 1, 50) ?? 10;
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
+  const terms = query.split(/\s+/).filter(Boolean);
+  // The MATCH is server-side, over all four memory text columns
+  // (`filters.terms`, any-of): a summary carries a 120-char title and a
+  // 200-char excerpt of a statement that may run to 4,000 chars, so a local
+  // scan could not see most of what it was searching. The local pass only
+  // RANKS, by how many terms hit the text a summary does carry — a hit the
+  // server found in the statement body keeps its place instead of being
+  // filtered back out.
   const data = await context.transport.invoke('collections.query', { body: {
-    spaceId, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100,
+    spaceId, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100, filters: { terms },
   } });
   const page = data as { page?: { items?: Array<Record<string, unknown>> } };
-  const terms = query.split(/\s+/).filter(Boolean);
   const hits = (page.page?.items ?? []).map((item) => {
-    const haystack = `${String(item.title ?? '')} ${String(item.excerpt ?? '')}`.toLowerCase();
+    const state = (item.state ?? {}) as Record<string, unknown>;
+    const haystack = [item.title, item.excerpt, state.mechanism, state.subjectScope, state.doesNotEstablish]
+      .map((part) => String(part ?? '')).join(' ').toLowerCase();
     return { item, score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
-  }).filter((hit) => hit.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+  }).sort((a, b) => b.score - a.score).slice(0, limit);
   return result('memory_search', { query, items: hits.map((hit) => hit.item) });
 }
 

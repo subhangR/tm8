@@ -990,6 +990,21 @@ export interface CollectionQuery {
      */
     category?: StatusCategory[];
     deleted?: 'exclude'|'only'|'include';
+    /**
+     * Additive (2026-09-15): memories whose statement, mechanism, subject
+     * scope or does-not-establish text contains ANY of these terms as a
+     * case-insensitive substring — any-of, like every other array filter
+     * here. Same kind-narrowing semantics as `status`: the four columns live
+     * on the memory arm only, so while present the query returns memories
+     * exclusively.
+     *
+     * It exists because the MCP `memory_search` tool scanned a summary's
+     * title/excerpt — a ~200-char prefix of a statement that averages 1,752
+     * chars on the launch node — and so could not reach 71% of the words it
+     * held. Memory-only on purpose: nothing searches another kind's text yet,
+     * and a predicate over columns nobody asked for is a feature, not a fix.
+     */
+    terms?: string[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */

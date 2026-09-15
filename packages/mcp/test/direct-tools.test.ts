@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ArtifactManifestSchema } from '@tm8/contract';
 import type { CatalogTransport } from '../src/catalog-client.js';
+import { DIRECT_TOOLS } from '../src/direct-tools.js';
 import { Tm8ToolRouter } from '../src/tools.js';
 
 const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
@@ -353,5 +354,54 @@ describe('direct repository tools', () => {
     expect(redirected).toMatchObject({ isError: true, structuredContent: { error: { code: 'forbidden' } } });
     expect(called).toEqual(['https://93.184.216.34/start']);
     expect(dispatchers[0]).toBeDefined();
+  });
+});
+
+describe('memory tools', () => {
+  it('requires all four memory_write fields in the schema and refuses a partial call before the transport', async () => {
+    // `create_memory` raises 22023 for a blank mechanism/subjectScope/
+    // doesNotEstablish; a schema that called them optional invited exactly
+    // that refusal. Both the advertised schema and the handler must agree.
+    expect(DIRECT_TOOLS.find((tool) => tool.name === 'memory_write')?.inputSchema).toMatchObject({
+      required: ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish'],
+    });
+    let invoked = 0;
+    const counting: CatalogTransport = { invoke: async () => { invoked += 1; return { ok: true }; } };
+    const router = new Tm8ToolRouter(counting, { mode: 'plan', spaceId: 'space-a' });
+    await expect(router.call('memory_write', { spaceId: 'space-a', statement: 'scoped tsc is faster' })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'invalid_input', message: 'mechanism must be a non-empty string' } },
+    });
+    await expect(router.call('memory_write', {
+      spaceId: 'space-a', statement: 'scoped tsc is faster', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: '   ',
+    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+    expect(invoked).toBe(0);
+    const ok = await router.call('memory_write', {
+      spaceId: 'space-a', statement: 'scoped tsc is faster', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: 'vite',
+    });
+    expect(ok.isError).toBeUndefined();
+    expect(invoked).toBe(1);
+  });
+
+  it('memory_search matches server-side over every memory text column and only ranks locally', async () => {
+    const bodies: Array<{ operation: string; body: unknown }> = [];
+    const recording: CatalogTransport = {
+      invoke: async (operation, options) => {
+        bodies.push({ operation, body: options.body });
+        return { page: { items: [
+          // A hit the server found in the statement BODY: nothing the summary
+          // carries mentions the terms. The old local scan dropped it.
+          { id: 'body-hit', kind: 'memory', title: 'unrelated', excerpt: 'unrelated', state: { kind: 'memory', mechanism: '', subjectScope: '', doesNotEstablish: '' } },
+          { id: 'both', kind: 'memory', title: 'Scoped tsc wins', excerpt: 'Scoped tsc wins', state: { kind: 'memory', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: 'vite' } },
+          { id: 'scope-hit', kind: 'memory', title: 'unrelated', excerpt: 'unrelated', state: { kind: 'memory', mechanism: 'tsc', subjectScope: '', doesNotEstablish: '' } },
+        ] } };
+      },
+    };
+    const router = new Tm8ToolRouter(recording, { mode: 'plan', spaceId: 'space-a' });
+    const out = await router.call('memory_search', { spaceId: 'space-a', query: 'Scoped  TSC', limit: 5 });
+    expect(bodies).toEqual([{ operation: 'collections.query', body: {
+      spaceId: 'space-a', kinds: ['memory'], sort: 'updatedAt_desc', limit: 100, filters: { terms: ['scoped', 'tsc'] },
+    } }]);
+    expect((out.structuredContent as { items: Array<{ id: string }> }).items.map((item) => item.id))
+      .toEqual(['both', 'scope-hit', 'body-hit']);
   });
 });

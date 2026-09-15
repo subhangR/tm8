@@ -963,6 +963,11 @@ const CollectionFiltersSchema = z.object({
   // encode this phase's incompleteness as a permanent law.
   category: z.array(StatusCategorySchema).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
+  // Memory text terms, any-of (collections.ts). Each term is trimmed and must
+  // survive it: a blank term is a substring of everything, the
+  // confident-EVERYTHING twin of the confident-zero the refinements below
+  // refuse. An empty array is refused for the same reason.
+  terms: z.array(z.string().trim().min(1)).min(1).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only

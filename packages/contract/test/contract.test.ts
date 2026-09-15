@@ -224,6 +224,11 @@ describe('DTO schemas', () => {
       },
     }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
+    // Memory text terms: any-of like every array filter; a blank term or an
+    // empty array is refused rather than matching everything.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['scoped', 'tsc'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: [] } }).success).toBe(false);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['   '] } }).success).toBe(false);
 
     // …but the kind-disjoint PAIR is refused, not silently empty: no row is
     // both a task and a work_session, so the conjunction could only ever
