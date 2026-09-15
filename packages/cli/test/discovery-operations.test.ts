@@ -298,9 +298,23 @@ describe('the CLI command projection', () => {
     }
   });
 
-  it('`memory` is a noun made only of aliases, and still resolves everywhere a noun must', () => {
+  /**
+   * `memory` was authored as the first noun made ONLY of aliases, and this
+   * test asserted that `DISCOVERY` carried NO row for it. The search lane then
+   * added `memories.search`, whose family maps to this same noun, and the two
+   * branches merged without a textual conflict — the count in a neighbouring
+   * file moved, nothing here did, and only running it said so. So the shape
+   * asserted below is the MERGED truth, and it is the shape that matters: the
+   * noun's every COMMAND still comes from the alias map, and its one catalog
+   * row is commandless. If that row ever grows a `cmd`, `memory search` would
+   * be claimed twice — by the row and by the alias — and this is where that
+   * shows up.
+   */
+  it('`memory` is a noun whose commands are all aliases, with exactly one commandless catalog row', () => {
     expect(NOUNS).toContain('memory');
-    expect(DISCOVERY.filter((d) => d.noun === 'memory' || d.command?.[0] === 'memory')).toEqual([]);
+    const rows = DISCOVERY.filter((d) => d.noun === 'memory' || d.command?.[0] === 'memory');
+    expect(rows.map((d) => d.operation)).toEqual(['memories.search']);
+    expect(rows[0]?.command).toBeNull();
     expect(commandsForNoun('memory').map((c) => c.command)).toEqual([
       'memory record',
       'memory list',
@@ -308,6 +322,9 @@ describe('the CLI command projection', () => {
       'memory supersede',
       'memory search',
     ]);
+    // The alias is the operation's ONLY invocation, and it names the operation
+    // rather than a stand-in — the seam the CLI lane left is closed.
+    expect(commandDiscovery(['memory', 'search'])?.operations).toEqual(['memories.search']);
   });
 
   it('the family noun `collection` is indexed even though its command is `entity query`', () => {

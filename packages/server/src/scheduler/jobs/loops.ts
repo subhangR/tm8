@@ -24,7 +24,7 @@
  * transient spawn refusal must not silently retire a schedule a human set up.
  *
  * WHOSE AUTHORITY A FIRING RUNS UNDER. The sweep reads through
- * `list_due_loops` (185), a node-admin-only door that sees every space. It
+ * `list_due_loops` (187), a node-admin-only door that sees every space. It
  * used to be a plain read of `public.loops` bound as the node's loopback
  * owner — and `loops_select` is membership, which node-admin does not widen,
  * so that read saw only the spaces the owner belongs to. On a multi-user node

@@ -81,6 +81,7 @@ const FOUR = [
 const CREATE = bindPath('entities.create', {});
 const EDGES = bindPath('edges.create', {});
 const QUERY = bindPath('collections.query', {});
+const SEARCH = bindPath('memories.search', {});
 const GET_MEMORY = bindPath('entities.get', { id: MEMORY });
 
 /** A memory as `entities.get` answers it: statement in content, scope in state. */
@@ -219,12 +220,17 @@ describe('the module registers exactly its own paths, and the projection agrees'
    * neighbouring row would still be a command, still be available, and
    * answer a different question.
    */
-  it('all five are aliases over doors that already existed, and name every door they use', () => {
+  it('every verb names every door it uses — four over doors that already existed, and search over its own', () => {
     expect(commandDiscovery(['memory', 'record'])?.operations).toEqual(['entities.create', 'edges.create']);
     expect(commandDiscovery(['memory', 'list'])?.operations).toEqual(['collections.query']);
     expect(commandDiscovery(['memory', 'show'])?.operations).toEqual(['entities.get']);
     expect(commandDiscovery(['memory', 'supersede'])?.operations).toEqual(['entities.create', 'edges.create', 'entities.get']);
-    expect(commandDiscovery(['memory', 'search'])?.operations).toEqual(['collections.query']);
+    // `search` is the one verb whose door did not already exist. It named
+    // `collections.query` while it ranked matches in this process; it names the
+    // real operation now, so this command's availability moves with the search
+    // itself rather than with a stand-in that could stay green while the
+    // search was down.
+    expect(commandDiscovery(['memory', 'search'])?.operations).toEqual(['memories.search']);
     for (const c of MEMORY_COMMANDS) expect(commandDiscovery(c.path)?.noun).toBe('memory');
   });
 
@@ -609,70 +615,76 @@ describe('memory supersede', () => {
 });
 
 // ---------------------------------------------------------------------------
-// memory search — local ranking behind a seam
+// memory search — one request, and whatever the Server answers
 // ---------------------------------------------------------------------------
 
+/**
+ * WHAT MOVED, AND WHAT THESE TESTS ARE NOW ABOUT. This command used to fetch a
+ * page of the hundred most recently updated memories and rank them in this
+ * process, so its unit tests were about the RANKING: which of three stub rows
+ * came back first, which field a word matched in, when the caveat about
+ * unsearched memories appeared. None of that is this command's job any more —
+ * matching, ranking and chain-head resolution happen in the database, and are
+ * proved where they live (`packages/server/test/db/memory-search.pg.test.ts`)
+ * and end to end against a real Server (`test/integration/memory.test.ts`).
+ *
+ * What is left here is the only thing this file can honestly assert: the
+ * request this CLI composes, and what it does with an answer. A unit test that
+ * re-asserted relevance against a stub would be asserting the stub.
+ */
 describe('memory search', () => {
-  const POOL = [
-    memorySummary(MEMORY, 'the deploy needs a reload', { mechanism: 'watched the PORT stay closed after a restart' }),
-    memorySummary(SUCCESSOR, 'staging runs a different init', { subjectScope: 'the Staging node', doesNotEstablish: 'anything about production' }),
-    memorySummary(HEAD, 'unrelated: the cache warms in ten minutes', { doesNotEstablish: 'cold-start time after a Deploy' }),
+  /** Two matches as `memories.search` answers them: statement and marks, no page wrapper. */
+  const HITS = [
+    { id: MEMORY, statement: 'the deploy needs a reload', subjectScope: 's', doesNotEstablish: 'd', rank: 0.9, marks: [] },
+    { id: SUCCESSOR, statement: 'staging runs a different init', subjectScope: 's', doesNotEstablish: 'd', rank: 0.4, marks: ['disputed'] },
   ];
 
-  it('asks for the most recently updated memories, one page of 100, and filters locally', async () => {
-    reply = () => envelope({ page: { items: POOL, nextCursor: null } });
-    expect(await run(['memory', 'search', 'deploy', '--format', 'json'])).toBe(0);
+  it('asks the Server to search, sending the words as typed and the space it is in', async () => {
+    reply = () => envelope({ items: HITS });
+    expect(await run(['memory', 'search', 'deploy', 'reload', '--format', 'json'])).toBe(0);
     expect(seen).toHaveLength(1);
-    expect(seen[0]?.path).toBe(QUERY);
-    expect(body()).toEqual({ spaceId: SPACE, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100 });
-    const dto = JSON.parse(out()) as { query: string; items: Array<{ id: string }>; searched: number; exhaustive: boolean };
-    expect(dto.query).toBe('deploy');
-    expect(dto.items.map((i) => i.id)).toEqual([MEMORY, HEAD]);
-    expect(dto.searched).toBe(3);
-    expect(dto.exhaustive).toBe(true);
+    expect(seen[0]?.path).toBe(SEARCH);
+    expect(seen[0]?.method).toBe('POST');
+    // The words go as typed — no lower-casing, no tokenizing, no re-quoting.
+    // "quoted words", `or` and a leading minus are the Server's syntax to read,
+    // and a CLI that pre-chewed them would be deciding what the caller meant.
+    expect(body()).toEqual({ spaceId: SPACE, query: 'deploy reload', limit: 10 });
+    const dto = JSON.parse(out()) as { query: string; items: Array<{ id: string }> };
+    expect(dto.query).toBe('deploy reload');
+    expect(dto.items.map((i) => i.id)).toEqual([MEMORY, SUCCESSOR]);
   });
 
-  it.each([
-    ['the claim (statement)', 'reload', [MEMORY]],
-    ['how it was found out (mechanism)', 'restart', [MEMORY]],
-    ['where it applies (scope)', 'staging', [SUCCESSOR]],
-    ['what it does not prove', 'cold-start', [HEAD]],
-  ])('matches in %s, ignoring letter case', async (_part, word, expected) => {
-    reply = () => envelope({ page: { items: POOL } });
-    expect(await run(['memory', 'search', word.toUpperCase(), '--format', 'json'])).toBe(0);
-    const dto = JSON.parse(out()) as { items: Array<{ id: string }> };
-    expect(dto.items.map((i) => i.id)).toEqual(expected);
-  });
-
-  it('ranks by how many of the words a memory contains, keeping the Server\'s recency order among ties', async () => {
-    reply = () => envelope({ page: { items: POOL } });
-    // "staging production": SUCCESSOR carries both (scope + does-not-establish),
-    // the others carry neither or one.
-    await run(['memory', 'search', 'production staging deploy', '--format', 'json']);
-    const dto = JSON.parse(out()) as { items: Array<{ id: string }> };
-    expect(dto.items.map((i) => i.id)).toEqual([SUCCESSOR, MEMORY, HEAD]);
-  });
-
-  it('--limit caps the matches shown; ten is the default', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => memorySummary(`018f0000-0000-7000-8000-0000000000${(i + 10).toString(16)}`, `deploy note ${i}`));
-    reply = () => envelope({ page: { items: many } });
+  it('keeps the Server\'s order — relevance is decided once, where the rows are', async () => {
+    reply = () => envelope({ items: [...HITS].reverse() });
     await run(['memory', 'search', 'deploy', '--format', 'json']);
-    expect((JSON.parse(out()) as { items: unknown[] }).items).toHaveLength(10);
-
-    stdout = [];
-    await run(['memory', 'search', 'deploy', '--limit', '2', '--format', 'json']);
-    expect((JSON.parse(out()) as { items: unknown[] }).items).toHaveLength(2);
+    const dto = JSON.parse(out()) as { items: Array<{ id: string }> };
+    expect(dto.items.map((i) => i.id)).toEqual([SUCCESSOR, MEMORY]);
   });
 
-  it('says when older memories were left unsearched, and says when nothing matched', async () => {
-    reply = () => envelope({ page: { items: POOL, nextCursor: 'more' } });
-    await run(['memory', 'search', 'deploy']);
-    expect(out()).toContain(MEMORY);
-    expect(out()).toMatch(/older ones were not searched/);
+  it('--limit is what the Server is asked for; ten is the default and two hundred the ceiling', async () => {
+    reply = () => envelope({ items: [] });
+    await run(['memory', 'search', 'deploy', '--limit', '3', '--format', 'json']);
+    expect(body()).toMatchObject({ limit: 3 });
 
-    stdout = [];
-    reply = () => envelope({ page: { items: POOL } });
-    await run(['memory', 'search', 'zebra']);
+    // Refused HERE, in a sentence, rather than by the wire as a schema error.
+    expect(await run(['memory', 'search', 'deploy', '--limit', '500'])).toBe(2);
+    expect(err()).toContain('at most 200 matches at a time');
+    expect(await run(['memory', 'search', 'deploy', '--limit', '0'])).toBe(2);
+    expect(err()).toContain('expects a positive count');
+    expect(seen).toHaveLength(1); // only the first call reached the wire
+  });
+
+  it('the human view puts the id first, then the claim, then any marks — in this noun\'s own words', async () => {
+    reply = () => envelope({ items: [
+      { id: MEMORY, statement: 'the deploy needs a reload', subjectScope: 's', doesNotEstablish: 'd', rank: 1, marks: ['basis changed', 'disputed'] },
+    ] });
+    await run(['memory', 'search', 'deploy']);
+    expect(out().trim()).toBe(`${MEMORY}  the deploy needs a reload  [rests on something since changed, disputed]`);
+  });
+
+  it('says so plainly when nothing matched', async () => {
+    reply = () => envelope({ items: [] });
+    expect(await run(['memory', 'search', 'zebra'])).toBe(0);
     expect(out().trim()).toBe('no memories mention "zebra"');
   });
 

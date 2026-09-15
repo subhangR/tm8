@@ -2934,17 +2934,26 @@ const COMMAND_ALIASES = new Map<string, {
     examples: [],
   }],
   // The five memory verbs are ALIASES for the reason `chat list|show|send|
-  // turns` are: every graph act each one performs is an operation that already
-  // exists. The memory design (docs/features/memory/MEMORY-DESIGN-FINAL.md
-  // §5.2, §6.5) says so in as many words — `create_memory` joins the
-  // `entities.create` ledger label "so the catalog gains nothing", and "no new
-  // read operation is proposed and none is needed". A `memories.record` row
-  // would have opened the catalog for a door that already exists.
+  // turns` are: the command index, not the catalog, is where a spelling lives.
+  // Four of the five perform only graph acts that already have operations. The
+  // memory design (docs/features/memory/MEMORY-DESIGN-FINAL.md §5.2, §6.5) says
+  // so in as many words — `create_memory` joins the `entities.create` ledger
+  // label "so the catalog gains nothing", and "no new read operation is
+  // proposed and none is needed". A `memories.record` row would have opened the
+  // catalog for a door that already exists.
   //
-  // `memory` is the first noun made ONLY of aliases (no catalog family is named
-  // `memories`), which is why `NOUNS` below unions alias nouns in: without that
+  // `search` is the exception, and it is an alias for a DIFFERENT reason: the
+  // `memories.search` row it names is deliberately commandless, so the only way
+  // to invoke it is this entry. §6.5's "none is needed" predates the finding
+  // that a substring search over a summary reads about a ninth of a memory and
+  // none of its boundary.
+  //
+  // `memory` is a noun with no catalog FAMILY of its own — every command it has
+  // is an alias — which is why `NOUNS` below unions alias nouns in: without that
   // the commands were wired and documented while `tm8 help memory` answered
-  // "no help for memory" — the exact gap this noun closes.
+  // "no help for memory" — the exact gap this noun closes. (`memories.search`
+  // later gave the noun one catalog row, but a commandless one: it names the
+  // noun and contributes no command, so it could never have closed this gap.)
   //
   // The prose here is what an agent reads in a PTY, so it says what each
   // command does for the reader and keeps the mechanism (which operation, which
@@ -3004,9 +3013,10 @@ const COMMAND_ALIASES = new Map<string, {
     syntax: 'tm8 memory search <query> [--limit <count>]',
     summary: 'Find memories that mention your words, in any of their four parts',
     notes: [
-      'each of your words is matched against all four parts of a memory, ignoring letter case; memories rank by how many of your words they contain',
-      'today this looks through the 100 most recently updated memories in this Space, and says so when older ones were left unsearched; `tm8 memory list` pages through everything',
-      '--limit <count> caps how many matches are shown (10 unless given)',
+      'every part of every memory in this Space is searched — what it claims, how it was found out, where it applies, and what it does not prove',
+      'all your words must appear; put "words in quotes" to look for the exact phrase, write `or` between words to widen the search, and put a minus in front of a word to leave it out',
+      'a memory that has been replaced is answered as its replacement, once, so a corrected fact never comes back under two wordings',
+      'best matches come first; --limit <count> caps how many are shown (10 unless given, 200 at most)',
     ],
     examples: ["tm8 memory search '<words>' --limit <count>"],
   }],
@@ -3087,14 +3097,23 @@ COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', '
 // the help header derives side-effect and versioning traits from the FIRST
 // operation, and a durable write is what those two commands ARE. `list` is one
 // `collections.query` in both of its forms (the --holder form is the same query
-// under an edge filter, not an edge list). `search` names only the query it
-// makes today — when a `memories.search` operation exists, the seam in
-// `commands/memory.ts` is where it lands, and this entry moves with it.
+// under an edge filter, not an edge list).
+//
+// `search` names `memories.search`, and this is the one entry in the block that
+// is not sugar. That row is COMMANDLESS in the table above (`cmd: null`) on
+// purpose: the operation's only invocation is `tm8 memory search`, so the row
+// contributes no command key of its own and the alias below is the single
+// place the two halves meet. Were the row to carry `cmd: ['memory','search']`,
+// this line and that one would both claim the key — the alias would win the
+// display and the row would win the operation list, silently. It was a
+// `collections.query` over the hundred most recently updated memories until
+// the operation existed; the availability of this command now moves with the
+// real search, which is the point of naming it here rather than a stand-in.
 COMMAND_OPS.set('memory record', ['entities.create', 'edges.create']);
 COMMAND_OPS.set('memory list', ['collections.query']);
 COMMAND_OPS.set('memory show', ['entities.get']);
 COMMAND_OPS.set('memory supersede', ['entities.create', 'edges.create', 'entities.get']);
-COMMAND_OPS.set('memory search', ['collections.query']);
+COMMAND_OPS.set('memory search', ['memories.search']);
 COMMAND_ORDER.push('memory record', 'memory list', 'memory show', 'memory supersede', 'memory search');
 
 /**
@@ -3208,13 +3227,19 @@ const NOUN_SUMMARY: Record<string, string> = {
  * Family nouns ∪ command nouns ∪ alias nouns, sorted. All resolve through
  * `tm8 help <noun>`.
  *
- * Alias nouns are unioned in because a noun can now be made ONLY of aliases
- * (`memory`: five commands, every one sugar over an existing operation, no
- * catalog family named `memories`). Derived from `BASE` alone, such a noun was
- * absent here while its commands were fully wired: `isNoun` said no, so
- * `tm8 help memory` answered "no help for memory", root help never listed it,
- * and completion never offered it — documented and built, and unreachable
- * from every discovery surface at once.
+ * Alias nouns are unioned in because a noun can be made entirely of aliases.
+ * `memory` was the first: five commands, no catalog row carrying the noun at
+ * all. Derived from `BASE` alone it was absent here while its commands were
+ * fully wired — `isNoun` said no, so `tm8 help memory` answered "no help for
+ * memory", root help never listed it, and completion never offered it:
+ * documented and built, and unreachable from every discovery surface at once.
+ *
+ * `memories.search` has since given `memory` one catalog row, so `BASE` would
+ * now carry the noun on its own — which is exactly why this union stays. That
+ * row is COMMANDLESS: it would put the noun in the index while every command
+ * under it still came from the alias map, so a noun whose last catalog row
+ * ever went away, or a new alias-only noun, would fall back into the same hole.
+ * The union costs one spread and closes the class of bug, not the instance.
  */
 export const NOUNS: readonly string[] = [
   ...new Set([

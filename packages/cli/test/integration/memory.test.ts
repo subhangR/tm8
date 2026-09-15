@@ -21,8 +21,10 @@
  *  5. `supersede` writes the corrected memory, then the append-only
  *     `supersedes` mark with its reason; the OLD memory's own read now names
  *     the replacement, and superseding it again is refused before any write.
- *  6. `search` finds a memory by a word in each of its four parts — including
- *     the two scope fields that only ride in `state` — ignoring letter case.
+ *  6. `search` reaches the real `memories.search` — the database's own search
+ *     over all four fields of every memory in the Space — and a word that
+ *     lives only in a memory that has since been REPLACED answers the
+ *     replacement, once, never the superseded wording.
  *  7. A session id the acting actor does not participate in is refused by the
  *     door (42501 → forbidden, exit 4) and the CLI explains it in plain words.
  *
@@ -235,20 +237,30 @@ describe('tm8 memory — the door an agent in a work session uses to save what i
     expect(count).toBe(4); // three records + one successor; the refused one wrote nothing
   });
 
-  it('6. search: a word in any of the four parts finds the memory, ignoring letter case', async () => {
+  it('6. search: every part of every memory, and a replaced one answers as its replacement', async () => {
+    // The claim. Letter case and word endings are the Server's problem: the
+    // search stems, so UPGRADE finds "upgrade" in the successor's statement.
     const byClaim = await tm8(['memory', 'search', 'UPGRADE', '--format', 'json']);
     expect(byClaim.code).toBe(0);
     expect(json<{ items: Array<{ id: string }> }>(byClaim.stdout).items.map((i) => i.id)).toContain(successorId);
 
+    // Where it applies. Both words are required, and only the successor's
+    // scope — "The production node on the upgraded init system" — has both.
     const byScope = await tm8(['memory', 'search', 'upgraded init', '--format', 'json']);
-    const scopeHits = json<{ items: Array<{ id: string }>; exhaustive: boolean }>(byScope.stdout);
-    expect(scopeHits.items[0]?.id).toBe(successorId); // both words, ranked first
-    expect(scopeHits.exhaustive).toBe(true);
+    const scopeHits = json<{ items: Array<{ id: string; statement: string }> }>(byScope.stdout);
+    expect(scopeHits.items[0]?.id).toBe(successorId);
+    expect(scopeHits.items[0]?.statement).toContain('since the init upgrade');
 
+    // What it does not prove — the field a summary read never carried, which
+    // is half the reason this operation exists. "supervisor" appears ONLY in
+    // the boundary of the memories recorded from FOUR, one of which is the
+    // superseded `memoryId`. That hit is answered as its replacement: the
+    // replaced wording is never served, and the chain collapses to one row.
     const byBoundary = await tm8(['memory', 'search', 'supervisor', '--format', 'json']);
     const ids = json<{ items: Array<{ id: string }> }>(byBoundary.stdout).items.map((i) => i.id);
-    expect(ids).toContain(memoryId); // "different supervisor" lives only in does-not-establish
-    expect(ids).not.toContain(successorId);
+    expect(ids).toContain(successorId);
+    expect(ids).not.toContain(memoryId);
+    expect(new Set(ids).size).toBe(ids.length);
 
     const none = await tm8(['memory', 'search', 'zebra']);
     expect(none.code).toBe(0);

@@ -979,9 +979,24 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   duplicate prefixes                                                      -> 0
     // The two lanes differing by value (rather than making the identical edit)
     // is why git asked at all — the good outcome this block has argued for
-    // seven times. A third memory lane lands one more migration on top of this
-    // merge, and the row below is that re-measurement.
-    expect(server.appliedMigrations.length).toBe(174);
+    // seven times. A third lane, the due-loop sweep fix, lands one more
+    // migration on top of this merge; the row below is that re-measurement.
+    // 174 -> 175 (2026-09-15): ONE more file on top of the merge above,
+    // 187_due_loops_sweep.sql from fix/dreamer-loops-never-run — the third and
+    // last lane of this integration. It was AUTHORED as 185, the number that was
+    // free on the base all four lanes forked from, and RENUMBERED to 187 at this
+    // merge because the two memory lanes above took 185 and 186. That rename is
+    // the failure the assertion below exists to catch, arriving for the first
+    // time as three sibling branches rather than two: git merges a file ADD with
+    // no conflict at all, so nothing but this suite would have noticed three
+    // lanes claiming two numbers. MEASURED on the merged tree, not added to it:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 175
+    //   duplicate prefixes                                                      -> 0
+    //   tools/ci/migrations-check.sh against a scratch database                 -> clean
+    // That last line is the end-to-end proof the renumbered chain still applies:
+    // 001 through 187 on a fresh database, in order, with no duplicate number.
+    expect(server.appliedMigrations.length).toBe(175);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

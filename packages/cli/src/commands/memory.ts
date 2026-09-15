@@ -11,24 +11,32 @@
  * `relates_to(work_session → team_member)` — so the missing half was purely the
  * write door. This module is that door.
  *
- * FIVE ALIASES, ZERO CATALOG ROWS. Every command here is SUGAR over operations
- * that already exist, registered in `src/discovery/operations.ts` as
- * `COMMAND_ALIASES` exactly the way `chat list`, `worktree status` and `task
- * import-issue` are:
+ * FIVE VERBS, FOUR OF THEM SUGAR. Every command here is registered in
+ * `src/discovery/operations.ts` as a `COMMAND_ALIASES` entry, exactly the way
+ * `chat list`, `worktree status` and `task import-issue` are, and four of the
+ * five put only pre-existing operations on the wire:
  *
  *   memory record     entities.create (kind memory) [+ edges.create for --about]
  *   memory list       collections.query kinds:[memory] [+ filters.edge for --holder]
  *   memory show       entities.get
  *   memory supersede  entities.get (pre-flight) + entities.create + edges.create
- *   memory search     collections.query kinds:[memory], ranked LOCALLY (see seam)
+ *   memory search     memories.search
  *
  * The memory design (docs/features/memory/MEMORY-DESIGN-FINAL.md §5.2, §6.5)
- * is explicit that the catalog gains nothing for memories: `create_memory`
+ * is explicit that the catalog gains nothing for the WRITE path: `create_memory`
  * joins the `entities.create` ledger label, and "no new read operation is
  * proposed and none is needed". A `memories.record` row would have opened the
  * catalog for a door that already exists, cost a contract registration, a
  * server handler this lane does not own, and a digest/count re-pin — for a
  * command whose only wire act is an ordinary entity create.
+ *
+ * `memories.search` is the one place that reasoning did not hold, and the
+ * search lane says why in its own catalog note: §6.5 predates the measurement
+ * that the substring search this command used to do saw about a ninth of an
+ * average memory and none of its boundary. That operation carries NO command
+ * of its own (`cmd: null` in the operations table) — `tm8 memory search` is
+ * its only invocation, so one action never gets two names, and the two halves
+ * meet in the `COMMAND_ALIASES` entry rather than colliding on a command key.
  *
  * SESSION PROVENANCE IS THE POINT. When this process IS a work session
  * (`TM8_SESSION_ID`, read into `ctx.sessionId`), `record` and `supersede`
@@ -548,92 +556,89 @@ async function memorySupersede(cmd: CommandContext): Promise<ExitCode> {
 // ── search ─────────────────────────────────────────────────────────────────
 
 /**
- * ┌────────────────────────────────────────────────────────────────────────┐
- * │ SEAM — server-side search lands here.                                  │
- * │                                                                        │
- * │ Today `memory search` is `collections.query` over the most recently    │
- * │ updated memories plus `rankLocally` below. Another lane is building a  │
- * │ database-side search; when the contract carries an operation named    │
- * │ `memories.search`, replace `searchCandidates` + `rankLocally` with one │
- * │ `observedInvoke(client, 'memories.search', …)`, point the alias's      │
- * │ COMMAND_OPS entry in `discovery/operations.ts` at it, and delete the   │
- * │ pool-size note from the alias. Nothing else in this file depends on   │
- * │ how the matches were found.                                            │
- * └────────────────────────────────────────────────────────────────────────┘
+ * THE SEARCH RUNS WHERE THE MEMORIES ARE. `memories.search` hands the words to
+ * the Server, which matches them against every part of every memory in the
+ * Space — what it claims, how that was established, what it applies to, and
+ * what it does not prove — ranks the matches, answers a memory that has been
+ * replaced as its latest version, and returns only what the caller is allowed
+ * to read.
+ *
+ * WHAT THIS REPLACED, and why the help copy lost a sentence. Until the
+ * operation existed, this command asked `collections.query` for the hundred
+ * most recently updated memories and substring-scanned them in this process,
+ * over a summary that carries the first 120 characters of the statement and
+ * nothing of the other three fields. It therefore had to warn that older
+ * memories were left unsearched, and it could not find a memory by the
+ * boundary that is half the reason to record one. There is nothing left to
+ * warn about: the search reaches every memory in the Space, so the pool size,
+ * the local ranking and the caveat are all gone with it. Relevance is decided
+ * once, where the rows are — a second opinion here would be the same split
+ * this change closes.
  */
-const SEARCH_POOL_LIMIT = 100;
 const SEARCH_DEFAULT_LIMIT = 10;
+/** The most matches the Server will answer at once; asking for more is refused here, in a sentence. */
+const SEARCH_MAX_LIMIT = 200;
 
-async function searchCandidates(cmd: CommandContext): Promise<{ items: MemoryRow[]; exhaustive: boolean }> {
-  const data = await observedInvoke<{ page?: { items?: MemoryRow[]; nextCursor?: unknown } }>(
-    clientFor(cmd.ctx),
-    'collections.query',
-    { body: { spaceId: requireSpace(cmd.ctx), kinds: ['memory'], sort: 'updatedAt_desc', limit: SEARCH_POOL_LIMIT } },
-  );
-  const items = data?.page?.items ?? [];
-  const more = typeof data?.page?.nextCursor === 'string' && data.page.nextCursor.length > 0;
-  return { items, exhaustive: !more && items.length < SEARCH_POOL_LIMIT };
-}
-
-/** The words a query contributes, lower-cased, empty tokens dropped. */
-function termsOf(query: string): string[] {
-  return [...new Set(query.toLowerCase().split(/\s+/).filter((t) => t.length > 0))];
+/** One match, as the Server answers it. */
+interface SearchHit {
+  id?: unknown;
+  statement?: unknown;
+  marks?: unknown;
 }
 
 /**
- * Every one of the four parts is searched: the statement reaches a summary
- * as its title (first 120 characters) and excerpt (first 200), and the three
- * scope fields ride in `state` on every summary read. Case-insensitive; a
- * memory ranks by how many DISTINCT query words it contains, ties keeping the
- * server's most-recently-updated order.
+ * The marks on a match, said the way the rest of this noun says them.
+ *
+ * `list` and `show` derive their marks from the badge block and spell each one
+ * out for a reader; a match arrives with the same words already chosen, so
+ * only the two that are shorthand are expanded. A word this table does not
+ * know is shown as it came — a mark nobody has a phrase for is still a mark,
+ * and silently dropping it would hide exactly what the reader needs.
  */
-function rankLocally(items: readonly MemoryRow[], terms: readonly string[]): MemoryRow[] {
-  const scored = items.map((item) => {
-    const haystack = [
-      item.title,
-      item.excerpt,
-      item.state?.mechanism,
-      item.state?.subjectScope,
-      item.state?.doesNotEstablish,
-    ].map((v) => String(v ?? '')).join('\n').toLowerCase();
-    const hits = terms.reduce((n, term) => n + (haystack.includes(term) ? 1 : 0), 0);
-    return { item, hits };
-  });
-  return scored
-    .filter((s) => s.hits > 0)
-    .sort((a, b) => b.hits - a.hits)
-    .map((s) => s.item);
+const MARK_WORDS: Record<string, string> = {
+  superseded: 'replaced',
+  'basis deleted': 'rests on something since deleted',
+  'basis changed': 'rests on something since changed',
+};
+
+/** One match as a line: id first (every follow-up command takes it), then the claim, then any marks. */
+function hitLine(hit: SearchHit): string {
+  const marks = (Array.isArray(hit.marks) ? hit.marks : []).map((m) => MARK_WORDS[String(m)] ?? String(m));
+  const parts = [String(hit.id ?? ''), String(hit.statement ?? '')];
+  if (marks.length > 0) parts.push(`[${marks.join(', ')}]`);
+  return parts.filter((p) => p !== '').join('  ');
 }
 
 function renderSearch(dto: unknown): string {
-  const result = (dto ?? {}) as { query?: unknown; items?: MemoryRow[]; searched?: unknown; exhaustive?: unknown };
+  const result = (dto ?? {}) as { query?: unknown; items?: SearchHit[] };
   const items = result.items ?? [];
-  const lines = items.length > 0 ? items.map(memoryLine) : [`no memories mention "${String(result.query ?? '')}"`];
-  if (result.exhaustive === false) {
-    lines.push(
-      `(searched the ${String(result.searched ?? SEARCH_POOL_LIMIT)} most recently updated memories; ` +
-        'older ones were not searched — `tm8 memory list` pages through everything)',
-    );
-  }
-  return lines.join('\n');
+  return items.length > 0
+    ? items.map(hitLine).join('\n')
+    : `no memories mention "${String(result.query ?? '')}"`;
 }
 
 async function memorySearch(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('memory search', cmd.options.value('mutation-id'));
   assertKnownOptions(cmd, ['limit']);
   const query = cmd.args.join(' ').trim();
-  const terms = termsOf(query);
-  if (terms.length === 0) {
+  if (query.length === 0) {
     throw new CliError('`tm8 memory search` needs at least one word to look for', EXIT_USAGE, {
       hint: 'syntax: tm8 memory search <query> [--limit <count>]',
     });
   }
   const limit = cmd.options.integer('limit') ?? SEARCH_DEFAULT_LIMIT;
   if (limit <= 0) throw new CliError(`--limit <count> expects a positive count, got ${limit}`, EXIT_USAGE);
+  if (limit > SEARCH_MAX_LIMIT) {
+    throw new CliError(
+      `--limit <count> can ask for at most ${SEARCH_MAX_LIMIT} matches at a time, not ${limit}`,
+      EXIT_USAGE,
+    );
+  }
 
-  const { items, exhaustive } = await searchCandidates(cmd);
-  const matches = rankLocally(items, terms).slice(0, limit);
-  cmd.out.data({ query, items: matches, searched: items.length, exhaustive }, renderSearch);
+  const data = await observedInvoke<{ items?: SearchHit[] }>(clientFor(cmd.ctx), 'memories.search', {
+    body: { spaceId: requireSpace(cmd.ctx), query, limit },
+  });
+  cmd.out.data({ query, items: data?.items ?? [] }, renderSearch);
   return EXIT_OK;
 }
 

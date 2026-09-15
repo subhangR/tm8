@@ -1,5 +1,12 @@
--- 185 — The due-loop sweep sees every space, and knows who may fire each loop
+-- 187 — The due-loop sweep sees every space, and knows who may fire each loop
 -- (2026-09-15).
+--
+-- Authored as 185, which was free on the base this branch forked from. Two
+-- memory lanes landed 185 and 186 in the same integration, so this file was
+-- renumbered to 187 at the merge. Renumbering is free here: all three add
+-- only new functions, none of them touches an object another one defines,
+-- and nothing in the tree derives anything from a migration's number — the
+-- regression test for this file resolves it by suffix, not by prefix.
 --
 -- WHAT WAS WRONG. The loop executor (packages/server/src/scheduler/jobs/loops.ts)
 -- found due loops with a plain read of public.loops bound as the node's
