@@ -26,9 +26,11 @@
  *
  * READ-ONLY CONTENT, LIVE INPUT. The turns cannot be edited, deleted or
  * retracted — they are a file the agent wrote. The composer is not a
- * contradiction of that: it does not append here at all. It calls
- * `execution.prompt`, which INJECTS INTO THE SESSION'S PTY, exactly as if the
- * text had been typed into the terminal. The turn appears in this list later,
+ * contradiction of that: it does not append here at all. It posts a message
+ * anchored on the session (`messages.post`), which the Server's route table
+ * hands to its internal delivery adapter — the bytes are INJECTED INTO THE
+ * SESSION'S PTY, exactly as if the text had been typed into the terminal, and
+ * the message also survives as a durable row. The turn appears in this list later,
  * if and when the agent writes it — which is why the composer clears on send
  * rather than drawing an optimistic bubble it has no id for.
  *
@@ -53,6 +55,7 @@ import { DisabledAction } from '../panels/honesty/DisabledWithReason';
    tap-to-disclose reason. Same fix `ChatHomeScreen` and `ChannelScreen` both
    carry, for the same reason. */
 import '../panels/honesty/honesty.css';
+import { nextMutationId } from '../authoring/commands';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import { uploadClipboardFile } from '../terminal/clipboardUpload';
 /* THE INDEX, NOT THE DEEP PATH, AND THAT IS A BUG FIX RATHER THAN A TIDY.
@@ -102,7 +105,7 @@ const PREFETCH_MARGIN = '240px';
  */
 export interface TranscriptSeam {
   transcript: Seam['transcript'];
-  commands: Pick<Seam['commands'], 'prompt'>;
+  commands: Pick<Seam['commands'], 'postMessage'>;
 }
 
 export interface TranscriptSurfaceProps {
@@ -485,8 +488,12 @@ function TranscriptBody({
  * go ("also the bottom text not needed") and they are right about the pixels:
  * it was the first thing the eye landed on in a region whose job is to be one
  * composer. THE FACT IS STILL TRUE AND STILL LOAD-BEARING — this is the one
- * composer in the app that does not post a message, and a reader who assumes
- * otherwise is wrong about where their words went.
+ * composer in the app whose words are TYPED AT A PROGRAM rather than said to
+ * a reader, and someone who assumes otherwise is wrong about where their words
+ * went. (Since 2026-09-15 the send does also store a message — that is the
+ * public authoring route, and the route is not the point. What the disclosure
+ * is for is the DESTINATION: the bytes land at an agent's stdin, so the
+ * sentence is read by a program, and nothing here echoes it back.)
  *
  * So it moved rather than being dropped, exactly as the terminal drawer's
  * collapsed summary moved onto its toggle when that 28px bar was removed: onto
@@ -495,7 +502,7 @@ function TranscriptBody({
  * fact a reader needs ONCE and this surface was charging on every render.
  */
 const PTY_DISCLOSURE =
-  'Typed into the session’s terminal, not posted as a message — it appears above only if the agent writes it to its transcript.';
+  'Typed into the session’s terminal — it appears above only if the agent writes it to its transcript.';
 
 /**
  * THE COMPOSER — a terminal keyboard wearing a chat box.
@@ -536,7 +543,23 @@ function TranscriptComposer({
     setSending(true);
     setFailure(null);
     try {
-      await seam.commands.prompt(sessionId, { message });
+      /* `messages.post`, NOT `execution.prompt`. The latter is now a
+         Server-INTERNAL delivery adapter and refuses every public caller with
+         a permanent 403 (`use_message_send`, execution-handlers.ts:2690) — a
+         refusal this composer rendered verbatim into its failure card, which
+         is what "messages are not going on the transcript" looked like from
+         the phone. The public authoring route is this one: PERSISTENCE FIRST,
+         DELIVERY SECOND. The post stores the message anchored on the session,
+         and because the anchor IS a live work_session the Server's own route
+         table (072) hands it to the very same internal adapter, which writes
+         it into the PTY. So the bytes still land in the terminal — they now
+         also exist as a durable row, which is the whole point of the
+         amendment that closed the public door. */
+      await seam.commands.postMessage({
+        clientMutationId: nextMutationId(),
+        anchorIds: [sessionId],
+        body: message,
+      });
       // Cleared, not echoed. There is no id to echo WITH — the turn appears
       // when the agent writes it to the transcript, and inventing a bubble here
       // would be a claim about a file this surface has not read yet.
@@ -690,8 +713,8 @@ function TranscriptComposer({
 /**
  * FILES INTO A PTY — upload, then splice the NODE PATH into the draft.
  *
- * THE DESTINATION DECIDES THE TRANSPORT, and this surface's Send is
- * `execution.prompt`, which injects into the session's PTY. So it is the
+ * THE DESTINATION DECIDES THE TRANSPORT, and this surface's Send reaches the
+ * session's PTY (via `messages.post`'s delivery route). So it is the
  * TERMINAL destination and takes the terminal's transport: the bytes go to the
  * node that owns the PTY (`uploadClipboardFile`, which reads the endpoint from
  * `ptyTransport` rather than assuming the current origin) and come back as an
