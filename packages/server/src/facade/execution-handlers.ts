@@ -243,44 +243,54 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   // silently dropping it for budget would be the same lie by another route.
   // Only the AUTOMATIC tiers — which grow on their own and are what made the
   // 32KB throw reachable — are bounded.
-  const push = (r: MemoryRow, exempt = false): void => {
+  // Returns whether the row actually made it in. Callers mark `emitted` only on
+  // a true return: a row dropped for budget in an automatic tier must stay
+  // eligible for the exempt requested-id tier below, and marking it emitted
+  // regardless silently swallowed a memory the caller had named outright.
+  const droppedIds = new Set<string>();
+  const push = (r: MemoryRow, exempt = false): boolean => {
     const text = render(r);
     const cost = Buffer.byteLength(text);
-    if (!exempt && spent + cost > MEMORY_SECTION_BUDGET_BYTES) { dropped += 1; return; }
+    if (!exempt && spent + cost > MEMORY_SECTION_BUDGET_BYTES) {
+      if (!droppedIds.has(r.entity_id)) { droppedIds.add(r.entity_id); dropped += 1; }
+      return false;
+    }
     out.push(text);
     spent += cost;
+    droppedIds.delete(r.entity_id);
+    return true;
   };
   // 1. The persona's own working set.
   for (const r of rows) {
     if (!r.remembered || r.superseded) continue;
-    push(r);
-    emitted.add(r.entity_id);
+    if (push(r)) emitted.add(r.entity_id);
   }
   // 2. Task working sets (D9): what the spawn tasks remember, after the
   //    persona's set — the persona's standing knowledge frames task context,
   //    not the other way round. Same superseded-drop rule as the working set.
   for (const r of rows) {
     if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
-    push(r);
-    emitted.add(r.entity_id);
+    if (push(r)) emitted.add(r.entity_id);
   }
   // 3. D10 carry — what THIS teammate's past sessions learned, newest first so
   //    a long-lived teammate keeps what it most recently established rather
   //    than whatever it happened to learn first.
+  // Requested ids are excluded here so they keep the tail position the caller's
+  // contract promises ("requested extras follow the caller's order, after every
+  // set") instead of being absorbed into this tier by authorship.
   const authored = rows
-    .filter((r) => r.session_authored && !r.superseded && !emitted.has(r.entity_id))
+    .filter((r) => r.session_authored && !r.superseded && !emitted.has(r.entity_id)
+      && !requestedIds.includes(r.entity_id))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   for (const r of authored) {
-    push(r);
-    emitted.add(r.entity_id);
+    if (push(r)) emitted.add(r.entity_id);
   }
   // 4. Requested extras follow the caller's order, after every set.
   for (const id of requestedIds) {
     if (emitted.has(id)) continue;
     const row = rows.find((r) => r.entity_id === id);
     if (!row) continue; // absence already refused upstream
-    push(row, true);
-    emitted.add(id);
+    if (push(row, true)) emitted.add(id);
   }
   // Say what was dropped. A silently truncated working set reads to the agent
   // as a complete one, which is worse than a short one.
@@ -364,11 +374,13 @@ export class DbGraphPort implements GraphPort {
                 exists (select 1 from public.edges v
                          where v.type = 'verifies' and v.dst_id = m.entity_id
                            and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
-                exists (select 1 from public.edges sm
-                         join public.edges st
-                           on st.src_id = sm.src_id and st.type = 'relates_to'
-                          and st.dst_id = $1
-                        where sm.type = 'remembers' and sm.dst_id = m.entity_id) as session_authored,
+                (e.created_by = $1
+                 or exists (select 1 from public.edges sm
+                             join public.edges st
+                               on st.src_id = sm.src_id and st.type = 'relates_to'
+                              and st.dst_id = $1
+                            where sm.type = 'remembers'
+                              and sm.dst_id = m.entity_id)) as session_authored,
                 m.created_at
            from public.memories m
            join public.entities e on e.id = m.entity_id and e.deleted_at is null
@@ -380,12 +392,25 @@ export class DbGraphPort implements GraphPort {
                  or exists (select 1 from public.edges t2
                              where t2.type = 'remembers' and t2.src_id = any($4::uuid[])
                                and t2.dst_id = m.entity_id)
-                 -- D10 carry: a memory one of THIS teammate's past work sessions
-                 -- authored. create_memory records remembers(work_session ->
-                 -- memory), and 048:99 links a session to its teammate with
-                 -- relates_to(work_session -> team_member). Without this arm the
-                 -- edge D10 writes is never read by anything, so a fact an agent
-                 -- learned died with the session that learned it.
+                 -- D10 carry, two routes to the same fact: this teammate wrote
+                 -- it. 090 D10 ruled that authorship implies working-set
+                 -- membership ("a session that AUTHORS a memory remembers it")
+                 -- and create_memory records remembers(work_session -> memory),
+                 -- with 048:99 linking a session to its teammate through
+                 -- relates_to(work_session -> team_member). Nothing READ that
+                 -- edge, so a fact an agent established died with the session
+                 -- that established it.
+                 --
+                 -- The edge route only fires when a caller passes
+                 -- p_work_session_id, and no current writer does -- production
+                 -- holds zero remembers(work_session -> memory) rows. So the
+                 -- authorship column carries the same ruling without depending
+                 -- on an edge nobody draws: create_envelope stamps created_by
+                 -- with the acting actor, and 23 of production's 43 memories
+                 -- already carry a team_member there. Both routes, because the
+                 -- edge is the one consolidation can later move and the column
+                 -- is the one that is true today.
+                 or e.created_by = $1
                  or exists (select 1 from public.edges sm2
                              join public.edges st2
                                on st2.src_id = sm2.src_id and st2.type = 'relates_to'

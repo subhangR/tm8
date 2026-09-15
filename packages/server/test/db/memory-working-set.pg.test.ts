@@ -512,17 +512,74 @@ describe('D10 carry — a past session of this teammate reaches the next one', (
     expect(entry).toContain(`(mem:${memory})`);
   });
 
-  it('does NOT inject a memory authored by a session belonging to another teammate', async () => {
-    // A session with no relates_to back to the fixture teammate.
-    const foreign = await mintSession();
-    const secret = await mintMemory('another teammate private finding', false);
-    await drawEdge(foreign, secret, 'remembers', {});
-    await database.transaction(async (client) => {
+  it('injects a memory this teammate AUTHORED, with no remembers edge at all', async () => {
+    // The authorship route. 090 D10 ruled that authoring implies working-set
+    // membership; create_envelope stamps created_by with the acting actor, so
+    // this is true of memories that already exist rather than only of ones a
+    // future writer remembers to link. mintMemory(..., false) draws no edge.
+    const memory = await mintMemory('authored, never explicitly remembered', false);
+    const rows = await database.query<{ count: string }>(
+      `select count(*)::text count from public.edges
+        where type = 'remembers' and dst_id = $1`, [memory],
+    );
+    expect(rows[0]!.count, 'no remembers edge exists for this memory').toBe('0');
+
+    const memories = await injectedMemories();
+    expect(statements(memories)).toContain('authored, never explicitly remembered');
+  });
+
+  it('does NOT inject a memory belonging to another teammate', async () => {
+    // Genuinely foreign on BOTH routes: created_by is a different team_member,
+    // and the session that remembers it has no relates_to back to the fixture
+    // teammate. mintMemory stamps the fixture teammate as creator, so this one
+    // is minted by hand.
+    const { other, secret } = await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
+      const mk = async (): Promise<string> =>
+        (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+      const otherId = await mk();
       await client.query(
-        `delete from public.edges where type = 'relates_to' and src_id = $1`, [foreign],
+        `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+         values($1,$2,'team_member',null,0,$3)`,
+        [otherId, fixture.spaceId, fixture.memberId],
       );
+      await client.query(
+        `insert into public.team_members(entity_id,owner_member_id,name,role,identity)
+         values($1,$2,'Other','','')`,
+        [otherId, fixture.memberId],
+      );
+      const memId = await mk();
+      await client.query(
+        `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+         values($1,$2,'memory',null,0,$3)`,
+        [memId, fixture.spaceId, otherId],
+      );
+      await client.query(
+        `insert into public.memories(entity_id,statement,mechanism,subject_scope,does_not_establish)
+         values($1,'another teammate private finding','theirs','theirs','theirs')`,
+        [memId],
+      );
+      const sessionId = await mk();
+      await client.query(
+        `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+         values($1,$2,'work_session',null,0,$3)`,
+        [sessionId, fixture.spaceId, otherId],
+      );
+      await client.query(`insert into public.work_sessions(entity_id) values($1)`, [sessionId]);
+      await client.query(
+        `insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
+         values($1,$2,$3,'relates_to','{}'::jsonb,$2)`,
+        [fixture.spaceId, sessionId, otherId],
+      );
+      await client.query(
+        `insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
+         values($1,$2,$3,'remembers','{}'::jsonb,$2)`,
+        [fixture.spaceId, sessionId, memId],
+      );
+      return { other: otherId, secret: memId };
     });
+    expect(other).toBeDefined();
+    expect(secret).toBeDefined();
 
     const memories = await injectedMemories();
     expect(statements(memories)).not.toContain('another teammate private finding');
