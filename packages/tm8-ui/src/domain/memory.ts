@@ -271,3 +271,66 @@ export function markDraftRefusal(mark: MemoryMarkKind, draft: Readonly<Record<st
   }
   return null;
 }
+
+/**
+ * THE MEMORY WAS ALREADY CORRECTED BY SOMEBODY ELSE.
+ *
+ * A memory is never edited, only replaced by a better one, and it keeps
+ * exactly ONE replacement — the database refuses a second so that everybody
+ * reading the memory arrives at the same answer instead of two rivals each
+ * believing it is the current version. Two people can still decide the same
+ * claim is wrong within seconds of each other, and one of them has to be told
+ * something more useful than a database error.
+ *
+ * This reader takes what the node sent and nothing else. The node ships the
+ * other correction's OWN WORDS (`details.correction`) rather than a reference
+ * to it, because words are what a person can judge: read them and you know in
+ * one glance whether they already cover what you were about to write.
+ */
+const ALREADY_CORRECTED_REASON = 'memory_already_corrected';
+
+export interface AlreadyCorrected {
+  /** What the other person's correction says, verbatim. */
+  readonly correction: string;
+}
+
+export function alreadyCorrectedRefusal(error: unknown): AlreadyCorrected | null {
+  if (error === null || typeof error !== 'object') return null;
+  const details = (error as { details?: unknown }).details;
+  if (details === null || typeof details !== 'object') return null;
+  const { reason, correction } = details as { reason?: unknown; correction?: unknown };
+  if (reason !== ALREADY_CORRECTED_REASON) return null;
+  if (typeof correction !== 'string' || correction.trim().length === 0) return null;
+  return { correction };
+}
+
+/**
+ * What the reader is told, and why each clause is there.
+ *
+ * The person just wrote a memory and it WAS saved — only the link marking it
+ * as the correction was refused. Saying "your correction was not saved" would
+ * be false and would send them off to write it again, so the first thing this
+ * says is where their words went. The other correction comes next, in full,
+ * because the decision they now have to make is whether it already says what
+ * they meant. The move that works comes last, stated as a move rather than an
+ * instruction: correct the other correction, and the two of them line up
+ * instead of competing.
+ */
+export function alreadyCorrectedNotice(
+  refusal: AlreadyCorrected,
+  /** True when the memory the person just wrote reached the node before the refusal. */
+  mineWasSaved: boolean,
+): { title: string; body: string } {
+  const yours = mineWasSaved
+    ? `What you wrote was saved as a memory of its own — nothing you typed was lost, and you do not need to write it again. `
+    : '';
+  return {
+    title: 'Somebody else corrected this memory first',
+    body:
+      `${yours}It was not saved as a second correction of the same memory, because a memory keeps one correction `
+      + `so that everyone reading it gets the same answer.\n\n`
+      + `Their correction says: “${refusal.correction}”\n\n`
+      + `If that is still wrong, or if it misses what you found, correct THEIR version instead of this one. `
+      + `Corrections are meant to stack up in a single line that anybody can read back.`,
+  };
+}

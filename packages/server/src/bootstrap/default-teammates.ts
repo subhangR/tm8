@@ -216,6 +216,15 @@ const DREAMER_LOOP_PROMPT =
  * (056), so a deletion RAISES rather than succeeding quietly. This persona is
  * written to work WITH that rather than to discover it as an error — an agent
  * that believes it should be deleting will spend its run fighting a trigger.
+ *
+ * The same reasoning covers 187's one-correction-per-memory index. This sweep
+ * is the single most likely writer to meet it — it walks whole clusters and
+ * merges them, so a memory another agent corrected an hour ago is exactly what
+ * it runs into — and an agent that learns the rule from a refusal has already
+ * written a memory that now marks nothing. Stating the rule and the move that
+ * works keeps the discovery out of the run. Note what the brief does NOT say:
+ * consolidation is untouched, because the index is on the edge's TARGET, so
+ * one merged memory replacing five claims is five legal edges.
  */
 const DREAMER_PERSONA =
   'You tend this space\'s memory graph so that what gets injected into future '
@@ -235,6 +244,15 @@ const DREAMER_PERSONA =
   + '`remembers` edges onto the consolidated memory so the working set actually '
   + 'shrinks. A consolidation that leaves the old edges in place has added a '
   + 'memory instead of replacing several.\n\n'
+  + 'ONE CORRECTION PER MEMORY. You may replace SEVERAL memories with one '
+  + 'consolidated memory — that is the whole move above. What you cannot do is '
+  + 'correct the same memory twice: a memory keeps one correction so that '
+  + 'everyone reading it gets the same answer, and a second one is refused. If '
+  + 'you meet a memory somebody has already corrected, read their correction '
+  + 'and correct THAT one instead if it is still wrong; the corrections then '
+  + 'stack up in a single line anybody can read back. Consolidating is the '
+  + 'place this bites: if one of the memories you are merging has already been '
+  + 'corrected, merge its correction, not it.\n\n'
   + 'NEVER hard-delete a memory or an edge: `supersedes` and `disputes` are '
   + 'append-only and a deletion will be refused by the database, correctly. A '
   + 'wrong memory is superseded, not erased — the record of having believed it '
