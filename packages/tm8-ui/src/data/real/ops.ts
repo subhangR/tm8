@@ -134,6 +134,8 @@ import {
   type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type ExecutionMemoryPreview,
+  type ExecutionMemoryPreviewInput,
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
@@ -612,6 +614,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     launch(workSessionId: EntityId): Promise<SessionLaunchRecord> {
       // No query at all: the launch record is a whole document, not a window.
       return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
+    },
+    memoryPreview(input: ExecutionMemoryPreviewInput): Promise<ExecutionMemoryPreview> {
+      // A READ carried in a POST body: the picks are arrays, and a list of
+      // memory ids does not belong in a URL. The body IS the contract DTO,
+      // so `http.call` binds only the path from the catalog row.
+      return http.call<ExecutionMemoryPreview>('execution.memoryPreview', { body: input });
     },
     transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> {
       // Optional keys only; http.ts drops `undefined`, so the default read

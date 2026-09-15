@@ -722,7 +722,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
     // 118 -> 119 (186): MemorySearchInputSchema binds memories.search, a POST
     // read with a body, the way collections.query and graph.query bind.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(119);
+    // 119 -> 120 (launch memory preview): ExecutionMemoryPreviewInputSchema
+    // binds execution.memoryPreview, a POST read with a body, the same way.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(120);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -889,8 +891,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // which adds a discoverable NAME for the existing socket, not a route.
     // MEASURED off /health.
     // +1 (186): memories.search, mounted and registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 196, implemented: 194 });
-    expect(harness.production.server.registry.size).toBe(194);
+    // +1 (launch memory preview): execution.memoryPreview, mounted and
+    // registered beside the rest of the execution family. MEASURED off /health.
+    expect(health).toMatchObject({ ok: true, operations: 197, implemented: 195 });
+    expect(harness.production.server.registry.size).toBe(195);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -912,7 +916,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
     // 193 -> 194 (186): memories.search. MEASURED.
-    expect(registered.size + residual.length).toBe(194);
+    // 194 -> 195 (launch memory preview): execution.memoryPreview. MEASURED.
+    expect(registered.size + residual.length).toBe(195);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

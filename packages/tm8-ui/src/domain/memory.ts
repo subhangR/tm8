@@ -183,6 +183,43 @@ export function memoryDraftRefusal(draft: Readonly<Record<string, string>>): str
 /** The contract's own ceiling: `memoryIds: z.array(...).max(32)` (schemas.ts:1662). */
 export const MEMORY_IDS_MAX = 32;
 
+/**
+ * THE MARKS ON A LAUNCH PREVIEW ROW — and the one place this build may say
+ * "verified" out loud.
+ *
+ * Divergence 1 above is about `badges.staleness`, which omits itself entirely
+ * when nothing is wrong: from a summary read, a verified memory and an
+ * unexamined one are the same bytes, so drawing a tick on silence would be
+ * inventing authority. `execution.memoryPreview` is not a summary read. It
+ * reports the marks the graph derives from the mark edges themselves — the
+ * same derivation the spawn injector uses to write `[verified]` into the
+ * prompt — so when it says 'verified', somebody verified the memory at its
+ * current version, and the agent is about to be shown that word too.
+ *
+ * Saying less than the agent will be shown is its own dishonesty: a person
+ * choosing what to hand over is entitled to the list the agent gets.
+ *
+ * Two words are translated rather than passed through, so one status does not
+ * get two names across this app: the graph's 'basis changed' is the badge's
+ * 'basis moved', and an empty list is 'unflagged' — which, as ever, is NOT
+ * the same as verified.
+ */
+const PREVIEW_MARK_WORD: Readonly<Record<string, string>> = {
+  superseded: 'superseded',
+  disputed: 'disputed',
+  'basis deleted': 'basis deleted',
+  'basis changed': 'basis moved',
+  verified: 'verified',
+};
+
+export function previewMarkWords(marks: readonly string[]): string {
+  if (marks.length === 0) return 'unflagged';
+  // Already in display precedence from the graph (superseded > disputed >
+  // basis deleted > basis changed > verified), and never re-sorted here — a
+  // second precedence is free to disagree with the first.
+  return marks.map((mark) => PREVIEW_MARK_WORD[mark] ?? mark).join(', ');
+}
+
 // ---------------------------------------------------------------------------
 // Authoring a MARK — supersede and dispute (056 §5, the mark-edge vocabulary)
 // ---------------------------------------------------------------------------

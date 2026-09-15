@@ -53,6 +53,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type ExecutionMemoryPreview,
   type CreateEdgeInput,
   type CreateEntityInput,
   type CreateTaskInput,
@@ -160,6 +161,7 @@ import {
   sessionExited,
   sessionLive,
   sessionStale,
+  teamMemberForge,
 } from '../../fixtures';
 import { SHIPPED_DEFAULT_MENU } from '../../domain';
 
@@ -2565,6 +2567,48 @@ export function createFixtureSeam(): FixtureSeam {
         });
       }
       return clone(fixtureLaunchRecord(workSessionId));
+    },
+    async memoryPreview(input) {
+      requireSummary(input.teamMemberId);
+      // The fixture's one working set is forge's three `remembers` edges
+      // (`fixtures/entities.ts`): two live rows and one superseded, which the
+      // injector drops from a working set but carries when picked by id. The
+      // marks are read off the same badge the picker reads, so the two
+      // surfaces cannot disagree about a fixture memory.
+      const marksOf = (summary: EntitySummary): Array<'superseded' | 'disputed'> =>
+        (summary.badges?.staleness?.reasons ?? []).flatMap((reason) =>
+          reason === 'superseded' || reason === 'disputed' ? [reason] : []);
+      const own = input.teamMemberId === teamMemberForge.id
+        ? ['ent-mem-tokens', 'ent-mem-disputed', 'ent-mem-superseded']
+        : [];
+      const entries: ExecutionMemoryPreview['entries'] = [];
+      const shown = new Set<string>();
+      for (const id of own) {
+        const summary = summaries.get(id as EntityId);
+        if (!summary) continue;
+        const marks = marksOf(summary);
+        if (marks.includes('superseded')) continue;
+        entries.push({ id, statement: summary.title, marks, source: 'own' });
+        shown.add(id);
+      }
+      for (const id of input.memoryIds ?? []) {
+        if (shown.has(id)) continue;
+        const summary = summaries.get(id);
+        if (!summary || summary.state.kind !== 'memory') {
+          throw new CollabError('not_found', `memoryIds not found in this space (or not memory entities): ${id}`);
+        }
+        entries.push({ id, statement: summary.title, marks: marksOf(summary), source: 'picked' });
+        shown.add(id);
+      }
+      // The real section budget is 4,096 bytes with a per-entry suffix; the
+      // fixture only needs a figure that moves when the picks do.
+      const bytes = entries.reduce((total, entry) => total + entry.statement.length + 48, 0);
+      return clone({
+        entries,
+        shown: entries.length,
+        omitted: 0,
+        roomUsedPercent: Math.round((bytes / 4096) * 100),
+      });
     },
     async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
       requireSummary(workSessionId);

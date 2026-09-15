@@ -77,15 +77,18 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // all mounted.
     // 197 -> 198 (2026-09-15, 186): memories.search, one POST read (kind read),
     // so 195 -> 196 v1 rows and 193 -> 194 mounted v1 HTTP. MEASURED on this tree.
-    expect(OPERATIONS).toHaveLength(198); // +25 (177) containers, +1 (186) memories.search
-    // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias. 195 -> 196 (186).
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(196);
+    // 198 -> 199 (2026-09-15, launch memory preview): execution.memoryPreview,
+    // one POST read, so 196 -> 197 v1 rows and 194 -> 195 mounted v1 HTTP.
+    // MEASURED on this tree.
+    expect(OPERATIONS).toHaveLength(199); // +25 (177) containers, +1 (186) memories.search, +1 execution.memoryPreview
+    // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias. 195 -> 196 (186), 196 -> 197 (preview).
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(197);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 196, // +24 (177): the container HTTP rows; +1 (186) memories.search
-      implemented: 194, // +24 (177): all registered, all mounted; +1 (186) memories.search, mounted
+      operations: 197, // +24 (177): the container HTTP rows; +1 (186) memories.search; +1 execution.memoryPreview
+      implemented: 195, // +24 (177): all registered, all mounted; +1 (186) memories.search; +1 execution.memoryPreview, mounted
     });
   });
 
@@ -153,7 +156,8 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 193 - 5 = 188, and the residual membership asserted above is what makes
     // that subtraction checkable rather than a fudge.
     // 188 -> 189 (2026-09-15, 186): memories.search answers for real — 194 - 5.
-    expect(implemented).toHaveLength(189);
+    // 189 -> 190 (2026-09-15): execution.memoryPreview answers for real — 195 - 5.
+    expect(implemented).toHaveLength(190);
   });
 
   /**

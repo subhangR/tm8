@@ -1612,6 +1612,27 @@ const ROWS: Record<OperationName, Row> = {
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
     ],
   },
+  // NO COMMAND HERE, ON PURPOSE. This is the question the launch screen asks
+  // while somebody is still choosing — "what would this teammate be told if I
+  // launched it now" — and at a terminal the shorter answer is to launch and
+  // read `tm8 session launch`. A second spelling would give one action two
+  // names with two failure modes. The row exists because the table is
+  // exhaustive over the catalog: the operation must be discoverable the moment
+  // it exists, with or without a verb of its own.
+  'execution.memoryPreview': {
+    cmd: null,
+    sum: 'See the memories a teammate would be handed if you launched it now — what it already carries, what the work brings, what it learned before, and anything picked by hand',
+    authz: 'space',
+    input: 'bound',
+    tags: ['memory', 'preview', 'launch', 'spawn', 'teammate', 'context', 'handover'],
+    reason: 'this is the question the launch screen asks while someone is still choosing; from a terminal, start the session and then read what it was told with `tm8 session launch`',
+    notes: [
+      'nothing is started and nothing is saved — ask as often as the choices change',
+      'the answer comes from the same selection a launch runs, so it is the hand-off itself rather than a guess about it',
+      'memories that did not fit are counted, never dropped silently: the agent is told they exist and can search for them',
+      'a memory picked by hand is always handed over, even when there is no room left',
+    ],
+  },
   // ── the session git rail (Git UI wave) ──────────────────────────────────
   // All six are deliberately `cmd: null`: the CLI already runs these verbs
   // LOCALLY through `@tm8/execution/worktree` (`tm8 session checkpoint`,
@@ -2530,7 +2551,9 @@ export const CATALOG_DIGEST =
   // correct once both landed.
   // Re-measured 186 (+ memories.search) — read from the regenerated conformance
   // manifest, never hand-derived.
-  'sha256:278432e9fa53df392567d1a1e855427e65b35f6ae864d72c1c7360cc63272f39';
+  // Re-measured again (+ execution.memoryPreview, the launch screen's preview
+  // read) — same rule, read from the regenerated manifest.
+  'sha256:bf52c19e79f891bff06cf56b30b83bd987bb9816d60553782e278f4a2880101d';
 
 export const GRAMMAR_VERSION = '2';
 

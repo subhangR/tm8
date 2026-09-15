@@ -174,15 +174,17 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // DENOMINATOR: this suite measures rows a composition could mount, not
     // rows that do real work. MEASURED.
     // 189 -> 190 (2026-09-15, 186): memories.search is unconditional too. MEASURED.
-    expect(REGISTERABLE).toHaveLength(190);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(190);
+    // 190 -> 191 (2026-09-15): execution.memoryPreview is unconditional too —
+    // it is registered beside the rest of the execution family. MEASURED.
+    expect(REGISTERABLE).toHaveLength(191);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(191);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
   it('KNOWN-GOOD world — WITH a presence source, residual is the EMPTY SET', () => {
     const residual = REGISTERABLE.filter((name) => !withPresence.has(name));
     expect(residual, `residual with presence: ${residual.join(',')}`).toEqual([]);
-    expect(withPresence.size).toBe(190); // 189 -> 190 (186)
+    expect(withPresence.size).toBe(191); // 189 -> 190 (186); 190 -> 191 (execution.memoryPreview)
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -192,7 +194,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // a substitution — a different operation going missing while presence.get
     // mounts would keep the count at 1 and this assertion would still catch it.
     expect(residual, `residual without presence: ${residual.join(',')}`).toEqual([PRESENCE_GATED]);
-    expect(withoutPresence.size).toBe(189); // 188 -> 189 (186)
+    expect(withoutPresence.size).toBe(190); // 188 -> 189 (186); 189 -> 190 (execution.memoryPreview)
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -213,9 +215,10 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
     // BOTH of those numbers are reachable from the SAME production code, which
     // is what makes "the frozen file drifted" the wrong diagnosis.
-    // 189 -> 190 (186): the denominator moved by one; the delta is still one.
-    expect([withPresence.size, 190 - withPresence.size]).toEqual([190, 0]);
-    expect([withoutPresence.size, 190 - withoutPresence.size]).toEqual([189, 1]);
+    // 189 -> 190 (186), 190 -> 191 (execution.memoryPreview): the denominator
+    // moved by one each time; the delta is still one.
+    expect([withPresence.size, 191 - withPresence.size]).toEqual([191, 0]);
+    expect([withoutPresence.size, 191 - withoutPresence.size]).toEqual([190, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {
