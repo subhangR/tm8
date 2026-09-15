@@ -416,7 +416,18 @@ export const COMMAND_SURFACE_INSTRUCTION =
   '`tm8 entity context <id>` for orientation — `entity get` returns the whole ' +
   'entity unbounded, so reach for it only when you need the full body and version. ' +
   'When a command pages, always pass --limit and continue with the returned ' +
-  'cursor. Never re-issue a read you have already made this session.';
+  'cursor. Never re-issue a read you have already made this session. ' +
+  'The same economy governs the REPOSITORY, where most of the tokens actually ' +
+  'go: measured on this fleet, tool results are 93.8% of everything re-read on ' +
+  'every later turn. If the project carries a code graph at ' +
+  '`graphify-out/merged-graph.json`, ask it before you grep — ' +
+  '`graphify affected|path|explain|query "<x>" --graph graphify-out/merged-graph.json` ' +
+  'answers a structural question (what calls this, what breaks if I change it, ' +
+  'where does this path lead) from an AST index in one bounded call. Measured ' +
+  'against grepping and opening candidate files on the same three questions: ' +
+  '40% cheaper, half the tool calls, and it named transitive dependents the ' +
+  'file-reading run never reached. Read the files themselves when you need to ' +
+  'understand or change code — the graph answers structure, not intent.';
 
 /**
  * Codex's legacy read-only sandbox cannot enable command networking. A tm8
