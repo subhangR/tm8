@@ -578,6 +578,13 @@ async function memorySupersede(cmd: CommandContext): Promise<ExitCode> {
 const SEARCH_DEFAULT_LIMIT = 10;
 /** The most matches the Server will answer at once; asking for more is refused here, in a sentence. */
 const SEARCH_MAX_LIMIT = 200;
+/**
+ * The longest query the Server accepts. Checked here for the same reason
+ * `record` checks its four field lengths here: a bound the caller has crossed
+ * should come back as a sentence about what they typed, not as a validation
+ * error from the wire about a string.
+ */
+const SEARCH_MAX_QUERY = 1000;
 
 /** One match, as the Server answers it. */
 interface SearchHit {
@@ -625,6 +632,13 @@ async function memorySearch(cmd: CommandContext): Promise<ExitCode> {
     throw new CliError('`tm8 memory search` needs at least one word to look for', EXIT_USAGE, {
       hint: 'syntax: tm8 memory search <query> [--limit <count>]',
     });
+  }
+  if (query.length > SEARCH_MAX_QUERY) {
+    throw new CliError(
+      `that is too much to search for at once — ${SEARCH_MAX_QUERY} characters is the most, and this is ${query.length}`,
+      EXIT_USAGE,
+      { hint: 'search for the words that matter; `tm8 memory list` pages through every memory in this Space' },
+    );
   }
   const limit = cmd.options.integer('limit') ?? SEARCH_DEFAULT_LIMIT;
   if (limit <= 0) throw new CliError(`--limit <count> expects a positive count, got ${limit}`, EXIT_USAGE);

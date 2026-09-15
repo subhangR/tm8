@@ -682,6 +682,12 @@ describe('memory search', () => {
     expect(out().trim()).toBe(`${MEMORY}  the deploy needs a reload  [rests on something since changed, disputed]`);
   });
 
+  it('refuses a query longer than the Server takes, in a sentence about what was typed', async () => {
+    expect(await run(['memory', 'search', 'x'.repeat(1001)])).toBe(2);
+    expect(err()).toContain('too much to search for at once');
+    expect(seen).toHaveLength(0);
+  });
+
   it('says so plainly when nothing matched', async () => {
     reply = () => envelope({ items: [] });
     expect(await run(['memory', 'search', 'zebra'])).toBe(0);
