@@ -218,7 +218,13 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
   { name: 'web_fetch', description: 'Fetch an HTTP(S) page as capped readable text.', inputSchema: objectSchema({ url: stringProp('Public HTTP(S) URL.'), maxBytes: integerProp('Maximum response bytes.', 1024, 500_000) }, ['url']), annotations: annotations(true, false, true) },
   { name: 'web_search', description: 'Search the public web and return links and snippets.', inputSchema: objectSchema({ query: stringProp('Search query.'), limit: integerProp('Maximum results.', 1, 10) }, ['query']), annotations: annotations(true, false, true) },
-  { name: 'memory_write', description: 'Write a durable Space memory graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('Decision or fact to remember.'), mechanism: stringProp('How it was established.'), subjectScope: stringProp('Scope the statement applies to.'), doesNotEstablish: stringProp('Explicit boundary of the claim.') }, ['spaceId', 'statement']), annotations: annotations(false) },
+  // All four memory fields are REQUIRED, because `create_memory` refuses with
+  // SQLSTATE 22023 unless each is 1..1000 chars after trim (db/migrations/
+  // 090_memory_any_holder.sql §2). Declaring three of them optional made the
+  // documented minimal call — spaceId + statement — a guaranteed server-side
+  // refusal the caller had no way to anticipate, which is why the corpus is
+  // measured in dozens. The schema now states what the graph actually demands.
+  { name: 'memory_write', description: 'Write a durable Space memory graph entity. A memory must say what it claims, how that was established, what it applies to, and what it does NOT prove — all four are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('The decision or fact to remember (1-4000 chars).'), mechanism: stringProp('How it was established — the measurement, test, document or observation behind it (1-1000 chars).'), subjectScope: stringProp('What the statement applies to, and where it stops (1-1000 chars).'), doesNotEstablish: stringProp('The explicit boundary of the claim — what a reader must NOT conclude from it (1-1000 chars).') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
   { name: 'memory_search', description: 'Search recent Space memories by words in their title/excerpt.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to match.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
   { name: 'git_branch', description: 'Read branch, upstream, head and remote for the chat checkout.', inputSchema: objectSchema({}), annotations: annotations(true) },
   { name: 'git_status', description: 'Read git status for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true) },
@@ -1177,11 +1183,15 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
   const statement = requiredString(args.statement, 'statement');
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
-  const content: Record<string, unknown> = { statement };
-  for (const key of ['mechanism', 'subjectScope', 'doesNotEstablish'] as const) {
-    const value = optionalString(args[key], key);
-    if (value) content[key] = value;
-  }
+  // Refuse HERE, with the field name, rather than letting Postgres refuse with
+  // 22023 after a round trip. Omitting any of these never produced a memory —
+  // it produced an error the caller could not have predicted from the schema.
+  const content: Record<string, unknown> = {
+    statement,
+    mechanism: requiredString(args.mechanism, 'mechanism'),
+    subjectScope: requiredString(args.subjectScope, 'subjectScope'),
+    doesNotEstablish: requiredString(args.doesNotEstablish, 'doesNotEstablish'),
+  };
   const data = await context.transport.invoke('entities.create', { body: {
     spaceId, kind: 'memory', title: statement.slice(0, 200),
     content, clientMutationId: randomUUID(),

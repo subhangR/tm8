@@ -137,6 +137,19 @@ function graphPort(): DbGraphPort {
   return new DbGraphPort(db);
 }
 
+
+/**
+ * Entries now carry a trailing ` (mem:<entity-id>)` so an injected memory can be
+ * cited, disputed or superseded by the agent that was shown it. Assertions here
+ * match on the statement (plus any marks), which is the part under test.
+ */
+const MEM_SUFFIX = / \(mem:[0-9a-f-]{36}\)$/;
+function statements(memories: readonly unknown[]): string[] {
+  return memories
+    .filter((m): m is string => typeof m === 'string')
+    .map((m) => m.replace(MEM_SUFFIX, ''));
+}
+
 async function injectedMemories(
   memoryIds?: string[],
   taskIds?: string[],
@@ -262,8 +275,8 @@ describe('088 jsonb → entity conversion', () => {
 describe('loadSpawnContext memory composition', () => {
   it('injects the remembers working set as statement strings', async () => {
     const memories = await injectedMemories();
-    expect(memories).toContain('prefers scoped tsc over full builds');
-    expect(memories).toContain('{"freeform": "object entry"}');
+    expect(statements(memories)).toContain('prefers scoped tsc over full builds');
+    expect(statements(memories)).toContain('{"freeform": "object entry"}');
   });
 
   it('drops superseded memories from the working set and marks disputed ones', async () => {
@@ -281,15 +294,15 @@ describe('loadSpawnContext memory composition', () => {
     });
 
     const memories = await injectedMemories();
-    expect(memories).not.toContain('stale claim about the build');
-    expect(memories).toContain('contested claim [disputed]');
+    expect(statements(memories)).not.toContain('stale claim about the build');
+    expect(statements(memories)).toContain('contested claim [disputed]');
   });
 
   it('appends requested memoryIds after the working set, in caller order', async () => {
     const a = await mintMemory('requested only: alpha', false);
     const b = await mintMemory('requested only: beta', false);
     const memories = await injectedMemories([b, a]);
-    const tail = memories.slice(-2);
+    const tail = statements(memories).slice(-2);
     expect(tail).toEqual(['requested only: beta', 'requested only: alpha']);
   });
 
@@ -298,7 +311,7 @@ describe('loadSpawnContext memory composition', () => {
     const successor = await mintMemory('its successor', false);
     await drawEdge(successor, doomed, 'supersedes', { reason: 'superseded for the test' });
     const memories = await injectedMemories([doomed]);
-    expect(memories).toContain('explicitly wanted stale note [superseded]');
+    expect(statements(memories)).toContain('explicitly wanted stale note [superseded]');
   });
 
   it('refuses a spawn naming a memory that does not exist in this space', async () => {
@@ -317,10 +330,10 @@ describe('loadSpawnContext memory composition', () => {
       );
     });
     const memories = await injectedMemories();
-    expect(memories).toContain('fresh jsonb entry');
+    expect(statements(memories)).toContain('fresh jsonb entry');
     // Graph set first, legacy remainder after.
-    expect(memories.indexOf('fresh jsonb entry'))
-      .toBeGreaterThan(memories.indexOf('prefers scoped tsc over full builds'));
+    expect(statements(memories).indexOf('fresh jsonb entry'))
+      .toBeGreaterThan(statements(memories).indexOf('prefers scoped tsc over full builds'));
   });
 });
 
@@ -353,9 +366,10 @@ describe('089 D9 — any holder, task working sets at spawn', () => {
     const requested = await mintMemory('explicitly requested extra', false);
 
     const memories = await injectedMemories([requested], [task]);
-    const persona = memories.indexOf('prefers scoped tsc over full builds');
-    const fromTask = memories.indexOf('task context: deploy quirk');
-    const extra = memories.indexOf('explicitly requested extra');
+    const shown = statements(memories);
+    const persona = shown.indexOf('prefers scoped tsc over full builds');
+    const fromTask = shown.indexOf('task context: deploy quirk');
+    const extra = shown.indexOf('explicitly requested extra');
     expect(persona).toBeGreaterThanOrEqual(0);
     expect(fromTask).toBeGreaterThan(persona);
     expect(extra).toBeGreaterThan(fromTask);
@@ -454,5 +468,125 @@ describe('089 D10 — the authoring session remembers', () => {
     });
     await expect(createViaDoor('forged provenance attempt', orphanSession))
       .rejects.toThrow(/authored_from provenance does not match/);
+  });
+});
+
+/**
+ * D10 CARRY — the half that was missing.
+ *
+ * `create_memory` has always written `remembers(work_session → memory)` for an
+ * authored memory (090 §2, proved by the suite above). Nothing ever READ it:
+ * the spawn injector bound holders to the team_member alone, so a fact an agent
+ * established died with the session that established it. These tests pin the
+ * read arm — memories authored by THIS teammate's past sessions reach the next
+ * one, and memories authored by somebody else's sessions do not.
+ */
+describe('D10 carry — a past session of this teammate reaches the next one', () => {
+  /** A session linked to the fixture teammate the way spawn links it (048:99). */
+  async function mintLinkedSession(): Promise<string> {
+    const session = await mintSession();           // draws participates_in(tm → ws)
+    await drawEdge(session, fixture.teamMemberId, 'relates_to', {});
+    return session;
+  }
+
+  it('injects a memory a past session of this teammate authored', async () => {
+    const session = await mintLinkedSession();
+    const memory = await mintMemory('the deploy needs the pg_hba reload, not a restart', false);
+    await drawEdge(session, memory, 'remembers', {});
+
+    const memories = await injectedMemories();
+    expect(statements(memories))
+      .toContain('the deploy needs the pg_hba reload, not a restart');
+  });
+
+  it('carries the memory id so the next session can supersede what it disagrees with', async () => {
+    const session = await mintLinkedSession();
+    const memory = await mintMemory('a claim a later session may want to correct', false);
+    await drawEdge(session, memory, 'remembers', {});
+
+    const memories = await injectedMemories();
+    const entry = memories.find(
+      (m): m is string => typeof m === 'string' && m.startsWith('a claim a later session'),
+    );
+    expect(entry).toBeDefined();
+    expect(entry).toContain(`(mem:${memory})`);
+  });
+
+  it('does NOT inject a memory authored by a session belonging to another teammate', async () => {
+    // A session with no relates_to back to the fixture teammate.
+    const foreign = await mintSession();
+    const secret = await mintMemory('another teammate private finding', false);
+    await drawEdge(foreign, secret, 'remembers', {});
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `delete from public.edges where type = 'relates_to' and src_id = $1`, [foreign],
+      );
+    });
+
+    const memories = await injectedMemories();
+    expect(statements(memories)).not.toContain('another teammate private finding');
+  });
+
+  it('drops a superseded carry, so a corrected fact does not come back', async () => {
+    const session = await mintLinkedSession();
+    const wrong = await mintMemory('the port is 5432', false);
+    await drawEdge(session, wrong, 'remembers', {});
+    const right = await mintMemory('the port is 5442', false);
+    await drawEdge(right, wrong, 'supersedes', { reason: 'checked the cluster' });
+
+    const memories = await injectedMemories();
+    expect(statements(memories)).not.toContain('the port is 5432');
+  });
+});
+
+/**
+ * BUDGET — the injector had no LIMIT and no relevance term, while the combined
+ * initial injection throws BudgetExceededError at 32,768 bytes rather than
+ * truncating (packages/prompt/src/budgets.ts:27,:71) and the degrade-to-ids
+ * fallback covers tasks only. An unbounded working set was a launch outage
+ * waiting for a teammate to learn enough things.
+ */
+describe('memory section budget', () => {
+  it('bounds the injected set and says how many it dropped', async () => {
+    // 4096-byte section budget; ~600-byte entries overflow it well inside the
+    // per-entry 512-byte cap applying to the statement alone.
+    const big = 'x'.repeat(600);
+    for (let i = 0; i < 12; i += 1) await mintMemory(`${i}-${big}`, true);
+
+    const memories = await injectedMemories();
+    const notice = memories.find(
+      (m): m is string => typeof m === 'string' && m.includes('not shown'),
+    );
+    expect(notice, 'a truncated working set must say so').toBeDefined();
+    expect(notice).toMatch(/\d+ further memor(y|ies) not shown/);
+
+    const graphEntries = memories.filter(
+      (m): m is string => typeof m === 'string' && MEM_SUFFIX.test(m),
+    );
+    const bytes = graphEntries.reduce((n, m) => n + Buffer.byteLength(m), 0);
+    expect(bytes).toBeLessThanOrEqual(4096);
+  });
+
+  it('never budget-drops an explicitly requested memoryId', async () => {
+    // The automatic tiers above have already filled the section budget. A
+    // spawn that NAMES a memory is refused outright when it cannot be read
+    // (see 'refuses a spawn naming a memory that does not exist'), so quietly
+    // dropping a readable one for budget would be the same lie by another
+    // route. Requested ids are exempt; the automatic tiers are what is bounded.
+    const named = await mintMemory('named explicitly despite a full budget', false);
+    const memories = await injectedMemories([named]);
+    expect(statements(memories)).toContain('named explicitly despite a full budget');
+  });
+
+  it('truncates a single oversized statement rather than emitting it whole', async () => {
+    const huge = await mintMemory(`huge-${'y'.repeat(3000)}`, false);
+    const memories = await injectedMemories([huge]);
+    const entry = memories.find(
+      (m): m is string => typeof m === 'string' && m.startsWith('huge-'),
+    );
+    expect(entry).toBeDefined();
+    expect(Buffer.byteLength(entry!)).toBeLessThan(700);
+    expect(entry).toContain('…');
   });
 });

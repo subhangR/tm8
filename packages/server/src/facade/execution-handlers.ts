@@ -181,6 +181,12 @@ interface MemoryRow {
   remembered: boolean;
   /** In some spawn task's `remembers` working set (D9: remembers(task → memory)). */
   task_remembered: boolean;
+  /**
+   * Authored by a past work session of THIS teammate (D10 carry). This is what
+   * makes memory cross-session: without it, `remembers(work_session → memory)`
+   * is written on every authored memory and read by nothing.
+   */
+  session_authored: boolean;
   superseded: boolean;
   disputed: boolean;
   verified: boolean;
@@ -199,20 +205,55 @@ interface MemoryRow {
  * requested id is different: the caller named THAT memory, so it is injected
  * with its `[superseded]` marker instead of second-guessing the request.
  */
+/**
+ * Byte budget for the whole injected memory set, per
+ * docs/features/memory/MEMORY-DESIGN-FINAL.md §7. The combined initial
+ * injection is capped at 32,768 bytes and THROWS rather than truncating
+ * (packages/prompt/src/budgets.ts:27,:71), and the degrade-to-id-references
+ * fallback covers tasks only — so an unbounded memory set is a launch outage
+ * waiting for a working set to grow. Bounding here is what makes it safe to
+ * widen the candidate routes above.
+ */
+const MEMORY_SECTION_BUDGET_BYTES = 4096;
+const MEMORY_ENTRY_BUDGET_BYTES = 512;
+
 function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   const render = (r: MemoryRow): string => {
     const marks: string[] = [];
     if (r.superseded) marks.push('superseded');
     if (r.disputed) marks.push('disputed');
     if (r.verified) marks.push('verified');
-    return marks.length > 0 ? `${r.statement} [${marks.join(', ')}]` : r.statement;
+    // The id is load-bearing, not decoration: the schema demands four fields on
+    // write and the injector renders one, so an agent shown a memory it knows
+    // to be wrong had nothing to supersede or dispute. Carrying the id is the
+    // smallest thing that makes an injected memory actionable.
+    let statement = r.statement;
+    if (Buffer.byteLength(statement) > MEMORY_ENTRY_BUDGET_BYTES) {
+      statement = `${Buffer.from(statement).subarray(0, MEMORY_ENTRY_BUDGET_BYTES - 1).toString('utf8').replace(/�$/, '')}…`;
+    }
+    const suffix = marks.length > 0 ? ` [${marks.join(', ')}]` : '';
+    return `${statement}${suffix} (mem:${r.entity_id})`;
   };
   const emitted = new Set<string>();
   const out: string[] = [];
+  let spent = 0;
+  let dropped = 0;
+  // `exempt` carries the existing hard contract for requested `memoryIds`: a
+  // spawn that names a memory is refused outright when it cannot be read, so
+  // silently dropping it for budget would be the same lie by another route.
+  // Only the AUTOMATIC tiers — which grow on their own and are what made the
+  // 32KB throw reachable — are bounded.
+  const push = (r: MemoryRow, exempt = false): void => {
+    const text = render(r);
+    const cost = Buffer.byteLength(text);
+    if (!exempt && spent + cost > MEMORY_SECTION_BUDGET_BYTES) { dropped += 1; return; }
+    out.push(text);
+    spent += cost;
+  };
   // 1. The persona's own working set.
   for (const r of rows) {
     if (!r.remembered || r.superseded) continue;
-    out.push(render(r));
+    push(r);
     emitted.add(r.entity_id);
   }
   // 2. Task working sets (D9): what the spawn tasks remember, after the
@@ -220,16 +261,31 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   //    not the other way round. Same superseded-drop rule as the working set.
   for (const r of rows) {
     if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
-    out.push(render(r));
+    push(r);
     emitted.add(r.entity_id);
   }
-  // 3. Requested extras follow the caller's order, after both sets.
+  // 3. D10 carry — what THIS teammate's past sessions learned, newest first so
+  //    a long-lived teammate keeps what it most recently established rather
+  //    than whatever it happened to learn first.
+  const authored = rows
+    .filter((r) => r.session_authored && !r.superseded && !emitted.has(r.entity_id))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  for (const r of authored) {
+    push(r);
+    emitted.add(r.entity_id);
+  }
+  // 4. Requested extras follow the caller's order, after every set.
   for (const id of requestedIds) {
     if (emitted.has(id)) continue;
     const row = rows.find((r) => r.entity_id === id);
     if (!row) continue; // absence already refused upstream
-    out.push(render(row));
+    push(row, true);
     emitted.add(id);
+  }
+  // Say what was dropped. A silently truncated working set reads to the agent
+  // as a complete one, which is worse than a short one.
+  if (dropped > 0) {
+    out.push(`[${dropped} further ${dropped === 1 ? 'memory' : 'memories'} not shown — working set exceeds ${MEMORY_SECTION_BUDGET_BYTES} bytes; use memory_search to reach the rest]`);
   }
   return out;
 }
@@ -308,6 +364,11 @@ export class DbGraphPort implements GraphPort {
                 exists (select 1 from public.edges v
                          where v.type = 'verifies' and v.dst_id = m.entity_id
                            and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
+                exists (select 1 from public.edges sm
+                         join public.edges st
+                           on st.src_id = sm.src_id and st.type = 'relates_to'
+                          and st.dst_id = $1
+                        where sm.type = 'remembers' and sm.dst_id = m.entity_id) as session_authored,
                 m.created_at
            from public.memories m
            join public.entities e on e.id = m.entity_id and e.deleted_at is null
@@ -318,7 +379,18 @@ export class DbGraphPort implements GraphPort {
                  or m.entity_id = any($3::uuid[])
                  or exists (select 1 from public.edges t2
                              where t2.type = 'remembers' and t2.src_id = any($4::uuid[])
-                               and t2.dst_id = m.entity_id))
+                               and t2.dst_id = m.entity_id)
+                 -- D10 carry: a memory one of THIS teammate's past work sessions
+                 -- authored. create_memory records remembers(work_session ->
+                 -- memory), and 048:99 links a session to its teammate with
+                 -- relates_to(work_session -> team_member). Without this arm the
+                 -- edge D10 writes is never read by anything, so a fact an agent
+                 -- learned died with the session that learned it.
+                 or exists (select 1 from public.edges sm2
+                             join public.edges st2
+                               on st2.src_id = sm2.src_id and st2.type = 'relates_to'
+                              and st2.dst_id = $1
+                            where sm2.type = 'remembers' and sm2.dst_id = m.entity_id))
           order by m.created_at, m.entity_id`,
         [input.teamMemberId, input.spaceId, requestedIds, spawnTaskIds],
       );

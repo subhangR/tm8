@@ -8,8 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { ArtifactManifestSchema } from '@tm8/contract';
 import type { CatalogTransport } from '../src/catalog-client.js';
 import { Tm8ToolRouter } from '../src/tools.js';
+import { DIRECT_TOOLS } from '../src/direct-tools.js';
 
 const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
+const SPACE = '00000000-0000-7000-8000-0000000000aa';
 const execFileAsync = promisify(execFile);
 
 describe('direct repository tools', () => {
@@ -353,5 +355,52 @@ describe('direct repository tools', () => {
     expect(redirected).toMatchObject({ isError: true, structuredContent: { error: { code: 'forbidden' } } });
     expect(called).toEqual(['https://93.184.216.34/start']);
     expect(dispatchers[0]).toBeDefined();
+  });
+});
+
+/**
+ * The memory write door.
+ *
+ * `create_memory` raises SQLSTATE 22023 unless statement, mechanism,
+ * subject_scope AND does_not_establish are each 1..1000 chars after trim
+ * (db/migrations/090_memory_any_holder.sql §2). The tool used to declare only
+ * `['spaceId','statement']` as required and drop the rest when absent, so the
+ * documented minimal call was a guaranteed server-side refusal that the caller
+ * had no way to predict from the schema — the reason the memory corpus stayed
+ * in the dozens. These pin the schema to what the graph actually accepts.
+ */
+describe('memory_write declares what the graph demands', () => {
+  const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_write')!;
+
+  it('requires all four epistemic fields, not just a statement', () => {
+    const schema = tool.inputSchema as { required?: string[] };
+    expect(schema.required).toEqual(
+      expect.arrayContaining(['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']),
+    );
+  });
+
+  it('refuses a statement-only call locally, naming the missing field', async () => {
+    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
+    // The router answers with a structured error envelope rather than
+    // throwing. What matters is that the refusal happens HERE, names the
+    // field, and never reaches Postgres as an unpredictable 22023.
+    await expect(router.call('memory_write', {
+      spaceId: SPACE, statement: 'a fact with no provenance',
+    })).resolves.toMatchObject({
+      structuredContent: {
+        error: { code: 'invalid_input', message: expect.stringContaining('mechanism') },
+      },
+    });
+  });
+
+  it('accepts a call carrying all four', async () => {
+    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
+    await expect(router.call('memory_write', {
+      spaceId: SPACE,
+      statement: 'the cluster listens on 5442, not 5432',
+      mechanism: 'probed both ports from this host on 2026-09-15',
+      subjectScope: 'this deployment only',
+      doesNotEstablish: 'it does not establish the port for any other node',
+    })).resolves.toBeDefined();
   });
 });
