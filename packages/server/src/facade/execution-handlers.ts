@@ -173,129 +173,83 @@ interface SkillRow {
  */
 const MAX_HIERARCHY_DEPTH = 16;
 
-interface MemoryRow {
+/**
+ * One row of `internal.select_agent_memories` (migration 185): the automatic
+ * memory set for this spawn, already selected, ranked, budgeted and rendered
+ * by the graph (design §7.2–§7.4). Only the columns the injector consumes are
+ * read; the function also returns the clipped fields, marks, route and
+ * truncation flags for a renderer that wants them.
+ */
+interface SelectedMemoryRow {
   entity_id: string;
-  statement: string;
-  version: number;
-  /** In the teammate's `remembers` working set (vs. only requested by id). */
-  remembered: boolean;
-  /** In some spawn task's `remembers` working set (D9: remembers(task → memory)). */
-  task_remembered: boolean;
-  /**
-   * Authored by a past work session of THIS teammate (D10 carry). This is what
-   * makes memory cross-session: without it, `remembers(work_session → memory)`
-   * is written on every authored memory and read by nothing.
-   */
-  session_authored: boolean;
-  superseded: boolean;
-  disputed: boolean;
-  verified: boolean;
-  created_at: Date | string;
+  /** The prompt line, `<statement> [marks] (mem:<id>)`, at most 512 bytes. */
+  entry: string;
+  /** Ranked candidates that did not fit the budget — the same on every row. */
+  omitted_ids: string[] | null;
+}
+
+/** A memory the spawn request named outright (D3a), rendered the same way. */
+interface RequestedMemoryRow {
+  entity_id: string;
+  entry: string;
 }
 
 /**
- * Memory entities → the manifest's `agent.memory` strings, with their
- * epistemic state visible (design §4.2: the receiving agent must see what is
- * verified vs disputed rather than trusting everything equally).
- *
- * Superseded memories are DROPPED from the working set — the 056 read rule is
- * "reads resolve to the chain head", and the head is either also remembered or
- * the working-set edge has not been moved yet, in which case injecting the
- * stale predecessor would be injecting known-replaced context. An explicitly
- * requested id is different: the caller named THAT memory, so it is injected
- * with its `[superseded]` marker instead of second-guessing the request.
- */
-/**
- * Byte budget for the whole injected memory set, per
- * docs/features/memory/MEMORY-DESIGN-FINAL.md §7. The combined initial
+ * Byte budget for the automatic memory set, per
+ * docs/features/memory/MEMORY-DESIGN-FINAL.md §7.3. The combined initial
  * injection is capped at 32,768 bytes and THROWS rather than truncating
  * (packages/prompt/src/budgets.ts:27,:71), and the degrade-to-id-references
  * fallback covers tasks only — so an unbounded memory set is a launch outage
- * waiting for a working set to grow. Bounding here is what makes it safe to
- * widen the candidate routes above.
+ * waiting for a working set to grow. The graph enforces this budget on the
+ * way in (it stops before the entry that would exceed it, with every entry
+ * capped at 512 bytes); the number lives here because how much of the prompt
+ * memory may take is a composition decision, not a storage one.
  */
 const MEMORY_SECTION_BUDGET_BYTES = 4096;
-const MEMORY_ENTRY_BUDGET_BYTES = 512;
 
-function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
-  const render = (r: MemoryRow): string => {
-    const marks: string[] = [];
-    if (r.superseded) marks.push('superseded');
-    if (r.disputed) marks.push('disputed');
-    if (r.verified) marks.push('verified');
-    // The id is load-bearing, not decoration: the schema demands four fields on
-    // write and the injector renders one, so an agent shown a memory it knows
-    // to be wrong had nothing to supersede or dispute. Carrying the id is the
-    // smallest thing that makes an injected memory actionable.
-    let statement = r.statement;
-    if (Buffer.byteLength(statement) > MEMORY_ENTRY_BUDGET_BYTES) {
-      statement = `${Buffer.from(statement).subarray(0, MEMORY_ENTRY_BUDGET_BYTES - 1).toString('utf8').replace(/�$/, '')}…`;
-    }
-    const suffix = marks.length > 0 ? ` [${marks.join(', ')}]` : '';
-    return `${statement}${suffix} (mem:${r.entity_id})`;
-  };
-  const emitted = new Set<string>();
+/**
+ * The injected memory strings, in the order the agent reads them:
+ *
+ *   1. the automatic set, in the graph's rank order — minus any id the caller
+ *      also requested, which is held back for the tail the caller's contract
+ *      promises;
+ *   2. one line saying how many ranked memories did not fit, when any did not
+ *      — a silently truncated set reads to the agent as a complete one;
+ *   3. the requested ids, in the caller's order, exempt from the budget: a
+ *      spawn that names a memory is refused outright when it cannot be read,
+ *      so quietly dropping a readable one for budget would be the same lie by
+ *      another route.
+ *
+ * Every line is the graph's own rendering (`internal.agent_memory_entry`), so
+ * the bytes the budget counted are the bytes the prompt carries.
+ */
+function renderMemories(
+  selected: readonly SelectedMemoryRow[],
+  requested: readonly RequestedMemoryRow[],
+  requestedIds: readonly string[],
+): string[] {
   const out: string[] = [];
-  let spent = 0;
-  let dropped = 0;
-  // `exempt` carries the existing hard contract for requested `memoryIds`: a
-  // spawn that names a memory is refused outright when it cannot be read, so
-  // silently dropping it for budget would be the same lie by another route.
-  // Only the AUTOMATIC tiers — which grow on their own and are what made the
-  // 32KB throw reachable — are bounded.
-  // Returns whether the row actually made it in. Callers mark `emitted` only on
-  // a true return: a row dropped for budget in an automatic tier must stay
-  // eligible for the exempt requested-id tier below, and marking it emitted
-  // regardless silently swallowed a memory the caller had named outright.
-  const droppedIds = new Set<string>();
-  const push = (r: MemoryRow, exempt = false): boolean => {
-    const text = render(r);
-    const cost = Buffer.byteLength(text);
-    if (!exempt && spent + cost > MEMORY_SECTION_BUDGET_BYTES) {
-      if (!droppedIds.has(r.entity_id)) { droppedIds.add(r.entity_id); dropped += 1; }
-      return false;
-    }
-    out.push(text);
-    spent += cost;
-    droppedIds.delete(r.entity_id);
-    return true;
-  };
-  // 1. The persona's own working set.
-  for (const r of rows) {
-    if (!r.remembered || r.superseded) continue;
-    if (push(r)) emitted.add(r.entity_id);
+  const shown = new Set<string>();
+  const wanted = new Set(requestedIds);
+  for (const row of selected) {
+    if (wanted.has(row.entity_id)) continue;
+    out.push(row.entry);
+    shown.add(row.entity_id);
   }
-  // 2. Task working sets (D9): what the spawn tasks remember, after the
-  //    persona's set — the persona's standing knowledge frames task context,
-  //    not the other way round. Same superseded-drop rule as the working set.
-  for (const r of rows) {
-    if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
-    if (push(r)) emitted.add(r.entity_id);
+  // What the graph left out, minus anything the requested tier shows anyway.
+  const omitted = new Set(selected[0]?.omitted_ids ?? []);
+  for (const id of requestedIds) omitted.delete(id);
+  if (omitted.size > 0) {
+    out.push(
+      `[${omitted.size} further ${omitted.size === 1 ? 'memory' : 'memories'} not shown — there was not room for them here; use memory_search to find the rest]`,
+    );
   }
-  // 3. D10 carry — what THIS teammate's past sessions learned, newest first so
-  //    a long-lived teammate keeps what it most recently established rather
-  //    than whatever it happened to learn first.
-  // Requested ids are excluded here so they keep the tail position the caller's
-  // contract promises ("requested extras follow the caller's order, after every
-  // set") instead of being absorbed into this tier by authorship.
-  const authored = rows
-    .filter((r) => r.session_authored && !r.superseded && !emitted.has(r.entity_id)
-      && !requestedIds.includes(r.entity_id))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  for (const r of authored) {
-    if (push(r)) emitted.add(r.entity_id);
-  }
-  // 4. Requested extras follow the caller's order, after every set.
   for (const id of requestedIds) {
-    if (emitted.has(id)) continue;
-    const row = rows.find((r) => r.entity_id === id);
+    if (shown.has(id)) continue;
+    const row = requested.find((r) => r.entity_id === id);
     if (!row) continue; // absence already refused upstream
-    if (push(row, true)) emitted.add(id);
-  }
-  // Say what was dropped. A silently truncated working set reads to the agent
-  // as a complete one, which is worse than a short one.
-  if (dropped > 0) {
-    out.push(`[${dropped} further ${dropped === 1 ? 'memory' : 'memories'} not shown — working set exceeds ${MEMORY_SECTION_BUDGET_BYTES} bytes; use memory_search to reach the rest]`);
+    out.push(row.entry);
+    shown.add(id);
   }
   return out;
 }
@@ -348,78 +302,53 @@ export class DbGraphPort implements GraphPort {
         throw fail('not_found', `team member ${input.teamMemberId} not found in this space`);
       }
 
-      // The persona's working set lives in the graph: memory ENTITIES linked by
-      // `remembers` edges (056), not the legacy `team_members.memories` jsonb.
-      // Migration 084 moved the jsonb entries into the graph and emptied the
-      // column; any jsonb remainder (written by a not-yet-updated editor path)
-      // is still injected so a write never silently vanishes. Task working
-      // sets (D9: remembers(task → memory)) ride the same query — what a
-      // spawn task remembers reaches the session automatically. Requested
-      // `memoryIds` (D3a) are validated hard — a spawn that names a memory the
-      // caller cannot read, or that is not a memory, must refuse rather than
-      // quietly inject less than was asked.
+      // The automatic memory set is SELECTED BY THE GRAPH — migration 185,
+      // internal.select_agent_memories, design §7.2–§7.4: the persona's own
+      // working set and authored memories, the assigned tasks' and their
+      // ancestors' memories, the project's; every superseded entry replaced by
+      // its chain head; ranked by epistemic state; bounded on the way in. Read
+      // here, inside the transaction, so the set describes the same instant as
+      // the persona beside it. The project's entity projection is resolved in
+      // the same statement. The worktree slot is null: a worktree is
+      // provisioned AFTER this read (SpawnService.spawn), so that route waits
+      // for a caller that knows its worktree.
       const requestedIds = input.memoryIds ?? [];
       const spawnTaskIds = input.taskIds ?? [];
-      const memoryRows = await q.query<MemoryRow>(
-        `select m.entity_id, m.statement, e.version,
-                (r.dst_id is not null) as remembered,
-                exists (select 1 from public.edges t
-                         where t.type = 'remembers' and t.src_id = any($4::uuid[])
-                           and t.dst_id = m.entity_id) as task_remembered,
-                exists (select 1 from public.edges s
-                         where s.type = 'supersedes' and s.dst_id = m.entity_id) as superseded,
-                exists (select 1 from public.edges d
-                         where d.type = 'disputes' and d.dst_id = m.entity_id
-                           and (d.props ->> 'pinnedVersion')::int = e.version) as disputed,
-                exists (select 1 from public.edges v
-                         where v.type = 'verifies' and v.dst_id = m.entity_id
-                           and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
-                (e.created_by = $1
-                 or exists (select 1 from public.edges sm
-                             join public.edges st
-                               on st.src_id = sm.src_id and st.type = 'relates_to'
-                              and st.dst_id = $1
-                            where sm.type = 'remembers'
-                              and sm.dst_id = m.entity_id)) as session_authored,
-                m.created_at
-           from public.memories m
-           join public.entities e on e.id = m.entity_id and e.deleted_at is null
-           left join public.edges r
-             on r.type = 'remembers' and r.src_id = $1 and r.dst_id = m.entity_id
-          where e.space_id = $2
-            and (r.dst_id is not null
-                 or m.entity_id = any($3::uuid[])
-                 or exists (select 1 from public.edges t2
-                             where t2.type = 'remembers' and t2.src_id = any($4::uuid[])
-                               and t2.dst_id = m.entity_id)
-                 -- D10 carry, two routes to the same fact: this teammate wrote
-                 -- it. 090 D10 ruled that authorship implies working-set
-                 -- membership ("a session that AUTHORS a memory remembers it")
-                 -- and create_memory records remembers(work_session -> memory),
-                 -- with 048:99 linking a session to its teammate through
-                 -- relates_to(work_session -> team_member). Nothing READ that
-                 -- edge, so a fact an agent established died with the session
-                 -- that established it.
-                 --
-                 -- The edge route only fires when a caller passes
-                 -- p_work_session_id, and no current writer does -- production
-                 -- holds zero remembers(work_session -> memory) rows. So the
-                 -- authorship column carries the same ruling without depending
-                 -- on an edge nobody draws: create_envelope stamps created_by
-                 -- with the acting actor, and 23 of production's 43 memories
-                 -- already carry a team_member there. Both routes, because the
-                 -- edge is the one consolidation can later move and the column
-                 -- is the one that is true today.
-                 or e.created_by = $1
-                 or exists (select 1 from public.edges sm2
-                             join public.edges st2
-                               on st2.src_id = sm2.src_id and st2.type = 'relates_to'
-                              and st2.dst_id = $1
-                            where sm2.type = 'remembers' and sm2.dst_id = m.entity_id))
-          order by m.created_at, m.entity_id`,
-        [input.teamMemberId, input.spaceId, requestedIds, spawnTaskIds],
+      const selectedRows = await q.query<SelectedMemoryRow>(
+        `select s.entity_id, s.entry, s.omitted_ids
+           from internal.select_agent_memories(
+                  $1::uuid, $2::uuid, $3::uuid[],
+                  (select pe.id
+                     from public.project_projection_details ppd
+                     join public.entities pe on pe.id = ppd.entity_id
+                    where ppd.project_id = $4::uuid
+                      and pe.space_id = $1::uuid and pe.deleted_at is null
+                    order by pe.id
+                    limit 1),
+                  null::uuid,
+                  $5::integer) s`,
+        [input.spaceId, input.teamMemberId, spawnTaskIds, input.projectId ?? null, MEMORY_SECTION_BUDGET_BYTES],
       );
-      const foundIds = new Set(memoryRows.map((r) => r.entity_id));
+      // Requested `memoryIds` (D3a) are validated hard — a spawn that names a
+      // memory the caller cannot read, or that is not a memory, must refuse
+      // rather than quietly inject less than was asked. They render through
+      // the same graph line as the automatic set, marks included: the caller
+      // named THAT memory, so a superseded one is shown as superseded rather
+      // than second-guessed into its successor.
+      const requestedRows =
+        requestedIds.length === 0
+          ? []
+          : await q.query<RequestedMemoryRow>(
+              `select m.entity_id,
+                      internal.agent_memory_entry(m.entity_id, m.statement, mk.marks) as entry
+                 from public.memories m
+                 join public.entities e
+                   on e.id = m.entity_id and e.space_id = $1::uuid and e.deleted_at is null
+                 join internal.memory_marks($2::uuid[]) mk on mk.entity_id = m.entity_id
+                where m.entity_id = any($2::uuid[])`,
+              [input.spaceId, requestedIds],
+            );
+      const foundIds = new Set(requestedRows.map((r) => r.entity_id));
       const missing = requestedIds.filter((id) => !foundIds.has(id));
       if (missing.length > 0) {
         throw fail(
@@ -427,7 +356,7 @@ export class DbGraphPort implements GraphPort {
           `memoryIds not found in this space (or not memory entities): ${missing.join(', ')}`,
         );
       }
-      const injectedMemories = renderMemories(memoryRows, requestedIds);
+      const injectedMemories = renderMemories(selectedRows, requestedRows, requestedIds);
 
       // 176 — WHAT THE PARENT IS, not merely that there is one.
       //
