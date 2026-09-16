@@ -102,9 +102,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
-    // 197 -> 198 (2026-09-15, 186): memories.search. MEASURED.
-    // 198 -> 199 (2026-09-15): execution.memoryPreview. MEASURED.
-    expect(rows).toHaveLength(199);
+    expect(rows).toHaveLength(197);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -123,9 +121,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 135 -> 136: execution.dispatch, a v1 row, joins `none` too.
     // 142 -> 148 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 170 -> 195: all 25 containers.* rows are non-reserved. MEASURED.
-    // 195 -> 196 (186): memories.search, a v1 row, joins `none` too.
-    // 196 -> 197: execution.memoryPreview, a v1 row, joins `none` too.
-    expect(unknownRows).toHaveLength(197);
+    expect(unknownRows).toHaveLength(195);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

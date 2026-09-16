@@ -202,8 +202,6 @@ import type {
   SessionGitStatus,
   SessionJournalPage,
   SessionLaunchRecord,
-  ExecutionMemoryPreview,
-  ExecutionMemoryPreviewInput,
   SessionTranscriptPage,
   HomeSnapshot,
   StartChatInput,
@@ -668,20 +666,6 @@ export interface Seam {
    * apart. Environment VALUES are structurally absent, never merely hidden.
    */
   launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
-  /**
-   * WHAT THIS AGENT WILL BE TOLD — the memory hand-off a launch WOULD make,
-   * before it is made (`execution.memoryPreview`).
-   *
-   * The launch sheet can pick memories, and until this read existed it could
-   * show nothing about what the agent would actually receive: the persona's
-   * own working set, the subject's working set and the teammate's past
-   * findings all ride along automatically, and the section budget drops what
-   * does not fit. The node runs the spawn injector's OWN selection for this
-   * answer and writes nothing; the sheet re-asks whenever the teammate, the
-   * subject or the picks change. Entries arrive as the agent will see them —
-   * already cut to the per-entry cap — with the marks it will see beside them.
-   */
-  memoryPreview(input: ExecutionMemoryPreviewInput): Promise<ExecutionMemoryPreview>;
   /**
    * What the session's agent SAID — the third face of the DEBUG surface, after
    * TOLD (`launch`) and DID (`journal`).

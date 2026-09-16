@@ -218,21 +218,8 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
   { name: 'web_fetch', description: 'Fetch an HTTP(S) page as capped readable text.', inputSchema: objectSchema({ url: stringProp('Public HTTP(S) URL.'), maxBytes: integerProp('Maximum response bytes.', 1024, 500_000) }, ['url']), annotations: annotations(true, false, true) },
   { name: 'web_search', description: 'Search the public web and return links and snippets.', inputSchema: objectSchema({ query: stringProp('Search query.'), limit: integerProp('Maximum results.', 1, 10) }, ['query']), annotations: annotations(true, false, true) },
-  // All four memory fields are REQUIRED, because `create_memory` refuses with
-  // SQLSTATE 22023 unless each is 1..1000 chars after trim (db/migrations/
-  // 090_memory_any_holder.sql §2). Declaring three of them optional made the
-  // documented minimal call — spaceId + statement — a guaranteed server-side
-  // refusal the caller had no way to anticipate, which is why the corpus is
-  // measured in dozens. The schema now states what the graph actually demands.
-  { name: 'memory_write', description: 'Save something this Space should remember for good. A memory must say what it claims, how that was established, what it applies to, and what it does NOT prove — all four are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('The decision or fact to remember (1-4000 chars).'), mechanism: stringProp('How it was established — the measurement, test, document or observation behind it (1-1000 chars).'), subjectScope: stringProp('What the statement applies to, and where it stops (1-1000 chars).'), doesNotEstablish: stringProp('The explicit boundary of the claim — what a reader must NOT conclude from it (1-1000 chars).') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
-  // `memory_search` is the server's `memories.search`: the database searches
-  // every part of every memory in the Space (statement, mechanism, subject
-  // scope and boundary), ranks the hits, and answers a replaced memory as its
-  // latest version. The old tool fetched the 100 most recent memories and
-  // substring-matched the summary's title and excerpt in JavaScript — about
-  // the first 11% of an average statement, and never the three fields that say
-  // what a claim rests on and where it stops.
-  { name: 'memory_search', description: 'Search this Space\'s memories for words. Every part of a memory is searched: what it claims, how that was established, what it applies to, and what it does not prove. A memory that has been replaced is answered as its latest version. Use quotes for an exact phrase, "or" to widen, and a leading minus to exclude a word.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to look for.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
+  { name: 'memory_write', description: 'Write a durable Space memory graph entity. All four text fields are required.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), statement: stringProp('Decision or fact to remember.'), mechanism: stringProp('How it was established.'), subjectScope: stringProp('Scope the statement applies to.'), doesNotEstablish: stringProp('Explicit boundary of the claim.') }, ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']), annotations: annotations(false) },
+  { name: 'memory_search', description: 'Search Space memories by words in their statement, mechanism, scope or boundary; any word matches, more matching words rank first.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), query: stringProp('Words to match.'), limit: integerProp('Maximum results.', 1, 50) }, ['spaceId', 'query']), annotations: annotations(true) },
   { name: 'git_branch', description: 'Read branch, upstream, head and remote for the chat checkout.', inputSchema: objectSchema({}), annotations: annotations(true) },
   { name: 'git_status', description: 'Read git status for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.') }), annotations: annotations(true) },
   { name: 'git_diff', description: 'Read a capped diff for this chat checkout or a named worker session.', inputSchema: objectSchema({ sessionId: stringProp('Optional worker session id.'), maxBytes: integerProp('Maximum diff bytes.', 1024, 500_000) }), annotations: annotations(true) },
@@ -1190,19 +1177,15 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
   const statement = requiredString(args.statement, 'statement');
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
-  // Refuse HERE, with the field name, rather than letting Postgres refuse with
-  // 22023 after a round trip. Omitting any of these never produced a memory —
-  // it produced an error the caller could not have predicted from the schema.
-  //
-  // Nothing is defaulted, deliberately. These three fields are what search and
-  // staleness read, so a placeholder written to get past the check would
-  // persist as if it were provenance. Better a refusal the caller can fix.
-  const content: Record<string, unknown> = {
-    statement,
-    mechanism: requiredString(args.mechanism, 'mechanism'),
-    subjectScope: requiredString(args.subjectScope, 'subjectScope'),
-    doesNotEstablish: requiredString(args.doesNotEstablish, 'doesNotEstablish'),
-  };
+  // `create_memory` refuses a blank mechanism/subjectScope/doesNotEstablish
+  // with SQLSTATE 22023 (090:69-80), so the tool requires them up front: the
+  // schema above says so, and this holds the line for a caller that ignores
+  // the schema. Nothing is defaulted — the scope fields are what
+  // `memory_search` and staleness read, and a placeholder would persist.
+  const content: Record<string, unknown> = { statement };
+  for (const key of ['mechanism', 'subjectScope', 'doesNotEstablish'] as const) {
+    content[key] = requiredString(args[key], key);
+  }
   const data = await context.transport.invoke('entities.create', { body: {
     spaceId, kind: 'memory', title: statement.slice(0, 200),
     content, clientMutationId: randomUUID(),
@@ -1211,24 +1194,29 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
 }
 
 async function memorySearch(args: Record<string, unknown>, context: DirectToolContext) {
-  const query = boundedString(args.query, 'query', 1_000).trim();
+  const query = requiredString(args.query, 'query').toLowerCase();
   const limit = integer(args.limit, 'limit', 1, 50) ?? 10;
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
-  // The database does the whole search — parsing, matching over all four
-  // fields, ranking, chain-head resolution and row-level security — so the
-  // tool's only job is to carry the request and hand back what came back.
-  //
-  // This replaces an earlier server-side substring filter that matched the same
-  // four columns through `collections.query` (`filters.terms`, still part of the
-  // collections contract and still tested there). Both fixes chased the same
-  // defect — a local scan of a 200-char excerpt could not see the statement
-  // body — and this one goes further: it ranks, it answers a superseded memory
-  // as its live replacement, and it understands quoted phrases, `or` and a
-  // leading minus. One search path, not two.
-  const data = await context.transport.invoke('memories.search', { body: { spaceId, query, limit } });
-  const items = (data as { items?: unknown[] } | null)?.items ?? [];
-  return result('memory_search', { query, items });
+  const terms = query.split(/\s+/).filter(Boolean);
+  // The MATCH is server-side, over all four memory text columns
+  // (`filters.terms`, any-of): a summary carries a 120-char title and a
+  // 200-char excerpt of a statement that may run to 4,000 chars, so a local
+  // scan could not see most of what it was searching. The local pass only
+  // RANKS, by how many terms hit the text a summary does carry — a hit the
+  // server found in the statement body keeps its place instead of being
+  // filtered back out.
+  const data = await context.transport.invoke('collections.query', { body: {
+    spaceId, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100, filters: { terms },
+  } });
+  const page = data as { page?: { items?: Array<Record<string, unknown>> } };
+  const hits = (page.page?.items ?? []).map((item) => {
+    const state = (item.state ?? {}) as Record<string, unknown>;
+    const haystack = [item.title, item.excerpt, state.mechanism, state.subjectScope, state.doesNotEstablish]
+      .map((part) => String(part ?? '')).join(' ').toLowerCase();
+    return { item, score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
+  }).sort((a, b) => b.score - a.score).slice(0, limit);
+  return result('memory_search', { query, items: hits.map((hit) => hit.item) });
 }
 
 async function gitBranch(context: DirectToolContext) {

@@ -154,21 +154,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // Neither branch's number survives: main counts chat's five and not the
     // container paths, my branch the reverse. Summing them would be arithmetic
     // over two partial views.
-    // 188 -> 193 (2026-09-15): the `memory` noun — record|list|show|supersede|
-    // search, five ALIASES. Four are sugar over entities.create,
-    // collections.query, entities.get and edges.create, by the memory design's
-    // own rule (§5.2: create_memory joins the entities.create label "so the
-    // catalog gains nothing"), and they move this count without moving the
-    // CATALOG at all — the distinction this pin exists to keep visible.
-    //
-    // `memory search` is the exception, and it does NOT move this number a
-    // sixth time: the catalog row it names, `memories.search`, is COMMANDLESS,
-    // so it contributes no path of its own and the alias remains its only
-    // spelling. The two halves landing on one branch is exactly the case the
-    // uniqueness test above would catch if that row ever grew a command:
-    // the loop over BASE and the alias block would each push `memory search`,
-    // and `commands()` would answer it twice.
-    expect(COMMAND_PATHS).toHaveLength(193);
+    expect(COMMAND_PATHS).toHaveLength(188);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

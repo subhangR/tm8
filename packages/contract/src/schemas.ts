@@ -74,8 +74,6 @@ import type {
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
-  MemorySearchInput, MemorySearchItem, MemorySearchResult,
-  ExecutionMemoryPreview, ExecutionMemoryPreviewEntry, ExecutionMemoryPreviewInput,
   Mention, MessageBatchResult, MessageDeliveryDisposition,
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
@@ -1038,31 +1036,6 @@ export const GraphResultSchema: z.ZodType<GraphResult> = z.lazy(() => z.object({
   clusters: z.array(z.object({ parentId: EntityIdSchema, childIds: z.array(EntityIdSchema) }).strict()),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).strict()).optional(),
 }).strict());
-
-// `memories.search` (188). The query is bounded so a pasted document cannot be
-// handed to the parser as a search, and it must carry at least one
-// non-blank character — a blank query is a request for nothing, refused here
-// rather than answered with an empty list that reads as "no memories match".
-export const MemorySearchInputSchema: z.ZodType<MemorySearchInput> = z.object({
-  spaceId: SpaceIdSchema,
-  query: z.string().max(1000).refine((value) => value.trim().length > 0, {
-    message: 'query needs at least one word to look for',
-  }),
-  limit: z.number().int().min(1).max(200).optional(),
-}).strict();
-
-export const MemorySearchItemSchema: z.ZodType<MemorySearchItem> = z.object({
-  id: EntityIdSchema,
-  statement: z.string(),
-  subjectScope: z.string(),
-  doesNotEstablish: z.string(),
-  rank: z.number(),
-  marks: z.array(z.string()),
-}).strict();
-
-export const MemorySearchResultSchema: z.ZodType<MemorySearchResult> = z.object({
-  items: z.array(MemorySearchItemSchema),
-}).strict();
 
 // ---------------------------------------------------------------------------
 // Threads, activity, presence, channel tabs
@@ -2787,40 +2760,6 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   cols: TerminalDimSchema,
   rows: TerminalDimSchema,
-}).strict();
-
-/**
- * `execution.memoryPreview` — the read behind "What this agent will be told".
- *
- * Bound at the frame, and bound to the SAME shapes `execution.spawn` binds:
- * the same uuid rule for every id and the same ceiling of 32 picks. A preview
- * that accepted a body spawn would refuse would be answering a question nobody
- * can act on, which is a worse lie than refusing.
- *
- * `.strict()` for the reason every read with a body is strict here: a field
- * this operation does not read must be REFUSED rather than silently dropped,
- * so nobody can believe they previewed something they did not.
- */
-export const ExecutionMemoryPreviewInputSchema: z.ZodType<ExecutionMemoryPreviewInput> = z.object({
-  spaceId: SpawnUuidSchema,
-  teamMemberId: SpawnUuidSchema,
-  taskIds: z.array(SpawnUuidSchema).optional(),
-  projectId: SpawnUuidSchema.nullable().optional(),
-  memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
-}).strict();
-
-export const ExecutionMemoryPreviewEntrySchema: z.ZodType<ExecutionMemoryPreviewEntry> = z.object({
-  id: EntityIdSchema,
-  statement: z.string(),
-  marks: z.array(z.string()),
-  source: z.enum(['own', 'task', 'learned', 'picked']),
-}).strict();
-
-export const ExecutionMemoryPreviewSchema: z.ZodType<ExecutionMemoryPreview> = z.object({
-  entries: z.array(ExecutionMemoryPreviewEntrySchema),
-  shown: z.number().int().min(0),
-  omitted: z.number().int().min(0),
-  roomUsedPercent: z.number().int().min(0),
 }).strict();
 
 /**

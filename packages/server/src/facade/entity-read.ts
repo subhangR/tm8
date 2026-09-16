@@ -1193,26 +1193,6 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     // required regardless of the write-side cycle guard: prevent_edge_cycle's
     // own CTE bounds at 256, so a longer chain can exist without detection.
     // Hitting the bound reports headId null rather than a wrong head.
-    //
-    // WHERE A CHAIN FORKS, THE NEWEST CORRECTION WINS — `head desc` over
-    // uuidv7 ids. Two writers can supersede the same entity (nothing in the
-    // database forbids it), and three readers resolve that fork: this one,
-    // `internal.memory_marks` (187) behind the spawn prompt, and
-    // `public.search_memories` (188). They must all name the same head, or a
-    // corrected fact reads as one version on screen and a different one in the
-    // agent's prompt. All three now order the same way.
-    //
-    // WHAT THIS READ DOES NOT DO, on purpose: it does not skip successors that
-    // have been soft-deleted. 187 and 188 do, because their question is "what
-    // should be shown as current"; this badge's question is "what does the
-    // graph say replaced this", and it answers for every kind, not just
-    // memories. Bringing liveness here would change what `badges.staleness`
-    // means for docs and tasks too, and that needs its own change with its own
-    // tests. The one user-visible consequence of leaving it, recorded so the
-    // next reader does not have to rediscover it: `tm8 memory supersede` reads
-    // this badge as its pre-flight, so it still refuses to correct a memory
-    // whose only successor has been deleted, and names that deleted successor
-    // in the refusal.
     const chainRows = await q.query<{ origin: string; head: string; depth: number }>(
       `with recursive chain as (
          select e.dst_id as origin, e.src_id as head, 1 as depth
@@ -1226,7 +1206,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
        )
        select distinct on (origin) origin, head, depth
          from chain
-        order by origin, depth desc, head desc`,
+        order by origin, depth desc, head`,
       [[...supersededBy.keys()]],
     );
     const headByOrigin = new Map(chainRows.map((r) => [r.origin, r]));

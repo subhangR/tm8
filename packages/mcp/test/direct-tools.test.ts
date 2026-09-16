@@ -11,7 +11,6 @@ import { DIRECT_TOOLS } from '../src/direct-tools.js';
 import { Tm8ToolRouter } from '../src/tools.js';
 
 const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
-const SPACE = '00000000-0000-7000-8000-0000000000aa';
 const execFileAsync = promisify(execFile);
 
 describe('direct repository tools', () => {
@@ -358,143 +357,51 @@ describe('direct repository tools', () => {
   });
 });
 
-/**
- * The memory read door.
- *
- * The tool used to fetch the 100 most recently updated memories and substring-
- * match the query's words, in JavaScript, against a summary's 120-char title
- * and 200-char excerpt — roughly the first tenth of an average statement, and
- * never the three fields that say what a claim rests on and where it stops.
- * It now asks `memories.search`, which matches, ranks and resolves chains in
- * the database. These pin that the tool carries the request and nothing more:
- * a second opinion on relevance in TypeScript is the split being removed.
- */
-describe('memory_search asks the database, not the summary', () => {
-  const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_search')!;
-
-  it('keeps the tool input shape: spaceId and query required, limit optional', () => {
-    const schema = tool.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
-    expect(schema.required).toEqual(['spaceId', 'query']);
-    expect(Object.keys(schema.properties ?? {})).toEqual(['spaceId', 'query', 'limit']);
-  });
-
-  it('invokes memories.search with the words as typed and hands back the ranked items', async () => {
-    const calls: Array<{ operation: string; options: unknown }> = [];
-    const item = {
-      id: '019f0000-0000-7000-8000-000000000201',
-      statement: 'the cluster listens on 5442',
-      subjectScope: 'this node',
-      doesNotEstablish: 'the port for any other node',
-      rank: 0.1,
-      marks: ['verified'],
-    };
-    const recording: CatalogTransport = {
-      invoke: async (operation, options) => {
-        calls.push({ operation, options });
-        return { items: [item] };
-      },
-    };
-    const router = new Tm8ToolRouter(recording, { mode: 'build', spaceId: SPACE });
-    const out = await router.call('memory_search', { spaceId: SPACE, query: '  pg_hba reload ', limit: 5 });
-    // ONE call, to the search operation, carrying the trimmed words and the
-    // limit — no `collections.query` page fetch and no local re-ranking.
-    expect(calls).toEqual([{
-      operation: 'memories.search',
-      options: { body: { spaceId: SPACE, query: 'pg_hba reload', limit: 5 } },
-    }]);
-    expect(out.isError).toBeUndefined();
-    expect(out.structuredContent).toMatchObject({
-      tool: 'memory_search', query: 'pg_hba reload', items: [item],
+describe('memory tools', () => {
+  it('requires all four memory_write fields in the schema and refuses a partial call before the transport', async () => {
+    // `create_memory` raises 22023 for a blank mechanism/subjectScope/
+    // doesNotEstablish; a schema that called them optional invited exactly
+    // that refusal. Both the advertised schema and the handler must agree.
+    expect(DIRECT_TOOLS.find((tool) => tool.name === 'memory_write')?.inputSchema).toMatchObject({
+      required: ['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish'],
     });
-  });
-
-  it('defaults the limit to 10 and refuses a Space outside the thread', async () => {
-    const calls: Array<{ operation: string; options: unknown }> = [];
-    const recording: CatalogTransport = {
-      invoke: async (operation, options) => { calls.push({ operation, options }); return { items: [] }; },
-    };
-    const router = new Tm8ToolRouter(recording, { mode: 'build', spaceId: SPACE });
-    await router.call('memory_search', { spaceId: SPACE, query: 'deploy' });
-    expect(calls).toEqual([{
-      operation: 'memories.search',
-      options: { body: { spaceId: SPACE, query: 'deploy', limit: 10 } },
-    }]);
-
-    await expect(router.call('memory_search', {
-      spaceId: '00000000-0000-7000-8000-0000000000bb', query: 'deploy',
-    })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'forbidden' } } });
-    expect(calls).toHaveLength(1);
-  });
-
-  it('refuses a blank query locally rather than asking the server for nothing', async () => {
-    const router = new Tm8ToolRouter(transport, { mode: 'build', spaceId: SPACE });
-    await expect(router.call('memory_search', { spaceId: SPACE, query: '   ' })).resolves.toMatchObject({
-      isError: true, structuredContent: { error: { code: 'invalid_input' } },
-    });
-  });
-});
-
-/**
- * The memory write door.
- *
- * `create_memory` raises SQLSTATE 22023 unless statement, mechanism,
- * subject_scope AND does_not_establish are each 1..1000 chars after trim
- * (db/migrations/090_memory_any_holder.sql §2). The tool used to declare only
- * `['spaceId','statement']` as required and drop the rest when absent, so the
- * documented minimal call was a guaranteed server-side refusal that the caller
- * had no way to predict from the schema — the reason the memory corpus stayed
- * in the dozens. These pin the schema to what the graph actually accepts.
- */
-describe('memory_write declares what the graph demands', () => {
-  const tool = DIRECT_TOOLS.find((t) => t.name === 'memory_write')!;
-
-  it('requires all four epistemic fields, not just a statement', () => {
-    const schema = tool.inputSchema as { required?: string[] };
-    expect(schema.required).toEqual(
-      expect.arrayContaining(['spaceId', 'statement', 'mechanism', 'subjectScope', 'doesNotEstablish']),
-    );
-  });
-
-  it('refuses a statement-only call locally, naming the missing field, without asking the server', async () => {
-    // The router answers with a structured error envelope rather than
-    // throwing. What matters is that the refusal happens HERE, names the
-    // field, and never reaches Postgres as an unpredictable 22023 — so the
-    // transport is counted, not just stubbed.
     let invoked = 0;
     const counting: CatalogTransport = { invoke: async () => { invoked += 1; return { ok: true }; } };
-    const router = new Tm8ToolRouter(counting, { mode: 'build', spaceId: SPACE });
-    await expect(router.call('memory_write', {
-      spaceId: SPACE, statement: 'a fact with no provenance',
-    })).resolves.toMatchObject({
-      isError: true,
-      structuredContent: {
-        error: { code: 'invalid_input', message: 'mechanism must be a non-empty string' },
-      },
+    const router = new Tm8ToolRouter(counting, { mode: 'plan', spaceId: 'space-a' });
+    await expect(router.call('memory_write', { spaceId: 'space-a', statement: 'scoped tsc is faster' })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'invalid_input', message: 'mechanism must be a non-empty string' } },
     });
-    // Present but blank is the same refusal: `create_memory` trims before it
-    // measures, so whitespace is not provenance either.
     await expect(router.call('memory_write', {
-      spaceId: SPACE,
-      statement: 'a fact with no provenance',
-      mechanism: 'probed both ports',
-      subjectScope: 'this deployment only',
-      doesNotEstablish: '   ',
+      spaceId: 'space-a', statement: 'scoped tsc is faster', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: '   ',
     })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
     expect(invoked).toBe(0);
-  });
-
-  it('accepts a call carrying all four, and only then reaches the server', async () => {
-    let invoked = 0;
-    const counting: CatalogTransport = { invoke: async () => { invoked += 1; return { ok: true }; } };
-    const router = new Tm8ToolRouter(counting, { mode: 'build', spaceId: SPACE });
     const ok = await router.call('memory_write', {
-      spaceId: SPACE,
-      statement: 'the cluster listens on 5442, not 5432',
-      mechanism: 'probed both ports from this host on 2026-09-15',
-      subjectScope: 'this deployment only',
-      doesNotEstablish: 'it does not establish the port for any other node',
+      spaceId: 'space-a', statement: 'scoped tsc is faster', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: 'vite',
     });
     expect(ok.isError).toBeUndefined();
     expect(invoked).toBe(1);
+  });
+
+  it('memory_search matches server-side over every memory text column and only ranks locally', async () => {
+    const bodies: Array<{ operation: string; body: unknown }> = [];
+    const recording: CatalogTransport = {
+      invoke: async (operation, options) => {
+        bodies.push({ operation, body: options.body });
+        return { page: { items: [
+          // A hit the server found in the statement BODY: nothing the summary
+          // carries mentions the terms. The old local scan dropped it.
+          { id: 'body-hit', kind: 'memory', title: 'unrelated', excerpt: 'unrelated', state: { kind: 'memory', mechanism: '', subjectScope: '', doesNotEstablish: '' } },
+          { id: 'both', kind: 'memory', title: 'Scoped tsc wins', excerpt: 'Scoped tsc wins', state: { kind: 'memory', mechanism: 'timed', subjectScope: 'builds', doesNotEstablish: 'vite' } },
+          { id: 'scope-hit', kind: 'memory', title: 'unrelated', excerpt: 'unrelated', state: { kind: 'memory', mechanism: 'tsc', subjectScope: '', doesNotEstablish: '' } },
+        ] } };
+      },
+    };
+    const router = new Tm8ToolRouter(recording, { mode: 'plan', spaceId: 'space-a' });
+    const out = await router.call('memory_search', { spaceId: 'space-a', query: 'Scoped  TSC', limit: 5 });
+    expect(bodies).toEqual([{ operation: 'collections.query', body: {
+      spaceId: 'space-a', kinds: ['memory'], sort: 'updatedAt_desc', limit: 100, filters: { terms: ['scoped', 'tsc'] },
+    } }]);
+    expect((out.structuredContent as { items: Array<{ id: string }> }).items.map((item) => item.id))
+      .toEqual(['both', 'scope-hit', 'body-hit']);
   });
 });

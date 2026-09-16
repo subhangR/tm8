@@ -9,8 +9,8 @@
  * first, which is exactly why they are pinned here.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
-import type { CredentialsStatusView, EntityId, ExecutionMemoryPreview } from '@tm8/contract';
+import { fireEvent, render, renderHook, within } from '@testing-library/react';
+import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
@@ -865,131 +865,5 @@ describe('OBLIGATION 4 — a late project read must still select the default', (
 
     expect(checked(view, /scratch/i)).toBe('true');
     expect(checked(view, /tm8-ui/)).toBe('false');
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-/**
- * WHAT THIS AGENT WILL BE TOLD — the read-only half of the memory section.
- *
- * The property that matters is that the list is READ from the node and never
- * derived from the picker: the node runs the spawn injector's own selection,
- * so a sheet that composed its own list would be a second selection free to
- * disagree with the one the agent gets. Everything here is that property from
- * one side — the section exists only when something can ask, it asks for the
- * configuration on screen and asks again when that changes, and what it draws
- * is the node's answer in plain words: a count, the room used, each memory
- * with its mark and where it came from, and how many did not fit.
- */
-describe('the sheet shows what the agent will be told, read from the node', () => {
-  const preview = (over: Partial<ExecutionMemoryPreview> = {}): ExecutionMemoryPreview => ({
-    entries: [
-      { id: 'ent-mem-tokens', statement: 'tokens.css is verbatim — a byte-equality test guards it', marks: [], source: 'own' },
-      { id: 'ent-mem-disputed', statement: 'The fixture seam drops fields it does not know', marks: ['disputed'], source: 'own' },
-      { id: 'mem-task-1', statement: 'the deploy needs the pg_hba reload, not a restart', marks: ['verified'], source: 'task' },
-      { id: 'mem-learned-1', statement: 'the port is 5442', marks: [], source: 'learned' },
-    ],
-    shown: 4,
-    omitted: 2,
-    roomUsedPercent: 61,
-    ...over,
-  });
-
-  it('draws no section at all when nothing can ask the node — unmeasured is not empty', () => {
-    const { queryByTestId, queryByText } = renderSheet();
-    expect(queryByTestId('launch-told')).toBeNull();
-    expect(queryByText(/will be handed over/)).toBeNull();
-  });
-
-  it('summarises the hand-off in one plain line, with the room used and what will not fit', async () => {
-    const load = vi.fn(async () => preview());
-    const { findByText, getByTestId } = renderSheet({ loadMemoryPreview: load });
-    expect(await findByText('4 memories will be handed over · 2 more will not fit')).toBeTruthy();
-    expect(getByTestId('launch-told-room').textContent).toContain('61%');
-    expect(await findByText('2 more not shown — the agent can search for them')).toBeTruthy();
-  });
-
-  it('shows each memory with its house mark and a plain source word, the reference only as a tooltip', async () => {
-    const load = vi.fn(async () => preview());
-    const { findByText, getByText } = renderSheet({ loadMemoryPreview: load });
-    await findByText('the port is 5442');
-    expect(getByText('unflagged · teammate’s own')).toBeTruthy();
-    expect(getByText('disputed · teammate’s own')).toBeTruthy();
-    expect(getByText('verified · from the task')).toBeTruthy();
-    expect(getByText('unflagged · learned last time')).toBeTruthy();
-    // The id is a tooltip, never text on screen — the plain-language rule.
-    const row = getByText('the port is 5442').closest('li');
-    expect(row?.getAttribute('title')).toContain('mem-learned-1');
-    expect(within(row as HTMLElement).queryByText(/mem-learned-1/)).toBeNull();
-    // Nothing in the list is a control.
-    expect(within(row as HTMLElement).queryByRole('button')).toBeNull();
-    expect(within(row as HTMLElement).queryByRole('checkbox')).toBeNull();
-  });
-
-  it('asks for the configuration on screen — teammate, subject, picks — and asks again when it changes', async () => {
-    const load = vi.fn(async () => preview());
-    const { getByLabelText, getByText } = renderSheet({ memories: LAUNCH_MEMORIES, loadMemoryPreview: load });
-    await waitFor(() => expect(load).toHaveBeenCalledWith({
-      teamMemberId: 'ent-tm-forge', taskIds: ['task-1'], projectId: 'pj-tm8ui', memoryIds: [],
-    }));
-    fireEvent.click(getByLabelText('Change picked memories'));
-    fireEvent.click(getByText('Panels have a border-box reset'));
-    await waitFor(() => expect(load).toHaveBeenLastCalledWith({
-      teamMemberId: 'ent-tm-forge', taskIds: ['task-1'], projectId: 'pj-tm8ui', memoryIds: ['ent-mem-superseded'],
-    }));
-    fireEvent.click(getByText('scout'));
-    await waitFor(() => expect(load).toHaveBeenLastCalledWith(
-      expect.objectContaining({ teamMemberId: 'ent-tm-scout' }),
-    ));
-  });
-
-  it('asks once for a burst of picks, not once per pick', async () => {
-    const load = vi.fn(async () => preview());
-    const { getByLabelText, getByText } = renderSheet({ memories: LAUNCH_MEMORIES, loadMemoryPreview: load });
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    fireEvent.click(getByLabelText('Change picked memories'));
-    fireEvent.click(getByText('Panels have a border-box reset'));
-    fireEvent.click(getByText('Panels have a border-box reset'));
-    fireEvent.click(getByText('Panels have a border-box reset'));
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
-    expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ memoryIds: ['ent-mem-superseded'] }));
-  });
-
-  it('says so plainly when the node cannot answer, and the launch stays available', async () => {
-    const load = vi.fn(async (): Promise<ExecutionMemoryPreview> => { throw new Error('node away'); });
-    const { findByText, getByRole } = renderSheet({ loadMemoryPreview: load });
-    expect(await findByText(/Could not work out what the agent will be told/)).toBeTruthy();
-    expect((getByRole('button', { name: /Launch/ }) as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('says when nothing will be handed over, without a zero dressed up as a list', async () => {
-    const load = vi.fn(async () => preview({ entries: [], shown: 0, omitted: 0, roomUsedPercent: 0 }));
-    const { findByText, queryByText, queryByRole } = renderSheet({ loadMemoryPreview: load });
-    expect(await findByText('No memories will be handed over')).toBeTruthy();
-    expect(queryByText(/more not shown/)).toBeNull();
-    expect(queryByRole('list', { name: 'Memories the agent will be told' })).toBeNull();
-    // NOTHING IS A MEASUREMENT, and it is said as one — never an empty region
-    // the reader has to interpret as either "none" or "it did not load".
-    expect(await findByText(/This teammate has no memories to hand over yet/)).toBeTruthy();
-  });
-
-  it('asks the node about the project the launch would run in, not just the teammate', async () => {
-    const load = vi.fn(async () => preview());
-    const { getByText } = renderSheet({ loadMemoryPreview: load });
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    // A project can hold memories of its own, and a launch into it hands them
-    // over — so the preview has to name the project or it is previewing a
-    // shorter hand-off than the one about to happen.
-    fireEvent.click(getByText('docs-site'));
-    await waitFor(() => expect(load).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: 'pj-docs' }),
-    ));
-    // …and a scratch session names no project, because a launch with no
-    // project hands over no project memories.
-    fireEvent.click(getByText('scratch — no project'));
-    await waitFor(() => expect(load).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: null }),
-    ));
   });
 });

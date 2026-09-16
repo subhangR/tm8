@@ -67,9 +67,7 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-// 197 -> 198 (2026-09-15, 186): memories.search, a commandless row (below). MEASURED.
-// 198 -> 199 (2026-09-15): execution.memoryPreview, also commandless (below). MEASURED.
-const EXPECTED_ROWS = 199;
+const EXPECTED_ROWS = 197;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -174,7 +172,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('195 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -183,9 +181,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    // 193 -> 194 public (2026-09-15, 186): memories.search. MEASURED.
-    // 194 -> 195 public (2026-09-15): execution.memoryPreview. MEASURED.
-    expect(histogram).toEqual({ public: 195, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -230,17 +226,9 @@ const COMMANDLESS_OPERATIONS = [
       'execution.gitRollback',
       'execution.gitStash',
       'execution.gitStatus',
-      // The launch screen's preview read. No verb of its own: at a terminal the
-      // shorter answer is to launch and read `tm8 session launch`, and one
-      // action must not have two names.
-      'execution.memoryPreview',
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',
-      // 186: `memories.search` carries no verb of its own — `tm8 memory search`
-      // is an alias the memory noun registers through the command index, and
-      // one action must not have two names.
-      'memories.search',
       'projects.directories.list',
       'projects.files.archive',
       'projects.files.attach',
@@ -294,43 +282,8 @@ describe('the CLI command projection', () => {
     expect(NOUNS.length).toBeGreaterThanOrEqual(26);
     for (const noun of NOUNS) {
       const rows = DISCOVERY.filter((d) => d.noun === noun || d.command?.[0] === noun);
-      // A noun may be made ONLY of aliases (`memory` is the first): no catalog
-      // row carries it, so `DISCOVERY` — the per-OPERATION projection — has no
-      // row for it, and its commands are reachable only through the command
-      // index. The invariant is unchanged: a noun in the index must lead
-      // somewhere. What counts as "somewhere" now includes an alias command.
-      const resolves = rows.length > 0 || commandsForNoun(noun).length > 0;
-      expect(resolves, noun).toBe(true);
+      expect(rows.length, noun).toBeGreaterThan(0);
     }
-  });
-
-  /**
-   * `memory` was authored as the first noun made ONLY of aliases, and this
-   * test asserted that `DISCOVERY` carried NO row for it. The search lane then
-   * added `memories.search`, whose family maps to this same noun, and the two
-   * branches merged without a textual conflict — the count in a neighbouring
-   * file moved, nothing here did, and only running it said so. So the shape
-   * asserted below is the MERGED truth, and it is the shape that matters: the
-   * noun's every COMMAND still comes from the alias map, and its one catalog
-   * row is commandless. If that row ever grows a `cmd`, `memory search` would
-   * be claimed twice — by the row and by the alias — and this is where that
-   * shows up.
-   */
-  it('`memory` is a noun whose commands are all aliases, with exactly one commandless catalog row', () => {
-    expect(NOUNS).toContain('memory');
-    const rows = DISCOVERY.filter((d) => d.noun === 'memory' || d.command?.[0] === 'memory');
-    expect(rows.map((d) => d.operation)).toEqual(['memories.search']);
-    expect(rows[0]?.command).toBeNull();
-    expect(commandsForNoun('memory').map((c) => c.command)).toEqual([
-      'memory record',
-      'memory list',
-      'memory show',
-      'memory supersede',
-      'memory search',
-    ]);
-    // The alias is the operation's ONLY invocation, and it names the operation
-    // rather than a stand-in — the seam the CLI lane left is closed.
-    expect(commandDiscovery(['memory', 'search'])?.operations).toEqual(['memories.search']);
   });
 
   it('the family noun `collection` is indexed even though its command is `entity query`', () => {

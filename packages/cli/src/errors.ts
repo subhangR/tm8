@@ -23,7 +23,6 @@
 import type { CommandErrorCode, ErrorCode } from '@tm8/contract';
 import {
   CliError,
-  EXIT_ALREADY_CORRECTED,
   EXIT_CONFLICT,
   EXIT_FORBIDDEN,
   EXIT_NOT_FOUND,
@@ -93,37 +92,6 @@ function reasonOf(details: unknown): string | undefined {
   return typeof reason === 'string' ? reason : undefined;
 }
 
-/**
- * The one refusal this CLI gives its own exit code to, and the reason it can.
- *
- * Every other `invariant_violation` means "the graph refused this write
- * against its current truth" and is answered by re-reading and deciding again
- * — exit 6, shared with version conflicts, because the retry can work. This
- * one cannot: the memory already carries somebody else's correction and only
- * ever keeps one, so the same write against the same memory is refused
- * forever. The useful next move is a DIFFERENT write, against their
- * correction. A scripted caller needs to tell those two apart without reading
- * prose, which is what an exit code is for.
- *
- * The token is the Server's, not this CLI's — it arrives in `details.reason`
- * and nothing here invents it.
- */
-const ALREADY_CORRECTED = 'memory_already_corrected';
-
-/**
- * The rival correction's own words, when the Server sent them.
- *
- * Deliberately the WORDS and not an identifier: a person told "memory
- * 019fbf72-… already has a correction" learns nothing they can judge, while a
- * person who can read what the other correction actually says can tell in one
- * glance whether it covers what they were about to write.
- */
-function correctionOf(details: unknown): string | undefined {
-  if (details === null || typeof details !== 'object') return undefined;
-  const correction = (details as { correction?: unknown }).correction;
-  return typeof correction === 'string' && correction.trim().length > 0 ? correction : undefined;
-}
-
 /** A typed refusal carrying the Server's own taxonomy code. */
 export class ApiError extends Error {
   /**
@@ -152,15 +120,7 @@ export class ApiError extends Error {
     return reasonOf(this.details);
   }
 
-  /** The rival correction's words, on the one refusal that carries them. */
-  get correction(): string | undefined {
-    return this.reason === ALREADY_CORRECTED ? correctionOf(this.details) : undefined;
-  }
-
   get exitCode(): ExitCode {
-    // The reason narrows the code on exactly one refusal (see ALREADY_CORRECTED
-    // above); every other code keeps its table row untouched.
-    if (this.reason === ALREADY_CORRECTED) return EXIT_ALREADY_CORRECTED;
     return EXIT_BY_COMMAND_ERROR[this.code];
   }
 }
@@ -283,15 +243,6 @@ export function errorLines(err: unknown): string[] {
     }
     if (err.code === 'not_implemented') {
       lines.push('  this operation is catalogued but not implemented on this node (honest 501)');
-    }
-    // The Server's sentence quotes the other correction only as far as one
-    // line allows. A terminal has more room than that, and the whole point of
-    // the refusal is that the reader can judge the other correction for
-    // themselves — so when the quote was shortened, the full words follow.
-    // Skipped when the message already carried them, so nobody reads it twice.
-    const correction = err.correction;
-    if (correction !== undefined && !err.message.includes(correction)) {
-      lines.push(`  their correction, in full: ${correction}`);
     }
     if (err.hint) lines.push(`  ${err.hint}`);
     return lines;

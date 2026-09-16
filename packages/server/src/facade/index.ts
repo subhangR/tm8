@@ -71,7 +71,6 @@ import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-a
 import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
-import { registerMemoryHandlers } from './handlers/memories.js';
 import { registerExecutionGitHandlers } from './services/execution-git.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
 import {
@@ -178,10 +177,6 @@ export function registerFacadeHandlers(
   registerW2ProjectsAssociationsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
-  // Memory search (188): one read over `public.search_memories`, registered
-  // unconditionally because its only dependency is the database every other
-  // seam here already has.
-  registerMemoryHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs
   // (checkpoint/rollback/commit/merge-from-base) behind the facade, resolved
   // to the session's worktree server-side. Registered unconditionally: the

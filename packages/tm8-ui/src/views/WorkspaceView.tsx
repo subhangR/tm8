@@ -905,7 +905,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               memories={data.launch.memories}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
-              loadMemoryPreview={data.launch.previewMemories}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
               /* Passed straight through, unbound to any sheet state — see the

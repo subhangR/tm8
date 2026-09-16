@@ -52,11 +52,7 @@ import { isExitCode } from '../src/exit.js';
 // 169 -> 172 (148): spaces.workflows list/upsert/delete — MEASURED
 // 172 -> 197 (177, TM8-CONTAINERS-DESIGN §4.1): the 25 containers.* rows, all
 // v1, so 170 -> 195. MEASURED on the tree, not carried.
-// 197 -> 198 (2026-09-15, 186): memories.search — one POST read, no CLI verb of
-// its own (the `memory` noun's aliases own the invocation). MEASURED.
-// 198 -> 199 (2026-09-15, launch memory preview): execution.memoryPreview — one
-// POST read, also commandless (the launch screen is what asks it). MEASURED.
-const EXPECTED_ROWS = 199;
+const EXPECTED_ROWS = 197;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
@@ -64,7 +60,7 @@ const params = (name: OperationName): Record<string, string> =>
 describe('the catalog itself is the shape W4 was briefed on', () => {
   it('197 rows = 195 v1 + 2 reserved, 195 mounted HTTP + 1 mounted WS (measured; +25 177 containers)', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(197); // 195 -> 196 (186); 196 -> 197 (execution.memoryPreview)
+    expect(V1_OPERATIONS.length).toBe(195);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     // TWO WS ROWS, ONE MOUNTED SOCKET, and the difference is the point.
     // `containers.stream` re-declares `events.subscribe`'s `WS /v2/ws` so the
@@ -74,7 +70,7 @@ describe('the catalog itself is the shape W4 was briefed on', () => {
     // different questions; this file asks both, separately, on purpose.
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(2);
     expect(MOUNTED_OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
-    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(197); // 195 -> 196 (186); 196 -> 197 (execution.memoryPreview)
+    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(195);
   });
 });
 
@@ -171,10 +167,10 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // The HTTP rows produced an honest 8; BOTH WS rows produced usage 2
     // without a request. Every one is a resolution; none is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(197); // 195 -> 196 (186); 196 -> 197 (execution.memoryPreview)
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(195);
     expect([...resolved.entries()].filter(([, c]) => c === 2).map(([name]) => name))
       .toEqual(['events.subscribe', 'containers.stream']);
-    expect(requested).toHaveLength(197); // 195 -> 196 (186); 196 -> 197 (execution.memoryPreview)
+    expect(requested).toHaveLength(195);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -216,7 +212,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(197); // 195 -> 196 (186): memories.search; 196 -> 197: execution.memoryPreview
+    expect(httpRows).toBe(195);
   });
 });
 

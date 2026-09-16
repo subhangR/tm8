@@ -29,17 +29,12 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
         // the 25th (`containers.stream`) re-declares `events.subscribe`'s
         // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
-        // -> {198/196/196/194} (2026-09-15, 188): memories.search, one POST
-        // read mounted at /v2/memories/search. MEASURED.
-        // -> {199/197/197/195} (2026-09-15, launch memory preview):
-        // execution.memoryPreview, one POST read mounted at
-        // /v2/execution/memory-preview. MEASURED.
-        total: 199,
-        v1: 197,
+        total: 197,
+        v1: 195,
         reserved: 2,
-        http: 197,
+        http: 195,
         ws: 1,
-        registerableV1Http: 195,
+        registerableV1Http: 193,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

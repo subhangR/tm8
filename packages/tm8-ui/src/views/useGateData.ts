@@ -27,7 +27,6 @@ import type {
   MessageBatchResult,
   Cursor,
   EdgeView,
-  ExecutionMemoryPreview,
   ExecutionSpawnInput,
   EntityCapabilities,
   EntityDetail,
@@ -707,20 +706,6 @@ export interface GateData {
      */
     memories?: readonly LaunchMemory[];
     capacity?: LaunchCapacity;
-    /**
-     * WHAT THIS AGENT WILL BE TOLD — the sheet's preview read, bound to the
-     * active space here so every launch surface asks the same node the same
-     * question. Takes exactly what the sheet knows and what a launch would
-     * send (the persona, the subjects, the project, the picks); the node runs
-     * the spawn injector's own selection and writes nothing. Optional so a
-     * sheet mounted without a seam still renders.
-     */
-    previewMemories?: (input: {
-      teamMemberId: EntityId;
-      taskIds: readonly EntityId[];
-      projectId: EntityId | null;
-      memoryIds: readonly EntityId[];
-    }) => Promise<ExecutionMemoryPreview>;
   };
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
   ensureKind: (kind: string) => void;
@@ -2343,34 +2328,6 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [seam, domain, refetchDetail, spaceId, options.serverBaseUrl],
   );
 
-  /*
-   * STABLE across entity events on purpose. The sheet re-asks the node
-   * whenever this function's identity changes, so a loader minted inside the
-   * `launch` memo below would re-ask on every event that recomputes the
-   * roster — a round trip per keystroke in some other panel. Only the seam and
-   * the space are reasons to ask again, so only they are dependencies.
-   *
-   * Sent the way `buildSpawnInput` sends them: an EMPTY list is omitted and a
-   * projectless launch sends null, because the node's selection is a function
-   * of the same body spawn would carry, and spawn carries no `taskIds` key for
-   * no subjects and a null `projectId` for a scratch session.
-   */
-  const previewMemories = useCallback(
-    (input: {
-      teamMemberId: EntityId;
-      taskIds: readonly EntityId[];
-      projectId: EntityId | null;
-      memoryIds: readonly EntityId[];
-    }) =>
-      seam.memoryPreview({
-        spaceId,
-        teamMemberId: input.teamMemberId,
-        ...(input.taskIds.length ? { taskIds: [...input.taskIds] } : {}),
-        ...(input.projectId ? { projectId: input.projectId } : {}),
-        ...(input.memoryIds.length ? { memoryIds: [...input.memoryIds] } : {}),
-      }),
-    [seam, spaceId],
-  );
   const launch = useMemo<GateData['launch']>(() => {
     const summaries = Object.values(entities).filter((row) => row.spaceId === spaceId && row.deletedAt === null);
     const teammates: LaunchTeammate[] = summaries.flatMap((row) => {
@@ -2477,9 +2434,8 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       profiles,
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
-      previewMemories,
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, previewMemories]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty

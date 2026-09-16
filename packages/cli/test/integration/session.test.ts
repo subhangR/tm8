@@ -737,12 +737,7 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // execution.git* family (status/diff/commit/checkpoint/rollback/merge/
     // cherryPick/branch/stash), execution.dispatch, plus terminal/transcript
     // rows that landed with their lanes.
-    // 20 -> 21 (2026-09-15, MEASURED off the merged contract): the launch lane
-    // adds execution.memoryPreview, the read that answers what an agent would
-    // be handed if it were launched right now. It belongs to this family
-    // because it is the SPAWN's own memory selection asked as a question, so a
-    // preview that stopped matching a launch would be worse than no preview.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(21);
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(20);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

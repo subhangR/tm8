@@ -942,7 +942,6 @@ export function HomeView(props: HomeViewProps) {
           memories={data.launch.memories}
           capacity={data.launch.capacity}
           loadCredentialStatus={data.seam.credentials.status}
-          loadMemoryPreview={data.launch.previewMemories}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}

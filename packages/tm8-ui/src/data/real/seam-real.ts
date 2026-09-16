@@ -67,8 +67,6 @@ import {
   type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
-  type ExecutionMemoryPreview,
-  type ExecutionMemoryPreviewInput,
   type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
@@ -382,8 +380,6 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
       ops.journal(workSessionId, opts),
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
-    memoryPreview: (input: ExecutionMemoryPreviewInput): Promise<ExecutionMemoryPreview> =>
-      ops.memoryPreview(input),
     transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
       ops.transcript(workSessionId, opts),
     projectContention: (projectId: string): Promise<ContentionReport> => ops.projectContention(projectId),

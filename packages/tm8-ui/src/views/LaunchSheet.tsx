@@ -57,14 +57,8 @@
  * rather than nesting a second modal dialog inside the first — one surface,
  * one dialog, which is what a screen reader is entitled to.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type {
-  CredentialProviderName,
-  CredentialsStatusView,
-  EntityId,
-  ExecutionMemoryPreview,
-  ExecutionMemoryPreviewEntry,
-} from '@tm8/contract';
+import { useEffect, useId, useMemo, useState } from 'react';
+import type { CredentialProviderName, CredentialsStatusView, EntityId } from '@tm8/contract';
 import { Avatar } from '../kit';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import './launch-sheet-mobile.css';
@@ -86,7 +80,7 @@ import {
   type LaunchTarget,
   type LaunchTeammate,
 } from '../domain/launch';
-import { MEMORY_IDS_MAX, previewMarkWords } from '../domain/memory';
+import { MEMORY_IDS_MAX } from '../domain/memory';
 
 export interface LaunchSheetProps {
   /** The entity being launched from. The sheet is bound to it and dies with it. */
@@ -111,16 +105,6 @@ export interface LaunchSheetProps {
   launching?: boolean;
   /** Reads only the viewer's display-safe connection metadata; never a token. */
   loadCredentialStatus?(): Promise<CredentialsStatusView>;
-  /**
-   * WHAT THIS AGENT WILL BE TOLD — the node's own answer to "what memory
-   * hand-off would THIS configuration make", asked afresh whenever the
-   * teammate, the subject or the picks change. Takes exactly what the sheet
-   * knows; the caller binds the space. Absent when nothing can ask (a sheet
-   * rendered without a seam), and then the section is not drawn at all: a
-   * preview nobody measured is not a preview, and an empty list would read as
-   * "nothing will be handed over", which is a claim.
-   */
-  loadMemoryPreview?(input: MemoryPreviewRequest): Promise<ExecutionMemoryPreview>;
   onLaunch(config: LaunchSelection): void;
   /**
    * D5 — route the subject through the space's resident dispatcher instead of
@@ -132,19 +116,6 @@ export interface LaunchSheetProps {
    */
   onDispatch?(request: DispatchSelection): void;
   onCancel(): void;
-}
-
-/**
- * What the preview is a function of — exactly what the launch's own memory
- * hand-off is a function of. The project is here because a project can hold
- * memories of its own and a launch into it hands them over; leaving it out
- * would show a shorter list than the launch being previewed.
- */
-export interface MemoryPreviewRequest {
-  teamMemberId: EntityId;
-  taskIds: readonly EntityId[];
-  projectId: EntityId | null;
-  memoryIds: readonly EntityId[];
 }
 
 /** Everything dispatch is allowed to know. Deliberately one field. */
@@ -164,44 +135,6 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
 type CredentialChoice = '' | 'member' | 'node';
-
-/**
- * How long the sheet waits after the last change before asking the node what
- * the agent will be told. Long enough that ticking three memories in a row is
- * one read, short enough that the list never feels stuck behind the pick.
- */
-const MEMORY_PREVIEW_DEBOUNCE_MS = 250;
-
-/**
- * The one-line summary over the hand-off. Counts only — the entries below say
- * what; this says how many, and how many the room could not take.
- */
-export function memoryPreviewSummary(preview: Pick<ExecutionMemoryPreview, 'shown' | 'omitted'>): string {
-  const head = preview.shown === 0
-    ? 'No memories will be handed over'
-    : `${String(preview.shown)} ${preview.shown === 1 ? 'memory' : 'memories'} will be handed over`;
-  return preview.omitted === 0 ? head : `${head} · ${String(preview.omitted)} more will not fit`;
-}
-
-/**
- * The source, said the way a person would say it. One word per tier, and the
- * tiers are the node's (`ExecutionMemoryPreviewSource`), so this is a
- * vocabulary and not a second classification.
- */
-const MEMORY_SOURCE_WORD: Record<ExecutionMemoryPreviewEntry['source'], string> = {
-  own: 'teammate’s own',
-  task: 'from the task',
-  learned: 'learned last time',
-  picked: 'picked at launch',
-};
-
-/**
- * The house mark words. `domain/memory.ts` owns them — it is the authority on
- * what this build may honestly claim about a memory, including the one case
- * where "verified" is sayable — so this screen borrows the vocabulary rather
- * than inventing a second one.
- */
-export const memoryPreviewMark = previewMarkWords;
 // The tool→provider map and the vendor labels live in `domain/launch` now —
 // the New Session composer is their second consumer, and two private copies
 // of a vocabulary is the copy-drift class (D34).
@@ -297,12 +230,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
      session believes without anyone choosing it. */
   const [memoryIds, setMemoryIds] = useState<readonly EntityId[]>([]);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  /* WHAT THIS AGENT WILL BE TOLD: the node's answer for the CURRENT picks,
-     and which request it answers — a late reply to an earlier configuration
-     is dropped rather than drawn over a newer one. */
-  const [told, setTold] = useState<ExecutionMemoryPreview | null>(null);
-  const [toldState, setToldState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const toldRequest = useRef(0);
 
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
@@ -331,53 +258,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
       cancelled = true;
     };
   }, [props.loadCredentialStatus]);
-
-  /*
-   * WHAT THIS AGENT WILL BE TOLD is re-ASKED, not re-derived.
-   *
-   * The list is the node running the spawn injector's own selection over the
-   * configuration on screen — teammate, subject, project, picks — so it changes
-   * whenever any of those does, and the only honest way to show the new answer
-   * is to ask for it. Deriving it here from the picker's rows would be a second
-   * selection, free to disagree with the one the agent actually gets.
-   *
-   * WHAT IS SENT is what LAUNCH sends: `GateApp` spawns with
-   * `taskIds: [subjectId]` and the chosen project, so the preview asks about
-   * the same subject and the same project. Anything else here would be
-   * previewing a launch nobody is about to make.
-   *
-   * Debounced, because a person ticking three memories in a row has one
-   * question, not three; and numbered, because the node can answer out of
-   * order and the sheet must draw the answer to the CURRENT question only.
-   */
-  useEffect(() => {
-    const load = props.loadMemoryPreview;
-    if (!load) return undefined;
-    const request = toldRequest.current + 1;
-    toldRequest.current = request;
-    if (!teammateId) {
-      setTold(null);
-      setToldState('idle');
-      return undefined;
-    }
-    setToldState('loading');
-    const projectId = target.kind === 'project' ? target.projectId : null;
-    const timer = setTimeout(() => {
-      void load({ teamMemberId: teammateId, taskIds: [props.subjectId], projectId, memoryIds }).then(
-        (preview) => {
-          if (toldRequest.current !== request) return;
-          setTold(preview);
-          setToldState('ready');
-        },
-        () => {
-          if (toldRequest.current !== request) return;
-          setTold(null);
-          setToldState('error');
-        },
-      );
-    }, MEMORY_PREVIEW_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [props.loadMemoryPreview, props.subjectId, teammateId, target, memoryIds]);
 
   const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
   const agentCredentialSource = agentCredentialProvider
@@ -1033,115 +913,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
             </div>
           ) : null}
         </section>
-
-        {/*
-          * WHAT THIS AGENT WILL BE TOLD — the other half of the memory section.
-          *
-          * The picker above answers "what extra context should this session
-          * start with". Nothing on this screen answered "and what will it
-          * actually receive?" — the teammate's own working set, the work's,
-          * the project's, and what the teammate found out in earlier sessions
-          * all ride along on their own, and a fixed amount of room drops what
-          * does not fit. A person picking blind to that list can pick a memory
-          * the agent already carries, or add a tenth to a hand-off with room
-          * for six.
-          *
-          * READ-ONLY IN BOTH SENSES. Nothing here is a control: the rows are
-          * inert and the words are the node's. And the node writes nothing to
-          * answer — no session, no task, no ledger row.
-          *
-          * The memory's reference travels as a tooltip only. On screen a row
-          * is the claim, its mark and where it came from; the plain-language
-          * rule keeps ids and byte counts off the surface.
-          */}
-        {props.loadMemoryPreview ? (
-          <section className="ls__section" data-testid="launch-told">
-            <div className="ls__eyebrow">WHAT THIS AGENT WILL BE TOLD</div>
-            {toldState === 'idle' ? (
-              <p className="ls__profile-empty" role="status">
-                Pick a teammate to see what it will be told.
-              </p>
-            ) : null}
-            {toldState === 'loading' && !told ? (
-              <p className="ls__profile-empty" role="status">
-                Working out what the agent will be told…
-              </p>
-            ) : null}
-            {toldState === 'error' ? (
-              <p className="ls__profile-empty" role="status">
-                Could not work out what the agent will be told. You can still launch.
-              </p>
-            ) : null}
-            {told ? (
-              <>
-                <div className="ls__row ls__row--inert">
-                  <span className="ls__glyph" aria-hidden="true">◈</span>
-                  <span className="ls__rowtext">
-                    <span className="ls__rowname">{memoryPreviewSummary(told)}</span>
-                    <span className="ls__rowsub">
-                      {toldState === 'loading'
-                        ? 'checking again for the new picks…'
-                        : 'what the launch would send, checked just now'}
-                    </span>
-                  </span>
-                </div>
-                {/* ROOM USED — one thin track. Filled to what the node
-                    measured; past the line only when the picks, which are
-                    never dropped, carry it over. */}
-                <div
-                  className="ls__room"
-                  data-testid="launch-told-room"
-                  aria-label={`Room used: ${String(told.roomUsedPercent)}%`}
-                >
-                  <span>room used</span>
-                  <span className="ls__roomtrack" aria-hidden="true">
-                    <span
-                      className={`ls__roomfill ${told.roomUsedPercent > 100 ? 'ls__roomfill--over' : ''}`}
-                      style={{ width: `${String(Math.min(100, told.roomUsedPercent))}%` }}
-                    />
-                  </span>
-                  <span>{String(told.roomUsedPercent)}%</span>
-                </div>
-                {told.entries.length > 0 ? (
-                  <ul className="ls__told" aria-label="Memories the agent will be told">
-                    {told.entries.map((entry) => (
-                      <li
-                        key={entry.id}
-                        className="ls__row ls__row--inert"
-                        /* The reference is reachable but never on screen: a
-                           person reads the claim, and only needs the reference
-                           when they go looking for this memory elsewhere. */
-                        title={`This memory’s reference: ${entry.id}`}
-                      >
-                        <span className="ls__glyph" aria-hidden="true">◈</span>
-                        <span className="ls__rowtext">
-                          <span className="ls__rowname ls__rowname--quiet">{entry.statement}</span>
-                          <span className="ls__rowsub">
-                            {memoryPreviewMark(entry.marks)} · {MEMORY_SOURCE_WORD[entry.source]}
-                          </span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  /* NOTHING TO HAND OVER is a measurement, and it is said as
-                     one. The summary above already says "no memories"; this
-                     line says what that does and does not mean, so an empty
-                     list is not read as a broken one. */
-                  <p className="ls__profile-empty" role="status">
-                    This teammate has no memories to hand over yet. It will still be
-                    told about the work and where to do it.
-                  </p>
-                )}
-                {told.omitted > 0 ? (
-                  <span className="ls__pinned">
-                    {String(told.omitted)} more not shown — the agent can search for them
-                  </span>
-                ) : null}
-              </>
-            ) : null}
-          </section>
-        ) : null}
 
         {props.refusal && (
           // T5-5: refusal renders IN the sheet — red word, cause, what did NOT

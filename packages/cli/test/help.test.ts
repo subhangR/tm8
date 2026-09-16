@@ -116,11 +116,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 139 -> 141 (2026-08-12): collection add/remove (public, with commands).
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows
     // (public, commandless — reachable via their noun shard).
-    // 194 -> 195 (2026-09-15, 186): memories.search (public, commandless —
-    // reachable via the `memory` noun shard). MEASURED.
-    // 195 -> 196 (2026-09-15): execution.memoryPreview (public, commandless —
-    // reachable via the `session` noun shard). MEASURED.
-    expect(wanted).toHaveLength(196); // 169 -> 194 (2026-09-03): +25 containers. MEASURED.
+    expect(wanted).toHaveLength(194); // 169 -> 194 (2026-09-03): +25 containers. MEASURED.
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -130,7 +126,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(199); // 197 -> 198 (186): memories.search; 198 -> 199: execution.memoryPreview
+    expect(swept).toBe(197);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -217,7 +213,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(199); // 197 -> 198 (186): memories.search; 198 -> 199: execution.memoryPreview
+    expect(seen.size).toBe(197);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

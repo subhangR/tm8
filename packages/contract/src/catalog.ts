@@ -145,18 +145,6 @@ export const OPERATIONS = [
   { name: 'placements.apply',        method: 'POST',   path: '/v2/placements',                              kind: 'command', status: 'v1' },
   { name: 'commands.undo',           method: 'POST',   path: '/v2/undo',                                    kind: 'command', status: 'v1' },
 
-  // memories — the one family-scoped read the memory layer needs. A POST read
-  // for the same reason `collections.query` and `graph.query` are: the query
-  // is a payload, not an address. It does NOT un-reserve `search.query` below:
-  // that slot is workspace-wide search over every kind and stays an honest
-  // 501; this searches the four fields of one kind (statement, mechanism,
-  // subject scope, boundary) through `public.search_memories` (186), which
-  // ranks in the database, resolves a superseded memory to its chain head and
-  // answers under the caller's own row-level security. The design's §6.5
-  // ("no new read operation is proposed") predates the finding that the
-  // substring search saw ~11% of an average memory and none of its boundary.
-  { name: 'memories.search',         method: 'POST',   path: '/v2/memories/search',                         kind: 'read',    status: 'v1' },
-
   // search — DEFERRED v1 (DEV-13): reserved slot, honest 501 forever until built
   { name: 'search.query',            method: 'GET',    path: '/v2/search',                                  kind: 'read',    status: 'reserved' },
 
@@ -238,16 +226,6 @@ export const OPERATIONS = [
   // setup (persona authorization, manifest, agent token, profile pin, trust
   // probes) and none of it applies. See `ExecutionTerminalStartInput`.
   { name: 'execution.terminal.start', method: 'POST',  path: '/v2/execution/terminal',                      kind: 'command', status: 'v1' },
-  // WHAT THIS AGENT WILL BE TOLD — the memory hand-off a launch WOULD make,
-  // worked out without making it. A READ, and read is the whole point: it
-  // creates no session, writes no ledger row and leaves no trace, so a person
-  // can ask it as often as they change their mind. A POST for the same reason
-  // `collections.query` and `graph.query` are POSTs — the question carries two
-  // lists (the subjects and the picks) and a list of ids does not belong in a
-  // URL. The node answers it by running the spawn injector's OWN selection
-  // (`selectAgentMemories`, shared with `loadSpawnContext`), so the answer is
-  // the hand-off rather than a second opinion about it.
-  { name: 'execution.memoryPreview',  method: 'POST',  path: '/v2/execution/memory-preview',                kind: 'read',    status: 'v1' },
   { name: 'execution.prompt',         method: 'POST',  path: '/v2/entities/:id/commands/prompt',            kind: 'command', status: 'v1' },
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
