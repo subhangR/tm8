@@ -998,11 +998,19 @@ export interface CollectionQuery {
      * on the memory arm only, so while present the query returns memories
      * exclusively.
      *
-     * It exists because the MCP `memory_search` tool scanned a summary's
+     * It was added because the MCP `memory_search` tool scanned a summary's
      * title/excerpt — a ~200-char prefix of a statement that averages 1,752
      * chars on the launch node — and so could not reach 71% of the words it
-     * held. Memory-only on purpose: nothing searches another kind's text yet,
-     * and a predicate over columns nobody asked for is a feature, not a fix.
+     * held. That tool now asks `memories.search` instead, which ranks, follows
+     * a superseded memory to its replacement, and understands quoted phrases:
+     * a plain substring filter could do none of those. This one stays because
+     * it is the only way to narrow a COLLECTION by memory text — `collections
+     * .query` still answers board, tree and feed layouts that the search read
+     * does not — and removing published contract surface is not a merge's job.
+     * If a later change finds no caller at all, retire it deliberately.
+     *
+     * Memory-only on purpose: nothing searches another kind's text yet, and a
+     * predicate over columns nobody asked for is a feature, not a fix.
      */
     terms?: string[];
   };
@@ -2401,6 +2409,138 @@ export interface ContentionReport {
   lanes: ContentionLane[];
   /** Only pairs that actually overlap; empty means no contention observed. */
   pairs: ContentionPair[];
+}
+
+/**
+ * `memories.search` (POST /v2/memories/search) — full-text search over one
+ * Space's memories, answered by `public.search_memories` (188).
+ *
+ * Every part of a memory is searched — what it claims, how that was
+ * established, what it applies to, and what it does NOT prove — so a memory is
+ * found by its boundary as readily as by its statement. `query` uses plain
+ * search-box syntax: words are all required, "quoted words" are a phrase,
+ * `or` widens, `-word` excludes. A query with no searchable words answers an
+ * empty list, never an error. Results are ranked in the database (a hit in the
+ * statement outranks the same word in the boundary), and a memory that has
+ * been replaced is answered as its latest version, once, so a corrected fact
+ * never appears under two wordings. Rows the caller cannot read are never
+ * returned: `public.search_memories` is SECURITY DEFINER — it has to be, or its
+ * index is unusable — so it carries the visibility rule in its own body, where
+ * every hit and every chain head must pass `internal.entity_readable`, the
+ * predicate the row-level policies are themselves made of. It fails closed:
+ * with no identity bound the search answers nothing.
+ */
+export interface MemorySearchInput {
+  spaceId: SpaceId;
+  query: string;
+  /** Default 20, at most 200. */
+  limit?: number;
+}
+
+export interface MemorySearchItem {
+  id: EntityId;
+  statement: string;
+  subjectScope: string;
+  doesNotEstablish: string;
+  /** Relevance for ordering only; higher is a better match. Not comparable across queries. */
+  rank: number;
+  /**
+   * The memory's current standing, in plain words, in display precedence:
+   * 'disputed', 'basis deleted', 'basis changed', 'verified' (and 'superseded',
+   * which a resolved result never carries). Empty means nobody has marked it —
+   * which is not the same as verified.
+   */
+  marks: string[];
+}
+
+export interface MemorySearchResult {
+  items: MemorySearchItem[];
+}
+
+/**
+ * `execution.memoryPreview` (POST /v2/execution/memory-preview) — WHAT THIS
+ * AGENT WILL BE TOLD, before it is told.
+ *
+ * A launch can hand a teammate memories, and until this read existed nobody
+ * could see what the teammate would actually receive. Three sets ride along on
+ * their own: what the teammate already carries, what the work it is being
+ * pointed at carries, and what it found out in earlier sessions — and a fixed
+ * amount of room drops whatever does not fit. So a person picking memories on
+ * a launch screen was picking blind: they could pick something already on its
+ * way, or add a tenth memory to a hand-off that had room for six.
+ *
+ * THE ANSWER IS THE HAND-OFF, NOT A DESCRIPTION OF IT. The node runs the
+ * launch's own selection to answer — the same function, in the same order,
+ * with the same room — so this cannot drift from what the agent gets. Give it
+ * the same teammate, work and picks a launch would carry and it returns the
+ * same memories a launch would carry.
+ *
+ * IT CHANGES NOTHING. No session is started, nothing is remembered, nothing is
+ * recorded; ask it as often as the choices change. And it sees only what the
+ * asker is allowed to see.
+ */
+export interface ExecutionMemoryPreviewInput {
+  spaceId: SpaceId;
+  /** The teammate that would be launched. */
+  teamMemberId: EntityId;
+  /** The work it would be pointed at. Omit when there is none. */
+  taskIds?: EntityId[];
+  /**
+   * The project the launch would run in, when it names one.
+   *
+   * Carried for one reason: a project can hold memories of its own, and a
+   * launch into that project hands them over. A preview that left this out
+   * would quietly show a shorter list than the launch it is previewing — the
+   * exact blindness this read exists to end.
+   */
+  projectId?: EntityId | null;
+  /** The memories picked by hand for this launch. At most 32, as a launch allows. */
+  memoryIds?: EntityId[];
+}
+
+/**
+ * Where one memory came from, in the words a launch screen shows:
+ *
+ *   'own'      the teammate carries it already
+ *   'task'     the work reached it — a task, a task above it, or the project
+ *   'learned'  the teammate found it out in an earlier session, or wrote it
+ *   'picked'   somebody named it for this launch
+ */
+export type ExecutionMemoryPreviewSource = 'own' | 'task' | 'learned' | 'picked';
+
+export interface ExecutionMemoryPreviewEntry {
+  id: EntityId;
+  /** The claim, as the agent will read it — already shortened if it was long. */
+  statement: string;
+  /**
+   * What is on record against this memory, in plain words: 'superseded',
+   * 'disputed', 'basis deleted', 'basis changed', 'verified'. An empty list
+   * means nobody has marked it, which is NOT the same as verified.
+   *
+   * Unlike an entity summary's staleness badge, this list CAN say 'verified':
+   * it is read from the same mark edges the launch itself reads, so it says
+   * exactly what the agent will be shown beside the claim.
+   */
+  marks: string[];
+  source: ExecutionMemoryPreviewSource;
+}
+
+export interface ExecutionMemoryPreview {
+  /** In the order the agent reads them. */
+  entries: ExecutionMemoryPreviewEntry[];
+  /** How many memories would be handed over — `entries.length`, said as a number. */
+  shown: number;
+  /**
+   * How many more were in the running and did not fit. The agent is told they
+   * exist and can search for them; they are never dropped silently.
+   */
+  omitted: number;
+  /**
+   * How much of the room set aside for memories this hand-off uses, as a
+   * percentage. Picked memories are handed over whether or not there is room,
+   * so this can exceed 100 — and saying so is the point.
+   */
+  roomUsedPercent: number;
 }
 
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */

@@ -38,7 +38,11 @@ import {
 // neither branch's value survives the merge, because each saw only its own
 // half of the catalog. The CLI's CATALOG_DIGEST and the generated conformance
 // manifest carry the same value and all three must agree.
-const CATALOG_DIGEST = 'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
+// Re-measured 188 (+ memories.search) — read from the regenerated conformance
+// manifest (tools/conformance/generated), never hand-derived.
+// Re-measured again (+ execution.memoryPreview, the launch screen's preview
+// read) — same rule, read from the regenerated manifest.
+const CATALOG_DIGEST = 'sha256:bf52c19e79f891bff06cf56b30b83bd987bb9816d60553782e278f4a2880101d';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -111,7 +115,9 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(root.catalog.total).toBe(197); // +3 141, +3 148, +25 177 containers
+    // 197 -> 198 (2026-09-15, 188): memories.search. MEASURED on this tree.
+    // 198 -> 199 (2026-09-15): execution.memoryPreview. MEASURED on this tree.
+    expect(root.catalog.total).toBe(199); // +3 141, +3 148, +25 177 containers, +1 188, +1 preview
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

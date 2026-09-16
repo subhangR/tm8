@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { CreatableEntityKind, EntityId, SpaceId } from '@tm8/contract';
 import {
+  alreadyCorrectedNotice,
+  alreadyCorrectedRefusal,
   markDraftRefusal,
   MEMORY_FIELDS,
   MEMORY_MARK_COPY,
@@ -28,6 +30,16 @@ import type { MemoryWorkingSetCommands } from './useMemoryWorkingSet';
  *     consolidation (D7, the Dreamer's job) and it is a judgement about whose
  *     working set should change — not something a supersede button should do to
  *     every holder silently.
+ *
+ * A SUPERSEDE CAN NOW LOSE A RACE, AND THAT IS THE POINT (190). A memory keeps
+ * exactly one correction, enforced by a unique index on the target of the
+ * `supersedes` edge. Two people who decide the same claim is wrong within a
+ * few seconds of each other used to get two rival successors and no warning;
+ * the second one now gets refused. The evidence memory is already written by
+ * then — the two steps cannot be merged into one, see above — so the refusal
+ * handler's first job is to say that the words are safely stored, and its
+ * second is to show the other correction so the reader can decide whether to
+ * build on it. Both live in `alreadyCorrectedNotice`.
  *
  * THE VERSION PIN IS READ, NEVER GUESSED. `disputes.props.pinnedVersion` must
  * be the target's CURRENT version: a dispute pinned at version N stops applying
@@ -143,11 +155,25 @@ export function useMemoryMarks(port: MemoryMarksPort): MemoryMarksHandle {
         setValues({});
         onChanged(target.id);
       } catch (error) {
+        // THE ONE REFUSAL WITH A BETTER ANSWER THAN THE SERVER'S SENTENCE.
+        // Somebody else corrected this memory in the time it took to write
+        // this one. The node's own message is already plain, but it quotes
+        // their correction only as far as one line allows, and it cannot know
+        // that this surface saved the new memory a moment ago. So the notice
+        // is composed here from the node's facts (see `alreadyCorrectedNotice`
+        // for why it is worded the way it is), and every other failure keeps
+        // the faithful pass-through below.
+        const corrected = alreadyCorrectedRefusal(error);
+        if (corrected) {
+          const notice = alreadyCorrectedNotice(corrected, evidenceId !== null);
+          onError(notice.title, notice.body);
+          return;
+        }
         const message = String((error as { message?: string })?.message ?? error);
         onError(
-          evidenceId ? 'The evidence was written but the mark was not' : 'The mark was not written',
+          evidenceId ? 'Your memory was saved, but the link to the old one was not' : 'Nothing was saved',
           evidenceId
-            ? `${message}. The memory “${statement}” exists and was NOT deleted — it is a claim somebody authored, and 056 does not destroy claims to tidy up. Mark from it directly rather than writing it again.`
+            ? `${message}\n\nWhat you wrote is safely stored as a memory of its own — it was not thrown away, because it is a claim somebody made and this app does not delete claims to tidy up. Point it at the old memory from there rather than writing it out again.`
             : message,
         );
       } finally {

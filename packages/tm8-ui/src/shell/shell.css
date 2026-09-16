@@ -1666,6 +1666,29 @@
   font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4);
   line-height: 1.5; padding: 0 2px;
 }
+/* WHAT THIS AGENT WILL BE TOLD — a read-only list under the picker, in the
+   picker's own row vocabulary so the two read as one section. The rows are
+   inert: nothing here is a control, it is the node's answer drawn back. */
+.cv2-root .ls__told {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+/* ROOM USED — one thin track under the summary, filled to the percentage the
+   node measured. Brass while there is room; the refusal red only once the
+   picks (never dropped) have carried it past the line. */
+.cv2-root .ls__room {
+  display: flex; align-items: center; gap: 8px; padding: 0 2px;
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4);
+}
+.cv2-root .ls__roomtrack {
+  flex: 1; height: 3px; border-radius: var(--pn-r-pill);
+  background: var(--pn-line); overflow: hidden;
+}
+.cv2-root .ls__roomfill {
+  display: block; height: 100%; border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+}
+.cv2-root .ls__roomfill--over { background: var(--pn-block); }
 /* Refusal renders IN the sheet, never as a toast (T5-5). */
 .cv2-root .ls__refusal {
   display: flex; flex-direction: column; gap: 8px;

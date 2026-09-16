@@ -22,6 +22,21 @@
  *
  * Failures are recorded on the loop (`last_error`) and NEVER disable it: a
  * transient spawn refusal must not silently retire a schedule a human set up.
+ *
+ * WHOSE AUTHORITY A FIRING RUNS UNDER. The sweep reads through
+ * `list_due_loops` (189), a node-admin-only door that sees every space. It
+ * used to be a plain read of `public.loops` bound as the node's loopback
+ * owner — and `loops_select` is membership, which node-admin does not widen,
+ * so that read saw only the spaces the owner belongs to. On a multi-user node
+ * that is one space out of many: measured on production, the executor could
+ * see 1 of 21 loops and 0 of the 16 that were due, and those 16 had never
+ * fired. Each FIRING is then bound to the identity its row names — the owner
+ * of the teammate the loop runs, or of the space's dispatcher when it names
+ * none — because that is the only identity `execution_spawn`'s `can_act_as`
+ * admits for the persona, and a member of the loop's space, which is what
+ * `update_loop` demands of whoever advances it. A loop that resolves to nobody
+ * is reported and counted, never silently skipped: a due loop that quietly
+ * never fires is the exact defect this paragraph exists to prevent.
  */
 
 import type { Db, DbClaims } from '../../db/types.js';
@@ -30,7 +45,10 @@ import type { JobContext, JobOutcome, ScheduledJob } from '../types.js';
 
 export const LOOPS_JOB_NAME = 'loops.execute-due';
 
-/** A row of the due-loop query — everything a firing needs, in one read. */
+/** The request id every claim the executor binds carries, sweep and firing alike. */
+export const LOOP_EXECUTOR_REQUEST_ID = 'loop-executor';
+
+/** A row of the due-loop sweep — everything a firing needs, in one read. */
 export interface DueLoop {
   readonly entityId: string;
   readonly spaceId: string;
@@ -41,6 +59,15 @@ export interface DueLoop {
   readonly prompt: string;
   readonly config: Record<string, unknown> | null;
   readonly version: number;
+  /**
+   * The identity entitled to fire this loop: the owner of the teammate it
+   * runs (or of the space's dispatcher when it names none), resolved by
+   * `list_due_loops` along the same route `can_act_as` checks. Null when no
+   * such person exists — the loop is then reported, not fired.
+   */
+  readonly runAsIdentityId: string | null;
+  /** That account's node-admin flag, carried from the row rather than asserted. */
+  readonly runAsNodeAdmin: boolean;
 }
 
 /**
@@ -52,8 +79,12 @@ export interface DueLoop {
  * one. The composition root supplies these.
  */
 export interface LoopExecutorPort {
-  /** Claims the executor acts under — the node's loopback owner. */
-  claimsFor(spaceId: string): Promise<DbClaims>;
+  /**
+   * Claims the SWEEP reads under — the node's loopback owner, whose node-admin
+   * claim is what `list_due_loops` demands. Per-loop work does not run under
+   * these: each firing binds the identity its own row names (`DueLoop`).
+   */
+  claimsFor(): Promise<DbClaims>;
   /** Session ids with a genuinely live PTY right now (the liveness probe). */
   liveSessionIds(): readonly string[];
   /**
@@ -81,24 +112,13 @@ export interface LoopsJobOptions {
   readonly maxPerTick?: number;
 }
 
-const DUE_LOOPS_SQL = `
-  select l.entity_id::text  "entityId",
-         e.space_id::text   "spaceId",
-         l.title            "title",
-         l.schedule         "schedule",
-         l.team_member_id::text "teamMemberId",
-         l.subject_id::text "subjectId",
-         l.prompt           "prompt",
-         l.config           "config",
-         e.version          "version"
-    from public.loops l
-    join public.entities e on e.id = l.entity_id
-   where l.enabled
-     and e.deleted_at is null
-     and l.next_run_at is not null
-     and l.next_run_at <= now()
-   order by l.next_run_at
-   limit $1`;
+/**
+ * The sweep door (189). A direct read of `public.loops` here is scoped by
+ * `loops_select` to the spaces the sweep's identity belongs to, which is how
+ * every loop outside the owner's own space went unfired on production. The
+ * door is node-admin-only and returns, beside each due loop, who may fire it.
+ */
+const LIST_DUE_LOOPS_RPC = 'public.list_due_loops';
 
 /**
  * Is a previous firing of this loop still running? Asked of the PTY map, never
@@ -135,10 +155,11 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
     runOnStart: false,
     timeoutMs: 10 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      // A read under the node owner's claims; per-loop work re-derives claims
-      // for the loop's own space.
-      const claims = await port.claimsFor('');
-      const due = await db.query<DueLoop>(claims, DUE_LOOPS_SQL, [maxPerTick]);
+      // The sweep reads under the node's claims; each firing below binds the
+      // identity its own row names.
+      const sweepClaims = await port.claimsFor();
+      const listed = await db.rpc<DueLoop[] | null>(sweepClaims, LIST_DUE_LOOPS_RPC, [maxPerTick]);
+      const due = Array.isArray(listed) ? listed : [];
       if (due.length === 0) return { skipped: true, reason: 'no loops are due' };
 
       const live = port.liveSessionIds();
@@ -148,7 +169,27 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
 
       for (const loop of due) {
         if (ctx.signal.aborted) break;
-        const loopClaims = await port.claimsFor(loop.spaceId);
+
+        if (loop.runAsIdentityId === null) {
+          // Nobody is entitled to spawn for this loop, and nobody is entitled
+          // to write that down on it either (`update_loop` needs a member of
+          // the space). So the tick says so where an operator reads, counts
+          // it, and leaves the row untouched for a human to repair. It will be
+          // reported again next tick; that is the point.
+          ctx.logger.warn(
+            `the scheduled loop "${loop.title}" cannot run: nobody in its space owns a teammate `
+            + 'for it to run as — it names no teammate and the space has no dispatcher, '
+            + 'or the person who owned that teammate has left the space '
+            + `(${loop.entityId})`,
+          );
+          failed += 1;
+          continue;
+        }
+        const loopClaims: DbClaims = {
+          identityId: loop.runAsIdentityId,
+          nodeAdmin: loop.runAsNodeAdmin,
+          requestId: LOOP_EXECUTOR_REQUEST_ID,
+        };
 
         // Advance the schedule FIRST, from now. Whatever happens to this
         // firing, the loop must not stay due — a loop that fails to advance is

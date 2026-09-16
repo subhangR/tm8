@@ -82,6 +82,8 @@ import {
   GateTaskInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
+  ExecutionMemoryPreviewInputSchema,
+  MemorySearchInputSchema,
   IdentityProfileUpdateInputSchema,
   InboxMarkReadInputSchema,
   LinkCommitInputSchema,
@@ -259,6 +261,14 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // only the command envelope.
   'collections.removeItem': RequiredCommandContextSchema,
   'graph.query': GraphQuerySchema,
+  // execution.memoryPreview — a POST READ with a body, bound here for the same
+  // reason the two above are: the question carries two lists of ids, and a
+  // preview that accepted a body a launch would refuse would be answering a
+  // question nobody can act on.
+  'execution.memoryPreview': ExecutionMemoryPreviewInputSchema,
+  // memories (188). A POST read with a body, bound like the two above so a
+  // blank or oversized query is refused at the frame rather than parsed.
+  'memories.search': MemorySearchInputSchema,
   'placements.apply': PlacementInputSchema,
   'commands.undo': UndoCommandInputSchema,
 
