@@ -23,7 +23,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandErrorCode } from '@tm8/contract';
 import { ERROR_STATUS } from '@tm8/contract';
-import { ApiError, EXIT_BY_COMMAND_ERROR, exitCodeForCommandError } from '../src/errors.js';
+import { ApiError, EXIT_BY_COMMAND_ERROR, errorLines, exitCodeForCommandError } from '../src/errors.js';
 import { EXIT_CODES, EXIT_MEANING, isExitCode } from '../src/exit.js';
 
 function exitFor(status: number, code: CommandErrorCode): number {
@@ -48,9 +48,11 @@ describe('frozen exit-code table §7.6', () => {
 
   it('is exactly the frozen table — no 1, no 12, nothing invented', () => {
     // 13 and 14 joined 2026-08-02 for `event watch --until-match` (F7), by the
-    // same scoped-extension route 11 took for `--wait settled`. 12 stays
-    // skipped: Node itself can exit 12, so this table cannot own it.
-    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 130]);
+    // same scoped-extension route 11 took for `--wait settled`. 15 joined
+    // 2026-09-15 by that route too, for the one memory refusal a retry can
+    // never clear. 12 stays skipped: Node itself can exit 12, so this table
+    // cannot own it.
+    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 130]);
     expect(EXIT_MEANING[3]).toBe('unauthenticated');
     expect(EXIT_MEANING[4]).toBe('forbidden');
     expect(EXIT_MEANING[8]).toBe('not implemented');
@@ -70,6 +72,53 @@ describe('frozen exit-code table §7.6', () => {
     expect(reserved).toHaveLength(0);
     expect(EXIT_MEANING[13]).toMatch(/no matching event arrived/);
     expect(EXIT_MEANING[14]).toMatch(/events\.poll fallback/);
+  });
+
+  it('15 is the already-corrected memory refusal, and no error CLASS maps to it', () => {
+    // It is reached by the Server's `details.reason`, never by the taxonomy
+    // code alone: `invariant_violation` on its own still exits 6, because
+    // almost every invariant violation IS worth re-reading and retrying.
+    const reserved = Object.values(EXIT_BY_COMMAND_ERROR).filter((c) => c === 15);
+    expect(reserved).toHaveLength(0);
+    expect(exitFor(409, 'invariant_violation')).toBe(6);
+    expect(EXIT_MEANING[15]).toMatch(/already corrected that memory/);
+  });
+});
+
+describe('a memory already corrected by somebody else', () => {
+  const details = {
+    reason: 'memory_already_corrected',
+    correction: 'The daily sweep runs at 04:00 UTC, not 02:00, and it skips spaces with no memories.',
+  };
+  const refusal = (message: string): ApiError =>
+    new ApiError(409, 'invariant_violation', message, 'req_9', false, details);
+
+  it('exits 15 rather than 6 — the same write can never succeed, so a retry loop is wrong', () => {
+    expect(refusal('Someone else corrected this memory first.').exitCode).toBe(15);
+  });
+
+  it('the same code with no such reason keeps exit 6', () => {
+    expect(
+      new ApiError(409, 'invariant_violation', 'x', 'req_9', false, { reason: 'project_not_linked' })
+        .exitCode,
+    ).toBe(6);
+    expect(new ApiError(409, 'invariant_violation', 'x', 'req_9', false, undefined).exitCode).toBe(6);
+  });
+
+  it('prints the other correction in full when the server had to shorten it', () => {
+    const lines = errorLines(refusal('Someone else corrected this memory first. Their correction says: "The daily sweep runs at 04:00 UTC…".'));
+    expect(lines.join('\n')).toContain(details.correction);
+    // No identifier anywhere in what the reader sees, and no retry advice: the
+    // write is not retryable and saying so would send a script into a loop.
+    expect(lines.join('\n')).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(lines.join('\n')).not.toContain('retryable');
+  });
+
+  it('does not repeat the words when the server already fitted them in the message', () => {
+    const whole = `Someone else corrected this memory first. Their correction says: "${details.correction}".`;
+    const body = errorLines(refusal(whole)).join('\n');
+    expect(body).toContain(details.correction);
+    expect(body).not.toContain('their correction, in full:');
   });
 });
 

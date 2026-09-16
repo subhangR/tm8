@@ -54,6 +54,21 @@ export const EXIT_WAIT_TIMEOUT = 13;
  * its own is not a code this table can own.)
  */
 export const EXIT_MATCHED_VIA_POLL = 14;
+/**
+ * 15 — the memory you tried to correct had already been corrected by somebody
+ * else, so yours was not saved as a second, competing correction.
+ *
+ * WHY THIS IS NOT 6. Six says "re-read, then retry deliberately", and for a
+ * version conflict that is exactly right: the write can succeed once you have
+ * caught up. This one CANNOT succeed on a retry against the same memory, ever,
+ * no matter how many times you re-read it — the answer is to correct the other
+ * person's correction instead, which is a different write to a different
+ * target. A script that retries on 6 would spin; one that branches on 15 can
+ * do the thing that actually works. It joins the table by the same scoped
+ * route 11, 13 and 14 took: one situation, one code, no server error class
+ * mapped onto it.
+ */
+export const EXIT_ALREADY_CORRECTED = 15;
 /** 130 — interrupted (SIGINT). */
 export const EXIT_INTERRUPTED = 130;
 
@@ -76,6 +91,7 @@ export const EXIT_MEANING = {
   11: 'stored, but one or more requested work-session deliveries are incomplete or non-delivered (--wait settled only)',
   13: 'no matching event arrived before --timeout expired (event watch --until-match only)',
   14: 'matched, but via the events.poll fallback after the event socket was lost (event watch --until-match only)',
+  15: 'somebody else had already corrected that memory, so this correction was not saved as a second one',
   130: 'interrupted',
 } as const;
 
