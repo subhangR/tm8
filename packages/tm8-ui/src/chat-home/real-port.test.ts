@@ -7,6 +7,11 @@ const CHAT = '019f0000-0000-7000-8000-000000000201' as EntityId;
 const ABOUT = '019f0000-0000-7000-8000-000000000202' as EntityId;
 const TEAMMATE = '019f0000-0000-7000-8000-000000000203' as EntityId;
 const MSG = '019f0000-0000-7000-8000-000000000210' as EntityId;
+/* The two identities of ONE project — the per-space projection entity, and the
+   `public.projects` row it materializes. Deliberately different values here,
+   because the defect was that they were assumed to be the same. */
+const PROJECT_ENTITY = '019f0000-0000-7000-8000-000000000220' as EntityId;
+const PROJECT_RESOURCE = '019f0000-0000-7000-8000-000000000221' as EntityId;
 
 function chatSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -457,5 +462,35 @@ describe('real chat-home seam adapter', () => {
     const detail = await port.readThread(CHAT);
     expect(detail.turns).toHaveLength(1);
     expect(detail.turns[0]?.sourceEntityId).toBeUndefined();
+  });
+
+  it('lists projects by ProjectResource id, never by the projection entity id', async () => {
+    // THE REPORTED DEFECT. `listProjects` reads project PROJECTIONS, whose own
+    // ids are space-local entity ids — but the id it returns is the one the
+    // composer sends to `chat.configure`, and `chat_configure` looks the
+    // project up in `public.projects` joined to `space_projects` by the
+    // RESOURCE id. Returning `item.id` matched nothing for any project, however
+    // well linked, and surfaced as `project is not linked to this space`.
+    const { seam } = seamStub();
+    (seam as { query: unknown }).query = vi.fn(async (input: { kinds?: string[] }) => (
+      input.kinds?.[0] === 'project'
+        ? { page: { items: [
+            {
+              id: PROJECT_ENTITY,
+              kind: 'project',
+              title: 'tm8-repo',
+              state: { kind: 'project', projectId: PROJECT_RESOURCE, materializedVersion: 1 },
+            },
+            // No project state to read a resource id out of: dropped rather
+            // than guessed, because a guess is the same refusal one layer on.
+            { id: '019f0000-0000-7000-8000-0000000000ff' as EntityId, kind: 'project', title: 'headless' },
+          ] } }
+        : { page: { items: [] } }
+    ));
+    const port = createChatHomePortFromSeam(seam);
+
+    const projects = await port.listProjects?.('space-1');
+    expect(projects).toEqual([{ id: PROJECT_RESOURCE, name: 'tm8-repo' }]);
+    expect(projects?.[0]?.id).not.toBe(PROJECT_ENTITY);
   });
 });
