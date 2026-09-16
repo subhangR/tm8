@@ -713,14 +713,21 @@
 .cv2-root[data-shell='mobile'] .term-host {
   zoom: 1;
 
-  /* xterm v6's touch scrolling is unreliable and `.term-host` declared no
-     `touch-action` at all, so a drag on the canvas was ambiguous: the browser
-     could claim it as a page pan and the terminal would never see it. `pan-y`
-     gives the vertical drag to the browser deterministically (scrolling
-     output is what a reader actually wants on a phone) and stops the
-     double-tap-to-zoom that otherwise fires on every fast tap into the
-     canvas. */
-  touch-action: pan-y;
+  /* THIS WAS `pan-y`, AND `pan-y` CANNOT WORK HERE. Handing the vertical drag
+     to the browser only helps if the browser can find a scrollable box to pan,
+     and on this subtree there is none: the touch hit-tests onto
+     `.xterm-screen`, whose ancestors are `.xterm` and then this element with
+     `overflow: hidden`. xterm's `.xterm-viewport` — the one box that scrolls —
+     is `.xterm-screen`'s SIBLING, not its ancestor, and a sibling is never a
+     pan target. So the browser deterministically panned nothing, which is why
+     the terminal was unscrollable on a phone.
+
+     `none` claims the gesture for us instead. `touchScroll.ts` moves
+     `.xterm-viewport.scrollTop` itself, and a native pan that the browser has
+     already started cannot be taken back by `preventDefault` mid-gesture, so
+     it must never start. `none` suppresses double-tap-to-zoom exactly as
+     `pan-y` did, which was the rule's other reason to exist. */
+  touch-action: none;
 
   /* THE 160px FLOOR IS A DESKTOP FLOOR AND IT IS WRONG HERE, in the one
      direction that matters. With the soft keyboard up the available height is
