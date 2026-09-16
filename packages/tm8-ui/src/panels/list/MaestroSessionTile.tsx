@@ -110,6 +110,13 @@ export function MaestroSessionTile({
       data-session-node={id}
       data-children={childCount > 0 ? childCount : undefined}
       data-streaming={streaming ? 'true' : 'false'}
+      /* WHICH DISCLOSURE THE ROW IS IN, on the DOM rather than in state alone.
+         The phone keeps only the opener while a row is closed (mobile-screens
+         7j''), and that is a question CSS has to be able to ask. The task and
+         standard tiles already publish `data-details`; this anatomy kept the
+         answer private to `useState`, which is the whole reason its cluster
+         could not be given the same treatment as theirs. */
+      data-details={detailsExpanded ? 'open' : 'closed'}
       onClick={onSelect}
     >
       <div className="pn-st__main">
@@ -174,7 +181,12 @@ export function MaestroSessionTile({
           )}
           <button
             type="button"
-            className="pn-st__btn"
+            /* `--ind` names it THE OPENER, exactly as `lp__rowaction--ind` and
+               `pn-tt__ind` do on the other two anatomies. The phone hides this
+               cluster's verbs while the row is closed and must keep precisely
+               this one; a positional selector (`> *:last-child`) would break
+               the day a verb is appended after it. */
+            className="pn-st__btn pn-st__btn--ind"
             title={detailsExpanded ? 'Collapse details' : 'Expand details'}
             aria-label={detailsExpanded ? 'Collapse details' : 'Expand details'}
             aria-expanded={detailsExpanded}
