@@ -67,12 +67,14 @@ import type {
 import {
   KindIcon,
   PROCESS_CONTROL,
+  SHARING_CONTROL,
   REASONS,
   getKind,
   hasEnded,
   offWorkflowType,
   processControlFor,
   resolveAction,
+  sharingControlFor,
   workflowRefusalText,
   workflowTypeOf,
   workflowVocabularyOf,
@@ -195,6 +197,22 @@ export interface ControlHost {
    * collapsed row where there is no state control to reach it through.
    */
   onComplete?: (entityId: string) => void;
+  /**
+   * THE WATCH DIAL (187) — `execution.sessions.share`.
+   *
+   * A dedicated prop for the same reason the three above are: `onAction` is
+   * the session-START dispatcher, whose switch has never known this verb, so
+   * a share routed through it would draw live and be swallowed.
+   *
+   * ONE prop for both halves, taking the mode. The verb the user pressed
+   * already says which way the dial is going, and splitting it into
+   * `onShare`/`onUnshare` would give the two directions two places to forget
+   * the version guard.
+   *
+   * Absent ⇒ the control renders its honest not-wired refusal rather than a
+   * live button, which is `RowAction`'s fallback and not a special case here.
+   */
+  onShareSession?: (entityId: string, next: 'none' | 'space') => void;
   /**
    * `label` rides along beside `source` because a failure notice is USER copy:
    * `source` is the wire field name, and titling a notice with it produced
@@ -463,10 +481,24 @@ export function RowActionCluster({
 
   /* `sort` is stable in every engine this ships to (ES2019 requires it), which
      is what lets an unranked verb keep its declared position. */
+  /**
+   * THE WATCH DIAL'S CURRENT POSITION (187), read off the ROW.
+   *
+   * `state` is `unknown`-valued here on purpose (see `ControlSubject`), so
+   * this reads the field by name the way every other control in this file
+   * does rather than narrowing to the work_session arm and putting a kind
+   * literal back into the component. A kind that has no `shareMode` reads
+   * `undefined` and `sharingControlFor` leaves its verbs alone.
+   */
+  const shareMode = (row.state as unknown as Record<string, unknown>).shareMode;
+
   const middle = declared
     .filter((ref) => !TAIL_ORDER.includes(ref))
     .filter((ref) => !(endedRun && ref === 'complete'))
-    .sort((a, b) => rankOf(a) - rankOf(b));
+    .sort((a, b) => rankOf(a) - rankOf(b))
+    /* The sharing swap, for the same structural reason the tail swaps below:
+       the registry can declare one ref and the row decides which half. */
+    .map((ref) => sharingControlFor(ref, typeof shareMode === 'string' ? shareMode : undefined));
   const tail = declared
     .filter((ref) => TAIL_ORDER.includes(ref))
     .map((ref) => processControlFor(ref, rowProcess));
@@ -490,6 +522,15 @@ export function RowActionCluster({
     if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
     if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
     if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
+    /* 187. Both halves of the sharing slot reach ONE executor with the mode
+       they mean, rather than two props that could drift apart: the verb the
+       user pressed is the whole of the intent. */
+    if (ref === SHARING_CONTROL.private && props.onShareSession) {
+      return (_ref, id) => props.onShareSession?.(id, 'space');
+    }
+    if (ref === SHARING_CONTROL.shared && props.onShareSession) {
+      return (_ref, id) => props.onShareSession?.(id, 'none');
+    }
     return undefined;
   };
 

@@ -83,11 +83,13 @@ export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 export {
   PROCESS_CONTROL,
   REASONS,
+  SHARING_CONTROL,
   allActions,
   deferredActions,
   hasEnded,
   processControlFor,
   resolveAction,
+  sharingControlFor,
 } from './actions';
 
 export {

@@ -154,7 +154,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // Neither branch's number survives: main counts chat's five and not the
     // container paths, my branch the reverse. Summing them would be arithmetic
     // over two partial views.
-    expect(COMMAND_PATHS).toHaveLength(188);
+    // 188 -> 189 (187): `session share` over execution.sessions.share — one
+    // new catalog row, one new command path, no alias. MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(189);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

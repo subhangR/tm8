@@ -347,6 +347,16 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const v = str(field(row, 'shareMode'));
       return v && v !== 'none' ? meta(`shared: ${v}`) : null;
     }
+    case 'driveMode': {
+      /* SILENT ON THE DEFAULT, exactly as `shareMode` is silent on 'none'.
+         `owner` is where every session starts and where 986 of them still
+         are, so badging it would put a word on every tile in the space to
+         say nothing happened. Absence is also the honest reading of a server
+         too old to project the column — it says nothing rather than claiming
+         the default it never read. */
+      const v = str(field(row, 'driveMode'));
+      return v === 'space' ? meta('drive: space') : null;
+    }
     case 'channelTopic':
       return meta(str(field(row, 'topic')));
     case 'unread': {
@@ -429,7 +439,7 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'priority', 'axes', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',
-  'messages', 'points', 'agentTool', 'model', 'shareMode',
+  'messages', 'points', 'agentTool', 'model', 'shareMode', 'driveMode',
   'channelTopic', 'unread', 'workingAgents', 'docFormat', 'childCount',
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
   'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',

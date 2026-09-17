@@ -43,6 +43,7 @@ import {
 } from '@tm8/contract';
 
 import { parseControlFrame } from './ptyProtocol.js';
+import { isPtyAttachRefused, type PtyAttachRefused } from './ptyAttachRefusal.js';
 
 export interface ReplayInfo {
   kind: 'delta' | 'snapshot';
@@ -53,6 +54,7 @@ type ReplayHandler = (id: string, data: string, info: ReplayInfo) => void;
 type ExitHandler = (id: string, exitCode?: number | null) => void;
 type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
+type AttachRefusedHandler = (id: string, refusal: PtyAttachRefused) => void;
 export type PtyGrantProvider = (id: string) => Promise<StreamAttachGrant>;
 
 const _sockets = new Map<string, WebSocket>();
@@ -80,6 +82,20 @@ const _replayHandlers: ReplayHandler[] = [];
 const _exitHandlers: ExitHandler[] = [];
 const _sizeHandlers: SizeHandler[] = [];
 const _reattachHandlers: ReattachHandler[] = [];
+const _attachRefusedHandlers: AttachRefusedHandler[] = [];
+/**
+ * Ids whose attach was REFUSED (not failed). They stay in `_activeSessions`
+ * — the app still wants them — but nothing reconnects them, because the
+ * answer will not change by being asked again.
+ *
+ * `openSession` and `closeSession` are the only two things that clear it, and
+ * that is deliberate: a remount IS the retry. There is no `retryAttach` here
+ * because nothing would call one — the refusal only stops being true when the
+ * session's owner shares it (187), and this module has no event feed to learn
+ * that from. Adding a door with nobody to open it would be a second way to say
+ * what the mount effect already says.
+ */
+const _refusals = new Map<string, PtyAttachRefused>();
 
 /**
  * Session ids the app currently wants attached. ONLY these auto-reconnect after
@@ -279,6 +295,10 @@ function _ensureSocket(id: string): WebSocket | undefined {
   const provider = _grantProviders.get(id);
   if (!provider) return _openSocket(id);
   if (_connecting.has(id)) return undefined;
+  // A refused id is not dialled again by any of the automatic paths — wake,
+  // resume and visibility all land here, and each of them would otherwise
+  // re-ask a settled question.
+  if (_refusals.has(id)) return undefined;
 
   _connecting.add(id);
   const generation = _connectGenerations.get(id) ?? 0;
@@ -292,8 +312,20 @@ function _ensureSocket(id: string): WebSocket | undefined {
       ) return;
       _openSocket(id, grant);
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       _connecting.delete(id);
+      // A REFUSAL IS FINAL; a failure is not. Before this branch both took the
+      // reconnect path, so a private session produced a silent retry loop
+      // behind an empty canvas. Now it stops and says so exactly once — and
+      // it is announced even for a stale generation, because the viewer was
+      // still told 'no' and deserves to see it.
+      if (isPtyAttachRefused(error)) {
+        _clearReconnectTimer(id);
+        _reconnectAttempts.delete(id);
+        _refusals.set(id, error);
+        for (const h of _attachRefusedHandlers) h(id, error);
+        return;
+      }
       if (_activeSessions.has(id) && !_suspended.has(id)) _scheduleReconnect(id);
     });
   return undefined;
@@ -562,6 +594,7 @@ export const ptyTransport = {
     _epochs.delete(id);
     _exitedSessions.delete(id);
     _decoders.delete(id);
+    _refusals.delete(id);
     // A newly attached PTY must never inherit queued input from a prior logical
     // use of the same id.
     _pendingSends.delete(id);
@@ -584,6 +617,7 @@ export const ptyTransport = {
     _epochs.delete(id);
     _pendingSends.delete(id);
     _overflowLatched.delete(id);
+    _refusals.delete(id);
     _serverBaseUrls.delete(id);
     _authTokenReaders.delete(id);
     _grantProviders.delete(id);
@@ -742,6 +776,18 @@ export const ptyTransport = {
       }
     }
     _ensureSocket(id);
+  },
+
+  /**
+   * The attach mint said no. Fires once per refusal, never on an ordinary
+   * transport failure — a surface that renders this is rendering a decision.
+   */
+  onAttachRefused(handler: AttachRefusedHandler): () => void {
+    _attachRefusedHandlers.push(handler);
+    return () => {
+      const i = _attachRefusedHandlers.indexOf(handler);
+      if (i >= 0) _attachRefusedHandlers.splice(i, 1);
+    };
   },
 
   /** Fires when the stream identity changed and the terminal must be cleared. */

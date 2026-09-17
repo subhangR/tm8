@@ -302,7 +302,10 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
-    expect(rows.length).toBe(197);
+    // 197 -> 198 (187): execution.sessions.share. Its only flags are the two
+    // dials and `--expect-version`, all of which the projection publishes and
+    // the kernel receives — which is exactly what this sweep is for. MEASURED.
+    expect(rows.length).toBe(198);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

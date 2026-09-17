@@ -64,8 +64,40 @@ function withDatabase(url, database) {
   return parsed.toString();
 }
 
+/**
+ * TM8_APP_VIA_SET_ROLE — for a cluster whose pg_hba does NOT let `tm8_app` log
+ * in over TCP.
+ *
+ * install.sh prepends `host all all 127.0.0.1/32 trust` precisely so the suites
+ * can CONNECT as the low-privilege role; a cluster provisioned some other way
+ * (or hardened afterwards) refuses that login, and every suite then dies in
+ * `ensureRoot` with `password authentication failed for user "tm8_app"` before a
+ * single assertion runs.
+ *
+ * With the flag set, the suites connect on the OWNER url and `set role tm8_app`
+ * instead. That is not a weaker test: RLS is evaluated against `current_user`,
+ * which `set role` really does change, and `tm8_app` carries neither SUPERUSER
+ * nor BYPASSRLS — so the policies apply exactly as they do over a direct login.
+ * The one thing it cannot prove is the LOGIN boundary itself (that `tm8_app`'s
+ * password/hba is what it should be), which is an install property, not a schema
+ * one.
+ *
+ * Off by default, so a correctly provisioned cluster is tested exactly as before.
+ */
+const APP_VIA_SET_ROLE = process.env.TM8_APP_VIA_SET_ROLE === '1';
+
 /** The low-privilege role tm8-server connects as. RLS applies to it. */
-export const APP_URL = withUser(OWNER_URL, 'tm8_app');
+export const APP_URL = APP_VIA_SET_ROLE ? OWNER_URL : withUser(OWNER_URL, 'tm8_app');
+
+/**
+ * Prefixed to every script that runs on APP_URL under the flag. `set role` is
+ * session-scoped and each call is its own psql process, so it cannot leak — and
+ * it must come BEFORE any `begin;` the script builds, since a `set local role`
+ * inside the transaction would not cover statements the script runs outside it.
+ */
+function asAppRole(script, url) {
+  return APP_VIA_SET_ROLE && url === APP_URL ? `set role tm8_app;\n${script}` : script;
+}
 export const TEST_DB = new URL(OWNER_URL).pathname.replace(/^\//, '');
 
 // --- SQL plumbing -----------------------------------------------------------
@@ -118,7 +150,7 @@ function buildScript(sql, { claims = null, singleTransaction = false, verbose = 
  * transaction, because that is the only scope in which a claim exists.
  */
 export function run(sql, { url = APP_URL, claims = null, singleTransaction = false, verbose = false } = {}) {
-  const script = buildScript(sql, { claims, singleTransaction, verbose });
+  const script = asAppRole(buildScript(sql, { claims, singleTransaction, verbose }), url);
   const result = spawnSync(PSQL, [...PSQL_ARGS, url, '-f', '-'], { input: script, encoding: 'utf8' });
   const stderr = result.stderr ?? '';
   return {
@@ -136,7 +168,7 @@ export function run(sql, { url = APP_URL, claims = null, singleTransaction = fal
  * explicit begin/commit interleaving).
  */
 export function runRaw(script, { url = APP_URL } = {}) {
-  const result = spawnSync(PSQL, [...PSQL_ARGS, url, '-f', '-'], { input: script, encoding: 'utf8' });
+  const result = spawnSync(PSQL, [...PSQL_ARGS, url, '-f', '-'], { input: asAppRole(script, url), encoding: 'utf8' });
   const stderr = result.stderr ?? '';
   return {
     ok: result.status === 0,
@@ -167,7 +199,7 @@ export function runRawAsync(script, { url = APP_URL } = {}) {
         elapsedMs: Date.now() - started,
       }),
     );
-    child.stdin.end(script);
+    child.stdin.end(asAppRole(script, url));
   });
 }
 

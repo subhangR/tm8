@@ -73,6 +73,7 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
+  type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
   type FeedItem,
   type FileUploadGrant,
@@ -4091,6 +4092,31 @@ export function createFixtureSeam(): FixtureSeam {
         if (snap?.liveEntityIds.includes(id)) {
           setLiveness(s.spaceId, snap.liveEntityIds.filter((x) => x !== id), snap.nodeBootId);
         }
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return commandResult(s);
+      },
+      /**
+       * THE TWO SHARING DIALS (187).
+       *
+       * MERGE, NEVER REPLACE — the same rule `set_work_session_sharing`
+       * follows. A patch naming only `shareMode` must leave `driveMode`
+       * exactly where it was; a fixture that defaulted the absent dial would
+       * let a test pass against a merge the server does not perform.
+       *
+       * It does NOT model the grant revocation that narrowing a dial
+       * performs server-side, and that absence is deliberate: the fixture
+       * holds no stream grants to revoke, and inventing a revocation here
+       * would be asserting an effect this layer cannot observe.
+       */
+      async shareSession(id, input: ExecutionSessionsShareInput) {
+        const s = requireSummary(id);
+        if (s.state.kind !== 'work_session') {
+          throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        }
+        if (input.expectedVersion !== undefined) requireVersion(s, input.expectedVersion);
+        if (input.shareMode !== undefined) s.state.shareMode = input.shareMode;
+        if (input.driveMode !== undefined) s.state.driveMode = input.driveMode;
+        touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },

@@ -252,6 +252,8 @@ interface SummaryRow {
   ws_agent_tool: string | null;
   ws_model: string | null;
   ws_share_mode: string | null;
+  /** 187. Optional so pre-187 row fixtures stay source-compatible. */
+  ws_drive_mode?: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
@@ -397,6 +399,7 @@ select
   ws.agent_tool      as ws_agent_tool,
   ws.model           as ws_model,
   ws.share_mode      as ws_share_mode,
+  ws.drive_mode      as ws_drive_mode,
   ws.started_at      as ws_started_at,
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
@@ -1198,6 +1201,12 @@ export class PgEntityProjector implements EntityProjector {
           agentTool: r.ws_agent_tool,
           model: r.ws_model,
           shareMode: oneOf(r.ws_share_mode, WS_SHARE_MODES, 'none'),
+          // 187 — MIRRORS entity-read.ts stateOf: spread, not defaulted,
+          // because absence means "too old to know" and the DTO reads
+          // that as `owner`. `oneOf` would substitute a claim here.
+          ...(r.ws_drive_mode === 'owner' || r.ws_drive_mode === 'space'
+            ? { driveMode: r.ws_drive_mode }
+            : {}),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an

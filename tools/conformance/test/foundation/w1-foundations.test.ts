@@ -60,28 +60,32 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // REGENERATED MANIFEST, never delta-arithmetic.
       // 172 -> 197 (177): the 25 containers.* rows. READ OUT OF THE
       // REGENERATED MANIFEST, never delta-arithmetic.
+      // 197 -> 198 (187): execution.sessions.share, one POST/command. It
+      // MOUNTS, so `http`, `uniqueBindings` and `registerableV1Http` all move
+      // with `total` this time — unlike the containers wave, where the WS
+      // alias made them diverge. READ OUT OF THE REGENERATED MANIFEST.
       //
       // `http`/`ws` are MOUNT counts and `uniqueBindings` is over the mounted
       // set, which is why they land on 195/1/196 rather than 196/2/197:
       // `containers.stream` re-declares `events.subscribe`'s socket so the
       // family is discoverable under its own name, and mounts nothing.
-      total: 197,
-      v1: 195,
+      total: 198,
+      v1: 196,
       reserved: 2,
-      http: 195,
+      http: 196,
       ws: 1,
-      registerableV1Http: 193,
-      methods: { GET: 65, POST: 98, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
-      kinds: { read: 69, command: 126, stream: 2 },
-      uniqueNames: 197,
-      uniqueBindings: 196,
+      registerableV1Http: 194,
+      methods: { GET: 65, POST: 99, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 69, command: 127, stream: 2 },
+      uniqueNames: 198,
+      uniqueBindings: 197,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(195); // +24 (177): the container HTTP rows
+    expect(manifest.routes.http).toHaveLength(196); // +1 (187): execution.sessions.share
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -126,7 +130,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // boundary, so it rises with every amendment EVEN THOUGH these three ops
     // are mounted — W2.C01's live inventory below is where that shows up.
     // 141 -> 165 (177): registerableV1Http 193 minus the frozen 28.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(165);
+    // 165 -> 166 (187): registerableV1Http 194 minus the frozen 28. The
+    // operation IS mounted; this axis measures distance from the FROZEN W1
+    // boundary, which never rotates, so it rises anyway.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(166);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -154,7 +161,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 165, // +24 (177): registerableV1Http 193 minus the frozen 28
+      unimplementedV1Http: 166, // +1 (187): registerableV1Http 194 minus the frozen 28
     });
   });
 
@@ -206,7 +213,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(197); // +25 (177) containers
+    expect(manifest.help.operations).toHaveLength(198); // +1 (187) execution.sessions.share
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -434,7 +441,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // live list reproduces the tranche-v4 sha efd55f5b…58229d byte-for-byte.
     // execution.dispatch adds one execution-module handler (merge 2026-08-09).
     // execution.terminal.start adds one more (merge 2026-08-13, #161).
-    expect(handlers.execution).toHaveLength(11);
+    // 11 -> 12 (187): execution.sessions.share registers in the execution
+    // handler module, beside terminate and resume.
+    expect(handlers.execution).toHaveLength(12);
     expect(handlers.events).toHaveLength(2);
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.
@@ -446,7 +455,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    expect(handlers.all).toHaveLength(193); // +24 (177): the container handlers
+    expect(handlers.all).toHaveLength(194); // +1 (187): execution.sessions.share
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -462,7 +471,11 @@ describe('W2.C01 current mounted registry inventory', () => {
       // container handlers. It hashes the sorted NAME list, so neither
       // branch's value survives — each hashed a list missing the other's
       // handlers. Read out of the FAILING RUN's Received line.
-      .toBe('e8e04b4f42f0732521f97bbd38ce1f42ef7b4db9bc8dd674ad8a6a273c5468c4');
+      // Re-measured 187: execution.sessions.share joins the sorted name list.
+      // Read out of the FAILING RUN's Received line, which is the same thing
+      // as calling the inventory and the only version of it that cannot be
+      // typed from memory.
+      .toBe('c7687082ab230e41795af6110a985e46f5db7f5547a14f867426ae6f734d80a8');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -480,7 +493,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert;
     // RequiredCommandContextSchema binds .delete. `.list` is a READ and binds
     // nothing, which is why three ops move this by two.
-    expect(inputSchemas.bound).toHaveLength(118) // +19 (177): the container command bodies that bind;
+    expect(inputSchemas.bound).toHaveLength(119) // +1 (187): ExecutionSessionsShareInput binds;
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -509,7 +522,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 166 -> 169 (148): the three workflows routes, all mounted.
     // 169 -> 193 (2026-09-03): 24 of the 25 containers.* rows are registerable
     // v1 HTTP; the 25th is the WS alias, which mounts nothing. MEASURED.
-    expect(registerableV1Http).toHaveLength(193);
+    // 193 -> 194 (187): execution.sessions.share is v1 HTTP and mounted, so
+    // the zero-residual assertion below still holds. MEASURED.
+    expect(registerableV1Http).toHaveLength(194);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

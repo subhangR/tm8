@@ -131,15 +131,18 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    expect(OPERATIONS).toHaveLength(197); // +25 (177) containers, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(195);
+    // 197 -> 198 (187, session sharing): execution.sessions.share, one
+    // POST command — registered and mounted, so every count below moves
+    // by exactly one and the residual set is unchanged.
+    expect(OPERATIONS).toHaveLength(198); // +25 (177) containers, MEASURED
+    expect(V1_OPERATIONS).toHaveLength(196);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
     // TWO WS ROWS now, one mounted socket: `containers.stream` re-declares
     // `events.subscribe`'s binding under the container family's own name.
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(195);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(196);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
       // The alias, and it must declare itself as one: `aliasOf` is what keeps
@@ -159,7 +162,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // auth.claim.reissue) — 163 -> 166.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(193); // 169 -> 193 (177): the container handlers
+    )).toHaveLength(194); // 169 -> 193 (177): the container handlers; +1 (187)
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

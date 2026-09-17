@@ -1,0 +1,73 @@
+/**
+ * A POLICY "no" from the attach mint, told apart from a transport failure.
+ *
+ * Why this exists at all. `execution.streams.attach` is the only place a
+ * viewer's right to a session's bytes is decided, and it decides it BEFORE any
+ * socket opens. Until this type, every way that call could fail arrived at
+ * `_ensureSocket`'s catch as an indistinguishable `unknown`, and the catch did
+ * the only safe thing it could with an unknown: scheduled a reconnect. So a
+ * session the server had deliberately closed to this viewer produced an
+ * endless exponential-backoff loop behind a black canvas — a refusal that
+ * neither stopped nor said anything, re-asking a question whose answer cannot
+ * change by being asked again.
+ *
+ * A refusal is therefore TERMINAL for the current attach: retrying is not
+ * resilience here, it is a poll of somebody else's decision. It resumes only
+ * when something actually changes — the owner shares the session (187) — and
+ * the viewer picks that up by remounting the terminal, which is the only thing
+ * that clears the latch. There is deliberately no in-place Retry: pressing one
+ * before the owner has shared would re-ask a settled question.
+ *
+ * It lives in its own leaf module so the transport can recognise a refusal
+ * without importing the HTTP mint, and the guard is BRANDED rather than
+ * `instanceof`: a bundle that loads this module twice would break `instanceof`
+ * and silently restore the old infinite-retry behaviour.
+ */
+
+export type PtyAttachRefusalReason =
+  /** Authorised, but this session is not shared with you (or is view-only). */
+  | 'forbidden'
+  /** No such live session — it ended, or was never visible to you. */
+  | 'not_found'
+  /** Not signed in, or the pass expired. */
+  | 'unauthorized';
+
+const BRAND = '__tm8PtyAttachRefused';
+
+export class PtyAttachRefused extends Error {
+  readonly [BRAND] = true as const;
+  readonly reason: PtyAttachRefusalReason;
+  /** The mode that was asked for — `view` means nothing narrower was left to try. */
+  readonly requestedMode: 'view' | 'drive';
+
+  constructor(
+    reason: PtyAttachRefusalReason,
+    requestedMode: 'view' | 'drive',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PtyAttachRefused';
+    this.reason = reason;
+    this.requestedMode = requestedMode;
+  }
+}
+
+export function isPtyAttachRefused(error: unknown): error is PtyAttachRefused {
+  return typeof error === 'object' && error !== null
+    && (error as Record<string, unknown>)[BRAND] === true;
+}
+
+/**
+ * What to SHOW. One sentence, no jargon, and it never guesses at a cause it
+ * cannot see: the client knows it was refused, not why the owner chose that.
+ */
+export function describePtyAttachRefusal(refusal: PtyAttachRefused): string {
+  switch (refusal.reason) {
+    case 'unauthorized':
+      return 'Sign in again to watch this terminal.';
+    case 'not_found':
+      return 'This terminal is no longer available.';
+    default:
+      return 'This terminal is private. Its owner can share it from the session menu.';
+  }
+}

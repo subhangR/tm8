@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa",
+  "catalogDigest": "sha256:186723c6fa90a7d596eb15d50ec58ad783ba01aea9fdd3752d27bed8cfa3da6b",
   "catalog": {
-    "total": 197,
-    "v1": 195,
+    "total": 198,
+    "v1": 196,
     "reserved": 2,
-    "http": 195,
+    "http": 196,
     "ws": 1,
-    "registerableV1Http": 193,
+    "registerableV1Http": 194,
     "methods": {
       "GET": 65,
-      "POST": 98,
+      "POST": 99,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 69,
-      "command": 126,
+      "command": 127,
       "stream": 2
     },
-    "uniqueNames": 197,
-    "uniqueBindings": 196
+    "uniqueNames": 198,
+    "uniqueBindings": 197
   },
   "reservedOperations": [
     "search.query",
@@ -985,6 +985,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.sessions.share",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/sharing",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.journal",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/journal",
@@ -1783,7 +1790,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 165
+    "unimplementedV1Http": 166
   },
   "schemas": {
     "additive": {
@@ -3821,6 +3828,23 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.sessions.share",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.sessions.share",
+        "intentTags": [
+          "execution",
+          "sessions",
+          "share"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

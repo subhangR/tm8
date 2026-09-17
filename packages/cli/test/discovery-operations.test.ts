@@ -67,7 +67,10 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-const EXPECTED_ROWS = 197;
+// 197 -> 198 (187, session sharing): execution.sessions.share — public, with a
+// `session share` command, so the commandless set is UNCHANGED and the derived
+// command-path count moves with this constant on its own. MEASURED.
+const EXPECTED_ROWS = 198;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -133,7 +136,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 197 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 198 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -172,7 +175,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('194 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -181,7 +184,11 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
+    // +1 (187): execution.sessions.share is public. It takes the sharing
+    // decision to anyone the RPC will accept — the owner, an actor who may act
+    // as the owner, a space admin — and refuses everyone else with 42501, so
+    // the gate lives in the database, not in the exposure.
+    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -586,6 +593,10 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
+  // 187: the session sharing dials. `expectedVersion` is OPTIONAL on this DTO
+  // — the guard is offered, not demanded — which is why the row advertises
+  // `--expect-version` rather than requiring it.
+  'execution.sessions.share': 'ExecutionSessionsShareInputSchema',
   // Containers (§14). The four lifecycle verbs SHARE one input schema, which is
   // why eleven operations map to eight DTOs.
   'containers.start': 'ContainersLifecycleInputSchema',
@@ -809,6 +820,13 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // deliberately absent — its shared `artifact publish` syntax omits the flag.
     ['artifacts.publish', '--expect-version', 'expectedVersion'],
     ['artifacts.restore', '--expect-version', 'expectedVersion'],
+
+    // ── 187: the session sharing dials ──────────────────────────────────────
+    // The guard is OPTIONAL on this row — the DTO marks `expectedVersion`
+    // `.optional()` — which is why the syntax brackets it. The pairing is
+    // pinned all the same: optional is not unspecified, and a row that
+    // advertises a flag it cannot send is exactly what this table catches.
+    ['execution.sessions.share', '--expect-version', 'expectedVersion'],
   ];
 
   it('every guard row pins its flag to its frozen field — transposition-proof', () => {
@@ -830,7 +848,8 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(31);
+    // 31 -> 32 (187): execution.sessions.share.
+    expect(actual.length).toBe(32);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

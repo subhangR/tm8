@@ -50,14 +50,21 @@ function mount(
     onComplete?: (entityId: string) => void;
     onTerminate?: (entityId: string) => void;
     onResume?: (entityId: string) => void;
+    onShareSession?: (entityId: string, next: 'none' | 'space') => void;
+    /** Overwrite every session row's watch dial — see the sharing describe. */
+    shareMode?: string;
     /** The two seam answers the process control turns on — see its describe. */
     liveness?: SessionLiveness;
     category?: StatusCategory;
   } = {},
 ) {
-  const rows = rowsOfKind(kind).map((row) =>
-    handlers.category ? { ...row, category: handlers.category } : row,
-  );
+  const rows = rowsOfKind(kind)
+    .map((row) => (handlers.category ? { ...row, category: handlers.category } : row))
+    .map((row) =>
+      handlers.shareMode === undefined
+        ? row
+        : { ...row, state: { ...row.state, shareMode: handlers.shareMode } as typeof row.state },
+    );
   return render(
     <EntityListPanel
       kind={kind}
@@ -70,6 +77,7 @@ function mount(
       onComplete={handlers.onComplete ?? vi.fn()}
       onTerminate={handlers.onTerminate ?? vi.fn()}
       onResume={handlers.onResume ?? vi.fn()}
+      onShareSession={handlers.onShareSession ?? vi.fn()}
       /* Collections needs BOTH to be live — the executor and the read its
          checkmarks come from. Without them it renders its not-wired refusal,
          which is honest but tells us nothing about placement. */
@@ -181,6 +189,12 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     expect(marks).toEqual([
       'collections',
       'Complete',
+      // THE SHARING SLOT (187), reading `unshare-session` because SESSION's
+      // own `shareMode` is 'space'. Declared as `share-session` and swapped
+      // here by `sharingControlFor` — the same per-row derivation the tail
+      // does for terminate/resume, and the reason the ref in this list is not
+      // the ref in the registry.
+      'unshare-session',
       // `chat-about` is derived onto every kind and unranked, so it keeps its
       // declared position — after the middle verbs, before the anatomy's own
       // affordances and the tail. It is not a session verb; it is the
@@ -461,5 +475,61 @@ describe('the tail slot resolves to terminate-or-resume, never both and never ne
     });
     const button = firstCluster(container).querySelector('button[data-action="resume"]');
     expect(button?.getAttribute('data-action')).toBe('resume');
+  });
+});
+
+/**
+ * THE SHARING SLOT (187) — one declared verb, two halves, picked per row.
+ *
+ * The structural claim under test is the same one the process control makes
+ * next door and the reason neither can be a registry entry: `rowActions` is
+ * STATIC per-kind data, so a session that is private and a session the whole
+ * space can watch declare the identical list — and must not draw the identical
+ * button. If `sharingControlFor` ever stops consulting the row, both cases
+ * below still render a control and only these assertions notice.
+ */
+describe('the sharing slot reads the ROW, not the registry', () => {
+  it('offers Share on a private session', () => {
+    const { container } = mount('work_session', SESSION, { shareMode: 'none' });
+    const verbs = verbsIn(firstCluster(container));
+    expect(verbs).toContain('share-session');
+    expect(verbs).not.toContain('unshare-session');
+  });
+
+  it('offers Make private on a session the space can watch', () => {
+    const { container } = mount('work_session', SESSION, { shareMode: 'space' });
+    const verbs = verbsIn(firstCluster(container));
+    expect(verbs).toContain('unshare-session');
+    expect(verbs).not.toContain('share-session');
+  });
+
+  /**
+   * A server too old to project `shareMode` answers `undefined`, and the slot
+   * falls back to the DECLARED half. Offering "Share" on a session that may
+   * already be shared is a no-op the server absorbs; offering "Make private"
+   * would claim a state nothing here ever read.
+   */
+  it('falls back to Share when the row carries no shareMode', () => {
+    const { container } = mount('work_session', SESSION, { shareMode: '' });
+    expect(verbsIn(firstCluster(container))).toContain('share-session');
+  });
+
+  /**
+   * AND IT CARRIES THE DIRECTION. One executor behind both halves, so the verb
+   * the user pressed has to be what says which way the dial turns — a click
+   * that sent the wrong mode would silently do the opposite of the label.
+   */
+  it.each([
+    ['none' as const, 'share-session', 'space' as const],
+    ['space' as const, 'unshare-session', 'none' as const],
+  ])('a %s session draws %s and dispatches it as %s', (shareMode, verb, sent) => {
+    const onShareSession = vi.fn();
+    const { container } = mount('work_session', SESSION, { shareMode, onShareSession });
+    const cluster = firstCluster(container);
+    const target = cluster.querySelector(`[data-action="${verb}"]`);
+    if (!target) throw new Error(`no ${verb} in the cluster`);
+    fireEvent.click(target);
+    expect(onShareSession).toHaveBeenCalledTimes(1);
+    expect(onShareSession.mock.calls[0]?.[1]).toBe(sent);
   });
 });

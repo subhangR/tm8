@@ -114,7 +114,8 @@ export const ENTITY_COLUMNS = `
   col.name as collection_name, col.description as collection_description,
   col.collection_type,
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
-  ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
+  ws.model as ws_model, ws.share_mode as ws_share_mode,
+  ws.drive_mode as ws_drive_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
@@ -433,6 +434,8 @@ export interface EntityRow {
   ws_agent_tool: string | null;
   ws_model: string | null;
   ws_share_mode: string | null;
+  /** 187. Optional so pre-187 row fixtures stay source-compatible. */
+  ws_drive_mode?: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_node_id: string | null;
@@ -1627,6 +1630,13 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         agentTool: row.ws_agent_tool,
         model: row.ws_model,
         shareMode: (row.ws_share_mode ?? 'none') as 'none' | 'space' | 'explicit',
+        // 187, the second dial. Spread, never defaulted, for the same
+        // reason `sessionKind` is below: the DTO makes absence mean
+        // `owner`, so a server reading a pre-187 row says nothing rather
+        // than asserting a drive policy it never looked at.
+        ...(row.ws_drive_mode === 'owner' || row.ws_drive_mode === 'space'
+          ? { driveMode: row.ws_drive_mode }
+          : {}),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
         // OMITTED, never defaulted, when the column has no value: the DTO

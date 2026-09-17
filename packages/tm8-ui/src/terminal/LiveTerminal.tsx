@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -12,6 +12,7 @@ import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
+import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
@@ -203,6 +204,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * THE REFUSAL, RENDERED.
+   *
+   * Until this existed the component returned `<TerminalHost/>`
+   * unconditionally, so a viewer denied the stream got a black rectangle and
+   * no words — indistinguishable from a terminal that is merely quiet. The
+   * sharing controls (187) are only meaningful if the closed state can be
+   * seen: a permission you cannot observe being applied is not a feature.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const resizeRafRef = useRef<number | null>(null);
@@ -293,6 +304,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     if (!container || termRef.current) return;
     // The ref outlives a sessionId change; a new terminal is owed its own nudge.
     repaintForcedRef.current = false;
+    // …and so does the state: a refusal belongs to the session that earned
+    // it, never to the next one this component is pointed at.
+    setRefusal(null);
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -690,6 +704,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(container);
 
+    // The mint's answer, when the answer is no. Subscribed BEFORE openSession
+    // so a refusal that resolves immediately is not missed.
+    const offRefused = ptyTransport.onAttachRefused((id, refused) => {
+      if (id !== sessionId) return;
+      setRefusal(describePtyAttachRefusal(refused));
+    });
+
     // Mint a fresh one-shot capability for every connect/reconnect. The HTTP
     // mint may use the active pass while older browser sessions transition to
     // the Secure cookie; the WebSocket itself receives only the scoped grant.
@@ -713,6 +734,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (resizeTimeoutRef.current !== null) window.clearTimeout(resizeTimeoutRef.current);
       offSize();
       offExit();
+      offRefused();
       onData.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
@@ -774,6 +796,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     <TerminalHost
       hostRef={hostRef}
       ariaLabel="Live terminal"
+      // The host's existing ghost slot. Nothing was ever written into the
+      // canvas on a refused attach, so this is the only content there is.
+      {...(refusal === null ? {} : { placeholder: refusal })}
       onPointerDown={() => {
         // Reclaim the textarea even when a surrounding scroll/settings layer
         // was the browser's previous focus target.

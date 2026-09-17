@@ -85,6 +85,12 @@ export type TileBadgeSource =
   | 'agentTool'
   | 'model'
   | 'shareMode'
+  // 187 — the OTHER dial. Its own badge rather than a clause inside
+  // `shareMode`'s, because the two are independent: a session can be
+  // watchable by the space with drive still held by its owner, and folding
+  // them into one word would make the common case unreadable and the
+  // uncommon one invisible.
+  | 'driveMode'
   // other kinds
   | 'channelTopic'
   | 'unread'
@@ -378,6 +384,21 @@ export type ActionRef =
   // so a launch config would open a card asking for things already decided.
   | 'resume'
   | 'prompt-session'
+  // THE SHARING CONTROL (187) — `execution.sessions.share`, the WATCH dial.
+  //
+  // Two refs for one slot, on the `terminate`/`resume` model next door: the
+  // verb a row offers depends on the row's OWN `shareMode`, and
+  // `ActionAvailability` has no `hidden`, so a single ref could only ever
+  // render one label. `sharingControlFor` in `domain/actions.ts` picks
+  // between them, and the component that holds the row calls it — the same
+  // derivation, for the same reason, as the process control.
+  //
+  // WATCH only. The drive dial (`driveMode`) is deliberately not a row verb:
+  // handing someone your keyboard is a decision that wants a sentence, not a
+  // one-click icon, and it stays on `tm8 session share --drive` until there
+  // is a surface that can ask the question properly.
+  | 'share-session'
+  | 'unshare-session'
   // §8 share-into-session (seam-deferred, §10.7)
   | 'share-into-session'
   | 'withdraw-handoff'
