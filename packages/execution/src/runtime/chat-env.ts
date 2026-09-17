@@ -45,6 +45,8 @@
 // honest posture remains: a chat thread with Bash is a shell as the tm8 OS
 // user, with that user's home and everything reachable from it.
 
+import { withAgentBinDirs } from '../spawn/manifest.js';
+
 /**
  * The MAXIMAL key set of a chat runtime's environment, before the per-thread
  * `config.env` (which tm8 composes itself and which carries no ambient value)
@@ -106,6 +108,24 @@ export function composeChatEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   // PATH is the one key whose absence is not survivable — without it the child
   // cannot find `git`, `node`, or anything Bash is asked to run — so it falls
   // back rather than being omitted, exactly as `composeShellEnv` does.
-  if (!env['PATH']) env['PATH'] = FALLBACK_PATH;
+  //
+  // …and then, for the same reason `composeEnv` and `composeCredentialEnv` do
+  // it, make sure the CLAUDE BINARY ITSELF is reachable. `ClaudeHeadlessAdapter`
+  // spawns the bare name `claude`, and on POSIX the bare name is resolved
+  // against the PATH of the env handed to the spawn — this one. Inheriting the
+  // server's PATH verbatim therefore makes chat work only when the server was
+  // hand-started from a login shell. Measured 2026-09-17 on the production
+  // node: under `tm8-prod.service` the inherited PATH is
+  // `/usr/lib/postgresql/16/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+  // `claude` lives in `~/.local/bin`, and EVERY chat turn died with
+  // `failed to start Claude headless process: spawn claude ENOENT` while agent
+  // sessions on the same node were fine — because those two go through
+  // `withAgentBinDirs` and chat, the fourth sibling, never did.
+  //
+  // This is a resolution fallback, not a grant: `withAgentBinDirs` APPENDS, so
+  // an operator's own `claude` earlier on PATH still wins, and it decides where
+  // a binary is FOUND, never what this child is TRUSTED with. The allow-list
+  // above is what bounds the latter and is untouched by this.
+  env['PATH'] = withAgentBinDirs(env['PATH'] ?? FALLBACK_PATH, parentEnv);
   return env;
 }
