@@ -153,6 +153,8 @@ export const CoreEntityKindSchema = z.enum([
   'chat',
   // Containers (177): a machine an agent runs in or drives.
   'container',
+  // Drawings (194): an Excalidraw canvas as an entity.
+  'drawing',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -217,6 +219,23 @@ export const GraphContentInputSchema = z.object({
   edges: z.array(GraphEdgeInputSchema).optional(),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()).nullable().optional(),
   source: z.string().nullable().optional(),
+}).passthrough();
+
+/**
+ * 194 — the drawing write door's input. Every member optional because a patch
+ * carries only what changed: the debounced editor sends `elements` and
+ * `appState` and never restates the title, and `null` MERGES in the door.
+ *
+ * The element shape is deliberately unpinned (`z.record(z.unknown())`): an
+ * Excalidraw element is ~30 fields of upstream's private shape, so pinning it
+ * would make every Excalidraw release a contract change for no safety we act
+ * on. The CONTAINER types are pinned, which is also what the doors check.
+ */
+export const DrawingContentInputSchema = z.object({
+  format: z.string().min(1).optional(),
+  elements: z.array(z.record(z.unknown())).optional(),
+  appState: z.record(z.unknown()).optional(),
+  files: z.record(z.unknown()).optional(),
 }).passthrough();
 
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
@@ -492,6 +511,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     graphType: z.string().min(1),
     nodeCount: z.number().int().nonnegative(),
     edgeCount: z.number().int().nonnegative(),
+  }).strict(),
+  // 194 — which canvas format, and how big. The scene itself is content.
+  z.object({
+    kind: z.literal('drawing'),
+    format: z.string().min(1),
+    elementCount: z.number().int().nonnegative(),
   }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
@@ -860,6 +885,20 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     edges: z.array(GraphEdgeInputSchema),
     layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
     source: z.string().nullable(),
+  }).passthrough(),
+  /*
+   * 194 — the Excalidraw scene. `passthrough` and `z.record(z.unknown())` are
+   * the point, not laxity: an Excalidraw element is ~30 fields of upstream's
+   * private shape, so pinning it would turn every Excalidraw release into a
+   * contract change while buying no safety we act on. What IS pinned is the
+   * container types, which is what the doors check too.
+   */
+  z.object({
+    kind: z.literal('drawing'),
+    format: z.string().min(1),
+    elements: z.array(z.record(z.unknown())),
+    appState: z.record(z.unknown()),
+    files: z.record(z.unknown()),
   }).passthrough(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
