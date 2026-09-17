@@ -596,16 +596,13 @@ export function EntityControlStrip({
   /**
    * Collapse a WHOLLY EMPTY set of date controls to one `＋ Add dates` verb.
    *
-   * Opt-in per host and deliberately narrow: the list's expanded strip asserts
-   * — correctly — that an empty date field is still a rendered field, so it
-   * keeps both boxes. Only the detail panel, where two empty `mm/dd/yyyy`
-   * placeholders were the widest and loudest things on the screen at 125.3px
-   * each, opts in.
+   * Used by the detail panel and phone list tiles to avoid spending their
+   * narrow width on two empty date fields. Existing dates stay visible.
    */
   collapseEmptyDates?: boolean;
   /**
    * The HOST renders the tombstone verb somewhere better. Set by the detail
-   * panel only: as this strip's last child, Archive took `margin-left: auto`,
+   * panel and phone tiles: as this strip's last child, Archive took `margin-left: auto`,
    * became the widest item in the row, and was therefore the one flex-wrap
    * ejected onto a second line — landing a few pixels under `✕` Close.
    */

@@ -3101,6 +3101,7 @@ export function Tile({
    */
   path?: ReadonlySet<string>;
 }) {
+  const { oneSurface } = useMobileSurface();
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
@@ -3403,7 +3404,7 @@ export function Tile({
             anatomyActions={own}
           />
         )}
-        detail={<EntityControlStrip row={row} props={props} config={config} />}
+        detail={<EntityControlStrip row={row} props={props} config={config} omitArchive={oneSurface} />}
       />
       {relatedBlock}
       </>
@@ -3490,7 +3491,7 @@ export function Tile({
             expand: two status controls, one of them inert. One strip now, in
             the place the chips already occupied, so the thing that looks like
             the control IS the control. */}
-        <EntityControlStrip row={row} props={props} config={config} variant="chips" />
+        <EntityControlStrip row={row} props={props} config={config} variant="chips" collapseEmptyDates={oneSurface} omitArchive={oneSurface} />
 
         {flowRef ? (
           <div className="lp__flow lp__flow--control">
