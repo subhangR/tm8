@@ -2630,7 +2630,6 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       reasoningEffort: input.reasoningEffort ?? null,
       accessMode: input.accessMode ?? null,
-      autocompactWindowTokens: input.autocompactWindowTokens ?? null,
       credentialSources: input.credentialSources ?? null,
       credentialSource: input.credentialSource ?? null,
       title: input.title ?? null,

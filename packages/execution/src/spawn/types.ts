@@ -792,14 +792,6 @@ export interface Tm8Manifest {
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
     /**
-     * The auto-compaction window the session was launched with, in tokens
-     * (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`; the harness clamps it to the model's
-     * own window). Optional because manifests written before it existed are
-     * still read back for posture inheritance; absent means "whatever the
-     * harness's own default was", not zero.
-     */
-    autocompactWindowTokens?: number;
-    /**
      * Deprecated common source. Null when providers differ or run in auto.
      */
     credentialSource: CredentialSource | null;
@@ -875,8 +867,6 @@ export interface SpawnRequest {
   agentTool?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   accessMode?: AccessMode | null;
-  /** Auto-compaction window in tokens (100k..1M, clamped to the model window by the harness). Null/absent = node default. */
-  autocompactWindowTokens?: number | null;
   /** Deprecated global compatibility carrier; provider keys below win. */
   credentialSource?: CredentialSource | null;
   /**
