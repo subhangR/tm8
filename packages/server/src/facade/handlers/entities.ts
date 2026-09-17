@@ -36,6 +36,7 @@ import {
   entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
+  readAncestorRows,
   ENTITY_FROM,
   iso,
   loadActors,
@@ -221,21 +222,19 @@ async function loadHierarchy(
   viewerIdentityId: string,
   childLimit: number,
 ): Promise<Hierarchy> {
-  // The ancestor chain, walked in SQL rather than by repeated round trips.
-  // Depth-capped for the same reason `entity_tree` is: a cycle would otherwise
-  // be an infinite loop, and 001 only guarantees acyclicity for edges.
-  const pathRows = await q.query<EntityRow>(
-    `with recursive up(id, parent_id, depth) as (
-        select e.id, e.parent_id, 0 from public.entities e where e.id = $1
-        union all
-        select p.id, p.parent_id, up.depth + 1
-          from public.entities p join up on p.id = up.parent_id
-         where up.depth < 32
-      )
-      select ${ENTITY_COLUMNS} ${ENTITY_FROM}
-       where e.id in (select id from up where depth > 0)`,
-    [row.id],
-  );
+  // The ancestor chain. Read as ids and then one point read each, NOT by
+  // joining the recursive CTE onto ENTITY_FROM -- `readAncestorRows` carries
+  // the measurement (~700ms joined vs ~26ms split, on an idle box) and the
+  // planner reason.
+  //
+  // includeDeleted: TRUE here, and that is load-bearing. The breadcrumb below
+  // walks `parentId` through `byId` and BREAKS at the first id it cannot find,
+  // so dropping a soft-deleted mid-chain ancestor would silently truncate the
+  // path back to the root rather than just hiding one crumb.
+  //
+  // Order is irrelevant to this caller: it rebuilds the order itself by
+  // walking the chain, so the helper's nearest-first is fine as-is.
+  const pathRows = await readAncestorRows(q, row.id, { includeDeleted: true });
 
   const childRows = await q.query<EntityRow>(
     `select ${ENTITY_COLUMNS} ${ENTITY_FROM}

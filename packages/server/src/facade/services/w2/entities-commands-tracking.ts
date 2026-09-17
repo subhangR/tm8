@@ -44,6 +44,7 @@ import {
   entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
+  readAncestorRows,
   ENTITY_FROM,
   iso,
   isoOrNull,
@@ -361,6 +362,32 @@ async function liveRow(q: Querier, id: string): Promise<EntityRow> {
   return row;
 }
 
+/**
+ * The existence + visibility guard, WITHOUT reading the entity.
+ *
+ * `liveRow` answers the same question but pays a full ENTITY_FROM point read
+ * (~200 columns across a 25-way join, 15-25ms) to do it. Callers that only
+ * need "does this exist and may I see it" discard that row.
+ *
+ * Exactly equivalent: ENTITY_FROM is `entities e` plus LEFT JOINs, so nothing
+ * downstream of `e` can hide a row. Visibility is decided by RLS on
+ * `public.entities` alone, which is the table queried here, with the same
+ * `deleted_at is null` predicate.
+ *
+ * This matters in `queryConnections`, which runs the guard on every call and
+ * is called once per page by `buildUniversalDetail` -- 12 pages for prod's
+ * most-connected entity (2,236 edges at limit 200), so 12 full point reads of
+ * one already-loaded row per detail build.
+ */
+async function assertLive(q: Querier, id: string): Promise<void> {
+  const rows = await q.query<{ one: number }>(
+    `/* entities.assert-live */
+     select 1 as one from public.entities e where e.id = $1 and e.deleted_at is null`,
+    [id],
+  );
+  if (rows.length === 0) throw new CollabError('not_found', `no such entity: ${id}`);
+}
+
 function detailContent(row: EntityRow, enrichment: EnrichmentRow | undefined): EntityContent {
   if (!enrichment) return contentOf(row);
   const content = enrichment.content ?? {};
@@ -491,7 +518,7 @@ async function queryConnections(
   query: ConnectionQuery,
   viewerIdentityId: string,
 ): Promise<Page<EdgeView>> {
-  await liveRow(q, query.entityId);
+  await assertLive(q, query.entityId);
   const fp = fingerprint('entities.connections', {
     entityId: query.entityId,
     types: query.types,
@@ -594,20 +621,17 @@ async function hierarchyFor(
   if (HIERARCHY_DISABLED_KINDS.has(row.kind)) {
     throw new CollabError('forbidden', `hierarchy is disabled for ${row.kind}`);
   }
-  const ancestors = await q.query<EntityRow & { hierarchy_depth: number }>(
-    `with recursive up(id, parent_id, depth, seen) as (
-       select e.id, e.parent_id, 0, array[e.id] from public.entities e where e.id = $1
-       union all
-       select parent.id, parent.parent_id, up.depth + 1, up.seen || parent.id
-         from up join public.entities parent on parent.id = up.parent_id
-        where up.depth < 32 and not parent.id = any(up.seen)
-     )
-     select ${ENTITY_COLUMNS}, up.depth hierarchy_depth ${ENTITY_FROM}
-       join up on up.id = e.id
-      where up.depth > 0 and e.deleted_at is null
-      order by up.depth desc`,
-    [row.id],
-  );
+  // Ancestors are read as ids and then one at a time, NOT by joining the
+  // recursive CTE onto ENTITY_FROM. `readAncestorRows` carries the measurement
+  // and the reason; the short version is that the joined form costs ~700ms to
+  // return two rows and this costs ~26ms.
+  //
+  // Reversed to depth DESCENDING: `path` renders root -> parent, which is the
+  // order a breadcrumb reads in, and the helper returns nearest-first.
+  //
+  // Deleted ancestors are EXCLUDED here (unlike `entities.get`), preserving
+  // what the single query did by filtering in its outer select.
+  const ancestors = (await readAncestorRows(q, row.id, { includeDeleted: false })).reverse();
   const childRows = await q.query<EntityRow>(
     `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
       where e.parent_id = $1 and e.deleted_at is null
@@ -646,21 +670,63 @@ async function collectionItems(
   collectionId: string,
   viewerIdentityId: string,
 ): Promise<EntitySummary[]> {
+  // TWO STEPS, and the reason is that the one-step form took 43 SECONDS.
+  //
+  // This used to join `edges` onto ENTITY_FROM directly. The planner
+  // estimated the edges index scan at ONE row (this collection has 56) and,
+  // on that estimate, chose to put the entire 25-way join on the INNER side
+  // of a nested loop with `ce.dst_id = e.id` as a Join Filter rather than an
+  // index condition:
+  //
+  //   Nested Loop  (cost=3008.99..172955.29 rows=1)
+  //     Join Filter: (ce.dst_id = e.id)
+  //     ->  Index Scan on edges ce            rows=1     -- actually 56
+  //     ->  Nested Loop Left Join             rows=14334 -- every entity
+  //
+  // So it rebuilt the full 25-way join over all 14,334 entities once per
+  // collection member and threw almost all of it away: ~800,000 rows of
+  // 6,079 bytes to return 50. Measured on prod: 43,694ms / 14,636ms /
+  // 15,824ms across three runs. Those last two straddle the 15s client
+  // timeout, which is the reported symptom.
+  //
+  // `join_collapse_limit=1` does NOT rescue it (still ~18s) -- the join order
+  // is not the problem, the rows=1 estimate driving a rescan is.
+  //
+  // Split, the ordering runs on `edges` + `entities` alone (two tables, an
+  // index and a limit) and only the surviving 50 ids ever reach ENTITY_FROM.
+  // Measured: 3ms + 40ms = ~44ms, against 14,636ms. Same rows, same order.
+  //
   // The position cast is TYPE-GUARDED, exactly as in `set_collection_item`
   // (migration 100): edge `props` are client-controlled, and one membership
   // written with `props: {position: "top"}` would otherwise 22P02 this read —
   // which maps to not_found, turning a live collection's detail into a 404.
-  const rows = await q.query<EntityRow>(
-    `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
-       join public.edges ce on ce.dst_id = e.id and ce.src_id = $1 and ce.type = 'contains'
-      where e.deleted_at is null
+  const ordered = await q.query<{ id: string }>(
+    `/* collections.items:ids */
+     select e.id
+       from public.edges ce
+       join public.entities e on e.id = ce.dst_id
+      where ce.src_id = $1 and ce.type = 'contains' and e.deleted_at is null
       order by (case when jsonb_typeof(ce.props -> 'position') = 'number'
                      then (ce.props ->> 'position')::float8 end) nulls last,
                ce.created_at, e.id
       limit ${COLLECTION_ITEMS_PREVIEW_LIMIT}`,
     [collectionId],
   );
-  return loadUniversalSummaries(q, rows, viewerIdentityId);
+  if (ordered.length === 0) return [];
+
+  const ids = ordered.map((r) => r.id);
+  const rows = await q.query<EntityRow>(
+    `/* collections.items:rows */
+     select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = any($1::uuid[])`,
+    [ids],
+  );
+  // `= any()` does not preserve argument order and step 1 IS the order, so
+  // the rows are put back into it here rather than re-sorted in SQL.
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const inOrder = ids
+    .map((id) => byId.get(id))
+    .filter((r): r is EntityRow => r !== undefined);
+  return loadUniversalSummaries(q, inOrder, viewerIdentityId);
 }
 
 async function buildUniversalDetail(
