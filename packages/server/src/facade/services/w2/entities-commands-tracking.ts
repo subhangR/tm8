@@ -362,6 +362,32 @@ async function liveRow(q: Querier, id: string): Promise<EntityRow> {
   return row;
 }
 
+/**
+ * The existence + visibility guard, WITHOUT reading the entity.
+ *
+ * `liveRow` answers the same question but pays a full ENTITY_FROM point read
+ * (~200 columns across a 25-way join, 15-25ms) to do it. Callers that only
+ * need "does this exist and may I see it" discard that row.
+ *
+ * Exactly equivalent: ENTITY_FROM is `entities e` plus LEFT JOINs, so nothing
+ * downstream of `e` can hide a row. Visibility is decided by RLS on
+ * `public.entities` alone, which is the table queried here, with the same
+ * `deleted_at is null` predicate.
+ *
+ * This matters in `queryConnections`, which runs the guard on every call and
+ * is called once per page by `buildUniversalDetail` -- 12 pages for prod's
+ * most-connected entity (2,236 edges at limit 200), so 12 full point reads of
+ * one already-loaded row per detail build.
+ */
+async function assertLive(q: Querier, id: string): Promise<void> {
+  const rows = await q.query<{ one: number }>(
+    `/* entities.assert-live */
+     select 1 as one from public.entities e where e.id = $1 and e.deleted_at is null`,
+    [id],
+  );
+  if (rows.length === 0) throw new CollabError('not_found', `no such entity: ${id}`);
+}
+
 function detailContent(row: EntityRow, enrichment: EnrichmentRow | undefined): EntityContent {
   if (!enrichment) return contentOf(row);
   const content = enrichment.content ?? {};
@@ -492,7 +518,7 @@ async function queryConnections(
   query: ConnectionQuery,
   viewerIdentityId: string,
 ): Promise<Page<EdgeView>> {
-  await liveRow(q, query.entityId);
+  await assertLive(q, query.entityId);
   const fp = fingerprint('entities.connections', {
     entityId: query.entityId,
     types: query.types,
