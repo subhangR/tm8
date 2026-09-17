@@ -13,6 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PtyAttachRefused } from './ptyAttachRefusal.js';
 import { ptyTransport } from './ptyTransport.js';
 
 class FakeWebSocket {
@@ -353,6 +354,88 @@ describe('pty transport — offset resume', () => {
     const sentBin = last().sent.filter((f) => typeof f !== 'string');
     expect(sentBin.length).toBe(1);
     expect(new TextDecoder().decode(sentBin[0] as Uint8Array)).toBe('ls -la\r');
+  });
+
+  /**
+   * 187 — the refusal latch, and the one reason it may be lifted.
+   *
+   * A refusal stops the reconnect loop, which is the whole point; the risk it
+   * creates is the opposite one, a latch that outlives the condition. Signing
+   * in is the only event that can change a refusal's answer without somebody
+   * else acting, so it is the only event allowed to clear one — and clearing
+   * it has to reach the SURFACE, not just the map, or the user follows an
+   * instruction into a working socket wearing a stale placeholder.
+   */
+  it('a refused attach latches: it stops the dial and says so exactly once', async () => {
+    const refusals: string[] = [];
+    const off = ptyTransport.onAttachRefused((id, r) => refusals.push(`${id}:${r.reason}`));
+    ptyTransport.openSession('s1', '', undefined, async () => {
+      throw new PtyAttachRefused('unauthorized', 'view', 'no pass');
+    }, 'view');
+    await vi.waitFor(() => expect(refusals).toEqual(['s1:unauthorized']));
+    const dialled = FakeWebSocket.instances.length;
+
+    // Every automatic path lands in `_ensureSocket`, and none of them may re-ask.
+    ptyTransport.suspend('s1');
+    ptyTransport.resume('s1');
+    window.dispatchEvent(new Event('online'));
+    expect(FakeWebSocket.instances.length).toBe(dialled);
+    off();
+  });
+
+  it('clearAuthRefusals lifts an unauthorized latch, re-dials, AND announces the clear', async () => {
+    const refusals: string[] = [];
+    const cleared: string[] = [];
+    const offR = ptyTransport.onAttachRefused((id, r) => refusals.push(`${id}:${r.reason}`));
+    const offC = ptyTransport.onAttachRefusalCleared((id) => cleared.push(id));
+
+    let deny = true;
+    ptyTransport.openSession('s1', '', undefined, async () => {
+      if (deny) throw new PtyAttachRefused('unauthorized', 'view', 'no pass');
+      return {
+        workSessionId: 's1',
+        url: '/v2/ws?sessionId=s1&mode=view',
+        protocol: 'ws' as const,
+        mode: 'view' as const,
+        token: 'tm8g_after-sign-in',
+        expiresAt: new Date(Date.now() + 30_000).toISOString(),
+      };
+    }, 'view');
+    await vi.waitFor(() => expect(refusals).toEqual(['s1:unauthorized']));
+    const dialled = FakeWebSocket.instances.length;
+
+    deny = false;
+    ptyTransport.clearAuthRefusals();
+
+    // The announcement is synchronous with the clear; the socket follows.
+    // Without it `LiveTerminal`'s placeholder state has no path back to null
+    // short of a remount, and nothing remounts on sign-in.
+    expect(cleared).toEqual(['s1']);
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(dialled + 1));
+
+    offR();
+    offC();
+  });
+
+  it('clearAuthRefusals leaves a private session private', async () => {
+    const cleared: string[] = [];
+    const refusals: string[] = [];
+    const offR = ptyTransport.onAttachRefused((id, r) => refusals.push(`${id}:${r.reason}`));
+    const offC = ptyTransport.onAttachRefusalCleared((id) => cleared.push(id));
+
+    ptyTransport.openSession('s2', '', undefined, async () => {
+      throw new PtyAttachRefused('forbidden', 'view', 'not shared');
+    }, 'view');
+    await vi.waitFor(() => expect(refusals).toEqual(['s2:forbidden']));
+    const dialled = FakeWebSocket.instances.length;
+
+    ptyTransport.clearAuthRefusals();
+    // Signing in does not make somebody else's decision go away.
+    expect(cleared).toEqual([]);
+    expect(FakeWebSocket.instances.length).toBe(dialled);
+
+    offR();
+    offC();
   });
 
   it('a real exit frame ends the session and does not reconnect', () => {

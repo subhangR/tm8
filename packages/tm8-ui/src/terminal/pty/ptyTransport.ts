@@ -55,6 +55,7 @@ type ExitHandler = (id: string, exitCode?: number | null) => void;
 type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
 type AttachRefusedHandler = (id: string, refusal: PtyAttachRefused) => void;
+type AttachRefusalClearedHandler = (id: string) => void;
 export type PtyGrantProvider = (id: string) => Promise<StreamAttachGrant>;
 
 const _sockets = new Map<string, WebSocket>();
@@ -83,6 +84,7 @@ const _exitHandlers: ExitHandler[] = [];
 const _sizeHandlers: SizeHandler[] = [];
 const _reattachHandlers: ReattachHandler[] = [];
 const _attachRefusedHandlers: AttachRefusedHandler[] = [];
+const _attachRefusalClearedHandlers: AttachRefusalClearedHandler[] = [];
 /**
  * Ids whose attach was REFUSED (not failed). They stay in `_activeSessions`
  * — the app still wants them — but nothing reconnects them, because the
@@ -626,6 +628,14 @@ export const ptyTransport = {
     for (const [id, refusal] of [..._refusals]) {
       if (refusal.reason !== 'unauthorized') continue;
       _refusals.delete(id);
+      // ANNOUNCE THE CLEAR, NOT ONLY THE REFUSAL. The latch lives here but the
+      // sentence lives in React state that only the terminal-creation effect
+      // ever resets, and nothing remounts on sign-in — so dropping the latch
+      // silently bought a working socket underneath a placeholder still saying
+      // "Sign in again to watch this terminal". Optimistic on purpose: if the
+      // re-dial is refused again the refusal channel fires and puts the
+      // sentence straight back.
+      for (const h of _attachRefusalClearedHandlers) h(id);
       if (_activeSessions.has(id) && !_suspended.has(id)) _ensureSocket(id);
     }
   },
@@ -816,6 +826,19 @@ export const ptyTransport = {
     return () => {
       const i = _attachRefusedHandlers.indexOf(handler);
       if (i >= 0) _attachRefusedHandlers.splice(i, 1);
+    };
+  },
+
+  /**
+   * The refusal was withdrawn and the id re-dialled. The mirror of
+   * {@link onAttachRefused}: a surface that renders a refusal needs to be told
+   * when it stops being true, and only `clearAuthRefusals` can ever say so.
+   */
+  onAttachRefusalCleared(handler: AttachRefusalClearedHandler): () => void {
+    _attachRefusalClearedHandlers.push(handler);
+    return () => {
+      const i = _attachRefusalClearedHandlers.indexOf(handler);
+      if (i >= 0) _attachRefusalClearedHandlers.splice(i, 1);
     };
   },
 

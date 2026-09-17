@@ -13,10 +13,18 @@
  *
  * A refusal is therefore TERMINAL for the current attach: retrying is not
  * resilience here, it is a poll of somebody else's decision. It resumes only
- * when something actually changes — the owner shares the session (187) — and
- * the viewer picks that up by remounting the terminal, which is the only thing
- * that clears the latch. There is deliberately no in-place Retry: pressing one
- * before the owner has shared would re-ask a settled question.
+ * when something actually changes. For `forbidden` and `not_found` that change
+ * is somebody ELSE acting — the owner shares the session (187) — which the
+ * transport has no feed to learn about, so a remount is what clears those two
+ * latches and there is deliberately no in-place Retry: pressing one before the
+ * owner has shared would re-ask a settled question.
+ *
+ * `unauthorized` is the exception, and the only one, because it is about the
+ * VIEWER: they can fix it, the sentence below tells them to, and signing in is
+ * an event the client already sees. `ptyTransport.clearAuthRefusals()` drops
+ * those latches, re-dials, and announces the clear so the surface stops showing
+ * the sentence. An instruction the user follows to no effect is worse than no
+ * instruction.
  *
  * It lives in its own leaf module so the transport can recognise a refusal
  * without importing the HTTP mint, and the guard is BRANDED rather than

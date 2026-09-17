@@ -66,6 +66,7 @@ vi.mock('./pty/ptyTransport.js', () => ({
     // passive effect, which surfaces as every test in the file failing for a
     // reason that has nothing to do with focus.
     onAttachRefused: () => () => {},
+    onAttachRefusalCleared: () => () => {},
     openSession: vi.fn(),
     closeSession: vi.fn(),
     resize: vi.fn(),

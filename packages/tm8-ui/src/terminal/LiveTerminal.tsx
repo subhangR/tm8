@@ -710,6 +710,15 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (id !== sessionId) return;
       setRefusal(describePtyAttachRefusal(refused));
     });
+    // …and the same channel in reverse. Sign-in drops the `unauthorized` latch
+    // and re-dials, but this state is reset in exactly one other place — the
+    // terminal-creation effect above — and nothing remounts on sign-in. Without
+    // this the user follows the instruction, the socket comes back, and the
+    // placeholder telling them to sign in is still sitting on top of it.
+    const offRefusalCleared = ptyTransport.onAttachRefusalCleared((id) => {
+      if (id !== sessionId) return;
+      setRefusal(null);
+    });
 
     // Mint a fresh one-shot capability for every connect/reconnect. The HTTP
     // mint may use the active pass while older browser sessions transition to
@@ -735,6 +744,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       offSize();
       offExit();
       offRefused();
+      offRefusalCleared();
       onData.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
