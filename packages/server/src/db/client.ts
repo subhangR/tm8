@@ -195,6 +195,19 @@ export interface PgDbOptions {
    * this pool serves complete in milliseconds; a statement still running after
    * this long is a bug, and without the ceiling it holds one of `max` clients
    * against every other request on the node.
+   *
+   * It must stay BELOW the client deadline (`DEFAULT_TIMEOUT_MS`, 15s, in both
+   * `packages/cli/src/client.ts` and `packages/tm8-ui/src/data/real/http.ts`).
+   * The default was 30s, which is a sound answer to "how long before a wedged
+   * client is permanently stuck" and the wrong answer to "how long may a slot
+   * be held for a caller who has already left". Nothing cancels a query when
+   * the HTTP client disconnects — the JSON response path registers no `close`
+   * handler and this module has no cancellation primitive — so a 30s ceiling
+   * against a 15s deadline means every timed-out request keeps burning one of
+   * `max` slots for 15s MORE while the UI retries into a pool that is filling
+   * with work nobody awaits. Measured on prod 2026-09-17: pool 32/32 active,
+   * `waiting=0`, every backend CPU-bound. Set it under the deadline so an
+   * abandoned statement dies with its caller rather than outliving it.
    */
   readonly statementTimeoutMillis?: number;
   /**
@@ -247,7 +260,7 @@ export class PgDb implements Db {
       // Startup parameters, applied by the server per connection — a stuck
       // statement or an abandoned transaction is killed by Postgres itself,
       // so no Node-side failure mode can wedge a pooled client permanently.
-      statement_timeout: options.statementTimeoutMillis ?? 30_000,
+      statement_timeout: options.statementTimeoutMillis ?? 12_000,
       idle_in_transaction_session_timeout: options.idleInTransactionTimeoutMillis ?? 30_000,
       options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'}`,
     });

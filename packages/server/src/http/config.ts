@@ -140,6 +140,17 @@ export interface ServerConfig {
    */
   readonly dbPoolMax?: number;
   /**
+   * Server-enforced ceiling on a single statement, in ms
+   * (`TM8_DB_STATEMENT_TIMEOUT_MS`). Default 12000.
+   *
+   * Must stay below the 15s client deadline. Exposed as an env var for the
+   * same reason `dbPoolMax` is: it was a hardcoded 30s in db/client.ts, and
+   * on a contended box the only way to stop abandoned queries outliving their
+   * caller was a rebuild. See the field doc in db/client.ts for why 30s was
+   * the wrong ceiling.
+   */
+  readonly dbStatementTimeoutMs?: number;
+  /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
    * a configuration error, not a degraded mode.
@@ -463,6 +474,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError(`TM8_DB_POOL_MAX must be an integer between 1 and 1000, got ${JSON.stringify(dbPoolMaxRaw)}`);
   }
 
+  const dbStatementTimeoutRaw = env.TM8_DB_STATEMENT_TIMEOUT_MS?.trim();
+  const dbStatementTimeoutMs = dbStatementTimeoutRaw ? Number.parseInt(dbStatementTimeoutRaw, 10) : 12_000;
+  if (!Number.isInteger(dbStatementTimeoutMs) || dbStatementTimeoutMs <= 0) {
+    throw new ConfigError(
+      `TM8_DB_STATEMENT_TIMEOUT_MS must be a positive integer, got ${JSON.stringify(dbStatementTimeoutRaw)}`,
+    );
+  }
+
   // An unrecognised value REFUSES rather than falling back to `single`. A typo
   // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
   // exactly how a node ends up auto-authenticating everyone who reaches
@@ -574,6 +593,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       ),
     },
     dbPoolMax,
+    dbStatementTimeoutMs,
     ...(livekit ? { livekit } : {}),
   };
 }
