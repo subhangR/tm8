@@ -38,6 +38,7 @@ import {
   json,
   literal,
   ok,
+  OWNER_URL,
   rootClaims,
   scalar,
   uuid,
@@ -235,17 +236,128 @@ test('drive requires the VIEW gate too: unshared beats drive_mode=space', () => 
     s, 'view', claimsC, 'c-view-unshared');
 });
 
+test('an UNLISTED session_kind does NOT inherit the space default — the trigger fails closed', () => {
+  // The review case. The trigger used to skip only 'credential', which made it a
+  // deny-list: every other kind inherited, including `container_exec`, whose
+  // insert (177:1649) names no share_mode and whose PTY nobody decided to
+  // publish. It is now an allow-list of ('agent','shell'), so this asserts the
+  // property that matters for the NEXT kind as much as for this one — a kind
+  // the product decision never considered keeps the column defaults.
+  //
+  // Driven at the table rather than through `start_container_exec_session`,
+  // which needs a live container; the trigger sits on the INSERT, so this is the
+  // same seam it fires on.
+  // The trigger fires on INSERT, so this needs a genuinely new detail row. It
+  // builds the envelope by hand rather than deleting a spawned session's row:
+  // `work_session_interaction_pins` cascades off `work_sessions` and its
+  // `guard_pin_snapshot()` refuses the delete ("pins are immutable; append a
+  // revision"), so re-making a spawned row is not available. The insert names
+  // no `share_mode`, exactly as `start_container_exec_session` (177:1649) does.
+  const exec = scalar(
+    `insert into public.entities (space_id, kind, position, created_by)
+       values (${uuid(w.spaceA)}, 'work_session', 1, ${uuid(w.personaA)})
+     returning id`,
+    { url: OWNER_URL },
+  );
+  ok(
+    `insert into public.work_sessions (entity_id, session_kind, status, node_id)
+       values (${uuid(exec)}, 'container_exec', 'running', 'node-1')`,
+    { url: OWNER_URL },
+  );
+  assert.equal(
+    modesOf(exec), 'none/owner',
+    'a container_exec session must keep the column defaults, not the space default',
+  );
+
+  // CONTROL, so the assertion above is not vacuous: the same hand-built insert
+  // at a LISTED kind does inherit. Without this the test would still pass if the
+  // trigger had simply stopped firing.
+  const shell = scalar(
+    `insert into public.entities (space_id, kind, position, created_by)
+       values (${uuid(w.spaceA)}, 'work_session', 2, ${uuid(w.personaA)})
+     returning id`,
+    { url: OWNER_URL },
+  );
+  ok(
+    `insert into public.work_sessions (entity_id, session_kind, status, node_id)
+       values (${uuid(shell)}, 'shell', 'running', 'node-1')`,
+    { url: OWNER_URL },
+  );
+  assert.equal(
+    modesOf(shell), 'space/owner',
+    'a shell session IS on the allow-list and must still inherit',
+  );
+});
+
+test('turning a dial BUMPS the entity version, so other devices learn about it', () => {
+  // The review case, and the one none of the other tests would have caught.
+  // `entity.upsert` has exactly one source — `entities_capture_event` on
+  // `public.entities` (003:385) — so a write that touched only `work_sessions`
+  // emitted nothing any other device could act on, and every viewer but the
+  // clicking one kept a stale badge. That is precisely the "streams on one
+  // device, not on another" complaint this whole task was opened for.
+  const s = spawn('version-bump');
+  const versionOf = () =>
+    Number(scalar(`select version from public.entities where id = ${uuid(s)}`,
+      { claims: w.claimsA }));
+  const before = versionOf();
+  ok(shareSql(s, { share: 'none' }, 'bump-1'), { claims: w.claimsA });
+  const after = versionOf();
+  assert.ok(after > before, `version must advance, got ${before} -> ${after}`);
+
+  // And because it advances, the optimistic guard is no longer vacuous: a stale
+  // expectation must now be REFUSED. Before the fix this passed every time,
+  // since a version that cannot move always matches whatever you remember.
+  denied(
+    'set_work_session_sharing at a stale expected_version',
+    `select public.set_work_session_sharing(${uuid(s)}, ${before},
+       'space', null, null, ${literal(cmid('bump-stale'))})`,
+    { claims: w.claimsA },
+  );
+});
+
+test("'explicit' is refused by the RPC, though the column still admits it", () => {
+  // It round-tripped before: the RPC stored it, the gate reads `= 'none'` so it
+  // behaved as 'space', and the badge rendered "shared: explicit" for a session
+  // open to the whole space. Nothing in this schema consults a per-person list,
+  // so the value is inert and must not become settable through the first door
+  // that could ever set it. The CHECK constraint keeps admitting it so any row
+  // already carrying it stays legal.
+  const s = spawn('explicit-refused');
+  denied(
+    'set_work_session_sharing with share_mode=explicit',
+    `select public.set_work_session_sharing(${uuid(s)}, null, 'explicit', null,
+       null, ${literal(cmid('explicit'))})`,
+    { claims: w.claimsA, expect: '22023' },
+  );
+  assert.equal(modesOf(s), 'space/owner', 'and the row is untouched');
+  ok(
+    `update public.work_sessions set share_mode = 'explicit' where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL },
+  );
+  assert.equal(modesOf(s), 'explicit/owner', 'the CHECK still admits a stored explicit');
+});
+
 // -----------------------------------------------------------------------------
 // 3. The teammate path, which 187 must PRESERVE rather than replace.
 // -----------------------------------------------------------------------------
-test('a teammate-created session stays reachable through can_act_as, even at share_mode=none', () => {
+test('KNOWN LIMIT: on a teammate-created session BOTH dials are inert, because 075 outranks them', () => {
   const s = spawn('agent-launched', { actorId: w.personaA });
   ok(shareSql(s, { share: 'none', drive: 'owner' }, 'agent-private'), { claims: w.claimsA });
 
-  // C may act as the persona (075), the persona created the session, so both
-  // gates open on the `may_act_as_creator` arm without any sharing being set.
-  // This is today's behaviour and the reason agent terminals are already
-  // visible space-wide; 187 adds a dial beside it and removes nothing.
+  // Read this as the gap it is, not as a feature. The owner has just asked for
+  // the most private posture both dials can express, and member C — who has no
+  // grant, no admin right and no relationship to this session — still gets BOTH
+  // view and drive. Both gates open on the `may_act_as_creator` arm, 075 makes
+  // `can_act_as` true for every active member whenever `created_by` is a
+  // team_member entity, and 464 of the 997 sessions on the live node are.
+  //
+  // It is 087's model, not 187's, and 187 deliberately does not change it: this
+  // arm is how a human watches an agent's terminal today, so closing it is a
+  // product decision with its own blast radius rather than a tidy-up. What 187
+  // owes it is that no surface claim it away — hence "watch: not shared" and
+  // the note in `renderShared`, and hence this test being named after the hole
+  // rather than after the mechanism that makes it.
   assert.equal(attaches(s, 'view', claimsC, 'c-view-agent').mode, 'view');
   assert.equal(attaches(s, 'drive', claimsC, 'c-drive-agent').mode, 'drive');
 });

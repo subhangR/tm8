@@ -2874,7 +2874,10 @@ export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttach
  */
 export const ExecutionSessionsShareInputSchema: z.ZodType<ExecutionSessionsShareInput> = z.object({
   ...commandContextShape,
-  shareMode: z.enum(['none', 'space', 'explicit']).optional(),
+  // No 'explicit'. It is readable on a stored row and not writable here — see
+  // ExecutionSessionsShareInput for why a value with no list behind it must not
+  // become settable through the first door that could set it.
+  shareMode: z.enum(['none', 'space']).optional(),
   driveMode: z.enum(['owner', 'space']).optional(),
   expectedVersion: z.number().int().nonnegative().optional(),
 }).strict().refine(

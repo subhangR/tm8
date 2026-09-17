@@ -292,13 +292,18 @@ function _ensureSocket(id: string): WebSocket | undefined {
     return existing;
   }
 
+  // A refused id is not dialled again by any of the automatic paths — wake,
+  // resume and visibility all land here, and each of them would otherwise
+  // re-ask a settled question. FIRST, above the no-provider branch: that branch
+  // dials unauthenticated and would ignore the latch, and it is reachable here
+  // only because `openSession` happens to clear `_refusals` after setting the
+  // provider. Checking at the top means the teardown order stops being
+  // load-bearing for whether a refused terminal reconnects.
+  if (_refusals.has(id)) return undefined;
+
   const provider = _grantProviders.get(id);
   if (!provider) return _openSocket(id);
   if (_connecting.has(id)) return undefined;
-  // A refused id is not dialled again by any of the automatic paths — wake,
-  // resume and visibility all land here, and each of them would otherwise
-  // re-ask a settled question.
-  if (_refusals.has(id)) return undefined;
 
   _connecting.add(id);
   const generation = _connectGenerations.get(id) ?? 0;
@@ -435,6 +440,7 @@ function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean):
       _epochs.delete(id);
       _pendingSends.delete(id);
       _overflowLatched.delete(id);
+      _refusals.delete(id);
       _serverBaseUrls.delete(id);
       _grantProviders.delete(id);
       _attachModes.delete(id);
@@ -599,6 +605,29 @@ export const ptyTransport = {
     // use of the same id.
     _pendingSends.delete(id);
     _ensureSocket(id);
+  },
+
+  /**
+   * Forget every `unauthorized` latch and re-dial.
+   *
+   * The other two refusals are somebody else's decision and cannot change by
+   * being re-asked. `unauthorized` is the one that is about the VIEWER, and the
+   * viewer can fix it — so the sentence we show them ("Sign in again to watch
+   * this terminal") has to be an instruction that works. Without this it was
+   * not: the latch outlives a pass-store write, nothing remounts on sign-in,
+   * and the terminal they were told to fix stayed dead until they navigated
+   * away and back.
+   *
+   * Called from the one place a new pass is adopted (auth/session.ts), not from
+   * a timer — this is an event, not a poll, and `forbidden`/`not_found` stay
+   * latched through it.
+   */
+  clearAuthRefusals(): void {
+    for (const [id, refusal] of [..._refusals]) {
+      if (refusal.reason !== 'unauthorized') continue;
+      _refusals.delete(id);
+      if (_activeSessions.has(id) && !_suspended.has(id)) _ensureSocket(id);
+    }
   },
 
   /** Detach permanently and drop every trace of the session. */

@@ -86,14 +86,33 @@ function withDatabase(url, database) {
  */
 const APP_VIA_SET_ROLE = process.env.TM8_APP_VIA_SET_ROLE === '1';
 
-/** The low-privilege role tm8-server connects as. RLS applies to it. */
-export const APP_URL = APP_VIA_SET_ROLE ? OWNER_URL : withUser(OWNER_URL, 'tm8_app');
+/**
+ * The low-privilege role tm8-server connects as. RLS applies to it.
+ *
+ * UNDER THE FLAG IT MUST STILL BE A DIFFERENT STRING FROM `OWNER_URL`, and that
+ * is the whole reason for the `application_name` below. Dozens of call sites
+ * pass `{ url: OWNER_URL }` DELIBERATELY, to run a statement the app role is not
+ * allowed to run — `delete from public.entities` expecting a 23514, a seed that
+ * has to bypass RLS. If both constants held the same string, `asAppRole` could
+ * not tell those apart from an app-role call and would prepend `set role
+ * tm8_app` to all of them, silently demoting every owner script in the suite.
+ * `application_name` is an ordinary libpq connection parameter, so the
+ * connection is identical in every way psql cares about and distinguishable in
+ * the one way this file cares about.
+ */
+export const APP_URL = APP_VIA_SET_ROLE
+  ? `${OWNER_URL}${OWNER_URL.includes('?') ? '&' : '?'}application_name=tm8_app_via_set_role`
+  : withUser(OWNER_URL, 'tm8_app');
 
 /**
  * Prefixed to every script that runs on APP_URL under the flag. `set role` is
  * session-scoped and each call is its own psql process, so it cannot leak — and
  * it must come BEFORE any `begin;` the script builds, since a `set local role`
  * inside the transaction would not cover statements the script runs outside it.
+ *
+ * The `url === APP_URL` test is an identity check against the constant above,
+ * NOT a check that the url points at the same database as the owner's. See the
+ * note there for why those two are not the same question.
  */
 function asAppRole(script, url) {
   return APP_VIA_SET_ROLE && url === APP_URL ? `set role tm8_app;\n${script}` : script;

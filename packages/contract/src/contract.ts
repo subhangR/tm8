@@ -4389,9 +4389,16 @@ export interface ExecutionStreamsAttachInput extends CommandContext {
  * Both fields are optional and a `null`/absent field MERGES — naming only
  * `driveMode` leaves `shareMode` alone — but at least one must be present, so a
  * request that would be a no-op is a 400 rather than a silent success.
+ *
+ * `shareMode` is NARROWER than {@link WorkSessionShareMode} on purpose: reading
+ * a session may return `'explicit'`, writing one may not. Nothing in this schema
+ * consults a per-person list, so the gate treats `'explicit'` as `'space'` while
+ * the badge renders "shared: explicit" — a stored row that says one thing and
+ * behaves as another. It stays readable so existing rows round-trip, and stays
+ * unwritable until the list it names actually exists.
  */
 export interface ExecutionSessionsShareInput extends CommandContext {
-  shareMode?: WorkSessionShareMode;
+  shareMode?: Exclude<WorkSessionShareMode, 'explicit'>;
   driveMode?: WorkSessionDriveMode;
   /** Optimistic concurrency against the session entity's version, when given. */
   expectedVersion?: number;

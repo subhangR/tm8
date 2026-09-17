@@ -101,13 +101,34 @@ comment on column public.work_sessions.drive_mode is
 -- `public.execution_spawn` is ~150 lines and has been redefined by seven
 -- migrations (007, 043, 048, 111, 129, 131, 150, 178). Re-pasting it to touch two
 -- columns would copy every line of that history forward for a chance to drift;
--- the insert is the real seam and this sits on it. Every spawn path — agent,
--- shell, and whatever is added next — inherits without being edited.
+-- the insert is the real seam and this sits on it.
 --
--- ONLY ON INSERT, and only when the caller did not name a value. A caller that
--- explicitly pins 'none' (083/183's credential path) must keep it, so the skip is
--- by `session_kind` rather than by comparing against the column default, which
--- cannot tell a deliberate 'none' from an absent one.
+-- IT STAMPS UNCONDITIONALLY, and it cannot do otherwise. A BEFORE INSERT trigger
+-- sees `new.share_mode` already filled by the column default, so it cannot tell
+-- an absent column from one the caller set to 'none' — the two are the same row
+-- by the time it runs. Selecting by `session_kind` is therefore the mechanism,
+-- not a shortcut around one: a kind that must stay private is named here, and a
+-- caller that pins 'none' on a kind that is NOT named has its value overwritten.
+-- (An earlier draft of this comment claimed the trigger fired "only when the
+-- caller did not name a value". It never did. The sentence was wrong, not the
+-- body.)
+--
+-- HENCE AN ALLOW-LIST, not a credential-shaped hole in a deny-list. Only 'agent'
+-- and 'shell' inherit the space default, because those are the two kinds the
+-- product decision was actually made about. The chain's own idiom runs the other
+-- way — 101 §4 replaced `session_kind <> 'agent'` with `= 'credential'` in
+-- `space_kind_counts` and 158 carries the note "so a future session kind is
+-- COUNTED unless someone writes it in here" — and that is right THERE, where
+-- default-include fails by showing a terminal in the rail. Here it fails by
+-- publishing a PTY to the whole space, so the polarity has to flip with it:
+-- a kind nobody has thought about should be invisible, not broadcast.
+--
+-- 'credential' is the existence proof. 083:490 had to pin it to 'none' after the
+-- fact because it streams an OAuth device code. 'container_exec' is the live
+-- one: 177:1649-1653 inserts with no `share_mode`, so under a deny-list every
+-- container exec terminal would have become space-readable in this migration,
+-- decided by nobody. Under this list it keeps the column default and the kind's
+-- owner opts in by adding four characters.
 -- -----------------------------------------------------------------------------
 create or replace function internal.apply_space_session_sharing_default()
 returns trigger language plpgsql security definer
@@ -115,9 +136,11 @@ set search_path = public, internal, pg_temp as $$
 declare
   space_row public.spaces;
 begin
-  -- A credential session streams an OAuth device code into its terminal. It is
-  -- private by construction (083:490) and no space policy may widen it.
-  if new.session_kind = 'credential' then
+  -- Default-deny by kind. 'credential' streams an OAuth device code (083:490);
+  -- 'container_exec' (177) was never part of this product decision; a kind added
+  -- after this migration has by definition not been considered at all. All three
+  -- keep the column defaults ('none'/'owner') until someone names them here.
+  if new.session_kind not in ('agent', 'shell') then
     return new;
   end if;
 
@@ -271,7 +294,14 @@ begin
     raise exception 'nothing to change: name share_mode, drive_mode, or both'
       using errcode = '22023';
   end if;
-  if p_share_mode is not null and p_share_mode not in ('none','space','explicit') then
+  -- 'explicit' is NOT accepted here, though the column CHECK still admits it so
+  -- any row already carrying it stays legal. The value has no per-person list
+  -- behind it anywhere in this schema: the gate below tests `= 'none'`, so a
+  -- session set to 'explicit' is open to the entire space while its badge reads
+  -- "shared: explicit". Writing it would be a setting that lies. This door is
+  -- the first one that could ever have written it, so refusing here costs
+  -- nothing and keeps the inert value inert until someone builds the list.
+  if p_share_mode is not null and p_share_mode not in ('none','space') then
     raise exception 'unknown share_mode: %', p_share_mode using errcode = '22023';
   end if;
   if p_drive_mode is not null and p_drive_mode not in ('owner','space') then
@@ -300,6 +330,21 @@ begin
          updated_at = now()
    where entity_id = p_session_id;
 
+  -- THE ENVELOPE, NOT JUST THE DETAIL ROW. `entity.upsert` has exactly one
+  -- source -- `entities_capture_event` on `public.entities` (003:385) -- so a
+  -- write that touches only `work_sessions` emits no upsert, and every device
+  -- except the one that clicked keeps a stale badge and a stale row verb until
+  -- something unrelated bumps the row. That is the "streams on one device, not
+  -- on another" bug this whole task was opened to explain, and omitting this
+  -- statement would have reintroduced it for the control that fixes it.
+  --
+  -- It also makes `p_expected_version` mean something: a version that can never
+  -- advance always matches a stale expectation, so the guard would admit every
+  -- write it exists to refuse. The idiom is 107:88-90's, verbatim.
+  update public.entities
+     set version = version + 1, updated_at = now()
+   where id = p_session_id;
+
   -- REVOKE LIVE GRANTS ON NARROWING. A grant is a capability that has already
   -- left the server; un-sharing a session that leaves an unconsumed grant alive
   -- is a close button that does not close anything for up to 60 seconds.
@@ -314,10 +359,23 @@ begin
   --
   -- A teammate-created session resolves to no identity here (`created_by` is a
   -- team_member entity, which has no `members` row), so every grant is revoked.
-  -- That is churn rather than a restriction: 075 lets any active member act as
-  -- any teammate, so each of them re-mints on the next dial and succeeds. The
-  -- alternative — special-casing the persona — would make this the second place
-  -- in the file that decides what `can_act_as` means.
+  --
+  -- READ THAT AS A LIMIT, NOT AS CHURN. 075 lets any active member act as any
+  -- teammate, so each of them re-mints on the next dial and succeeds — which
+  -- means that on an agent-launched session `share_mode = 'none'` revokes the
+  -- outstanding capabilities and does NOT close the door they came through.
+  -- The gate below opens on `may_act_as_creator`, and 46% of the sessions on
+  -- the live node are created_by a team_member entity, so for those the dial
+  -- narrows nothing. This is 087's authority model, not something this
+  -- migration introduces, and changing it is a separate decision with a real
+  -- blast radius: it is how a human watches an agent's terminal today.
+  --
+  -- What this migration owes that fact is honesty, and pays it at the surfaces
+  -- (`renderShared` prints "not shared" rather than "owner only", plus a note)
+  -- and in `session_sharing.test.mjs`, where the case is pinned by name rather
+  -- than left as an unexplained green assertion. Special-casing the persona
+  -- here would instead make this the second place in the file that decides what
+  -- `can_act_as` means.
   if p_share_mode = 'none' or p_drive_mode = 'owner' then
     select m.identity_id into creator_identity
       from public.members m where m.entity_id = e.created_by;
