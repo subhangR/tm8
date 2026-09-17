@@ -13,7 +13,9 @@
  * the same D18 precedent that put `SHIPPED_DEFAULT_MENU` and
  * `HOME_RAIL_KINDS` here. It is registry-adjacent DATA: the groups only
  * CLASSIFY what `collectionKinds()` already offers, they never widen it
- * (R3: every collection kind is a root, custom kinds included).
+ * (R3: every collection kind is a root, custom kinds included) — with one
+ * stated exception, `HOME_RAIL_WITHHELD_KINDS`, which NARROWS it and says
+ * per kind why.
  *
  * WHY THIS IS NOT MenuConfig. The frozen menu DTO caps a group at 12 items
  * and caret children at 8; the full kind list does not fit, and a server
@@ -69,34 +71,121 @@ interface HomeRailGroupSpec {
  * Visual classification ONLY (R4): the order and the section labels. A kind
  * missing from the registry's collection set is skipped; a collection kind
  * missing from this spine still renders, appended under "More" — the spine
- * curates presentation, it never gates membership.
+ * curates presentation, it never gates membership (the one exception is
+ * `HOME_RAIL_WITHHELD_KINDS` below, which is a stated withdrawal rather than
+ * an omission).
+ *
+ * THE SPINE IS SEVEN GROUPS, AND THE GROUPING IS THE POINT (reporter ruling,
+ * 2026-09-17, task 01a0ada5 "Organizing the icon rail"). Before this it was
+ * three — Work / Library / People — and "Work" had swallowed nine kinds
+ * spanning three unrelated questions: what is being done (chats, tasks,
+ * sessions), what it is being done to (projects, docs), and what the
+ * repository recorded afterwards (commits, PRs, worktrees). A nine-row group
+ * under one word is an unsorted list wearing a label, which is what the
+ * ruling names. Each group below answers ONE question, and its label is that
+ * question's short noun:
+ *
+ *   Work       — what is in flight right now.
+ *   Agents     — who does the work and what they carry into it.
+ *   Content    — what the work produces and reads.
+ *   Structure  — how any of it is organised or related.
+ *   People     — the humans, and where they talk.
+ *   Code       — what the repository recorded.
+ *   Beta       — shipped, reachable, and not yet settled.
+ *
+ * THE LABELS ARE LOAD-BEARING, NOT DECORATION. The collapsed rail is the
+ * DEFAULT state (72px, `HomeView`), so a label only the expanded rail draws
+ * is a label most viewers never see — which would have left this ruling's
+ * "give each of them an apt subheading" satisfied in code and unsatisfied on
+ * screen. `HomeRail` therefore draws the eyebrow in BOTH widths; that is why
+ * every label here is short enough to set at 72px.
  */
 const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   {
     id: 'work',
     label: 'Work',
-    // `chat` LEADS (2026-09-05): the Chats tab left the top row and its door
-    // is this row. It leads rather than sitting wherever the registry happens
-    // to order it because a conversation is where work in this space starts —
-    // a chat is what spawns the `work_session` two rows down — and because the
-    // door it replaces led the tab row too. Before this it was in no group at
-    // all, so it rendered under "More": a real row, but filed as an
-    // afterthought beside custom kinds.
-    // `container` sits after `work_session` (Design §13.1): a machine is a
-    // place work runs, so it belongs beside the runs and not in the library.
-    kinds: ['chat', 'task', 'work_session', 'container', 'doc', 'project', 'pull_request', 'worktree', 'commit'],
+    // `chat` still LEADS, for the reason it has led since 2026-09-05: the
+    // Chats tab left the top row and this row is its door, a conversation is
+    // where work in this space starts, and a chat is what spawns the
+    // `work_session` two rows down. `project` closes the group as the thing
+    // all three hang off.
+    kinds: ['chat', 'task', 'work_session', 'project'],
   },
   {
-    id: 'library',
-    label: 'Library',
-    kinds: ['file', 'artifact', 'memory', 'collection', 'spell', 'skill', 'loop'],
+    id: 'agents',
+    label: 'Agents',
+    // A teammate and the two libraries it draws on. `skill` and `memory` sat
+    // in the old "Library" beside files and artifacts, which filed a
+    // teammate's capability and its recall as documents; they are neither.
+    kinds: ['team_member', 'skill', 'memory'],
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    // Authored, produced, uploaded — in that order, which is also the order
+    // of how much of it a space typically has.
+    kinds: ['doc', 'artifact', 'file'],
+  },
+  {
+    id: 'structure',
+    label: 'Structure',
+    // Neither of these is a thing work produces; both are arrangements OVER
+    // things work produced. A curated set, and an extracted index.
+    kinds: ['collection', 'graph'],
   },
   {
     id: 'people',
     label: 'People',
-    kinds: ['team_member', 'member', 'channel'],
+    // Humans only. `team_member` used to share this group; it moved to
+    // `agents`, where the things that configure it live.
+    kinds: ['member', 'channel'],
+  },
+  {
+    id: 'code',
+    label: 'Code',
+    // The repository's own record, which the old spine had scattered across
+    // the tail of a nine-row "Work". Read in the order a change travels:
+    // commit, then the review it landed through, then the checkout it ran in.
+    kinds: ['commit', 'pull_request', 'worktree'],
+  },
+  {
+    id: 'beta',
+    label: 'Beta',
+    // NAMED BY THE RULING, and the name is the content: these three ship and
+    // are reachable, and their shape is not settled. The group exists so a
+    // viewer can tell that from the rail instead of from a release note.
+    // `container` left the Work group for this one — a machine is where work
+    // runs, but the kind itself is still moving.
+    kinds: ['loop', 'spell', 'container'],
   },
 ];
+
+/**
+ * Collection kinds the rail deliberately does NOT offer as a Home root —
+ * the single, stated exception to "the spine curates, it never gates" (R3).
+ *
+ * `interaction_profile` (reporter ruling, 2026-09-17): a profile is not a
+ * population anybody browses. It is a SETTING that a session or a teammate
+ * carries, it is chosen from the entity that carries it (`EntityControls`),
+ * and it is immutable once pinned. Under the old spine it belonged to no
+ * group at all, so it rendered under "More" — a browsable root filed beside
+ * whatever custom kinds a space happens to have, which is how a settings row
+ * ended up in an entity rail in the first place.
+ *
+ * WITHHELD, NOT DELETED, and the distinction is the whole design. The
+ * registry row stays; the kind is still created, still resolved, still drawn
+ * wherever an entity names its profile. What goes is the ROOT: the rail row,
+ * the list header's kind switcher entry, the Workspace column menu and the
+ * mobile drawer row, all four of which read this one table.
+ *
+ * `isHomeRootKind` honours this too, on purpose. A withheld kind that a
+ * stored root or a hand-typed `k/` route could still select would open a list
+ * whose own switcher cannot name it — so a stale selection falls back to the
+ * default root instead. Withholding a kind here is therefore a real decision
+ * about the product, not a display filter, and it is deliberately harder to
+ * reach for than adding a spine group.
+ */
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile'];
 
 export interface HomeRailGroup {
   id: string;
@@ -104,9 +193,14 @@ export interface HomeRailGroup {
   kinds: readonly KindConfig[];
 }
 
+/** Every collection kind the rail is willing to offer as a root. */
+function railEligibleKinds(): KindConfig[] {
+  return collectionKinds().filter((config) => !HOME_RAIL_WITHHELD_KINDS.includes(config.kind));
+}
+
 /** The rail, resolved against the live registry. Never empty groups. */
 export function homeRailGroups(): HomeRailGroup[] {
-  const eligible = collectionKinds();
+  const eligible = railEligibleKinds();
   const byKind = new Map<string, KindConfig>(eligible.map((config) => [config.kind, config]));
   const placed = new Set<string>();
   const groups: HomeRailGroup[] = HOME_RAIL_GROUP_SPINE.map((spec) => ({
@@ -133,5 +227,5 @@ export function homeRootKinds(): KindConfig[] {
 }
 
 export function isHomeRootKind(kind: string): boolean {
-  return collectionKinds().some((config) => config.kind === kind);
+  return railEligibleKinds().some((config) => config.kind === kind);
 }
