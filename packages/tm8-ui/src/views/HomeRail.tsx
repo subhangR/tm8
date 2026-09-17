@@ -12,8 +12,9 @@
  * ANATOMY: collapsed by default at 72px, each mark keeping its word beneath
  * it — the #269 ruling ("collapsed keeps the word") applied to this rail;
  * an icon-only strip identifiable only by hovering is the arrangement that
- * ruling exists to prevent. Expanded, rows widen to icon-beside-word with
- * the group labels as eyebrows.
+ * ruling exists to prevent. Expanded, rows widen to icon-beside-word. The
+ * group eyebrow is drawn at BOTH widths — same reasoning one step up: a
+ * subheading the default state hides is a subheading that does not exist.
  *
  * THE COLLAPSE FLAG IS THE HOST'S, NOT THIS COMPONENT'S (task 01a00ac2).
  * It used to live here as its own `usePanelFlag('home-rail-collapsed')`.
@@ -48,7 +49,15 @@ export function HomeRail({ groups, activeKind, onSelect, collapsed, onToggleColl
       <div className="hr-rail__scroll">
         {groups.map((group) => (
           <div key={group.id} className="hr-rail__group" role="group" aria-label={group.label}>
-            {!collapsed ? <span className="hr-rail__eyebrow">{group.label}</span> : null}
+            {/*
+              THE EYEBROW DRAWS IN BOTH WIDTHS (task 01a0ada5). It used to be
+              expanded-only, and the rail's default state is COLLAPSED — so
+              the group labels the spine is careful about were labels most
+              viewers never saw, leaving seven groups separated by six hairlines
+              and nothing saying what separated them. `home-rail.ts` keeps every
+              label short enough to set at 72px for exactly this reason.
+            */}
+            <span className="hr-rail__eyebrow">{group.label}</span>
             {group.kinds.map((config) => (
               <button
                 key={config.kind}

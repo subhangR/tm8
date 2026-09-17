@@ -162,8 +162,40 @@ rail**, because:
 
 The rail *component* is reused chrome: same collapsed-by-default anatomy as
 #269 (icon + word beneath, 72px), same expand affordance, with group headers
-(visual classification only — e.g. Work / Library / Tracking / People) drawn
-from a presentation table in `home/`, not from MenuConfig.
+(visual classification only) drawn from a presentation table in `domain/`, not
+from MenuConfig.
+
+**Amended 2026-09-17 (task 01a0ada5 "Organizing the icon rail").** The shipped
+spine had settled at three groups — Work / Library / People — and "Work" had
+grown to nine kinds spanning three unrelated questions, which is an unsorted
+list wearing a label. The spine is now seven groups, each answering one
+question and headed by that question's short noun, in this order:
+
+| Group | Rows |
+| --- | --- |
+| Work | Chats, Tasks, Sessions, Projects |
+| Agents | Teammates, Skills, Memories |
+| Content | Docs, Artifacts, Files |
+| Structure | Collections, Graphs |
+| People | Members, Channels |
+| Code | Commits, Pull requests, Worktrees |
+| Beta | Loops, Spells, Containers |
+
+Two rules changed with it:
+
+- **The heading draws at both widths.** The rail is collapsed by default, so an
+  expanded-only eyebrow is a heading most viewers never see. Every label above
+  is therefore short enough to set inside 72px; `e2e/capture-home-rail.mjs`
+  measures that rather than asserting it.
+- **R3 gains one stated narrowing.** `HOME_RAIL_WITHHELD_KINDS` names
+  collection kinds the rail does not offer as a root, and today it names
+  exactly one: `interaction_profile`, which is a setting an entity carries and
+  chooses from its own panel, not a population anybody browses. Withheld is not
+  deleted — the registry row, the kind and every place an entity names its
+  profile are untouched; what goes is the ROOT, across all four surfaces that
+  read this table (rail, list-header switcher, Workspace column menu, mobile
+  drawer). Withholding a kind is a product decision and is deliberately harder
+  to reach for than adding a group.
 
 The retired rows stay reachable: every ref keeps its route and its palette
 entry (the revision-5 precedent — "a rail edit, not a feature removal").

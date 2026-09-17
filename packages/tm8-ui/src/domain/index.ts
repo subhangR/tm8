@@ -179,6 +179,7 @@ export { CATEGORY_DEFAULT_STATUS } from './status-categories';
 export {
   CHATS_ROOT,
   DEFAULT_HOME_KIND,
+  HOME_RAIL_WITHHELD_KINDS,
   LEGACY_HOME_TAB_KINDS,
   homeRailGroups,
   homeRootKinds,
