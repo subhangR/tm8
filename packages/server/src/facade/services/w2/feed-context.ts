@@ -66,6 +66,7 @@ import { claimsFor, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   ENTITY_COLUMNS,
+  readAncestorRows,
   ENTITY_FROM,
   MICROS,
   actorOf,
@@ -1091,19 +1092,18 @@ export class W2FeedContextService {
     let parents: EntitySummary[] = [];
     let children: EntitySummary[] = [];
     if (sections.has('hierarchy')) {
-      const parentRows = await q.query<EntityRow>(
-        `/* entities.context:parents */
-         with recursive up(id, parent_id, depth) as (
-           select e.id, e.parent_id, 0 from public.entities e where e.id = $1
-           union all
-           select p.id, p.parent_id, up.depth + 1
-             from public.entities p join up on p.id = up.parent_id
-            where up.depth < 32
-         )
-         select ${ENTITY_COLUMNS} ${ENTITY_FROM}
-          where e.id in (select id from up where depth > 0)`,
-        [id],
-      );
+      // Read as ids and then one point read each, NOT by joining the
+      // recursive CTE onto ENTITY_FROM -- see `readAncestorRows` for the
+      // measurement (~700ms joined vs ~26ms split) and the planner reason.
+      //
+      // includeDeleted: true preserves what this query did -- it filtered
+      // nothing, so a soft-deleted ancestor still appeared in the chain.
+      //
+      // The old query had NO `order by`, so its order was whatever the hash
+      // join happened to emit. The helper returns nearest-parent-first, which
+      // is now explicit and is the order that matters once `capList` truncates
+      // this list: the nearest ancestors are the ones worth keeping.
+      const parentRows = await readAncestorRows(q, id, { includeDeleted: true });
       parents = await assembleSummaries(q, parentRows, viewerIdentityId);
 
       const childRows = await q.query<EntityRow>(

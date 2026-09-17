@@ -2551,3 +2551,71 @@ export async function loadEntitySummariesByIds(
   const byId = new Map(summaries.map((s) => [s.id, s]));
   return unique.map((id) => byId.get(id)).filter((s): s is EntitySummary => s !== undefined);
 }
+
+/**
+ * The ancestor chain — read as ids first, then one point read per ancestor.
+ *
+ * WHY THIS IS TWO STEPS AND WHY THE SECOND ONE IS A LOOP. The obvious form is
+ * one query: join the recursive CTE straight onto `ENTITY_FROM`. Three call
+ * sites did exactly that and each cost ~700ms on prod to return two rows,
+ * measured on an idle box — this is intrinsic, not contention.
+ *
+ * `ENTITY_FROM` is a 25-way left join. The planner picks the cheap nested-loop
+ * plan (8 scan nodes) only when it can prove the predicate yields exactly one
+ * row. Joined to a CTE it cannot, so it hash-joins and builds hash tables over
+ * ALL the side tables: 26 sequential scans for two ancestors. The resulting
+ * plan costs 173,089, which crosses `jit_above_cost` (100,000), so every
+ * execution additionally LLVM-compiles 260 functions — measured Emission
+ * 269ms, JIT total 330ms, planning 43ms, execution 801ms.
+ *
+ * `= any($1::uuid[])` does not escape it either: same estimate problem.
+ * `where e.id = $1` is the only shape that reliably gets the 8-scan plan.
+ *
+ * So the N+1 is deliberate, and correct HERE and only here: the walk is capped
+ * at 32 and real chains are 1-5 deep, so this is a handful of ~13ms point
+ * reads against one 700ms scan of the whole database. Measured end to end on
+ * an idle box: ~700ms -> ~26ms for a two-ancestor chain.
+ *
+ * SEQUENTIAL, not `Promise.all`: `q` is a single connection, and fanning out
+ * would take pool slots on a node whose read concurrency IS its pool size.
+ *
+ * Returns DEPTH ASCENDING — immediate parent first, root last.
+ */
+export async function readAncestorRows(
+  q: Querier,
+  id: string,
+  opts: { readonly includeDeleted: boolean },
+): Promise<Array<EntityRow & { hierarchy_depth: number }>> {
+  // The `seen` guard, not just the depth cap: 001 only guarantees acyclicity
+  // for edges, and a cyclic parent chain would otherwise return the same
+  // entity 32 times for a breadcrumb to render.
+  const ids = await q.query<{ id: string; hierarchy_depth: number }>(
+    `/* entities.ancestors:ids */
+     with recursive up(id, parent_id, depth, seen) as (
+       select e.id, e.parent_id, 0, array[e.id] from public.entities e where e.id = $1
+       union all
+       select parent.id, parent.parent_id, up.depth + 1, up.seen || parent.id
+         from up join public.entities parent on parent.id = up.parent_id
+        where up.depth < 32 and not parent.id = any(up.seen)
+     )
+     select id, depth as hierarchy_depth from up where depth > 0 order by depth asc`,
+    [id],
+  );
+
+  // The walk CROSSES soft-deleted parents whether or not it returns them: a
+  // deleted mid-chain entity still connects its children to their grandparent.
+  // `includeDeleted` decides only what comes back, which is what the single
+  // query did by filtering in its outer select and not in the CTE.
+  const deletedFilter = opts.includeDeleted ? '' : ' and e.deleted_at is null';
+  const rows: Array<EntityRow & { hierarchy_depth: number }> = [];
+  for (const ancestor of ids) {
+    const found = await q.query<EntityRow>(
+      `/* entities.ancestors:row */
+       select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1${deletedFilter}`,
+      [ancestor.id],
+    );
+    const hit = found[0];
+    if (hit) rows.push({ ...hit, hierarchy_depth: ancestor.hierarchy_depth });
+  }
+  return rows;
+}

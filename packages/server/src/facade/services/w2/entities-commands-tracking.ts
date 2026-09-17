@@ -44,6 +44,7 @@ import {
   entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
+  readAncestorRows,
   ENTITY_FROM,
   iso,
   isoOrNull,
@@ -594,49 +595,17 @@ async function hierarchyFor(
   if (HIERARCHY_DISABLED_KINDS.has(row.kind)) {
     throw new CollabError('forbidden', `hierarchy is disabled for ${row.kind}`);
   }
-  // TWO STEPS, DELIBERATELY, and the second one is a LOOP on purpose.
+  // Ancestors are read as ids and then one at a time, NOT by joining the
+  // recursive CTE onto ENTITY_FROM. `readAncestorRows` carries the measurement
+  // and the reason; the short version is that the joined form costs ~700ms to
+  // return two rows and this costs ~26ms.
   //
-  // This was one query: the recursive CTE joined straight onto ENTITY_FROM.
-  // It read correctly and it cost 706ms on prod for a two-deep path, because
-  // ENTITY_FROM is a 25-way join and the planner can only pick the cheap
-  // nested-loop plan when it can prove the predicate yields exactly one row.
-  // Joined to a CTE it cannot, so it hash-joined instead and built a hash
-  // table over ALL 25 side tables -- 26 sequential scans, ~45,000 rows read,
-  // to return two ancestors. `= any($1::uuid[])` does not escape this either;
-  // it is the same estimate problem and measured 161ms for a single id.
-  // `where e.id = $1` is the ONLY shape that gets the 8-scan plan, so the
-  // ancestors are walked as ids first and then read one at a time.
+  // Reversed to depth DESCENDING: `path` renders root -> parent, which is the
+  // order a breadcrumb reads in, and the helper returns nearest-first.
   //
-  // N+1 is the right trade HERE and only here: the walk is capped at 32 and
-  // real paths are 1-5 deep, so this is a handful of 19ms point reads against
-  // one 706ms scan of the whole database. Measured 706ms -> ~60ms.
-  // Sequential, not Promise.all: `q` is one connection, and fanning out would
-  // take pool slots on a node whose pool saturation is the other half of this
-  // same bug.
-  const ancestorIds = await q.query<{ id: string; hierarchy_depth: number }>(
-    `/* entities.hierarchy:ancestor-ids */
-     with recursive up(id, parent_id, depth, seen) as (
-       select e.id, e.parent_id, 0, array[e.id] from public.entities e where e.id = $1
-       union all
-       select parent.id, parent.parent_id, up.depth + 1, up.seen || parent.id
-         from up join public.entities parent on parent.id = up.parent_id
-        where up.depth < 32 and not parent.id = any(up.seen)
-     )
-     select id, depth hierarchy_depth from up where depth > 0 order by depth desc`,
-    [row.id],
-  );
-  // The walk crosses deleted parents but must not RETURN them -- a soft-deleted
-  // mid-chain entity still connects its children to their grandparent, exactly
-  // as the single-query form did by filtering only in the outer select.
-  const ancestors: Array<EntityRow & { hierarchy_depth: number }> = [];
-  for (const ancestor of ancestorIds) {
-    const found = await q.query<EntityRow>(
-      `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1 and e.deleted_at is null`,
-      [ancestor.id],
-    );
-    const hit = found[0];
-    if (hit) ancestors.push({ ...hit, hierarchy_depth: ancestor.hierarchy_depth });
-  }
+  // Deleted ancestors are EXCLUDED here (unlike `entities.get`), preserving
+  // what the single query did by filtering in its outer select.
+  const ancestors = (await readAncestorRows(q, row.id, { includeDeleted: false })).reverse();
   const childRows = await q.query<EntityRow>(
     `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
       where e.parent_id = $1 and e.deleted_at is null
