@@ -195,6 +195,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? createDb(config.databaseUrl, {
         idempotencyEnabled: config.idempotencyEnabled !== false,
         ...(config.dbPoolMax !== undefined ? { max: config.dbPoolMax } : {}),
+        ...(config.dbStatementTimeoutMs !== undefined
+          ? { statementTimeoutMillis: config.dbStatementTimeoutMs }
+          : {}),
       })
     : undefined;
   const dataDir = config.dataDir ?? resolveServerDataDir();
