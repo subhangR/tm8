@@ -710,6 +710,32 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         usage: state.status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
         exposed: [],
       };
+    case 'drawing':
+      // A small, real scene: two rectangles and nothing else. The fixture
+      // carries actual Excalidraw members rather than `[]` so a panel that
+      // mounts the canvas has something to draw, and so a fixture-backed test
+      // exercises the same shape the server returns.
+      return {
+        kind: 'drawing',
+        format: 'excalidraw',
+        elements: [
+          {
+            id: 'fixture-rect-a', type: 'rectangle', x: 40, y: 40, width: 160, height: 90,
+            angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+            fillStyle: 'solid', strokeWidth: 2, roughness: 1, opacity: 100,
+            seed: 1, version: 1, versionNonce: 1, isDeleted: false,
+          },
+          {
+            id: 'fixture-rect-b', type: 'rectangle', x: 260, y: 40, width: 160, height: 90,
+            angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+            fillStyle: 'solid', strokeWidth: 2, roughness: 1, opacity: 100,
+            seed: 2, version: 1, versionNonce: 2, isDeleted: false,
+          },
+        ],
+        appState: { viewBackgroundColor: '#ffffff' },
+        // Always empty in phase 1: the doors refuse a non-empty files map.
+        files: {},
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -1819,6 +1845,14 @@ export function createFixtureSeam(): FixtureSeam {
         return { kind: 'voice_channel', participantCount: 0 };
       case 'doc':
         return { kind: 'doc', format: (c.format as 'markdown') ?? 'markdown', childCount: 0 };
+      // A new drawing is genuinely blank, so the count is 0 rather than a
+      // read of the input — "New drawing" creates an empty canvas.
+      case 'drawing':
+        return {
+          kind: 'drawing',
+          format: (c.format as string) ?? 'excalidraw',
+          elementCount: Array.isArray(c.elements) ? (c.elements as unknown[]).length : 0,
+        };
       case 'team_member':
         // `defaultProfileId: null` — a freshly created teammate has no
         // `defaults_to_profile` edge yet, and the field's contract is that
@@ -2975,6 +3009,25 @@ export function createFixtureSeam(): FixtureSeam {
               edges: Array.isArray(c.edges) ? (c.edges as never[]) : [],
               layout: (c.layout as Record<string, { x: number; y: number }>) ?? {},
               source: (c.source as string | null) ?? null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+        }
+        if (input.kind === 'drawing') {
+          /* Same reason as `graph`: the row IS the scene, so a created
+             drawing must carry a real content arm or the panel would mount
+             the canvas over `undefined` and look empty for the wrong reason.
+             A new drawing is genuinely blank — that is what "New drawing"
+             makes — so the arm is empty, not absent. */
+          const c = (input.content ?? {}) as Record<string, unknown>;
+          extras.set(s.id, {
+            content: {
+              kind: 'drawing',
+              format: (c.format as string) ?? 'excalidraw',
+              elements: Array.isArray(c.elements) ? (c.elements as never[]) : [],
+              appState: (c.appState as Record<string, unknown>) ?? {},
+              files: (c.files as Record<string, unknown>) ?? {},
             },
             connections: clone(NO_CONNECTIONS),
             capabilities: { ...CAPS_FULL },

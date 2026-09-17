@@ -1249,6 +1249,17 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     downloadHref={props.attachments?.downloadHref}
                     startUpload={props.attachments?.startUpload}
                     projectFolder={props.attachments?.projectFolder}
+                    /* Create a blank drawing attached HERE, then open it — a
+                       canvas nobody is looking at is not what "add a drawing"
+                       means. The refetch is `onAttachmentUploaded`, the same
+                       one an upload and a detach share, because all three
+                       change the same thing: this anchor's `attached_to`
+                       edges. */
+                    createDrawing={props.attachments?.createDrawing ? async () => {
+                      const id = await props.attachments!.createDrawing!(detail.id, 'Untitled drawing');
+                      props.onAttachmentUploaded?.();
+                      props.onOpenEntity?.(id);
+                    } : undefined}
                     onUploaded={props.onAttachmentUploaded}
                     onDetach={props.attachments?.detach}
                     /* A detach and an upload change the SAME thing — the

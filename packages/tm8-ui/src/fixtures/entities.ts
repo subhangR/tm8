@@ -1071,6 +1071,23 @@ export const customRitual = summary({
  * viewer's publisher chrome exercises the agent wording rather than only the
  * human one.
  */
+/**
+ * Drawing — a hand-drawn canvas as an entity (migration 194).
+ *
+ * `elementCount` is 6 rather than 0 because an EMPTY canvas is the one state
+ * that proves nothing: a list row showing "0" and a row whose state failed to
+ * project look identical. Six is a small real sketch, which is also what makes
+ * the tile's count worth drawing at all.
+ */
+export const drawingLoginFlow = summary({
+  id: 'drawing-login-flow',
+  kind: 'drawing',
+  title: 'Login flow sketch',
+  excerpt: 'excalidraw',
+  createdBy: ada,
+  state: { kind: 'drawing', format: 'excalidraw', elementCount: 6 },
+});
+
 export const artifactPulseBoard = summary({
   id: 'artifact-pulse-board',
   kind: 'artifact',
@@ -1290,7 +1307,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, customRitual, artifactPulseBoard,
+  profileHouseStyle, customRitual, artifactPulseBoard, drawingLoginFlow,
   ...containerFixtures,
 ];
 
@@ -1779,6 +1796,71 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [customRitual.id]: detail(customRitual, {
     content: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
+  }),
+
+  /*
+   * The scene is REAL Excalidraw element JSON, not a placeholder: the panel
+   * hands `elements` straight to the library with no translation, so a fixture
+   * carrying an invented shape would render a canvas that cannot exist and
+   * would hide exactly the bugs a fixture is for. Two boxes and an arrow —
+   * the smallest thing that is recognisably a drawing.
+   *
+   * NO COLOURS. Excalidraw stores element colours as raw hex — that is its
+   * format, not this app's palette, and there is no tm8 token that could
+   * legitimately stand in for a persisted `strokeColor`. They are simply left
+   * out: they are optional members the library defaults, nothing here asserts
+   * them, and including them would put raw hex in `src/` for no gain (§14).
+   */
+  [drawingLoginFlow.id]: detail(drawingLoginFlow, {
+    content: {
+      kind: 'drawing',
+      format: 'excalidraw',
+      elements: [
+        {
+          id: 'fx-box-form', type: 'rectangle', x: 40, y: 60, width: 180, height: 100,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 101, version: 4, versionNonce: 991, isDeleted: false, groupIds: [],
+        },
+        {
+          id: 'fx-box-home', type: 'rectangle', x: 340, y: 60, width: 180, height: 100,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 102, version: 4, versionNonce: 992, isDeleted: false, groupIds: [],
+        },
+        {
+          id: 'fx-arrow', type: 'arrow', x: 230, y: 110, width: 100, height: 0,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 103, version: 3, versionNonce: 993, isDeleted: false, groupIds: [],
+          points: [[0, 0], [100, 0]],
+        },
+        {
+          id: 'fx-label-form', type: 'text', x: 70, y: 100, width: 120, height: 25,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 104, version: 2, versionNonce: 994, isDeleted: false, groupIds: [],
+          text: 'Sign in', fontSize: 20, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+        {
+          id: 'fx-label-home', type: 'text', x: 380, y: 100, width: 120, height: 25,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 105, version: 2, versionNonce: 995, isDeleted: false, groupIds: [],
+          text: 'Home', fontSize: 20, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+        {
+          id: 'fx-note', type: 'text', x: 40, y: 200, width: 400, height: 22,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 106, version: 2, versionNonce: 996, isDeleted: false, groupIds: [],
+          text: 'on success only', fontSize: 16, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+      ],
+      appState: { gridSize: null },
+      // Always empty in phase 1 — the doors refuse a non-empty files map.
+      files: {},
+    },
   }),
 
   [artifactPulseBoard.id]: detail(artifactPulseBoard, {
