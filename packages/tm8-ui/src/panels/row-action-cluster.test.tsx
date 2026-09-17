@@ -194,6 +194,68 @@ describe('the row action cluster is one shape across all three anatomies', () =>
   });
 });
 
+/**
+ * THE DOM HALF OF 7j'' — the two hooks the phone rule selects on.
+ *
+ * `mobile-screens.css` hides every child of the session cluster but its opener
+ * while the row is CLOSED, and it asks two questions to do it: is the row open
+ * (`[data-details]` on `.pn-st`) and which control is the opener
+ * (`.pn-st__btn--ind`). Neither was on the DOM before — the tile kept its
+ * disclosure in `useState` and named its buttons all alike — which is the whole
+ * reason this anatomy could not be given the amendment the other two have.
+ *
+ * `row-cluster-parity.test.ts` pins the selectors; this pins the markup they
+ * aim at. Split deliberately: a CSS test that also had to mount React would
+ * stop being readable as a count, and either half passing alone is a rule that
+ * silently selects nothing. jsdom loads no stylesheets, so what is claimed here
+ * is the ATTRIBUTE and the CLASS — never that anything was actually hidden.
+ */
+describe("the session tile publishes what the phone rule selects on (7j'')", () => {
+  const sessionTile = (container: HTMLElement): HTMLElement => {
+    const tile = container.querySelector('.pn-st');
+    if (!tile) throw new Error('no .pn-st session tile rendered');
+    return tile as HTMLElement;
+  };
+
+  it('reports its disclosure state on the row, closed by default', () => {
+    const { container } = mount('work_session', SESSION);
+    expect(sessionTile(container).getAttribute('data-details')).toBe('closed');
+  });
+
+  it('flips to open when the disclosure is pressed', () => {
+    const { container } = mount('work_session', SESSION);
+    const tile = sessionTile(container);
+    fireEvent.click(within(tile).getByLabelText('Expand details'));
+    expect(tile.getAttribute('data-details')).toBe('open');
+  });
+
+  /**
+   * THE ONE SURVIVOR, AND IT MUST BE EXACTLY ONE. The rule keeps
+   * `*:not(.pn-st__btn--ind)` out of a closed row, so a second control wearing
+   * the opener's class would quietly survive with it — and a row that kept
+   * Terminate pinned open is the defect this whole change is about.
+   */
+  it('marks the disclosure — and nothing else — as the opener', () => {
+    const { container } = mount('work_session', SESSION);
+    const cluster = firstCluster(container).parentElement!;
+    const openers = [...cluster.querySelectorAll('.pn-st__btn--ind')];
+    expect(openers).toHaveLength(1);
+    expect(openers[0]!.getAttribute('aria-label')).toBe('Expand details');
+  });
+
+  /**
+   * And the opener is genuinely INSIDE the container the rule scopes to. It is
+   * rendered outside `RowActionCluster` (the tile draws it after `actions?.()`),
+   * so "it exists" and "it is where the selector looks" are two different
+   * claims, and only the second one keeps the row expandable on a phone.
+   */
+  it('keeps the opener inside the cluster container the rule scopes to', () => {
+    const { container } = mount('work_session', SESSION);
+    const actions = container.querySelector('.pn-st__actions');
+    expect(actions?.querySelector('.pn-st__btn--ind')).not.toBeNull();
+  });
+});
+
 describe('Archive is hidden on server truth, and ONLY on server truth', () => {
   it('is present when the server says the row is deletable', () => {
     const { container } = mount('doc', DELETABLE);

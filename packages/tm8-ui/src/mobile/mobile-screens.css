@@ -570,6 +570,64 @@
 
 
 /* ==========================================================================
+   7j''. THE THIRD ANATOMY, AND THE LAST ONE STILL PINNED OPEN.
+
+   7j is written about `.pn-tt__actions` (the task tile) and 7j' about
+   `.lp__rowactions` (the standard tile). THREE containers carry this cluster —
+   `panels.css` enumerates them by name where the shell-marker reveal is stated
+   — and the SESSION tile, `.pn-st__actions`, was the one member of that shape
+   that never got the amendment. It kept the pinned-open treatment on the one
+   screen where it costs the most.
+
+   MEASURED IN THE CAPTURE (Sessions, 390px): SIX controls per row — archive,
+   tick, run, copy-id, terminate, disclosure — on an opaque `--pn-hover`
+   backing floated over the row's right edge, so every title on the screen was
+   covered mid-word: `Remove codebrain from`, `Transcript message sen`,
+   `Terminal scrolling in mo`. Not ellipsised: the text is laid out and
+   measurable, and the backing is on top of it. Same class of defect 7j'
+   records on the channel row's `12 unread`, one anatomy over, and found the
+   same way — only a screenshot shows it.
+
+   It is worse here than on either of the other two for a reason worth stating:
+   this cluster is the WIDEST of the three (it is the only one carrying Copy
+   and the process control as well as the registry verbs), and the sessions
+   list is the one whose titles are longest. The float and the title were
+   always going to collide; on a 390px phone they collide on every row.
+
+   THE SHAPE IS 7j's, RULE FOR RULE, because the three anatomies must not
+   drift: keep the container (it holds the opener), drop its other children
+   while the row is closed, un-float it, and grow the opener to the touch
+   floor. Nothing is lost that touch could reach — the verbs are one 44px tap
+   away, and this tile's expand already opens the full `EntityControlStrip`
+   (`MaestroSessionTile.detail`), a strictly larger set than the five it was
+   pinning open.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-st:not([data-details='open']) .pn-st__actions > *:not(.pn-st__btn--ind) {
+  display: none;
+}
+
+/* In the flow, not over the title. The session cluster is `position: absolute`
+   with an opaque backing (`panels.css`), which is what put it on top of the
+   title rather than beside it; 7j' had to un-float the standard tile for the
+   same reason. `background` is dropped with the float — an opaque strip that
+   no longer covers anything is just a box around one chevron. */
+.cv2-root[data-shell='mobile'] .pn-st__actions {
+  position: static;
+  transform: none;
+  padding-left: 0;
+  background: none;
+}
+
+/* The opener carries the whole promise, so it takes the whole floor.
+   `min-*`, not `width`/`height`: `.pn-st__btn` is sized 22x22 outright, and an
+   OPEN row's cluster is a row of peers that should stay 22px rather than being
+   blown up to 44 each. */
+.cv2-root[data-shell='mobile'] .pn-st:not([data-details='open']) .pn-st__actions .pn-st__btn--ind {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* ==========================================================================
    7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
 
    MEASURED, a row carrying no badges: 56px, of which
