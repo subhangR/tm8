@@ -2747,11 +2747,6 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
-  // An integer token count inside the bounds Claude Code itself enforces for
-  // CLAUDE_CODE_AUTO_COMPACT_WINDOW (it raises anything below 100k to 100k and
-  // caps at 1M); the contract refuses those instead of letting the harness
-  // silently rewrite the number the manifest recorded.
-  autocompactWindowTokens: z.number().int().min(100_000).max(1_000_000).optional(),
   credentialSources: CredentialSourcesSchema.optional(),
   // Deprecated compatibility carrier. Provider-specific keys above win.
   credentialSource: CredentialSourceSchema.optional(),

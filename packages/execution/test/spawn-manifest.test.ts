@@ -12,7 +12,6 @@ import {
   CODEX_LOOPBACK_CONFIG_OVERRIDES,
   composeEnv,
   composeManifest,
-  DEFAULT_AUTOCOMPACT_WINDOW_TOKENS,
   resolveCommandNetworkPolicy,
   resolveCoordinatorKind,
   resolveCoordinatorSessionId,
@@ -786,17 +785,12 @@ describe('composeEnv', () => {
     expect('TM8_JOURNAL_PATH' in env).toBe(false);
   });
 
-  describe('CLAUDE_CODE_AUTO_COMPACT_WINDOW — the launch names where the agent compacts', () => {
-    // Measured 2026-09-15 on this node's transcripts: 83.2% of cache-read
-    // tokens were spent on turns above a 200k prefix, and on 1M-window models
-    // auto-compaction fired at a median prefix of 965,524. The default exists
-    // to move that trigger. It is a TOKEN COUNT, not a percentage, because the
-    // same catalog launches 200k-window models (Haiku 4.5, Sonnet 5): the
-    // harness clamps this variable to the model's own window, so one number
-    // is a no-op there and a 5x cut on a 1M model, whereas a percentage
-    // would trim a 200k model to 20k and thrash. These pin that it reaches
-    // the process, that a request can name its own, and that codex — which
-    // has no such knob — never sees the variable at all.
+  describe('CLAUDE_CODE_AUTO_COMPACT_WINDOW — removed, and stays removed', () => {
+    // tm8 used to pin every claude-code launch to a 200k auto-compaction
+    // window. That knob is gone: the harness's own default now decides where
+    // a session compacts, and no tm8 code names the variable. These pin both
+    // halves of "gone" — the launch never sets it, and composeEnv's allowlist
+    // never lets the server process's own value leak into a child.
     const withLaunch = (overrides: Partial<Parameters<typeof resolveLaunchConfig>[0]>, member = {}) => {
       const launch = resolveLaunchConfig({ ...base, ...overrides }, context(member), {});
       return composeManifest({
@@ -810,41 +804,25 @@ describe('composeEnv', () => {
       });
     };
 
-    it('defaults to 200k tokens for a claude-code launch and records it in the manifest', () => {
+    it('is ABSENT from a claude-code launch environment', () => {
       const m = withLaunch({});
       expect(m.launch.tool).toBe('claude-code');
-      expect(m.launch.autocompactWindowTokens).toBe(DEFAULT_AUTOCOMPACT_WINDOW_TOKENS);
-      expect(DEFAULT_AUTOCOMPACT_WINDOW_TOKENS).toBe(200_000);
-      expect(composeEnv(m, '/tmp/m.json', 'http://x', {}).CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('200000');
+      expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in composeEnv(m, '/tmp/m.json', 'http://x', {})).toBe(false);
     });
 
-    it('honours an explicit request value', () => {
-      const m = withLaunch({ autocompactWindowTokens: 350_000 });
-      expect(m.launch.autocompactWindowTokens).toBe(350_000);
-      expect(composeEnv(m, '/tmp/m.json', 'http://x', {}).CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('350000');
-    });
-
-    it('falls back to the default for an out-of-range or non-integer value', () => {
-      // The contract schema refuses these upstream; the resolver is the belt.
-      // The bounds are the harness's own (it would raise 50k to 100k and cap
-      // 2M at 1M) — the manifest must never record a number the process
-      // silently replaced.
-      expect(withLaunch({ autocompactWindowTokens: 0 }).launch.autocompactWindowTokens).toBe(200_000);
-      expect(withLaunch({ autocompactWindowTokens: 50_000 }).launch.autocompactWindowTokens).toBe(200_000);
-      expect(withLaunch({ autocompactWindowTokens: 2_000_000 }).launch.autocompactWindowTokens).toBe(200_000);
-      expect(withLaunch({ autocompactWindowTokens: 150_000.5 }).launch.autocompactWindowTokens).toBe(200_000);
-    });
-
-    it('is ABSENT for a codex launch', () => {
-      const m = withLaunch({ autocompactWindowTokens: 300_000 }, { model: 'gpt-5.6-sol', agentTool: 'codex' });
+    it('is ABSENT from a codex launch environment', () => {
+      const m = withLaunch({}, { model: 'gpt-5.6-sol', agentTool: 'codex' });
       expect(m.launch.tool).toBe('codex');
       expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in composeEnv(m, '/tmp/m.json', 'http://x', {})).toBe(false);
     });
 
     it('never inherits the variable from the server process', () => {
-      const m = withLaunch({}, { model: 'gpt-5.6-sol', agentTool: 'codex' });
-      const env = composeEnv(m, '/tmp/m.json', 'http://x', { CLAUDE_CODE_AUTO_COMPACT_WINDOW: '500000' });
-      expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in env).toBe(false);
+      for (const member of [{}, { model: 'gpt-5.6-sol', agentTool: 'codex' }]) {
+        const env = composeEnv(withLaunch({}, member), '/tmp/m.json', 'http://x', {
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '500000',
+        });
+        expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in env).toBe(false);
+      }
     });
   });
 

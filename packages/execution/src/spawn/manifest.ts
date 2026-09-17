@@ -50,37 +50,6 @@ export const DEFAULT_MODEL = 'sonnet';
 /** Fallback agent tool. Matches old maestro's read-time default. */
 export const DEFAULT_AGENT_TOOL = 'claude-code';
 /**
- * The conversation size, in tokens, at which Claude Code auto-compacts,
- * unless the request names its own.
- *
- * MEASURED (2026-09-15, 311 resolvable transcripts on this node, usage
- * de-duplicated by message.id): 83.2% of all cache-read tokens were spent on
- * turns whose prefix was already above 200k tokens, and on 1M-window models
- * auto-compaction fired at a MEDIAN prefix of 965,524 tokens — i.e. the
- * harness's own threshold lets a session re-read most of a million tokens
- * on every turn for most of its life. 200k is where a 200k-window model
- * compacts anyway, and a fifth of the 1M ceiling.
- *
- * WHY AN ABSOLUTE WINDOW AND NOT A PERCENTAGE. Claude Code also offers
- * `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, a fraction of whatever window the model
- * has. tm8 launches 1M models AND 200k models (Haiku 4.5: 85 sessions
- * all-time, Sonnet 5: 50) from one catalog; a percentage that trims a 1M
- * model to 100k trims a 200k model to 20k, where the harness compacts every
- * turn and aborts the session as "thrashing" (measured: 10% on Opus 5 lost a
- * read-heavy task on 7/8 files and compacted six times in 30 turns; a 200k
- * window finished 8/8 and compacted at 176-178k). `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
- * is read by `resolveAutoCompactWindow` (Claude Code 2.1.261) as
- * `min(modelWindow, max(100_000, value))`, capped at 1_000_000 — so one
- * number is a no-op on a 200k model and a 5x cut on a 1M one, and there is
- * nothing to look up per model.
- */
-export const DEFAULT_AUTOCOMPACT_WINDOW_TOKENS = 200_000;
-/** The env var Claude Code reads for the window above. Not read by codex. */
-export const CLAUDE_AUTOCOMPACT_ENV = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
-/** The harness's own bounds for that variable: below the floor it is raised, above the cap it is capped. */
-export const AUTOCOMPACT_WINDOW_MIN_TOKENS = 100_000;
-export const AUTOCOMPACT_WINDOW_MAX_TOKENS = 1_000_000;
-/**
  * Fallback permission posture.
  *
  * `auto`, not maestro's `acceptEdits` (manifest-generator.ts:474). Every tm8
@@ -217,12 +186,6 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
   return (AGENT_MODES as readonly string[]).includes(value) ? (value as AgentMode) : null;
 }
 
-/** An integer token count inside the harness's bounds, or null. The contract schema already refuses the rest; this is the belt. */
-function asAutocompactWindowTokens(value: number | null | undefined): number | null {
-  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
-  return value >= AUTOCOMPACT_WINDOW_MIN_TOKENS && value <= AUTOCOMPACT_WINDOW_MAX_TOKENS ? value : null;
-}
-
 /** The resolved launch posture — one persona, one request, three links. */
 export interface ResolvedLaunchConfig {
   mode: AgentMode;
@@ -231,8 +194,6 @@ export interface ResolvedLaunchConfig {
   permissionMode: PermissionMode;
   accessMode: AccessMode;
   reasoningEffort: ReasoningEffort | null;
-  /** Resolved auto-compaction window in tokens. Always a number: the default is a fact of the launch. */
-  autocompactWindowTokens: number;
   /** Deprecated common value; null when provider choices differ or are auto. */
   credentialSource: CredentialSource | null;
   /** Independent launch-time choice for every credential provider. */
@@ -394,12 +355,6 @@ export function resolveLaunchConfig(
     ? 'fullAccess'
     : requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
   const reasoningEffort = asReasoningEffort(request.reasoningEffort);
-  // Request or the node default — there is no persona link, because the
-  // window is a property of how much a session is allowed to re-read per
-  // turn, not of who is running. Resolved here rather than in composeEnv so
-  // the manifest records the number the session actually got.
-  const autocompactWindowTokens =
-    asAutocompactWindowTokens(request.autocompactWindowTokens) ?? DEFAULT_AUTOCOMPACT_WINDOW_TOKENS;
 
   // Each provider resolves independently. New provider keys outrank the
   // deprecated global carrier; inherited provider keys then outrank an older
@@ -418,7 +373,6 @@ export function resolveLaunchConfig(
     permissionMode,
     accessMode,
     reasoningEffort,
-    autocompactWindowTokens,
     credentialSource,
     credentialSources,
   };
@@ -1110,17 +1064,6 @@ export function composeEnv(
   }
   if (manifest.project) env.TM8_PROJECT_ID = manifest.project.id;
   if (manifest.launch.model) env.TM8_MODEL = manifest.launch.model;
-  // Auto-compaction window, claude-code only — codex has no such knob and an
-  // unknown variable in its environment is noise at best. The value is the
-  // one the manifest resolved (DEFAULT_AUTOCOMPACT_WINDOW_TOKENS carries the
-  // measurement and the reason it is a token count, not a percentage). Older
-  // manifests read back without the field get the same default rather than
-  // no window.
-  if (manifest.launch.tool === 'claude-code') {
-    env[CLAUDE_AUTOCOMPACT_ENV] = String(
-      manifest.launch.autocompactWindowTokens ?? DEFAULT_AUTOCOMPACT_WINDOW_TOKENS,
-    );
-  }
 
   for (const key of AUTH_ENV_KEYS) {
     const value = parentEnv[key];
@@ -1403,7 +1346,6 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       permissionMode: launch.permissionMode,
       accessMode: launch.accessMode,
       reasoningEffort: launch.reasoningEffort,
-      autocompactWindowTokens: launch.autocompactWindowTokens,
       credentialSource: launch.credentialSource,
       credentialSources: launch.credentialSources,
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),

@@ -171,12 +171,11 @@ describe('the exact key set a composed agent environment carries', () => {
     'XDG_CACHE_HOME',
   ].sort();
   /**
-   * A claude-code launch carries ONE more: the auto-compaction window
-   * (manifest.ts DEFAULT_AUTOCOMPACT_WINDOW_TOKENS). It is a claude-code knob
-   * and no other tool's environment grows by it — the provider cases below
-   * stay on BASE_KEYS, which is the assertion that matters.
+   * A claude-code launch carries NOTHING extra. It used to grow by the
+   * auto-compaction window; that knob was removed, so every tool's base
+   * environment is now the same list.
    */
-  const CLAUDE_KEYS = [...BASE_KEYS, 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].sort();
+  const CLAUDE_KEYS = BASE_KEYS;
 
   it('is exactly this, and XDG_CONFIG_HOME is not in it', () => {
     const env = composeEnv(manifestFor('claude-code'), '/tmp/m.json', 'http://x', POLLUTED_PARENT);
