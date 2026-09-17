@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "audit:mobile": "node e2e/mobile-audit.mjs"
+    "audit:mobile": "node e2e/mobile-audit.mjs",
+    "test:mobile-lists": "node e2e/check-mobile-lists.mjs"
   },
   "dependencies": {
     "@maestro/pty-protocol": "workspace:*",

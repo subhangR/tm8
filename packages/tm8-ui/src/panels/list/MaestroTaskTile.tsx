@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 import type { ActorSummary } from '@tm8/contract';
 import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
+import { useMobileSurface } from '../../mobile/surface';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
@@ -94,6 +95,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     onToggleDetails,
     children,
   } = props;
+  const { oneSurface } = useMobileSurface();
   const hasChildren = childCount > 0 && onToggleChildren != null;
 
   return (
@@ -222,7 +224,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
 
         <div className="pn-tt__actions lp__cluster">
-          {actions}
+          {!oneSurface || detailsExpanded ? actions : null}
           <button
             type="button"
             className={detailsExpanded ? 'pn-tt__ind pn-tt__ind--open' : 'pn-tt__ind'}

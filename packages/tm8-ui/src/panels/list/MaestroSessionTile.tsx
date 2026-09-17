@@ -1,5 +1,6 @@
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
+import { useMobileSurface } from '../../mobile/surface';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
 
@@ -94,6 +95,7 @@ export function MaestroSessionTile({
   /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
   detail?: ReactNode;
 }) {
+  const { oneSurface } = useMobileSurface();
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -165,7 +167,7 @@ export function MaestroSessionTile({
               anatomy's own affordance — it is handed to the cluster rather
               than drawn after it, so that it lands in the ruled position
               BEFORE terminate. */}
-          {actions?.(
+          {(!oneSurface || detailsExpanded) && actions?.(
             <button
               type="button"
               className="pn-st__btn"

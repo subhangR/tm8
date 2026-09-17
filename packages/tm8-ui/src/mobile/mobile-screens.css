@@ -313,6 +313,7 @@
    leaves the text a block box to ellipsise inside. */
 .cv2-root[data-shell='mobile'] .pn-tt__title,
 .cv2-root[data-shell='mobile'] .lp__title {
+  box-sizing: border-box;
   min-block-size: var(--mobile-touch-min);
   padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
 }
@@ -618,15 +619,6 @@
   background: none;
 }
 
-/* The opener carries the whole promise, so it takes the whole floor.
-   `min-*`, not `width`/`height`: `.pn-st__btn` is sized 22x22 outright, and an
-   OPEN row's cluster is a row of peers that should stay 22px rather than being
-   blown up to 44 each. */
-.cv2-root[data-shell='mobile'] .pn-st:not([data-details='open']) .pn-st__actions .pn-st__btn--ind {
-  min-inline-size: var(--mobile-touch-min);
-  min-block-size: var(--mobile-touch-min);
-}
-
 /* ==========================================================================
    7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
 
@@ -674,6 +666,110 @@
   padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
 }
 
+
+/* Phone list rows own their geometry, including :hover and :focus-within.
+   Base hover rules translate desktop clusters by half their height. A static
+   mobile cluster must never inherit that transform after a tap. */
+.cv2-root[data-shell='mobile'] .pn-tt > .pn-tt__main,
+.cv2-root[data-shell='mobile'] .pn-st > .pn-st__main {
+  flex-wrap: wrap;
+  gap: 0 6px;
+  padding: 4px 8px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt > .pn-tt__main > .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-st > .pn-st__main > .pn-st__actions {
+  position: static;
+  transform: none;
+  background: none;
+  padding: 0;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 4px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Expanded verbs get a separate band, never the title's remaining width. */
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] > .pn-tt__main > .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-st[data-details='open'] > .pn-st__main > .pn-st__actions {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] .pn-tt__ind,
+.cv2-root[data-shell='mobile'] .pn-st[data-details='open'] .pn-st__btn--ind {
+  margin-left: auto;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__actions > *,
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__actions > * {
+  box-sizing: border-box;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  flex-shrink: 0;
+}
+
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__title {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-block: 0;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__model,
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__statusglyph {
+  display: none;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__arrow {
+  width: 24px;
+  height: var(--mobile-touch-min);
+  flex: 0 0 24px;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__arrow--empty {
+  visibility: hidden;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__tag {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stable gutters and a quiet separator keep each title with its own facts. */
+.cv2-root[data-shell='mobile'] .pn-tt,
+.cv2-root[data-shell='mobile'] .pn-st {
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__badges {
+  padding: 0 12px 8px 58px;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__badges {
+  padding: 0 12px 8px 59px;
+}
+/* Long worktree branches must shrink before the mode mark or PR chips. */
+.cv2-root[data-shell='mobile'] .pn-st .pn-lane {
+  max-width: 100%;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-lane__branch {
+  min-width: 0;
+  display: block;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__meta {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--pn-line);
+  gap: 10px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__rowdetail--chips {
+  gap: 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__rowdetail--chips > :last-child {
+  margin-left: 0;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__statesel {
+  border-radius: 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__dateadd {
+  min-height: var(--mobile-touch-min);
+}
 
 /* ==========================================================================
    8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
