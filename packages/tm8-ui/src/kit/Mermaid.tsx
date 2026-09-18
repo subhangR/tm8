@@ -305,7 +305,15 @@ export function diagramPalette(host: HTMLElement): DiagramPalette {
       if (i < 8) {
         set(`git${i}`, hue(i));
         put(`gitBranchLabel${i}`, '--pn-card');
+        /* A journey's SECTION bands. Measured unset: the bands themed
+           correctly off cScale while the actor dots beside them stayed on
+           mermaid's stock darkseagreen, which is the giveaway that a family
+           was missed rather than that the diagram type is unsupported. */
+        set(`fillType${i}`, soft(i));
       }
+      /* A journey's ACTOR dots, which mermaid names separately from every
+         other series and caps at six. */
+      if (i < 6) set(`actor${i}`, hue(i));
     }
     put('pieTitleTextColor', '--pn-ink');
     put('pieLegendTextColor', '--pn-ink');
@@ -455,6 +463,14 @@ export function Mermaid({ source, testId = 'mermaid' }: MermaidProps) {
           securityLevel: 'strict',
           theme: 'base',
           darkMode: dark,
+          /* On a parse failure mermaid APPENDS its own "Syntax error in text"
+             graphic to <body>. That element is outside this component, so it
+             survives unmount, stacks up one per failed render, and -- the way
+             it was found -- gets swept into the print clone, where it prints
+             as an orphan error banner ABOVE the document title. We already
+             render our own failure state with the source in a code fence, so
+             mermaid's copy is duplicate content in the wrong place. */
+          suppressErrorRendering: true,
           ...(palette === null ? {} : { themeVariables: palette.vars }),
         });
         renderSeq += 1;
