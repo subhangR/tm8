@@ -83,42 +83,7 @@ interface BarKey {
   readonly arrow?: ArrowName;
 }
 
-/**
- * TWO ROWS, AND THE ARITHMETIC THAT FORCED THEM — DEF-010.
- *
- * MEASURED: at phone-390 the single key row bled 77px (`hscroll`
- * `term-mod__keys`), the size/limits toggle sat 69px past the right edge, and
- * `exit` was sliced by it. At 430 the toggle was still 29px over.
- *
- * IT WAS NEVER GOING TO FIT, and the stylesheet's claim that "at 390px the
- * whole set fits" was simply wrong. Nine controls at the 44px floor is
- * 9 × 44 = 396px of keys alone, before a single gap and before the bar's own
- * padding, against 390px of viewport. The row was already over budget by
- * construction.
- *
- * WHY NOT SCROLL IT — it already did. `overflow-x: auto` is what turned an
- * impossible row into a row whose last two controls are off-screen, and one of
- * those is `exit`, which on a phone is THE ONLY WAY OUT of terminal focus
- * (the `⌃\`` chord it documents cannot be typed here). A control that requires
- * discovering a horizontal scroll inside a bar to reach is, for the person who
- * does not discover it, the same as absent.
- *
- * WHY NOT SHRINK THEM — `mobile/CONTRACT.md` §6: the floor is on the SMALLER
- * side and a key that shrinks below it is a key that fails the finger it was
- * added for. These keys exist because a phone keyboard cannot produce them; a
- * ctrl you miss is worse than no ctrl, because you believe you sent it.
- *
- * SO THE SET SPLITS BY WHAT THE KEYS ARE FOR, not by what happens to fit.
- * MODIFIERS carries ctrl / esc / tab and the two chips that are about the
- * terminal rather than about typing into it (exit, and the column readout).
- * ARROWS carries the four together, which is also how they read: a cluster,
- * scanned as a shape, not four items in a queue.
- *
- * Budget at 390, the number this replaces the old comment's guess with:
- *   modifiers  3×44 + 2 gaps + exit ~86 + cols ~48 + 16 padding  ≈ 294
- *   arrows     4×44 + 3 gaps + 16 padding                        ≈ 204
- * Both inside 390, and both still inside 320 with room.
- */
+// Keep the primary controls in one row; arrows live in the More disclosure.
 const MODIFIER_KEYS: readonly BarKey[] = [
   { id: 'esc', label: 'esc', aria: 'Escape', seq: ESC },
   { id: 'tab', label: 'tab', aria: 'Tab', seq: TAB },
@@ -324,28 +289,23 @@ export function TerminalModifierBar({
             aria-label="Exit terminal focus"
             data-testid="terminal-mod-exit"
           >
-            exit <span className="term-exit-chip__key" aria-hidden>⌃`</span>
+            exit
           </button>
           <button
             type="button"
             className={`term-mod__key term-mod__key--more${detailsOpen ? ' term-mod__key--armed' : ''}`}
             onClick={() => setDetailsOpen((open) => !open)}
             aria-expanded={detailsOpen}
-            aria-label={`Terminal size and limits — ${cols || '?'} columns`}
+            aria-label={`More terminal keys and settings — ${cols || '?'} columns`}
             data-testid="terminal-mod-toggle"
           >
-            {/* THE COLUMN COUNT IS ON THE COLLAPSED BAR, not only inside the
-                panel. A number you have to open a drawer to see is a number
-                nobody sees, and this one exists to be seen before the output
-                garbles rather than after. */}
-            {cols ? `${cols}c` : '···'}
+            More
           </button>
         </div>
 
-        {/* ROW 2 — the arrows, kept together. Their own group and their own
-            label, so a screen reader is told they are a cluster rather than
-            four more items appended to the modifiers. */}
-        <div
+        {/* Extra keys are available without permanently charging a second row. */}
+        {detailsOpen ? (
+          <div
           className="term-mod__keys term-mod__keys--arrows"
           role="group"
           aria-label="Terminal arrow keys"
@@ -365,6 +325,7 @@ export function TerminalModifierBar({
             </button>
           ))}
         </div>
+        ) : null}
       </div>
     </AlwaysDark>
   );
