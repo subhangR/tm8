@@ -144,6 +144,14 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
      * `files/reasons.ts` — constructing a transport URL is `src/data/**` work,
      * and same-origin luck is not a substitute for a seam. With no resolver
      * passed the reference states itself instead of guessing at a path.
+     *
+     * BOTH REFUSALS ARE ABOUT THE LIVE VIEW, and both chips carry the source
+     * they declined to load on `data-img-src` so that a different consumer can
+     * reach its own conclusion. Exactly one does: `doc-edit/printDoc.ts`, which
+     * inlines them when a reader presses Download. That is a deliberate,
+     * reader-initiated crossing of the beacon boundary argued above — see the
+     * note there, which states what it costs. Nothing in THIS file issues a
+     * request, and opening a doc still sends nothing.
      */
     img({ src, alt, title }) {
       const raw = typeof src === 'string' ? src : '';
@@ -167,7 +175,12 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
       }
       if (/^data:/i.test(raw.trim())) {
         return (
-          <span className="md-img-chip" data-testid="markdown-image-rejected">
+          <span
+            className="md-img-chip"
+            data-testid="markdown-image-rejected"
+            data-img-src={raw}
+            data-img-alt={label}
+          >
             {label} — inline image data is not rendered
           </span>
         );
@@ -181,6 +194,8 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
           rel="noreferrer noopener"
           className="md-link md-img-chip"
           data-testid="markdown-image-link"
+          data-img-src={raw}
+          data-img-alt={label}
         >
           {label} — remote image, not loaded
         </a>
