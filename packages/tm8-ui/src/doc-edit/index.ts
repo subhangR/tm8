@@ -11,6 +11,7 @@
  * `authoring/index.ts` all do the same.)
  */
 import './doc-edit.css';
+import './doc-print.css';
 
 export {
   docBodyOf,
@@ -52,5 +53,7 @@ export { DocEditor } from './DocEditor';
 export { DocPreview } from './DocPreview';
 export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
+export { DownloadDocControl } from './DownloadDocControl';
 export { EditEntryControl } from './EditEntryControl';
+export { canPrint, printDoc, PRINT_ROOT_ID, type PrintDocInput } from './printDoc';
 export { fileReference, spliceInto } from './insert';

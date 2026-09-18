@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import {
   DocEditor,
   DocSplitView,
+  DownloadDocControl,
   EditEntryControl,
+  printDoc,
   useDocSave,
   type DocAttach,
   type DocCommands,
@@ -128,6 +130,26 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
     setEditing(false);
   }, [detail.id]);
 
+  /**
+   * DOWNLOAD PDF prints the RENDERED document, so it reads the node the reader
+   * is already looking at rather than re-rendering the markdown into a second
+   * DOM that could disagree with it. The query is scoped to this surface's own
+   * body — never `document.querySelector` — so a second reader mounted
+   * elsewhere (a split, a preview, a phone sheet) cannot be the one that gets
+   * printed. `printDoc` clones; the live node is never touched.
+   *
+   * Hooks live ABOVE the `editing` fork for the reason this whole file exists:
+   * a ref or a callback declared inside the branch would run conditionally.
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const downloadPdf = useCallback(() => {
+    const node = bodyRef.current?.querySelector<HTMLElement>('[data-testid="reader-markdown"]');
+    /* No rendered body ⇒ nothing to print. `ReaderBody` draws its designed
+       empty in that case, and `DownloadDocControl` has already refused. */
+    if (node == null) return;
+    printDoc({ title: detail.title, body: node });
+  }, [detail.title]);
+
   if (editing) {
     /**
      * THE SPLIT IS THE EDIT SURFACE (user ruling 2026-07-31): markdown source
@@ -202,8 +224,9 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           editRefusal={editRefusal}
           onEnterEdit={commands ? () => setEditing(true) : undefined}
         />
+        <DownloadDocControl detail={detail} onDownload={downloadPdf} />
       </div>
-      <div className="rs-body">
+      <div className="rs-body" ref={bodyRef}>
         <ReaderBody
           detail={detail}
           blocks={props.blocks}
