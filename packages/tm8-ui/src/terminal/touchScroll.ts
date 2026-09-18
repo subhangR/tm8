@@ -1,7 +1,7 @@
-import type { Terminal } from '@xterm/xterm';
+import { scrollTerminalLines, type ScrollTerminal } from './scrollTerminal';
 
 /**
- * Translate touch drags into xterm's public scrolling API. In xterm 6 the
+ * Translate touch drags into terminal history or application mouse scrolling. In xterm 6 the
  * legacy .xterm-viewport is empty; scrollback lives in a virtual scroller,
  * so neither its scrollHeight nor assigning its scrollTop can scroll output.
  */
@@ -16,8 +16,6 @@ const VELOCITY_SMOOTHING = 0.7;
 
 type Axis = 'undecided' | 'vertical' | 'horizontal';
 
-type ScrollTerminal = Pick<Terminal, 'buffer' | 'rows' | 'scrollLines'>;
-
 /** Attach after term.open(); dispose before the terminal is destroyed. */
 export function attachTouchScroll(container: HTMLElement, term: ScrollTerminal): () => void {
   let remainder = 0;
@@ -27,16 +25,17 @@ export function attachTouchScroll(container: HTMLElement, term: ScrollTerminal):
   // touch samples and fling frames, otherwise slow drags never move a line.
   const scrollPixels = (pixels: number): boolean => {
     const buffer = term.buffer.active;
-    if (rowHeight <= 0 || buffer.baseY === 0 ||
+    const appScrolls = term.modes.mouseTrackingMode !== 'none' || buffer.type === 'alternate';
+    if (rowHeight <= 0 || (!appScrolls && (buffer.baseY === 0 ||
         (pixels < 0 && buffer.viewportY === 0) ||
-        (pixels > 0 && buffer.viewportY === buffer.baseY)) {
+        (pixels > 0 && buffer.viewportY === buffer.baseY)))) {
       remainder = 0;
       return false;
     }
     remainder += pixels / rowHeight;
     const lines = Math.trunc(remainder);
     remainder -= lines;
-    if (lines !== 0) term.scrollLines(lines);
+    if (lines !== 0) scrollTerminalLines(term, lines);
     return true;
   };
 

@@ -173,6 +173,7 @@ export function TerminalBody({
    * state on the one control whose entire value is that its state is visible.
    */
   const [ctrlArmed, setCtrlArmed] = useState(false);
+  const [altArmed, setAltArmed] = useState(false);
 
   /* Persist per DEVICE, never per account — the size that is legible is a
      property of the screen you are holding and the eyes holding it, and a
@@ -262,6 +263,7 @@ export function TerminalBody({
                 fontSize,
                 onGeometry: readTerminalMetrics,
                 onCtrlSpent: () => setCtrlArmed(false),
+                onAltSpent: () => setAltArmed(false),
               }
             : {})}
         />
@@ -285,6 +287,8 @@ export function TerminalBody({
           hostWidth={hostWidth}
           cellWidth={cellWidth}
           live={style.isLive}
+          altArmed={altArmed}
+          onAltArmedChange={setAltArmed}
           ctrlArmed={ctrlArmed}
           onCtrlArmedChange={setCtrlArmed}
         />
@@ -331,6 +335,7 @@ function SessionCanvas({
   fontSize,
   onGeometry,
   onCtrlSpent,
+  onAltSpent,
 }: {
   presentation: ReturnType<typeof presentSession>;
   sessionId: string;
@@ -354,6 +359,7 @@ function SessionCanvas({
       reasonably expect it to be about the PANEL resizing. */
   onGeometry?: (size: { cols: number; rows: number }) => void;
   onCtrlSpent?: () => void;
+  onAltSpent?: () => void;
 }) {
   switch (presentation) {
     case 'streaming':
@@ -370,6 +376,7 @@ function SessionCanvas({
           {...(fontSize ? { fontSize } : {})}
           {...(onGeometry ? { onResize: (_id, size) => onGeometry(size) } : {})}
           {...(onCtrlSpent ? { onCtrlSpent } : {})}
+          {...(onAltSpent ? { onAltSpent } : {})}
         />
       ) : (
         <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />

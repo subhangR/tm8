@@ -244,6 +244,12 @@ describe('pty transport — offset resume', () => {
     expect(ptyTransport.__received('s1')).toBe(100);
   });
 
+  it('preserves high-bit mouse report bytes without UTF-8 expansion', () => {
+    ptyTransport.openSession('s1');
+    ptyTransport.writeBinary('s1', '\x1b[M`\xc8\xff');
+    expect(Array.from(last().sent.at(-1) as Uint8Array)).toEqual([27, 91, 77, 96, 200, 255]);
+  });
+
   it('input and resize produced while disconnected are flushed in FIFO order on open', () => {
     // The real sequence: the terminal mounts and fits itself immediately, which
     // races openSession()'s connect. User input during that same window must not
