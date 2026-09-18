@@ -46,7 +46,21 @@
     font-size: 11pt;
     line-height: 1.55;
     /* Points, not pixels: this text is going onto a physical page size. */
-    font-family: inherit;
+
+    /* THE REAL STACK, NOT `inherit`, because of a cascade trap that is
+       invisible on screen. `inherit` resolves against <body>, whose rule is
+       `font-family: var(--pn-ui)` — but `--pn-ui` is declared at
+       styles/tokens.css:62 INSIDE the `.cv2-root` block. Custom properties
+       inherit DOWNWARD, so <body> cannot see a token declared on its own
+       descendant: the declaration is invalid at computed-value time and the
+       entire PDF falls back to the UA serif. Verified in a real print engine —
+       every page came out in Times New Roman.
+       Nothing on screen reveals this, because everything the user looks at
+       lives inside `.cv2-root`. Only the print clone — deliberately a SIBLING
+       of `#root`, see printDoc.ts — is outside it. Restating the stack is the
+       narrow fix; moving the tokens up to `:root` is the correct broad one and
+       carries a far wider blast radius than this feature should. */
+    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
   /* The header we add when the body does not already open with its own title. */
@@ -100,6 +114,28 @@
   }
   #tm8-print-root code {
     border: none;
+  }
+
+  /* THE CLONE LOSES EVERY `.cv2-root`-SCOPED RULE, and `Markdown.tsx` expresses
+     a code fence through CLASSES rather than tags:
+     `.md-fence > .md-fence__lang + pre.md-fence__pre`. Every `.md-*` rule in
+     kit/markdown.css is scoped under `.cv2-root` (see :130, :139, :171), so in
+     the print root both wrappers drop to `display: inline`. The <pre> survives
+     on its UA default, but the language label lands above it as a stray bare
+     word — "bash" with no strip and no border. Restoring the two wrappers is
+     enough; the tag-level rules above already carry the rest.
+     The general lesson, since this will recur: anything Markdown.tsx styles
+     through a class arrives in the PDF unstyled unless it is restated here. */
+  #tm8-print-root .md-fence,
+  #tm8-print-root .md-tablewrap {
+    display: block;
+  }
+  #tm8-print-root .md-fence__lang {
+    display: block;
+    font-size: 8pt;
+    text-transform: lowercase;
+    color: rgb(0 0 0 / 55%);
+    margin: 0 0 2pt;
   }
 
   #tm8-print-root table {
