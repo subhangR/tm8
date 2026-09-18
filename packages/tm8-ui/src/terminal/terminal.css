@@ -713,20 +713,8 @@
 .cv2-root[data-shell='mobile'] .term-host {
   zoom: 1;
 
-  /* THIS WAS `pan-y`, AND `pan-y` CANNOT WORK HERE. Handing the vertical drag
-     to the browser only helps if the browser can find a scrollable box to pan,
-     and on this subtree there is none: the touch hit-tests onto
-     `.xterm-screen`, whose ancestors are `.xterm` and then this element with
-     `overflow: hidden`. xterm's `.xterm-viewport` — the one box that scrolls —
-     is `.xterm-screen`'s SIBLING, not its ancestor, and a sibling is never a
-     pan target. So the browser deterministically panned nothing, which is why
-     the terminal was unscrollable on a phone.
-
-     `none` claims the gesture for us instead. `touchScroll.ts` moves
-     `.xterm-viewport.scrollTop` itself, and a native pan that the browser has
-     already started cannot be taken back by `preventDefault` mid-gesture, so
-     it must never start. `none` suppresses double-tap-to-zoom exactly as
-     `pan-y` did, which was the rule's other reason to exist. */
+  /* xterm 6 scrolls virtually. The touch handler drives its public buffer
+     API; a native browser pan would cancel the gesture before it can do so. */
   touch-action: none;
 
   /* THE 160px FLOOR IS A DESKTOP FLOOR AND IT IS WRONG HERE, in the one
@@ -796,25 +784,7 @@
   box-shadow: var(--pn-sh-md);
 }
 
-/*
- * TWO ROWS, BECAUSE ONE WAS ARITHMETICALLY IMPOSSIBLE — DEF-010.
- *
- * MEASURED at phone-390: this row bled 77px (`hscroll`, cls `term-mod__keys`),
- * `term-mod__key--more` sat 69px past the right edge, and `exit` was sliced by
- * it. 29px over at 430.
- *
- * The comment that used to sit here said "at 390px the whole set fits", and it
- * was simply wrong: nine controls at the 44px floor is 396px of keys before a
- * single gap or any padding, against a 390px viewport. `overflow-x: auto` did
- * not rescue that — it converted an impossible row into a row whose last two
- * controls are off-screen, and one of them is `exit`, which on a phone is the
- * ONLY way out of terminal focus (the chord it documents cannot be typed here).
- *
- * `flex-wrap: wrap` REPLACES the scroller rather than joining it. A wrapping
- * row cannot bleed: anything that does not fit takes a new line, which is a
- * thing you can see, where a scrolled tail is a thing you have to discover.
- * The split into two labelled groups is in the TSX, by what the keys are for.
- */
+/* One primary row; extra keys appear only when More is open. */
 .cv2-root[data-shell='mobile'] .term-mod__keys {
   display: flex;
   align-items: center;
