@@ -173,6 +173,11 @@ describe('diagramPalette, against the shipped stylesheets', () => {
     for (let i = 1; i <= 12; i += 1) expect(vars).toHaveProperty(`pie${i}`);
     for (let i = 0; i <= 11; i += 1) expect(vars).toHaveProperty(`cScale${i}`);
     for (let i = 0; i <= 7; i += 1) expect(vars).toHaveProperty(`git${i}`);
+    // journey: the bands themed off cScale while the actor dots beside them
+    // stayed on mermaid's stock darkseagreen, because these two families are
+    // named separately from every other series.
+    for (let i = 0; i <= 7; i += 1) expect(vars).toHaveProperty(`fillType${i}`);
+    for (let i = 0; i <= 5; i += 1) expect(vars).toHaveProperty(`actor${i}`);
     expect(vars.pieOpacity).toBe('1');
   });
 
