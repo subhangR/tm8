@@ -659,10 +659,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         event.stopPropagation();
       }
     };
-    // xterm ships no touch support, and `.xterm-viewport` is a SIBLING of the
-    // `.xterm-screen` that receives the touch rather than its ancestor, so no
-    // amount of `touch-action` can make the browser pan it — see touchScroll.ts.
-    const detachTouchScroll = attachTouchScroll(container);
+    // Touch gestures use the same public buffer API as desktop scrolling.
+    const detachTouchScroll = attachTouchScroll(container, term);
     container.addEventListener('paste', handlePaste, true);
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
