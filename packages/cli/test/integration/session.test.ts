@@ -737,7 +737,12 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // execution.git* family (status/diff/commit/checkpoint/rollback/merge/
     // cherryPick/branch/stash), execution.dispatch, plus terminal/transcript
     // rows that landed with their lanes.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(20);
+    // 20 -> 21 (2026-09-19, Changes screen Phase 1): `execution.gitStage`, the
+    // TENTH execution.git* row. The enumeration above is now status/diff/
+    // commit/checkpoint/rollback/STAGE/merge/cherryPick/branch/stash — the
+    // index verb the Changes surface stages with. MEASURED from this
+    // assertion's own failing run (`expected 21 to be 20`), never derived.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(21);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

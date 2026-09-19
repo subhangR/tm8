@@ -198,6 +198,12 @@ describe('W5.C generator proof', () => {
     // schema would refuse every legitimate upload — it is enumerated in
     // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
     // as reads do. MEASURED.
-    expect(ENTRIES).toHaveLength(118);
+    // +1 (2026-09-19, Changes screen Phase 1): `execution.gitStage` binds its
+    // command body. A path-scoped stage takes a real input DTO — the worktree
+    // and the pathspecs — so it binds the way every other execution.git*
+    // command does, and lands in ENTRIES rather than in
+    // UNBOUND_COMMAND_OPERATIONS. MEASURED from this assertion's own failing
+    // run (`expected ... length of 118 but got 119`), never hand-derived.
+    expect(ENTRIES).toHaveLength(119);
   });
 });
