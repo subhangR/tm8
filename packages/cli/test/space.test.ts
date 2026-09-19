@@ -651,6 +651,52 @@ describe('INVITE CODES ARE CREDENTIALS — faithful render, zero retention', () 
   });
 });
 
+/**
+ * `space invite resolve` — the `member` status (195, task 01a0baf5).
+ *
+ * The bug this came from was a person being told "This invite is used up"
+ * about a Space they had already joined with that very code: `preview_invite`
+ * could not see who was asking, while `redeem_invite` could and answered
+ * `{joined:false}` for the same code in the same second. Measured on the
+ * production node before the fix, as this same account:
+ *
+ *   space invite resolve inv_…8d6f  ->  exhausted  Syed
+ *   space invite redeem  inv_…8d6f  ->  {"joined":false,"spaceId":"01a0b9be-…"}
+ *
+ * The CLI rendered `exhausted  Syed` faithfully — the renderer was right and
+ * the answer was wrong. Now that SQL can say `member`, the renderer must not
+ * print it in the dead-status shape, which is a bare word beside a Space name
+ * and reads as a refusal.
+ */
+describe('`space invite resolve` renders a membership as a membership', () => {
+  it('names the Space and says there is nothing to redeem — not a dead word', async () => {
+    reply = {
+      status: 200,
+      body: {
+        data: { status: 'member', spaceId: SPACE, spaceName: 'Syed' },
+        requestId: 'r-195',
+      },
+    };
+    const r = await drive(['space', 'invite', 'resolve', 'JOIN-ME']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('member');
+    expect(r.stdout).toContain('Syed');
+    expect(r.stdout).toMatch(/nothing to redeem/i);
+    // The sentence that made the report. A member must never read it.
+    expect(r.stdout).not.toMatch(/exhausted|revoked|expired/i);
+  });
+
+  it('a dead status is still rendered dead, for a caller who is not a member', async () => {
+    reply = {
+      status: 200,
+      body: { data: { status: 'exhausted', spaceName: 'Syed' }, requestId: 'r-195b' },
+    };
+    const r = await drive(['space', 'invite', 'resolve', 'JOIN-ME']);
+    expect(r.stdout).toContain('exhausted');
+    expect(r.stdout).not.toMatch(/nothing to redeem/i);
+  });
+});
+
 describe('the A02 menu payload', () => {
   it('--data carries the payload and --expect-revision the guard, per its DTO', async () => {
     await drive([

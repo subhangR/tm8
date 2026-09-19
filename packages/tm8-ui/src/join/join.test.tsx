@@ -34,6 +34,7 @@ import {
 } from './pendingJoin';
 import { JoinScreen, refusalOf } from './JoinScreen';
 import { JoinBanner } from './JoinBanner';
+import { arriveInSpace, spaceAddress, type ArrivalPort } from './arrive';
 
 afterEach(cleanup);
 
@@ -232,6 +233,58 @@ describe('the join screen', () => {
     }
   });
 
+  /**
+   * THE REPORTED BUG (task 01a0baf5), at the layer that showed the wrong card.
+   *
+   * A one-use code was redeemed successfully — the member row is in production
+   * with `joined_at` ninety seconds after the invite was minted — and the same
+   * person opening the same link again was told "This invite is used up".
+   * `preview_invite` could not see who was asking; `redeem_invite`, which can,
+   * answered `joined:false` for that identity and that code in the same second.
+   * 195 gives the preview a `member` status, and this screen must treat it as
+   * an arrival rather than an obituary.
+   */
+  it('tells somebody already IN the space so, and never that the link is dead', async () => {
+    const joined: Array<{ spaceId: string; joined: boolean }> = [];
+    render(
+      <JoinScreen
+        code={CODE}
+        onPreview={async () => ({
+          status: 'member',
+          spaceId: 'space-7' as never,
+          spaceName: 'atelier',
+        })}
+        onJoined={(spaceId, didJoin) => { joined.push({ spaceId, joined: didJoin }); }}
+        onDismiss={() => {}}
+      />,
+    );
+    const card = await screen.findByTestId('join-member');
+    expect(card.textContent).toMatch(/already in/i);
+    expect(card.textContent).toMatch(/atelier/);
+    // The exact words that made the report. A member must never read them.
+    expect(card.textContent).not.toMatch(/used up|revoked|expired|doesn’t open/i);
+
+    // And it goes somewhere. `joined:false` matches what `redeem_invite`
+    // answers for an existing member, so the host's arrival is identical.
+    fireEvent.click(screen.getByTestId('join-open-space'));
+    expect(joined).toEqual([{ spaceId: 'space-7', joined: false }]);
+  });
+
+  it('a dead card is still dead for somebody who is NOT a member', async () => {
+    // The `member` branch must not soften a genuine refusal: 195 changes what
+    // a MEMBER sees and nothing about what a stranger sees.
+    render(
+      <JoinScreen
+        code={CODE}
+        onPreview={async () => ({ status: 'exhausted', spaceName: 'atelier' })}
+        onJoined={() => {}}
+        onDismiss={() => {}}
+      />,
+    );
+    expect((await screen.findByTestId('join-exhausted')).textContent).toMatch(/used up/i);
+    expect(screen.queryByTestId('join-open-space')).toBeNull();
+  });
+
   it('an UNKNOWN code discloses nothing — not even that a space exists', async () => {
     render(
       <JoinScreen
@@ -283,5 +336,49 @@ describe('the join screen', () => {
     const h = mount();
     fireEvent.click(await screen.findByTestId('join-dismiss'));
     expect(h.dismissed()).toBe(1);
+  });
+});
+
+/**
+ * ARRIVAL — the other half of task 01a0baf5, and the half that actually broke.
+ *
+ * `GateApp` ended a successful redemption with `location.assign('/#/s/{id}')`
+ * under a comment insisting it was "A FULL RELOAD". `capturePendingJoin` has
+ * already stripped the path to `/` by then, so that call changed ONLY the
+ * fragment — and a fragment navigation does not reload the document. Measured
+ * in a real browser against the deployed node: a marker set on `window` before
+ * the call survived it. No reload meant `joinCode` was never re-derived and
+ * `JoinScreen` kept rendering, so the person sat on a disabled "Joining…"
+ * button over a membership that had already committed — and then reopened the
+ * link, which is what produced the "used up" card above.
+ *
+ * jsdom implements neither call (`location.reload` logs "Not implemented"), so
+ * the port is injected and the RULE is what gets asserted: set the address,
+ * THEN load it.
+ */
+describe('arriving in the space a join produced', () => {
+  function spy(): ArrivalPort & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      setAddress(url) { calls.push(`address:${url}`); },
+      load() { calls.push('load'); },
+    };
+  }
+
+  it('sets the address and then LOADS it — a hash change alone is not a reload', () => {
+    const port = spy();
+    arriveInSpace('space-7', port);
+    expect(port.calls).toEqual(['address:/#/s/space-7', 'load']);
+  });
+
+  it('never ends without a load, which is exactly how the bug shipped', () => {
+    const port = spy();
+    arriveInSpace('space-7', port);
+    expect(port.calls.at(-1)).toBe('load');
+  });
+
+  it('lands on the space\u2019s own address', () => {
+    expect(spaceAddress('space-7')).toBe('/#/s/space-7');
   });
 });

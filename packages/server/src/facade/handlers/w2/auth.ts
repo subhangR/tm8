@@ -270,11 +270,31 @@ async function profileDisplayName(
  * The short version: an unresolvable code returns `{status:'unknown'}` and
  * nothing else; a dead code names the space (so the holder can ask the right
  * person for a fresh one) but never the inviter.
+ *
+ * CLAIM-FREE IS NOT CLAIM-BLIND (195). An identity is never REQUIRED here —
+ * that is the whole point of the operation — but a join link is very often
+ * opened by somebody who does have a session, and refusing to look at it cost
+ * a real user a real Space: `preview_invite` answered `exhausted` to the very
+ * person whose redemption had spent the code, because nothing told it who was
+ * asking. So the bearer's identity is FORWARDED when the request carries one,
+ * and omitted when it does not. This is not `claimsFor`: that helper REFUSES
+ * an anonymous caller (context.ts:72), which is exactly the behaviour this
+ * handler must not have. An anonymous request binds no identity claim and SQL
+ * takes the branch it always took.
  */
 function authInviteResolve(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
     const body = ctx.body as ResolveInviteInput;
-    return deps.db.rpc<InvitePreview>({ requestId: ctx.requestId }, 'preview_invite', [body.code]);
+    // A bearer whose identity is unresolved is treated as anonymous rather
+    // than refused: this read has no authorization to get wrong, and a
+    // half-resolved session must not be able to turn a working join link into
+    // an error page.
+    const viewer = ctx.identity?.kind === 'bearer' ? ctx.identity.identityId : undefined;
+    return deps.db.rpc<InvitePreview>(
+      { requestId: ctx.requestId, ...(viewer ? { identityId: viewer } : {}) },
+      'preview_invite',
+      [body.code],
+    );
   };
 }
 

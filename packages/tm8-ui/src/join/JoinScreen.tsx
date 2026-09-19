@@ -16,6 +16,16 @@
  * two built-but-refused cards (`auth` frame 1h, `settings-space/RedeemLanding`)
  * take every fact as a prop and can never be honest; this one asks.
  *
+ * A MEMBER IS NOT A DEAD LINK (195, task 01a0baf5). The preview used to be
+ * claim-free in the strong sense — it could not see who was asking — so it
+ * answered `exhausted` to the very person whose redemption had spent the code,
+ * while `redeem_invite`, which CAN see them, answered `joined: false` for the
+ * same code in the same second. The screen asked the preview first and
+ * believed it, and a real invitee was told a Space they had joined ninety
+ * seconds earlier was out of reach. `member` is now its own status, handled
+ * ahead of every dead one, and it arrives in the Space rather than explaining
+ * itself.
+ *
  * THE DEAD STATES ARE THE SERVER'S OWN, and so is the disclosure rule.
  * `InvitePreview` is a discriminated union precisely so a dead code discloses
  * less than a live one: `unknown` carries NOTHING — no space name, not even a
@@ -176,6 +186,45 @@ export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: J
           whatever you copied it from.
         </p>
         <Foot code={code} onDismiss={onDismiss} dismissLabel="Continue without joining" />
+      </Shell>
+    );
+  }
+
+  /**
+   * ALREADY IN — and this branch is the report that created it (task 01a0baf5).
+   *
+   * A one-use code was redeemed successfully and the member row exists; the
+   * holder opened their own link a second time and was told "This invite is
+   * used up", because `preview_invite` could not see who was asking while
+   * `redeem_invite` could. 195 gives the preview the caller's identity and this
+   * status, ahead of every dead one: a membership outlives the link that
+   * granted it, so a spent — or revoked, or expired — code is simply not news
+   * to somebody already inside.
+   *
+   * It lands on the SAME arrival as a fresh join, with `joined: false`, which
+   * is exactly what `redeem_invite` answers for an existing member. There is
+   * one way into the space from this screen and this is it.
+   */
+  if (preview.status === 'member') {
+    return (
+      <Shell testId="join-member">
+        <h1 className="join__title">
+          You’re already in
+          <br />
+          {preview.spaceName}
+        </h1>
+        <p className="join__why">
+          This link has already been accepted by this account — there is nothing left to join.
+        </p>
+        <button
+          type="button"
+          className="join__primary"
+          data-testid="join-open-space"
+          onClick={() => onJoined(preview.spaceId, false)}
+        >
+          {`Open ${preview.spaceName}`}
+        </button>
+        <Foot code={code} onDismiss={onDismiss} dismissLabel="Not now" />
       </Shell>
     );
   }
