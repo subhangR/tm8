@@ -17,6 +17,7 @@ import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
+import { DrawingBlock } from './DrawingBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
@@ -163,6 +164,20 @@ function ContentBlock({
          for why it needs nothing from the host but `onOpenEntity`. */
       case 'blueprint':
         return <BlueprintBlock detail={detail} onOpenEntity={onOpenEntity} />;
+      /* The Excalidraw canvas — the EDITOR, not a picture of one, which is why
+         it takes `commands` where `blueprint` takes none. Keyed by entity id:
+         re-pointing the panel at another drawing must remount, or Excalidraw
+         keeps the previous scene's in-memory history and the debounce timer
+         would commit it under the new entity's version. */
+      case 'canvas':
+        return (
+          <DrawingBlock
+            key={detail.id}
+            detail={detail}
+            commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
+            onSaved={onSaved}
+          />
+        );
       case 'artifact-preview':
         /* Keyed by entity id: a panel that re-points to another artifact must
            reset the viewer's whole run state (selected revision, mint timer,

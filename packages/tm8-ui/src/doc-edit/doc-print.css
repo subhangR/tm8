@@ -138,6 +138,74 @@
     margin: 0 0 2pt;
   }
 
+  /* --- diagrams ------------------------------------------------------------
+     The same lesson as the fence above, in its expensive form. A mermaid fence
+     renders as `.md-mermaid.kit-zfig > .kit-zfig__viewport > .kit-zfig__canvas`
+     with a control cluster as the viewport's sibling, and EVERY rule shaping it
+     — kit/markdown.css:197+ and the whole of kit/zoomable-figure.css — is
+     written `.cv2-root .kit-zfig...`. In the clone all of it evaporates at once.
+
+     Most of that loss is harmless, and this sheet deliberately does not restate
+     it: `position: relative`, `display: block` and the viewport's
+     `overflow: auto` all fall back to the UA default the print page wanted
+     anyway. Two losses do reach the paper.
+
+     1. The control cluster. `zoomable-figure.css:90-107` hides it with
+        `opacity: 0` and argues, correctly, that `display: none` there would
+        drop four buttons out of the tab order. That argument is about a LIVE
+        document. A printed page has no tab order and no hover, so `display:
+        none` is not merely safe here, it is the only honest answer -- and it is
+        needed, because the cluster loses its `position: absolute` too and
+        otherwise prints as a strip of empty boxes under every diagram.
+     2. The frame and the centring, which markdown.css puts on `.md-mermaid`
+        and which the figure shell deliberately leaves to its host.
+
+     The canvas transform is the one thing the clone DOES keep. It is an inline
+     style (`ZoomableFigure.tsx:406`), written only while a figure is zoomed or
+     expanded, so it survives `cloneNode` and outranks this sheet. A reader who
+     zooms a diagram and then downloads would otherwise get it printed
+     off-register. That is why `!important` appears on these two lines and
+     nowhere else in this file. */
+  #tm8-print-root .kit-zfig__controls {
+    display: none !important;
+  }
+  #tm8-print-root .kit-zfig__canvas {
+    transform: none !important;
+  }
+
+  #tm8-print-root .md-mermaid {
+    text-align: center;
+    break-inside: avoid;
+    padding: 8pt;
+    border: 1px solid rgb(0 0 0 / 22%);
+    /* Mermaid paints its nodes with SVG `fill`, which prints, but the themed
+       card behind them is a background, which a print dialog drops unless the
+       reader thinks to tick "Background graphics". A diagram is the one thing
+       in a design doc that is not readable in outline. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Measured, and worth recording because it contradicts the obvious guess:
+     mermaid writes its own inline `max-width` on the root <svg>, and THAT is
+     what keeps a wide flowchart inside the trim today -- losing
+     `.cv2-root .md-mermaid__svg svg` does not clip anything. This restates the
+     clamp so a drawing whose source omits that attribute still fits. */
+  #tm8-print-root .md-mermaid__svg svg,
+  #tm8-print-root .kit-zfig__canvas svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* A diagram that could not be drawn keeps the author's SOURCE on the page
+     (`Mermaid.tsx:179-190`) rather than vanishing, which is the right call in
+     print too -- a reader holding the PDF can still see what was meant. But it
+     is a <pre> inside the centred box above, and centring inherits, so every
+     line of that source would print centre-justified. */
+  #tm8-print-root .md-mermaid--failed {
+    text-align: left;
+  }
+
   #tm8-print-root table {
     width: 100%;
     border-collapse: collapse;

@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Terminal } from '@xterm/xterm';
 import { attachTouchScroll } from './touchScroll.js';
 
 interface Host {
@@ -16,11 +17,12 @@ interface Host {
   detach: () => void;
 }
 
-/** A stand-in for xterm's DOM: jsdom never lays out, so sizes are defined. */
+/** Model the public buffer API; DOM supplies only the rendered row height. */
 function makeHost(scrollHeight = 1000, clientHeight = 200): Host {
   const container = document.createElement('div');
   const viewport = document.createElement('div');
-  viewport.className = 'xterm-viewport';
+  viewport.className = 'xterm-screen';
+  viewport.getBoundingClientRect = () => ({ height: 200 }) as DOMRect;
   container.appendChild(viewport);
   document.body.appendChild(container);
 
@@ -35,7 +37,16 @@ function makeHost(scrollHeight = 1000, clientHeight = 200): Host {
     },
   });
 
-  return { container, viewport, detach: attachTouchScroll(container) };
+  const term = {
+    rows: 20,
+    modes: { mouseTrackingMode: 'none' },
+    buffer: { active: {
+      get baseY() { return (scrollHeight - clientHeight) / 10; },
+      get viewportY() { return top / 10; },
+    } },
+    scrollLines(lines: number) { viewport.scrollTop += lines * 10; },
+  } as unknown as Terminal;
+  return { container, viewport, detach: attachTouchScroll(container, term) };
 }
 
 function touch(x: number, y: number): Touch {
@@ -68,6 +79,15 @@ afterEach(() => {
 });
 
 describe('attachTouchScroll', () => {
+  it('accumulates sub-row movement after locking the axis', () => {
+    host.viewport.scrollTop = 500;
+    fire(host.container, 'touchstart', [touch(50, 300)], 0);
+    fire(host.container, 'touchmove', [touch(50, 294)], 16);
+    expect(host.viewport.scrollTop).toBe(500);
+    fire(host.container, 'touchmove', [touch(50, 290)], 32);
+    expect(host.viewport.scrollTop).toBe(510);
+  });
+
   it('scrolls the viewport on a vertical drag', () => {
     host.viewport.scrollTop = 500;
     fire(host.container, 'touchstart', [touch(50, 300)], 0);

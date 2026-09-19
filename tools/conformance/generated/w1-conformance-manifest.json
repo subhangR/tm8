@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:10d20505efff9b689aa116cc651d8588298f8738863af8e9e4b2284b54c1b7f9",
+  "catalogDigest": "sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4",
   "catalog": {
-    "total": 198,
-    "v1": 196,
+    "total": 199,
+    "v1": 197,
     "reserved": 2,
-    "http": 196,
+    "http": 197,
     "ws": 1,
-    "registerableV1Http": 194,
+    "registerableV1Http": 195,
     "methods": {
       "GET": 65,
-      "POST": 99,
+      "POST": 100,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 69,
-      "command": 127,
+      "command": 128,
       "stream": 2
     },
-    "uniqueNames": 198,
-    "uniqueBindings": 197
+    "uniqueNames": 199,
+    "uniqueBindings": 198
   },
   "reservedOperations": [
     "search.query",
@@ -985,6 +985,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.sessions.share",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/sharing",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.journal",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/journal",
@@ -1790,7 +1797,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 166
+    "unimplementedV1Http": 167
   },
   "schemas": {
     "additive": {
@@ -3828,6 +3835,23 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.sessions.share",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.sessions.share",
+        "intentTags": [
+          "execution",
+          "sessions",
+          "share"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -5983,6 +6007,39 @@
         },
         "migration": {
           "strategy": "graph-detail"
+        }
+      },
+      "drawing": {
+        "kind": "drawing",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "drawings"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "drawing-detail"
         }
       },
       "chat": {

@@ -85,6 +85,24 @@ const ATTACH_MODES = ['view', 'drive'] as const;
 type AttachMode = (typeof ATTACH_MODES)[number];
 
 /**
+ * The two sharing dials (187), spelled exactly as `set_work_session_sharing`
+ * accepts them. They are SEPARATE on purpose: watching and typing are
+ * different grants, so opening a session to the space never implies handing
+ * anyone the keyboard.
+ *
+ * `explicit` is accepted by the server and is deliberately NOT offered here.
+ * The attach gate tests `share_mode = 'none'`, so `explicit` behaves exactly
+ * like `space` today — a per-person list is a schema that does not exist yet.
+ * Offering the word would let a caller believe they had narrowed a session
+ * they had in fact opened to everyone, which is the worst direction for a
+ * sharing control to be wrong in.
+ */
+const SHARE_MODES = ['none', 'space'] as const;
+type ShareMode = (typeof SHARE_MODES)[number];
+const DRIVE_MODES = ['owner', 'space'] as const;
+type DriveMode = (typeof DRIVE_MODES)[number];
+
+/**
  * A closed-set option. The diagnostic names the WHOLE set rather than just
  * rejecting the value: a caller who wrote `--mode watch` has a wrong model of
  * the vocabulary, and telling them only that `watch` is wrong leaves them
@@ -538,6 +556,60 @@ async function sessionTerminate(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 session share` — who may watch this terminal, and who may type into it.
+ *
+ * Two independent flags, and NEITHER is defaulted here. The server merges on
+ * null (`coalesce`), so sending only `--drive` leaves watching exactly as it
+ * was. Filling in the other dial locally would mean a caller who asked to stop
+ * remote typing also silently re-closed, or re-opened, the session to viewers.
+ *
+ * Narrowing REVOKES capabilities that have already been handed out — a share
+ * grant is a bearer token with a 30s life, so un-sharing that left live grants
+ * alone would be a close button that does not close anything for half a
+ * minute. That happens server-side; it is named here because it is the part a
+ * caller cannot see from the flags.
+ */
+async function sessionShare(cmd: CommandContext): Promise<ExitCode> {
+  const id = requireSessionId('session share', cmd.args[0]);
+  const shareMode = closed<ShareMode>('share', cmd.options.value('share'), SHARE_MODES);
+  const driveMode = closed<DriveMode>('drive', cmd.options.value('drive'), DRIVE_MODES);
+  if (shareMode === undefined && driveMode === undefined) {
+    throw new CliError(
+      'tm8 session share requires --share none|space, --drive owner|space, or both',
+      EXIT_USAGE,
+      { hint: '`--share` decides who may WATCH; `--drive` decides who may TYPE' },
+    );
+  }
+
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  // Strict input: an omitted dial is an absent key, never an explicit null.
+  if (shareMode !== undefined) body.shareMode = shareMode;
+  if (driveMode !== undefined) body.driveMode = driveMode;
+  // `--expect-version`, not `--expected-version`: every one of the 31 guard
+  // rows in the CLI spells the flag this way, and a lone variant here would be
+  // a second name for one thing. The DTO FIELD stays `expectedVersion` — the
+  // flag surface is the CLI's, the field is the frozen contract's.
+  const expected = cmd.options.value('expect-version');
+  if (expected !== undefined) {
+    const parsed = Number(expected);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new CliError('--expect-version must be a non-negative integer', EXIT_USAGE);
+    }
+    body.expectedVersion = parsed;
+  }
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.sessions.share', {
+    params: { id },
+    body,
+  });
+  cmd.out.data(data, (dto) => renderShared(dto, shareMode, driveMode));
+  return EXIT_OK;
+}
+
 async function sessionAttach(cmd: CommandContext): Promise<ExitCode> {
   const id = requireSessionId('session attach', cmd.args[0]);
   const mode = closed<AttachMode>('mode', cmd.options.value('mode'), ATTACH_MODES);
@@ -743,6 +815,48 @@ function renderTerminated(dto: unknown): string {
   return `${String(entity.id)} ${String(entity.status ?? 'terminated')}`;
 }
 
+/**
+ * Echoes back only what was ASKED for. The command result carries the entity,
+ * not the two columns, and reading a posture out of a field that is not there
+ * would be an invention — so an omitted dial prints nothing about itself
+ * rather than printing a guess at its unchanged value.
+ *
+ * IT NAMES THE SETTING, NOT THE OUTCOME. An earlier draft printed "owner only"
+ * for both narrowed dials, and on an agent-launched session that was false:
+ * `grant_stream_attach` opens on `internal.can_act_as(created_by, space)`, and
+ * 075 makes that true for EVERY active member whenever `created_by` is a
+ * team_member entity — 46% of the sessions on the live node. Setting the dial
+ * to `none` does not close that arm, so a line claiming it did would tell the
+ * user they were private when they were not. The dial is real for a
+ * human-launched session and the gate is genuinely narrowed for everyone who
+ * cannot act as the creator; what it cannot do is override 075.
+ *
+ * The note is printed on any narrowing rather than only when it bites, because
+ * this result does not carry `createdBy` and a caveat that guesses wrong in the
+ * reassuring direction is the one failure worth avoiding here. It is phrased as
+ * a condition ("on an agent-launched session") so it is true either way.
+ */
+function renderShared(
+  dto: unknown,
+  shareMode: ShareMode | undefined,
+  driveMode: DriveMode | undefined,
+): string {
+  const entity = (dto as CommandResultish)?.entity;
+  const parts: string[] = [];
+  if (shareMode !== undefined) {
+    parts.push(shareMode === 'none' ? 'watch: not shared' : 'watch: everyone in the space');
+  }
+  if (driveMode !== undefined) {
+    parts.push(driveMode === 'owner' ? 'type: not shared' : 'type: everyone in the space');
+  }
+  const head = entity?.id === undefined ? 'shared' : String(entity.id);
+  const narrowed = shareMode === 'none' || driveMode === 'owner';
+  const note = narrowed
+    ? '\nnote: on an agent-launched session any space member may still attach as the agent (075).'
+    : '';
+  return `${head}  ${parts.join('  ')}${note}`;
+}
+
 function renderGrant(dto: StreamAttachGrantDto): string {
   const parts = [String(dto.workSessionId ?? ''), String(dto.mode ?? ''), String(dto.url ?? '')];
   const expires = dto.expiresAt === undefined ? '' : `  expires ${String(dto.expiresAt)}`;
@@ -775,4 +889,5 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },
+  { path: ['session', 'share'], run: sessionShare },
 ];

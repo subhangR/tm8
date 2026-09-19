@@ -67,10 +67,15 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-// 197 -> 198 (Changes screen Phase 1): execution.gitStage, public and
-// deliberately commandless like the rest of its family, so the commandless
-// subtraction below moves 26 -> 27. MEASURED from this file's own failing run.
-const EXPECTED_ROWS = 198;
+// 197 -> 198 (187, session sharing): execution.sessions.share — public, with a
+// `session share` command, so the commandless set is UNCHANGED and the derived
+// command-path count moves with this constant on its own. MEASURED.
+// 198 -> 199 (Changes screen Phase 1, INTEGRATED WITH main): execution.gitStage,
+// public and deliberately commandless like the rest of its family, so the
+// commandless subtraction below moves 26 -> 27 while 187's `session share`
+// leaves it alone. Both rows land, so this constant moves twice from 197.
+// MEASURED from this file's own failing run on the MERGED tree.
+const EXPECTED_ROWS = 199;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -184,9 +189,15 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
+    // +1 (187): execution.sessions.share is public. It takes the sharing
+    // decision to anyone the RPC will accept — the owner, an actor who may act
+    // as the owner, a space admin — and refuses everyone else with 42501, so
+    // the gate lives in the database, not in the exposure.
     // 193 -> 194 (Changes screen Phase 1): execution.gitStage is public, like
     // every other row in the session git rail. MEASURED from the failing run.
-    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
+    // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
+    expect(histogram).toEqual({ public: 195, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -594,6 +605,10 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
+  // 187: the session sharing dials. `expectedVersion` is OPTIONAL on this DTO
+  // — the guard is offered, not demanded — which is why the row advertises
+  // `--expect-version` rather than requiring it.
+  'execution.sessions.share': 'ExecutionSessionsShareInputSchema',
   // Containers (§14). The four lifecycle verbs SHARE one input schema, which is
   // why eleven operations map to eight DTOs.
   'containers.start': 'ContainersLifecycleInputSchema',
@@ -817,6 +832,13 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // deliberately absent — its shared `artifact publish` syntax omits the flag.
     ['artifacts.publish', '--expect-version', 'expectedVersion'],
     ['artifacts.restore', '--expect-version', 'expectedVersion'],
+
+    // ── 187: the session sharing dials ──────────────────────────────────────
+    // The guard is OPTIONAL on this row — the DTO marks `expectedVersion`
+    // `.optional()` — which is why the syntax brackets it. The pairing is
+    // pinned all the same: optional is not unspecified, and a row that
+    // advertises a flag it cannot send is exactly what this table catches.
+    ['execution.sessions.share', '--expect-version', 'expectedVersion'],
   ];
 
   it('every guard row pins its flag to its frozen field — transposition-proof', () => {
@@ -838,7 +860,8 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(31);
+    // 31 -> 32 (187): execution.sessions.share.
+    expect(actual.length).toBe(32);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

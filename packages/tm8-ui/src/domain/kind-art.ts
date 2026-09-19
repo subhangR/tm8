@@ -189,6 +189,22 @@ export const KIND_ART = {
     'M2.4 6.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1v1.6',
   ],
 
+  /**
+   * A pencil, and the stroke it left.
+   *
+   * The stroke is the half that carries the meaning. A pencil alone is an
+   * EDIT mark — it is what every "rename this" affordance in the app already
+   * uses — so a pencil by itself would read as "edit", not "a drawing". The
+   * loose line underneath is what makes it a hand-drawn thing rather than an
+   * action, and it is deliberately not straight: `graph` owns straight lines
+   * between nodes, and the two marks must not converge at 16px.
+   */
+  drawing: [
+    'M11.4 2.7 13.3 4.6 6.9 11 4.1 11.9 5 9.1z',
+    'M10.1 4 12 5.9',
+    'M2.6 14c1.6-1.5 3.1.6 4.7-.7',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 

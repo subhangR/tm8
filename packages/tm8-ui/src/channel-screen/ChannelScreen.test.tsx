@@ -928,6 +928,51 @@ describe('paging and the honest absences', () => {
     expect(region.scrollTop).toBe(900);
   });
 
+  it('re-pins the newest message when the feed grows after commit, but not if the reader scrolled up', () => {
+    // Subhang, 2026-09-18: "the composer card covers the trailing USAGE …
+    // tokens line". The open-at-newest pin uses the scrollHeight it can see at
+    // COMMIT; a web font then swaps, every paragraph re-wraps, and the feed
+    // grows BELOW a scrollTop that is no longer the bottom. Measured in the
+    // panel host at a 1466px panel, the pin settled 14px short — more than the
+    // feed's 12px bottom padding, so the newest row ended flush against the
+    // composer. A ResizeObserver on the list asks for the bottom again.
+    let fire: (() => void) | undefined;
+    const prior = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) { fire = callback; }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      render(<ChannelScreen {...base} page={page([
+        messageItem({ itemId: 'feed-a' }, msg({ id: 'msg-a' })),
+        messageItem({ itemId: 'feed-b' }, msg({ id: 'msg-b' })),
+      ])} />);
+      const region = screen.getByRole('region', { name: /chat history/i });
+      let height = 1000;
+      Object.defineProperty(region, 'scrollHeight', { configurable: true, get: () => height });
+      Object.defineProperty(region, 'clientHeight', { configurable: true, get: () => 200 });
+
+      // At the bottom, then the rows grow under it: the pin follows.
+      region.scrollTop = 800;
+      fireEvent.scroll(region);
+      height = 1100;
+      fire?.();
+      expect(region.scrollTop).toBe(900);
+
+      // Scrolled up to read history: a late-resolving image must NOT yank the
+      // viewport back down. Same 48px threshold the new-items pill uses.
+      region.scrollTop = 100;
+      fireEvent.scroll(region);
+      height = 1400;
+      fire?.();
+      expect(region.scrollTop).toBe(100);
+    } finally {
+      globalThis.ResizeObserver = prior;
+    }
+  });
+
   it('enables measured content virtualization only at the long-feed threshold', () => {
     const observed: Element[] = [];
     const prior = globalThis.ResizeObserver;
@@ -944,8 +989,14 @@ describe('paging and the honest absences', () => {
       render(<ChannelScreen {...base} page={page(items)} />);
       const list = screen.getByRole('list', { name: /messages and activity/i });
       expect(list.getAttribute('data-virtualized')).toBe('true');
-      expect(observed.length).toBe(100);
+      expect(observed.filter((element) => element.classList.contains('chs-row'))).toHaveLength(100);
       expect(screen.getAllByRole('article')).toHaveLength(100);
+      /* The LIST is observed too, by a second observer with a different job:
+         the bottom pin re-asks for the newest message when the feed grows
+         after commit (a font swap re-wrapping every row, a late image), which
+         is what used to leave the newest row flush against the composer. */
+      expect(observed).toContain(list);
+      expect(observed).toHaveLength(101);
     } finally {
       globalThis.ResizeObserver = prior;
     }

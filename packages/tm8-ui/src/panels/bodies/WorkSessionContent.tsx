@@ -181,6 +181,7 @@ export function WorkSessionContent({
    * `false` and every branch it guards is unreachable by construction.
    */
   const { oneSurface } = useMobileSurface();
+  const [immersive, setImmersive] = useState(true);
 
   // The offered surfaces, in fixed order. On a desktop Terminal is first and is
   // the default; every other surface is always offered, and nothing is gated —
@@ -402,6 +403,15 @@ export function WorkSessionContent({
   const switchEl = showSwitch ? (
     oneSurface ? (
       <div className="pn-surface-switch" data-arrangement="phone-row">
+        <button
+          type="button"
+          className="pn-session-details-toggle"
+          aria-label={immersive ? 'Show session details and navigation' : 'Fill screen with session'}
+          aria-expanded={!immersive}
+          onClick={() => setImmersive((value) => !value)}
+        >
+          {immersive ? '☰' : '⤢'}
+        </button>
         <div
           className="pn-surface-switch__tabs"
           role="tablist"
@@ -478,6 +488,7 @@ export function WorkSessionContent({
       className="pn-work-session-content"
       data-testid="work-session-content"
       data-surface={surface}
+      data-immersive={oneSurface && immersive}
       /* The instrument's witness for WHICH arrangement it photographed. Two
          fields rather than one boolean: `data-surface` says what is showing,
          this says which set of surfaces was on offer to show it. */

@@ -1492,3 +1492,63 @@
 .cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__filterempty {
   padding-inline: var(--pn-space-3);
 }
+
+/* Phone sessions open as a full-screen reading/terminal surface. Details and
+   navigation remain one tap away in the surface switch. Keep the existing
+   frame in charge of keyboard insets; do not reparent the running terminal. */
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-immersive='true']) {
+  grid-template-rows: 1fr;
+  padding-top: var(--mobile-safe-top, 0px);
+  padding-bottom: var(--mobile-safe-bottom, 0px);
+}
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-immersive='true']) > :is(.mobile-frame__header, .mobile-frame__tabbar),
+.cv2-root[data-shell='mobile'] .pn-panel:has(.pn-work-session-content[data-immersive='true']) > :is(.pn-head, .pn-panelbar, .pn-foot),
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__refused {
+  display: none;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] > .pn-surface-switch {
+  padding-block: 0;
+  gap: var(--pn-space-1);
+}
+.cv2-root[data-shell='mobile'] .pn-session-details-toggle {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-size: 20px;
+  cursor: pointer;
+}
+.cv2-root[data-shell='mobile'] .pn-session-details-toggle:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The session input is a compact command row until it is being edited.
+   Attachments/errors keep a full-width row above it. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot {
+  padding: var(--pn-space-1);
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card > :not(.ri-host, .ri-card__foot) {
+  grid-column: 1 / -1;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea {
+  min-height: 44px;
+  height: 44px;
+  padding: 10px 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea:focus {
+  height: 72px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card__foot {
+  flex-wrap: nowrap;
+  padding: 0 4px;
+}

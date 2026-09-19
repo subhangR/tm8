@@ -151,7 +151,7 @@ describe('the node itself', () => {
     // 150 -> 151 (2026-08-12): projects.files.archive. Measured off a live
     // /health in CI, not derived — these two are the only pins in the tree that
     // a local run cannot reach, because they need a running server.
-    expect(health.operations).toBe(196) /* 195→196 2026-09-19 Changes screen Phase 1: execution.gitStage mounts one more HTTP route. MEASURED twice, never hand-derived: a live /health in server test/w3/g15-public.test.ts now reports 196, and `new Router().mounted().length` over the rebuilt MOUNTED_OPERATIONS is 196 (197 rows, one of them WS). */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
+    expect(health.operations).toBe(197) /* 196→197 2026-09-19 Changes screen Phase 1 INTEGRATED WITH main: execution.gitStage mounts one more HTTP route on top of 187’s. Both land, so this moves twice from 195. MEASURED on the MERGED tree, never hand-derived. */ /* 195→196 187: execution.sessions.share — POST /v2/entities/:id/commands/sharing, a mounted HTTP route */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

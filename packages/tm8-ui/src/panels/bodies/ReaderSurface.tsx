@@ -138,6 +138,16 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
    * elsewhere (a split, a preview, a phone sheet) cannot be the one that gets
    * printed. `printDoc` clones; the live node is never touched.
    *
+   * IT IS ALSO ASYNC, and the promise is deliberately dropped. It resolves when
+   * the browser's own `print()` returns — immediately in some browsers, only on
+   * dismissal in others — which is not a moment this surface has anything to do
+   * at, and its `false` means only "superseded or could not print", both of
+   * which are already handled inside. `DownloadDocControl` has
+   * refused up front when printing is unavailable, and a second press is
+   * reconciled by `printDoc`'s own generation guard rather than by a busy flag
+   * here, which would have to be threaded through the control's disabled state
+   * for a wait that is imperceptible whenever the diagrams are already drawn.
+   *
    * Hooks live ABOVE the `editing` fork for the reason this whole file exists:
    * a ref or a callback declared inside the branch would run conditionally.
    */
@@ -147,7 +157,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
     /* No rendered body ⇒ nothing to print. `ReaderBody` draws its designed
        empty in that case, and `DownloadDocControl` has already refused. */
     if (node == null) return;
-    printDoc({ title: detail.title, body: node });
+    void printDoc({ title: detail.title, body: node });
   }, [detail.title]);
 
   if (editing) {

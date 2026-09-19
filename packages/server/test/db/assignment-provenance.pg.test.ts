@@ -289,6 +289,51 @@ describe.sequential('task assignment provenance (129)', () => {
     // when something resolves a chat entity's content, which this suite never
     // does.
     database.apply(['177_container_kind.sql']);
+    // 187, same shape again, with a different relation name: `entity-read.ts`
+    // selects `ws.drive_mode` and a 129-era schema has no such column.
+    //
+    // Same safety argument, checked the same way. 187 adds two columns to
+    // `public.spaces`, one to `public.work_sessions`, a BEFORE INSERT trigger on
+    // `work_sessions`, and `create or replace`s `grant_stream_attach`,
+    // `w2_update_space` and the new `set_work_session_sharing` — all at their
+    // existing parameter names and return types. The trigger DOES fire on this
+    // suite's `execution_spawn` case, and that is deliberate to leave in the
+    // path: it stamps the space's sharing default onto the new session and
+    // touches no assignment, no provenance row and no edge, which is exactly
+    // the position statement at 129 this file is defending.
+    database.apply(['187_work_session_sharing.sql']);
+    // …and 194, the SEVENTH instance of the same recurring shape — 135, 147,
+    // 171, 176 (FOURTH, named above), 177 (fifth, named above), 187 (sixth),
+    // now 194. main's 5e1f9e1e ("Drawing as an entity, with Excalidraw", #627)
+    // added the `drawing` core kind, and the read model joins `public.drawings`
+    // into ENTITY_FROM, so current code selects from a relation a 129-era schema
+    // does not have and `loadEntitySummariesByIds` refuses to run — the
+    // identical failure the six above each caused, with a different relation
+    // again.
+    //
+    // INHERITED, NOT INTRODUCED BY THIS LANE. #627 added both the join and 194
+    // and did not extend this fixture, so main carries this red on its own.
+    // PROVEN, not argued: every input to this suite — all 176 migration files,
+    // test/db/w1-pg.ts, src/facade/entity-read.ts and this file — is
+    // BYTE-IDENTICAL to main, so running it here is running it on main. This
+    // branch has zero commits touching any of them, and changes no SQL at all.
+    // NO PRODUCTION CODE CHANGES HERE.
+    //
+    // MEASURED, not computed — from the authoritative gate's own failing run:
+    //   test/db/assignment-provenance.pg.test.ts (6 tests | 3 failed)
+    //   error: relation "public.drawings" does not exist
+    //     ❯ Module.loadEntitySummariesByIds src/facade/entity-read.ts:2592:16
+    //
+    // LAST AND HIGHEST, needing nothing in between: there are NO migrations
+    // numbered 188-193, the chain goes 187 -> 194. Every table 194's recreated
+    // `internal.entity_content` reads is present by here — `containers` from 177
+    // above, `chats` from 176, `work_sessions` from 187, `drawings` from 194
+    // itself, the rest from the pre-129 base slice.
+    //
+    // Same duplicate-apply guard the 177 note states: this suite applies
+    // a-la-carte (`apply([…])`), never `apply(migrationFiles())`, so this is a
+    // FIRST apply of 194, not a second.
+    database.apply(['194_drawing_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

@@ -17,11 +17,16 @@ export interface MaestroTaskTileProps {
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
-  /** `category === 'done'` — this task FINISHED. Never `deletedAt` (C2). */
-  completed: boolean;
-  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. A row
-      may be both; the two are orthogonal axes and read differently. The
-      session tile has carried this distinction all along. */
+  /* NO `completed` PROP. The tile took one, turned it into `pn-tt--completed`
+     and struck the title through — and `category === 'done'` is the server's
+     RESOLUTION predicate, which `152_universal_status.sql` seeds the fact kinds
+     (commit, message, file, memory, artifact) into on purpose. Every artifact
+     row rendered as completed work. The mark is gone for every kind, so the
+     prop is gone with it rather than left as a dead hook; completion is said by
+     `status` below, which the Done tab and the status glyph already read. */
+  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. This
+      is the ONE axis the tile still paints, and it is never a category (C2).
+      The session tile has carried this distinction all along. */
   archived: boolean;
   childCount: number;
   childrenExpanded: boolean;
@@ -78,7 +83,6 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     selected,
     attention,
     attentionReason,
-    completed,
     archived,
     childCount,
     childrenExpanded,
@@ -103,7 +107,6 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       ref={rootRef}
       className={[
         'pn-tt',
-        completed ? 'pn-tt--completed' : '',
         archived ? 'pn-tt--archived' : '',
         selected ? 'pn-tt--active' : '',
         attention ? 'pn-tt--attention' : '',

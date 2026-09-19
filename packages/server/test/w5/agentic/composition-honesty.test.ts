@@ -173,10 +173,16 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // inside when the runtime is off. That is what puts them in the
     // DENOMINATOR: this suite measures rows a composition could mount, not
     // rows that do real work. MEASURED.
+    // 189 -> 190 (187): execution.sessions.share is unconditional — it is
+    // mounted by every composition and the sharing decision is made in the
+    // database, not by withholding the route. MEASURED.
     // 189 -> 190 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.) It is unconditional — nothing gates it — so it
     // lands in the denominator alongside the container rows.
-    expect(REGISTERABLE).toHaveLength(190);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(190);
+    // 190 -> 191 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(REGISTERABLE).toHaveLength(191);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(191);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
@@ -184,7 +190,10 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     const residual = REGISTERABLE.filter((name) => !withPresence.has(name));
     expect(residual, `residual with presence: ${residual.join(',')}`).toEqual([]);
     // 189 -> 190 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
-    expect(withPresence.size).toBe(190);
+    // 190 -> 191 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(withPresence.size).toBe(191);
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -195,7 +204,10 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // mounts would keep the count at 1 and this assertion would still catch it.
     expect(residual, `residual without presence: ${residual.join(',')}`).toEqual([PRESENCE_GATED]);
     // 188 -> 189 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
-    expect(withoutPresence.size).toBe(189);
+    // 189 -> 190 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(withoutPresence.size).toBe(190);
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -210,7 +222,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     expect(onlyWithout, `mounted only WITHOUT presence: ${onlyWithout.join(',')}`).toEqual([]);
   }, 15_000);
 
-  it('BOTH READINGS ARE CORRECT — 162/0 and 161/1 name the two compositions, not a defect', () => {
+  it('BOTH READINGS ARE CORRECT — 191/0 and 190/1 name the two compositions, not a defect', () => {
     // The sentence the frozen file could not say, wired to something that
     // fails. `test/w2/reserved-honesty.test.ts` composes WITHOUT presence
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
@@ -219,8 +231,12 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // The denominator moved 189 -> 190 with it, so BOTH readings shift by one
     // and the 0/1 residual split — the actual claim — is unchanged.
     // (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
-    expect([withPresence.size, 190 - withPresence.size]).toEqual([190, 0]);
-    expect([withoutPresence.size, 190 - withoutPresence.size]).toEqual([189, 1]);
+    // The DENOMINATOR literal moves 190 -> 191 too. It is not an expected
+    // value, it is the subtrahend: leaving it at 190 turned the residual into
+    // -1 rather than failing on the count. Both readings shift by one and the
+    // 0/1 residual split — the actual claim — is unchanged. MEASURED on the merged tree from this assertion's own failing run.
+    expect([withPresence.size, 191 - withPresence.size]).toEqual([191, 0]);
+    expect([withoutPresence.size, 191 - withoutPresence.size]).toEqual([190, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {

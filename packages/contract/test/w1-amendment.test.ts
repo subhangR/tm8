@@ -97,11 +97,16 @@ describe('W1 adopted catalog target', () => {
     // never carried: `OPERATIONS.length` = 197, `V1_OPERATIONS.length` = 195.
     // The Design's PROSE says 27 rows and is wrong; §4.1's list is 25 and the
     // coordinator ruled on it.
+    // 197 -> 198 (187, terminal sharing): execution.sessions.share, v1, so
+    // 195 -> 196 too. MEASURED on this tree per PIN RULE v3, never carried.
     // 197 -> 198 (2026-09-19, Changes surface phase 1): execution.gitStage,
     // the index verb (stage|unstage) the review screen commits through. v1,
     // so 195 -> 196. MEASURED on this tree per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(198);
-    expect(V1_OPERATIONS).toHaveLength(196);
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(OPERATIONS).toHaveLength(199);
+    expect(V1_OPERATIONS).toHaveLength(197);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -136,9 +141,12 @@ describe('W1 adopted catalog target', () => {
     // under its own name; it carries `aliasOf` and is excluded from
     // MOUNTED_OPERATIONS, so nothing mounts a second socket. Counting rows and
     // counting mounts are different questions and this pin asks the first.
+    // 187: POST 98->99 — execution.sessions.share, a POST command on the
+    // entity-command shape. Nothing else moves. MEASURED from the failing run.
     // 2026-09-19 (Changes surface phase 1): POST 98->99 — execution.gitStage,
     // a command row on the session's git path. MEASURED on this tree.
-    }).toEqual({ GET: 65, POST: 99, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
+    // POST 99 -> 100 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows are POST commands. MEASURED on the merged tree from this assertion's own failing run.
+    }).toEqual({ GET: 65, POST: 100, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -147,8 +155,12 @@ describe('W1 adopted catalog target', () => {
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
     // Containers: read 65->69, command 106->126, stream 1->2. MEASURED.
+    // 187: command 126->127. MEASURED.
     // Changes surface phase 1: command 126->127 (execution.gitStage). MEASURED.
-    }).toEqual({ read: 69, command: 127, stream: 2 });
+    // command 127 -> 128 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main):
+    // execution.sessions.share and execution.gitStage are both kind: command.
+    // MEASURED from this assertion's own failing run (Received: command 128).
+    }).toEqual({ read: 69, command: 128, stream: 2 });
   });
 });
 
@@ -205,6 +217,10 @@ describe('W1 frozen-row schema amendments', () => {
       'chat',
       // 2026-09-03: `container` — the machine kind (177, CONTAINERS §3.1).
       'container',
+      // 2026-09-17: `drawing` — an Excalidraw canvas as an entity (194).
+      // Creatable through the ordinary envelope, unlike `chat`/`container`:
+      // nothing runtime stands behind a drawing, only its detail row.
+      'drawing',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

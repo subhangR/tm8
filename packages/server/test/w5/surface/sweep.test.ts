@@ -306,10 +306,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
+    // 193 -> 194 (187): execution.sessions.share, one POST command. MEASURED.
     // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
-    expect(SURFACE).toHaveLength(194);
-    expect(rows).toHaveLength(194);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(SURFACE).toHaveLength(195);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
+    expect(rows).toHaveLength(195);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
+    expect(new Set(rows.map((r) => r.op)).size).toBe(195);
   });
 
   /**
@@ -991,7 +997,23 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // integer invisible to any grep phrased as the thing being added — it was
     // found here by running the suite, which is the other way it says to find
     // it. RE-MEASURE, do not add.
-    expect(server.appliedMigrations.length).toBe(174);
+    //
+    // 174 -> 175 (187): ONE file, 187_work_session_sharing.sql (the two space
+    // sharing defaults, work_sessions.drive_mode, the inheriting trigger, and
+    // the re-defined grant_stream_attach). MEASURED the same way, not
+    // incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 174
+    //   ls db/migrations/*.sql | wc -l                                          -> 175
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main has not moved under this branch, so the two differ by exactly its
+    // one file.
+    // 175 -> 176. NOT a catalog pin and NOT caused by this merge: this branch
+    // adds no migration. origin/main carries 176 migration files (187_work_-
+    // session_sharing.sql and 194_drawing_kind.sql on top of the merge-base's
+    // 174) while still pinning 175, so main is red here on its own. Verified
+    // by counting db/migrations/*.sql at cb6a35a8 / HEAD / MERGE_HEAD. MEASURED.
+    expect(server.appliedMigrations.length).toBe(176);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

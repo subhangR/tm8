@@ -1,17 +1,10 @@
-/**
- * Touch scrolling for xterm.js.
- *
- * xterm ships no touch support. Its `.xterm-viewport` is absolutely positioned
- * and `.xterm-screen` — a later sibling — paints on top of it, so every touch
- * lands on the screen layer, which is not scrollable. Desktop works only
- * because xterm registers a `wheel` listener on `.xterm` and moves the viewport
- * programmatically; there is no `touchmove` equivalent, so a finger drag on a
- * phone scrolls nothing.
- *
- * This translates a one-finger vertical drag into `viewport.scrollTop`, with a
- * decaying fling so long scrollback is reachable without a dozen drags.
- */
+import { scrollTerminalLines, type ScrollTerminal } from './scrollTerminal';
 
+/**
+ * Translate touch drags into terminal history or application mouse scrolling. In xterm 6 the
+ * legacy .xterm-viewport is empty; scrollback lives in a virtual scroller,
+ * so neither its scrollHeight nor assigning its scrollTop can scroll output.
+ */
 /** Movement (px) before the gesture commits to an axis. */
 const AXIS_LOCK_PX = 6;
 /** Per-frame velocity decay during a fling. */
@@ -23,23 +16,29 @@ const VELOCITY_SMOOTHING = 0.7;
 
 type Axis = 'undecided' | 'vertical' | 'horizontal';
 
-function findViewport(container: HTMLElement): HTMLElement | null {
-  return container.querySelector<HTMLElement>('.xterm-viewport');
-}
+/** Attach after term.open(); dispose before the terminal is destroyed. */
+export function attachTouchScroll(container: HTMLElement, term: ScrollTerminal): () => void {
+  let remainder = 0;
+  let rowHeight = 0;
 
-function canScroll(viewport: HTMLElement): boolean {
-  return viewport.scrollHeight - viewport.clientHeight > 1;
-}
+  // Public xterm scrolling is in whole rows. Preserve sub-row movement across
+  // touch samples and fling frames, otherwise slow drags never move a line.
+  const scrollPixels = (pixels: number): boolean => {
+    const buffer = term.buffer.active;
+    const appScrolls = term.modes.mouseTrackingMode !== 'none' || buffer.type === 'alternate';
+    if (rowHeight <= 0 || (!appScrolls && (buffer.baseY === 0 ||
+        (pixels < 0 && buffer.viewportY === 0) ||
+        (pixels > 0 && buffer.viewportY === buffer.baseY)))) {
+      remainder = 0;
+      return false;
+    }
+    remainder += pixels / rowHeight;
+    const lines = Math.trunc(remainder);
+    remainder -= lines;
+    if (lines !== 0) scrollTerminalLines(term, lines);
+    return true;
+  };
 
-/**
- * Wire touch scrolling onto a terminal host. Returns a disposer.
- *
- * The listeners live on the host rather than on `.xterm-viewport` because the
- * viewport does not exist until `term.open()` has run and is replaced on some
- * renderer transitions; resolving it per gesture keeps this independent of
- * xterm's mount order.
- */
-export function attachTouchScroll(container: HTMLElement): () => void {
   let axis: Axis = 'undecided';
   let tracking = false;
   let startX = 0;
@@ -55,14 +54,11 @@ export function attachTouchScroll(container: HTMLElement): () => void {
     flingFrame = null;
   };
 
-  const startFling = (viewport: HTMLElement) => {
+  const startFling = () => {
     if (Math.abs(velocity) < FLING_MIN_VELOCITY) return;
     const step = () => {
       flingFrame = null;
-      const before = viewport.scrollTop;
-      viewport.scrollTop = before - velocity;
-      // A fling that has run into either end has nothing left to animate.
-      if (viewport.scrollTop === before) return;
+      if (!scrollPixels(-velocity)) return;
       velocity *= FLING_DECAY;
       if (Math.abs(velocity) < FLING_MIN_VELOCITY) return;
       flingFrame = requestAnimationFrame(step);
@@ -78,6 +74,8 @@ export function attachTouchScroll(container: HTMLElement): () => void {
       return;
     }
     const touch = event.touches[0]!;
+    remainder = 0;
+    rowHeight = (container.querySelector('.xterm-screen')?.getBoundingClientRect().height ?? 0) / term.rows;
     tracking = true;
     axis = 'undecided';
     startX = touch.clientX;
@@ -104,10 +102,6 @@ export function attachTouchScroll(container: HTMLElement): () => void {
       if (axis === 'horizontal') return;
     }
 
-    const viewport = findViewport(container);
-    // With nothing to scroll, let the gesture bubble to the page.
-    if (!viewport || !canScroll(viewport)) return;
-
     const delta = touch.clientY - lastY;
     lastY = touch.clientY;
 
@@ -119,9 +113,7 @@ export function attachTouchScroll(container: HTMLElement): () => void {
       velocity = velocity * (1 - VELOCITY_SMOOTHING) + sample * VELOCITY_SMOOTHING;
     }
 
-    const before = viewport.scrollTop;
-    viewport.scrollTop = before - delta;
-    if (viewport.scrollTop === before) {
+    if (!scrollPixels(-delta)) {
       // At an end of the scrollback: hand the overscroll back rather than
       // swallowing it, so the gesture can still pan the enclosing panel.
       velocity = 0;
@@ -139,8 +131,7 @@ export function attachTouchScroll(container: HTMLElement): () => void {
       velocity = 0;
       return;
     }
-    const viewport = findViewport(container);
-    if (viewport && canScroll(viewport)) startFling(viewport);
+    startFling();
   };
 
   container.addEventListener('touchstart', onTouchStart, { passive: true });

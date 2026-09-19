@@ -716,10 +716,12 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 99 -> 118 (177): nineteen container command bodies bind. The family has
     // twenty commands; `containers.files.put` carries a tar stream, not JSON,
     // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
+    // +1 (187): `execution.sessions.share` binds ExecutionSessionsShareInput.
     // 118 -> 119 (2026-09-19, Changes screen Phase 1): execution.gitStage is a
     // POST that carries a JSON body (the paths to stage), so it binds an input
     // schema like the other four git commands. MEASURED.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(119);
+    // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(120);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -885,13 +887,18 @@ describe.sequential('W2.I02 real production public surface', () => {
     // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
     // which adds a discoverable NAME for the existing socket, not a route.
     // MEASURED off /health.
+    // +1 (187): `execution.sessions.share`, registered and mounted. MEASURED
+    // off /health, not incremented.
     // 2026-09-19 (Changes screen Phase 1): execution.gitStage — one public v1
     // POST, mounted with a real facade handler — moves both counts together:
     // routes 195 -> 196, registered handlers 193 -> 194. MEASURED off a live
     // /health in test/w3/public-harness.test.ts and test/w3/g15-public.test.ts,
     // which both report the new pair; not hand-derived.
-    expect(health).toMatchObject({ ok: true, operations: 196, implemented: 194 });
-    expect(harness.production.server.registry.size).toBe(194);
+    // 196/194 -> 197/195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(health).toMatchObject({ ok: true, operations: 197, implemented: 195 });
+    expect(harness.production.server.registry.size).toBe(195);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -912,10 +919,12 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
+    // 193 -> 194 (187): execution.sessions.share. MEASURED.
     // 193 -> 194 (2026-09-19): execution.gitStage. It is REGISTERED, not
     // residual, so the whole +1 lands in `registered.size` and the empty
     // residual asserted above stays empty. MEASURED.
-    expect(registered.size + residual.length).toBe(194);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
+    expect(registered.size + residual.length).toBe(195);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

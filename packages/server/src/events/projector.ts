@@ -252,6 +252,8 @@ interface SummaryRow {
   ws_agent_tool: string | null;
   ws_model: string | null;
   ws_share_mode: string | null;
+  /** 187. Optional so pre-187 row fixtures stay source-compatible. */
+  ws_drive_mode?: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
@@ -314,6 +316,9 @@ interface SummaryRow {
   graph_type: string | null;
   graph_node_count: number | null;
   graph_edge_count: number | null;
+  drawing_title: string | null;
+  drawing_format: string | null;
+  drawing_element_count: number | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -397,6 +402,7 @@ select
   ws.agent_tool      as ws_agent_tool,
   ws.model           as ws_model,
   ws.share_mode      as ws_share_mode,
+  ws.drive_mode      as ws_drive_mode,
   ws.started_at      as ws_started_at,
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
@@ -464,6 +470,11 @@ select
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
   coalesce(jsonb_array_length(gr.edges), 0) as graph_edge_count,
+  drw.title          as drawing_title,
+  drw.format         as drawing_format,
+  -- The element COUNT only: a scene is the largest payload any kind carries
+  -- and the event path must never move it. The elements are content.
+  coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -533,6 +544,7 @@ left join lateral (
    where t.chat_id = cht.entity_id
 ) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
+left join public.drawings drw         on drw.entity_id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -1015,6 +1027,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'graph':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.graph_title ?? 'Graph';
+      case 'drawing':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.drawing_title ?? 'Drawing';
       case 'chat':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
         // the empty-string fallback (the column defaults to '').
@@ -1065,6 +1080,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'artifact' ? r.artifact_description
       : r.kind === 'loop' ? r.loop_schedule
       : r.kind === 'graph' ? r.graph_type
+      : r.kind === 'drawing' ? r.drawing_format
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1198,6 +1214,12 @@ export class PgEntityProjector implements EntityProjector {
           agentTool: r.ws_agent_tool,
           model: r.ws_model,
           shareMode: oneOf(r.ws_share_mode, WS_SHARE_MODES, 'none'),
+          // 187 — MIRRORS entity-read.ts stateOf: spread, not defaulted,
+          // because absence means "too old to know" and the DTO reads
+          // that as `owner`. `oneOf` would substitute a claim here.
+          ...(r.ws_drive_mode === 'owner' || r.ws_drive_mode === 'space'
+            ? { driveMode: r.ws_drive_mode }
+            : {}),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
@@ -1328,6 +1350,14 @@ export class PgEntityProjector implements EntityProjector {
           graphType: r.graph_type ?? 'entity',
           nodeCount: r.graph_node_count ?? 0,
           edgeCount: r.graph_edge_count ?? 0,
+        };
+      case 'drawing':
+        // MIRRORS entity-read.ts stateOf: which canvas format and how big —
+        // the elements themselves are content, never summary state.
+        return {
+          kind: 'drawing',
+          format: r.drawing_format ?? 'excalidraw',
+          elementCount: r.drawing_element_count ?? 0,
         };
       case 'chat':
         // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
