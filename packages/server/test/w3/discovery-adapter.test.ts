@@ -29,12 +29,19 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
         // the 25th (`containers.stream`) re-declares `events.subscribe`'s
         // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
-        total: 197,
-        v1: 195,
+        // -> {198/196/196/194} (2026-09-19, Changes screen Phase 1):
+        // `execution.gitStage`. One public v1 POST, mounted over HTTP with a
+        // real facade handler, so ALL FOUR move together — it is a catalog row
+        // (total), non-reserved (v1), a route (http) and registered (last).
+        // `reserved` and `ws` are unmoved: it reserves nothing and opens no
+        // socket. MEASURED from this assertion's own failing run, which printed
+        // all four live values on `Received`; never hand-derived.
+        total: 198,
+        v1: 196,
         reserved: 2,
-        http: 195,
+        http: 196,
         ws: 1,
-        registerableV1Http: 193,
+        registerableV1Http: 194,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
