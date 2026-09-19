@@ -163,13 +163,19 @@
 .cv2-root .pn-tt--attention {
   background: var(--pn-wait-soft);
 }
-.cv2-root .pn-tt--completed .pn-tt__title {
-  color: var(--pn-ink-4);
-  text-decoration: line-through;
-}
-/* ARCHIVED IS NOT COMPLETED (C2). Filing a row away dims it; it does not
-   strike it through, which is the mark this tile reserves for work that
-   finished. Same 0.62 the session tile has always used for the same fact. */
+/* NO `--completed` RULE, AND NO `--completed` CLASS. It used to strike the
+   title through from `category === 'done'` — but `done` is the server's
+   RESOLUTION predicate, and `152_universal_status.sql` deliberately seeds the
+   fact kinds (commit, message, file, memory, artifact) into it so a fact about
+   the past cannot block a `depends_on`. Every artifact row on the list wore a
+   completion mark because of it. The treatment is gone for every kind, tasks
+   included: the status glyph and the Done tab already carry the fact. See
+   `.lp__title--archived` in panels.css for the long form.
+
+   ARCHIVED IS NOT COMPLETED (C2), and that separation is exactly why this rule
+   stays behind alone: filing a row away dims it, and `--archived` is fed by
+   `deletedAt` — never by a category. Same 0.62 the session tile has always
+   used for the same fact. */
 .cv2-root .pn-tt--archived {
   opacity: 0.62;
 }
