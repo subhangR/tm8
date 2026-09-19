@@ -508,6 +508,13 @@ export function ChatHomeScreen({
     setThreads([]);
     setSelectedRootId(null);
     setDetail(null);
+    // THE PROJECT CHOICE IS SPACE-SCOPED TOO. A project is linked per space, so
+    // a choice carried across a switch names one the new space very often does
+    // not have — the chip keeps reading the old project's name while the list
+    // underneath it has already been refetched, and the send is refused with
+    // `project is not linked to this space`. Back to scratch, which every space
+    // has.
+    setProjectChoice('');
   }, [spaceId]);
 
   useEffect(() => {
