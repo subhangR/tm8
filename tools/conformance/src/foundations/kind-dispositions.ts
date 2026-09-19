@@ -55,6 +55,7 @@ export type MigrationStrategy =
   | 'graph-detail'
   | 'chat-detail'
   | 'container-detail'
+  | 'drawing-detail'
   | 'custom-registry'
   | 'none';
 
@@ -421,6 +422,15 @@ export const CORE_KIND_DISPOSITIONS = {
   graph: core('graph', 'graphs', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'graph-detail' },
+  }),
+  // Drawings (migration 194). `graph`'s disposition exactly, and for the same
+  // reasons: an ordinary collection-routed entity whose detail row is the only
+  // special thing about it, created through `entities.create` rather than a
+  // door of its own. `registered-not-default` because the kind registers
+  // without rearranging anybody's default menu.
+  drawing: core('drawing', 'drawings', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'drawing-detail' },
   }),
   // Chat as an Entity (migration 176). Its lifecycle is `work_session`'s, not
   // `graph`'s: born from its own door (`chat.start`), never from

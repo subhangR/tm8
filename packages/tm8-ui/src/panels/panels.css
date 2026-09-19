@@ -2757,12 +2757,26 @@
 }
 /* No compact step-down: a session title is 12.5px at every density, so shrinking
    only this one reopened the mismatch wherever `lp--compact` is applied. */
-/* C2 — `--done` was ONE class fed by `deletedAt`, so archiving a row struck it
-   through exactly as completing it would have. Two facts, two treatments: a
-   COMPLETED row is struck through (it finished), an ARCHIVED one is only dimmed
-   (it was filed away, whatever its status). A row can be both, and then it
-   reads as both. Matches `.pn-st--archived`, which already dims sessions. */
-.cv2-root .lp__title--completed { color: var(--pn-ink-3); text-decoration: line-through; }
+/* THERE IS NO COMPLETED TREATMENT ON A LIST TITLE, and the reason is a
+   COLLISION IN `done`, not a change of taste.
+
+   `status_category = 'done'` is a RESOLUTION predicate on the server, not a
+   lifecycle position: `db/migrations/152_universal_status.sql` seeds the FACT
+   KINDS — commit, message, file, memory, artifact — into `done` so that a fact
+   about the past cannot block a `depends_on` forever. A list row that painted a
+   completion mark from that flag therefore struck through EVERY artifact, EVERY
+   memory, EVERY file, message and commit — twelve of twelve titles on the
+   Artifacts list. `registry.ts` already documents the same collision for the
+   category tab. This was the last place still reading the resolution flag as
+   "this finished", and the mark is gone rather than kind-gated: completion is
+   said by the status chip, the status dot and the Done tab, which say it
+   without claiming an artifact was completed.
+
+   C2 SURVIVES, and it is the reason `--archived` is still here alone. Archived
+   and completed are two orthogonal facts; `--archived` is `deletedAt`, it dims,
+   and it must never be fed by a category. Matches `.pn-st--archived`, which
+   already dims sessions. `.pn-head__title--struck` (the detail header) is also
+   `deletedAt` and is correct as it stands. */
 .cv2-root .lp__title--archived { color: var(--pn-ink-3); opacity: 0.62; }
 .cv2-root .lp__title:focus-visible {
   outline: 2px solid var(--pn-brand);

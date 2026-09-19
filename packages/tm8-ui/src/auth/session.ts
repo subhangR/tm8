@@ -37,6 +37,7 @@ import type {
 } from '@tm8/contract';
 import { createHttpClient, type HttpClient } from '../data/real/http';
 import { LOCAL_SERVER_ID, readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
+import { ptyTransport } from '../terminal/pty/ptyTransport';
 import { endSession } from './session-reset';
 import {
   KNOWN_ACCOUNTS_KEY,
@@ -277,6 +278,11 @@ function storePass(
     displayName: account.displayName,
     lastSignedInAt: pass.signedInAt,
   });
+  // A refused terminal told this viewer to sign in again. They just did, so lift
+  // the latches that sentence was about — nothing remounts on its own, and an
+  // instruction the user follows to no effect is worse than no instruction.
+  // Only the `unauthorized` ones: a private session stays private.
+  ptyTransport.clearAuthRefusals();
   // A deliberate sign-in (or claim) is the one act that says "resume me here",
   // so it lifts the "signed out on purpose" opt-out the loopback probe honours.
   // Without this a viewer who signed out of a loopback node and then signed

@@ -400,6 +400,24 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
       }],
     },
   },
+  /**
+   * `ExecutionSessionsShareInputSchema` (187) refines the PAIR: both dials are
+   * optional in the shape, and the refinement rejects a body that names
+   * NEITHER — an omitted dial means "leave it alone", so `{}` is a no-op the
+   * command declines to accept rather than a valid request. The minimal walk
+   * omits every optional field and therefore produces exactly that body.
+   *
+   * `shareMode` is the dial named here, and `'none'` the value, because the
+   * sweep is measuring HANDLER REACH and nothing else: the operation is being
+   * called against ABSENT_ID, so whichever dial it names the RPC refuses at its
+   * first lookup. Naming the WATCH dial rather than the drive dial keeps the
+   * body the same shape as the one the UI sends.
+   */
+  'execution.sessions.share': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    shareMode: 'none',
+  },
+
   'artifacts.publish': {
     clientMutationId: 'w5-surface-sweep-cmid',
     expectedVersion: 1,

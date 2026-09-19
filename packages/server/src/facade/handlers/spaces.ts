@@ -38,6 +38,9 @@ export interface SpaceRow {
   github_repo: string | null;
   created_at: Date | string;
   member_count: string;
+  /** 187 sharing defaults. Optional so pre-187 row fixtures still type. */
+  session_share_default?: string | null;
+  session_drive_default?: string | null;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -53,6 +56,17 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
     // measured one. `spaces.navigation` is where the real number lives.
     unreadTotal: null,
     githubRepo: row.github_repo,
+    // 187, the space-wide sharing defaults. Spread rather than defaulted:
+    // absence means this server did not read the columns, and the DTO
+    // documents absence as "assume nothing, offer no control". Two plain
+    // columns off the row `s` is already scanned for — no join, no
+    // subquery, so the boot-gate budget below is untouched.
+    ...(row.session_share_default === 'none' || row.session_share_default === 'space'
+      ? { sessionShareDefault: row.session_share_default }
+      : {}),
+    ...(row.session_drive_default === 'owner' || row.session_drive_default === 'space'
+      ? { sessionDriveDefault: row.session_drive_default }
+      : {}),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
 }
@@ -102,6 +116,7 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
  */
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
+  s.session_share_default, s.session_drive_default,
   (select count(*)::text from public.members member_count_row
     where member_count_row.space_id = s.id) as member_count`;
 

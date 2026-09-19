@@ -38,12 +38,13 @@ import {
 // neither branch's value survives the merge, because each saw only its own
 // half of the catalog. The CLI's CATALOG_DIGEST and the generated conformance
 // manifest carry the same value and all three must agree.
-// 2026-09-19 (Changes screen Phase 1): execution.gitStage joined OPERATIONS,
-// so the digest moved with it. READ OUT OF THE FAILING RUN — this assertion
-// compares the LIVE server digest against this literal, so the run printed the
-// live value on its `Received:` line and this is that string, copied. The CLI's
-// CATALOG_DIGEST and the regenerated conformance manifest agree independently.
-const CATALOG_DIGEST = 'sha256:10d20505efff9b689aa116cc651d8588298f8738863af8e9e4b2284b54c1b7f9';
+// 2026-09-19 (Changes screen Phase 1, INTEGRATED WITH main): the merged tree
+// carries BOTH execution.sessions.share (187) and execution.gitStage, so the
+// digest is a THIRD value — neither 186723c6.. nor 10d20505.. is correct here.
+// READ OUT OF THE FAILING RUN: this assertion compares the LIVE server digest
+// against this literal, so the run printed the live value on its `Received:`
+// line and this is that string, copied.
+const CATALOG_DIGEST = 'sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -116,9 +117,10 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 197 -> 198 (2026-09-19, Changes screen Phase 1): execution.gitStage, the
-    // Changes surface's index verb. MEASURED from this file's own failing run.
-    expect(root.catalog.total).toBe(198); // +3 141, +3 148, +25 177 containers
+    // 197 -> 198 (187): execution.sessions.share. MEASURED.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage.
+    // MEASURED on the merged tree.
+    expect(root.catalog.total).toBe(199); // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { pwaShell } from './vite-plugin-pwa-shell';
@@ -121,6 +123,20 @@ export default defineConfig({
     // failed by which neighbour ran first in their worker.
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     setupFiles: ['./test-setup.ts'],
+    /*
+     * EXCALIDRAW IS STUBBED FOR EVERY SUITE. See `test/excalidraw-stub.tsx`
+     * for the why — the short version is that it cannot render in jsdom AND
+     * its `open-color` JSON import throws under node resolution, which took
+     * the whole drawing body into the panel's CatchBoundary and silently
+     * removed the attachment strip below it.
+     *
+     * The CSS entry is separate and must be aliased too: a bare `.css` import
+     * from inside a node-resolved dependency has nothing to handle it here.
+     */
+    alias: [
+      { find: /^@excalidraw\/excalidraw$/, replacement: resolve(__dirname, 'test/excalidraw-stub.tsx') },
+      { find: /^@excalidraw\/excalidraw\/index\.css$/, replacement: resolve(__dirname, 'test/excalidraw-stub.css') },
+    ],
     /**
      * THE DEADLINE IS A CLAIM ABOUT THE MACHINE, AND THE DEFAULT ONE IS FALSE
      * HERE.

@@ -459,6 +459,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       dispatch: (input) => ops.dispatch(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
+      shareSession: (id, input) => ops.shareSession(id, input),
       resume: (id, input) => ops.resume(id, input),
       gitCheckpoint: (id, input) => ops.gitCheckpoint(id, input),
       gitRollback: (id, input) => ops.gitRollback(id, input),

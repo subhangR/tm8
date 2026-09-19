@@ -124,7 +124,12 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     label: 'Content',
     // Authored, produced, uploaded — in that order, which is also the order
     // of how much of it a space typically has.
-    kinds: ['doc', 'artifact', 'file'],
+    //
+    // `drawing` sits beside `doc` because it is AUTHORED: someone made it here,
+    // in the app, from nothing. It is deliberately not in `structure` beside
+    // `collection` and `graph` — those are arrangements OVER things work
+    // produced, and a hand-drawn canvas arranges nothing; it IS the thing.
+    kinds: ['doc', 'drawing', 'artifact', 'file'],
   },
   {
     id: 'structure',

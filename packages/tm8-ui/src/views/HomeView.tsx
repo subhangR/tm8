@@ -683,6 +683,7 @@ export function HomeView(props: HomeViewProps) {
           /* Same executor, same reason as `EntityView`: this list draws the
              session row's ⏻ too, and until now nothing was behind it. */
           onTerminate={primaries.terminate}
+          onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}

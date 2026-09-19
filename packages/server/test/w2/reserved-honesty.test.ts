@@ -131,14 +131,21 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
+    // 197 -> 198 (187, session sharing): execution.sessions.share, one
+    // POST command — registered and mounted, so every count below moves
+    // by exactly one and the residual set is unchanged.
     // 197 -> 198 (2026-09-19, Changes screen Phase 1): execution.gitStage, the
     // TENTH execution.git* row (measured: status/diff/checkpoint/rollback/commit/
     // stage/merge/cherryPick/branch/stash) and the index verb the Changes
     // surface needs.
     // One public v1 POST command, so V1 moves with it: 195 -> 196. MEASURED
     // from this file's own failing run, not derived.
-    expect(OPERATIONS).toHaveLength(198); // +25 (177) containers, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(196);
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(OPERATIONS).toHaveLength(199); // +25 (177) containers, MEASURED
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage are both v1. MEASURED on the merged tree from this assertion's own failing run.
+    expect(V1_OPERATIONS).toHaveLength(197);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -146,7 +153,8 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // TWO WS ROWS now, one mounted socket: `containers.stream` re-declares
     // `events.subscribe`'s binding under the container family's own name.
     // 195 -> 196: execution.gitStage is HTTP, so it lands in this half. MEASURED.
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(196);
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): mounted HTTP gains sharing + gitStage. MEASURED from this assertion's own failing run (Received 197).
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(197);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
       // The alias, and it must declare itself as one: `aliasOf` is what keeps
@@ -171,7 +179,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // printed `Received 194` against a stale `Expected 193`.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(194); // 169 -> 193 (177): the container handlers
+    )).toHaveLength(195); // 169 -> 193 (177): the container handlers; +1 (187); +1 (execution.gitStage)
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

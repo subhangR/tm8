@@ -310,6 +310,44 @@ export function ChannelScreen({
     return () => observer.disconnect();
   }, [itemIds, virtualized]);
 
+  /*
+   * THE PIN HAS TO SURVIVE THE FEED GROWING UNDER IT (Subhang, 2026-09-18:
+   * "the composer card covers the trailing USAGE … tokens line").
+   *
+   * The layout effect above lands on the newest message using the scrollHeight
+   * it can see AT COMMIT. Rows keep growing after that — a web font swaps and
+   * every paragraph re-wraps, an attachment thumbnail resolves, a turn's parts
+   * finish laying out — and each of those adds height BELOW a scrollTop that
+   * is no longer the bottom. Measured in the panel host at a 1466px panel: the
+   * pin settled 14px short of the maximum, which is more than `.chs-feed`'s
+   * 12px bottom padding, so the newest row's last line — its usage card —
+   * ended up flush against the composer's top edge with nothing between them.
+   * Ask for the bottom a second time once the growth has happened and the same
+   * feed sits at the true maximum with its padding intact.
+   *
+   * ONLY WHILE THE READER IS STILL AT THE BOTTOM. `nearNewest` is the same
+   * 48px threshold the new-items pill uses: scroll up to read history and a
+   * late-resolving image must not yank the viewport back down.
+   *
+   * The observer watches the LIST, not the rows: one target, and its block
+   * size is exactly the quantity that invalidates the pin. jsdom has no
+   * ResizeObserver, hence the guard its neighbour above also carries.
+   */
+  useLayoutEffect(() => {
+    const element = feedElement.current;
+    const list = element?.querySelector<HTMLElement>('.chs-list');
+    if (!element || !list || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!scrollSnapshot.current?.nearNewest) return;
+      const bottom = Math.max(0, element.scrollHeight - element.clientHeight);
+      if (Math.abs(element.scrollTop - bottom) < 1) return;
+      element.scrollTop = bottom;
+      rememberScroll();
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [itemIds, rememberScroll]);
+
   const focusMessage = useCallback((id: EntityId) => {
     const rows = feedElement.current?.querySelectorAll<HTMLElement>('[data-feed-message-id]') ?? [];
     const row = [...rows].find((candidate) => candidate.dataset.feedMessageId === id);

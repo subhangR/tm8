@@ -905,6 +905,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'agentTool' },
           { source: 'model' },
           { source: 'shareMode' },
+          { source: 'driveMode' },
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
@@ -993,8 +994,14 @@ const ROWS: readonly KindConfig[] = [
        * control" ruling that took the tick out in the first place. The swap is
        * per-ROW state, so the component that sees the row owns it; this array
        * keeps saying which verbs the kind HAS.
+       *
+       * `share-session` follows the identical reading (187). Declared here in
+       * its PRIVATE half, because that is the state a session is in before
+       * anyone has decided anything about it; `sharingControlFor` swaps it to
+       * `unshare-session` from the row's own `shareMode`, and `unshare-session`
+       * is absent from this array for exactly the reason `resume` is.
        */
-      rowActions: ['complete', 'terminate'],
+      rowActions: ['complete', 'share-session', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {
@@ -1757,6 +1764,50 @@ const ROWS: readonly KindConfig[] = [
     },
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Launch flow' },
+    ],
+  },
+
+  /*
+   * -- drawing (migration 194: an Excalidraw canvas as an entity) --
+   *
+   * THE CANVAS IS THE BODY. `graph` reasoned its way to putting a picture
+   * first and this row inherits that conclusion, but goes one step further:
+   * the blueprint block is READ-ONLY because Craft's studio is where a graph
+   * is edited, and a drawing has no studio. The panel is the only place it is
+   * ever drawn, so the block is the editor.
+   *
+   * `quickCreate` is on: a drawing's empty state is a legitimate starting
+   * point — a title and a blank canvas is exactly what "new drawing" means,
+   * unlike a kind that needs a runtime binding before it means anything.
+   *
+   * `primaries: ['edit']` covers the TITLE only. The scene is saved by the
+   * canvas itself under the ordinary version guard, not through the edit
+   * sheet, which is why no scene field is declared here (§15.1 requires every
+   * declared field to be reachable, and a 40-shape scene is not a form input).
+   */
+  {
+    kind: 'drawing',
+    label: 'Drawing',
+    labelPlural: 'Drawings',
+    icon: '✎',
+    iconArt: KIND_ART.drawing,
+    slug: 'drawings',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree'],
+    chip: { glyph: '✎', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'canvas' }, { block: 'fields', label: 'DRAWING' }, COLLECTIONS_BLOCK],
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Login wireframe' },
     ],
   },
 

@@ -747,8 +747,10 @@ export class PtyHostService {
   write(sessionId: string, data: string | Buffer): void {
     const entry = this.sessions.get(sessionId);
     if (!entry || entry.exited) return;
-    const text = Buffer.isBuffer(data) ? data.toString('utf8') : data;
-    entry.proc.write(text);
+    // Legacy xterm mouse reports contain byte-valued coordinates. Decoding
+    // them as UTF-8 replaces high bytes and corrupts the report. node-pty
+    // accepts Buffer directly; ordinary string input retains its UTF-8 path.
+    entry.proc.write(data);
   }
 
   /** Pause prompt draining while a spawn/resume event hands off to the server

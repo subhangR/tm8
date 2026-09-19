@@ -331,6 +331,8 @@ export interface EntityListPanelProps {
   onTerminate?: (entityId: string) => void;
   /** The other half of that row's tail slot — see `ControlHost.onResume`. */
   onResume?: (entityId: string) => void;
+  /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
+  onShareSession?: (entityId: string, next: 'none' | 'space') => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;
@@ -3235,6 +3237,21 @@ export function Tile({
    *
    * `cancelled` is deliberately NOT completed: a cancelled task stopped, it
    * did not finish, and the fourth category exists to say so.
+   *
+   * WHAT `completed` MAY NO LONGER DO IS PAINT A COMPLETION MARK. `done` is
+   * the server's RESOLUTION predicate and not a lifecycle position:
+   * `db/migrations/152_universal_status.sql` seeds the FACT KINDS — commit,
+   * message, file, memory, artifact — into `done` on purpose, so that a fact
+   * about the past cannot block a `depends_on` forever, and its header says
+   * so. Reading it as "this finished" struck through every row of the
+   * Artifacts, Memories, Files, Messages and Commits lists. The strikethrough
+   * is therefore gone from the list for EVERY kind, tasks included (the status
+   * chip, the dot and the Done tab already carry completion); `--archived`
+   * stays, because archived and completed are still two facts (C2).
+   *
+   * `completed` survives as a computed fact because the SESSION tile still
+   * consumes it — for a `done` text tag, not a strikethrough, and no fact kind
+   * renders as a session.
    */
   const archived = row.deletedAt != null;
   const completed = row.category === 'done';
@@ -3423,7 +3440,6 @@ export function Tile({
         attention={attention}
         attentionReason={row.badges.attention?.latestReason}
         archived={archived}
-        completed={completed}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -3620,12 +3636,15 @@ export function Tile({
             type="button"
             className={[
               'lp__title',
-              /* Two facts, two classes — C2. `--completed` is the
-                 strikethrough (this row FINISHED); `--archived` only dims
-                 (this row was FILED AWAY). The one class used to be named
-                 `--done` and was driven by `deletedAt`, so archiving struck a
-                 row through as though it had been completed. */
-              completed ? 'lp__title--completed' : '',
+              /* ONE fact, one class. `--archived` dims (this row was FILED
+                 AWAY) and is fed by `deletedAt` alone — C2, and the reason it
+                 was split off a single `--done` class that `deletedAt` used to
+                 drive. There is no longer a `--completed` sibling: it struck
+                 the title through from `category === 'done'`, which is the
+                 server's RESOLUTION predicate and which every fact kind is
+                 seeded into, so the Artifacts list rendered twelve of twelve
+                 titles as completed work. Completion is said by the status dot
+                 and the Done tab instead. */
               archived ? 'lp__title--archived' : '',
             ]
               .filter(Boolean)

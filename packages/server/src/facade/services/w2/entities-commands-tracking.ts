@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   CollabError,
   GraphContentInputSchema,
+  DrawingContentInputSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -977,6 +978,16 @@ function softGraphContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
+function softDrawingContent(content: Record<string, unknown>) {
+  const parsed = DrawingContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `drawing content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`);
+  }
+  return parsed.data;
+}
+
 function acceptanceCriteria(
   content: Record<string, unknown>,
   actorId: string | null,
@@ -1201,6 +1212,21 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'drawing': {
+          // 194: zero new catalog rows, the 056/091/135 posture exactly — a
+          // drawing is born through the ordinary envelope. Attaching it to a
+          // task needs nothing here either: `attachInitialConnections` below
+          // writes the `attached_to` edge from `input.attachTo`, which is the
+          // real attachment door (a task cannot be a drawing's PARENT —
+          // `validate_entity_parent` requires matching kinds).
+          const drawing = softDrawingContent(content);
+          raw = await q.rpc('create_drawing_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            drawing.format ?? 'excalidraw',
+            JSON.stringify(drawing.elements ?? []), JSON.stringify(drawing.appState ?? {}),
+            JSON.stringify(drawing.files ?? {}),
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1343,6 +1369,20 @@ export class W2EntitiesCommandsTrackingService {
               graph.edges === undefined ? null : JSON.stringify(graph.edges),
               graph.layout === undefined || graph.layout === null ? null : JSON.stringify(graph.layout),
               graph.source ?? null, graph.source === null,
+              envelope.clientMutationId ?? null]);
+            break;
+          }
+          case 'drawing': {
+            // `null` MERGES, the graph/loop pattern: the debounced editor
+            // sends elements and appState and must not wipe the title it did
+            // not restate. There is no explicit clear — every column has a
+            // non-null default and "empty" is '[]'/'{}', never null.
+            const drawing = softDrawingContent(content);
+            raw = await q.rpc('update_drawing_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, drawing.format ?? null,
+              drawing.elements === undefined ? null : JSON.stringify(drawing.elements),
+              drawing.appState === undefined ? null : JSON.stringify(drawing.appState),
+              drawing.files === undefined ? null : JSON.stringify(drawing.files),
               envelope.clientMutationId ?? null]);
             break;
           }

@@ -825,6 +825,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
             onTerminate={handleSessionTerminate}
+            onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
@@ -992,6 +993,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
             onTerminate={handleSessionTerminate}
+            onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}

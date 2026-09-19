@@ -74,6 +74,7 @@ import {
   ExecutionGitBranchInputSchema,
   ExecutionGitStageInputSchema,
   ExecutionGitStashInputSchema,
+  ExecutionSessionsShareInputSchema,
   ExecutionTerminalStartInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
@@ -302,6 +303,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
+  'execution.sessions.share': ExecutionSessionsShareInputSchema,
   'execution.resume': ExecutionResumeInputSchema,
 
   // session git rail (Git UI wave)

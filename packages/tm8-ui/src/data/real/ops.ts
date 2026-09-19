@@ -76,6 +76,7 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
+  type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
   type FileUploadAbortInput,
   type FileUploadCompleteInput,
@@ -1065,6 +1066,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
+    },
+
+    /**
+     * The two sharing dials (187). The body goes through VERBATIM: the
+     * server's `.strict()` schema refuses a field the contract does not name,
+     * and — the part that matters — it refuses a patch that names NEITHER
+     * dial, so an empty object is a 400 rather than a silent no-op.
+     */
+    shareSession(id: EntityId, input: ExecutionSessionsShareInput): Promise<CommandResult> {
+      return http.call<CommandResult>('execution.sessions.share', { params: { id }, body: input });
     },
 
     /** A resume re-spawns the PTY, so it carries the same geometry as `spawn`. */

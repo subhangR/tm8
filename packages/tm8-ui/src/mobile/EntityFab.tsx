@@ -48,6 +48,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { createPortal } from 'react-dom';
 import { RibbonMark } from '../kit';
 import { useMobileSurface } from './surface';
 import './entity-fab.css';
@@ -118,7 +119,7 @@ function TriggerMark() {
 }
 
 export function EntityFab({ items, label, slot = 'primary', face, testId }: EntityFabProps) {
-  const { oneSurface } = useMobileSurface();
+  const { oneSurface, terminalActionsHost } = useMobileSurface();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuId = useId();
@@ -214,6 +215,22 @@ export function EntityFab({ items, label, slot = 'primary', face, testId }: Enti
 
   if (!oneSurface) return null;
 
+  const trigger = (
+    <button
+      ref={triggerRef}
+      type="button"
+      className="efab__trigger"
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? menuId : undefined}
+      data-testid={testId ?? 'entity-fab'}
+      onClick={() => (open ? close() : setOpen(true))}
+    >
+      {open ? <span aria-hidden>✕</span> : (face ?? <TriggerMark />)}
+    </button>
+  );
+
   return (
     <div className={`efab${slot === 'secondary' ? ' efab--secondary' : ''}`} data-fab-slot={slot}>
       {open ? (
@@ -239,19 +256,7 @@ export function EntityFab({ items, label, slot = 'primary', face, testId }: Enti
         </>
       ) : null}
 
-      <button
-        ref={triggerRef}
-        type="button"
-        className="efab__trigger"
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        data-testid={testId ?? 'entity-fab'}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
-        {open ? <span aria-hidden>✕</span> : (face ?? <TriggerMark />)}
-      </button>
+      {slot === 'primary' && terminalActionsHost ? createPortal(trigger, terminalActionsHost) : trigger}
     </div>
   );
 }

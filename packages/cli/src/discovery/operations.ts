@@ -433,11 +433,16 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.update': {
     cmd: ['space', 'update'],
-    syn: 'tm8 space update [<space-id>] [--name <name>] [--description <text-source>] [--github-repo <url|none>] [--mutation-id <id>]',
-    sum: 'Change a Space name, description, or deprecated repository field',
+    syn: 'tm8 space update [<space-id>] [--name <name>] [--description <text-source>] [--github-repo <url|none>] [--session-share none|space] [--session-drive owner|space] [--mutation-id <id>]',
+    sum: 'Change a Space name, description, deprecated repository field, or its session sharing defaults',
     authz: 'space',
     input: 'bound',
-    notes: ['`--github-repo` is deprecated in favour of linked ProjectResources'],
+    tags: ['share', 'terminal', 'defaults', 'permissions', 'visibility'],
+    notes: [
+      '`--github-repo` is deprecated in favour of linked ProjectResources',
+      '`--session-share`/`--session-drive` set the defaults NEW sessions are born with; existing sessions keep the posture they already have',
+      'override one session with `tm8 session share`',
+    ],
   },
   'spaces.navigation': {
     cmd: ['space', 'navigation', 'get'],
@@ -1562,6 +1567,23 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['terminal', 'pty', 'watch', 'drive'],
     notes: ['`--format json` implies `--grant-only`: interactive terminal bytes are not DTO output'],
   },
+  'execution.sessions.share': {
+    cmd: ['session', 'share'],
+    syn: 'tm8 session share <work-session-id> [--share none|space] [--drive owner|space] [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Set who may WATCH a work session terminal and who may TYPE into it — two independent dials',
+    authz: 'session',
+    input: 'bound',
+    side: 'durable',
+    ver: 'expectedVersion',
+    tags: ['share', 'terminal', 'pty', 'permissions', 'visibility', 'watch', 'drive'],
+    notes: [
+      'the two dials are independent: opening a session to the space never implies handing anyone the keyboard',
+      'an omitted flag is LEFT ALONE, not defaulted — sending only `--drive` does not change who may watch',
+      'the session owner, an actor who may act as the owner, and a space admin may set this; nobody else',
+      'narrowing REVOKES outstanding stream grants for other identities, so un-sharing takes effect at once rather than when the last 30s capability expires',
+      'a new session inherits the space defaults (`tm8 space update --session-share/--session-drive`); this command overrides one session',
+    ],
+  },
   'execution.journal': {
     cmd: ['session', 'journal'],
     syn: 'tm8 session journal <work-session-id> [--limit <count>] [--before <line-index>]',
@@ -2514,12 +2536,12 @@ export const CATALOG_DIGEST =
   // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
   // adjusted from either side of the merge — neither branch's value is
   // correct once both landed.
-  // Re-measured 198 (+ execution.gitStage, the Changes screen's index verb).
-  // READ OUT OF THE FAILING RUN: `discovery-operations.test.ts` recomputes
-  // `sha256(JSON.stringify(OPERATIONS))` and prints it on the Expected line;
-  // this is that string, not a hand-derived one. The regenerated conformance
-  // manifest agrees with it independently.
-  'sha256:10d20505efff9b689aa116cc651d8588298f8738863af8e9e4b2284b54c1b7f9';
+  // Re-measured on the MERGED tree (2026-09-19): it carries BOTH
+  // execution.sessions.share (187) and execution.gitStage, so the digest is a
+  // THIRD value — neither 186723c6.. nor 10d20505.. is correct here. RECOMPUTED
+  // from `JSON.stringify(OPERATIONS)` on this tree and read out of the failing
+  // run, then written into the regenerated conformance manifest.
+  'sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4';
 
 export const GRAMMAR_VERSION = '2';
 

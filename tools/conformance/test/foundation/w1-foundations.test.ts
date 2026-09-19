@@ -60,6 +60,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // REGENERATED MANIFEST, never delta-arithmetic.
       // 172 -> 197 (177): the 25 containers.* rows. READ OUT OF THE
       // REGENERATED MANIFEST, never delta-arithmetic.
+      // 197 -> 198 (187): execution.sessions.share, one POST/command. It
+      // MOUNTS, so `http`, `uniqueBindings` and `registerableV1Http` all move
+      // with `total` this time — unlike the containers wave, where the WS
+      // alias made them diverge. READ OUT OF THE REGENERATED MANIFEST.
       //
       // `http`/`ws` are MOUNT counts and `uniqueBindings` is over the mounted
       // set, which is why they land on 195/1/196 rather than 196/2/197:
@@ -67,24 +71,28 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // family is discoverable under its own name, and mounts nothing.
       // 197 -> 198 (2026-09-19, Changes surface phase 1): execution.gitStage,
       // one POST/command v1 HTTP row. READ OUT OF THE REGENERATED MANIFEST.
-      total: 198,
-      v1: 196,
+      // 198 -> 199 and the whole block with it (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+      // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+      // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+      total: 199,
+      v1: 197,
       reserved: 2,
-      http: 196,
+      http: 197,
       ws: 1,
-      registerableV1Http: 194,
-      methods: { GET: 65, POST: 99, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
-      kinds: { read: 69, command: 127, stream: 2 },
-      uniqueNames: 198,
-      uniqueBindings: 197,
+      registerableV1Http: 195,
+      methods: { GET: 65, POST: 100, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 69, command: 128, stream: 2 },
+      uniqueNames: 199,
+      uniqueBindings: 198,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    // +24 (177): the container HTTP rows. 195 -> 196 (2026-09-19): execution.gitStage.
-    expect(manifest.routes.http).toHaveLength(196);
+    // +24 (177): the container HTTP rows. 195 -> 196 (187): execution.sessions.share.
+    // 196 -> 197 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
+    expect(manifest.routes.http).toHaveLength(197);
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -129,9 +137,15 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // boundary, so it rises with every amendment EVEN THOUGH these three ops
     // are mounted — W2.C01's live inventory below is where that shows up.
     // 141 -> 165 (177): registerableV1Http 193 minus the frozen 28.
+    // 165 -> 166 (187): registerableV1Http 194 minus the frozen 28. The
+    // operation IS mounted; this axis measures distance from the FROZEN W1
+    // boundary, which never rotates, so it rises anyway.
     // 165 -> 166 (2026-09-19, Changes surface phase 1): registerableV1Http 194
     // minus the frozen 28, because execution.gitStage joined the catalog.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(166);
+    // 166 -> 167 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(167);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -159,9 +173,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      // +24 (177): registerableV1Http 193 minus the frozen 28.
-      // 165 -> 166 (2026-09-19): execution.gitStage takes registerableV1Http to 194.
-      unimplementedV1Http: 166,
+      // +24 (177). 165 -> 166 (187), 166 -> 167 (2026-09-19, execution.gitStage):
+      // registerableV1Http 195 minus the frozen 28. MEASURED on the merged tree.
+      unimplementedV1Http: 167,
     });
   });
 
@@ -213,20 +227,27 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    // +25 (177) containers; 197 -> 198 (2026-09-19): execution.gitStage.
-    expect(manifest.help.operations).toHaveLength(198);
+    // +25 (177) containers; 197 -> 198 (187): execution.sessions.share.
+    // 198 -> 199 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
+    expect(manifest.help.operations).toHaveLength(199);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
   });
 
-  it('is total over 23 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+  it('is total over 24 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
     // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1);
     // 21 -> 23 (2026-09-03): `chat` (migration 176, Chat as an Entity) and
     // `container` (TM8-CONTAINERS-DESIGN, migration 177). Both landed the
     // same day; the number is MEASURED on the merged tree, not summed from
     // two branches that each saw only its own kind.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(23);
+    // 23 -> 24 (2026-09-17): `drawing` (migration 194, the Excalidraw canvas
+    // kind). MEASURED on this tree — main at 28c07b6e plus this lane — by
+    // counting the `core(` rows in kind-dispositions.ts, not by adding one to
+    // the number that was here. No other unmerged branch adds a kind: the one
+    // holding migrations 187..193 (feat/architecture_security) seeds no
+    // entity_kinds row.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(24);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
@@ -444,7 +465,9 @@ describe('W2.C01 current mounted registry inventory', () => {
     // live list reproduces the tranche-v4 sha efd55f5b…58229d byte-for-byte.
     // execution.dispatch adds one execution-module handler (merge 2026-08-09).
     // execution.terminal.start adds one more (merge 2026-08-13, #161).
-    expect(handlers.execution).toHaveLength(11);
+    // 11 -> 12 (187): execution.sessions.share registers in the execution
+    // handler module, beside terminate and resume.
+    expect(handlers.execution).toHaveLength(12);
     expect(handlers.events).toHaveLength(2);
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.
@@ -456,9 +479,10 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    // +24 (177): the container handlers. 193 -> 194 (2026-09-19, Changes
-    // surface phase 1): the execution.gitStage facade handler.
-    expect(handlers.all).toHaveLength(194);
+    // +24 (177): the container handlers. 193 -> 194 (187): execution.sessions.share.
+    // 194 -> 195 (2026-09-19, Changes surface phase 1): the execution.gitStage
+    // facade handler. MEASURED on the merged tree.
+    expect(handlers.all).toHaveLength(195);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -474,10 +498,14 @@ describe('W2.C01 current mounted registry inventory', () => {
       // container handlers. It hashes the sorted NAME list, so neither
       // branch's value survives — each hashed a list missing the other's
       // handlers. Read out of the FAILING RUN's Received line.
-      // Re-measured 2026-09-19 (Changes surface phase 1): the execution.gitStage
-      // facade handler joins the sorted name list, so the whole digest rotates.
-      // Read out of the FAILING RUN's Received line, not computed by hand.
-      .toBe('7597393650fc518e4346f0471bd3199f91df12c3b2ea67cb503c647e051b1d66');
+      // Re-measured on the MERGED tree: BOTH execution.sessions.share (187) and
+      // execution.gitStage join the sorted handler name list, so this digest is a
+      // THIRD value — neither branch's is correct here. Read out of the FAILING
+      // RUN's Received line, not computed by hand.
+      // The HANDLERS digest — sha256 over the sorted handler-name list, a
+      // SEPARATE digest from the catalog digest. Read out of this assertion's
+      // own failing-run Received line on the merged tree, never computed.
+      .toBe('7f1b80f81377250b133e8bccd1b438bea9a203aba0ef735fa63f4860291fddcd');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -495,10 +523,10 @@ describe('W2.C01 current mounted registry inventory', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert;
     // RequiredCommandContextSchema binds .delete. `.list` is a READ and binds
     // nothing, which is why three ops move this by two.
-    // +19 (177): the container command bodies that bind.
-    // 118 -> 119 (2026-09-19, Changes surface phase 1): GitStageInput binds
-    // execution.gitStage's command body.
-    expect(inputSchemas.bound).toHaveLength(119)
+    // +19 (177): the container command bodies that bind. 118 -> 119 (187):
+    // ExecutionSessionsShareInput. 119 -> 120 (2026-09-19): GitStageInput binds
+    // execution.gitStage's command body. MEASURED on the merged tree.
+    expect(inputSchemas.bound).toHaveLength(120)
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -527,9 +555,12 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 166 -> 169 (148): the three workflows routes, all mounted.
     // 169 -> 193 (2026-09-03): 24 of the 25 containers.* rows are registerable
     // v1 HTTP; the 25th is the WS alias, which mounts nothing. MEASURED.
+    // 193 -> 194 (187): execution.sessions.share is v1 HTTP and mounted, so
+    // the zero-residual assertion below still holds. MEASURED.
     // 193 -> 194 (2026-09-19, Changes surface phase 1): execution.gitStage is a
     // registerable v1 HTTP command. MEASURED.
-    expect(registerableV1Http).toHaveLength(194);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
+    expect(registerableV1Http).toHaveLength(195);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

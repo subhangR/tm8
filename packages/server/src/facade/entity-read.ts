@@ -114,7 +114,8 @@ export const ENTITY_COLUMNS = `
   col.name as collection_name, col.description as collection_description,
   col.collection_type,
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
-  ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
+  ws.model as ws_model, ws.share_mode as ws_share_mode,
+  ws.drive_mode as ws_drive_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
@@ -152,6 +153,9 @@ export const ENTITY_COLUMNS = `
   gr.title as graph_title, gr.graph_type as graph_type,
   gr.nodes as graph_nodes, gr.edges as graph_edges,
   gr.layout as graph_layout, gr.source as graph_source,
+  drw.title as drawing_title, drw.format as drawing_format,
+  drw.elements as drawing_elements, drw.app_state as drawing_app_state,
+  drw.files as drawing_files,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -339,6 +343,7 @@ export const ENTITY_FROM = `
      where t.chat_id = cht.entity_id
   ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
+  left join public.drawings drw           on drw.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -433,6 +438,8 @@ export interface EntityRow {
   ws_agent_tool: string | null;
   ws_model: string | null;
   ws_share_mode: string | null;
+  /** 187. Optional so pre-187 row fixtures stay source-compatible. */
+  ws_drive_mode?: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_node_id: string | null;
@@ -500,6 +507,11 @@ export interface EntityRow {
   graph_edges: unknown[] | null;
   graph_layout: Record<string, { x: number; y: number }> | null;
   graph_source: string | null;
+  drawing_title: string | null;
+  drawing_format: string | null;
+  drawing_elements: unknown[] | null;
+  drawing_app_state: Record<string, unknown> | null;
+  drawing_files: Record<string, unknown> | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1394,6 +1406,9 @@ export function titleOf(row: EntityRow): string {
     case 'graph':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.graph_title ?? 'Graph';
+    case 'drawing':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.drawing_title ?? 'Drawing';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -1468,6 +1483,10 @@ function excerptOf(row: EntityRow): string | undefined {
       // The type is what makes a graph legible in a list — an orchestratable
       // blueprint and a mermaid sketch answer to different intents.
       return excerpt(row.graph_type);
+    case 'drawing':
+      // The format is the one row-level fact about a canvas; the picture
+      // itself cannot be a text excerpt. MIRRORS the projector twin.
+      return excerpt(row.drawing_format);
     default:
       return undefined;
   }
@@ -1627,6 +1646,13 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         agentTool: row.ws_agent_tool,
         model: row.ws_model,
         shareMode: (row.ws_share_mode ?? 'none') as 'none' | 'space' | 'explicit',
+        // 187, the second dial. Spread, never defaulted, for the same
+        // reason `sessionKind` is below: the DTO makes absence mean
+        // `owner`, so a server reading a pre-187 row says nothing rather
+        // than asserting a drive policy it never looked at.
+        ...(row.ws_drive_mode === 'owner' || row.ws_drive_mode === 'space'
+          ? { driveMode: row.ws_drive_mode }
+          : {}),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
         // OMITTED, never defaulted, when the column has no value: the DTO
@@ -1728,6 +1754,15 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         graphType: row.graph_type ?? 'entity',
         nodeCount: Array.isArray(row.graph_nodes) ? row.graph_nodes.length : 0,
         edgeCount: Array.isArray(row.graph_edges) ? row.graph_edges.length : 0,
+      };
+    case 'drawing':
+      // Which format and how big — the elements are content, not state. A
+      // scene is the largest payload any kind carries, so a list row must
+      // never pull it. MIRRORS the projector twin.
+      return {
+        kind: 'drawing',
+        format: row.drawing_format ?? 'excalidraw',
+        elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
     case 'chat':
       // Who it is with, what it is running, and whether it is busy. The two
@@ -2014,7 +2049,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -2377,6 +2412,17 @@ export function contentOf(row: EntityRow): EntityContent {
         edges: (Array.isArray(row.graph_edges) ? row.graph_edges : []) as GraphEdgeSpec[],
         layout: row.graph_layout ?? {},
         source: row.graph_source,
+      };
+    case 'drawing':
+      // The whole row IS the scene: one read hands the editor everything it
+      // needs to mount, in Excalidraw's own member names, so nothing between
+      // the database and the canvas has to translate.
+      return {
+        kind: 'drawing',
+        format: row.drawing_format ?? 'excalidraw',
+        elements: (Array.isArray(row.drawing_elements) ? row.drawing_elements : []) as Record<string, unknown>[],
+        appState: row.drawing_app_state ?? {},
+        files: row.drawing_files ?? {},
       };
     case 'container': {
       const status = ctrStatusOf(row.ctr_status);
