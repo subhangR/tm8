@@ -27,6 +27,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
@@ -250,6 +251,7 @@ export function ChannelView({
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      changesSurface={changesSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, selectedDetail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),

@@ -384,6 +384,17 @@ export const SURFACE_ART = {
     'M6.1 8.6h2.8',
   ],
 
+  /**
+   * A DIFF: a `+` row above a `−` row.
+   *
+   * Not the branch mark (`git`, below) and not a page: this surface is not
+   * about where the lane is or which document is open, it is about what the
+   * lines DID. Plus over minus is the one silhouette that says that without a
+   * word, and it is the same vocabulary `DiffView` draws inside the panel — so
+   * the tab and its contents agree at a glance.
+   */
+  changes: ['M3 5.4h2.4', 'M4.2 4.2v2.4', 'M7.4 5.4h5.6', 'M3 10.6h2.4', 'M7.4 10.6h5.6'],
+
   /** The branch mark, shared with the Git VIEW because it is the same idea. */
   git: VIEW_ART.git,
 
@@ -442,6 +453,7 @@ export const SURFACE_ART = {
 export const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   terminal: 'Terminal',
   transcript: 'Transcript',
+  changes: 'Changes',
   git: 'Git',
   debug: 'Debug',
   graph: 'Graph',

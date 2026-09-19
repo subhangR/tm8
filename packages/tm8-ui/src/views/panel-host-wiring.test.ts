@@ -129,6 +129,18 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes changesSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('changesSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass changesSurface, so its Changes chip ` +
+          'would render the "unavailable in this view" fallback — and the Changes chip is the ' +
+          'one a reviewer reaches for before committing, so an unwired host would look like ' +
+          'a session with nothing to review rather than a host with nothing wired',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes taskGitSection at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -228,6 +240,12 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         expect(
           block.includes('gitSurfaceFor'),
           `${file} builds gitSurface inline; use gitSurfaceFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('changesSurface')) {
+        expect(
+          block.includes('changesSurfaceFor'),
+          `${file} builds changesSurface inline; use changesSurfaceFor() so every host stays identical`,
         ).toBe(true);
       }
       if (block.includes('taskGitSection')) {

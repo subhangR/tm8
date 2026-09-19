@@ -52,15 +52,19 @@ import { isExitCode } from '../src/exit.js';
 // 169 -> 172 (148): spaces.workflows list/upsert/delete — MEASURED
 // 172 -> 197 (177, TM8-CONTAINERS-DESIGN §4.1): the 25 containers.* rows, all
 // v1, so 170 -> 195. MEASURED on the tree, not carried.
-const EXPECTED_ROWS = 197;
+// 197 -> 198 (Changes screen Phase 1): execution.gitStage — one v1 HTTP
+// envelope row, public, with no CLI command. So 195 -> 196 v1 and 195 -> 196
+// mounted HTTP; the reserved pair is untouched. MEASURED from this file's own
+// failing run, not derived.
+const EXPECTED_ROWS = 198;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('197 rows = 195 v1 + 2 reserved, 195 mounted HTTP + 1 mounted WS (measured; +25 177 containers)', () => {
+  it('198 rows = 196 v1 + 2 reserved, 196 mounted HTTP + 1 mounted WS (measured; +1 execution.gitStage)', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(195);
+    expect(V1_OPERATIONS.length).toBe(196);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     // TWO WS ROWS, ONE MOUNTED SOCKET, and the difference is the point.
     // `containers.stream` re-declares `events.subscribe`'s `WS /v2/ws` so the
@@ -70,7 +74,7 @@ describe('the catalog itself is the shape W4 was briefed on', () => {
     // different questions; this file asks both, separately, on purpose.
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(2);
     expect(MOUNTED_OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
-    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(195);
+    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(196);
   });
 });
 
@@ -167,10 +171,10 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // The HTTP rows produced an honest 8; BOTH WS rows produced usage 2
     // without a request. Every one is a resolution; none is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(195);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(196);
     expect([...resolved.entries()].filter(([, c]) => c === 2).map(([name]) => name))
       .toEqual(['events.subscribe', 'containers.stream']);
-    expect(requested).toHaveLength(195);
+    expect(requested).toHaveLength(196);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -212,7 +216,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(195);
+    expect(httpRows).toBe(196);
   });
 });
 

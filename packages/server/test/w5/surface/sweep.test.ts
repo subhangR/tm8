@@ -306,9 +306,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(193);
-    expect(rows).toHaveLength(193);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(193);
+    // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
+    expect(SURFACE).toHaveLength(194);
+    expect(rows).toHaveLength(194);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
   });
 
   /**

@@ -73,13 +73,13 @@ describe('WorkSessionContent on a phone', () => {
   /**
    * THE ONE THIS FILE EXISTS FOR.
    *
-   * Removing three surfaces is defensible. Removing them QUIETLY is the DEF-003
+   * Removing four surfaces is defensible. Removing them QUIETLY is the DEF-003
    * pathology — the phone had no account menu, no space switcher and no sign-out
    * for months, and every tap census scored those screens as passing, because
    * absence measures as health. If this assertion is ever deleted along with the
    * marker, nothing else in the suite and nothing in the instrument will notice.
    */
-  it('states the three surfaces it refuses rather than dropping them silently', () => {
+  it('states the four surfaces it refuses rather than dropping them silently', () => {
     phone(
       <WorkSessionContent
         sessionId={SESSION}
@@ -90,10 +90,15 @@ describe('WorkSessionContent on a phone', () => {
     );
 
     const marker = screen.getByTestId('work-session-surface-refused-marker');
+    /* Changes is refused BY NAME like the other three. It is the newest
+       surface and the most tempting one to ship phone-shaped, and a reviewer
+       holding a selection across several diffs at 390px cannot see the file
+       list and the diff at the same time — so the phone says so. */
+    expect(marker.textContent).toContain('Changes');
     expect(marker.textContent).toContain('Git');
     expect(marker.textContent).toContain('Debug');
     expect(marker.textContent).toContain('Graph');
-    /* It is a STATEMENT, not a fourth tab: a screen reader walking the tablist
+    /* It is a STATEMENT, not a third tab: a screen reader walking the tablist
        must not be offered something it cannot select. */
     expect(screen.getAllByRole('tab')).toHaveLength(2);
   });
@@ -206,10 +211,10 @@ describe('WorkSessionContent on a phone', () => {
   /**
    * THE CONTROL ON THE CONTROL. Every assertion above would also pass on a
    * component that had simply been broken for the desktop too, so one case
-   * proves the fork is a fork: no provider, five tabs, terminal default, and
+   * proves the fork is a fork: no provider, six tabs, terminal default, and
    * the marker absent.
    */
-  it('leaves the desktop arrangement alone — five surfaces, terminal first, no marker', () => {
+  it('leaves the desktop arrangement alone — six surfaces, terminal first, no marker', () => {
     render(
       <WorkSessionContent
         sessionId={SESSION}
@@ -222,6 +227,7 @@ describe('WorkSessionContent on a phone', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Terminal',
       'Transcript',
+      'Changes',
       'Git',
       'Debug',
       'Graph',

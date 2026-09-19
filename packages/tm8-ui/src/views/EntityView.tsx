@@ -89,6 +89,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { AuxEntityPanel } from './auxPanel';
@@ -841,6 +842,7 @@ export function EntityView(props: EntityViewProps) {
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       graphSurface={
         detail

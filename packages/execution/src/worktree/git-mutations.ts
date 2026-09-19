@@ -365,7 +365,10 @@ export async function stage(params: {
     throw new WorktreeError('stage needs pathspecs or all: true', 'invalid_input', 'nothing_to_stage');
   }
   for (const p of paths) assertSafePathspec(p);
-  const args = params.all === true ? ['add', '-A'] : ['add', '--', ...paths];
+  // `--literal-pathspecs` BEFORE the subcommand: the paths are exact names
+  // from a status listing, and a name containing `*` must stage that file and
+  // not everything it would match. See the env default in `git-invoker`.
+  const args = params.all === true ? ['add', '-A'] : ['--literal-pathspecs', 'add', '--', ...paths];
   const added = await git(args, params.worktreePath);
   if (added.code !== 0) {
     throw new WorktreeError(
@@ -374,6 +377,115 @@ export async function stage(params: {
     );
   }
   return { staged: await stagedFiles(params.worktreePath) };
+}
+
+/**
+ * A STAGED RENAME IS ONE ROW AND TWO INDEX ENTRIES.
+ *
+ * `git status` and `git diff --cached` both report `git mv old new` as a
+ * SINGLE row — `R100 old new` — so every surface above this one holds it as
+ * one file with a `path` and an `origPath`. The index does not: it holds the
+ * DELETION of `old` and the ADDITION of `new`, two entries. `git reset HEAD --
+ * new` therefore unstages exactly half of it, and leaves behind a staged
+ * deletion of a file the reviewer never asked to delete plus an untracked
+ * `new` — a worse index than the one they started with, reached by pressing a
+ * button labelled "Unstage".
+ *
+ * So unstage expands a rename to both of its paths, HERE rather than in a
+ * caller, because every caller has the same half and picking one is not a
+ * choice any of them should be making.
+ *
+ * COPIES ARE DELIBERATELY NOT EXPANDED. `C100 old new` means the index added
+ * `new`; `old` is untouched by that operation and may carry a genuine, wholly
+ * unrelated staged change of its own. Resetting it would be the silent
+ * widening this expansion exists to prevent, pointed the other way.
+ */
+async function expandStagedRenames(
+  worktreePath: string,
+  paths: readonly string[],
+): Promise<string[]> {
+  const asked = new Set(paths);
+  const out = [...paths];
+  const seen = new Set(paths);
+  for (const file of await stagedFiles(worktreePath)) {
+    if (!file.status.startsWith('R') || file.origPath === undefined) continue;
+    if (!asked.has(file.path) && !asked.has(file.origPath)) continue;
+    for (const half of [file.path, file.origPath]) {
+      if (seen.has(half)) continue;
+      // Git's own output, guarded anyway: this list reaches an argv slot and
+      // a path never passes that boundary unchecked, whoever produced it.
+      assertSafePathspec(half);
+      seen.add(half);
+      out.push(half);
+    }
+  }
+  return out;
+}
+
+/**
+ * UNSTAGE — move the index back to HEAD for these paths, and touch nothing
+ * else. The mirror of `stage`, and the verb whose absence meant a reviewer
+ * could put a file into a commit but never take it out again.
+ *
+ * `git reset -q HEAD -- <paths>` is a MIXED reset: it rewrites the index and
+ * leaves every byte in the working tree exactly where it was. That is the
+ * whole safety argument for this verb, and it is why `--hard` (and `--merge`,
+ * and `checkout --` ) are not reachable from here under any argument. A lane
+ * holds an agent's uncommitted work; a verb that could discard it while
+ * calling itself "unstage" is the silent data loss this module is written to
+ * make impossible. Discarding work is `rollback`, which gates on `force` and
+ * reports the untracked paths it deleted.
+ *
+ * `all` unstages the whole index — still mixed, still worktree-safe.
+ *
+ * MID-MERGE IS REFUSED, exactly as `stage` refuses it, and for a sharper
+ * reason: during a merge the index holds the CONFLICT STAGES (1/2/3), and
+ * resetting a conflicted path to HEAD throws away the resolution work and
+ * leaves a half-merged tree that looks clean. tm8 verbs never complete or
+ * unpick a merge implicitly.
+ */
+export async function unstage(params: {
+  worktreePath: string;
+  expectedBranch?: string;
+  paths?: readonly string[];
+  all?: boolean;
+  /** `paths` on the result is what was ACTUALLY reset — see the expansion. */
+}): Promise<{ staged: ChangedFile[]; paths: string[] }> {
+  await assertMutableWorktree(params);
+  await refuseMidMerge(params.worktreePath, 'unstage');
+  const paths = params.paths ?? [];
+  if (params.all !== true && paths.length === 0) {
+    throw new WorktreeError('unstage needs pathspecs or all: true', 'invalid_input', 'nothing_to_unstage');
+  }
+  for (const p of paths) assertSafePathspec(p);
+  // An unborn branch has no HEAD to reset to. Caught by name rather than let
+  // through as a raw git failure, because "there is no first commit yet" is a
+  // different fact from "the reset failed".
+  const head = await git(['rev-parse', '--verify', '-q', 'HEAD'], params.worktreePath);
+  if (head.code !== 0) {
+    throw new WorktreeError(
+      'worktree has no HEAD commit to unstage against', 'conflict', 'no_head',
+      { hint: 'nothing has been committed on this branch yet; there is no HEAD state to restore the index to' },
+    );
+  }
+  // Read the index BEFORE the reset: afterwards the rename row is gone and
+  // its other half is unreachable.
+  const resetPaths = params.all === true ? [] : await expandStagedRenames(params.worktreePath, paths);
+  // MIXED by omission — `git reset` with no mode flag is `--mixed`, and a
+  // path-scoped reset cannot be anything else (git refuses `--hard` with
+  // pathspecs outright). The mode is never caller-supplied.
+  const args = params.all === true
+    ? ['reset', '-q', 'HEAD']
+    // Literal for the same reason `stage` is: exact names, never patterns.
+    : ['--literal-pathspecs', 'reset', '-q', 'HEAD', '--', ...resetPaths];
+  const reset = await git(args, params.worktreePath);
+  if (reset.code !== 0) {
+    throw new WorktreeError(
+      'git reset failed', 'invalid_input', 'unstage_failed',
+      { stderr: reset.stderr.trim() },
+    );
+  }
+  return { staged: await stagedFiles(params.worktreePath), paths: resetPaths };
 }
 
 export interface CommitResult {
