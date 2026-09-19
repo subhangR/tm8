@@ -495,6 +495,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
        */
       'createContainer', 'containerLifecycle', 'destroyContainer',
       'startContainerTerminal', 'containerProviders',
+      // 187: `shareSession` — `execution.sessions.share`, the WATCH and DRIVE
+      // dials on a work session. Appended rather than inserted at its sorted
+      // position, the same posture as the five above and for the same reason.
+      //
+      // ONE method for two dials, because the RPC MERGES: an omitted key is
+      // left alone, never defaulted. Two methods would be two places for a
+      // caller to clobber the dial it was not thinking about.
+      'shareSession',
       'terminate',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and

@@ -707,7 +707,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 99 -> 118 (177): nineteen container command bodies bind. The family has
     // twenty commands; `containers.files.put` carries a tar stream, not JSON,
     // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(118);
+    // +1 (187): `execution.sessions.share` binds ExecutionSessionsShareInput.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(119);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -873,8 +874,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
     // which adds a discoverable NAME for the existing socket, not a route.
     // MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 195, implemented: 193 });
-    expect(harness.production.server.registry.size).toBe(193);
+    // +1 (187): `execution.sessions.share`, registered and mounted. MEASURED
+    // off /health, not incremented.
+    expect(health).toMatchObject({ ok: true, operations: 196, implemented: 194 });
+    expect(harness.production.server.registry.size).toBe(194);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -895,7 +898,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
-    expect(registered.size + residual.length).toBe(193);
+    // 193 -> 194 (187): execution.sessions.share. MEASURED.
+    expect(registered.size + residual.length).toBe(194);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

@@ -306,9 +306,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(193);
-    expect(rows).toHaveLength(193);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(193);
+    // 193 -> 194 (187): execution.sessions.share, one POST command. MEASURED.
+    expect(SURFACE).toHaveLength(194);
+    expect(rows).toHaveLength(194);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
   });
 
   /**
@@ -990,7 +991,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // integer invisible to any grep phrased as the thing being added — it was
     // found here by running the suite, which is the other way it says to find
     // it. RE-MEASURE, do not add.
-    expect(server.appliedMigrations.length).toBe(174);
+    //
+    // 174 -> 175 (187): ONE file, 187_work_session_sharing.sql (the two space
+    // sharing defaults, work_sessions.drive_mode, the inheriting trigger, and
+    // the re-defined grant_stream_attach). MEASURED the same way, not
+    // incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 174
+    //   ls db/migrations/*.sql | wc -l                                          -> 175
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main has not moved under this branch, so the two differ by exactly its
+    // one file.
+    expect(server.appliedMigrations.length).toBe(175);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

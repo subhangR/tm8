@@ -26,15 +26,18 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {169/167/168/166} (141): the three account-lifecycle ops.
         // -> {172/170/171/169} (148): spaces.workflows.*.
         // -> {197/195/195/193} (177): the 25 containers.* rows.
+        // -> {198/196/196/194} (187): execution.sessions.share, one v1 POST.
+        // `ws` is UNMOVED: sharing decides who may open the PTY socket, it
+        // does not declare a second one.
         // NOTE `http` and `ws` are MOUNT counts: 24 of the 25 are HTTP, and
         // the 25th (`containers.stream`) re-declares `events.subscribe`'s
         // socket, so it adds a discoverable NAME and no mount — `ws` stays 1.
-        total: 197,
-        v1: 195,
+        total: 198,
+        v1: 196,
         reserved: 2,
-        http: 195,
+        http: 196,
         ws: 1,
-        registerableV1Http: 193,
+        registerableV1Http: 194,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

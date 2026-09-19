@@ -737,7 +737,11 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // execution.git* family (status/diff/commit/checkpoint/rollback/merge/
     // cherryPick/branch/stash), execution.dispatch, plus terminal/transcript
     // rows that landed with their lanes.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(20);
+    // 20 -> 21 (187): execution.sessions.share — the WATCH and DRIVE dials on a
+    // work session. It is a SETTING on the record, not a spawn, so it does not
+    // change the point this test is making: none of these 21 rows can build a
+    // live session through the contract.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(21);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

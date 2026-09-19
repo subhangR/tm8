@@ -331,6 +331,8 @@ export interface EntityListPanelProps {
   onTerminate?: (entityId: string) => void;
   /** The other half of that row's tail slot — see `ControlHost.onResume`. */
   onResume?: (entityId: string) => void;
+  /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
+  onShareSession?: (entityId: string, next: 'none' | 'space') => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;

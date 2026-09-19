@@ -43,6 +43,7 @@ import {
 } from '@tm8/contract';
 
 import { parseControlFrame } from './ptyProtocol.js';
+import { isPtyAttachRefused, type PtyAttachRefused } from './ptyAttachRefusal.js';
 
 export interface ReplayInfo {
   kind: 'delta' | 'snapshot';
@@ -53,6 +54,8 @@ type ReplayHandler = (id: string, data: string, info: ReplayInfo) => void;
 type ExitHandler = (id: string, exitCode?: number | null) => void;
 type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
+type AttachRefusedHandler = (id: string, refusal: PtyAttachRefused) => void;
+type AttachRefusalClearedHandler = (id: string) => void;
 export type PtyGrantProvider = (id: string) => Promise<StreamAttachGrant>;
 
 const _sockets = new Map<string, WebSocket>();
@@ -80,6 +83,21 @@ const _replayHandlers: ReplayHandler[] = [];
 const _exitHandlers: ExitHandler[] = [];
 const _sizeHandlers: SizeHandler[] = [];
 const _reattachHandlers: ReattachHandler[] = [];
+const _attachRefusedHandlers: AttachRefusedHandler[] = [];
+const _attachRefusalClearedHandlers: AttachRefusalClearedHandler[] = [];
+/**
+ * Ids whose attach was REFUSED (not failed). They stay in `_activeSessions`
+ * — the app still wants them — but nothing reconnects them, because the
+ * answer will not change by being asked again.
+ *
+ * `openSession` and `closeSession` are the only two things that clear it, and
+ * that is deliberate: a remount IS the retry. There is no `retryAttach` here
+ * because nothing would call one — the refusal only stops being true when the
+ * session's owner shares it (187), and this module has no event feed to learn
+ * that from. Adding a door with nobody to open it would be a second way to say
+ * what the mount effect already says.
+ */
+const _refusals = new Map<string, PtyAttachRefused>();
 
 /**
  * Session ids the app currently wants attached. ONLY these auto-reconnect after
@@ -276,6 +294,15 @@ function _ensureSocket(id: string): WebSocket | undefined {
     return existing;
   }
 
+  // A refused id is not dialled again by any of the automatic paths — wake,
+  // resume and visibility all land here, and each of them would otherwise
+  // re-ask a settled question. FIRST, above the no-provider branch: that branch
+  // dials unauthenticated and would ignore the latch, and it is reachable here
+  // only because `openSession` happens to clear `_refusals` after setting the
+  // provider. Checking at the top means the teardown order stops being
+  // load-bearing for whether a refused terminal reconnects.
+  if (_refusals.has(id)) return undefined;
+
   const provider = _grantProviders.get(id);
   if (!provider) return _openSocket(id);
   if (_connecting.has(id)) return undefined;
@@ -292,8 +319,20 @@ function _ensureSocket(id: string): WebSocket | undefined {
       ) return;
       _openSocket(id, grant);
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       _connecting.delete(id);
+      // A REFUSAL IS FINAL; a failure is not. Before this branch both took the
+      // reconnect path, so a private session produced a silent retry loop
+      // behind an empty canvas. Now it stops and says so exactly once — and
+      // it is announced even for a stale generation, because the viewer was
+      // still told 'no' and deserves to see it.
+      if (isPtyAttachRefused(error)) {
+        _clearReconnectTimer(id);
+        _reconnectAttempts.delete(id);
+        _refusals.set(id, error);
+        for (const h of _attachRefusedHandlers) h(id, error);
+        return;
+      }
       if (_activeSessions.has(id) && !_suspended.has(id)) _scheduleReconnect(id);
     });
   return undefined;
@@ -403,6 +442,7 @@ function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean):
       _epochs.delete(id);
       _pendingSends.delete(id);
       _overflowLatched.delete(id);
+      _refusals.delete(id);
       _serverBaseUrls.delete(id);
       _grantProviders.delete(id);
       _attachModes.delete(id);
@@ -562,10 +602,42 @@ export const ptyTransport = {
     _epochs.delete(id);
     _exitedSessions.delete(id);
     _decoders.delete(id);
+    _refusals.delete(id);
     // A newly attached PTY must never inherit queued input from a prior logical
     // use of the same id.
     _pendingSends.delete(id);
     _ensureSocket(id);
+  },
+
+  /**
+   * Forget every `unauthorized` latch and re-dial.
+   *
+   * The other two refusals are somebody else's decision and cannot change by
+   * being re-asked. `unauthorized` is the one that is about the VIEWER, and the
+   * viewer can fix it — so the sentence we show them ("Sign in again to watch
+   * this terminal") has to be an instruction that works. Without this it was
+   * not: the latch outlives a pass-store write, nothing remounts on sign-in,
+   * and the terminal they were told to fix stayed dead until they navigated
+   * away and back.
+   *
+   * Called from the one place a new pass is adopted (auth/session.ts), not from
+   * a timer — this is an event, not a poll, and `forbidden`/`not_found` stay
+   * latched through it.
+   */
+  clearAuthRefusals(): void {
+    for (const [id, refusal] of [..._refusals]) {
+      if (refusal.reason !== 'unauthorized') continue;
+      _refusals.delete(id);
+      // ANNOUNCE THE CLEAR, NOT ONLY THE REFUSAL. The latch lives here but the
+      // sentence lives in React state that only the terminal-creation effect
+      // ever resets, and nothing remounts on sign-in — so dropping the latch
+      // silently bought a working socket underneath a placeholder still saying
+      // "Sign in again to watch this terminal". Optimistic on purpose: if the
+      // re-dial is refused again the refusal channel fires and puts the
+      // sentence straight back.
+      for (const h of _attachRefusalClearedHandlers) h(id);
+      if (_activeSessions.has(id) && !_suspended.has(id)) _ensureSocket(id);
+    }
   },
 
   /** Detach permanently and drop every trace of the session. */
@@ -584,6 +656,7 @@ export const ptyTransport = {
     _epochs.delete(id);
     _pendingSends.delete(id);
     _overflowLatched.delete(id);
+    _refusals.delete(id);
     _serverBaseUrls.delete(id);
     _authTokenReaders.delete(id);
     _grantProviders.delete(id);
@@ -747,6 +820,31 @@ export const ptyTransport = {
       }
     }
     _ensureSocket(id);
+  },
+
+  /**
+   * The attach mint said no. Fires once per refusal, never on an ordinary
+   * transport failure — a surface that renders this is rendering a decision.
+   */
+  onAttachRefused(handler: AttachRefusedHandler): () => void {
+    _attachRefusedHandlers.push(handler);
+    return () => {
+      const i = _attachRefusedHandlers.indexOf(handler);
+      if (i >= 0) _attachRefusedHandlers.splice(i, 1);
+    };
+  },
+
+  /**
+   * The refusal was withdrawn and the id re-dialled. The mirror of
+   * {@link onAttachRefused}: a surface that renders a refusal needs to be told
+   * when it stops being true, and only `clearAuthRefusals` can ever say so.
+   */
+  onAttachRefusalCleared(handler: AttachRefusalClearedHandler): () => void {
+    _attachRefusalClearedHandlers.push(handler);
+    return () => {
+      const i = _attachRefusalClearedHandlers.indexOf(handler);
+      if (i >= 0) _attachRefusalClearedHandlers.splice(i, 1);
+    };
   },
 
   /** Fires when the stream identity changed and the terminal must be cleared. */

@@ -289,6 +289,19 @@ describe.sequential('task assignment provenance (129)', () => {
     // when something resolves a chat entity's content, which this suite never
     // does.
     database.apply(['177_container_kind.sql']);
+    // 187, same shape again, with a different relation name: `entity-read.ts`
+    // selects `ws.drive_mode` and a 129-era schema has no such column.
+    //
+    // Same safety argument, checked the same way. 187 adds two columns to
+    // `public.spaces`, one to `public.work_sessions`, a BEFORE INSERT trigger on
+    // `work_sessions`, and `create or replace`s `grant_stream_attach`,
+    // `w2_update_space` and the new `set_work_session_sharing` — all at their
+    // existing parameter names and return types. The trigger DOES fire on this
+    // suite's `execution_spawn` case, and that is deliberate to leave in the
+    // path: it stamps the space's sharing default onto the new session and
+    // touches no assignment, no provenance row and no edge, which is exactly
+    // the position statement at 129 this file is defending.
+    database.apply(['187_work_session_sharing.sql']);
   }, 180_000);
 
   afterAll(async () => {

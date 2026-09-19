@@ -143,6 +143,7 @@ import type {
   ContainersTerminalStartInput,
   ContainersTerminalStartResult,
   ExecutionResumeInput,
+  ExecutionSessionsShareInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
   FileUploadCompleteInput,
@@ -987,6 +988,25 @@ export interface Seam {
     dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
+    /**
+     * `execution.sessions.share` (187) — TURN ONE OR BOTH OF THIS SESSION'S
+     * SHARING DIALS.
+     *
+     * TWO INDEPENDENT DIALS, and the input type is what keeps them
+     * independent: `shareMode` is who may WATCH the terminal's bytes and
+     * `driveMode` is who may TYPE into it. The RPC merges on omission — a
+     * patch that names only one leaves the other exactly where it was — so a
+     * caller that means "open watching" must not send a `driveMode` it did
+     * not intend to author.
+     *
+     * NOT a metadata control. The session ROW's visibility is governed by
+     * `entities_select` and is space-wide regardless of these dials; what
+     * they gate is the byte stream, through `grant_stream_attach`. Narrowing
+     * either dial revokes the live grants it no longer covers, so this is a
+     * command with an immediate effect on other people's open terminals and
+     * carries `expectedVersion` for the same reason `complete` does.
+     */
+    shareSession(id: EntityId, input: ExecutionSessionsShareInput): Promise<CommandResult>;
     /**
      * Bring an `exited`/`failed` session back with its agent's conversation
      * restored. `clientMutationId` is REQUIRED by the contract DTO (unlike

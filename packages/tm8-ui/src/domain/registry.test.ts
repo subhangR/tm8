@@ -239,7 +239,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // cluster's `RULED_ORDER` ranks `complete` and `run`, an unranked verb
     // keeps its declared position, and `terminate` is pulled to the tail by
     // `TAIL_ORDER` regardless of where it sits here.
-    expect(session.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
+    //
+    // `share-session` (187) is declared in its PRIVATE half, exactly as
+    // `terminate` is declared rather than `resume`. `rowActions` is STATIC
+    // per-kind data; the shared half (`unshare-session`) is substituted per ROW
+    // by `sharingControlFor` inside `RowActionCluster`, which is the only place
+    // that sees the row's `shareMode`. So the ref in this array is not always
+    // the ref the list draws — see `row-action-cluster.test.tsx`.
+    expect(session.rowActions).toEqual(['complete', 'share-session', 'terminate', 'chat-about']);
   });
 
   it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
@@ -254,7 +261,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // running session off In Progress without killing it, which is exactly the
     // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['complete', 'terminate', 'chat-about']);
+    expect(session.list.rowActions).toEqual([
+      'complete', 'share-session', 'terminate', 'chat-about',
+    ]);
     // The PANEL's budget is untouched by the row's third verb: `chat-about` is
     // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
     // because Run is a verb about the entity; this one opens a conversation

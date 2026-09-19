@@ -62,6 +62,7 @@ import type {
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
+  ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
   ExecutionGitCherryPickInput, ExecutionGitBranchInput, ExecutionGitStashInput,
@@ -113,7 +114,7 @@ import type {
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -252,6 +253,16 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
+/**
+ * Mirrors `work_sessions.drive_mode`'s CHECK exactly — 187.
+ *
+ * TWO values, not three, and deliberately not a mirror of share_mode: watching
+ * has a per-person future ('explicit') that typing does not, and giving drive a
+ * value the gate does not read would be the same inert vocabulary 187's header
+ * complains about.
+ */
+export const WorkSessionDriveModeSchema: z.ZodType<WorkSessionDriveMode> =
+  z.enum(['owner', 'space']);
 /** Mirrors `work_sessions.session_kind`'s CHECK exactly — 083, widened by 101. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
   z.enum(['agent', 'credential', 'shell']);
@@ -457,6 +468,18 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.
     teammate: ActorSummarySchema.nullable().optional(),
+    // 187: whether a non-owner who may WATCH this terminal may also TYPE into
+    // it. Optional and not nullable for the usual additive reason — a pre-187
+    // node omits it and a reader takes the absence as 'owner', which is the
+    // rule that node is in fact enforcing.
+    //
+    // This arm is `.strict()`, and that is the whole reason this line exists:
+    // the projector emits whatever the entity reader produced, and a field the
+    // reader spreads but the schema does not name is not dropped, it is a
+    // refusal — `OffContractEventError` on `entity.upsert`, i.e. the space's
+    // event stream stops. The TS type gaining a field is only half of adding
+    // one.
+    driveMode: WorkSessionDriveModeSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -2315,6 +2338,13 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   githubRepo: z.string().nullable().optional(),
+  // 187. This object is `.strict()`, so the keys have to be NAMED here or the
+  // request is a 400 at the door — `w2_update_space` would never see them, and
+  // the allow-list in `identity-spaces.ts` would be filtering a body that was
+  // already refused. Not nullable: there is no "unset" for a default, only the
+  // two postures, and the RPC validates the vocabulary again on its side.
+  sessionShareDefault: z.enum(['none', 'space']).optional(),
+  sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
 }).strict();
 
 /** The role vocabulary, in one place, so the wire and the check constraint agree. */
@@ -2870,6 +2900,24 @@ export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttach
   ...commandContextShape,
   mode: z.enum(['view', 'drive']),
 }).strict();
+
+/**
+ * At least one dial must be named. `.strict()` rejects unknown keys, and the
+ * refinement rejects the empty patch — the RPC refuses it too (22023), but a
+ * request that cannot do anything should not reach the database to find out.
+ */
+export const ExecutionSessionsShareInputSchema: z.ZodType<ExecutionSessionsShareInput> = z.object({
+  ...commandContextShape,
+  // No 'explicit'. It is readable on a stored row and not writable here — see
+  // ExecutionSessionsShareInput for why a value with no list behind it must not
+  // become settable through the first door that could set it.
+  shareMode: z.enum(['none', 'space']).optional(),
+  driveMode: z.enum(['owner', 'space']).optional(),
+  expectedVersion: z.number().int().nonnegative().optional(),
+}).strict().refine(
+  (v) => v.shareMode !== undefined || v.driveMode !== undefined,
+  { message: 'name shareMode, driveMode, or both' },
+) as z.ZodType<ExecutionSessionsShareInput>;
 
 export const ExecutionGitCheckpointInputSchema: z.ZodType<ExecutionGitCheckpointInput> = z.object({
   ...commandContextShape,
@@ -3573,6 +3621,14 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   // an older node parses unchanged.
   unreadTotal: z.number().int().nonnegative().nullable(),
   githubRepo: z.string().nullable().optional(),
+  // 187, the space-wide DEFAULT posture new sessions are spawned with — not a
+  // statement about any existing session, each of which carries its own pair.
+  // Optional for the additive reason, and it matters here more than usual:
+  // this object is `.strict()` and is re-parsed on the way OUT of storage, so
+  // a node that stores the keys without naming them here answers 503
+  // `stored Space settings violate the frozen contract` for the whole space.
+  sessionShareDefault: z.enum(['none', 'space']).optional(),
+  sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
   createdAt: IsoTimestamp,
 }).strict();
 

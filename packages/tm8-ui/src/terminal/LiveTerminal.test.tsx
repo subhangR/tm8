@@ -61,6 +61,13 @@ vi.mock('./pty/ptyTransport.js', () => ({
   ptyTransport: {
     onSize: () => () => {},
     onExit: () => () => {},
+    // 187: the refusal channel. This file is about FOCUS, so the stub never
+    // publishes one — but it must exist, because `LiveTerminal` subscribes
+    // unconditionally on mount and a missing method is a TypeError inside a
+    // passive effect, which surfaces as every test in the file failing for a
+    // reason that has nothing to do with focus.
+    onAttachRefused: () => () => {},
+    onAttachRefusalCleared: () => () => {},
     openSession: vi.fn(),
     closeSession: vi.fn(),
     resize: vi.fn(),

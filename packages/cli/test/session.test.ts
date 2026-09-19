@@ -162,9 +162,12 @@ const body = (): Record<string, unknown> => (seen[0]?.body ?? {}) as Record<stri
 // ── registration and the anti-drift binding ─────────────────────────────────
 
 describe('registration', () => {
-  it('registers exactly the nine caller-facing execution rows', async () => {
+  it('registers exactly the ten caller-facing execution rows', async () => {
     const paths = (await sessionCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session spawn', 'session terminate', 'session transcript']);
+    // 187 adds `session share` — the WATCH and DRIVE dials on one session.
+    // Sorted position matters here: the list is the assertion, so a row that
+    // arrives has to be placed, not appended.
+    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
   });
 
   it('every registered path is in the frozen projection', async () => {

@@ -905,6 +905,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'agentTool' },
           { source: 'model' },
           { source: 'shareMode' },
+          { source: 'driveMode' },
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
@@ -993,8 +994,14 @@ const ROWS: readonly KindConfig[] = [
        * control" ruling that took the tick out in the first place. The swap is
        * per-ROW state, so the component that sees the row owns it; this array
        * keeps saying which verbs the kind HAS.
+       *
+       * `share-session` follows the identical reading (187). Declared here in
+       * its PRIVATE half, because that is the state a session is in before
+       * anyone has decided anything about it; `sharingControlFor` swaps it to
+       * `unshare-session` from the row's own `shareMode`, and `unshare-session`
+       * is absent from this array for exactly the reason `resume` is.
        */
-      rowActions: ['complete', 'terminate'],
+      rowActions: ['complete', 'share-session', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {

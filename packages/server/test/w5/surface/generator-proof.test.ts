@@ -198,6 +198,11 @@ describe('W5.C generator proof', () => {
     // schema would refuse every legitimate upload — it is enumerated in
     // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
     // as reads do. MEASURED.
-    expect(ENTRIES).toHaveLength(118);
+    // +1 (187): ExecutionSessionsShareInputSchema binds
+    // execution.sessions.share. It is a COMMAND with a JSON body, so it binds
+    // like every other command and is NOT in UNBOUND_COMMAND_OPERATIONS —
+    // the refinement that rejects an empty body is a constraint inside the
+    // schema, not a reason to have none. MEASURED.
+    expect(ENTRIES).toHaveLength(119);
   });
 });
