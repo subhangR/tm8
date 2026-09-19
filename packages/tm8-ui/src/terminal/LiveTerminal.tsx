@@ -15,6 +15,7 @@ import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
+import { scrollTerminalLines } from './scrollTerminal';
 import {
   clientFittedSessions,
   measureSpawnTerminalSize,
@@ -141,6 +142,8 @@ export interface LiveTerminalHandle {
    * converted to its control byte and the arm is spent. See `ctrlByte`.
    */
   armCtrl(armed: boolean): void;
+  armAlt(armed: boolean): void;
+  scroll(direction: -1 | 1): void;
   /**
    * Is DECCKM on? Decides whether an arrow is `ESC [ A` or `ESC O A`, which is
    * the difference between the arrow working and the letters `OA` appearing in
@@ -185,6 +188,7 @@ export interface LiveTerminalProps {
    * value is that you can see whether it is on.
    */
   onCtrlSpent?: () => void;
+  onAltSpent?: () => void;
 }
 
 /**
@@ -199,7 +203,7 @@ export interface LiveTerminalProps {
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent },
+  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent, onAltSpent },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -243,6 +247,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
    * nothing to the bytes, which is the worst of both outcomes.
    */
   const pendingCtrlRef = useRef(false);
+  const pendingAltRef = useRef(false);
+  const onAltSpentRef = useRef(onAltSpent);
+  onAltSpentRef.current = onAltSpent;
   /** Assigned by the mount effect so the font-size effect can force a refit.
       The effect owns the retry/backoff machinery; nothing outside it may
       re-implement that, so it publishes the entry point instead. */
@@ -257,17 +264,40 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   onExitRef.current = onExit;
   onCtrlSpentRef.current = onCtrlSpent;
 
+  // Both soft-keyboard input and toolbar keys consume the same sticky modifiers.
+  const sendInput = (data: string) => {
+    if (readOnlyRef.current) return;
+    // SGR mouse reports are navigation, not a keystroke for sticky modifiers.
+    if (data.startsWith('\x1b[<')) { ptyTransport.write(sessionId, data); return; }
+    const ctrl = pendingCtrlRef.current;
+    const alt = pendingAltRef.current;
+    if (ctrl) { pendingCtrlRef.current = false; onCtrlSpentRef.current?.(); }
+    if (alt) { pendingAltRef.current = false; onAltSpentRef.current?.(); }
+    const arrow = /^\x1b(?:\[|O)([ABCD])$/.exec(data);
+    if (arrow && (ctrl || alt)) {
+      data = `\x1b[1;${1 + (ctrl ? 4 : 0) + (alt ? 2 : 0)}${arrow[1]}`;
+    } else {
+      if (ctrl) data = ctrlByte(data) ?? data;
+      if (alt) data = `\x1b${data}`;
+    }
+    ptyTransport.write(sessionId, data);
+  };
+
   useImperativeHandle(ref, () => ({
     blur: () => termRef.current?.blur(),
     focus: () => {
       if (!readOnlyRef.current) termRef.current?.focus();
     },
-    send: (data: string) => {
-      if (readOnlyRef.current) return;
-      ptyTransport.write(sessionId, data);
-    },
+    send: sendInput,
     armCtrl: (armed: boolean) => {
       pendingCtrlRef.current = armed;
+    },
+    armAlt: (armed: boolean) => {
+      pendingAltRef.current = armed;
+    },
+    scroll: (direction: -1 | 1) => {
+      const term = termRef.current;
+      if (term) scrollTerminalLines(term, direction * Math.max(1, Math.floor(term.rows / 2)));
     },
     applicationCursorKeys: () => {
       /* `modes` is public API in xterm 5+, but it is read defensively because a
@@ -560,31 +590,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       return true;
     });
 
-    const onData = term.onData((data) => {
-      if (readOnlyRef.current) return;
-      /*
-       * THE STICKY CTRL IS SPENT HERE, at the one place every keystroke passes
-       * through, rather than in the bar.
-       *
-       * The bar cannot do it itself: the character it is modifying comes from
-       * the SYSTEM keyboard, which the bar neither renders nor receives events
-       * from. This is the only seam that sees both.
-       *
-       * `ctrlByte` returning null means the modifier does not apply to what was
-       * typed — a digit, an emoji, a paste. The arm is spent ANYWAY and the
-       * input is forwarded unchanged. Keeping it armed would silently apply
-       * Ctrl to whatever the user typed NEXT, which is how a stray Ctrl+C ends
-       * up killing an agent mid-run; and swallowing the character would make
-       * the bar eat keystrokes. Spend it and pass the byte through.
-       */
-      if (pendingCtrlRef.current) {
-        pendingCtrlRef.current = false;
-        onCtrlSpentRef.current?.();
-        const control = ctrlByte(data);
-        ptyTransport.write(sessionId, control ?? data);
-        return;
-      }
-      ptyTransport.write(sessionId, data);
+    const onData = term.onData(sendInput);
+    const onBinary = term.onBinary((data) => {
+      if (!readOnlyRef.current) ptyTransport.writeBinary(sessionId, data);
     });
 
     /**
@@ -659,7 +667,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         event.stopPropagation();
       }
     };
-    // Touch gestures use the same public buffer API as desktop scrolling.
+    // Touch gestures follow desktop history scrolling and application wheel input.
     const detachTouchScroll = attachTouchScroll(container, term);
     container.addEventListener('paste', handlePaste, true);
     container.addEventListener('dragover', handleDragOver);
@@ -712,6 +720,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       offSize();
       offExit();
       onData.dispose();
+      onBinary.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
       // its sockets/decoders/offsets/epochs/suspend/replay maps; unregister
@@ -732,6 +741,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
          typed into the NEXT session — the bar would be dark and the byte would
          still be modified. */
       pendingCtrlRef.current = false;
+      pendingAltRef.current = false;
     };
   }, [sessionId, serverBaseUrl, autoFocus]);
 

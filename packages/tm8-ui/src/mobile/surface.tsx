@@ -43,7 +43,7 @@
  * arrangement without its desktop arrangement being touched, which is the
  * property that lets desktop stay in daily use while this program runs.
  */
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
 export interface MobileSurface {
   /**
@@ -55,6 +55,8 @@ export interface MobileSurface {
    * list column with a detail pane behind it.
    */
   readonly oneSurface: boolean;
+  readonly terminalActionsHost?: HTMLElement | null;
+  readonly setTerminalActionsHost?: (host: HTMLElement | null) => void;
 
   /**
    * The frame's sheet region, or `null` where there is none.
@@ -96,6 +98,9 @@ export interface MobileSurfaceProviderProps {
  * desktop's arrangement inside it — a combination no viewer should ever see.
  */
 export function MobileSurfaceProvider({ sheetHost, children }: MobileSurfaceProviderProps) {
-  const value = useMemo<MobileSurface>(() => ({ oneSurface: true, sheetHost }), [sheetHost]);
+  const [terminalActionsHost, setTerminalActionsHost] = useState<HTMLElement | null>(null);
+  const value = useMemo<MobileSurface>(() => ({
+    oneSurface: true, sheetHost, terminalActionsHost, setTerminalActionsHost,
+  }), [sheetHost, terminalActionsHost]);
   return <MobileSurfaceContext.Provider value={value}>{children}</MobileSurfaceContext.Provider>;
 }

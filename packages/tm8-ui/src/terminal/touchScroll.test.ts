@@ -39,6 +39,7 @@ function makeHost(scrollHeight = 1000, clientHeight = 200): Host {
 
   const term = {
     rows: 20,
+    modes: { mouseTrackingMode: 'none' },
     buffer: { active: {
       get baseY() { return (scrollHeight - clientHeight) / 10; },
       get viewportY() { return top / 10; },

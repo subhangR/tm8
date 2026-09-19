@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlwaysDark } from './AlwaysDark';
+import { useMobileSurface } from '../mobile/surface';
 import {
   ESC,
   TAB,
@@ -69,6 +70,8 @@ export interface TerminalModifierBarProps {
    * state here could not be cleared by the half that consumes it.
    */
   ctrlArmed: boolean;
+  altArmed: boolean;
+  onAltArmedChange(next: boolean): void;
   onCtrlArmedChange(next: boolean): void;
 }
 
@@ -83,7 +86,7 @@ interface BarKey {
   readonly arrow?: ArrowName;
 }
 
-// Keep the primary controls in one row; arrows live in the More disclosure.
+// All keys remain visible in the compact phone toolbar.
 const MODIFIER_KEYS: readonly BarKey[] = [
   { id: 'esc', label: 'esc', aria: 'Escape', seq: ESC },
   { id: 'tab', label: 'tab', aria: 'Tab', seq: TAB },
@@ -106,8 +109,24 @@ export function TerminalModifierBar({
   live,
   ctrlArmed,
   onCtrlArmedChange,
+  altArmed,
+  onAltArmedChange,
 }: TerminalModifierBarProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const actionsHost = useRef<HTMLSpanElement>(null);
+  const { setTerminalActionsHost } = useMobileSurface();
+  useEffect(() => {
+    const host = actionsHost.current;
+    if (!host || !setTerminalActionsHost) return;
+    // The terminal stays mounted when Transcript is selected. Restore the
+    // floating action trigger whenever this toolbar is hidden.
+    const sync = () => setTerminalActionsHost(host.getBoundingClientRect().width > 0 ? host : null);
+    const observer = new ResizeObserver(sync);
+    observer.observe(host);
+    sync();
+    return () => { observer.disconnect(); setTerminalActionsHost(null); };
+  }, [setTerminalActionsHost]);
+  useEffect(() => { terminal.current?.armAlt(altArmed); }, [altArmed, terminal]);
 
   /*
    * THE KEYBOARD LISTENER THAT USED TO BE HERE IS GONE — `mobile/CONTRACT.md`
@@ -233,99 +252,33 @@ export function TerminalModifierBar({
           </div>
         ) : null}
 
-        {/* ROW 1 — the modifiers, plus the two chips that are ABOUT the
-            terminal rather than input into it. */}
-        <div
-          className="term-mod__keys term-mod__keys--mods"
-          role="group"
-          aria-label="Terminal modifier keys"
-        >
-          <button
-            type="button"
-            className={`term-mod__key term-mod__key--ctrl${ctrlArmed ? ' term-mod__key--armed' : ''}`}
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={toggleCtrl}
-            disabled={!live}
-            /* `aria-pressed` and not a label change: the arm is a TOGGLE STATE,
-               and a screen reader that is told "Control" twice with different
-               words cannot tell which of them is the current one. */
-            aria-pressed={ctrlArmed}
-            aria-label="Control — applies to the next key you type"
-            data-testid="terminal-mod-ctrl"
-          >
-            ctrl
-          </button>
-          {MODIFIER_KEYS.map((key) => (
-            <button
-              key={key.id}
-              type="button"
-              className="term-mod__key"
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={() => send(key)}
-              disabled={!live}
-              aria-label={key.aria}
-              data-testid={`terminal-mod-${key.id}`}
-            >
+        <div className="term-mod__keys term-mod__keys--controls" role="group" aria-label="Terminal controls">
+          <button type="button" className={`term-mod__key${ctrlArmed ? ' term-mod__key--armed' : ''}`}
+            onPointerDown={(e) => e.preventDefault()} onClick={toggleCtrl} disabled={!live}
+            aria-label="Control" aria-pressed={ctrlArmed} title="Control" data-testid="terminal-mod-ctrl">ctrl</button>
+          <button type="button" className={`term-mod__key${altArmed ? ' term-mod__key--armed' : ''}`}
+            onPointerDown={(e) => e.preventDefault()} disabled={!live}
+            onClick={() => { onAltArmedChange(!altArmed); terminal.current?.focus(); }}
+            aria-label="Alt" aria-pressed={altArmed} title="Alt" data-testid="terminal-mod-alt">alt</button>
+          {[...MODIFIER_KEYS, ...ARROW_KEYS].map((key) => (
+            <button key={key.id} type="button" className="term-mod__key"
+              onPointerDown={(e) => e.preventDefault()} onClick={() => send(key)} disabled={!live}
+              aria-label={key.aria} title={key.aria} data-testid={`terminal-mod-${key.id}`}>
               {key.label}
             </button>
           ))}
-          {/*
-            THE EXIT CHIP, AND WHY IT IS HERE AS WELL AS IN THE CHROME.
-            `⌃\`` is the reserved escape from terminal focus, and on a desktop
-            it is a physical chord the chip merely documents. On a phone the
-            chord CANNOT BE TYPED, so the chip is not documentation — it is the
-            only exit. Same class as the existing chip so it is the same object
-            the user already knows from the drawer.
-
-            IT STAYS ON THE FIRST ROW deliberately. It was the control the old
-            single row sliced, and the row a thumb reaches first is the row the
-            only-way-out belongs on.
-          */}
-          <button
-            type="button"
-            className="term-exit-chip term-mod__exit"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => terminal.current?.blur()}
-            aria-label="Exit terminal focus"
-            data-testid="terminal-mod-exit"
-          >
-            exit
-          </button>
-          <button
-            type="button"
-            className={`term-mod__key term-mod__key--more${detailsOpen ? ' term-mod__key--armed' : ''}`}
-            onClick={() => setDetailsOpen((open) => !open)}
-            aria-expanded={detailsOpen}
-            aria-label={`More terminal keys and settings — ${cols || '?'} columns`}
-            data-testid="terminal-mod-toggle"
-          >
-            More
-          </button>
+          <button type="button" className="term-mod__key" onPointerDown={(e) => e.preventDefault()}
+            onClick={() => terminal.current?.scroll(-1)} aria-label="Scroll up" title="Scroll up">⇞</button>
+          <button type="button" className="term-mod__key" onPointerDown={(e) => e.preventDefault()}
+            onClick={() => terminal.current?.scroll(1)} aria-label="Scroll down" title="Scroll down">⇟</button>
+          <button type="button" className="term-mod__key" onPointerDown={(e) => e.preventDefault()}
+            onClick={() => terminal.current?.blur()} aria-label="Exit terminal focus" title="Exit terminal focus"
+            data-testid="terminal-mod-exit">exit</button>
+          <button type="button" className="term-mod__key" onClick={() => setDetailsOpen((open) => !open)}
+            aria-expanded={detailsOpen} aria-label={`Terminal settings — ${cols || '?'} columns`}
+            title="Terminal settings" data-testid="terminal-mod-toggle">⋯</button>
+          <span className="term-mod__actions" ref={actionsHost} />
         </div>
-
-        {/* Extra keys are available without permanently charging a second row. */}
-        {detailsOpen ? (
-          <div
-          className="term-mod__keys term-mod__keys--arrows"
-          role="group"
-          aria-label="Terminal arrow keys"
-        >
-          {ARROW_KEYS.map((key) => (
-            <button
-              key={key.id}
-              type="button"
-              className="term-mod__key"
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={() => send(key)}
-              disabled={!live}
-              aria-label={key.aria}
-              data-testid={`terminal-mod-${key.id}`}
-            >
-              {key.label}
-            </button>
-          ))}
-        </div>
-        ) : null}
       </div>
     </AlwaysDark>
   );

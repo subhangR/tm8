@@ -616,6 +616,11 @@ export const ptyTransport = {
     _sendFrame(id, new TextEncoder().encode(data));
   },
 
+  /** xterm onBinary supplies byte-valued characters, not UTF-8 text. */
+  writeBinary(id: string, data: string): void {
+    _sendFrame(id, Uint8Array.from(data, (char) => char.charCodeAt(0)));
+  },
+
   /**
    * The node that owns this session's PTY, and the pass to reach it with.
    *

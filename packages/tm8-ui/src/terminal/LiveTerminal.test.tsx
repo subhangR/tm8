@@ -15,6 +15,7 @@ const xterm = vi.hoisted(() => {
     paste = vi.fn();
     attachCustomKeyEventHandler = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
+    onBinary = vi.fn(() => ({ dispose: vi.fn() }));
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => '');
     rows = 24;
