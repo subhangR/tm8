@@ -1123,6 +1123,232 @@ describe('the probe runs in the SAME environment the terminal ran in', () => {
   });
 });
 
+// ===========================================================================
+// EVERY CLOSE PATH PROBES — the regression this lane exists for.
+//
+// WHAT WAS BROKEN, measured on utho-prod 2026-09-19. Three paths close a
+// credential session — `finish()`, the 30s `sweepNow()` and the
+// start-time reclaim — and only `finish()` probed and persisted. The other two
+// called `finishRow` alone, which stamps `finished_at` and nothing else.
+//
+// That is not an edge case, it is the SUCCESS PATH. Every vendor login CLI
+// writes its credential and then EXITS: `claude auth login`, `gh auth login`,
+// `codex login` all do. So the commonest way a login terminal loses its PTY is
+// the member COMPLETING the login — and the sweep, whose comment read "the
+// member typed `exit`, or the CLI crashed", reaped exactly those. Identity
+// id_79242d2c's credential file was written at 12:37:21.124 and the session was
+// finished at 12:37:35 with ZERO rows in `account_agent_credentials`; the
+// credential is still valid on that disk today. 20 of 71 sessions (28%) closed
+// through that branch, and the retry storm it produced measured 4.3 GitHub
+// attempts per success, 5.0 for Anthropic.
+//
+// The member saw: a login that worked, then a Connect card that still said
+// Connect, then an agent spawned with no credential injected — because
+// `DbAgentCredentialHome.resolve` gates on a row that was never written.
+//
+// Each test below fails on the pre-fix service.
+// ===========================================================================
+
+describe('every close path probes and persists, not just the member’s click', () => {
+  it('the SWEEP persists the credential of a login that succeeded and exited', async () => {
+    const pty = fakePty();
+    // The vendor CLI's own success behaviour: it wrote the credential, printed
+    // nothing more, and exited. Nothing at the process level distinguishes this
+    // from an abandoned login — which is precisely why the close has to probe.
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'cursor' }, principal);
+    pty.live.delete(started.workSessionId);
+
+    expect(await service.sweepNow()).toBe(1);
+
+    const rows = await database.query<{ status: string; last_verified_at: Date | null }>(
+      `select status, last_verified_at from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = 'pr2-alice')
+          and provider = 'cursor'`,
+    );
+    // THE ASSERTION THE BUG WAS: before the fix this was `toHaveLength(0)` in
+    // production — the row the whole feature depends on was never written, and
+    // every later spawn therefore injected nothing.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('active');
+    expect(rows[0]!.last_verified_at).not.toBeNull();
+
+    // And the close still did everything it always did: the row is stamped and
+    // the one-live-per-pair slot is free.
+    const [session] = await database.query<{ finished_at: Date | null }>(
+      `select finished_at from public.credential_sessions where work_session_id = $1`,
+      [started.workSessionId],
+    );
+    expect(session!.finished_at).not.toBeNull();
+    expect(service.liveSessionIds()).toEqual([]);
+  });
+
+  it('the EXPIRY branch probes too — a TTL is not evidence the login failed', async () => {
+    const pty = fakePty();
+    const clock = { now: Date.now() };
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    const service = serviceFor(pty.pty, { run, now: () => clock.now });
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'cursor' }, principal);
+    // A member who logged in successfully and then left the tab open reaches the
+    // TTL with a live PTY and a real credential on disk. Reading "expired" as
+    // "abandoned" threw that credential away.
+    clock.now += 2_000_000;
+    expect(await service.sweepNow()).toBe(1);
+
+    expect(pty.kills).toContain(started.workSessionId);
+    const rows = await database.query<{ status: string }>(
+      `select status from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = 'pr2-bob')
+          and provider = 'cursor'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('active');
+  });
+
+  it('a finish that LOSES the race to the sweep reports the credential, not not_found', async () => {
+    const pty = fakePty();
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ loggedIn: true, email: 'bob@b.test' }) });
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+    // The CLI exited on success and the 30s tick reached the entry before the
+    // member's browser posted finish. That is a NORMAL ordering, not a fault.
+    pty.live.delete(started.workSessionId);
+    expect(await service.sweepNow()).toBe(1);
+
+    const finished = await service.finish({ workSessionId: started.workSessionId }, principal);
+
+    // Answering `not_found` here is what made a login that HAD succeeded read
+    // to the member as a login that failed — the settings dialog's Connect
+    // tile stayed red on top of a credential that was already stored.
+    expect(finished.provider).toBe('openai');
+    expect(finished.probe.connected).toBe(true);
+    expect(finished.probe.login).toBe('bob@b.test');
+    expect(finished.stored).toBe(true);
+    // Narrower than a probe, and it says so: nothing was terminated by THIS
+    // call, and the claim is "a row exists", not "the vendor would accept it
+    // this second".
+    expect(finished.terminated).toBe(false);
+    expect(finished.probe.detail).toMatch(/earlier close/);
+  });
+
+  it('still answers not_found for a work session that was never a login terminal', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty);
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    // The guard on the guard. Reading the persisted row instead of refusing
+    // must not turn every unknown id into a cheerful answer — RLS already
+    // scopes the lookup to the caller's own rows, so no row really does mean
+    // "never existed, or not yours".
+    const error = await captureError(() =>
+      service.finish(
+        { workSessionId: '00000000-0000-7000-8000-00000000dead' },
+        principal,
+      ),
+    );
+    expect(refusalCode(error)).toBe('not_found');
+  });
+
+  it('a STALE stored row is reported stale, never upgraded to connected', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty);
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    // Hermes has no verified probe on this node, so the close writes nothing —
+    // the session row is finished and the registry entry is gone.
+    const started = await service.start({ spaceId: fixture.space, provider: 'hermes' }, principal);
+    pty.live.delete(started.workSessionId);
+    expect(await service.sweepNow()).toBe(1);
+
+    // An earlier connection that has since gone stale, written the way the
+    // revalidation path writes one.
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.account_agent_credentials(account_id, provider, login, status)
+         values ((select id from public.accounts where identity_id = 'pr2-alice'),
+                 'hermes', 'alice@stale.test', 'stale')`,
+      );
+    });
+
+    // A second finish — the member's double click, or their browser retrying.
+    const finished = await service.finish({ workSessionId: started.workSessionId }, principal);
+
+    // `stale` is exactly what `DbAgentCredentialHome.resolve` refuses to
+    // inject. Calling it connected here would put a Connected card in front of
+    // a member whose next agent starts unauthenticated — the same lie the
+    // whole build exists to stop telling, just told from the other end.
+    expect(finished.probe.status).toBe('stale');
+    expect(finished.probe.connected).toBe(false);
+    expect(finished.stored).toBe(false);
+    expect(finished.probe.login).toBe('alice@stale.test');
+  });
+
+  it('the close STILL finishes the row when the probe throws — no TTL lockout', async () => {
+    const pty = fakePty();
+    const run: CommandRunner = async () => {
+      throw new Error('probe exploded');
+    };
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'anthropic' }, principal);
+    // The member gets the failure rather than a log line — they are waiting.
+    const error = await captureError(() =>
+      service.finish({ workSessionId: started.workSessionId }, principal),
+    );
+    expect((error as Error).message).toContain('probe exploded');
+
+    // But the row is finished ANYWAY. Leaving `finished_at` null would hold the
+    // one-live-per-pair slot for the full 900s TTL and lock the member out of
+    // retrying — the exact lockout R10 added the sweep to prevent, re-created
+    // by a failing probe.
+    const [session] = await database.query<{ finished_at: Date | null }>(
+      `select finished_at from public.credential_sessions where work_session_id = $1`,
+      [started.workSessionId],
+    );
+    expect(session!.finished_at).not.toBeNull();
+    expect(service.liveSessionIds()).toEqual([]);
+
+    // Proof rather than inference that the slot came back: Connect works again.
+    const retry = await service.start({ spaceId: fixture.space, provider: 'anthropic' }, principal);
+    expect(retry.workSessionId).not.toBe(started.workSessionId);
+    pty.live.delete(retry.workSessionId);
+    await service.sweepNow();
+  });
+
+  it('two sweep ticks cannot close the same session twice', async () => {
+    const pty = fakePty();
+    // Closing is asynchronous now — it probes and persists — so a 30s interval
+    // can fire a second tick into a first one that is still awaiting its probe.
+    // Without the guard both ticks see the same registry snapshot, because the
+    // entry is only deleted after the await.
+    const run: CommandRunner = async () => outcome({ stdout: 'unparseable' });
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+    pty.live.delete(started.workSessionId);
+
+    const ticks = await Promise.all([service.sweepNow(), service.sweepNow()]);
+    // Exactly one tick owns the registry. Before the guard this was [1, 1]:
+    // two terminates, two `finish_credential_session` calls, and two probes of
+    // the same credential home racing each other's reads.
+    expect(ticks).toEqual([1, 0]);
+    expect(service.liveSessionIds()).toEqual([]);
+  });
+});
+
 describe('the credential home really is where the vendor CLI would write', () => {
   it('two identities resolve to two different config directories on disk', async () => {
     const a = await ensureCredentialHome(dataDir, 'iso-a', 'anthropic');
