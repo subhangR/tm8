@@ -199,6 +199,10 @@ describe('W1 frozen-row schema amendments', () => {
       'chat',
       // 2026-09-03: `container` — the machine kind (177, CONTAINERS §3.1).
       'container',
+      // 2026-09-17: `drawing` — an Excalidraw canvas as an entity (194).
+      // Creatable through the ordinary envelope, unlike `chat`/`container`:
+      // nothing runtime stands behind a drawing, only its detail row.
+      'drawing',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

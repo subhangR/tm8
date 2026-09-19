@@ -55,7 +55,13 @@ export type CoreEntityKind =
   // Containers (TM8-CONTAINERS-DESIGN §3.1, migration 177): a machine an
   // agent runs IN or drives. It is an entity so hierarchy, edges, messages
   // and attention all work on it for free; the RUNTIME behind it is not.
-  | 'container';
+  | 'container'
+  // Drawings (migration 194, 2026-09-17): a hand-drawn canvas as an entity.
+  // The scene is Excalidraw's own three parts — elements, appState, files —
+  // and `format` is a SLUG, not a closed list, so a second canvas format
+  // later costs no migration (135's R3 lesson). Phase 1 is single-writer and
+  // refuses embedded images; both are rulings, not omissions.
+  | 'drawing';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -441,6 +447,12 @@ export type CoreEntityState =
    */
   | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number }
   /**
+   * A drawing's row facts: which canvas format, and how big. The elements
+   * themselves are content, never state — a list row never needs them and a
+   * scene is the largest payload any kind carries.
+   */
+  | { kind: 'drawing'; format: string; elementCount: number }
+  /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
    * read, which is the same rule `capabilities` and `category` ride on.
@@ -760,6 +772,21 @@ export type CoreEntityContent =
   | { kind: 'chat' }
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
       layout: Record<string, { x: number; y: number }>; source: string | null }
+  /**
+   * The whole Excalidraw scene in one row (194 D2).
+   *
+   * The three members are Excalidraw's own, passed through unchanged so the
+   * editor can hand `elements`/`appState` straight back to it with no
+   * translation layer to drift. They are deliberately UNTYPED beyond their
+   * containers: an element is ~30 fields of Excalidraw's private shape and
+   * pinning it here would make every upstream release a contract change.
+   *
+   * `files` is the embedded-image map. It is always `{}` today — the doors
+   * refuse a non-empty one by name — and phase 2 fills it after splitting
+   * image bytes to `public.files`.
+   */
+  | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
+      appState: Record<string, unknown>; files: Record<string, unknown> }
   /**
    * Containers (§4.2), hydrated in the panel.
    *

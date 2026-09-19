@@ -1042,6 +1042,18 @@ export type ContentBlockKind =
   // studio is where you EDIT a blueprint; this block is where every other
   // surface can SEE it, so a graph stops rendering two different ways.
   | 'blueprint'
+  // The Excalidraw canvas (194). Unlike `blueprint`, which is read-only
+  // because Craft owns editing a graph, this block IS the editor: a drawing
+  // has no studio screen of its own, so the panel is where it is drawn. The
+  // component behind it is lazily imported — Excalidraw is ~47 MB unpacked
+  // and must never enter the main chunk.
+  //
+  // NAMED `canvas`, NOT `drawing`, and the difference is load-bearing: a block
+  // id that spells a kind name makes `case 'drawing':` in a component
+  // indistinguishable from a kind literal, which §15.2 forbids and its scanner
+  // cannot tell apart. The block is also the thing a FUTURE second canvas
+  // format would reuse, so naming it after one kind was wrong anyway.
+  | 'canvas'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —

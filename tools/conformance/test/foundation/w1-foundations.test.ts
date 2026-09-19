@@ -212,13 +212,19 @@ describe('W1.C generated catalog and reachability foundations', () => {
     }
   });
 
-  it('is total over 23 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+  it('is total over 24 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
     // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1);
     // 21 -> 23 (2026-09-03): `chat` (migration 176, Chat as an Entity) and
     // `container` (TM8-CONTAINERS-DESIGN, migration 177). Both landed the
     // same day; the number is MEASURED on the merged tree, not summed from
     // two branches that each saw only its own kind.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(23);
+    // 23 -> 24 (2026-09-17): `drawing` (migration 194, the Excalidraw canvas
+    // kind). MEASURED on this tree — main at 28c07b6e plus this lane — by
+    // counting the `core(` rows in kind-dispositions.ts, not by adding one to
+    // the number that was here. No other unmerged branch adds a kind: the one
+    // holding migrations 187..193 (feat/architecture_security) seeds no
+    // entity_kinds row.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(24);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
