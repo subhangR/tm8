@@ -120,6 +120,41 @@
   --pn-x-term-ansi-13: #CCA0D2;
   --pn-x-term-ansi-14: #86C4BA;
   --pn-x-term-ansi-15: #EFE9DB;
+  /* ---- DIAGRAM HUE WHEEL -------------------------------------------------
+     Eight categorical hues for mermaid diagram nodes. THIS IS THE ONE PLACE
+     THE PACKAGE HAS A CATEGORICAL RAMP: every other colour in tokens.css is
+     either paper/ink (one hue) or status (semantic — run/wait/block), and a
+     diagram needs neither. It needs "these boxes are different boxes".
+
+     WHY THEY ARE HERE AND NOT IN tokens.css. Same reason as everything else in
+     this file: tokens.css is a byte-verbatim transplant guarded by A0's
+     byte-equality test, so it cannot grow. The hex ban (§14) names this file
+     as the one auditable extension, and a diagram ramp is exactly the case it
+     was named for — colours the token ramp has no entry for.
+
+     WHY EIGHT. Mermaid's own node rotation has no upper bound, so the wheel
+     cycles; eight is the point where adjacent hues stay separable at the size
+     a flowchart node actually prints. Beyond that they read as "two blues".
+
+     TUNED FOR THE WARM PAPER, not picked off a colour wheel: each is pulled
+     toward the same ochre neutral the ANSI set uses, so a diagram sits ON the
+     paper rather than floating above it. They are STROKE values — the node
+     FILL is derived from them at render time by mixing into --pn-card, which
+     is why there is no second literal per hue. See kit/Mermaid.tsx.
+
+     Do NOT give these semantic meaning. Rotation is positional; a green box
+     does not mean "healthy". Authors who want meaning use mermaid `classDef`,
+     which wins over this ramp — mermaid emits classDef as an INLINE
+     !important, which outranks a stylesheet !important, so author intent is
+     preserved without this file knowing anything about it. */
+  --pn-x-dia-1: #4E7FB5;
+  --pn-x-dia-2: #2F8A77;
+  --pn-x-dia-3: #568B41;
+  --pn-x-dia-4: #B0801F;
+  --pn-x-dia-5: #B4603F;
+  --pn-x-dia-6: #B04F6D;
+  --pn-x-dia-7: #7159AC;
+  --pn-x-dia-8: #64707B;
 }
 
 /* Dark counterparts. The terminal blacks do NOT flip — that is the whole
@@ -140,4 +175,18 @@
   --pn-x-block-hover: #E89A89;
   /* MEASURED dark half of the reader prose pair (oracle T0-4:1345). */
   --pn-x-prose-ink: #D8D0BE;
+  /* Dark halves of the diagram wheel. These are NOT the light values
+     inverted: on the dark paper a node fill is the hue mixed INTO --pn-card
+     (near-black), so the hue itself has to carry the lightness the fill will
+     lose. Same eight positions, same order — a diagram keeps its colour
+     identity across a theme toggle, which matters because the toggle
+     re-renders it (see kit/Mermaid.tsx §4). */
+  --pn-x-dia-1: #7FAAD8;
+  --pn-x-dia-2: #57B6A0;
+  --pn-x-dia-3: #8CBE6E;
+  --pn-x-dia-4: #D8A857;
+  --pn-x-dia-5: #D98C6B;
+  --pn-x-dia-6: #D47E9B;
+  --pn-x-dia-7: #A997DB;
+  --pn-x-dia-8: #98A2AD;
 }
