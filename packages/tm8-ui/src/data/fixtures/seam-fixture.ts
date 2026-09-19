@@ -107,6 +107,7 @@ import {
   type ExecutionGitMergeInput,
   type ExecutionGitCherryPickInput,
   type ExecutionGitBranchInput,
+  type ExecutionGitStageInput,
   type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
@@ -116,6 +117,7 @@ import {
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
   type SessionGitBranchResult,
+  type SessionGitStageResult,
   type SessionGitStashResult,
   type SessionGitStashEntry,
   type SessionGitRollbackResult,
@@ -1258,7 +1260,47 @@ export function createFixtureSeam(): FixtureSeam {
           filesTruncated: false,
           diff: '',
           diffTruncated: false,
+          scope: 'session' as const,
+          path: null,
+          untracked: false,
         };
+  };
+  /**
+   * The fixture's model of the INDEX, and the only thing that makes stage and
+   * unstage provable without a git process: the XY status IS the state, so
+   * moving a file between staged and unstaged is a character swap. `??` ⇄ `A `
+   * because staging an untracked file is what makes git start tracking it.
+   */
+  const fxStagePath = (status: string): string =>
+    status === '??' ? 'A ' : `${status[1] === ' ' ? (status[0] ?? 'M') : (status[1] ?? 'M')} `;
+  const fxUnstagePath = (status: string): string =>
+    status[0] === 'A' ? '??' : ` ${status[0] === ' ' ? (status[1] ?? 'M') : (status[0] ?? 'M')}`;
+  const fxIsStaged = (f: SessionGitFile): boolean =>
+    f.status !== '??' && f.status[0] !== ' ' && f.status[0] !== '?';
+  // Untracked is NOT unstaged: `git diff` (the unstaged comparison) does not
+  // see a file git has never been told about. The counts and the scope filter
+  // both have to agree with git or the surface teaches the wrong model.
+  const fxIsUnstaged = (f: SessionGitFile): boolean =>
+    f.status !== '??' && f.status[1] !== ' ' && f.status[1] !== '?';
+  /** SAMPLE_DIFF sliced to ONE file, the way a path-scoped server diff answers. */
+  const fxFileDiff = (path: string): string => {
+    const blocks = SAMPLE_DIFF.split(/^diff --git /m).filter((b) => b.trim() !== '');
+    const hit = blocks.find((b) => b.split('\n')[0]?.endsWith(`b/${path}`));
+    if (hit !== undefined) return `diff --git ${hit}`;
+    // Untracked: no recorded state to compare against, so the whole file reads
+    // as an addition — exactly what `git diff --no-index -- /dev/null <path>`
+    // emits, and what the server answers for this case.
+    return [
+      `diff --git a/${path} b/${path}`,
+      'new file mode 100644',
+      'index 0000000..1111111',
+      '--- /dev/null',
+      `+++ b/${path}`,
+      '@@ -0,0 +1,2 @@',
+      '+scratch notes',
+      '+not yet tracked',
+      '',
+    ].join('\n');
   };
   const requireGitLane = (sessionId: EntityId): void => {
     requireSummary(sessionId);
@@ -2761,8 +2803,28 @@ export function createFixtureSeam(): FixtureSeam {
       if (workSessionId !== sessionLive.id) {
         return clone(gitUnavailable(workSessionId, 'diff') as SessionGitDiff);
       }
+      const scope = opts?.scope ?? 'session';
+      const wantPath = opts?.path ?? null;
       const hasWork = gitLane.dirty.length > 0 || gitLane.history.length > 1;
-      let diff = hasWork ? SAMPLE_DIFF : '';
+
+      // SCOPE IS A REAL FILTER HERE TOO. A fixture that answered the same
+      // bytes for `staged` and `unstaged` would let a caller wire the wrong
+      // scope and still pass — the projectBranches rule, applied to the
+      // narrowing params.
+      const inScope = gitLane.dirty.filter((f) =>
+        scope === 'staged' ? fxIsStaged(f) : scope === 'unstaged' ? fxIsUnstaged(f) : true,
+      );
+      const rows = (wantPath === null ? inScope : inScope.filter((f) => f.path === wantPath)).map((f) => ({
+        path: f.path,
+        additions: f.path.endsWith('.md') ? 2 : 7,
+        deletions: f.path.endsWith('.md') ? 0 : 2,
+      }));
+      const untracked = wantPath !== null && gitLane.dirty.some((f) => f.path === wantPath && f.status === '??');
+
+      let diff = '';
+      if (hasWork && rows.length > 0) {
+        diff = wantPath === null ? SAMPLE_DIFF : fxFileDiff(wantPath);
+      }
       let diffTruncated = false;
       if (opts?.maxBytes !== undefined && diff.length > opts.maxBytes) {
         diff = diff.slice(0, opts.maxBytes);
@@ -2778,17 +2840,19 @@ export function createFixtureSeam(): FixtureSeam {
         mergeBaseOid: gitLane.baseOid,
         headOid: gitHead(),
         stat: hasWork
-          ? { filesChanged: 2, additions: 9, deletions: 2 }
+          ? {
+              filesChanged: rows.length,
+              additions: rows.reduce((t, r) => t + r.additions, 0),
+              deletions: rows.reduce((t, r) => t + r.deletions, 0),
+            }
           : { filesChanged: 0, additions: 0, deletions: 0 },
-        files: hasWork
-          ? [
-              { path: 'packages/server/src/facade/handlers/projects.ts', additions: 7, deletions: 2 },
-              { path: 'notes/scratch.md', additions: 2, deletions: 0 },
-            ]
-          : [],
+        files: hasWork ? rows : [],
         filesTruncated: false,
         diff,
         diffTruncated,
+        scope,
+        path: wantPath,
+        untracked,
         checkedAt: FIXTURE_NOW,
       });
     },
@@ -4169,14 +4233,78 @@ export function createFixtureSeam(): FixtureSeam {
           oid: gitHead(), branch: gitLane.branch, previousOid, deletedUntracked: untracked,
         });
       },
+      /**
+       * STAGE / UNSTAGE — the index moves, the working tree does not. The
+       * fixture proves the second half by never touching anything but
+       * `status`: the path stays in `dirty` with the same name, which is
+       * exactly what a mixed reset leaves behind.
+       */
+      async gitStage(id, input: ExecutionGitStageInput): Promise<SessionGitStageResult> {
+        requireGitLane(id);
+        const paths = input.paths ?? [];
+        if (input.all !== true && paths.length === 0) {
+          throw new CollabError('invalid_input', `${input.action} needs pathspecs or all: true`, {
+            details: { reason: input.action === 'stage' ? 'nothing_to_stage' : 'nothing_to_unstage' },
+          });
+        }
+        const touched = (f: SessionGitFile): boolean => input.all === true || paths.includes(f.path);
+        gitLane.dirty = gitLane.dirty.map((f) =>
+          touched(f)
+            ? { ...f, status: input.action === 'stage' ? fxStagePath(f.status) : fxUnstagePath(f.status) }
+            : f,
+        );
+        const staged = gitLane.dirty.filter(fxIsStaged);
+        return clone({
+          sessionId: id,
+          worktreeId: 'fx-worktree-1' as EntityId,
+          action: input.action,
+          branch: gitLane.branch,
+          paths: [...paths],
+          all: input.all === true,
+          staged,
+          files: [...gitLane.dirty],
+          filesTruncated: false,
+          dirty: {
+            staged: staged.length,
+            unstaged: gitLane.dirty.filter((f) => f.status !== '??' && f.status[1] !== ' ').length,
+            untracked: gitLane.dirty.filter((f) => f.status === '??').length,
+            total: gitLane.dirty.length,
+          },
+          checkedAt: FIXTURE_NOW,
+        });
+      },
       async gitCommit(id, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
         requireGitLane(id);
+        // THE SAME REFUSAL THE SERVER MAKES: a path-scoped commit that would
+        // also sweep up an already-staged file it was not asked about is
+        // refused by name, not silently widened. Mirrored here because the UI
+        // has to render that refusal, and it can only be tested if the double
+        // can produce it.
+        if (input.all !== true && (input.paths?.length ?? 0) > 0) {
+          const outside = gitLane.dirty
+            .filter((f) => fxIsStaged(f) && input.paths?.includes(f.path) !== true)
+            .map((f) => f.path);
+          if (outside.length > 0) {
+            throw new CollabError(
+              'conflict',
+              `commit refused: ${outside.length} staged path(s) are outside the selection`,
+              {
+                details: {
+                  reason: 'staged_outside_selection',
+                  outsidePaths: outside,
+                  outsideCount: outside.length,
+                  hint: 'unstage them, or include them in paths',
+                },
+              },
+            );
+          }
+        }
         const staging = input.all === true
           ? [...gitLane.dirty]
-          : gitLane.dirty.filter((f) => input.paths?.includes(f.path));
+          : gitLane.dirty.filter((f) => input.paths?.includes(f.path) === true || fxIsStaged(f));
         if (staging.length === 0) {
           throw new CollabError('conflict', 'nothing is staged', {
-            details: { hint: 'stage changes first' },
+            details: { reason: 'nothing_staged', hint: 'stage changes first' },
           });
         }
         gitLane.serial += 1;

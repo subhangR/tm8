@@ -36,11 +36,16 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discu
  * clamp — and the panel that reads it is one component either way.
  */
 export type ContentSurface =
-  | 'terminal' | 'transcript' | 'git' | 'debug' | 'graph'
+  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph'
   | 'screen' | 'logs';
 export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'terminal',
   'transcript',
+  // `changes` is the REVIEW surface — which files changed, what is in them,
+  // what goes into the next commit. `git` next to it is the LANE surface —
+  // which branch this is, how far it has moved, and the verbs that move it.
+  // Two questions, two surfaces; folding them made one panel with two jobs.
+  'changes',
   'git',
   'debug',
   'graph',

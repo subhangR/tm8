@@ -67,7 +67,10 @@ import { createOutput } from '../src/output.js';
 // containers.stream and containers.proxy — are deliberately commandless, which
 // is why the commandless subtraction below moves 25 -> 27. MEASURED on this
 // tree, not carried from the design.
-const EXPECTED_ROWS = 197;
+// 197 -> 198 (Changes screen Phase 1): execution.gitStage, public and
+// deliberately commandless like the rest of its family, so the commandless
+// subtraction below moves 26 -> 27. MEASURED from this file's own failing run.
+const EXPECTED_ROWS = 198;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -133,7 +136,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 197 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 198 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -172,7 +175,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('193 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('194 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
@@ -181,7 +184,9 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 193, composite: 1, internal: 1, reserved: 2 });
+    // 193 -> 194 (Changes screen Phase 1): execution.gitStage is public, like
+    // every other row in the session git rail. MEASURED from the failing run.
+    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -214,9 +219,11 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
       'credentials.status',
-      // The nine execution.git* rows are deliberately commandless (see the
+      // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
+      // 9 -> 10 (Changes screen Phase 1): `execution.gitStage` joins them for
+      // the same reason — it is the index half of a verb the CLI already has.
       'execution.gitBranch',
       'execution.gitCheckpoint',
       'execution.gitCherryPick',
@@ -224,6 +231,7 @@ const COMMANDLESS_OPERATIONS = [
       'execution.gitDiff',
       'execution.gitMerge',
       'execution.gitRollback',
+      'execution.gitStage',
       'execution.gitStash',
       'execution.gitStatus',
       'execution.prompt',

@@ -1635,7 +1635,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.gitCommit': {
     cmd: null,
-    sum: 'Stage (optionally) and commit exactly what is staged in a session worktree',
+    sum: 'Commit exactly what is staged in a session worktree; a path-scoped commit refuses when other paths are already staged',
     authz: 'entity',
     input: 'bound',
     side: 'execution',
@@ -1668,6 +1668,15 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     side: 'execution',
     tags: ['git', 'branch', 'create', 'rename', 'delete', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitStage': {
+    cmd: null,
+    sum: 'Stage or unstage paths in a session worktree without committing; unstage is a path-scoped mixed reset that moves no working-tree bytes',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'stage', 'unstage', 'index', 'reset', 'worktree'],
     reason: 'cli_runs_git_locally',
   },
   'execution.gitStash': {
@@ -2505,7 +2514,12 @@ export const CATALOG_DIGEST =
   // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
   // adjusted from either side of the merge — neither branch's value is
   // correct once both landed.
-  'sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa';
+  // Re-measured 198 (+ execution.gitStage, the Changes screen's index verb).
+  // READ OUT OF THE FAILING RUN: `discovery-operations.test.ts` recomputes
+  // `sha256(JSON.stringify(OPERATIONS))` and prints it on the Expected line;
+  // this is that string, not a hand-derived one. The regenerated conformance
+  // manifest agrees with it independently.
+  'sha256:10d20505efff9b689aa116cc651d8588298f8738863af8e9e4b2284b54c1b7f9';
 
 export const GRAMMAR_VERSION = '2';
 

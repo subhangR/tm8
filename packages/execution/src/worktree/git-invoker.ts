@@ -61,6 +61,17 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
           // Never let an interactive credential/editor prompt hang a server.
           GIT_TERMINAL_PROMPT: '0',
           GIT_EDITOR: 'true',
+          // DELIBERATELY NOT `GIT_LITERAL_PATHSPECS` HERE. A pathspec is a
+          // glob and `--` does not change that, so every caller-supplied
+          // exact path in this package passes `--literal-pathspecs` before
+          // its subcommand (see `stage`, `unstage`, `file-history`, and the
+          // diff reads in the server facade). Setting it as an ENV default
+          // looked like the safer choke point and is not: the variable is
+          // inherited by git's own internals, and `git stash push -u` builds
+          // pathspecs of its own — under a literal default it stops matching
+          // untracked content and silently leaves it in the worktree.
+          // Measured: `execution/test/spawn-safety` stash case regresses.
+          // The guarantee belongs at the call sites that own the path.
         },
       },
       (error, stdout, stderr) => {

@@ -65,6 +65,7 @@ import type {
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
   ExecutionGitCherryPickInput, ExecutionGitBranchInput, ExecutionGitStashInput,
+  ExecutionGitStageInput,
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
@@ -2846,6 +2847,18 @@ export const ExecutionGitRollbackInputSchema: z.ZodType<ExecutionGitRollbackInpu
 export const ExecutionGitCommitInputSchema: z.ZodType<ExecutionGitCommitInput> = z.object({
   ...commandContextShape,
   message: z.string().min(1),
+  paths: z.array(z.string().min(1)).optional(),
+  all: z.boolean().optional(),
+}).strict();
+
+/**
+ * Stage/unstage. `paths` and `all` are both optional HERE and the SERVER
+ * refuses the empty pair — the refusal names which verb wanted what
+ * (`nothing_to_stage` / `nothing_to_unstage`), which a schema error could not.
+ */
+export const ExecutionGitStageInputSchema: z.ZodType<ExecutionGitStageInput> = z.object({
+  ...commandContextShape,
+  action: z.enum(['stage', 'unstage']),
   paths: z.array(z.string().min(1)).optional(),
   all: z.boolean().optional(),
 }).strict();

@@ -102,7 +102,10 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
-    expect(rows).toHaveLength(197);
+    // 197 -> 198 (Changes screen Phase 1): execution.gitStage, the index verb
+    // behind the Changes surface — public, v1, deliberately commandless like the
+    // rest of the session git rail. MEASURED from this file's own failing run.
+    expect(rows).toHaveLength(198);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -121,7 +124,9 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 135 -> 136: execution.dispatch, a v1 row, joins `none` too.
     // 142 -> 148 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 170 -> 195: all 25 containers.* rows are non-reserved. MEASURED.
-    expect(unknownRows).toHaveLength(195);
+    // 195 -> 196 (Changes screen Phase 1): execution.gitStage is a v1,
+    // non-reserved row, so it joins this population too. MEASURED.
+    expect(unknownRows).toHaveLength(196);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

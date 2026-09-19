@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3b2b97fc54418ed191f5bd2dbaf48f5176d0fa404b4d6ee397546cf3a1eedafa",
+  "catalogDigest": "sha256:10d20505efff9b689aa116cc651d8588298f8738863af8e9e4b2284b54c1b7f9",
   "catalog": {
-    "total": 197,
-    "v1": 195,
+    "total": 198,
+    "v1": 196,
     "reserved": 2,
-    "http": 195,
+    "http": 196,
     "ws": 1,
-    "registerableV1Http": 193,
+    "registerableV1Http": 194,
     "methods": {
       "GET": 65,
-      "POST": 98,
+      "POST": 99,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 69,
-      "command": 126,
+      "command": 127,
       "stream": 2
     },
-    "uniqueNames": 197,
-    "uniqueBindings": 196
+    "uniqueNames": 198,
+    "uniqueBindings": 197
   },
   "reservedOperations": [
     "search.query",
@@ -1034,6 +1034,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.gitStage",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/stage",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.gitMerge",
         "method": "POST",
         "path": "/v2/work-sessions/:workSessionId/git/merge",
@@ -1783,7 +1790,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 165
+    "unimplementedV1Http": 166
   },
   "schemas": {
     "additive": {
@@ -3938,6 +3945,23 @@
           "execution",
           "git",
           "commit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitStage",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitStage",
+        "intentTags": [
+          "execution",
+          "git",
+          "stage"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

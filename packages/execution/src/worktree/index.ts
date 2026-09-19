@@ -37,6 +37,7 @@ export {
   rollback,
   stage,
   stagedFiles,
+  unstage,
   type ChangedFile,
   type CheckpointResult,
   type CommitResult,

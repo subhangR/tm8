@@ -20,7 +20,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   // 136 -> 137 (2026-08-09): execution.dispatch. NOTE this counts ROUTES, not
   // catalog rows — the catalog is 138, of which `events.subscribe` is WS and
   // never becomes an HTTP route.
-  expect(h.operations).toBe(195) /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
+  expect(h.operations).toBe(196) /* 195→196 2026-09-19 Changes screen Phase 1: execution.gitStage mounts one more HTTP route. MEASURED twice, never hand-derived: a live /health in server test/w3/g15-public.test.ts now reports 196, and `new Router().mounted().length` over the rebuilt MOUNTED_OPERATIONS is 196 (197 rows, one of them WS). */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });
