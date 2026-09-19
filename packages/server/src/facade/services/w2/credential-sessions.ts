@@ -133,6 +133,28 @@ export interface FinishedCredentialSession {
   terminated: boolean;
 }
 
+/** What one pass of `closeSession` established. */
+interface CloseOutcome {
+  /** Null ONLY when the probe itself threw; `failure` then says why. */
+  probe: ProbeResult | null;
+  stored: boolean;
+  terminated: boolean;
+  /** The first error that occurred, or null. Returned, never thrown — see `closeSession`. */
+  failure: unknown;
+}
+
+/** The row `reportClosedSession` reads for a session this node no longer holds. */
+interface ClosedSessionRow {
+  provider: string;
+}
+
+/** The persisted index row, read back when the terminal is already gone. */
+interface StoredCredentialRow {
+  login: string | null;
+  auth_method: string | null;
+  status: string;
+}
+
 /** What this node remembers about a login terminal it started. */
 interface RegistryEntry {
   workSessionId: string;
@@ -205,6 +227,27 @@ export class W2CredentialSessionsService {
   /** This node's live login terminals. See the sweep discussion in the header. */
   private readonly registry = new Map<string, RegistryEntry>();
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Work sessions a close is IN FLIGHT for.
+   *
+   * Closing stopped being instantaneous once every path began probing: it
+   * terminates, spawns a vendor CLI and writes two rows, so a second path can
+   * now reach the same entry while the first is still awaiting. Deleting from
+   * `registry` up front would lose the entry if the close then failed, so the
+   * claim is held separately — the second caller recognises "someone else has
+   * it" and reads the persisted answer instead of racing for a second probe.
+   */
+  private readonly closing = new Set<string>();
+
+  /**
+   * Re-entrancy guard for the interval sweep.
+   *
+   * `setInterval` does not wait for an async tick, and a sweep that now runs
+   * probes can comfortably outlive its own 30s period. Without this, two
+   * sweeps interleave over one registry and race each other's closes.
+   */
+  private sweeping = false;
 
   constructor(options: W2CredentialSessionsServiceOptions) {
     this.db = options.db;
@@ -395,33 +438,32 @@ export class W2CredentialSessionsService {
     principal: CredentialPrincipal,
   ): Promise<FinishedCredentialSession> {
     const entry = this.registry.get(input.workSessionId);
-    if (!entry) {
-      throw new CollabError(
-        'not_found',
-        'no live credential session on this node for that work session',
-      );
+    // Either the session was already closed (the sweep reached it first, or
+    // this is a second click), or another path is closing it right now. Both
+    // used to answer `not_found`, which is what made a login that HAD
+    // succeeded read to the member as a login that failed.
+    if (!entry) return this.reportClosedSession(input.workSessionId, principal);
+
+    const outcome = await this.closeSession(entry, principal);
+    if (!outcome) return this.reportClosedSession(input.workSessionId, principal);
+
+    // The member is here and waiting, so unlike the background paths they get
+    // the failure rather than a log line. The row is already finished and the
+    // slot already released by this point, so the error costs them nothing but
+    // the truth: retrying Connect works.
+    if (!outcome.probe) {
+      throw outcome.failure instanceof Error
+        ? outcome.failure
+        : new CollabError('upstream_unavailable', String(outcome.failure));
     }
 
-    // Terminate BEFORE probing. The vendor CLIs write their credential file on
-    // completion and the process may still hold a partially written one; and a
-    // live `claude`/`gh` holding the config directory can race the probe's read.
-    const outcome = this.launcher.terminate(entry.workSessionId);
-    const terminated = outcome === 'killed';
-
-    const probe = await runCredentialProbe({
+    return {
+      workSessionId: entry.workSessionId,
       provider: entry.provider,
-      env: entry.env,
-      cwd: entry.homeDir,
-      ...(this.probeRunner ? { run: this.probeRunner } : {}),
-      ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
-    });
-
-    const stored = await this.persistProbe(principal, probe, entry);
-
-    await this.finishRow(principal, entry.workSessionId);
-    this.registry.delete(entry.workSessionId);
-
-    return { workSessionId: entry.workSessionId, provider: entry.provider, probe, stored, terminated };
+      probe: outcome.probe,
+      stored: outcome.stored,
+      terminated: outcome.terminated,
+    };
   }
 
   /**
@@ -470,6 +512,186 @@ export class W2CredentialSessionsService {
   }
 
   // -------------------------------------------------------------------------
+  // the one close path
+  // -------------------------------------------------------------------------
+
+  /**
+   * TERMINATE, PROBE, PERSIST, STAMP — the single way a credential session ends.
+   *
+   * Before this existed there were three ways to close one and only `finish()`
+   * — the path the member's own click reaches — probed and persisted. The
+   * sweep and the reclaim called `finishRow` alone. So a login that SUCCEEDED
+   * and then exited, which is what every one of these CLIs does on success,
+   * was recorded as closed with no credential row written: the credential sat
+   * valid on disk while nothing referenced it, no config dir was injected at
+   * the member's next spawn, and the settings card still offered to Connect.
+   *
+   * The sweep could never have told those apart by watching the process. A
+   * successful `claude auth login` exits 0 and so does an abandoned one. That
+   * is exactly why `finish()` probes instead of reading an exit code, and
+   * exactly why every other path has to probe too.
+   *
+   * THIS NEVER THROWS. The close must complete even when the probe or the
+   * persist fails, because leaving `finished_at` null holds the
+   * one-live-per-pair slot and locks the member out of retrying — the lockout
+   * R10 added the sweep to prevent. The failure is RETURNED instead, so
+   * `finish()` can surface it to the member while the background paths log it.
+   *
+   * Returns null when another path already holds the close claim.
+   */
+  private async closeSession(
+    entry: RegistryEntry,
+    principal: CredentialPrincipal,
+  ): Promise<CloseOutcome | null> {
+    if (this.closing.has(entry.workSessionId)) return null;
+    this.closing.add(entry.workSessionId);
+    try {
+      // Terminate BEFORE probing. The vendor CLIs write their credential file
+      // on completion and the process may still hold a partially written one;
+      // and a live `claude`/`gh` holding the config directory can race the
+      // probe's read. `kill` answers 'not_found' rather than throwing for a
+      // PTY that already died, so this is safe on the sweep's gone path too.
+      const terminated = this.launcher.terminate(entry.workSessionId) === 'killed';
+
+      let probe: ProbeResult | null = null;
+      let stored = false;
+      let failure: unknown = null;
+
+      try {
+        probe = await runCredentialProbe({
+          provider: entry.provider,
+          env: entry.env,
+          cwd: entry.homeDir,
+          ...(this.probeRunner ? { run: this.probeRunner } : {}),
+          ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+        });
+        stored = await this.persistProbe(principal, probe, entry);
+      } catch (error) {
+        failure = error;
+      }
+
+      try {
+        await this.finishRow(principal, entry.workSessionId);
+      } catch (error) {
+        // Keep the probe's failure if there was one: it explains the outcome
+        // the member cares about, where this one only explains bookkeeping.
+        failure ??= error;
+      } finally {
+        this.registry.delete(entry.workSessionId);
+      }
+
+      return { probe, stored, terminated, failure };
+    } finally {
+      this.closing.delete(entry.workSessionId);
+    }
+  }
+
+  /**
+   * Report a session this node no longer holds, from what was PERSISTED.
+   *
+   * A member's `finish()` can legitimately arrive after the session is already
+   * closed — the sweep got there first, or they clicked twice. Answering
+   * `not_found` is what made a successful login look like a failed one, so the
+   * persisted row is consulted rather than guessed at.
+   *
+   * WHAT THIS REPORTS IS NARROWER THAN A PROBE, deliberately. It says a
+   * credential row EXISTS, not that the vendor would accept it this second,
+   * and `status` is read off the row rather than assumed `active` so a row
+   * written as stale is never upgraded on the way out. `detail` says which
+   * kind of answer this is, because "connected, from the stored record" and
+   * "connected, just measured" are not the same claim.
+   */
+  private async reportClosedSession(
+    workSessionId: string,
+    principal: CredentialPrincipal,
+  ): Promise<FinishedCredentialSession> {
+    const sessions = await this.db.query<ClosedSessionRow>(
+      principal.claims,
+      `select provider
+         from public.credential_sessions
+        where work_session_id = $1`,
+      [workSessionId],
+    );
+    const session = sessions[0];
+    // RLS already scopes this to the caller's own rows, so no row really does
+    // mean "never existed, or not yours" — the original `not_found`, still the
+    // right answer.
+    if (!session) {
+      throw new CollabError(
+        'not_found',
+        'no live credential session on this node for that work session',
+      );
+    }
+
+    const provider = session.provider as CredentialProvider;
+    const probe = await this.readStoredCredential(provider, principal);
+    return { workSessionId, provider, probe, stored: probe.connected, terminated: false };
+  }
+
+  /**
+   * The persisted answer for one provider, shaped as a `ProbeResult`.
+   *
+   * The two credential tables are split by SHAPE, not by accident (R6/093), so
+   * this reads whichever one holds the provider: GitHub's string-shaped token
+   * lives in `account_git_credentials`, the four file-shaped providers in
+   * `account_agent_credentials`. Reading only the second would report every
+   * successful GitHub connect as not connected.
+   */
+  private async readStoredCredential(
+    provider: CredentialProvider,
+    principal: CredentialPrincipal,
+  ): Promise<ProbeResult> {
+    const disconnected: ProbeResult = {
+      provider,
+      connected: false,
+      status: 'active',
+      login: null,
+      authMethod: null,
+      detail: 'the login terminal was already closed and no credential was recorded',
+    };
+
+    if (provider === 'github') {
+      const rows = await this.db.query<{ login: string }>(
+        principal.claims,
+        `select login from public.account_git_credentials where provider = 'github' limit 1`,
+      );
+      const row = rows[0];
+      if (!row) return disconnected;
+      return {
+        provider,
+        connected: true,
+        status: 'active',
+        login: row.login,
+        authMethod: 'oauth',
+        detail: 'recorded by an earlier close of this login terminal',
+      };
+    }
+
+    const rows = await this.db.query<StoredCredentialRow>(
+      principal.claims,
+      `select login, auth_method, status
+         from public.account_agent_credentials
+        where provider = $1
+        limit 1`,
+      [provider],
+    );
+    const row = rows[0];
+    if (!row) return disconnected;
+    return {
+      provider,
+      // Only an `active` row is a connection. A `stale` or `revoked` row is
+      // exactly what `DbAgentCredentialHome.resolve` refuses to inject, and
+      // calling it connected here would put a Connected card in front of a
+      // member whose next agent will start unauthenticated.
+      connected: row.status === 'active',
+      status: row.status === 'active' ? 'active' : 'stale',
+      login: row.login,
+      authMethod: row.auth_method,
+      detail: 'recorded by an earlier close of this login terminal',
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // the sweep (R10 element 1) and the reclaim (R10 element 2)
   // -------------------------------------------------------------------------
 
@@ -495,41 +717,60 @@ export class W2CredentialSessionsService {
   }
 
   /**
-   * Finish every registry entry that is expired or has lost its PTY.
+   * Close every registry entry that is expired or has lost its PTY.
    *
    * Both predicates, not just expiry: a terminal whose process died on its own
-   * (the member typed `exit`, or the CLI crashed) is finished immediately
-   * rather than held until its TTL, so the one-live-per-pair slot comes back at
-   * once and Connect works on the second click.
+   * is closed immediately rather than held until its TTL, so the
+   * one-live-per-pair slot comes back at once and Connect works on the second
+   * click.
+   *
+   * THE `gone` BRANCH IS THE SUCCESS PATH, which is the whole reason this now
+   * goes through `closeSession`. The original comment here read "the member
+   * typed `exit`, or the CLI crashed" — but the commonest way a login terminal
+   * loses its PTY is the member COMPLETING the login, because every one of
+   * these CLIs exits when it is done. Finishing the row without probing threw
+   * that success away.
    */
   async sweepNow(): Promise<number> {
-    const now = this.now();
-    let swept = 0;
-    for (const entry of [...this.registry.values()]) {
-      const expired = entry.expiresAtMs <= now;
-      const gone = !this.launcher.hasLiveTerminal(entry.workSessionId);
-      if (!expired && !gone) continue;
+    // A tick that is still running owns the registry; a second one would race
+    // it entry-for-entry now that closing is asynchronous.
+    if (this.sweeping) return 0;
+    this.sweeping = true;
+    try {
+      const now = this.now();
+      let swept = 0;
+      for (const entry of [...this.registry.values()]) {
+        const expired = entry.expiresAtMs <= now;
+        const gone = !this.launcher.hasLiveTerminal(entry.workSessionId);
+        if (!expired && !gone) continue;
 
-      // Terminate first, so `finished_at` is never stamped on a row whose PTY
-      // is still streaming. R7's single lifecycle writer — the PTY-exit path —
-      // then writes `work_sessions.status` on its own.
-      if (expired) this.launcher.terminate(entry.workSessionId);
+        // `closeSession` terminates first either way, so `finished_at` is
+        // never stamped on a row whose PTY is still streaming. R7's single
+        // lifecycle writer — the PTY-exit path — still writes
+        // `work_sessions.status` on its own.
+        const outcome = await this.closeSession(entry, entry.principal);
+        // Another path claimed it between the snapshot and here. It closes it.
+        if (!outcome) continue;
 
-      try {
-        await this.finishRow(entry.principal, entry.workSessionId);
-      } catch (error) {
-        // Best-effort by design. A row this node cannot finish is picked up by
-        // the member's own reclaim next time they connect, and the amended cap
-        // predicate ages it out regardless.
-        this.logger?.warn?.('credential sweep could not finish a row', {
-          workSessionId: entry.workSessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        if (outcome.failure) {
+          // Best-effort by design, and `closeSession` has already stamped the
+          // row and freed the slot. A credential that failed to persist is
+          // re-probed the next time the member connects.
+          this.logger?.warn?.('credential sweep could not close a session cleanly', {
+            workSessionId: entry.workSessionId,
+            provider: entry.provider,
+            error:
+              outcome.failure instanceof Error
+                ? outcome.failure.message
+                : String(outcome.failure),
+          });
+        }
+        swept += 1;
       }
-      this.registry.delete(entry.workSessionId);
-      swept += 1;
+      return swept;
+    } finally {
+      this.sweeping = false;
     }
-    return swept;
   }
 
   /**
@@ -574,10 +815,35 @@ export class W2CredentialSessionsService {
       // in progress — most likely this member's other tab, and it holds a
       // different index slot. It is left alone.
       if (live && expiresAtMs > now && !supersede) continue;
-      if (live) this.launcher.terminate(row.work_session_id);
 
+      // When this node still remembers the terminal, close it PROPERLY — the
+      // member may have completed the login in the tab they are superseding,
+      // and the entry carries the env the probe needs to find out. Without
+      // this, clicking Connect a second time destroys the credential the first
+      // click had already obtained.
+      const entry = this.registry.get(row.work_session_id);
+      if (entry) {
+        const outcome = await this.closeSession(entry, principal);
+        if (outcome?.failure) {
+          this.logger?.warn?.('credential reclaim could not close a session cleanly', {
+            workSessionId: row.work_session_id,
+            error:
+              outcome.failure instanceof Error
+                ? outcome.failure.message
+                : String(outcome.failure),
+          });
+        }
+        reclaimed += 1;
+        continue;
+      }
+
+      // No registry entry: a row left by a previous process, or by another
+      // node. There is no env to probe with here — rebuilding one is possible
+      // and is deliberately left out of this change — so the row is stamped as
+      // before. This is the one remaining close that cannot persist, and it
+      // only covers sessions this node never launched.
+      if (live) this.launcher.terminate(row.work_session_id);
       await this.finishRow(principal, row.work_session_id);
-      this.registry.delete(row.work_session_id);
       reclaimed += 1;
     }
     return reclaimed;
