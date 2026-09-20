@@ -522,6 +522,20 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       active: false,
       outrankedBy: null,
     });
+
+    // AND `gemini` SAYS NOTHING, WHICH IS THE POINT.
+    //
+    // It is an api-key provider like the three above — the member pastes a key
+    // and tm8 stores it — but it is the NATIVE provider of the `gemini` tool
+    // rather than a redirection of somebody else's. There is no counterpart to
+    // name and nothing to warn about, so the card carries `null` exactly as
+    // anthropic's and openai's do.
+    //
+    // A `routing` object here would be worse than useless: every string the UI
+    // renders from one is a displacement claim ("connecting this points X at
+    // Y"), and Gemini displaces nobody. The shape of the credential is not the
+    // thing this field describes.
+    expect(routingOf.get('gemini')).toBeNull();
   });
 
   it('says on BOTH cards which one is actually serving claude-code', async () => {

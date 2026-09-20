@@ -64,7 +64,7 @@ import type { CredentialProvider } from './credential-env.js';
  * branches on shape should fail to compile when a new one is added rather than
  * fall through a default that silently treats it as file-shaped.
  */
-export type ApiKeyCredentialProvider = 'kimi' | 'groq' | 'grok';
+export type ApiKeyCredentialProvider = 'kimi' | 'groq' | 'grok' | 'gemini';
 
 /**
  * THIS ARRAY'S ORDER IS THE PRECEDENCE RULE, and it is load-bearing.
@@ -86,11 +86,34 @@ export type ApiKeyCredentialProvider = 'kimi' | 'groq' | 'grok';
  * A member choosing between two connected backends is a picker this codebase
  * does not have yet; until it does, the rule is fixed and visible rather than
  * fixed and hidden.
+ *
+ * MEMBERSHIP OF THIS LIST NO LONGER IMPLIES BACKEND-HOOD, AND THAT IS THE POINT
+ * OF `gemini` BEING IN IT.
+ *
+ * This union used to fuse two independent facts, because until now they always
+ * travelled together: "the credential is a key the member pastes, stored by
+ * tm8" and "connecting it redirects some other provider's agent tool". Gemini
+ * has the first and not the second. It is the NATIVE provider of the `gemini`
+ * tool — see `agentTools: ['gemini']` in `spawn/agent-credentials.ts` — so it
+ * displaces nobody and outranks nobody; it simply has a second way to
+ * authenticate that tm8 could not previously accept.
+ *
+ * So `API_KEY_BACKEND_ROUTING` is now `Record<…, ApiKeyBackendRouting | null>`,
+ * and `gemini` holds a REQUIRED null rather than being absent from the table.
+ * Required-and-nullable for the same reason `CredentialRoutingView.outrankedBy`
+ * is: an omitted key is indistinguishable from a forgotten one, while an
+ * explicit `null` is a statement the next person has to make on purpose. Every
+ * site that read routing off an api-key provider now has to answer "and if it
+ * backs nothing?", which is exactly the question that was previously being
+ * answered by accident.
  */
 export const API_KEY_CREDENTIAL_PROVIDERS: readonly ApiKeyCredentialProvider[] = [
   'kimi',
   'groq',
   'grok',
+  // Appended, under the rule stated above. It changes no existing precedence:
+  // it backs no tool, so it never appears in `apiKeyBackendsForAgentTool`.
+  'gemini',
 ];
 
 /** Narrowing helper so callers branch on the union rather than on a string. */
@@ -132,6 +155,30 @@ interface ApiKeyProviderDefinition {
    * and still verifies rather than refusing outright.
    */
   readonly keyPrefix: string;
+  /**
+   * HOW the key is presented to `verifyUrl`. Not cosmetic — sending the wrong
+   * one is an authentication failure that looks exactly like a bad key.
+   *
+   * `bearer` is `Authorization: Bearer <key>`, which the three OpenAI- and
+   * Anthropic-wire vendors accept. Google does not: its public generative
+   * endpoint takes `x-goog-api-key`, measured in the installed
+   * `@google/gemini-cli` 0.58.0 bundle, which references `x-goog-api-key`
+   * alongside `generativelanguage.googleapis.com` and never a bearer header for
+   * that host. A Gemini key sent as a bearer token 401s, and the probe would
+   * then report a working key as rejected.
+   */
+  readonly verifyAuth: 'bearer' | 'x-goog-api-key';
+  /**
+   * The variable the provider's OWN CLI reads to pick up a pasted key, or null
+   * when no such CLI exists.
+   *
+   * Distinct from `ApiKeyBackendRouting.keyVar`, which names the variable of the
+   * tool being REDIRECTED. For a backend the two differ by nature — Kimi's key
+   * goes out as `ANTHROPIC_AUTH_TOKEN` because it is impersonating Anthropic's
+   * wire. For a native provider there is nothing to impersonate, so the key
+   * travels under the vendor's own name.
+   */
+  readonly keyEnvVar: string | null;
 }
 
 const API_KEY_PROVIDER_DEFINITIONS = {
@@ -140,12 +187,17 @@ const API_KEY_PROVIDER_DEFINITIONS = {
     consoleUrl: 'https://platform.moonshot.ai/console/api-keys',
     verifyUrl: 'https://api.moonshot.ai/v1/models',
     keyPrefix: 'sk-',
+    verifyAuth: 'bearer',
+    // No Moonshot CLI exists; the key only ever travels as a backend override.
+    keyEnvVar: null,
   },
   groq: {
     displayName: 'Groq',
     consoleUrl: 'https://console.groq.com/keys',
     verifyUrl: 'https://api.groq.com/openai/v1/models',
     keyPrefix: 'gsk_',
+    verifyAuth: 'bearer',
+    keyEnvVar: null,
   },
   // GROK IS xAI, AND IT IS NOT GROQ. The two names differ by one transposed
   // letter, serve different companies, and both speak an OpenAI-compatible
@@ -159,6 +211,43 @@ const API_KEY_PROVIDER_DEFINITIONS = {
     consoleUrl: 'https://console.x.ai/team/default/api-keys',
     verifyUrl: 'https://api.x.ai/v1/models',
     keyPrefix: 'xai-',
+    verifyAuth: 'bearer',
+    keyEnvVar: null,
+  },
+  // THE FIRST NATIVE PROVIDER IN THIS TABLE, and every field below differs from
+  // the three above for that reason rather than by vendor accident.
+  //
+  // Gemini was already a tm8 provider, and it was already broken here. The CLI
+  // it wraps supports FOUR auth modes — measured in the installed
+  // `@google/gemini-cli` 0.58.0 bundle, whose auth enum carries
+  // `LOGIN_WITH_GOOGLE`, `USE_GEMINI`, `USE_VERTEX_AI` and `CLOUD_SHELL` — and
+  // tm8's probe recognised exactly one of them, by looking for the
+  // `.gemini/oauth_creds.json` that only `LOGIN_WITH_GOOGLE` writes. A member
+  // authenticating the documented `USE_GEMINI` way, with an AI Studio key, was
+  // told their credential state was unknown forever, because a `stale` probe
+  // persists no row. This entry is the missing second mode.
+  //
+  // `verifyUrl` is the PUBLIC, documented generative endpoint. It is emphatically
+  // not `cloudcode-pa.googleapis.com/v1internal`, which is what the third-party
+  // Antigravity bridges call — that route requires shipping Google's extracted
+  // OAuth client secret and spoofing a first-party IDE User-Agent, and tm8 will
+  // not do either.
+  //
+  // `keyPrefix` is `AIza`, the Google API-key prefix. Note it is shared with
+  // other Google API keys, so it is even weaker evidence than the vendor-unique
+  // prefixes above — which only makes the advisory-not-authoritative rule on
+  // `keyPrefix` more important here, not less.
+  gemini: {
+    displayName: 'Gemini',
+    consoleUrl: 'https://aistudio.google.com/apikey',
+    verifyUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
+    keyPrefix: 'AIza',
+    verifyAuth: 'x-goog-api-key',
+    // `GEMINI_API_KEY` over `GOOGLE_API_KEY`: the bundle reads both, but the
+    // former is Gemini-specific while the latter is a general Google variable
+    // that may already be set in the environment for an unrelated service.
+    // Writing the specific one cannot collide with something else's credential.
+    keyEnvVar: 'GEMINI_API_KEY',
   },
 } as const satisfies Record<ApiKeyCredentialProvider, ApiKeyProviderDefinition>;
 
@@ -193,6 +282,29 @@ export const API_KEY_PROVIDER_KEY_PREFIX: Readonly<
     Object.entries(API_KEY_PROVIDER_DEFINITIONS).map(([p, d]) => [p, d.keyPrefix]),
   ),
 ) as Readonly<Record<ApiKeyCredentialProvider, string>>;
+
+/** How each provider's key is presented to its verify endpoint. */
+export const API_KEY_PROVIDER_VERIFY_AUTH: Readonly<
+  Record<ApiKeyCredentialProvider, 'bearer' | 'x-goog-api-key'>
+> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(API_KEY_PROVIDER_DEFINITIONS).map(([p, d]) => [p, d.verifyAuth]),
+  ),
+) as Readonly<Record<ApiKeyCredentialProvider, 'bearer' | 'x-goog-api-key'>>;
+
+/**
+ * The header a verified key is presented under, built from `verifyAuth` so the
+ * probe and the paste harness cannot drift apart into two spellings of it.
+ */
+export function apiKeyVerifyHeaders(
+  provider: ApiKeyCredentialProvider,
+  apiKey: string,
+): Record<string, string> {
+  const base = { Accept: 'application/json' };
+  return API_KEY_PROVIDER_VERIFY_AUTH[provider] === 'x-goog-api-key'
+    ? { ...base, 'x-goog-api-key': apiKey }
+    : { ...base, Authorization: `Bearer ${apiKey}` };
+}
 
 // ---------------------------------------------------------------------------
 // ROUTING — which existing agent tool a connected key redirects, and how.
@@ -280,7 +392,17 @@ const API_KEY_BACKEND_ROUTING = {
     baseUrl: 'https://api.x.ai/v1',
     keyVar: 'OPENAI_API_KEY',
   },
-} as const satisfies Record<ApiKeyCredentialProvider, ApiKeyBackendRouting>;
+  // BACKS NOTHING, ON PURPOSE. Gemini is the native provider of the `gemini`
+  // tool, so there is no tool of someone else's to redirect and nobody to
+  // displace. A pasted Gemini key changes which credential the `gemini` tool
+  // authenticates with; it does not change WHICH tool runs, which is the only
+  // thing this table describes.
+  //
+  // Spelled as an explicit null rather than omitted: see the note on
+  // `API_KEY_CREDENTIAL_PROVIDERS`. Omission would make "native provider" and
+  // "somebody forgot a row" the same shape.
+  gemini: null,
+} as const satisfies Record<ApiKeyCredentialProvider, ApiKeyBackendRouting | null>;
 
 /**
  * The API-key backends that can displace a native provider for `agentTool`, in
@@ -297,7 +419,7 @@ export function apiKeyBackendsForAgentTool(
 ): readonly ApiKeyCredentialProvider[] {
   if (!agentTool) return [];
   return API_KEY_CREDENTIAL_PROVIDERS.filter(
-    (provider) => API_KEY_BACKEND_ROUTING[provider].agentTool === agentTool,
+    (provider) => API_KEY_BACKEND_ROUTING[provider]?.agentTool === agentTool,
   );
 }
 
@@ -322,25 +444,48 @@ export function apiKeyBackendOutrankedBy(
   activeProviders: ReadonlySet<string>,
 ): ApiKeyCredentialProvider | null {
   if (!activeProviders.has(provider)) return null;
-  for (const candidate of apiKeyBackendsForAgentTool(
-    API_KEY_BACKEND_ROUTING[provider].agentTool,
-  )) {
+  const routing = API_KEY_BACKEND_ROUTING[provider];
+  // A provider that backs nothing cannot lose a contest it is not in. Gemini is
+  // never outranked, however many keys the member has connected.
+  if (routing === null) return null;
+  for (const candidate of apiKeyBackendsForAgentTool(routing.agentTool)) {
     if (candidate === provider) return null;
     if (activeProviders.has(candidate)) return candidate;
   }
   return null;
 }
 
-/** The native provider a connected `provider` key displaces, for display. */
+/**
+ * The native provider a connected `provider` key displaces, for display, or
+ * null when it displaces nobody because it IS the native provider.
+ */
 export function apiKeyBackendDisplaces(
   provider: ApiKeyCredentialProvider,
-): CredentialProvider {
-  return API_KEY_BACKEND_ROUTING[provider].displaces;
+): CredentialProvider | null {
+  return API_KEY_BACKEND_ROUTING[provider]?.displaces ?? null;
 }
 
-/** The tool a connected `provider` key redirects, for display. */
-export function apiKeyBackendAgentTool(provider: ApiKeyCredentialProvider): string {
-  return API_KEY_BACKEND_ROUTING[provider].agentTool;
+/**
+ * The tool a connected `provider` key redirects, for display, or null when the
+ * key redirects nothing.
+ *
+ * Null here does NOT mean "no tool uses this key" — the `gemini` tool uses a
+ * Gemini key. It means no tool is being pointed somewhere other than its
+ * native provider, so there is no redirection for a card to announce.
+ */
+export function apiKeyBackendAgentTool(
+  provider: ApiKeyCredentialProvider,
+): string | null {
+  return API_KEY_BACKEND_ROUTING[provider]?.agentTool ?? null;
+}
+
+/**
+ * Whether a connected key of this provider redirects some other provider's
+ * tool. The one predicate the shape check `isApiKeyCredentialProvider` used to
+ * imply and no longer does.
+ */
+export function isApiKeyBackend(provider: ApiKeyCredentialProvider): boolean {
+  return API_KEY_BACKEND_ROUTING[provider] !== null;
 }
 
 /**
@@ -356,6 +501,14 @@ export function apiKeyBackendEnv(
   apiKey: string,
 ): Record<string, string> {
   const routing = API_KEY_BACKEND_ROUTING[provider];
+  if (routing === null) {
+    // A NATIVE provider. No base URL is rewritten, because the tool is already
+    // pointed at its own vendor and the key is simply the credential it was
+    // missing. Writing a base URL here would be the redirection this provider
+    // explicitly is not.
+    const keyEnvVar = API_KEY_PROVIDER_DEFINITIONS[provider].keyEnvVar;
+    return keyEnvVar === null ? {} : { [keyEnvVar]: apiKey };
+  }
   return {
     [routing.baseUrlVar]: routing.baseUrl,
     [routing.keyVar]: apiKey,

@@ -189,9 +189,35 @@ export const CREDENTIAL_LOGIN_COMMANDS: Readonly<Record<CredentialProvider, stri
     anthropic: 'claude auth login',
     openai: 'codex login --device-auth',
     github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
-    gemini: 'gemini',
     hermes: 'hermes login',
     cursor: 'cursor-agent login',
+    // GEMINI IS NOT IN THE LIST ABOVE ANY MORE. It used to read `gemini: 'gemini'`
+    // — bare `gemini`, which owns the CLI's interactive OAuth flow — and it now
+    // comes from the API-key spread below instead. That is a deliberate change
+    // of which auth mode tm8's Connect button drives, and it needs its reason
+    // recorded because it is a product decision, not a refactor.
+    //
+    // THE OAUTH FLOW CANNOT COMPLETE WHERE TM8 RUNS. It wants a browser. tm8's
+    // credential terminal is a headless PTY on a server — the same constraint
+    // that makes `NO_OPEN_BROWSER` a behaviour override for Cursor two files
+    // away. Measured on this node: `~/.gemini` contains an empty
+    // `projects.json` (`{"projects":{}}`, 20 bytes) and two orphaned `.tmp`
+    // siblings, and no `oauth_creds.json` at all — a flow entered and never
+    // finished. Every probe since has answered `stale`, and `stale` persists no
+    // row, so the member is told "unknown" forever with nothing to act on.
+    //
+    // The API-key mode needs no browser, and it is equally official: the
+    // installed `@google/gemini-cli` 0.58.0 bundle carries `USE_GEMINI`
+    // alongside `LOGIN_WITH_GOOGLE` in its auth enum and reads `GEMINI_API_KEY`
+    // in 21 of its chunks. So Connect now pastes a key.
+    //
+    // WHAT THIS DOES NOT DO IS DISCONNECT ANYONE. A member who already holds a
+    // completed `oauth_creds.json` keeps it: `readGeminiProbe` still reads that
+    // file and still reports them connected. What they lose is the ability to
+    // re-run the OAuth flow from tm8's dialog — a flow that, on a headless
+    // host, was not reaching a browser to begin with. Re-running `gemini` in a
+    // normal terminal on a machine with a browser still works and tm8 still
+    // honours the result.
     ...(Object.fromEntries(
       API_KEY_CREDENTIAL_PROVIDERS.map((provider) => [provider, apiKeyLoginCommand(provider)]),
     ) as Record<ApiKeyCredentialProvider, string>),

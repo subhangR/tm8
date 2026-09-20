@@ -78,6 +78,7 @@ import {
   apiKeyBackendOutrankedBy,
   apiKeyBackendsForAgentTool,
   isApiKeyCredentialProvider,
+  isApiKeyBackend,
   type Logger,
 } from '@tm8/execution';
 
@@ -175,14 +176,28 @@ function routingFor(
   provider: CredentialProviderName,
   activeProviders: ReadonlySet<CredentialProviderName>,
 ): CredentialRoutingView | null {
-  if (isApiKeyCredentialProvider(provider)) {
-    return {
-      agentTool: apiKeyBackendAgentTool(provider),
-      role: 'backend',
-      counterpart: apiKeyBackendDisplaces(provider),
-      active: activeProviders.has(provider),
-      outrankedBy: apiKeyBackendOutrankedBy(provider, activeProviders),
-    };
+  // THE SHAPE CHECK IS NO LONGER THE BACKEND CHECK, and conflating them was
+  // safe only while every api-key provider happened to be a backend. Gemini is
+  // an api-key provider that displaces nobody, so asking
+  // `isApiKeyCredentialProvider` here would have built it a routing line
+  // announcing a redirection that does not exist — with a null `agentTool` and
+  // a null `counterpart` to render. It gets `null` routing instead, which is
+  // the same answer anthropic and openai get when no backend is connected, and
+  // means the same thing: this card has nothing to say about redirection.
+  if (isApiKeyCredentialProvider(provider) && isApiKeyBackend(provider)) {
+    const agentTool = apiKeyBackendAgentTool(provider);
+    const counterpart = apiKeyBackendDisplaces(provider);
+    // Both are non-null for a backend by construction; the guard keeps that a
+    // checked fact rather than an assertion.
+    if (agentTool !== null && counterpart !== null) {
+      return {
+        agentTool,
+        role: 'backend',
+        counterpart,
+        active: activeProviders.has(provider),
+        outrankedBy: apiKeyBackendOutrankedBy(provider, activeProviders),
+      };
+    }
   }
 
   // A native provider is displaced only by a backend that is connected RIGHT

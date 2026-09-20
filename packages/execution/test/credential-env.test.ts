@@ -400,7 +400,7 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // The values are asserted literally rather than compared to themselves.
     // `codex login --device-auth` in particular must never decay to bare
     // `codex login`, which opens a loopback listener nobody can reach.
-    const { kimi, groq, grok, ...vendor } = CREDENTIAL_LOGIN_COMMANDS;
+    const { kimi, groq, grok, gemini, ...vendor } = CREDENTIAL_LOGIN_COMMANDS;
     expect(vendor).toEqual({
       // `claude auth login`, not `claude setup-token` — setup-token PRINTS a
       // token and never persists a login, so the `claude auth status` finish
@@ -409,7 +409,6 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
       anthropic: 'claude auth login',
       openai: 'codex login --device-auth',
       github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
-      gemini: 'gemini',
       hermes: 'hermes login',
       cursor: 'cursor-agent login',
     });
@@ -424,7 +423,22 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // program is `node` and not a shell, the harness path is the one file that
     // implements this flow, and every vendor fact the harness is told comes
     // from `api-key-credentials.ts` rather than being retyped here.
-    for (const [provider, command] of [['kimi', kimi], ['groq', groq], ['grok', grok]] as const) {
+    // `gemini` joins the structural group rather than the literal one above,
+    // and the move is the product change rather than a test convenience. The
+    // old entry was the bare string `gemini`, which invoked the vendor CLI's
+    // own `LOGIN_WITH_GOOGLE` flow — a flow that needs a browser tm8's headless
+    // credential PTY does not have. It is now the paste harness, so the
+    // absolute-path reasoning stated above applies to it identically.
+    //
+    // This does NOT disconnect members who completed the OAuth flow earlier:
+    // `readGeminiProbe` still reads `.gemini/oauth_creds.json` as its second
+    // route. What changed is only which flow a NEW connection starts.
+    for (const [provider, command] of [
+      ['kimi', kimi],
+      ['groq', groq],
+      ['grok', grok],
+      ['gemini', gemini],
+    ] as const) {
       expect(command.startsWith('node ')).toBe(true);
       expect(command).toContain('/harness/credential-paste.mjs');
       expect(command).toContain(`--provider '${provider}'`);
