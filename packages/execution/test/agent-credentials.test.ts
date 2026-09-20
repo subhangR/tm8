@@ -491,11 +491,14 @@ describe('API-key backend routing — the env a member with Kimi or Groq actuall
   });
 
   it('routes nothing when the key could not be read', () => {
-    // `DbAgentCredentialHome` returns null rather than a keyless home on this
-    // path, so this is belt-and-braces — but the branch is reachable by
-    // construction from any other caller, and a base URL without a key is the
-    // worst of the three possible outcomes: a live session pointed at a vendor
-    // it cannot authenticate to.
+    // NOT belt-and-braces any more, and the comment that used to say so was
+    // wrong within this same PR. `DbAgentCredentialHome` now returns exactly
+    // this keyless home for an active row whose key file cannot be read —
+    // answering `null` there left the node's own key live in the composed
+    // environment and ran the member's session on the machine account. So this
+    // is the real path, and what it must not produce is the worst of the three
+    // possible outcomes: a base URL without a key, i.e. a live session pointed
+    // at a vendor it cannot authenticate to.
     const env = composeEnv(
       manifestFor('claude-code'),
       '/tmp/m.json',
