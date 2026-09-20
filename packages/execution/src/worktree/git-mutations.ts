@@ -36,6 +36,7 @@
 import { stat } from 'node:fs/promises';
 
 import { WorktreeError, assertSafeRefName, runGit, type GitRunOptions } from './git-invoker.js';
+import { buildSubsetPatch, digestHunks, parseUnifiedDiff, selectHunks } from './hunks.js';
 
 /** One changed path from `git status --porcelain -z`. */
 export interface ChangedFile {
@@ -492,6 +493,154 @@ export interface CommitResult {
   oid: string;
   branch: string;
   files: ChangedFile[];
+}
+
+/** What `stageHunks` did, plus the post-operation index so the UI need not re-read. */
+export interface StageHunksResult {
+  path: string;
+  /** How many hunks the patch carried — the caller's selection, after de-duplication. */
+  appliedHunks: number;
+  /** Total hunks in the diff the server derived, so the UI can say "2 of 5". */
+  totalHunks: number;
+  staged: ChangedFile[];
+}
+
+/** The diff-read cap. A single file's diff past this is not a review surface. */
+const HUNK_DIFF_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Stage or unstage INDIVIDUAL HUNKS of one file — `git add -p` without the
+ * prompt, driven by hunk indices from a UI.
+ *
+ * THE CLIENT NEVER SENDS PATCH TEXT. It sends a path and a list of indices,
+ * and the server re-derives the diff itself and slices it. This is the whole
+ * security posture of the verb: a patch reaching `git apply --cached` is a
+ * write primitive for ANY path in the repository — `--cached` writes the
+ * index, so a hostile patch would not even need to touch the working tree to
+ * put content into the next commit. Indices cannot express that. They can only
+ * select a subset of a diff the server just computed for a path it already
+ * validated.
+ *
+ * WHICH DIFF, AND WHY EACH IS THE RIGHT PRE-IMAGE:
+ *   stage   — `git diff -- <path>`          (index → worktree). Applying it to
+ *             the index with `--cached` moves the selected hunks into the
+ *             index, leaving the rest unstaged. This is exactly `git add -p`.
+ *   unstage — `git diff --cached -- <path>` (HEAD → index). Applying it to the
+ *             index REVERSED backs the selected hunks out. This is `git reset -p`.
+ * In both directions the patch's pre-image is the index, which is what
+ * `--cached` applies against, so a stale selection fails loudly in `git apply`
+ * instead of landing somewhere unintended.
+ *
+ * `digest` is the caller's claim about WHICH hunks they were looking at. The
+ * diff can change under a live agent lane between render and click, and the
+ * indices would still be in range — pointing at different code. The digest
+ * covers hunk BODY text only, deliberately: an edit elsewhere in the file
+ * renumbers every later `@@` header without changing the hunk the reviewer
+ * approved, and refusing that would make the feature unusable in the only
+ * place it is ever used.
+ */
+export async function stageHunks(params: {
+  worktreePath: string;
+  expectedBranch?: string;
+  path: string;
+  indices: readonly number[];
+  /** Fail unless the server's freshly-read hunks still digest to this. */
+  digest?: string;
+  /** true = remove these hunks from the index (unstage); false = add them. */
+  reverse?: boolean;
+}): Promise<StageHunksResult> {
+  const verb = params.reverse === true ? 'unstage' : 'stage';
+  await assertMutableWorktree(params);
+  await refuseMidMerge(params.worktreePath, `${verb} hunks`);
+  assertSafePathspec(params.path);
+  if (params.indices.length === 0) {
+    throw new WorktreeError(`${verb} hunks needs at least one hunk index`, 'invalid_input', 'no_hunks_selected');
+  }
+
+  // `--literal-pathspecs` before the subcommand (see `stage`). `--no-renames`
+  // keeps this a SINGLE-file diff: with detection on, a renamed path can pull
+  // its counterpart in, and a two-file diff is one the hunk parser refuses —
+  // better to never produce it. `--no-ext-diff`/`--no-textconv` keep a repo's
+  // own config from substituting a human-readable diff that git cannot apply.
+  const diffArgs = [
+    '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
+    ...(params.reverse === true ? ['--cached'] : []),
+    '--', params.path,
+  ];
+  const diff = await git(diffArgs, params.worktreePath, { maxBufferBytes: HUNK_DIFF_MAX_BYTES });
+  if (diff.code !== 0) {
+    throw new WorktreeError('git diff failed', 'internal', 'diff_failed', { stderr: diff.stderr.trim() });
+  }
+  if (diff.stdout.trim().length === 0) {
+    // An untracked file lands here: `git diff` cannot see it, because it has
+    // no index entry to diff against. Say so by name — the honest remedy is
+    // to stage the whole file once, after which its hunks become selectable.
+    throw new WorktreeError(
+      `no ${params.reverse === true ? 'staged' : 'unstaged'} changes in ${JSON.stringify(params.path)}`,
+      'conflict', 'no_hunks_available',
+      { path: params.path, hint: 'an untracked file has no diff to split; stage the whole file first' },
+    );
+  }
+
+  const parsed = parseUnifiedDiff(diff.stdout);
+  if (parsed.binary) {
+    throw new WorktreeError(
+      `${JSON.stringify(params.path)} is a binary file and has no hunks`,
+      'invalid_input', 'binary_file',
+      { path: params.path, hint: 'stage or unstage the whole file' },
+    );
+  }
+
+  if (params.digest !== undefined) {
+    const actual = digestHunks(parsed.hunks);
+    if (actual !== params.digest) {
+      // The same shape as the facade's staged_outside_selection refusal: the
+      // caller is told the world moved, not handed a silent partial result.
+      throw new WorktreeError(
+        `${params.path} changed since the hunks were listed`,
+        'conflict', 'hunks_stale',
+        { path: params.path, expectedDigest: params.digest, actualDigest: actual,
+          hint: 'reload the diff and re-select; the file was edited under the selection' },
+      );
+    }
+  }
+
+  const selected = selectHunks(parsed, params.indices);
+  const patch = buildSubsetPatch(parsed, selected);
+
+  // NO `--recount`. MEASURED (git 2.x, this box): `git apply` validates BOTH
+  // hunk COUNTS against the body and rejects a mismatch outright — "corrupt
+  // patch at line N" — but it IGNORES the new-side START, applying a hunk
+  // headed `@@ -2,3 +99,3 @@` to the right place without complaint. So
+  // `--recount` would suppress the one class of subset-builder bug git can
+  // still catch for us, and buys nothing for the class it cannot.
+  //
+  // The offset recomputation is therefore NOT guarded by git. It is guarded
+  // only by `execution/test/hunks.test.ts` ("RECOMPUTES the new-side offset"),
+  // verified by mutation: breaking the recomputation reddens those unit tests
+  // while all twelve real-git cases still pass. Do not delete them thinking
+  // the integration suite covers it — it does not.
+  const applyArgs = [
+    'apply', '--cached', '--whitespace=nowarn',
+    ...(params.reverse === true ? ['--reverse'] : []),
+    '-',
+  ];
+  const applied = await git(applyArgs, params.worktreePath, { stdin: patch });
+  if (applied.code !== 0) {
+    throw new WorktreeError(
+      `git apply --cached refused the ${verb} patch`,
+      'conflict', 'hunk_apply_failed',
+      { path: params.path, stderr: applied.stderr.trim(),
+        hint: 'the file moved under the selection; reload the diff and re-select' },
+    );
+  }
+
+  return {
+    path: params.path,
+    appliedHunks: selected.length,
+    totalHunks: parsed.hunks.length,
+    staged: await stagedFiles(params.worktreePath),
+  };
 }
 
 /** Commit exactly what is staged. An empty index is a refusal, not a no-op commit. */

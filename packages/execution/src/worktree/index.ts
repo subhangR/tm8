@@ -36,6 +36,7 @@ export {
   resolveCommitish,
   rollback,
   stage,
+  stageHunks,
   stagedFiles,
   unstage,
   type ChangedFile,
@@ -44,6 +45,7 @@ export {
   type GitIdentity,
   type MergeResult,
   type RollbackResult,
+  type StageHunksResult,
 } from './git-mutations.js';
 // Tier 2 completion — cherry-pick / branch ops / stash (same subpath law).
 export {
