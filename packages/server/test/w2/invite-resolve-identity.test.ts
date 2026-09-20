@@ -131,6 +131,38 @@ describe('auth.invite.resolve forwards the caller it has (195)', () => {
     expect(db.calls[0]!.claims.requestId).toBe('req-195');
   });
 
+  it('binds an AUTO-OWNER identity too — the local node is where this bug bites hardest', async () => {
+    // The arm the first cut of this handler dropped. `auto-owner` is the human
+    // at the node's own UI, resolved with an `identityId` on the request
+    // (`identity-resolver.ts:93`) — the same fact a bearer carries, arriving by
+    // a different door. On a v1 local node EVERY browser request takes this
+    // door, so forwarding only the bearer arm left the reported journey broken
+    // on the deployment shape most likely to walk it: the owner redeems their
+    // own one-use code and is then told it is used up.
+    const db = new ClaimRecordingDb();
+    const result = await resolveAs(db, {
+      kind: 'auto-owner',
+      identityId: IDENTITY,
+      authKind: 'browser',
+    } as RequestContext['identity']);
+
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]!.fn).toBe('preview_invite');
+    expect(db.calls[0]!.args).toEqual([CODE]);
+    expect(db.calls[0]!.claims.identityId).toBe(IDENTITY);
+    expect(result).toEqual(MEMBER);
+    // And it got there off the REQUEST, never off a loopback owner lookup:
+    // `deps.owner` throws, so reaching for it would have failed this test.
+  });
+
+  it('treats an auto-owner with no resolved identity as anonymous rather than refusing', async () => {
+    const db = new ClaimRecordingDb({ status: 'valid' });
+    await resolveAs(db, { kind: 'auto-owner' } as unknown as RequestContext['identity']);
+
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]!.claims.identityId).toBeUndefined();
+  });
+
   it('treats a bearer with no resolved identity as anonymous rather than refusing', async () => {
     // A half-resolved session must not be able to turn a working join link
     // into an error page: this read has no authorization to get wrong.
