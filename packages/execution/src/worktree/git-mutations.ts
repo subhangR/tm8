@@ -36,7 +36,7 @@
 import { stat } from 'node:fs/promises';
 
 import { WorktreeError, assertSafeRefName, runGit, type GitRunOptions } from './git-invoker.js';
-import { buildSubsetPatch, digestHunks, parseUnifiedDiff, selectHunks } from './hunks.js';
+import { buildSubsetPatch, digestHunks, parseUnifiedDiff, selectHunks, type ParsedDiff } from './hunks.js';
 
 /** One changed path from `git status --porcelain -z`. */
 export interface ChangedFile {
@@ -495,6 +495,105 @@ export interface CommitResult {
   files: ChangedFile[];
 }
 
+/**
+ * THE ONE PLACE A SPLITTABLE DIFF IS DERIVED.
+ *
+ * Both the read that TELLS a client which hunks exist and the write that
+ * verifies the client's digest go through here, because a digest is only
+ * worth anything if the two sides derive the same bytes. The flags are the
+ * reason this is not "just `git diff`" at each call site:
+ *
+ *   `--literal-pathspecs` — the path is an exact name from a status listing,
+ *     and a name containing `*` must mean that file (see `stage`);
+ *   `--no-renames` — with detection on, a renamed path pulls its counterpart
+ *     in, and a two-file diff is one the parser refuses. Better never produced;
+ *   `--no-ext-diff` / `--no-textconv` — a repo's own config can substitute a
+ *     human-readable diff that git cannot apply. That is a trap for a verb
+ *     whose whole job is to feed the text back to `git apply`.
+ *
+ * Drifting these apart at either call site reintroduces a stale-digest
+ * refusal that no edit explains, so there is deliberately no second spelling.
+ */
+async function deriveHunks(worktreePath: string, path: string, staged: boolean): Promise<ParsedDiff> {
+  const diff = await git(
+    [
+      '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
+      ...(staged ? ['--cached'] : []),
+      '--', path,
+    ],
+    worktreePath,
+    { maxBufferBytes: HUNK_DIFF_MAX_BYTES },
+  );
+  if (diff.code !== 0) {
+    throw new WorktreeError('git diff failed', 'internal', 'diff_failed', { stderr: diff.stderr.trim() });
+  }
+  if (diff.stdout.trim().length === 0) {
+    // An untracked file lands here: `git diff` cannot see it, because it has
+    // no index entry to diff against. Say so by name — the honest remedy is
+    // to stage the whole file once, after which its hunks become selectable.
+    throw new WorktreeError(
+      `no ${staged ? 'staged' : 'unstaged'} changes in ${JSON.stringify(path)}`,
+      'conflict', 'no_hunks_available',
+      { path, hint: 'an untracked file has no diff to split; stage the whole file first' },
+    );
+  }
+  const parsed = parseUnifiedDiff(diff.stdout);
+  if (parsed.binary) {
+    throw new WorktreeError(
+      `${JSON.stringify(path)} is a binary file and has no hunks`,
+      'invalid_input', 'binary_file',
+      { path, hint: 'stage or unstage the whole file' },
+    );
+  }
+  return parsed;
+}
+
+/** What a client needs to offer a hunk selection: how many, and which ones. */
+export interface HunkListing {
+  path: string;
+  staged: boolean;
+  count: number;
+  /** Echo this back with a selection; `stageHunks` refuses if it moved. */
+  digest: string;
+  hunks: { index: number; heading: string; oldStart: number; newStart: number; text: string }[];
+}
+
+/**
+ * List the hunks of one file, with the digest that pins them.
+ *
+ * Returns `null` for the two states that are not failures of the read — an
+ * untracked or binary path simply has no hunks to offer, and a client asking
+ * "can this file be split?" deserves "no" rather than an exception it has to
+ * classify. `stageHunks` still THROWS for both, because there the same state
+ * means a selection was made against something that cannot honour it.
+ */
+export async function readHunks(params: {
+  worktreePath: string;
+  path: string;
+  staged?: boolean;
+}): Promise<HunkListing | null> {
+  await assertWorktreeDir(params.worktreePath);
+  assertSafePathspec(params.path);
+  const staged = params.staged === true;
+  let parsed: ParsedDiff;
+  try {
+    parsed = await deriveHunks(params.worktreePath, params.path, staged);
+  } catch (error) {
+    const reason = error instanceof WorktreeError ? error.reason : '';
+    if (reason === 'no_hunks_available' || reason === 'binary_file') return null;
+    throw error;
+  }
+  return {
+    path: params.path,
+    staged,
+    count: parsed.hunks.length,
+    digest: digestHunks(parsed.hunks),
+    hunks: parsed.hunks.map((h) => ({
+      index: h.index, heading: h.heading, oldStart: h.oldStart, newStart: h.newStart, text: h.text,
+    })),
+  };
+}
+
 /** What `stageHunks` did, plus the post-operation index so the UI need not re-read. */
 export interface StageHunksResult {
   path: string;
@@ -557,39 +656,7 @@ export async function stageHunks(params: {
     throw new WorktreeError(`${verb} hunks needs at least one hunk index`, 'invalid_input', 'no_hunks_selected');
   }
 
-  // `--literal-pathspecs` before the subcommand (see `stage`). `--no-renames`
-  // keeps this a SINGLE-file diff: with detection on, a renamed path can pull
-  // its counterpart in, and a two-file diff is one the hunk parser refuses —
-  // better to never produce it. `--no-ext-diff`/`--no-textconv` keep a repo's
-  // own config from substituting a human-readable diff that git cannot apply.
-  const diffArgs = [
-    '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
-    ...(params.reverse === true ? ['--cached'] : []),
-    '--', params.path,
-  ];
-  const diff = await git(diffArgs, params.worktreePath, { maxBufferBytes: HUNK_DIFF_MAX_BYTES });
-  if (diff.code !== 0) {
-    throw new WorktreeError('git diff failed', 'internal', 'diff_failed', { stderr: diff.stderr.trim() });
-  }
-  if (diff.stdout.trim().length === 0) {
-    // An untracked file lands here: `git diff` cannot see it, because it has
-    // no index entry to diff against. Say so by name — the honest remedy is
-    // to stage the whole file once, after which its hunks become selectable.
-    throw new WorktreeError(
-      `no ${params.reverse === true ? 'staged' : 'unstaged'} changes in ${JSON.stringify(params.path)}`,
-      'conflict', 'no_hunks_available',
-      { path: params.path, hint: 'an untracked file has no diff to split; stage the whole file first' },
-    );
-  }
-
-  const parsed = parseUnifiedDiff(diff.stdout);
-  if (parsed.binary) {
-    throw new WorktreeError(
-      `${JSON.stringify(params.path)} is a binary file and has no hunks`,
-      'invalid_input', 'binary_file',
-      { path: params.path, hint: 'stage or unstage the whole file' },
-    );
-  }
+  const parsed = await deriveHunks(params.worktreePath, params.path, params.reverse === true);
 
   if (params.digest !== undefined) {
     const actual = digestHunks(parsed.hunks);

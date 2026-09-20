@@ -4498,6 +4498,36 @@ export type ExecutionGitStageInput = CommandContext & {
   paths?: string[];
   /** The whole worktree: `git add -A` / `git reset HEAD`. */
   all?: boolean;
+  /**
+   * PART of one file instead of all of it — `git add -p` without the prompt.
+   * Mutually exclusive with `paths` and `all`; naming two scopes is a refusal,
+   * not a merge, because there is no honest way to rank them.
+   *
+   * INDICES, NEVER PATCH TEXT. The server re-derives the diff and slices it
+   * itself. A patch accepted from a client and fed to `git apply --cached` is
+   * a write primitive for any path in the repository — `--cached` writes the
+   * index, so such a patch would not even have to touch the working tree to
+   * put content into the next commit. An index into a diff the server just
+   * computed cannot express that.
+   *
+   * The indices are 1-based and come from `execution.gitDiff`'s `hunks`, read
+   * in the scope that matches the action: `unstaged` to stage, `staged` to
+   * unstage. Out of range is a refusal — never a clamp, never a partial apply.
+   */
+  hunks?: {
+    path: string;
+    /** 1-based, from the matching `gitDiff` read. Order and repeats do not matter. */
+    indices: number[];
+    /**
+     * `hunkDigest` from that read, echoed back.
+     *
+     * An agent lane can write the file between render and click, and the
+     * indices would still be IN RANGE while pointing at different code. The
+     * digest is what turns that into a refusal instead of a wrong stage.
+     * Optional so a scripted caller can opt out; a UI should always send it.
+     */
+    digest?: string;
+  };
 };
 
 export interface SessionGitStageResult {
@@ -4525,6 +4555,13 @@ export interface SessionGitStageResult {
   files: SessionGitFile[];
   filesTruncated: boolean;
   dirty: { staged: number; unstaged: number; untracked: number; total: number };
+  /**
+   * Present only for a hunk request. `applied` is the selection after
+   * de-duplication and `total` is how many hunks the file had, so a client can
+   * say "2 of 5" without a second read — and can tell a full-file result from
+   * a partial one, which the porcelain alone does not distinguish.
+   */
+  hunkSelection?: { path: string; applied: number; total: number };
   checkedAt: string;
 }
 
@@ -4584,6 +4621,28 @@ export interface SessionGitStatus {
    */
   stashes?: SessionGitStashEntry[];
   checkedAt: string;
+}
+
+/**
+ * One selectable hunk of a single-file diff — the unit `execution.gitStage`
+ * takes an index into.
+ *
+ * ONLY EVER PRESENT FOR `staged` AND `unstaged` SCOPE, and only when `path`
+ * narrowed the read to one file. The `session` scope is measured from the
+ * MERGE-BASE, so its hunks have a pre-image that is not the index and cannot
+ * be handed to `git apply --cached` — offering them would be offering a
+ * selection the stage verb must then refuse. Absent is the honest answer.
+ */
+export interface SessionGitDiffHunk {
+  /** 1-based, and stable only within the read that produced it. */
+  index: number;
+  /** The text after the closing `@@` — git's guess at the enclosing function. */
+  heading: string;
+  /** Pre-image start line, which is the side a reviewer is looking at. */
+  oldStart: number;
+  newStart: number;
+  /** The hunk verbatim, header included, so a client need not re-split `diff`. */
+  text: string;
 }
 
 /** Per-file numstat digest — always complete even when the diff text is cut. */
@@ -4659,6 +4718,28 @@ export interface SessionGitDiff {
   scope: SessionGitDiffScope;
   /** The single path this answer was narrowed to, or null for the whole tree. */
   path: string | null;
+  /**
+   * The selectable hunks of this file, or null when there are none to offer.
+   *
+   * Null rather than `[]`, and the distinction carries weight: `[]` would say
+   * "this file has zero hunks", which is never true of a file that appears in
+   * a diff. Null says the read cannot offer a selection at all — wrong scope,
+   * no `path`, an untracked or binary file, or a diff the byte cap cut, where
+   * the hunks parsed from a half-file would be a selection over text the
+   * reviewer never saw the end of.
+   */
+  hunks: SessionGitDiffHunk[] | null;
+  /**
+   * Pins `hunks` to the bytes they were read from. Echo it back in
+   * `execution.gitStage`; the server refuses the selection if the file moved
+   * underneath it. Null exactly when `hunks` is null.
+   *
+   * It covers hunk BODY text only — an edit elsewhere in the file renumbers
+   * every later `@@` header without changing the hunk the reviewer approved,
+   * and refusing that would make hunk staging unusable in a live agent lane,
+   * which is the only place it is used.
+   */
+  hunkDigest: string | null;
   /**
    * True when `path` names a file git is not tracking — recorded neither in
    * the index nor in HEAD.

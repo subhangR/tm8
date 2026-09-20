@@ -17,7 +17,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { stageHunks } from '../src/worktree/index.js';
+import { readHunks, stageHunks } from '../src/worktree/index.js';
 import { digestHunks, parseUnifiedDiff } from '../src/worktree/hunks.js';
 
 const ENV = {
@@ -174,6 +174,42 @@ describe('stageHunks against real git', () => {
     await writeFile(join(dir, 'b.bin'), Buffer.from([0, 9, 9, 9, 0, 255]));
     await expect(stageHunks({ worktreePath: dir, path: 'b.bin', indices: [1] }))
       .rejects.toMatchObject({ reason: 'binary_file' });
+  });
+
+  /**
+   * `readHunks` is the listing a client selects FROM, and `stageHunks` is what
+   * verifies the selection. If their digests could ever disagree, every
+   * selection would be refused as stale with no edit to explain it — so the
+   * agreement is asserted, not assumed, and both go through one derivation.
+   */
+  it('produces a digest stageHunks accepts, with no edit in between', async () => {
+    const dir = await repo();
+    const listing = await readHunks({ worktreePath: dir, path: 'f.txt' });
+    expect(listing).not.toBeNull();
+    expect(listing!.count).toBe(2);
+    expect(listing!.hunks.map((h) => h.index)).toEqual([1, 2]);
+    const res = await stageHunks({
+      worktreePath: dir, path: 'f.txt', indices: [1], digest: listing!.digest,
+    });
+    expect(res.appliedHunks).toBe(1);
+  });
+
+  it('reads the staged side separately, and it is a different digest', async () => {
+    const dir = await repo();
+    await stageHunks({ worktreePath: dir, path: 'f.txt', indices: [1] });
+    const unstaged = await readHunks({ worktreePath: dir, path: 'f.txt' });
+    const staged = await readHunks({ worktreePath: dir, path: 'f.txt', staged: true });
+    expect(unstaged!.count).toBe(1);   // hunk 2 is still only in the worktree
+    expect(staged!.count).toBe(1);     // hunk 1 is now in the index
+    expect(staged!.digest).not.toBe(unstaged!.digest);
+  });
+
+  it('answers null — not an exception — for a file that cannot be split', async () => {
+    const dir = await repo();
+    await writeFile(join(dir, 'new.txt'), 'hello\n', 'utf8');
+    expect(await readHunks({ worktreePath: dir, path: 'new.txt' })).toBeNull();
+    // The same state THROWS from stageHunks, where a selection was made
+    // against something that cannot honour it. Both are covered above.
   });
 
   it('refuses an empty selection', async () => {
