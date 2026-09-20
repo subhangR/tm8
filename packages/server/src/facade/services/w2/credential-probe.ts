@@ -59,6 +59,7 @@ import {
   API_KEY_FILENAME,
   API_KEY_PROVIDER_DISPLAY_NAME,
   API_KEY_PROVIDER_VERIFY_URL,
+  apiKeyVerifyHeaders,
   composeCredentialEnv,
   CREDENTIAL_LOGIN_COMMANDS,
   isApiKeyCredentialProvider,
@@ -750,7 +751,11 @@ async function readApiKeyProbe(
   try {
     const response = await fetch(API_KEY_PROVIDER_VERIFY_URL[provider], {
       method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      // NOT a hardcoded bearer header any more. Google's generative endpoint
+      // authenticates `x-goog-api-key` and 401s a bearer token, which would
+      // have made every valid Gemini key read as rejected. `apiKeyVerifyHeaders`
+      // keeps the choice with the vendor facts table.
+      headers: apiKeyVerifyHeaders(provider, apiKey),
       signal: controller.signal,
     });
 
@@ -802,10 +807,43 @@ async function readApiKeyProbe(
 }
 
 /**
- * Gemini has no verified status command. Its measured OAuth file is therefore
- * the whole positive signal, and every non-positive result remains `stale`.
- * In particular, ENOENT is not "logged out": it may be an abandoned flow, a
- * different credential mode, or a later CLI storage shape we have not measured.
+ * GEMINI HAS TWO CREDENTIALS, AND THIS PROBE READS BOTH.
+ *
+ * The old version of this function read one file — `.gemini/oauth_creds.json` —
+ * and returned `stale` for every other outcome. That was correct about what it
+ * measured and wrong about what it implied, because the file it looked for is
+ * written by exactly ONE of the CLI's four auth modes. Measured in the installed
+ * `@google/gemini-cli` 0.58.0 bundle, the auth enum carries `LOGIN_WITH_GOOGLE`,
+ * `USE_GEMINI`, `USE_VERTEX_AI` and `CLOUD_SHELL`. Only the first writes
+ * `oauth_creds.json`. A member on the documented API-key mode was therefore
+ * reported "unknown" forever — and because `stale` is never persisted, the
+ * unknown never resolved and the card never changed. That is the defect.
+ *
+ * THE ORDER IS KEY FIRST, AND IT IS NOT ARBITRARY. The key route can
+ * AUTHENTICATE: tm8 wrote the file, so it can present its contents to Google and
+ * get a verdict. The OAuth route can only observe that a file exists, which does
+ * not prove the token inside it still works. When both are present the stronger
+ * evidence should decide, and a verified key is strictly stronger than an
+ * unverified file.
+ *
+ * A KEY THAT IS ABSENT IS NOT A KEY THAT IS REJECTED. `readApiKeyProbe` reports
+ * ENOENT as a confident `connected: false`, which is right for a pure api-key
+ * provider but would be a wrong final answer here — the member may hold a
+ * working OAuth credential instead. So an unconnected key result falls THROUGH
+ * to the file check rather than returning, and only a `stale` key result (an
+ * unreachable vendor, a timeout, an unreadable file) short-circuits, because
+ * that one genuinely leaves the whole question open.
+ *
+ * WHAT THE NEGATIVE NOW CLAIMS, AND WHAT IT STILL DOES NOT. With no key and no
+ * credential file the answer is a confident `connected: false` rather than the
+ * old `stale`, and the change is defensible because the claim has narrowed:
+ * tm8 now owns one of Gemini's credential routes, so it can state with
+ * authority that NO GEMINI CREDENTIAL HAS BEEN GIVEN TO TM8. That is a fact
+ * about tm8's own records. It is deliberately not the broader claim that the
+ * member has no Gemini access at all — `USE_VERTEX_AI` and `CLOUD_SHELL`
+ * authenticate through ambient environment and metadata that this probe cannot
+ * see, and the detail string says so rather than pretending the absence is
+ * total. Every genuinely unanswerable case below is still `stale`.
  */
 async function readGeminiProbe(env: Record<string, string>): Promise<ProbeResult> {
   const home = env['HOME'];
@@ -816,6 +854,17 @@ async function readGeminiProbe(env: Record<string, string>): Promise<ProbeResult
       'Gemini credential state is unknown because the isolated HOME was not present',
     );
   }
+
+  // ROUTE 1 — the pasted API key, verified against Google.
+  const keyProbe = await readApiKeyProbe('gemini', env);
+  if (keyProbe.connected) return keyProbe;
+  if (keyProbe.status === 'stale') return keyProbe;
+  // A key that Google positively REJECTED is a real answer about that key, but
+  // it is not an answer about the member's OAuth credential, so it does not end
+  // the probe. It is remembered and reported only if route 2 also finds nothing.
+  const rejectedKey = keyProbe.detail !== null && keyProbe.detail.includes('rejected');
+
+  // ROUTE 2 — the OAuth credential file written by `LOGIN_WITH_GOOGLE`.
   const parts = CREDENTIAL_PROBE_SPECS.gemini.credentialFile;
   const credentialFile = join(home, ...parts);
   try {
@@ -827,27 +876,46 @@ async function readGeminiProbe(env: Record<string, string>): Promise<ProbeResult
         'Gemini credential state is unknown because the measured credential path is not a file',
       );
     }
+    return {
+      provider: 'gemini',
+      connected: true,
+      status: 'active',
+      // File presence establishes a usable OAuth credential, not the Google
+      // account name or the CLI's own name for that auth method.
+      login: null,
+      // Named for the mode that writes this file, so a card can tell an OAuth
+      // member from a pasted-key member. The two are now both reachable and
+      // they are not interchangeable: only one of them survives a token expiry
+      // without the member returning to a browser.
+      authMethod: 'oauth',
+      detail: null,
+    };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    return negativeProbe(
-      'gemini',
-      'stale',
-      code === 'ENOENT'
-        ? 'Gemini credential state is unknown: its measured OAuth credential file is not present and there is no verified status verb'
-        : `Gemini credential state is unknown because its measured credential file could not be inspected: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-    );
+    if (code !== 'ENOENT') {
+      // A permissions or I/O error is not an absence — the file may be there and
+      // perfectly good. Unchanged from the original, and still `stale`.
+      return negativeProbe(
+        'gemini',
+        'stale',
+        `Gemini credential state is unknown because its measured credential file could not be inspected: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
+
+  // NEITHER ROUTE. Both absences were measured, so this is an answer rather
+  // than a shrug — see the header for the exact size of the claim.
   return {
     provider: 'gemini',
-    connected: true,
+    connected: false,
     status: 'active',
-    // File presence establishes a usable OAuth credential, not the Google
-    // account name or the CLI's own name for that auth method.
     login: null,
     authMethod: null,
-    detail: null,
+    detail: rejectedKey
+      ? 'Google rejected the stored Gemini API key, and no OAuth credential file is present either'
+      : 'no Gemini API key has been stored for this member and no OAuth credential file is present; a Vertex AI or Cloud Shell credential would not be visible to tm8',
   };
 }
 
@@ -942,8 +1010,13 @@ export async function runCredentialProbe(input: RunCredentialProbeInput): Promis
     return negativeProbe(provider, 'stale', binary.detail ?? 'credential CLI presence is unknown');
   }
 
-  if (isApiKeyCredentialProvider(provider)) return readApiKeyProbe(provider, env);
+  // GEMINI FIRST, and the order is load-bearing. Gemini is now an api-key
+  // provider AND a file-credential provider, so the generic api-key branch
+  // below would swallow it and report a member with a perfectly good
+  // `oauth_creds.json` as having no key. `readGeminiProbe` tries both routes in
+  // the order that can actually prove something.
   if (provider === 'gemini') return readGeminiProbe(env);
+  if (isApiKeyCredentialProvider(provider)) return readApiKeyProbe(provider, env);
   if (provider === 'hermes') {
     return negativeProbe(
       provider,

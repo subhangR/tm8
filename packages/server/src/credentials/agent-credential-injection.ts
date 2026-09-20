@@ -51,6 +51,7 @@ import {
   agentCredentialProviderFor,
   apiKeyBackendAgentTool,
   apiKeyBackendsForAgentTool,
+  isApiKeyBackend,
   isApiKeyCredentialProvider,
   type AgentCredentialProvider,
   type AgentCredentialHome,
@@ -114,7 +115,12 @@ function toolsByCredentialProvider(): Record<AgentCredentialProvider, readonly s
     result[provider].push(agentTool);
   }
   for (const provider of API_KEY_CREDENTIAL_PROVIDERS) {
+    // `null` for a NATIVE api-key provider such as gemini, which reaches its
+    // tool through `AGENT_TOOL_CREDENTIAL_PROVIDER` in the loop above and needs
+    // nothing added here. Only a backend reaches a tool that the first loop
+    // credits to somebody else, and only that case belongs in this one.
     const agentTool = apiKeyBackendAgentTool(provider);
+    if (agentTool === null) continue;
     if (!result[provider].includes(agentTool)) result[provider].push(agentTool);
   }
   return result;
@@ -227,9 +233,27 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     const configDir = credentialConfigDir(this.dataDir, claims.identityId, provider);
 
     if (isApiKeyCredentialProvider(provider)) {
-      const apiKey = await this.readApiKey(configDir, provider, claims.identityId);
-      // An index row with no readable key is an INCONSISTENCY, and the honest
-      // response is the same one an unconnected member gets: inject nothing.
+      // WHETHER A MISSING KEY IS AN INCONSISTENCY DEPENDS ON WHETHER THE
+      // PROVIDER HAS A SECOND ROUTE, and `gemini` is the first that does.
+      //
+      // A BACKEND has exactly one: the pasted key IS the credential, and there
+      // is no vendor CLI whose stored login could serve instead. A NATIVE
+      // api-key provider has two — Gemini's own CLI authenticates either from
+      // `GEMINI_API_KEY` or from the OAuth credentials under its config dir —
+      // so for Gemini an absent key file is the ORDINARY state of every member
+      // who connected before the paste flow existed, not a fault.
+      const absenceIsInconsistent = isApiKeyBackend(provider);
+      const apiKey = await this.readApiKey(
+        configDir,
+        provider,
+        claims.identityId,
+        absenceIsInconsistent,
+      );
+      if (apiKey !== null) return { provider, homeDir, configDir, apiKey };
+
+      // An index row with no readable key is an INCONSISTENCY FOR A BACKEND,
+      // and the honest response is the same one an unconnected member gets:
+      // inject nothing.
       //
       // The two alternatives are both worse. Falling through to the native
       // provider would silently run the member on Anthropic's billing after
@@ -240,8 +264,14 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
       // the node's own configuration applies exactly as it would for anyone who
       // has not connected, and the inconsistency is logged rather than
       // swallowed, because nothing else in the system will notice it.
-      if (apiKey === null) return null;
-      return { provider, homeDir, configDir, apiKey };
+      if (absenceIsInconsistent) return null;
+
+      // Gemini with no pasted key falls THROUGH to the file-shaped injection
+      // below — the same home and config dir this provider has always been
+      // given. Returning null here instead would have silently un-injected
+      // every existing OAuth-connected member the moment `gemini` joined
+      // `API_KEY_CREDENTIAL_PROVIDERS`, which is a regression this branch
+      // exists to prevent rather than a behaviour anybody asked for.
     }
 
     return { provider, homeDir, configDir };
@@ -264,6 +294,7 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     configDir: string,
     provider: ApiKeyCredentialProvider,
     identityId: string,
+    absenceIsInconsistent: boolean,
   ): Promise<string | null> {
     const path = join(configDir, API_KEY_FILENAME);
     try {
@@ -277,6 +308,16 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
       }
       return apiKey;
     } catch (err) {
+      // A PLAIN ABSENCE IS NOT LOGGED WHEN ABSENCE IS LEGITIMATE. For an
+      // OAuth-connected Gemini member there is no key file and never was, so
+      // logging one error per spawn would fill the log with a non-event and
+      // teach operators to ignore the line that DOES mean something. Every
+      // other failure — a directory, a permissions error, an unreadable file —
+      // is still reported for both kinds of provider, because none of those is
+      // explained by "this member uses the other route".
+      if (!absenceIsInconsistent && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
       // The PATH is logged and the CONTENTS never are. A path is what an
       // operator needs to fix this; the file is the secret itself.
       this.logger?.error(

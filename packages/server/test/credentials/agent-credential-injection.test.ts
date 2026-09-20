@@ -20,11 +20,16 @@
 // is what scopes it and there is deliberately no node-admin bypass to lean on.
 
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   API_KEY_CREDENTIAL_PROVIDERS,
+  API_KEY_FILENAME,
   apiKeyBackendAgentTool,
   apiKeyBackendDisplaces,
+  isApiKeyBackend,
   isApiKeyCredentialProvider,
 } from '@tm8/execution';
 
@@ -112,13 +117,33 @@ describe('DbAgentCredentialHome', () => {
     // reaches exactly the tool it routes, whose native provider is the one it
     // displaces.
     for (const [provider, tools] of Object.entries(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER)) {
-      if (isApiKeyCredentialProvider(provider)) continue;
+      // Keyed on backend-hood, not on credential shape: a native api-key
+      // provider such as `gemini` round-trips exactly like a file-shaped one.
+      if (isApiKeyCredentialProvider(provider) && isApiKeyBackend(provider)) continue;
       for (const tool of tools) expect(credentialProviderForAgentTool(tool)).toBe(provider);
     }
-    for (const backend of API_KEY_CREDENTIAL_PROVIDERS) {
-      const agentTool = apiKeyBackendAgentTool(backend);
-      expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[backend]).toEqual([agentTool]);
-      expect(credentialProviderForAgentTool(agentTool)).toBe(apiKeyBackendDisplaces(backend));
+    // Only the BACKENDS make that claim. `API_KEY_CREDENTIAL_PROVIDERS` also
+    // holds `gemini`, which is an api-key provider that backs nothing — it
+    // reaches its own `gemini` tool through the native table in the first loop
+    // above, and `apiKeyBackendAgentTool` answers `null` for it. Running it
+    // through this loop would compare against `[null]` and assert a claim
+    // nobody makes.
+    for (const provider of API_KEY_CREDENTIAL_PROVIDERS) {
+      const agentTool = apiKeyBackendAgentTool(provider);
+      if (agentTool === null) {
+        // The native half, asserted rather than skipped: a non-backend gets its
+        // tools from the same table every file-shaped provider uses, and
+        // displaces nobody.
+        expect(isApiKeyBackend(provider)).toBe(false);
+        expect(apiKeyBackendDisplaces(provider)).toBeNull();
+        for (const tool of AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[provider]) {
+          expect(credentialProviderForAgentTool(tool)).toBe(provider);
+        }
+        continue;
+      }
+      expect(isApiKeyBackend(provider)).toBe(true);
+      expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[provider]).toEqual([agentTool]);
+      expect(credentialProviderForAgentTool(agentTool)).toBe(apiKeyBackendDisplaces(provider));
     }
   });
 
@@ -215,3 +240,81 @@ describe('DbAgentCredentialHome', () => {
     expect(recorded[0]?.sql).toContain("status = 'active'");
   });
 });
+
+/**
+ * A NATIVE API-KEY PROVIDER RESOLVES DOWN TWO PATHS, AND ONLY ONE OF THEM IS
+ * NEW.
+ *
+ * `gemini` joining `API_KEY_CREDENTIAL_PROVIDERS` re-pointed an existing branch
+ * at it: every api-key provider whose key file could not be read returned
+ * `null`, on the reasoning that a backend with no key has nothing else to fall
+ * back to. That reasoning does not hold for Gemini. An OAuth-connected member
+ * has an active row, a config directory holding `oauth_creds.json`, and no
+ * pasted key — so the unchanged branch would have stopped injecting for every
+ * one of them the moment this shipped, turning a working session into an
+ * unauthenticated one with nothing in the product that changed.
+ *
+ * The distinction the code now draws is SECOND ROUTE OR NO SECOND ROUTE, and
+ * these two cases are the two sides of it.
+ */
+describe('DbAgentCredentialHome — gemini resolves by key OR by file', () => {
+  const IDENTITY_B = 'identity-bob';
+  const CLAIMS_B: DbClaims = { identityId: IDENTITY_B, actorId: 'actor-2' };
+
+  function dataDirWithKey(provider: string | null, key: string): string {
+    const dataDir = mkdtempSync(join(tmpdir(), 'tm8-inject-'));
+    if (provider !== null) {
+      const dir = join(dataDir, 'credentials', IDENTITY_B, provider);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writeFileSync(join(dir, API_KEY_FILENAME), key, { mode: 0o600 });
+    }
+    return dataDir;
+  }
+
+  function resolveGemini(dataDir: string, rows: Array<{ provider: string }>) {
+    return new DbAgentCredentialHome({ db: stubDb(rows, []), dataDir }).resolve(CLAIMS_B, {
+      agentTool: 'gemini',
+    });
+  }
+
+  it('carries the pasted key when the member has one', async () => {
+    const dataDir = dataDirWithKey('gemini', 'AIzaMemberKey\n');
+    const home = await resolveGemini(dataDir, [{ provider: 'gemini' }]);
+
+    // Trimmed: the paste harness writes a trailing newline, and a newline
+    // inside an API header is a request that fails for a reason nobody would
+    // guess from the message.
+    expect(home?.apiKey).toBe('AIzaMemberKey');
+    expect(home?.provider).toBe('gemini');
+    expect(home?.configDir).toBe(join(dataDir, 'credentials', IDENTITY_B, 'gemini'));
+  });
+
+  it('still injects the home when the member connected by OAuth and has no key', async () => {
+    // THE REGRESSION GUARD. No key file exists at all, and the correct result
+    // is the file-shaped home this provider has always been given — not null.
+    const dataDir = dataDirWithKey(null, '');
+    const home = await resolveGemini(dataDir, [{ provider: 'gemini' }]);
+
+    expect(home).not.toBeNull();
+    expect(home?.provider).toBe('gemini');
+    expect(home?.homeDir).toBe(join(dataDir, 'credentials', IDENTITY_B));
+    // No key, and none invented. `composeEnv` sets `GEMINI_API_KEY` only when
+    // this field is present, so its absence is what keeps the OAuth member on
+    // their file credential instead of an empty variable.
+    expect(home?.apiKey).toBeUndefined();
+  });
+
+  it('but a BACKEND with no key still injects nothing, which is the older rule intact', async () => {
+    // Kimi has no second route: the key IS the credential. Falling through here
+    // would hand the session an empty Anthropic config directory and an agent
+    // with no authentication, which is the failure the `null` exists to avoid.
+    const dataDir = dataDirWithKey(null, '');
+    const home = await new DbAgentCredentialHome({
+      db: stubDb([{ provider: 'kimi' }], []),
+      dataDir,
+    }).resolve(CLAIMS_B, { agentTool: 'claude-code' });
+
+    expect(home).toBeNull();
+  });
+})
+;

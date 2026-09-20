@@ -32,6 +32,12 @@ import {
   apiKeyBackendDisplaces,
   apiKeyBackendOutrankedBy,
   apiKeyBackendsForAgentTool,
+  API_KEY_CREDENTIAL_PROVIDERS,
+  apiKeyBackendEnv,
+  apiKeyVerifyHeaders,
+  API_KEY_PROVIDER_VERIFY_AUTH,
+  apiKeyBackendAgentTool,
+  isApiKeyBackend,
   isApiKeyCredentialProvider,
 } from '../src/credentials/api-key-credentials.js';
 import { CREDENTIAL_CONFIG_DIR_VAR, composeCredentialEnv } from '../src/credentials/credential-env.js';
@@ -599,6 +605,155 @@ describe('API-key backend routing — the env a member with Kimi or Groq actuall
   });
 });
 
+describe('a NATIVE api-key provider — the shape/role split `gemini` forced', () => {
+  /* Gemini is the first provider that is api-key SHAPED without being a
+     BACKEND, and separating those two facts is the whole of this change.
+
+     Before it, `isApiKeyCredentialProvider` answered both questions at once
+     because no provider had ever disagreed with itself: kimi, groq and grok are
+     each a pasted key AND a redirection of somebody else's tool. Gemini has the
+     first property and not the second — it is the native provider of the
+     `gemini` tool (`agentTools: ['gemini']`, agent-credentials.ts:79-82), so
+     connecting it displaces nobody and outranks nothing.
+
+     Every case below is one half of that split, asserted where a future
+     provider would trip over it. */
+
+  const NODE_GOOGLE_KEYS: NodeJS.ProcessEnv = {
+    ...POLLUTED_PARENT,
+    GEMINI_API_KEY: 'AIzaNODEKEYnotthemembers',
+    GOOGLE_API_KEY: 'AIzaNODEKEYotherspelling',
+  };
+
+  const geminiKeyHome: AgentCredentialHome = {
+    provider: 'gemini',
+    homeDir: HOME_DIR,
+    configDir: `${HOME_DIR}/gemini`,
+    apiKey: 'AIzaMEMBERkey',
+  };
+
+  it('is api-key shaped but backs no tool', () => {
+    expect(isApiKeyCredentialProvider('gemini')).toBe(true);
+    expect(isApiKeyBackend('gemini')).toBe(false);
+    expect(apiKeyBackendAgentTool('gemini')).toBeNull();
+    expect(apiKeyBackendDisplaces('gemini')).toBeNull();
+    // And the tool it natively serves is reached through nobody's routing.
+    expect(apiKeyBackendsForAgentTool('gemini')).toEqual([]);
+  });
+
+  it('states the law rather than the three cases, so the next provider is covered too', () => {
+    // A backend is exactly a provider that routes a tool. Asserting the
+    // EQUIVALENCE means a future row that sets one field and not the other
+    // fails here, instead of failing as a mis-routed session months later.
+    for (const provider of API_KEY_CREDENTIAL_PROVIDERS) {
+      expect(isApiKeyBackend(provider)).toBe(apiKeyBackendAgentTool(provider) !== null);
+      expect(isApiKeyBackend(provider)).toBe(apiKeyBackendDisplaces(provider) !== null);
+    }
+    expect(API_KEY_CREDENTIAL_PROVIDERS.filter((p) => !isApiKeyBackend(p))).toEqual(['gemini']);
+  });
+
+  it('never outranks anything, however many keys the member has connected', () => {
+    // `outrankedBy` is a claim about two backends competing for ONE tool.
+    // Gemini competes with nobody, so the answer is null even when every other
+    // api-key provider is connected alongside it.
+    expect(apiKeyBackendOutrankedBy('gemini', new Set(['gemini']))).toBeNull();
+    expect(
+      apiKeyBackendOutrankedBy('gemini', new Set(['kimi', 'groq', 'grok', 'gemini'])),
+    ).toBeNull();
+    // Nor is it ever the thing doing the outranking.
+    expect(apiKeyBackendOutrankedBy('grok', new Set(['gemini', 'grok']))).toBeNull();
+  });
+
+  it('gives the member key its own variable and rewrites no base URL', () => {
+    // The backend shape is `{BASE_URL, KEY}` — point a vendor SDK somewhere
+    // else. The native shape is one variable and no redirection, because the
+    // Gemini CLI is already talking to Google. A base URL here would be the
+    // bug: it would aim the tool at an endpoint nobody configured.
+    expect(apiKeyBackendEnv('gemini', 'AIzaMEMBERkey')).toEqual({
+      GEMINI_API_KEY: 'AIzaMEMBERkey',
+    });
+    // Contrast, pinned LITERALLY so the two shapes cannot quietly converge.
+    // The routing table itself stays module-private — the accessors are the
+    // API, and exporting the table to spell this assertion would widen the
+    // surface for a test's convenience.
+    expect(apiKeyBackendEnv('kimi', 'sk-member')).toEqual({
+      ANTHROPIC_BASE_URL: 'https://api.moonshot.ai/anthropic',
+      ANTHROPIC_AUTH_TOKEN: 'sk-member',
+    });
+  });
+
+  it('suppresses the node keys BEFORE injecting the member key, which for Gemini is the same variable', () => {
+    // The exact hazard `groq` has with `OPENAI_API_KEY`, and Gemini has it
+    // twice: `GEMINI_API_KEY` is simultaneously a node value being deleted and
+    // the member value being written. Inject-then-suppress would leave the
+    // session with NO key and a node key it was not entitled to use anyway.
+    const env = composeEnv(
+      manifestFor('gemini'),
+      '/tmp/m.json',
+      'http://x',
+      NODE_GOOGLE_KEYS,
+      undefined,
+      undefined,
+      geminiKeyHome,
+    );
+
+    expect(env.GEMINI_API_KEY).toBe('AIzaMEMBERkey');
+    // The other spelling is suppressed and never re-set: two keys for one
+    // vendor is a session whose billing depends on SDK precedence.
+    expect(env).not.toHaveProperty('GOOGLE_API_KEY');
+    expect(env).not.toHaveProperty('GEMINI_BASE_URL');
+    expect(env.HOME).toBe(HOME_DIR);
+  });
+
+  it('leaves an OAuth-connected member keyless rather than inventing a variable', () => {
+    // The pre-existing member: a credential row, a config dir holding
+    // `oauth_creds.json`, and no pasted key. They must come out exactly as they
+    // did before Gemini joined the api-key list — the home injected, the node
+    // keys suppressed, and nothing fabricated.
+    const env = composeEnv(
+      manifestFor('gemini'),
+      '/tmp/m.json',
+      'http://x',
+      NODE_GOOGLE_KEYS,
+      undefined,
+      undefined,
+      { provider: 'gemini', homeDir: HOME_DIR, configDir: `${HOME_DIR}/gemini` },
+    );
+
+    expect(env).not.toHaveProperty('GEMINI_API_KEY');
+    expect(env).not.toHaveProperty('GOOGLE_API_KEY');
+    expect(env.HOME).toBe(HOME_DIR);
+  });
+
+  it('sends Google its key in the header Google actually reads', () => {
+    // `x-goog-api-key`, not `Authorization: Bearer`. The generic api-key probe
+    // hardcoded bearer, which Google rejects — every valid Gemini key would
+    // have verified as invalid, and the member would have been told their key
+    // was wrong when it was tm8 asking wrongly.
+    expect(apiKeyVerifyHeaders('gemini', 'AIzaMEMBERkey')).toEqual({
+      Accept: 'application/json',
+      'x-goog-api-key': 'AIzaMEMBERkey',
+    });
+    const headers = apiKeyVerifyHeaders('gemini', 'AIzaMEMBERkey');
+    expect(headers).not.toHaveProperty('Authorization');
+
+    // The three OpenAI-wire backends keep bearer, so this is a per-provider
+    // fact rather than a global switch.
+    for (const provider of ['kimi', 'groq', 'grok'] as const) {
+      expect(apiKeyVerifyHeaders(provider, 'sk-x')).toEqual({
+        Accept: 'application/json',
+        Authorization: 'Bearer sk-x',
+      });
+    }
+  });
+
+  it('keeps the verify auth table total, so a new provider must choose', () => {
+    for (const provider of API_KEY_CREDENTIAL_PROVIDERS) {
+      expect(['bearer', 'x-goog-api-key']).toContain(API_KEY_PROVIDER_VERIFY_AUTH[provider]);
+    }
+  });
+});
+
 describe('drift guard — the agent table and the login-terminal table are one convention', () => {
   /**
    * These two tables are duplicated ON PURPOSE: `credential-env.ts` imports
@@ -633,7 +788,22 @@ describe('drift guard — the agent table and the login-terminal table are one c
       // non-null value at login would hand tm8's own harness a vendor variable
       // it does not read. The guard therefore narrows rather than widening, and
       // says why.
-      if (isApiKeyCredentialProvider(provider)) {
+      // The exemption is keyed on BACKEND-HOOD, not on credential shape, and
+      // `gemini` is why the distinction had to be made explicit. Being an
+      // api-key provider means only "the credential is a key tm8 stores"; it
+      // says nothing about whose tool reads it. Gemini stores a pasted key AND
+      // is the native provider of the `gemini` tool (`agentTools: ['gemini']`,
+      // agent-credentials.ts:79-82), so no redirection happens and the two
+      // tables are back to describing one program. It therefore belongs on the
+      // agreement branch below — where it passes, both tables reading `null`,
+      // because the Gemini CLI keys its storage off HOME rather than off a
+      // config-dir variable.
+      //
+      // Guarding this on `isApiKeyCredentialProvider` alone would have silently
+      // exempted Gemini from the very guard it satisfies, and compared it to
+      // `AGENT_CREDENTIAL_CONFIG_DIR_VAR[null]` — `undefined` — which is not a
+      // claim about anything.
+      if (isApiKeyCredentialProvider(provider) && isApiKeyBackend(provider)) {
         expect(CREDENTIAL_CONFIG_DIR_VAR[provider]).toBeNull();
         expect(AGENT_CREDENTIAL_CONFIG_DIR_VAR[provider]).toBe(
           AGENT_CREDENTIAL_CONFIG_DIR_VAR[apiKeyBackendDisplaces(provider)],

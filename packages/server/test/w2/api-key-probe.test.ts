@@ -20,7 +20,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { API_KEY_FILENAME, API_KEY_PROVIDER_VERIFY_URL } from '@tm8/execution';
 import type { CredentialBinaryResolver } from '../../src/facade/services/w2/credential-probe.js';
-import { runCredentialProbe } from '../../src/facade/services/w2/credential-probe.js';
+import {
+  credentialBinaryFor,
+  runCredentialProbe,
+} from '../../src/facade/services/w2/credential-probe.js';
 
 /** The harness binary is `node`; this suite is not testing PATH resolution. */
 const BINARY_PRESENT: CredentialBinaryResolver = ({ binary }) => `/test/bin/${binary}`;
@@ -181,5 +184,157 @@ describe('the API-key probe', () => {
       expect(result.detail ?? '', `HTTP ${status} detail leaked the key`).not.toContain(key);
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * GEMINI HAS TWO ROUTES, AND THE PROBE MUST NOT COLLAPSE THEM.
+ *
+ * Every other provider in this file answers one question. Gemini answers two,
+ * because a member can hold either a pasted API key that tm8 stores and can
+ * VERIFY against Google, or an OAuth credential file written by the CLI's own
+ * `LOGIN_WITH_GOOGLE` flow, which tm8 can only OBSERVE the existence of.
+ *
+ * The order is key-first and it is load-bearing: the key route authenticates,
+ * the file route only looks. Checking the file first would report a member with
+ * a stale key and an old credentials file as connected, on the strength of a
+ * file nobody has validated since it was written.
+ *
+ * The honest limit is stated too. `@google/gemini-cli` 0.58.0 carries FOUR auth
+ * modes — `USE_GEMINI`, `LOGIN_WITH_GOOGLE`, `USE_VERTEX_AI`, `CLOUD_SHELL` —
+ * and tm8 can see the first two. A negative here therefore means "tm8 has no
+ * Gemini credential", never "this member cannot reach Gemini".
+ */
+describe('the Gemini dual-route probe', () => {
+  function geminiHome(options: { key?: string; oauth?: boolean }): string {
+    const home = mkdtempSync(join(tmpdir(), 'tm8-gemini-probe-'));
+    if (options.key !== undefined) {
+      mkdirSync(join(home, 'gemini'), { recursive: true, mode: 0o700 });
+      writeFileSync(join(home, 'gemini', API_KEY_FILENAME), options.key, { mode: 0o600 });
+    }
+    if (options.oauth === true) {
+      mkdirSync(join(home, '.gemini'), { recursive: true, mode: 0o700 });
+      writeFileSync(join(home, '.gemini', 'oauth_creds.json'), '{"access_token":"x"}', {
+        mode: 0o600,
+      });
+    }
+    return home;
+  }
+
+  function geminiProbe(home: string) {
+    return runCredentialProbe({
+      provider: 'gemini',
+      env: { HOME: home, PATH: '/usr/bin:/bin' },
+      cwd: home,
+      resolveBinary: BINARY_PRESENT,
+      run: async () => {
+        throw new Error('the Gemini probe must not run a command');
+      },
+    });
+  }
+
+  it('verifies a stored key against Google, in the header Google reads', async () => {
+    const calls = stubFetch(new Response('{"models":[]}', { status: 200 }));
+    const result = await geminiProbe(geminiHome({ key: 'AIzaRealKeyValue\n' }));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('generativelanguage.googleapis.com');
+    // `x-goog-api-key`, NOT `Authorization: Bearer`. Google rejects a bearer
+    // key, so the generic bearer header would have failed every VALID key and
+    // told the member their key was wrong when tm8 was asking wrongly.
+    expect(calls[0]?.headers['x-goog-api-key']).toBe('AIzaRealKeyValue');
+    expect(calls[0]?.headers['Authorization']).toBeUndefined();
+
+    expect(result.connected).toBe(true);
+    expect(result.status).toBe('active');
+    expect(result.authMethod).toBe('api_key');
+    expect(result.login).toBeNull();
+  });
+
+  it('falls through to the OAuth file when there is no key, and asks Google nothing', async () => {
+    // The pre-existing member. There is nothing to verify and nothing to ask —
+    // a network call here would be a request made on behalf of a member who
+    // gave tm8 no key to make it with.
+    const calls = stubFetch(new Response('', { status: 500 }));
+    const result = await geminiProbe(geminiHome({ oauth: true }));
+
+    expect(calls).toHaveLength(0);
+    expect(result.connected).toBe(true);
+    expect(result.status).toBe('active');
+    expect(result.authMethod).toBe('oauth');
+  });
+
+  it('does not let a REJECTED key hide a working OAuth login', async () => {
+    // Both routes present, the key dead. The member still has a usable Gemini
+    // credential, and reporting them disconnected would be a false negative
+    // that no action of theirs caused.
+    stubFetch(new Response('', { status: 401 }));
+    const result = await geminiProbe(geminiHome({ key: 'AIzaDeadKey\n', oauth: true }));
+
+    expect(result.connected).toBe(true);
+    expect(result.authMethod).toBe('oauth');
+  });
+
+  it('reports a rejected key with no OAuth file as a MEASURED negative', async () => {
+    stubFetch(new Response('', { status: 401 }));
+    const result = await geminiProbe(geminiHome({ key: 'AIzaDeadKey\n' }));
+
+    expect(result.connected).toBe(false);
+    // `active`, not `stale`: Google answered. The doctrine's distinction is
+    // between "established a negative" and "could not tell", and this is the
+    // first.
+    expect(result.status).toBe('active');
+    expect(result.detail ?? '').toContain('rejected');
+    expect(result.detail ?? '').not.toContain('AIzaDeadKey');
+  });
+
+  it('cannot tell when Google itself said nothing, and does NOT consult the file', async () => {
+    // A 5xx means the key's validity is unknown. Falling through to the file
+    // route would convert "cannot confirm" into a confident answer drawn from a
+    // DIFFERENT credential — the exact collapse the honesty doctrine forbids,
+    // and `stale` is deliberately never persisted.
+    stubFetch(new Response('', { status: 503 }));
+    const result = await geminiProbe(geminiHome({ key: 'AIzaUnknown\n', oauth: true }));
+
+    expect(result.status).toBe('stale');
+    expect(result.connected).toBe(false);
+  });
+
+  it('gates on node, because the login flow IS node — and that is a widening', () => {
+    // `credentialBinaryFor` takes the FIRST TOKEN of the login command, so
+    // moving Gemini from `gemini` to the paste harness moved its gate from the
+    // vendor CLI to `node`. Stated here because it is otherwise a silent
+    // consequence of an unrelated-looking edit.
+    //
+    // It is the correct gate for THIS flow — the binary check asks "can the
+    // login terminal run", and what runs is the harness — but it is genuinely
+    // more permissive than before: a node without `@google/gemini-cli` can now
+    // store and verify a Gemini key. That key is still real and still
+    // verifiable; what it cannot do on such a node is back a `gemini` session,
+    // and no `gemini` session can be spawned by tm8 on ANY node yet
+    // (`AGENT_TOOL_BINARIES` carries claude-code, codex and echo-agent only).
+    // So the widening admits a credential that is useful later rather than one
+    // that is useless now.
+    expect(credentialBinaryFor('gemini')).toBe('node');
+    // The backends have always gated this way; Gemini now matches them.
+    expect(credentialBinaryFor('kimi')).toBe('node');
+    // And a genuine vendor-CLI provider still gates on its own binary, so this
+    // is a per-provider consequence of the login command rather than a blanket
+    // change.
+    expect(credentialBinaryFor('anthropic')).toBe('claude');
+  });
+
+  it('says tm8 holds no credential, not that the member has no Gemini', async () => {
+    const calls = stubFetch(new Response('', { status: 500 }));
+    const result = await geminiProbe(geminiHome({}));
+
+    expect(calls).toHaveLength(0);
+    expect(result.connected).toBe(false);
+    expect(result.status).toBe('active');
+    expect(result.authMethod).toBeNull();
+    // The limit of the claim is IN the message, because a member reading
+    // "not connected" while their Vertex-backed CLI works fine would reasonably
+    // conclude tm8 is broken.
+    expect(result.detail ?? '').toMatch(/Vertex|Cloud Shell/i);
   });
 });
