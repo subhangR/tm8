@@ -565,6 +565,8 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
       hermes: 'node',
       cursor: 'node',
       github: 'node',
+      kimi: 'node',
+      groq: 'node',
     });
   }, 30000);
 
@@ -594,6 +596,8 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
       hermes: 'member',
       cursor: 'member',
       github: 'member',
+      kimi: 'member',
+      groq: 'member',
     });
   }, 30000);
 
@@ -632,6 +636,8 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
       hermes: null,
       cursor: null,
       github: null,
+      kimi: null,
+      groq: null,
     });
   }, 30000);
 });

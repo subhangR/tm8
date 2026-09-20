@@ -1979,7 +1979,55 @@ export type CredentialProviderName =
   | 'github'
   | 'gemini'
   | 'hermes'
-  | 'cursor';
+  | 'cursor'
+  | 'kimi'
+  | 'groq';
+
+/**
+ * What a connected credential CHANGES about the agent sessions a member runs.
+ *
+ * This type exists because two of the eight providers are not additional tools
+ * — they are alternative BACKENDS for a tool that already exists. Connecting
+ * Kimi does not give a member a "kimi" agent to choose; it makes every
+ * `claude-code` session they start talk to Moonshot's Anthropic-wire endpoint
+ * instead of Anthropic's, account-wide, with no per-session opt-in. Groq does
+ * the same to `codex`.
+ *
+ * That behaviour was chosen deliberately, and it is the reason this field is on
+ * the wire at all. A routing decision that is invisible is a routing decision
+ * nobody can audit: the member who connected Kimi in March and debugs an odd
+ * model response in June has no way, from the product, to discover that their
+ * sessions stopped reaching Anthropic. The card must be able to SAY it. So the
+ * server computes the routing rather than leaving the UI to hardcode a pair of
+ * provider names it would then have to keep in step with
+ * `api-key-credentials.ts`.
+ */
+export interface CredentialRoutingView {
+  /** The agent tool whose backend this provider is, e.g. `claude-code`. */
+  agentTool: string;
+  /**
+   * `backend`  — THIS provider serves `agentTool` when it is connected.
+   * `displaced` — this provider is the one being REPLACED, because the
+   *               counterpart below is connected and wins the resolution.
+   *
+   * Both halves of a displacement are described so that the member reads the
+   * same fact from whichever card they happen to be looking at.
+   */
+  role: 'backend' | 'displaced';
+  /** The provider at the other end of that relationship. */
+  counterpart: CredentialProviderName;
+  /**
+   * Whether the routing is IN EFFECT right now, as opposed to what would happen
+   * if this provider were connected.
+   *
+   * A `kimi` card that nobody has connected still carries routing with
+   * `active: false`, because the standing consequence of connecting it is
+   * exactly what a member needs to know BEFORE they press Connect. A `displaced`
+   * entry is only ever emitted with `active: true` — there is nothing to warn an
+   * Anthropic user about until a backend actually displaces them.
+   */
+  active: boolean;
+}
 
 /** One provider's card on the Connections screen. */
 export interface CredentialConnectionView {
@@ -2016,6 +2064,16 @@ export interface CredentialConnectionView {
   status: 'active' | 'stale' | 'revoked' | 'unavailable' | null;
   connectedAt: string | null;
   lastVerifiedAt: string | null;
+  /**
+   * How this provider redirects agent sessions, or `null` for the six providers
+   * that redirect nothing.
+   *
+   * Nullable rather than optional for the same reason `login` is: "this
+   * provider has no routing" is a permanent fact about anthropic, openai,
+   * github, gemini, hermes and cursor, and a UI that rendered "missing"
+   * differently from "null" would draw two cards for one state.
+   */
+  routing: CredentialRoutingView | null;
 }
 
 /**
@@ -2032,7 +2090,7 @@ export interface CredentialConnectionView {
  * a node where the table exists.
  */
 export interface CredentialsStatusView {
-  /** One entry per provider in `CredentialProviderName`, always all six. */
+  /** One entry per provider in `CredentialProviderName` — always all of them. */
   providers: CredentialConnectionView[];
   /**
    * `present` — the table exists and was read.

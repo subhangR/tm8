@@ -40,13 +40,23 @@
  * identity-keyed directory is correctly re-adopted by the same human's
  * re-created account, and an account-keyed one would orphan on every recreate.
  */
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import {
   AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   AGENT_TOOL_CREDENTIAL_PROVIDER,
+  API_KEY_CREDENTIAL_PROVIDERS,
+  API_KEY_FILENAME,
   agentCredentialProviderFor,
+  apiKeyBackendAgentTool,
+  apiKeyBackendsForAgentTool,
+  isApiKeyCredentialProvider,
   type AgentCredentialProvider,
   type AgentCredentialHome,
   type AgentCredentialHomePort,
+  type ApiKeyCredentialProvider,
+  type Logger,
 } from '@tm8/execution';
 
 import type { Db, DbClaims } from '../db/types.js';
@@ -60,6 +70,13 @@ export interface DbAgentCredentialHomeOptions {
   db: Db;
   /** The node data root — the same one SpawnService and the launcher use. */
   dataDir: string;
+  /**
+   * Optional, and used for exactly one thing: reporting an index row whose key
+   * file cannot be read. That is an INCONSISTENCY rather than an ordinary
+   * "not connected", and it resolves to the same silent outcome, so it needs a
+   * place to be loud. See `readApiKey`.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -75,6 +92,18 @@ export interface DbAgentCredentialHomeOptions {
  * GitHub is deliberately absent: its string-shaped token is injected into all
  * tools through `account_git_credentials`, so the catalog represents it with
  * `null` (all tools) rather than one row here.
+ *
+ * THE API-KEY BACKENDS CONTRIBUTE NOTHING TO `AGENT_TOOL_CREDENTIAL_PROVIDER`,
+ * so they must be added here explicitly, and forgetting to would have been a
+ * containment hole rather than a cosmetic gap. That table maps a tool to the
+ * provider it NATIVELY authenticates with, and Kimi holds `agentTools: []`
+ * there precisely so it cannot displace Anthropic for members who never
+ * connected it. But a Kimi key IS live in every `claude-code` process of a
+ * member who did connect it — so if this reverse projection reported no tools
+ * for `kimi`, Disconnect would revoke the row, leave those processes running
+ * with the key still in their environment, and report success. The second loop
+ * below reads the routing table for that reason: the projection must describe
+ * where a credential can REACH, not where it came from.
  */
 function toolsByCredentialProvider(): Record<AgentCredentialProvider, readonly string[]> {
   const result = Object.fromEntries(
@@ -83,6 +112,10 @@ function toolsByCredentialProvider(): Record<AgentCredentialProvider, readonly s
   ) as Record<AgentCredentialProvider, string[]>;
   for (const [agentTool, provider] of Object.entries(AGENT_TOOL_CREDENTIAL_PROVIDER)) {
     result[provider].push(agentTool);
+  }
+  for (const provider of API_KEY_CREDENTIAL_PROVIDERS) {
+    const agentTool = apiKeyBackendAgentTool(provider);
+    if (!result[provider].includes(agentTool)) result[provider].push(agentTool);
   }
   return result;
 }
@@ -114,34 +147,59 @@ export function credentialProviderForAgentTool(
 export class DbAgentCredentialHome implements AgentCredentialHomePort {
   private readonly db: Db;
   private readonly dataDir: string;
+  private readonly logger: Logger | undefined;
 
   constructor(options: DbAgentCredentialHomeOptions) {
     this.db = options.db;
     this.dataDir = options.dataDir;
+    this.logger = options.logger;
   }
 
   async resolve(
     auth: unknown,
     input: { agentTool: string },
   ): Promise<AgentCredentialHome | null> {
-    const provider = credentialProviderForAgentTool(input.agentTool);
+    const nativeProvider = credentialProviderForAgentTool(input.agentTool);
+    // An API-key backend can exist for a tool with no native provider in
+    // principle, so both are computed before deciding there is nothing to do.
+    const backends = apiKeyBackendsForAgentTool(input.agentTool);
+
     // `echo-agent`, an operator wrapper, or any tool that authenticates against
     // no admitted vendor. Nothing to inject and nothing to look up.
-    if (!provider) return null;
+    if (!nativeProvider && backends.length === 0) return null;
 
     const claims = auth as DbClaims;
     // No identity means no RLS-visible row anyway; asking would be a pointless
     // round trip whose only possible answer is "none".
     if (!claims?.identityId) return null;
 
+    // THE PREFERENCE ORDER, AND THE PRODUCT DECISION IT ENCODES.
+    //
+    // API-key backends first, native provider last. A member who has connected
+    // Kimi gets Kimi for EVERY `claude-code` session, not just ones that opted
+    // in, and it outranks a connected Anthropic login rather than losing to it.
+    // That is the account-wide default this feature was asked for, and it is
+    // the reason the order is stated here as data rather than left to whichever
+    // row the database happened to return first.
+    //
+    // It is also the surprising half, so it is made VISIBLE rather than
+    // silent: `credentials.status` reports the displacement in words and the
+    // connection card says which tool now routes where. Disconnecting the key
+    // restores the native provider with no other action — nothing about the
+    // Anthropic credential is altered or revoked by connecting Kimi, it is
+    // simply outranked while the key is live.
+    const candidates: AgentCredentialProvider[] = [
+      ...backends,
+      ...(nativeProvider ? [nativeProvider] : []),
+    ];
+
     const rows = await this.db.query<CredentialIndexRow>(
       claims,
       `select provider
          from public.account_agent_credentials
-        where provider = $1
-          and status = 'active'
-        limit 1`,
-      [provider],
+        where provider = any($1::text[])
+          and status = 'active'`,
+      [candidates],
     );
     // 'stale' and 'revoked' deliberately do NOT inject. A stale credential must
     // fail visibly and attributably to the member ("reconnect your account"),
@@ -150,10 +208,73 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     // member is least able to notice it.
     if (rows.length === 0) return null;
 
-    return {
-      provider,
-      homeDir: credentialHomeDir(this.dataDir, claims.identityId),
-      configDir: credentialConfigDir(this.dataDir, claims.identityId, provider),
-    };
+    const active = new Set(rows.map((row) => row.provider));
+    // Ordered by OUR preference list, never by the row order the query returned.
+    const provider = candidates.find((candidate) => active.has(candidate));
+    if (!provider) return null;
+
+    const homeDir = credentialHomeDir(this.dataDir, claims.identityId);
+    const configDir = credentialConfigDir(this.dataDir, claims.identityId, provider);
+
+    if (isApiKeyCredentialProvider(provider)) {
+      const apiKey = await this.readApiKey(configDir, provider, claims.identityId);
+      // An index row with no readable key is an INCONSISTENCY, and the honest
+      // response is the same one an unconnected member gets: inject nothing.
+      //
+      // The two alternatives are both worse. Falling through to the native
+      // provider would silently run the member on Anthropic's billing after
+      // they deliberately connected Kimi — a quiet substitution of one vendor
+      // for another, which is the precise class of lie this subsystem exists to
+      // prevent. Throwing would fail the spawn outright over a credential
+      // problem, turning a degraded session into no session. So: no injection,
+      // the node's own configuration applies exactly as it would for anyone who
+      // has not connected, and the inconsistency is logged rather than
+      // swallowed, because nothing else in the system will notice it.
+      if (apiKey === null) return null;
+      return { provider, homeDir, configDir, apiKey };
+    }
+
+    return { provider, homeDir, configDir };
+  }
+
+  /**
+   * Read a member's pasted key from their credential home.
+   *
+   * Returns `null` for every failure, deliberately without distinguishing them
+   * to the caller: a missing file, a directory, a permissions error and a
+   * blank file all mean "there is no usable key here", and the caller's
+   * response to each is identical. The distinction that matters goes to the
+   * log, not to the control flow.
+   *
+   * The value is trimmed because it is written with a trailing newline by the
+   * paste harness, and a key with a newline in the `Authorization` header is a
+   * request that fails for a reason nobody would guess from the message.
+   */
+  private async readApiKey(
+    configDir: string,
+    provider: ApiKeyCredentialProvider,
+    identityId: string,
+  ): Promise<string | null> {
+    const path = join(configDir, API_KEY_FILENAME);
+    try {
+      const apiKey = (await readFile(path, 'utf8')).trim();
+      if (apiKey.length === 0) {
+        this.logger?.error('DbAgentCredentialHome: stored API key is empty', undefined, {
+          provider,
+          identityId,
+        });
+        return null;
+      }
+      return apiKey;
+    } catch (err) {
+      // The PATH is logged and the CONTENTS never are. A path is what an
+      // operator needs to fix this; the file is the secret itself.
+      this.logger?.error(
+        'DbAgentCredentialHome: active credential has no readable key',
+        err instanceof Error ? err : undefined,
+        { provider, identityId, path },
+      );
+      return null;
+    }
   }
 }

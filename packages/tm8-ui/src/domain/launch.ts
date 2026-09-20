@@ -663,6 +663,15 @@ export type LaunchCredentialSource = 'member' | 'node';
  * its second consumer — two private copies of a tool→provider map is exactly
  * the copy-drift D34 names.
  */
+// Kimi and Groq are DELIBERATELY ABSENT. This map answers "which provider's
+// credential does this tool consume", and the launch picker uses it to offer a
+// per-session choice. Those two are not a choice at this seam: they are
+// account-wide backends that replace anthropic/openai wherever they are
+// connected, resolved on the server at spawn time. Listing them here would
+// either overwrite `claude-code`'s entry — silently pointing every member's
+// picker at a provider most of them have never connected — or add a second
+// entry to a map that is one-to-one by construction. The card's routing line is
+// where that relationship is shown; see `CredentialRoutingView`.
 export const AGENT_CREDENTIAL_PROVIDER: Readonly<Partial<Record<string, CredentialProviderName>>> = {
   'claude-code': 'anthropic',
   codex: 'openai',
@@ -682,6 +691,8 @@ export const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> =
   gemini: 'Google',
   hermes: 'Nous',
   cursor: 'Cursor',
+  kimi: 'Moonshot AI',
+  groq: 'Groq',
 };
 
 /**

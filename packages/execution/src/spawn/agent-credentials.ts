@@ -40,6 +40,14 @@ import type { CredentialProvider, GraphAuth } from './types.js';
  * shaped. They still belong in this set: the HOME redirection in
  * `agentCredentialEnv` below is what makes the login terminal's write and the
  * ordinary spawned agent's read meet at the same member-owned directory.
+ *
+ * Kimi and Groq arrive here automatically, because this type SUBTRACTS github
+ * rather than listing members. That is the behaviour we want — they are
+ * file-shaped, their credential lives in the same per-identity directory, and
+ * the only thing unusual about them is that tm8 wrote the file instead of a
+ * vendor CLI. The `satisfies` below is what makes the widening safe rather than
+ * silent: adding a provider to `CredentialProvider` fails this file's build
+ * until someone states its row here deliberately.
  */
 export type AgentCredentialProvider = Exclude<CredentialProvider, 'github'>;
 
@@ -92,6 +100,65 @@ const AGENT_CREDENTIAL_PROVIDER_DEFINITIONS = {
     configDirVar: null,
     nodeConfigDir: '.cursor',
     suppressedEnvKeys: ['CURSOR_API_KEY'],
+  },
+
+  // THE TWO API-KEY BACKENDS. Read `agentTools: []` before anything else here:
+  // it is EMPTY ON PURPOSE and it is the most important value in this file.
+  //
+  // `AGENT_TOOL_CREDENTIAL_PROVIDER` below is built by flat-mapping these
+  // arrays into a tool→provider record. Writing `agentTools: ['claude-code']`
+  // here — the obvious thing, since Kimi does back Claude Code — would emit a
+  // SECOND `claude-code` entry, and the later one wins. Every member on this
+  // node would silently resolve `claude-code` to `kimi`, including the ones who
+  // never connected it, whose sessions would then find no credential at all.
+  // One plausible line, no type error, no failing test, and Anthropic login
+  // stops working for everybody.
+  //
+  // The relation these two need is not the one that table expresses. That table
+  // is "the provider this tool NATIVELY authenticates with", which is a
+  // property of the tool. Backing is per-MEMBER and conditional: it applies
+  // only where a key is connected, and it DISPLACES the native provider rather
+  // than replacing it. That lives in `API_KEY_BACKEND_ROUTING`
+  // (`credentials/api-key-credentials.ts`), consulted per spawn by the resolver
+  // that knows which member is spawning. Here they contribute rows for
+  // relocation, node-directory discovery and suppression, and no tool mapping.
+  kimi: {
+    agentTools: [],
+    // Pointed at the DISPLACED vendor's variable, which is not a mistake.
+    //
+    // A Kimi-backed session runs the `claude` binary, so `CLAUDE_CONFIG_DIR` is
+    // the variable that decides where that binary looks — and pointing it at
+    // the member's `kimi/` directory is what makes the routing DETERMINISTIC.
+    // That directory holds an `api-key` file and no Anthropic login, so the CLI
+    // finds no stored OAuth account to prefer and uses the bearer token the
+    // composer injects. Leaving it null would let a previously connected
+    // Anthropic login in the member's own home quietly outrank the Kimi key
+    // they just connected, which is the exact ambiguity this feature exists to
+    // avoid.
+    configDirVar: 'CLAUDE_CONFIG_DIR',
+    // The same node directory as Anthropic, because it is the same binary.
+    // A shared value here is a true statement about `claude`, not a collision:
+    // this field names where the CLI writes beneath the NODE's home, and the
+    // CLI does not change its mind about that because of who is paying for the
+    // tokens.
+    nodeConfigDir: '.claude',
+    // Both Anthropic-precedence names. `ANTHROPIC_API_KEY` for the same
+    // measured reason as the Anthropic row above; `ANTHROPIC_AUTH_TOKEN`
+    // additionally, because that is the very variable the routing step sets and
+    // a node-forwarded one would otherwise be indistinguishable from ours.
+    // Suppression runs BEFORE routing in `composeEnv`; see the note in
+    // `api-key-credentials.ts` about why that order is load-bearing.
+    suppressedEnvKeys: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'],
+  },
+  groq: {
+    agentTools: [],
+    configDirVar: 'CODEX_HOME',
+    nodeConfigDir: '.codex',
+    // `OPENAI_API_KEY` is BOTH the key suppressed here and the key the routing
+    // step injects, so this row is only correct because suppression happens
+    // first. `OPENAI_BASE_URL` is not listed: routing overwrites it
+    // unconditionally, so a forwarded node value cannot survive either way.
+    suppressedEnvKeys: ['OPENAI_API_KEY'],
   },
 } as const satisfies Record<AgentCredentialProvider, AgentCredentialProviderDefinition>;
 
@@ -190,6 +257,30 @@ export interface AgentCredentialHome {
   homeDir: string;
   /** `<homeDir>/<provider>` — used by CLIs with a config-directory override. */
   configDir: string;
+  /**
+   * The member's API key, present ONLY for an API-key provider.
+   *
+   * THIS IS THE ONE SECRET THAT TRAVELS THROUGH THIS INTERFACE, and it is worth
+   * saying why it has to. Every other provider's credential is delivered by
+   * POINTING A VARIABLE AT A DIRECTORY the vendor CLI then reads for itself, so
+   * the secret never enters the server's memory and `agentCredentialEnv` can
+   * stay a pure, synchronous path computation. Kimi and Groq have no CLI to do
+   * that reading; the key has to arrive as an environment variable, so somebody
+   * has to read the file.
+   *
+   * The reader is the server's `DbAgentCredentialHome`, which already owns the
+   * credential home, its 0700 modes and its identity check — so the read
+   * happens in the one place already trusted with that directory, and this
+   * interface receives a value rather than growing an async method. It is
+   * absent, not empty, for every other provider: `undefined` means "this shape
+   * has no inline secret", which is a different statement from "the key is
+   * blank" and the routing step treats it as such.
+   *
+   * It must never be logged. `CredentialSessionLauncher` already declines to log
+   * its composed environment for exactly this reason, and that restraint stops
+   * being merely prudent the moment this field is populated.
+   */
+  apiKey?: string;
 }
 
 /**

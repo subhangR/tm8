@@ -67,10 +67,18 @@ import { CollabError } from '@tm8/contract';
 import type {
   CredentialConnectionView,
   CredentialProviderName,
+  CredentialRoutingView,
   CredentialsDeleteResult,
   CredentialsStatusView,
 } from '@tm8/contract';
-import { CREDENTIAL_PROVIDERS, type Logger } from '@tm8/execution';
+import {
+  CREDENTIAL_PROVIDERS,
+  apiKeyBackendAgentTool,
+  apiKeyBackendDisplaces,
+  apiKeyBackendsForAgentTool,
+  isApiKeyCredentialProvider,
+  type Logger,
+} from '@tm8/execution';
 
 import type { Db } from '../../../db/types.js';
 import {
@@ -87,12 +95,12 @@ import {
 /**
  * Every provider a card is rendered for, in display order.
  *
- * This is the SESSION table's six-value CHECK, not either credential store's
- * CHECK. Five file-shaped providers are indexed in
- * `account_agent_credentials`; GitHub is intentionally absent from that table
- * because its string-shaped token lives in `account_git_credentials`. A member
- * can still run all six login flows here, so deriving the cards from either
- * storage table would describe an implementation shape rather than the feature.
+ * This is the SESSION table's provider CHECK, not either credential store's
+ * CHECK. The file-shaped providers are indexed in `account_agent_credentials`;
+ * GitHub is intentionally absent from that table because its string-shaped
+ * token lives in `account_git_credentials`. A member can still run every login
+ * flow here, so deriving the cards from either storage table would describe an
+ * implementation shape rather than the feature.
  * `CREDENTIAL_PROVIDERS` is also the login table's order, so the two surfaces
  * cannot drift independently.
  */
@@ -107,6 +115,69 @@ export const CREDENTIAL_STATUS_PROVIDERS: readonly CredentialProviderName[] =
  */
 function agentToolsForProvider(provider: CredentialProviderName): readonly string[] | null {
   return provider === 'github' ? null : AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[provider];
+}
+
+/**
+ * What connecting this provider does to the member's agent sessions.
+ *
+ * THE COMMITMENT THIS FUNCTION KEEPS. Kimi and Groq route account-wide with no
+ * per-session opt-in: once a member connects Kimi, every `claude-code` session
+ * they start reaches Moonshot instead of Anthropic, including the ones they
+ * started before they had ever heard of Kimi. That was chosen on purpose, and
+ * the price of choosing it is that the product must SAY so — a silent
+ * redirection of which model answers your questions is the kind of thing a
+ * member should never have to read the source to discover.
+ *
+ * TWO CARDS DESCRIBE ONE FACT, FROM BOTH ENDS.
+ *
+ *   * On the kimi card: `role: 'backend'`, always non-null, `active` telling
+ *     the member whether this is happening now or is what WOULD happen. An
+ *     unconnected backend still carries routing, because the consequence of
+ *     pressing Connect is precisely what is worth knowing before pressing it.
+ *   * On the anthropic card: `role: 'displaced'`, and ONLY while a backend is
+ *     actually connected. There is nothing to tell an Anthropic user until
+ *     something displaces them, and a permanent "could be replaced" banner on
+ *     the card of a provider that is working fine is noise, not disclosure.
+ *
+ * THE ORDER MIRRORS THE RESOLVER, DELIBERATELY. `DbAgentCredentialHome.resolve`
+ * builds its candidates as `[...apiKeyBackendsForAgentTool(tool), native]` and
+ * takes the first ACTIVE one, so this walks the same list in the same order.
+ * Computing the displacement here from a different rule — say, a hardcoded
+ * kimi/anthropic pair in the UI — is how a card comes to claim one thing while
+ * spawn does another.
+ *
+ * WHAT IT CANNOT SEE. `active` reflects the stored index row, which is the same
+ * thing the resolver queries. It does not know whether the key FILE is still
+ * readable; a row whose file has gone missing makes the resolver fall back to
+ * no injection at all (and log), and this card would still say the routing is
+ * active. That gap is narrow — the file and the row are written together and
+ * removed together — and closing it would mean a filesystem read per provider
+ * per status call.
+ */
+function routingFor(
+  provider: CredentialProviderName,
+  activeProviders: ReadonlySet<CredentialProviderName>,
+): CredentialRoutingView | null {
+  if (isApiKeyCredentialProvider(provider)) {
+    return {
+      agentTool: apiKeyBackendAgentTool(provider),
+      role: 'backend',
+      counterpart: apiKeyBackendDisplaces(provider),
+      active: activeProviders.has(provider),
+    };
+  }
+
+  // A native provider is displaced only by a backend that is connected RIGHT
+  // NOW. `agentToolsForProvider` returns null for github — which no backend
+  // serves — and the loop below simply finds nothing for it.
+  for (const agentTool of agentToolsForProvider(provider) ?? []) {
+    for (const backend of apiKeyBackendsForAgentTool(agentTool)) {
+      if (!activeProviders.has(backend)) continue;
+      if (apiKeyBackendDisplaces(backend) !== provider) continue;
+      return { agentTool, role: 'displaced', counterpart: backend, active: true };
+    }
+  }
+  return null;
 }
 
 /** Statuses that mean a work session may still be holding a credential. */
@@ -208,7 +279,8 @@ export class W2CredentialCatalogService {
   // -------------------------------------------------------------------------
 
   /**
-   * The merged view. Always all six providers, in a fixed order.
+   * The merged view. Always every provider in `CREDENTIAL_PROVIDERS`, in a
+   * fixed order.
    *
    * A provider with no row is `connected: false` with every other field null —
    * an ABSENT row is the encoding of "not connected" (PR2 is deliberate about
@@ -242,6 +314,10 @@ export class W2CredentialCatalogService {
         status: row.status as CredentialConnectionView['status'],
         connectedAt: toIso(row.connected_at),
         lastVerifiedAt: toIso(row.last_verified_at),
+        // Overwritten below, once every row is known: a provider's routing
+        // depends on which OTHER providers are connected, so it cannot be
+        // decided while the rows are still being read.
+        routing: null,
       });
     }
 
@@ -258,14 +334,26 @@ export class W2CredentialCatalogService {
         status: 'active',
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       });
     }
+
+    // Read from the STORED rows rather than from the cards below, because the
+    // cards have had `withMeasuredAvailability` applied and that can turn
+    // `connected` false for a missing binary. Spawn-time resolution asks the
+    // database, not the node, so the routing answer must too.
+    const activeProviders = new Set<CredentialProviderName>(
+      [...byProvider.values()].filter((view) => view.connected).map((view) => view.provider),
+    );
 
     return {
       providers: CREDENTIAL_STATUS_PROVIDERS.map((provider) =>
         this.withMeasuredAvailability(
           provider,
-          byProvider.get(provider) ?? notConnected(provider),
+          {
+            ...(byProvider.get(provider) ?? notConnected(provider)),
+            routing: routingFor(provider, activeProviders),
+          },
           principal.identityId,
         ),
       ),
@@ -616,6 +704,9 @@ function notConnected(provider: CredentialProviderName): CredentialConnectionVie
     status: null,
     connectedAt: null,
     lastVerifiedAt: null,
+    // Filled by the caller. A not-connected BACKEND still routes — see
+    // `routingFor` — so this cannot be left as the final answer.
+    routing: null,
   };
 }
 

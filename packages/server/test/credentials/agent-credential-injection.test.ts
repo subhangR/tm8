@@ -22,6 +22,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  API_KEY_CREDENTIAL_PROVIDERS,
+  apiKeyBackendAgentTool,
+  apiKeyBackendDisplaces,
+  isApiKeyCredentialProvider,
+} from '@tm8/execution';
+
+import {
   AGENT_TOOLS_BY_CREDENTIAL_PROVIDER,
   DbAgentCredentialHome,
   credentialProviderForAgentTool,
@@ -68,15 +75,43 @@ function resolver(rows: Array<{ provider: string }>, recorded: RecordedQuery[] =
 
 describe('DbAgentCredentialHome', () => {
   it('uses the execution tool map in both directions for every file-shaped provider', () => {
+    // The API-key backends are in this table because it answers "where can this
+    // credential REACH", not "where did it come from". Disconnect reads it to
+    // find the live processes that may still hold the provider, and a `kimi`
+    // row reporting no tools would revoke the index row, leave every
+    // `claude-code` process running with the key still in its environment, and
+    // report success.
     expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER).toEqual({
       anthropic: ['claude-code'],
       openai: ['codex'],
       gemini: ['gemini'],
       hermes: ['hermes'],
       cursor: ['cursor'],
+      kimi: ['claude-code'],
+      groq: ['codex'],
     });
+
+    // THE REVERSE DIRECTION IS NO LONGER ONE-TO-ONE, AND IS DELIBERATELY NOT
+    // ASSERTED AS IF IT WERE. `credentialProviderForAgentTool` reads execution's
+    // tool-to-provider table, which names the provider a tool NATIVELY
+    // authenticates with: `claude-code` answers `anthropic` there even for a
+    // member whose sessions run on Kimi. That is the property that stops a
+    // backend from displacing Anthropic for members who never connected one, so
+    // widening this loop to demand `claude-code -> kimi` would be asserting a
+    // containment hole rather than a fix.
+    //
+    // The round trip is therefore checked for the NATIVE providers, and the
+    // backends are checked against the thing they actually claim — that each one
+    // reaches exactly the tool it routes, whose native provider is the one it
+    // displaces.
     for (const [provider, tools] of Object.entries(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER)) {
+      if (isApiKeyCredentialProvider(provider)) continue;
       for (const tool of tools) expect(credentialProviderForAgentTool(tool)).toBe(provider);
+    }
+    for (const backend of API_KEY_CREDENTIAL_PROVIDERS) {
+      const agentTool = apiKeyBackendAgentTool(backend);
+      expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[backend]).toEqual([agentTool]);
+      expect(credentialProviderForAgentTool(agentTool)).toBe(apiKeyBackendDisplaces(backend));
     }
   });
 
@@ -98,7 +133,14 @@ describe('DbAgentCredentialHome', () => {
     // RLS decides whose row this is, not this layer.
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.claims).toBe(CLAIMS);
-    expect(recorded[0]?.params).toEqual(['anthropic']);
+    // ONE parameter, not one per provider: the query is
+    // `provider = any($1::text[])`, so a single round trip answers for the
+    // API-key backend and the native provider together. The ORDER inside it is
+    // the preference order and is asserted here — `kimi` first, because a
+    // connected key is the account-wide default and outranks the native login.
+    // Reordering this array silently changes which vendor every `claude-code`
+    // session of a doubly-connected member runs on.
+    expect(recorded[0]?.params).toEqual([['kimi', 'anthropic']]);
     expect(recorded[0]?.sql).not.toMatch(/account_id/i);
   });
 
@@ -121,7 +163,9 @@ describe('DbAgentCredentialHome', () => {
       homeDir: `${DATA_DIR}/credentials/${IDENTITY}`,
       configDir: `${DATA_DIR}/credentials/${IDENTITY}/${provider}`,
     });
-    expect(recorded[0]?.params).toEqual([provider]);
+    // No API-key backend routes these three tools, so the candidate array holds
+    // the native provider alone — still one array parameter, not a bare string.
+    expect(recorded[0]?.params).toEqual([[provider]]);
   });
 
   it('returns null when the member has not connected this provider', async () => {

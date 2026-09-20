@@ -53,9 +53,16 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
+import { readFile } from 'node:fs/promises';
+
 import {
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_VERIFY_URL,
   composeCredentialEnv,
   CREDENTIAL_LOGIN_COMMANDS,
+  isApiKeyCredentialProvider,
+  type ApiKeyCredentialProvider,
   type CredentialProvider,
 } from '@tm8/execution';
 
@@ -112,6 +119,35 @@ const CREDENTIAL_PROBE_SPECS = {
     install:
       'Install Cursor Agent with `curl https://cursor.com/install -fsS | bash`, then make its `cursor-agent` binary available to tm8.',
   },
+  // THE API-KEY PROVIDERS. `command: null` for the same reason as Gemini — no
+  // vendor status verb exists — but the resemblance ends there, and the
+  // difference is worth stating because it makes these the STRONGEST probes in
+  // this table rather than the weakest.
+  //
+  // Gemini's probe can only ask whether a file exists, and a file's existence
+  // does not prove a credential works, which is why it reports `stale` rather
+  // than claiming more than it measured. Here the file is one tm8 wrote itself,
+  // and its contents can be presented to the vendor for a verdict. So the probe
+  // does not infer from presence: it AUTHENTICATES, and reports `active` only
+  // when the vendor accepted the key seconds ago.
+  //
+  // `install` names no package deliberately. There is nothing to install: the
+  // binary derived from the login command is `node`, which ships with the
+  // server. If it is ever reported unavailable, the fault is tm8's own PATH and
+  // the message should say so rather than send an operator to npm for a
+  // package that would not help.
+  kimi: {
+    command: null,
+    credentialFile: ['kimi', 'api-key'],
+    install:
+      "Kimi needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
+  },
+  groq: {
+    command: null,
+    credentialFile: ['groq', 'api-key'],
+    install:
+      "Groq needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
+  },
 } as const satisfies Record<
   CredentialProvider,
   {
@@ -120,6 +156,18 @@ const CREDENTIAL_PROBE_SPECS = {
     install: string;
   }
 >;
+
+// Compile-time guard, not a runtime check: `API_KEY_FILENAME` is a literal
+// type, so these assignments fail to compile the day the filename changes in
+// `api-key-credentials.ts` without the two literals above changing with it.
+// The `satisfies` on the table needs the literals to stay literals, so the
+// agreement is asserted here instead of expressed by interpolation.
+const _kimiCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.kimi.credentialFile[1] =
+  API_KEY_FILENAME;
+const _groqCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.groq.credentialFile[1] =
+  API_KEY_FILENAME;
+void _kimiCredentialFilenameAgrees;
+void _groqCredentialFilenameAgrees;
 
 /**
  * Only providers with measured, non-interactive status verbs appear here.
@@ -606,6 +654,145 @@ function negativeProbe(
 }
 
 /**
+ * Ask the vendor whether the member's stored key still works.
+ *
+ * THIS IS THE ONLY PROBE IN THIS FILE THAT LEAVES THE MACHINE, and the reason
+ * is that it is the only one that can. Every other provider is asked a local
+ * question — does a CLI report a session, does a credential file exist — because
+ * that is all a local CLI can be asked without running a billable request. Here
+ * tm8 holds the secret itself, and the vendor publishes a free, unauthenticated-
+ * rejecting model list, so the honest question ("does this credential work?")
+ * is directly answerable.
+ *
+ * The three outcomes are the same three the paste harness reports at capture
+ * time, deliberately: a key that passed there must not be classified
+ * differently here for a reason neither program can see.
+ *
+ *   200         → `active` + connected. The vendor accepted it just now.
+ *   401 / 403   → `active` + NOT connected. A determinate, understood negative;
+ *                 `active` describes the PROBE, not the credential, and
+ *                 negative probes are never persisted as a credential row.
+ *   anything else, or no answer at all
+ *               → `stale`, meaning "cannot confirm". A 429 or a 5xx or a DNS
+ *                 failure says nothing whatever about the key, and reporting
+ *                 one as a rejection would tell a member to re-paste a
+ *                 perfectly good credential.
+ *
+ * A MISSING KEY FILE IS A DETERMINATE NEGATIVE HERE, unlike Gemini's ENOENT
+ * below. That asymmetry is not an oversight. Gemini's file is written by a
+ * vendor CLI whose storage shape we have only measured, so its absence might
+ * mean a credential we do not know how to find. This file is written by tm8, at
+ * a path tm8 chose, and by nothing else — so if it is not there, there is no
+ * key, and saying `stale` would be feigning uncertainty we do not have.
+ */
+async function readApiKeyProbe(
+  provider: ApiKeyCredentialProvider,
+  env: Record<string, string>,
+): Promise<ProbeResult> {
+  const display = API_KEY_PROVIDER_DISPLAY_NAME[provider];
+  const home = env['HOME'];
+  if (!home) {
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown because the isolated HOME was not present`,
+    );
+  }
+
+  let apiKey: string;
+  try {
+    apiKey = (await readFile(join(home, provider, API_KEY_FILENAME), 'utf8')).trim();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return {
+        provider,
+        connected: false,
+        status: 'active',
+        login: null,
+        authMethod: null,
+        detail: `no ${display} API key has been stored for this member`,
+      };
+    }
+    // A permissions or I/O error is NOT an absence. The key may be perfectly
+    // good and unreadable for a reason that has nothing to do with the member.
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown because its stored key could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (apiKey.length === 0) {
+    return {
+      provider,
+      connected: false,
+      status: 'active',
+      login: null,
+      authMethod: null,
+      detail: `the stored ${display} API key is empty`,
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(API_KEY_PROVIDER_VERIFY_URL[provider], {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      return {
+        provider,
+        connected: true,
+        status: 'active',
+        // The vendor's model list carries no account identity, so there is no
+        // login name to report. `null` states that rather than inventing one
+        // from the key — a key prefix is not a username.
+        login: null,
+        // Named for what it is. This member authenticates with a pasted API
+        // key, not an OAuth session, and the card should not imply otherwise.
+        authMethod: 'api_key',
+        detail: null,
+      };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        provider,
+        connected: false,
+        status: 'active',
+        login: null,
+        authMethod: null,
+        detail: `${display} rejected the stored API key (HTTP ${response.status})`,
+      };
+    }
+
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown: the vendor answered HTTP ${response.status}, which says nothing about the key`,
+    );
+  } catch (error) {
+    return negativeProbe(
+      provider,
+      'stale',
+      controller.signal.aborted
+        ? `${display} credential state is unknown: no answer within ${PROBE_TIMEOUT_MS / 1000}s`
+        : `${display} credential state is unknown because the vendor could not be reached: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Gemini has no verified status command. Its measured OAuth file is therefore
  * the whole positive signal, and every non-positive result remains `stale`.
  * In particular, ENOENT is not "logged out": it may be an abandoned flow, a
@@ -746,6 +933,7 @@ export async function runCredentialProbe(input: RunCredentialProbeInput): Promis
     return negativeProbe(provider, 'stale', binary.detail ?? 'credential CLI presence is unknown');
   }
 
+  if (isApiKeyCredentialProvider(provider)) return readApiKeyProbe(provider, env);
   if (provider === 'gemini') return readGeminiProbe(env);
   if (provider === 'hermes') {
     return negativeProbe(

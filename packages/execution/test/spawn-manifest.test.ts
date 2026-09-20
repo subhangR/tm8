@@ -257,6 +257,13 @@ describe('resolveLaunchConfig', () => {
   });
 
   it('resolves each provider credential source independently and keeps legacy fallback', () => {
+    // Exhaustive over `CredentialProviderName`, kimi and groq included. Those
+    // two entries are INERT by construction and that is deliberate rather than
+    // an oversight: a claude-code session's per-provider choice is read under
+    // `anthropic` (see `AGENT_CREDENTIAL_PROVIDER`), and answering 'node' there
+    // skips the credential port entirely — which already skips the Kimi backend
+    // with it. A `credentialSources.kimi` would be a second, quieter way to
+    // express a choice that already has one, so nothing reads it.
     expect(resolveLaunchConfig(base, context(), {}).credentialSources).toEqual({
       anthropic: null,
       openai: null,
@@ -264,6 +271,8 @@ describe('resolveLaunchConfig', () => {
       hermes: null,
       cursor: null,
       github: null,
+      kimi: null,
+      groq: null,
     });
 
     expect(resolveLaunchConfig({
@@ -281,6 +290,8 @@ describe('resolveLaunchConfig', () => {
       hermes: null,
       cursor: 'node',
       github: 'member',
+      kimi: null,
+      groq: null,
     });
 
     // A new provider-specific choice overrides only its own legacy/global arm.
@@ -295,6 +306,8 @@ describe('resolveLaunchConfig', () => {
       hermes: 'node',
       cursor: 'node',
       github: 'member',
+      kimi: 'node',
+      groq: 'node',
     });
 
     // Existing manifests remain inheritable: their one source fans out only
@@ -311,6 +324,8 @@ describe('resolveLaunchConfig', () => {
       hermes: 'member',
       cursor: 'member',
       github: 'node',
+      kimi: 'member',
+      groq: 'member',
     });
   });
 

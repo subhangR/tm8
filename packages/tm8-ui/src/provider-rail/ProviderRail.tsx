@@ -187,7 +187,12 @@ export function ProviderRail({ port, serverBaseUrl }: ProviderRailProps) {
                 aria-label={label}
                 aria-disabled="true"
                 title={state === 'unavailable'
-                  ? `${presentation.binary} is not installed on this node`
+                  // An API-key provider has no binary of its own to install, so
+                  // naming one would send the member after a fix that does not
+                  // exist. See `binary: null` in the presentation table.
+                  ? presentation.binary === null
+                    ? `${presentation.name} cannot be reached from this node`
+                    : `${presentation.binary} is not installed on this node`
                   : 'Credential state has not been measured yet'}
                 data-testid={`provider-rail-chip-${provider}`}
                 data-provider-state={state}

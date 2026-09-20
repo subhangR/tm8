@@ -55,8 +55,14 @@
 // the whole credential-storage isolation tm8 can claim for those three.
 // Anthropic, OpenAI and GitHub get that boundary PLUS a vendor-documented
 // override pinned to `configDir`; `null` records that the latter guarantee does
-// not exist rather than implying all six providers are isolated in the same
-// way.
+// not exist rather than implying every provider is isolated in the same way.
+//
+// Kimi and Groq are `null` for a DIFFERENT reason, and the shared value hides
+// the difference, so it is written here. For those two there is no vendor CLI
+// whose storage could need redirecting: tm8's own paste harness writes the
+// credential, and it writes it where it is told. Their isolation is therefore
+// not weaker than Anthropic's — it is the same per-identity directory, reached
+// without having to persuade someone else's binary to use it.
 //
 // THE TWO PROVIDER-SPECIFIC BEHAVIOUR FLAGS. Utho's installed gh 2.62.0 asks
 // `Authenticate Git with your GitHub credentials? (Y/n)` even when `--web`,
@@ -77,14 +83,25 @@
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 
-/** The six vendors a Tier B login terminal can authenticate against. */
+/**
+ * The vendors a Tier B login terminal can authenticate against.
+ *
+ * Six of them run a VENDOR login command. `kimi` and `groq` run a tm8-owned
+ * paste prompt instead, because neither vendor ships one — see
+ * `api-key-credentials.ts`, which holds the measurement and every fact specific
+ * to those two. They are members of this union rather than a parallel one so
+ * that the session, probe, sweep and close machinery treats all eight
+ * identically; only the login command and the probe differ.
+ */
 export type CredentialProvider =
   | 'anthropic'
   | 'openai'
   | 'github'
   | 'gemini'
   | 'hermes'
-  | 'cursor';
+  | 'cursor'
+  | 'kimi'
+  | 'groq';
 
 export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'anthropic',
@@ -93,6 +110,8 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'gemini',
   'hermes',
   'cursor',
+  'kimi',
+  'groq',
 ];
 
 /**
@@ -112,6 +131,12 @@ export const CREDENTIAL_CONFIG_DIR_VAR = {
   gemini: null,
   hermes: null,
   cursor: null,
+  // No vendor CLI exists for these two, so there is no vendor-documented
+  // variable to redirect. Their credential is written by tm8's own paste
+  // harness, directly into `configDir`, which the harness receives as `HOME`
+  // plus the provider name rather than through an override.
+  kimi: null,
+  groq: null,
 } as const satisfies Record<CredentialProvider, string | null>;
 
 /** Provider-only process behaviour, kept in one table so keys and values agree. */
@@ -122,6 +147,12 @@ const CREDENTIAL_BEHAVIOR_ENV = {
   gemini: {},
   hermes: {},
   cursor: { NO_OPEN_BROWSER: '1' },
+  // The paste harness opens no browser and shells out to nothing, so it needs
+  // no headless remedy. Note what is NOT here: the vendor key variables
+  // (`ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`). A login terminal is where a
+  // secret is CAPTURED, never where one is injected.
+  kimi: {},
+  groq: {},
 } as const satisfies Record<CredentialProvider, Readonly<Record<string, string>>>;
 
 /**

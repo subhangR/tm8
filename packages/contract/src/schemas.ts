@@ -50,7 +50,7 @@ import type {
   ContainersUnexposeInput, ContainersUpdateInput, SurfaceAttachGrant,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
-  CredentialConnectionView, CredentialProviderName, CredentialsDeleteInput,
+  CredentialConnectionView, CredentialProviderName, CredentialRoutingView, CredentialsDeleteInput,
   CredentialsDeleteResult, CredentialsLoginSessionFinishInput,
   CredentialsLoginSessionFinishResult, CredentialsLoginSessionStartInput,
   CredentialsLoginSessionStartResult, CredentialsStatusView,
@@ -1801,12 +1801,32 @@ export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z
 // ledger is enabled.
 // ---------------------------------------------------------------------------
 
-/** All six declared login-terminal providers; credential storage remains shape-specific. */
+/**
+ * Every declared login-terminal provider; credential storage remains
+ * shape-specific.
+ *
+ * `kimi` and `groq` are login-terminal providers like the rest — same Connect
+ * button, same PTY, same probe — but the program that terminal runs is tm8's
+ * own paste harness rather than a vendor CLI, because neither vendor ships one.
+ * The wire does not distinguish them, and deliberately so: a client rendering
+ * a connection card needs the provider name and its status, not the mechanism
+ * by which the secret was captured.
+ */
 export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor']);
+  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor', 'kimi', 'groq']);
 
 /** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
 const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
+
+// `active` is not derivable from the rest of the card: a `kimi` entry that is
+// not connected still describes what connecting it would do, so the UI must be
+// told which sentence to write rather than inferring it from `connected`.
+export const CredentialRoutingViewSchema: z.ZodType<CredentialRoutingView> = z.object({
+  agentTool: z.string(),
+  role: z.enum(['backend', 'displaced']),
+  counterpart: CredentialProviderNameSchema,
+  active: z.boolean(),
+}).strict();
 
 export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView> = z.object({
   provider: CredentialProviderNameSchema,
@@ -1823,6 +1843,9 @@ export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView>
   status: z.union([CredentialStatusSchema, z.literal('unavailable')]).nullable(),
   connectedAt: z.string().nullable(),
   lastVerifiedAt: z.string().nullable(),
+  // Nullable-never-absent, like `login` above: six of the eight providers route
+  // nothing, permanently.
+  routing: CredentialRoutingViewSchema.nullable(),
 }).strict();
 
 export const CredentialsStatusViewSchema: z.ZodType<CredentialsStatusView> = z.object({

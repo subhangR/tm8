@@ -16,6 +16,19 @@
  * here, and that direction is deliberate: counting them would tell a member
  * they are finished on the strength of an answer nobody obtained.
  *
+ * A BACKEND IS NOT A TOOL, AND COUNTING IT AS ONE WOULD LIE TWICE. Kimi and
+ * Groq connect like any other provider and appear in `agents` like any other,
+ * but they do not bring a program with them: connecting Kimi redirects
+ * `claude-code` at Moonshot's endpoint, and a `claude-code` session still needs
+ * the `claude` BINARY to exist on this node in order to run at all. So a member
+ * who connects Kimi on a node with no `claude` installed has connected
+ * something real and still cannot launch anything. Telling them setup is
+ * complete would be the worst outcome this module can produce — a green tick
+ * followed by every session failing — so a backend counts toward `hasAgent`
+ * only while the provider it displaces is not itself `unavailable`. The
+ * relationship is read from the server's `routing` rather than from a
+ * kimi/anthropic pair spelled out here; see `CredentialRoutingView`.
+ *
  * The reverse mistake is the one this module must also not make. An `unknown`
  * is not a MISSING step either — it is a step whose state we could not read —
  * so {@link credentialSetupState} reports it separately and the dialog says so
@@ -36,6 +49,15 @@ export interface ProviderStanding {
   unmeasured: boolean;
   /** The binary is absent here; this provider cannot be signed in on this node. */
   unavailable: boolean;
+  /**
+   * This provider is an API-key BACKEND whose borrowed binary is missing.
+   *
+   * Distinct from `unavailable`, which means this provider's OWN probe binary
+   * is absent — a backend's own binary is `node` and is never absent, so the
+   * two can never both be true and collapsing them would make the card say the
+   * wrong thing about which install is missing. See the header.
+   */
+  borrowsMissingBinary: boolean;
 }
 
 export interface CredentialSetupState {
@@ -76,18 +98,34 @@ function standingOf(
     connected: verdict === 'connected-named' || verdict === 'connected-unnamed',
     unmeasured: verdict === 'unknown',
     unavailable: verdict === 'unavailable',
+    // Filled in by the caller: it depends on ANOTHER provider's standing, which
+    // is not knowable while the rows are still being read one at a time.
+    borrowsMissingBinary: false,
   };
 }
 
 export function credentialSetupState(
   status: CredentialsStatusView,
 ): CredentialSetupState {
-  const standings = status.providers.map((entry) =>
+  const measured = status.providers.map((entry) =>
     standingOf(entry, status.gitCredentialStore),
   );
+
+  // See the header. A backend borrows the binary of the provider it displaces,
+  // so if that provider is `unavailable` here the backend can launch nothing.
+  // Computed in a second pass because it reads the FIRST pass's answer about a
+  // different provider.
+  const unavailable = new Set(measured.filter((s) => s.unavailable).map((s) => s.provider));
+  const standings = measured.map((s, i) => {
+    const routing = status.providers[i]?.routing ?? null;
+    return routing?.role === 'backend' && unavailable.has(routing.counterpart)
+      ? { ...s, borrowsMissingBinary: true }
+      : s;
+  });
+
   const agents = standings.filter((s) => s.provider !== GIT_PROVIDER);
   const git = standings.find((s) => s.provider === GIT_PROVIDER) ?? null;
-  const hasAgent = agents.some((s) => s.connected);
+  const hasAgent = agents.some((s) => s.connected && !s.borrowsMissingBinary);
   const hasGit = git?.connected === true;
 
   return {
@@ -112,7 +150,10 @@ export function credentialSetupState(
  * the screen that can change it.
  */
 function hasActionableGap(state: CredentialSetupState): boolean {
-  const agentGap = !state.hasAgent && state.agents.some((a) => !a.unavailable);
+  // A stranded backend is no more actionable than an absent binary: signing in
+  // to it would succeed and still leave the member unable to launch anything.
+  const agentGap =
+    !state.hasAgent && state.agents.some((a) => !a.unavailable && !a.borrowsMissingBinary);
   const gitGap = !state.hasGit && state.git !== null && !state.git.unavailable;
   return agentGap || gitGap;
 }
@@ -162,6 +203,15 @@ export function setupNudgeOf(state: CredentialSetupState): string | null {
      it must not read as something the member forgot to do. It is the one gap
      this node cannot close from the dialog, so the nudge names the cause. */
   if (!state.hasAgent && state.agents.length > 0 && state.agents.every((a) => a.unavailable)) {
+    return 'no agent tool is installed on this node';
+  }
+  /* The same sentence for the same cause, reached differently: every provider
+     that could still be signed in here is an API-key backend, and the binary it
+     would borrow is missing. Without this branch the addition of kimi and groq
+     would silently retire the message above on every node — `agents.every` can
+     no longer be true once two providers exist whose measured binary is `node`,
+     which is never absent. */
+  if (!state.hasAgent && state.agents.length > 0 && state.agents.every((a) => a.unavailable || a.borrowsMissingBinary)) {
     return 'no agent tool is installed on this node';
   }
   if (!state.hasAgent && !state.hasGit) return 'no agent tools connected yet';

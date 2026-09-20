@@ -710,7 +710,9 @@ function ProviderRow({
             : standing.verdict === 'connected-unnamed'
               ? 'Connected'
               : standing.verdict === 'unavailable'
-                ? `${presentation.binary} is not installed on this node`
+                ? presentation.binary === null
+                  ? 'Cannot be reached from this node'
+                  : `${presentation.binary} is not installed on this node`
                 : standing.verdict === 'unknown'
                   ? 'Could not be checked — you may already be signed in'
                   : 'Not connected'}

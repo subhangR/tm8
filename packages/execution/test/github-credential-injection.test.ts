@@ -185,6 +185,8 @@ describe('member GitHub credential injection', () => {
       hermes: null,
       cursor: null,
       github: 'member',
+      kimi: null,
+      groq: null,
     });
   });
 

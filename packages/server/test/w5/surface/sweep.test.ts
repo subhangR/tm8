@@ -1002,7 +1002,24 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   git rev-list --count HEAD..origin/main                                  -> 0
     // Main has not moved under this branch, so the two differ by exactly its
     // one file.
-    expect(server.appliedMigrations.length).toBe(175);
+    //
+    // 175 -> 177 (195): TWO files, and the jump is the point. One of them is
+    // NOT this branch's: 194_drawing_kind.sql landed on main in 5e1f9e1e
+    // ("Drawing as an entity, with Excalidraw", #627) WITHOUT updating this
+    // number, so main has been red on this assertion since it merged. That is
+    // precisely the failure every paragraph above predicts — a bare integer no
+    // grep phrased as "drawing" could ever reach — and it is recorded here
+    // rather than quietly absorbed, because a branch that silently fixes an
+    // inherited red teaches the next author that the pin drifts harmlessly.
+    // This branch's own file is 195_kimi_groq_credentials.sql (the two API-key
+    // providers joining the admitted set). MEASURED on the merged tree:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 176
+    //   ls db/migrations/*.sql | wc -l                                          -> 177
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main has not moved under this branch, so the two differ by exactly this
+    // branch's one file; the other difference is already on main.
+    expect(server.appliedMigrations.length).toBe(177);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

@@ -30,9 +30,27 @@ function connection(
     status: null,
     connectedAt: null,
     lastVerifiedAt: null,
+    routing: null,
     ...over,
   };
 }
+
+/**
+ * A connected API-key backend, with the routing entry the server computes for
+ * it. `login` is null on purpose: these two providers authenticate a pasted key
+ * and there is no vendor account name to show, so `connected-unnamed` is the
+ * only verdict they can ever reach.
+ */
+const backend = (
+  provider: CredentialProviderName,
+  counterpart: CredentialProviderName,
+  agentTool: string,
+) =>
+  connection(provider, {
+    connected: true,
+    login: null,
+    routing: { agentTool, role: 'backend' as const, counterpart, active: true },
+  });
 
 function status(
   providers: CredentialsStatusView['providers'],
@@ -265,5 +283,83 @@ describe('the account-menu nudge names what is actually missing', () => {
     );
     expect(mixed.hasAgent).toBe(false);
     expect(setupNudgeOf(mixed)).toBe('no agent tool connected yet');
+  });
+});
+
+/* A BACKEND IS NOT A TOOL.
+ *
+ * Kimi and Groq supply a key to someone else's binary — `claude` and `codex`
+ * respectively — and supply no binary of their own. Counting a connected Kimi
+ * as "an agent tool is set up" on a node with no `claude` would show a member
+ * a green tick and then fail every session they start, which is the exact
+ * shape of wrongness this whole gate exists to prevent. These tests pin the
+ * two directions apart: the borrowed binary being ABSENT must not read as
+ * done, and the borrowed binary being merely DISCONNECTED must not read as
+ * broken — the key is what authenticates, so the vendor account need not be.
+ */
+describe('an API-key backend borrows the binary it displaces', () => {
+  it('does NOT satisfy the agent half when that binary is missing', () => {
+    const state = credentialSetupState(
+      status([
+        connection('anthropic', { status: 'unavailable' }),
+        backend('kimi', 'anthropic', 'claude-code'),
+        connected('github', 'octocat'),
+      ]),
+    );
+    const kimi = state.agents.find((a) => a.provider === 'kimi');
+    // Connected is still TRUE — the credential is real and the card should say
+    // so. What it cannot do is launch anything.
+    expect(kimi?.connected).toBe(true);
+    expect(kimi?.borrowsMissingBinary).toBe(true);
+    expect(state.hasAgent).toBe(false);
+    expect(state.complete).toBe(false);
+  });
+
+  it('DOES satisfy it when the binary is present and merely not signed in', () => {
+    const state = credentialSetupState(
+      status([
+        connection('anthropic'),
+        backend('kimi', 'anthropic', 'claude-code'),
+        connected('github', 'octocat'),
+      ]),
+    );
+    expect(state.agents.find((a) => a.provider === 'kimi')?.borrowsMissingBinary).toBe(false);
+    expect(state.hasAgent).toBe(true);
+    expect(state.complete).toBe(true);
+  });
+
+  it('is judged per backend — Groq borrows codex, not claude', () => {
+    const state = credentialSetupState(
+      status([
+        connection('anthropic', { status: 'unavailable' }),
+        connection('openai'),
+        backend('kimi', 'anthropic', 'claude-code'),
+        backend('groq', 'openai', 'codex'),
+        connected('github', 'octocat'),
+      ]),
+    );
+    const by = new Map(state.agents.map((a) => [a.provider, a]));
+    expect(by.get('kimi')?.borrowsMissingBinary).toBe(true);
+    expect(by.get('groq')?.borrowsMissingBinary).toBe(false);
+    // One working backend is enough, exactly as one working vendor login is.
+    expect(state.hasAgent).toBe(true);
+  });
+
+  /* The nudge branch this created. `agents.every(a => a.unavailable)` can never
+     be true once kimi and groq exist, because their measured binary is `node`
+     and `node` is never absent — so without the second branch the "nothing is
+     installed" sentence would silently retire on every node. */
+  it('still says nothing is installed when every remaining agent borrows a missing binary', () => {
+    const state = credentialSetupState(
+      status([
+        connection('anthropic', { status: 'unavailable' }),
+        connection('openai', { status: 'unavailable' }),
+        backend('kimi', 'anthropic', 'claude-code'),
+        backend('groq', 'openai', 'codex'),
+        connected('github', 'octocat'),
+      ]),
+    );
+    expect(state.hasAgent).toBe(false);
+    expect(setupNudgeOf(state)).toBe('no agent tool is installed on this node');
   });
 });

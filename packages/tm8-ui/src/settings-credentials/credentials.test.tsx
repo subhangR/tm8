@@ -30,6 +30,7 @@ function connection(over: Partial<CredentialsStatusView['providers'][number]> & 
     status: null,
     connectedAt: null,
     lastVerifiedAt: null,
+    routing: null,
     ...over,
   };
 }
@@ -69,7 +70,7 @@ function portWith(
 }
 
 describe('six providers and four honest states', () => {
-  it('renders all six product names with currentColor inline marks, binaries, and a connected Cursor', async () => {
+  it('renders every product name with currentColor inline marks, binaries, and a connected Cursor', async () => {
     render(
       <CredentialsSection
         port={portWith({
@@ -80,6 +81,8 @@ describe('six providers and four honest states', () => {
             connection({ provider: 'gemini', status: 'stale' }),
             connection({ provider: 'hermes', status: 'unavailable' }),
             connection({ provider: 'cursor', connected: true, status: 'active' }),
+            connection({ provider: 'kimi' }),
+            connection({ provider: 'groq' }),
           ],
           gitCredentialStore: 'present',
         })}
@@ -87,7 +90,7 @@ describe('six providers and four honest states', () => {
     );
 
     await screen.findByTestId('credential-provider-grid');
-    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(6);
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(8);
     expect(Object.values(CREDENTIAL_PROVIDER_PRESENTATIONS).map(({ name, binary }) => [name, binary])).toEqual([
       ['Claude Code', 'claude'],
       ['Codex', 'codex'],
@@ -95,12 +98,20 @@ describe('six providers and four honest states', () => {
       ['Gemini', 'gemini'],
       ['Hermes', 'hermes'],
       ['Cursor', 'cursor-agent'],
+      // `null`, not 'node'. These two are reached by pasting a key, not by
+      // running a vendor CLI, and the binary their probe measures is the
+      // server's own `node` — printing it here would tell a member that
+      // installing node is what connects Kimi.
+      ['Kimi (Moonshot AI)', null],
+      ['Groq', null],
     ]);
 
     for (const [id, provider] of Object.entries(CREDENTIAL_PROVIDER_PRESENTATIONS)) {
       const card = screen.getByTestId(`credential-card-${id}`);
       expect(within(card).getByText(provider.name)).toBeTruthy();
-      expect(card.querySelector('.cred-card__binary')?.textContent).toBe(provider.binary);
+      expect(card.querySelector('.cred-card__binary')?.textContent).toBe(
+        provider.binary ?? 'API key',
+      );
       const mark = card.querySelector('svg');
       expect(mark?.getAttribute('aria-hidden')).toBe('true');
       expect(mark?.innerHTML).toContain('currentColor');
