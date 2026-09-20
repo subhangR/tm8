@@ -1057,7 +1057,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // left this pin at 181 — main read 182 here) and 201_jev_runs. MEASURED.
     // 183 -> 184 (2026-09-23): 202_work_session_sharing_provenance. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 184, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(184);
+    // 184 -> 185 (2026-09-23): 203_grok_credentials. Written as 197_ on a branch
+    // that never reached main; renumbered because main's 197_ is the skills file.
+    //   MEASURED: ls db/migrations/*.sql | wc -l -> 185, duplicate prefixes -> 0.
+    expect(server.appliedMigrations.length).toBe(185);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

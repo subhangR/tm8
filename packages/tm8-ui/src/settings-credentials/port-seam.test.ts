@@ -37,6 +37,7 @@ describe('the credentials port against a real seam', () => {
       'cursor',
       'kimi',
       'groq',
+      'grok',
     ]);
     expect(status.providers.find((provider) => provider.provider === 'cursor')).toMatchObject({
       connected: true,
@@ -59,15 +60,24 @@ describe('the credentials port against a real seam', () => {
       role: 'backend',
       counterpart: 'anthropic',
       active: true,
+      outrankedBy: null,
     });
     expect(routingOf.get('anthropic')).toEqual({
       agentTool: 'claude-code',
       role: 'displaced',
       counterpart: 'kimi',
       active: true,
+      outrankedBy: null,
     });
-    // Not connected, and still saying what Connect would do.
+    // Not connected, and still saying what Connect would do. Both codex
+    // backends are in this state in the fixture — see the block comment there
+    // for why the contention case cannot share a screen with this one.
     expect(routingOf.get('groq')?.active).toBe(false);
+    expect(routingOf.get('grok')?.active).toBe(false);
+    // And `outrankedBy` survives the seam as an explicit null rather than being
+    // dropped as falsy — a screen that receives `undefined` cannot tell "wins"
+    // from "old server".
+    expect(routingOf.get('grok')).toHaveProperty('outrankedBy', null);
     // A provider that redirects nothing says nothing.
     expect(routingOf.get('github')).toBeNull();
   });

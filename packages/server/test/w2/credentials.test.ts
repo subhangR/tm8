@@ -482,6 +482,7 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       'cursor',
       'kimi',
       'groq',
+      'grok',
     ]);
     expect(parsed.providers.every((p) => p.connected === false)).toBe(true);
 
@@ -493,7 +494,9 @@ describe('credentials.status merges two stores and degrades honestly', () => {
     // `active: false`, because "what would connecting this do" is precisely the
     // question a member has in front of the Connect button. A surface that only
     // emitted routing for connected providers would answer it only after it was
-    // too late to matter.
+    // too late to matter. And an UNCONNECTED backend is never outranked: it has
+    // not entered the contest, so `outrankedBy` is null on all three here even
+    // though two of them claim the same tool.
     const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
     expect(routingOf.get('anthropic')).toBeNull();
     expect(routingOf.get('openai')).toBeNull();
@@ -503,12 +506,21 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       role: 'backend',
       counterpart: 'anthropic',
       active: false,
+      outrankedBy: null,
     });
     expect(routingOf.get('groq')).toEqual({
       agentTool: 'codex',
       role: 'backend',
       counterpart: 'openai',
       active: false,
+      outrankedBy: null,
+    });
+    expect(routingOf.get('grok')).toEqual({
+      agentTool: 'codex',
+      role: 'backend',
+      counterpart: 'openai',
+      active: false,
+      outrankedBy: null,
     });
   });
 
@@ -553,6 +565,11 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       role: 'backend',
       counterpart: 'anthropic',
       active: true,
+      // `claude-code` has exactly one backend, so kimi cannot be outranked —
+      // and that is asserted rather than omitted, because `undefined` and
+      // `null` would render the same on a card while meaning different things
+      // about whether the server computed the field at all.
+      outrankedBy: null,
     });
 
     // And the provider it displaced says so from its own card, which is the
@@ -565,11 +582,97 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       role: 'displaced',
       counterpart: 'kimi',
       active: true,
+      outrankedBy: null,
     });
 
-    // Groq is not connected, so codex is untouched and openai stays silent.
+    // Neither codex backend is connected, so codex is untouched and openai
+    // stays silent.
     expect(routingOf.get('openai')).toBeNull();
     expect(routingOf.get('groq')?.active).toBe(false);
+    expect(routingOf.get('grok')?.active).toBe(false);
+  });
+
+  it('names the winner on the losing card when two backends claim one tool', async () => {
+    // THE STATE THIS FIELD WAS ADDED FOR. The member pasted a Groq key some
+    // time ago and a Grok key today. Both are connected, both are valid, both
+    // back `codex`, and exactly one of them is reached — so one card is about
+    // to tell a true-but-useless story ("I am a backend for codex, and I am
+    // active") while the member's sessions go somewhere else entirely.
+    //
+    // The expected winner is `groq`, and NOT because it is better: it is the
+    // one that was connected under the old rule, and `API_KEY_CREDENTIAL_PROVIDERS`
+    // appends rather than inserts precisely so that adding Grok cannot move a
+    // member's existing sessions to a vendor they never chose. This test is
+    // where that promise is enforced — if someone reorders that array, the
+    // failure lands here, with the reason written beside it.
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('to_regclass')) return [{ present: false }];
+      if (sql.includes('account_agent_credentials')) {
+        return [
+          {
+            provider: 'groq',
+            login: null,
+            auth_method: 'api_key',
+            status: 'active',
+            connected_at: new Date('2026-09-01T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
+          },
+          {
+            provider: 'grok',
+            login: null,
+            auth_method: 'api_key',
+            status: 'active',
+            connected_at: new Date('2026-09-20T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-20T00:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    });
+    const registry = registryFor(db);
+    const parsed = CredentialsStatusViewSchema.parse(
+      await invoke(registry, 'credentials.status', context('credentials.status', 'browser')),
+    );
+    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+
+    // The winner says nothing new. It is a backend, it is active, and there is
+    // nobody ahead of it.
+    expect(routingOf.get('groq')).toEqual({
+      agentTool: 'codex',
+      role: 'backend',
+      counterpart: 'openai',
+      active: true,
+      outrankedBy: null,
+    });
+
+    // The LOSER still reports itself connected and still reports itself a
+    // backend, because both are true and denying either would be a different
+    // lie — the member's key IS stored and it IS a codex backend. What it adds
+    // is the one fact they cannot get anywhere else: who is ahead of it.
+    expect(routingOf.get('grok')).toEqual({
+      agentTool: 'codex',
+      role: 'backend',
+      counterpart: 'openai',
+      active: true,
+      outrankedBy: 'groq',
+    });
+
+    // Both are connected — the losing key is not revoked, disabled, or hidden.
+    // Disconnecting `groq` is all it takes to hand `codex` to `grok`, with no
+    // other action, which is only discoverable if the card said who to
+    // disconnect.
+    expect(parsed.providers.find((p) => p.provider === 'grok')?.connected).toBe(true);
+
+    // And openai is displaced ONCE, by the backend that actually won. A
+    // displaced native provider is not in the precedence contest at all, so its
+    // own `outrankedBy` is null even here, where two backends exist.
+    expect(routingOf.get('openai')).toEqual({
+      agentTool: 'codex',
+      role: 'displaced',
+      counterpart: 'groq',
+      active: true,
+      outrankedBy: null,
+    });
   });
 
   it('reports an absent CLI as unavailable, never as a measured disconnection', async () => {

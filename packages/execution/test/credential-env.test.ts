@@ -111,6 +111,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       'cursor',
       'kimi',
       'groq',
+      'grok',
     ]);
     expect(CREDENTIAL_CONFIG_DIR_VAR).toEqual({
       anthropic: 'CLAUDE_CONFIG_DIR',
@@ -126,6 +127,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       // is handed, so there is nothing to override. See `credential-env.ts`.
       kimi: null,
       groq: null,
+      grok: null,
     });
   });
 
@@ -398,7 +400,7 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // The values are asserted literally rather than compared to themselves.
     // `codex login --device-auth` in particular must never decay to bare
     // `codex login`, which opens a loopback listener nobody can reach.
-    const { kimi, groq, ...vendor } = CREDENTIAL_LOGIN_COMMANDS;
+    const { kimi, groq, grok, ...vendor } = CREDENTIAL_LOGIN_COMMANDS;
     expect(vendor).toEqual({
       // `claude auth login`, not `claude setup-token` — setup-token PRINTS a
       // token and never persists a login, so the `claude auth status` finish
@@ -422,7 +424,7 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // program is `node` and not a shell, the harness path is the one file that
     // implements this flow, and every vendor fact the harness is told comes
     // from `api-key-credentials.ts` rather than being retyped here.
-    for (const [provider, command] of [['kimi', kimi], ['groq', groq]] as const) {
+    for (const [provider, command] of [['kimi', kimi], ['groq', groq], ['grok', grok]] as const) {
       expect(command.startsWith('node ')).toBe(true);
       expect(command).toContain('/harness/credential-paste.mjs');
       expect(command).toContain(`--provider '${provider}'`);

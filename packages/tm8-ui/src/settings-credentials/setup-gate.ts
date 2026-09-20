@@ -207,10 +207,12 @@ export function setupNudgeOf(state: CredentialSetupState): string | null {
   }
   /* The same sentence for the same cause, reached differently: every provider
      that could still be signed in here is an API-key backend, and the binary it
-     would borrow is missing. Without this branch the addition of kimi and groq
-     would silently retire the message above on every node — `agents.every` can
-     no longer be true once two providers exist whose measured binary is `node`,
-     which is never absent. */
+     would borrow is missing. Without this branch the addition of kimi, groq and
+     grok would silently retire the message above on every node — `agents.every`
+     can no longer be true once providers exist whose measured binary is `node`,
+     which is never absent. The count is deliberately not stated: this branch is
+     written against the CLASS of API-key backends, so a fourth one needs no
+     edit here. */
   if (!state.hasAgent && state.agents.length > 0 && state.agents.every((a) => a.unavailable || a.borrowsMissingBinary)) {
     return 'no agent tool is installed on this node';
   }

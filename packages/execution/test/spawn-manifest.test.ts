@@ -258,8 +258,8 @@ describe('resolveLaunchConfig', () => {
   });
 
   it('resolves each provider credential source independently and keeps legacy fallback', () => {
-    // Exhaustive over `CredentialProviderName`, kimi and groq included. Those
-    // two entries are INERT by construction and that is deliberate rather than
+    // Exhaustive over `CredentialProviderName`, kimi, groq and grok included.
+    // Those three entries are INERT by construction and that is deliberate rather than
     // an oversight: a claude-code session's per-provider choice is read under
     // `anthropic` (see `AGENT_CREDENTIAL_PROVIDER`), and answering 'node' there
     // skips the credential port entirely — which already skips the Kimi backend
@@ -274,6 +274,7 @@ describe('resolveLaunchConfig', () => {
       github: null,
       kimi: null,
       groq: null,
+      grok: null,
     });
 
     expect(resolveLaunchConfig({
@@ -293,6 +294,7 @@ describe('resolveLaunchConfig', () => {
       github: 'member',
       kimi: null,
       groq: null,
+      grok: null,
     });
 
     // A new provider-specific choice overrides only its own legacy/global arm.
@@ -309,6 +311,7 @@ describe('resolveLaunchConfig', () => {
       github: 'member',
       kimi: 'node',
       groq: 'node',
+      grok: 'node',
     });
 
     // Existing manifests remain inheritable: their one source fans out only
@@ -327,6 +330,7 @@ describe('resolveLaunchConfig', () => {
       github: 'node',
       kimi: 'member',
       groq: 'member',
+      grok: 'member',
     });
   });
 

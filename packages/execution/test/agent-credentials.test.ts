@@ -30,6 +30,7 @@ import {
 } from '../src/spawn/agent-credentials.js';
 import {
   apiKeyBackendDisplaces,
+  apiKeyBackendOutrankedBy,
   apiKeyBackendsForAgentTool,
   isApiKeyCredentialProvider,
 } from '../src/credentials/api-key-credentials.js';
@@ -241,6 +242,10 @@ describe('the exact credential fragment is chosen by agent tool', () => {
       // connected.
       kimi: 'CLAUDE_CONFIG_DIR',
       groq: 'CODEX_HOME',
+      // Grok redirects `codex` exactly as Groq does — same tool, same isolation
+      // variable. The vendors differ only in base URL, which this table does
+      // not hold.
+      grok: 'CODEX_HOME',
     });
   });
 
@@ -344,6 +349,7 @@ describe('finding C8 — a session never carries two credentials for one provide
       // Same shape, one variable: `OPENAI_API_KEY` is simultaneously the node
       // key being suppressed and the member key being injected.
       groq: ['OPENAI_API_KEY'],
+      grok: ['OPENAI_API_KEY'],
     });
   });
 
@@ -536,8 +542,63 @@ describe('API-key backend routing — the env a member with Kimi or Groq actuall
     // make `DbAgentCredentialHome.resolve` pick by list order — a silent, stable
     // wrong answer. The relationship is one-to-one and this says so.
     expect(apiKeyBackendsForAgentTool('claude-code')).toEqual(['kimi']);
-    expect(apiKeyBackendsForAgentTool('codex')).toEqual(['groq']);
+    // TWO BACKENDS, ORDERED. This is the assertion that pins the precedence
+    // rule: `groq` first because it existed first, and adding a backend must
+    // never silently re-route a member who connected the earlier one. A change
+    // that reorders this array is a change that moves live sessions between
+    // vendors, and it should have to edit this line to do it.
+    expect(apiKeyBackendsForAgentTool('codex')).toEqual(['groq', 'grok']);
     expect(apiKeyBackendsForAgentTool('gemini')).toEqual([]);
+  });
+
+  /* PRECEDENCE IS A PRODUCT PROMISE, NOT AN IMPLEMENTATION DETAIL. The promise
+     is narrow and worth stating once: adding a backend must never move an
+     existing member's sessions. A member who connected Groq before Grok existed
+     has `codex` pointed at api.groq.com, and the deploy that introduces Grok
+     must leave that alone — they took no action, and nothing in the product
+     changed for them. Appending to `API_KEY_CREDENTIAL_PROVIDERS` is what keeps
+     that true, and these cases are where the promise is enforced rather than
+     merely documented. */
+  describe('apiKeyBackendOutrankedBy', () => {
+    it('names the earlier backend when both are connected', () => {
+      expect(apiKeyBackendOutrankedBy('grok', new Set(['groq', 'grok']))).toBe('groq');
+    });
+
+    it('says nothing to the winner', () => {
+      expect(apiKeyBackendOutrankedBy('groq', new Set(['groq', 'grok']))).toBeNull();
+    });
+
+    it('does not outrank a backend whose rival is not connected', () => {
+      // The member pasted only a Grok key. Groq exists in the table and is
+      // ahead of it, and that is irrelevant: precedence sorts ACTIVE
+      // credentials, and a card that said "Groq takes priority" to someone who
+      // has never connected Groq would send them looking for a key they do not
+      // have.
+      expect(apiKeyBackendOutrankedBy('grok', new Set(['grok']))).toBeNull();
+    });
+
+    it('does not outrank a backend that is not connected at all', () => {
+      // An unconnected backend has not entered the contest. This is the state
+      // every card is in before a member presses Connect, so it is the most
+      // common one on the screen.
+      expect(apiKeyBackendOutrankedBy('grok', new Set(['groq']))).toBeNull();
+      expect(apiKeyBackendOutrankedBy('grok', new Set())).toBeNull();
+    });
+
+    it('never outranks the sole backend of a tool', () => {
+      // `claude-code` has one. Kimi cannot lose a contest with itself, and a
+      // future second claude-code backend should have to make this line fail
+      // rather than inheriting an answer.
+      expect(apiKeyBackendOutrankedBy('kimi', new Set(['kimi', 'groq', 'grok']))).toBeNull();
+    });
+
+    it('ignores providers that are not backends of the same tool', () => {
+      // `anthropic` is connected and ahead of nothing: it is a native provider,
+      // not a competitor in this list. Reading the active set as if membership
+      // alone implied precedence would have grok reporting a winner that does
+      // not serve codex.
+      expect(apiKeyBackendOutrankedBy('grok', new Set(['anthropic', 'kimi', 'grok']))).toBeNull();
+    });
   });
 });
 
