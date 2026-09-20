@@ -31,6 +31,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CollabError } from '@tm8/contract';
 
 import type { PtyHostService } from '@tm8/execution';
+import type { Logger } from '@tm8/execution';
 import { CredentialSessionLauncher, CREDENTIAL_LOGIN_COMMANDS } from '@tm8/execution';
 
 import { createDb } from '../../src/db/client.js';
@@ -743,6 +744,8 @@ function serviceFor(
       provider: 'github';
       token: string;
     }) => Promise<void>;
+    /** Only `warn` is ever called by this service; the rest of `Logger` is not modelled. */
+    logger?: { warn: (message: string, meta?: Record<string, unknown>) => void };
   } = {},
 ): W2CredentialSessionsService {
   const parentEnv = {
@@ -762,6 +765,7 @@ function serviceFor(
     ...(options.run ? { probeRunner: options.run } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.storeGitCredential ? { storeGitCredential: options.storeGitCredential } : {}),
+    ...(options.logger ? { logger: options.logger as unknown as Logger } : {}),
   });
 }
 
@@ -1238,7 +1242,12 @@ describe('every close path probes and persists, not just the member’s click', 
     // call, and the claim is "a row exists", not "the vendor would accept it
     // this second".
     expect(finished.terminated).toBe(false);
-    expect(finished.probe.detail).toMatch(/earlier close/);
+    // The detail says what is known and stops there. It used to read "recorded
+    // by an earlier close of this login terminal" — an attribution neither
+    // credential table can support, since neither records the session that
+    // wrote the row and the lookup is by (account, provider) alone.
+    expect(finished.probe.detail).toMatch(/this close did not measure it/);
+    expect(finished.probe.detail).not.toMatch(/this login terminal/);
   });
 
   it('still answers not_found for a work session that was never a login terminal', async () => {
@@ -1346,6 +1355,323 @@ describe('every close path probes and persists, not just the member’s click', 
     // the same credential home racing each other's reads.
     expect(ticks).toEqual([1, 0]);
     expect(service.liveSessionIds()).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// THE TWO BUGS THE CLOSE-PATH CHANGE INTRODUCED, both in the review of #634.
+//
+// Both are consequences of the same thing: closing STOPPED BEING INSTANTANEOUS
+// once every path began probing. It now terminates a PTY, spawns a vendor CLI
+// and writes two rows, so a second path can reach the same entry mid-flight
+// and a persist can fail long after the probe has already answered.
+// ===========================================================================
+
+/** A promise a test can settle by hand, to hold a close open mid-flight. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe('a close that is IN FLIGHT is waited for, not read around', () => {
+  it('finish() racing the sweep reports the credential the sweep is still writing', async () => {
+    const pty = fakePty();
+    const clock = { now: Date.now() };
+    // The probe is held open, so the sweep's close is genuinely mid-flight —
+    // claimed, terminated, and NOT yet persisted — when finish() arrives.
+    const gate = deferred<void>();
+    const run: CommandRunner = async () => {
+      await gate.promise;
+      return outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    };
+    const service = serviceFor(pty.pty, { run, now: () => clock.now });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    // GUARD ON THE GUARD, and it is not hypothetical: written without this,
+    // this test passed against the UNFIXED service. An earlier case in this
+    // file leaves alice an active `cursor` row, and the false-negative path
+    // under test reads `account_agent_credentials` with no bound to this
+    // terminal at all — so it found that stale-by-provenance row and reported
+    // a cheerful connected:true for the wrong reason. Clearing it is what
+    // makes a red available.
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `delete from public.account_agent_credentials
+          where account_id = (select id from public.accounts where identity_id = 'pr2-alice')
+            and provider = 'cursor'`,
+      );
+    });
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'cursor' }, principal);
+    // Expiry rather than a dead PTY, so the close really does kill a terminal
+    // and `terminated` can discriminate a measured answer from a stored one.
+    clock.now += 2_000_000;
+
+    // NOT awaited. `sweepNow` runs synchronously as far as its first await,
+    // which is inside the probe, so the close claim is held from here on and
+    // there is no scheduling assumption in what follows.
+    const sweeping = service.sweepNow();
+    const finishing = service.finish({ workSessionId: started.workSessionId }, principal);
+    gate.resolve();
+    const [swept, finished] = await Promise.all([sweeping, finishing]);
+
+    expect(swept).toBe(1);
+    // THE BUG. The registry entry still existed, so finish() did not take the
+    // already-closed path on its own account: it asked `closeSession`, was told
+    // "someone else has it", and then read the database for a row the in-flight
+    // close had not written yet. A login that SUCCEEDED was reported to the
+    // member as connected:false — the same false negative this PR exists to
+    // remove, re-created one layer up by the close claim it added.
+    expect(finished.probe.connected).toBe(true);
+    expect(finished.stored).toBe(true);
+    expect(finished.provider).toBe('cursor');
+    // The discriminator a stored row cannot fake. `reportClosedSession`
+    // hardcodes `terminated: false` and stamps its own provenance detail; a
+    // real close of a live terminal killed a PTY and carries the probe's own
+    // answer. Asserting `connected` alone would go green on the stored row.
+    expect(finished.terminated).toBe(true);
+    expect(finished.probe.detail).toBeNull();
+
+    // And only ONE close really happened: one persisted row, one kill.
+    const rows = await database.query<{ status: string }>(
+      `select status from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = 'pr2-alice')
+          and provider = 'cursor'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(pty.kills.filter((id) => id === started.workSessionId)).toHaveLength(1);
+    expect(service.liveSessionIds()).toEqual([]);
+  });
+
+  it('the start-time reclaim waits for an in-flight close instead of counting it', async () => {
+    const pty = fakePty();
+    const release = deferred<void>();
+    const probing = deferred<void>();
+    const run: CommandRunner = async () => {
+      probing.resolve();
+      await release.promise;
+      return outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    };
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'cursor' }, principal);
+    pty.live.delete(started.workSessionId);
+
+    // DISCRIMINATOR, and it is the reason this test can be trusted at all.
+    // The refusal under test arrives as `credential_sessions_one_live_per_
+    // account_provider`, and a leftover unfinished row from ANY earlier case in
+    // this file would produce the identical error string through the identical
+    // index. The error message alone therefore cannot tell "the reclaim
+    // returned without stamping" from "the fixture bled". Pinning the
+    // unfinished set to exactly this session's row, before the race starts,
+    // rules the second one out — and fails naming it, rather than fraudulently
+    // passing as evidence for the first.
+    const unfinishedBefore = await database.query<{ work_session_id: string }>(
+      `select work_session_id from public.credential_sessions
+        where account_id = (select id from public.accounts where identity_id = 'pr2-bob')
+          and provider = 'cursor' and finished_at is null`,
+    );
+    expect(unfinishedBefore.map((row) => row.work_session_id)).toEqual([started.workSessionId]);
+
+    const sweeping = service.sweepNow();
+    // Wait for the probe to actually be running before the member clicks
+    // Connect again, so the claim is held rather than assumed to be.
+    await probing.promise;
+
+    // The close is released on a timer rather than by this test's control
+    // flow, because the two outcomes need different orderings and a test may
+    // only impose one. Pre-fix the reclaim does not wait: it counts the null
+    // close as reclaimed and reaches `start_credential_session` within the
+    // reclaim query's sub-millisecond round trip, while `finished_at` is still
+    // null — so the partial unique index refuses the member's Connect. Post-fix
+    // it awaits the close, which the timer then releases. 250ms is three
+    // orders of magnitude of margin over a local-socket query.
+    const timer = setTimeout(() => release.resolve(), 250);
+    const settled = await Promise.all([
+      sweeping,
+      service.start({ spaceId: fixture.space, provider: 'cursor' }, principal).then(
+        (value) => ({ refused: null as unknown, value, openAtRefusal: [] as { work_session_id: string }[] }),
+        // Read the row INSIDE the rejection handler. Reading it after the
+        // `Promise.all` settles reads it after the gate has been released and
+        // the close has stamped the row, which reports an empty set and proves
+        // nothing whatsoever about the moment the member was refused.
+        async (refused: unknown) => ({
+          refused,
+          value: null,
+          openAtRefusal: await database.query<{ work_session_id: string }>(
+            `select work_session_id from public.credential_sessions
+              where account_id = (select id from public.accounts where identity_id = 'pr2-bob')
+                and provider = 'cursor' and finished_at is null`,
+          ),
+        }),
+      ),
+    ]);
+    clearTimeout(timer);
+    const attempt = settled[1];
+
+    // THE BUG, with the row that proves the mechanism rather than the string
+    // that merely permits it. `reclaimed += 1` fired on an `outcome` of null,
+    // so the reclaim reported the slot freed and `start_credential_session`
+    // ran while `finished_at` was STILL NULL on the very row it had just
+    // claimed to have closed. Counting a close is not performing one — and the
+    // unfinished row named here is the one this test started, which is what
+    // separates the defect from a leaked fixture.
+    if (attempt.refused) {
+      throw new Error(
+        `Connect was refused — ${(attempt.refused as Error).message}\n` +
+          `finished_at IS NULL at the instant of refusal: ` +
+          `${JSON.stringify(attempt.openAtRefusal.map((row) => row.work_session_id))}\n` +
+          `this session's row was ${started.workSessionId} — if it is the one listed above, ` +
+          `the reclaim counted a close it had not performed`,
+      );
+    }
+
+    const retry = attempt.value!;
+    expect(retry.workSessionId).not.toBe(started.workSessionId);
+    // The slot really came back, rather than the retry having squeezed past.
+    const [old] = await database.query<{ finished_at: Date | null }>(
+      `select finished_at from public.credential_sessions where work_session_id = $1`,
+      [started.workSessionId],
+    );
+    expect(old!.finished_at).not.toBeNull();
+    pty.live.delete(retry.workSessionId);
+    await service.sweepNow();
+  });
+});
+
+describe('finish() closes only the caller’s OWN login terminal', () => {
+  it('refuses another member’s work session without killing it or writing a row', async () => {
+    const pty = fakePty();
+    const run: CommandRunner = async () =>
+      outcome({ stdout: JSON.stringify({ isAuthenticated: true }) });
+    const service = serviceFor(pty.pty, { run });
+    const alice = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    const bob = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'gemini' }, alice);
+
+    // The registry is keyed by work-session id ALONE, so Bob holding the id was
+    // enough to close Alice's terminal — and `persistProbe` writes with the
+    // CALLER's claims, so Alice's login would have been recorded against Bob's
+    // account. `finishRow` is RLS-scoped and would have refused the final
+    // stamp, but the kill and the probe happen before it.
+    const error = await captureError(() =>
+      service.finish({ workSessionId: started.workSessionId }, bob),
+    );
+    // `not_found`, not `forbidden`: the same answer an RLS-scoped lookup gives
+    // for someone else's row, so this guard is not an oracle for which
+    // work-session ids are live login terminals.
+    expect(refusalCode(error)).toBe('not_found');
+
+    // Nothing was done TO the terminal, and nothing was written for Bob.
+    expect(pty.kills).not.toContain(started.workSessionId);
+    expect(service.liveSessionIds()).toContain(started.workSessionId);
+    const bobRows = await database.query(
+      `select 1 from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = 'pr2-bob')
+          and provider = 'gemini'`,
+    );
+    expect(bobRows).toHaveLength(0);
+
+    // And Alice can still finish her own.
+    const finished = await service.finish({ workSessionId: started.workSessionId }, alice);
+    expect(finished.terminated).toBe(true);
+  });
+});
+
+describe('a persist failure is REPORTED, never hidden behind the probe that preceded it', () => {
+  it('finish() throws when the credential could not be stored', async () => {
+    const pty = fakePty();
+    const token = `ghp_${'P'.repeat(36)}`;
+    const run: CommandRunner = async (argv) =>
+      argv.includes('api')
+        ? outcome({ stdout: 'alice\n' })
+        : argv.includes('token')
+          ? outcome({ stdout: `${token}\n` })
+          : outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account alice (keyring)' });
+    const service = serviceFor(pty.pty, {
+      run,
+      // The probe SUCCEEDS and the store then fails — an encryption key the
+      // node cannot read, a dead pool. This is the ordering the bug lives in.
+      storeGitCredential: async () => {
+        throw new Error('credential store unavailable');
+      },
+    });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
+    const error = await captureError(() =>
+      service.finish({ workSessionId: started.workSessionId }, principal),
+    );
+
+    // THE BUG. `probe` was assigned BEFORE `persistProbe` ran, so by the time
+    // the persist threw, `outcome.probe` was already non-null and finish()'s
+    // `if (!outcome.probe)` guard could never fire. The member was handed
+    // `{connected: true, stored: false}` and a 200 — a Connected answer for a
+    // credential that reached no table, which is precisely the state this PR
+    // was written to stop producing. The failure has to be the answer.
+    expect((error as Error).message).toContain('credential store unavailable');
+
+    // Nothing was written, by either shape.
+    const git = await database.query(
+      `select 1 from public.account_git_credentials
+        where account_id = (select id from public.accounts where identity_id = 'pr2-alice')`,
+    );
+    expect(git).toHaveLength(0);
+
+    // And the row is still finished: a persist failure must not hold the
+    // one-live-per-pair slot for the full TTL. Proof, not inference — the
+    // retry that the lockout would have refused.
+    const [session] = await database.query<{ finished_at: Date | null }>(
+      `select finished_at from public.credential_sessions where work_session_id = $1`,
+      [started.workSessionId],
+    );
+    expect(session!.finished_at).not.toBeNull();
+    expect(service.liveSessionIds()).toEqual([]);
+    const retry = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
+    expect(retry.workSessionId).not.toBe(started.workSessionId);
+    pty.live.delete(retry.workSessionId);
+    await service.sweepNow();
+  });
+
+  // NOT A RED. This one PASSES against the unfixed service and never failed:
+  // `outcome.failure` is set today, so the sweep already logs. The guard that
+  // could not fire was `finish()`'s, which the case above pins. It is kept as a
+  // regression guard — committing the probe only after the persist must not
+  // quietly cost the background paths their log line — and it is labelled so
+  // that no later reader mistakes it for evidence of the defect.
+  it('the SWEEP logs a persist failure instead of counting a silent success', async () => {
+    const pty = fakePty();
+    const run: CommandRunner = async (argv) =>
+      argv.includes('api')
+        ? outcome({ stdout: 'bob\n' })
+        : argv.includes('token')
+          ? outcome({ stdout: `ghp_${'Q'.repeat(36)}\n` })
+          : outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account bob (keyring)' });
+    const warnings: unknown[] = [];
+    const service = serviceFor(pty.pty, {
+      run,
+      storeGitCredential: async () => {
+        throw new Error('store exploded');
+      },
+      logger: { warn: (message: string, meta: unknown) => warnings.push({ message, meta }) },
+    });
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+
+    const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
+    pty.live.delete(started.workSessionId);
+    expect(await service.sweepNow()).toBe(1);
+
+    // The background paths log rather than throw — but they have to SEE it.
+    // With the probe committed before the persist, `outcome.failure` was set
+    // yet the session read as a clean success everywhere the probe was used.
+    expect(warnings).toHaveLength(1);
+    expect(JSON.stringify(warnings[0])).toContain('store exploded');
   });
 });
 
