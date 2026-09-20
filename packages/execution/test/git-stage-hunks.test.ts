@@ -155,8 +155,12 @@ describe('stageHunks against real git', () => {
 
   it('refuses an out-of-range hunk index instead of staging what it can', async () => {
     const dir = await repo();
+    // `reason`, not the message. The message was already correct while the
+    // error was a PLAIN `Error` that the facade could only turn into a 503 —
+    // so `/out of range/` alone passed against the broken and the fixed class
+    // alike and could not have come back the other way.
     await expect(stageHunks({ worktreePath: dir, path: 'f.txt', indices: [1, 9] }))
-      .rejects.toThrow(/out of range/);
+      .rejects.toMatchObject({ code: 'invalid_input', reason: 'hunk_index_out_of_range' });
     expect(git(dir, 'diff', '--cached', '--name-only')).toBe('');
   });
 
@@ -216,5 +220,72 @@ describe('stageHunks against real git', () => {
     const dir = await repo();
     await expect(stageHunks({ worktreePath: dir, path: 'f.txt', indices: [] }))
       .rejects.toMatchObject({ reason: 'no_hunks_selected' });
+  });
+});
+
+/**
+ * A DIRECTORY-SCOPED READ — the shape that answered 503.
+ *
+ * `execution.gitDiff` takes a `path`, and a reviewer clicking a FOLDER in the
+ * Changes tree sends a directory. Git answers that with a perfectly good
+ * multi-file diff, and the base shipped it. Then hunk support spliced an
+ * un-try/catch'd `hunkListing(...)` into the response: it called `readHunks`,
+ * `parseUnifiedDiff` refused the multi-file text with a PLAIN `Error`,
+ * `readHunks`'s catch converts only `WorktreeError` and re-threw — and the
+ * whole read became a 503. A feature that adds hunks to a diff must not be
+ * able to take the diff away.
+ *
+ * Its own repo, with two files under one directory: the single-file `repo()`
+ * above cannot produce a multi-file diff, and a test whose fixture cannot
+ * exhibit the defect is not a test of it.
+ */
+describe('readHunks over a scope that is not a single file', () => {
+  const made: string[] = [];
+
+  async function treeRepo(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'tm8-hunks-dir-'));
+    made.push(dir);
+    git(dir, 'init', '-q', '-b', 'main');
+    await writeFile(join(dir, 'src-a.txt'), BASE, 'utf8');
+    await writeFile(join(dir, 'src-b.txt'), BASE, 'utf8');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'base');
+    await writeFile(join(dir, 'src-a.txt'), EDITED, 'utf8');
+    await writeFile(join(dir, 'src-b.txt'), EDITED, 'utf8');
+    return dir;
+  }
+
+  afterEach(async () => {
+    await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  });
+
+  it('answers null for a multi-file scope instead of throwing past the facade', async () => {
+    const dir = await treeRepo();
+    // THE CONTROL, and it is what makes the null below attributable: the
+    // fixture really does produce a two-file diff, so `readHunks` is being
+    // asked the question that used to break it.
+    expect(git(dir, 'diff', '--name-only').trim().split('\n').sort()).toEqual(['src-a.txt', 'src-b.txt']);
+
+    // A single file in the same repo still lists its hunks — so "null" below
+    // is the scope being unsplittable, not the read being broken.
+    const one = await readHunks({ worktreePath: dir, path: 'src-a.txt' });
+    expect(one?.count).toBe(2);
+
+    // `.` is the whole worktree: two files, one diff, no single file for
+    // indices to index into. The honest answer is "no hunks", not an error.
+    expect(await readHunks({ worktreePath: dir, path: '.' })).toBeNull();
+  });
+
+  /**
+   * The WRITE side keeps the refusal, and that asymmetry is deliberate: a read
+   * asking "which hunks?" about a directory has a true answer ("none"), while
+   * a write asking to stage "hunk 1 of a directory" names a selection that
+   * cannot exist. `invalid_input` makes it a 400 the client can act on.
+   */
+  it('still REFUSES a multi-file scope from stageHunks, as invalid_input', async () => {
+    const dir = await treeRepo();
+    await expect(stageHunks({ worktreePath: dir, path: '.', indices: [1] }))
+      .rejects.toMatchObject({ code: 'invalid_input', reason: 'not_a_single_file' });
+    expect(git(dir, 'diff', '--cached', '--name-only')).toBe('');
   });
 });

@@ -22,6 +22,8 @@
  */
 import { createHash } from 'node:crypto';
 
+import { WorktreeError } from './git-invoker.js';
+
 export interface Hunk {
   /** 1-based, and stable only for the diff it was parsed from. */
   index: number;
@@ -71,7 +73,21 @@ export function parseUnifiedDiff(text: string): ParsedDiff {
   for (const line of lines) {
     if (line.startsWith('diff --git ')) {
       if (seenDiffHeader) {
-        throw new Error('parseUnifiedDiff expects a single file diff, got more than one');
+        // A DIRECTORY-SCOPED READ LANDS HERE, and it is a normal request, not
+        // a bug: `gitDiff` with `path: "src"` produces a multi-file diff. This
+        // threw a PLAIN Error, which `readHunks`'s WorktreeError-only catch
+        // re-threw past an un-try/catch'd facade splice — so asking for the
+        // diff of a directory answered 503, where the same read without hunk
+        // support had answered a valid multi-file diff. It is a WorktreeError
+        // so the read side can recognise it and answer `hunks: null` (there is
+        // no single file for indices to index into) and the STAGE side can
+        // refuse it as `invalid_input` instead of crashing.
+        throw new WorktreeError(
+          'parseUnifiedDiff expects a single file diff, got more than one',
+          'invalid_input',
+          'not_a_single_file',
+          { hint: 'hunk indices are per-file; name one file, not a directory' },
+        );
       }
       seenDiffHeader = true;
     }
@@ -126,14 +142,26 @@ export function digestHunks(hunks: readonly Hunk[]): string {
 
 /** Select by 1-based index, refusing out-of-range rather than clamping. */
 export function selectHunks(parsed: ParsedDiff, indices: readonly number[]): Hunk[] {
-  if (indices.length === 0) throw new Error('no hunks selected');
+  if (indices.length === 0) {
+    throw new WorktreeError('no hunks selected', 'invalid_input', 'no_hunks_selected');
+  }
   const seen = new Set<number>();
   const out: Hunk[] = [];
   // Sorted so the rebuilt patch is in file order no matter what order the
   // reviewer ticked the boxes in; git applies a patch top-down.
   for (const i of [...indices].sort((a, b) => a - b)) {
     if (!Number.isInteger(i) || i < 1 || i > parsed.hunks.length) {
-      throw new Error(`hunk index ${i} is out of range (1..${parsed.hunks.length})`);
+      // The contract promises "out of range is a refusal — never a clamp,
+      // never a partial apply". A 503 is not a refusal: it tells the caller
+      // the server broke AND invites a retry that can never succeed. Named,
+      // `liftWorktreeError` turns it into a 400 that carries the index and the
+      // range the client needs to re-read the diff.
+      throw new WorktreeError(
+        `hunk index ${i} is out of range (1..${parsed.hunks.length})`,
+        'invalid_input',
+        'hunk_index_out_of_range',
+        { index: i, count: parsed.hunks.length },
+      );
     }
     if (seen.has(i)) continue;
     seen.add(i);
@@ -165,8 +193,17 @@ export function selectHunks(parsed: ParsedDiff, indices: readonly number[]): Hun
  * than by git's tolerance.
  */
 export function buildSubsetPatch(parsed: ParsedDiff, selected: readonly Hunk[]): string {
-  if (parsed.binary) throw new Error('a binary diff cannot be staged by hunk');
-  if (selected.length === 0) throw new Error('no hunks selected');
+  if (parsed.binary) {
+    throw new WorktreeError(
+      'a binary diff cannot be staged by hunk',
+      'invalid_input',
+      'binary_file',
+      { hint: 'stage or unstage the whole file' },
+    );
+  }
+  if (selected.length === 0) {
+    throw new WorktreeError('no hunks selected', 'invalid_input', 'no_hunks_selected');
+  }
 
   const parts: string[] = [...parsed.preamble];
   let delta = 0;

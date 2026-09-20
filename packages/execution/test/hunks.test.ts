@@ -5,6 +5,7 @@ import {
   parseUnifiedDiff,
   selectHunks,
 } from '../src/worktree/hunks.js';
+import { WorktreeError } from '../src/worktree/git-invoker.js';
 
 /**
  * A two-hunk diff shaped like git's own output. Hunk 1 ADDS two lines, which
@@ -79,6 +80,77 @@ describe('parseUnifiedDiff', () => {
   it('refuses a multi-file diff rather than silently reading the first file', () => {
     const two = TWO_HUNKS + ['diff --git a/b.ts b/b.ts', '--- a/b.ts', '+++ b/b.ts', '@@ -1 +1 @@', '-x', '+y', ''].join('\n');
     expect(() => parseUnifiedDiff(two)).toThrow(/single file diff/);
+  });
+});
+
+/**
+ * THE ERROR CLASS IS THE CONTRACT, NOT THE MESSAGE.
+ *
+ * Every refusal in this module used to be a PLAIN `Error`. The message read
+ * correctly and the taxonomy was wrong, which is the worst combination: the
+ * facade converts `WorktreeError` to a 4xx by `code` and lets anything else
+ * fall through as a 503. So a reviewer asking for the diff of a DIRECTORY —
+ * an ordinary `gitDiff` with `path: "src"`, which produces the multi-file diff
+ * `parseUnifiedDiff` refuses — got "the server broke" instead of an answer,
+ * and an out-of-range hunk index got a 503 where the contract says in as many
+ * words: "Out of range is a refusal — never a clamp, never a partial apply."
+ *
+ * THE 503 IS MEASURED, NOT ASSUMED, AND NOT MEASURED HERE. This file asserts
+ * the THROWN OBJECT; the status a client actually receives is a fact about
+ * `toWireError` two layers up, and asserting one while claiming the other is
+ * the same mistake as the missing schema key. The wire answer — 503 with the
+ * plain `Error`, 400 with the named one, both OBSERVED by running them — is
+ * asserted in
+ * `packages/server/test/facade/execution-git-hunk-wire-status.test.ts`.
+ *
+ * These assert on `code` and `reason`, NOT on the message, deliberately. The
+ * message is identical either way — it did not change when these were fixed —
+ * so a message-matching test passes against both the broken and the correct
+ * class and proves nothing. `reason` is the discriminator the facade actually
+ * switches on, and the one a plain `Error` cannot fake.
+ */
+describe('hunk refusals carry the worktree taxonomy, so the facade can answer 4xx', () => {
+  const refusalOf = (fn: () => unknown): { code: string; reason: string } => {
+    try {
+      fn();
+    } catch (error) {
+      if (error instanceof WorktreeError) return { code: error.code, reason: error.reason };
+      return { code: `PLAIN ${(error as Error).constructor.name} -> 503`, reason: '(none)' };
+    }
+    throw new Error('expected a refusal, got a value — this check has no losing outcome');
+  };
+
+  it('a multi-file diff is invalid_input/not_a_single_file, not a 503', () => {
+    const two = TWO_HUNKS + ['diff --git a/b.ts b/b.ts', '--- a/b.ts', '+++ b/b.ts', '@@ -1 +1 @@', '-x', '+y', ''].join('\n');
+    expect(refusalOf(() => parseUnifiedDiff(two))).toEqual({ code: 'invalid_input', reason: 'not_a_single_file' });
+  });
+
+  it('an out-of-range index is invalid_input/hunk_index_out_of_range, not a 503', () => {
+    const parsed = parseUnifiedDiff(TWO_HUNKS);
+    expect(refusalOf(() => selectHunks(parsed, [3]))).toEqual({ code: 'invalid_input', reason: 'hunk_index_out_of_range' });
+    expect(refusalOf(() => selectHunks(parsed, [0]))).toEqual({ code: 'invalid_input', reason: 'hunk_index_out_of_range' });
+  });
+
+  it('an empty selection is invalid_input/no_hunks_selected, not a 503', () => {
+    const parsed = parseUnifiedDiff(TWO_HUNKS);
+    expect(refusalOf(() => selectHunks(parsed, []))).toEqual({ code: 'invalid_input', reason: 'no_hunks_selected' });
+  });
+
+  it('a binary diff is invalid_input/binary_file, not a 503', () => {
+    const parsed = parseUnifiedDiff(
+      ['diff --git a/i.png b/i.png', 'Binary files a/i.png and b/i.png differ', ''].join('\n'),
+    );
+    expect(refusalOf(() => buildSubsetPatch(parsed, []))).toEqual({ code: 'invalid_input', reason: 'binary_file' });
+  });
+
+  /**
+   * THE CONTROL. Had the taxonomy been wrong, this would be indistinguishable
+   * from the cases above by message; it is here so a reader can see that the
+   * happy path still returns a value rather than that everything now throws.
+   */
+  it('a valid selection still returns a patch (the control)', () => {
+    const parsed = parseUnifiedDiff(TWO_HUNKS);
+    expect(buildSubsetPatch(parsed, selectHunks(parsed, [1]))).toContain('@@ -');
   });
 });
 

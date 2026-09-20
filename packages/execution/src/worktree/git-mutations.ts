@@ -580,7 +580,16 @@ export async function readHunks(params: {
     parsed = await deriveHunks(params.worktreePath, params.path, staged);
   } catch (error) {
     const reason = error instanceof WorktreeError ? error.reason : '';
-    if (reason === 'no_hunks_available' || reason === 'binary_file') return null;
+    // THE READ SIDE ANSWERS null, NOT AN ERROR, for every "this scope has no
+    // selectable hunks" case. `not_a_single_file` joined the set because a
+    // DIRECTORY-scoped `gitDiff` is a legitimate read — it returns a valid
+    // multi-file diff, and the honest answer to "which hunks?" is "none, this
+    // is not one file". Before, it threw past this catch and turned that whole
+    // read into a 503. The STAGE side calls `deriveHunks` directly and so
+    // still sees the refusal, which is what it should be there.
+    if (reason === 'no_hunks_available' || reason === 'binary_file' || reason === 'not_a_single_file') {
+      return null;
+    }
     throw error;
   }
   return {
