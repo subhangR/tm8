@@ -241,6 +241,48 @@
   cursor: default;
 }
 
+/* A conflicted row has no verb — this is a label where the buttons were, so
+   the row does not silently lose its right-hand column and reflow. */
+.cv2-root .pn-chg__row-note {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-block);
+  border: 1px solid var(--pn-block);
+  padding: 0 6px;
+  flex: none;
+}
+
+/* -- the merge banner ----------------------------------------------------- */
+
+/* Mirrors `.pn-git__conflict` in session-git.css deliberately: the same fact
+   (this worktree is mid-merge) should not look like two different facts
+   depending on which panel the reviewer is standing in. */
+.cv2-root .pn-chg__conflict {
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  padding: var(--pn-space-3);
+}
+
+.cv2-root .pn-chg__conflict-title {
+  display: block;
+  margin-bottom: var(--pn-space-2);
+  color: var(--pn-block);
+  font-weight: 600;
+}
+
+.cv2-root .pn-chg__conflict-paths {
+  margin: 0;
+  padding-left: var(--pn-space-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__conflict-remedy {
+  display: block;
+  margin-top: var(--pn-space-2);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
 /* -- the diff pane -------------------------------------------------------- */
 
 .cv2-root .pn-chg__diff-head {

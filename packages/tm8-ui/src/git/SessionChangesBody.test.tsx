@@ -545,6 +545,91 @@ describe('commit never silently widens', () => {
   });
 });
 
+/**
+ * A CONFLICT REFUSES THE WORKTREE, NOT THE SELECTION.
+ *
+ * `stage`, `unstage` and `commit` each call `refuseMidMerge` server-side
+ * before touching the index, and it asks only whether `MERGE_HEAD` exists.
+ * Before this, an unmerged row (`UU`, `AA`, `DD`, …) answered true to BOTH
+ * `isStaged` and `isUnstaged` — the two columns are non-blank — so the row
+ * drew a Stage button and an Unstage button, the bar drew Commit selected,
+ * and the only thing any of the three could produce was a `merge_in_progress`
+ * string in the error line after the click.
+ *
+ * WHAT THESE WOULD HAVE DONE HAD THE DEFECT BEEN ABSENT: nothing different.
+ * Both were written against the broken component and both were red — the
+ * first because `session-changes-row-stage` and `-row-unstage` were rendered
+ * for `src/conflict.ts`, the second because `session-changes-commit` was
+ * rendered and clickable.
+ */
+describe('a merge conflict is stated once, not discovered three times', () => {
+  const CONFLICTED: SessionGitFile[] = [
+    { status: 'UU', path: 'src/conflict.ts' },
+    { status: 'M ', path: 'src/b.ts' },
+  ];
+
+  it('names the conflicted paths in a banner and offers the row no verb', async () => {
+    mount(harness(CONFLICTED));
+    await screen.findByTestId('session-changes-files');
+
+    const banner = screen.getByTestId('session-changes-conflict');
+    expect(banner.textContent).toContain('src/conflict.ts');
+    expect(banner.textContent).toContain('resolve or abort the merge');
+    expect(banner.getAttribute('role')).toBe('alert');
+
+    // The conflicted row says what it is and offers nothing to press. Its
+    // neighbour is an ordinary staged file and keeps its Unstage.
+    expect(screen.getByTestId('session-changes-row-conflict')).toBeTruthy();
+    const stageRows = screen
+      .queryAllByTestId('session-changes-row-stage')
+      .map((b) => (b as HTMLElement).dataset.path);
+    const unstageRows = screen
+      .queryAllByTestId('session-changes-row-unstage')
+      .map((b) => (b as HTMLElement).dataset.path);
+    expect(stageRows).not.toContain('src/conflict.ts');
+    expect(unstageRows).not.toContain('src/conflict.ts');
+    expect(unstageRows).toContain('src/b.ts');
+  });
+
+  it('refuses all three bar verbs even for a selection that excludes the conflict', async () => {
+    const h = harness(CONFLICTED);
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+
+    // `src/b.ts` is a clean staged file. Selecting only it does NOT make the
+    // verbs available, because the server refuses on `MERGE_HEAD`, not on the
+    // paths it was handed — a bar that re-enabled here would be promising a
+    // narrowing that does not exist.
+    check('src/b.ts');
+    fireEvent.change(screen.getByTestId('session-changes-commit-message'), {
+      target: { value: 'sneak past the merge' },
+    });
+
+    expect(screen.queryByTestId('session-changes-stage')).toBeNull();
+    expect(screen.queryByTestId('session-changes-unstage')).toBeNull();
+    expect(screen.queryByTestId('session-changes-commit')).toBeNull();
+
+    const gate = screen.getByTestId('session-changes-conflict-gate');
+    expect(gate.textContent).toContain('1 path(s) are unresolved in a merge');
+    expect(gate.textContent).toContain('src/conflict.ts');
+    expect(h.stageCalls).toEqual([]);
+    expect(h.commitCalls).toEqual([]);
+  });
+
+  it('shows the banner under a chip whose filtered list is empty', async () => {
+    // The conflicted row answers no chip — it is neither staged nor unstaged
+    // — so under `untracked` the list is empty. The banner is outside the
+    // filtered list precisely so the reason the buttons are dead is still on
+    // screen when the rows are not.
+    mount(harness([{ status: 'UU', path: 'src/conflict.ts' }]));
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('untracked'));
+    expect(screen.queryByTestId('session-changes-files')).toBeNull();
+    expect(screen.getByTestId('session-changes-conflict').textContent).toContain('src/conflict.ts');
+  });
+});
+
 describe('no checkout, and no borrowed attribution', () => {
   /**
    * A LANE-SAFETY CONTROL. Phase 1 deliberately ships no branch switch — this

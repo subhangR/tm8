@@ -64,6 +64,51 @@ const DIFF_FILES_CAP = 500;
 const DIFF_BYTES_DEFAULT = 256 * 1024;
 const DIFF_BYTES_MAX = 1024 * 1024;
 
+/**
+ * THE STATUS READ'S OWN CAP, because `STATUS_FILES_CAP` is not one.
+ *
+ * `-uall` asks git to list untracked FILES rather than collapsing a new
+ * directory to `dir/`, which the Changes surface needs — it cannot stage,
+ * diff or name what it cannot see. The cost of that is unbounded in the
+ * worktree's content, and the 200-row cap does NOT bound it: that cap is
+ * applied to the parsed array AFTER git has already printed every row and
+ * node has already buffered them.
+ *
+ * Which matters because an overflow here is not a truncated answer. `runGit`
+ * resolves with an exit code for ordinary git failures, but node rejects a
+ * maxBuffer overflow out of `execFile` with a string-coded `RangeError`
+ * (`ERR_CHILD_PROCESS_STDIO_MAXBUFFER` — MEASURED), which `runGit` re-raises
+ * rather than resolving. Left at node's 1 MiB default and outside a `try`,
+ * an agent that generated a large unignored tree — a build directory or a
+ * dataset the repo's `.gitignore` does not cover — turned `execution.gitStatus`
+ * from `available: false, unavailableReason: 'worktree_unreadable'` into a
+ * throw out of the handler. Roughly 40 bytes a row, so order 25,000 files.
+ *
+ * So the buffer is raised to a size no honest worktree reaches, and passing
+ * it is only half the fix: the rejection is caught and answered with the
+ * `worktree_unreadable` this read already has a shape for. A worktree too
+ * large to read is a fact about the worktree, not a server error.
+ */
+const STATUS_BYTES_MAX = 8 * 1024 * 1024;
+
+/**
+ * The one status read, shared by `status` and by `stage`'s post-apply
+ * re-read, so the cap and the overflow contract cannot drift apart between
+ * the two call sites that have to agree about them.
+ *
+ * `null` means "could not be read" for either reason — a non-zero git exit or
+ * an overflow. The callers differ in what they say about it (one has applied
+ * nothing, the other has already moved the index), so they branch, not this.
+ */
+async function readPorcelain(cwd: string): Promise<string | null> {
+  const run = await runGit(['status', '--porcelain=v1', '-z', '-uall'], {
+    cwd,
+    maxBufferBytes: STATUS_BYTES_MAX,
+  }).catch(() => null);
+  if (run === null || run.code !== 0) return null;
+  return run.stdout;
+}
+
 interface SessionLaneRow {
   session_id: string;
   workdir_mode: string | null;
@@ -376,12 +421,13 @@ export class ExecutionGitService {
 
     // `-uall` lists untracked FILES. Without it git collapses a new directory
     // to `dir/`, and a Changes surface cannot stage, diff or even name what is
-    // inside it. The list is capped below, so the cost of asking is bounded.
-    const porcelain = await runGit(['status', '--porcelain=v1', '-z', '-uall'], { cwd: path });
-    if (porcelain.code !== 0) {
+    // inside it. What bounds the COST of asking is `STATUS_BYTES_MAX`, not the
+    // 200-row cap applied further down — see the constant.
+    const porcelain = await readPorcelain(path);
+    if (porcelain === null) {
       return { ...empty, headOid, unavailableReason: 'worktree_unreadable' };
     }
-    const { files, dirty } = parsePorcelain(porcelain.stdout);
+    const { files, dirty } = parsePorcelain(porcelain);
 
     const { baseRef, baseOid } = await ExecutionGitService.resolveBase(lane, path);
     let ahead: number | null = null;
@@ -602,6 +648,54 @@ export class ExecutionGitService {
      * answer from an empty-because-unchanged one.
      */
     if (untracked && wantPath !== null && scope === 'session') {
+      /*
+       * IGNORED IS A REFUSAL, AND THIS IS THE ONE BRANCH THAT HAS TO ASK.
+       *
+       * `git diff --no-index` compares two FILESYSTEM paths. `.gitignore`
+       * never enters into it, so a file the repository was explicitly told
+       * not to look at was returned in full — through a public v1 read, to
+       * anyone who could name it.
+       *
+       * Nothing already here catches it. Containment does not: `.env` sits
+       * inside the worktree and resolves inside it, which is all
+       * `containedFile` asks. The status listing does not: `-uall` omits
+       * ignored files, so the surface never offers the path — but the read
+       * takes `path` from the request, not from the listing it just served.
+       * And every OTHER read in this file is safe by construction rather
+       * than by care: they hand git a pathspec resolved against the index or
+       * a tree, where an ignored file simply is not present to be found.
+       *
+       * `git check-ignore` is the command that answers this, and it is the
+       * ONE git call in this file that must NOT carry `--literal-pathspecs`:
+       * it rejects the magic outright (`fatal: pathspec magic not supported
+       * by this command: 'literal'`, exit 128 — MEASURED, git 2.43). That is
+       * safe rather than a hole in the guarantee the flag buys everywhere
+       * else, because check-ignore matches the NAME it is handed against the
+       * ignore patterns instead of globbing the worktree with it: asked for
+       * `a?c.txt` while only `abc.txt` is ignored, it answers 1 (MEASURED).
+       * It also consults the index by default, so a TRACKED file matching an
+       * ignore pattern answers 1 and stays readable — which is correct, and
+       * moot here since this branch only runs for untracked paths.
+       *
+       * Exit 0 is "ignored" and refuses BY NAME, the same way containment
+       * does, because a caller that asked for a path it may not have needs
+       * telling. Exit 1 is the only code allowed through. Anything else is a
+       * question that did not get an answer, and an unanswered ignore check
+       * is not a licence to read the file — so it takes the honest
+       * `worktree_unreadable` exit rather than falling through.
+       */
+      const ignored = await runGit(['check-ignore', '-q', '--', wantPath], { cwd: path }).catch(
+        () => ({ code: 128, stdout: '', stderr: '' }),
+      );
+      if (ignored.code === 0) {
+        throw new CollabError('invalid_input', 'path is ignored by this repository', {
+          details: { reason: 'path_ignored', path: wantPath },
+        });
+      }
+      if (ignored.code !== 1) {
+        return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
+      }
+
       // The ONLY read in this file whose argument is a filesystem path rather
       // than a pathspec, so it is the only one that needs containment proved
       // rather than inherited from git. See `containedFile`.
@@ -766,6 +860,7 @@ export class ExecutionGitService {
     const input = ctx.body as ExecutionGitCommitInput;
     try {
       const selected = input.paths ?? [];
+      let toStage: readonly string[] = selected;
       if (input.all !== true && selected.length > 0) {
         const wanted = new Set(selected);
         // Read with the SAME function `commit()` uses to decide what it is
@@ -788,12 +883,58 @@ export class ExecutionGitService {
             },
           );
         }
+
+        /*
+         * RE-STAGING A DELETION THAT IS ALREADY STAGED IS NOT A NO-OP.
+         *
+         * This verb stages the selection before committing it, so that a
+         * reviewer who ticks a row that is only dirty on disk gets it in the
+         * commit. For one row that is fatal: once a deletion is staged, git
+         * holds the path in NEITHER the working tree nor the index, so
+         * `git add -- <path>` matches nothing — and an unmatched pathspec is
+         * not the harmless no-op it is for `git diff`. `git add` exits 128
+         * (MEASURED; `-A` does not help, it exits 128 too) and `stage` lifts
+         * that into a refusal that takes the whole commit down.
+         *
+         * So "Delete a file, press Stage, press Commit selected" — a
+         * sequence this surface actively invites — could not complete.
+         *
+         * The narrowest true fix, and the reason it is not just "skip the
+         * re-stage when something is already staged": drop from the stage
+         * list only those paths that have nothing left for `git add` to
+         * match. That is exactly a staged deletion with no file back on
+         * disk. WORKTREE PRESENCE IS THE SECOND QUESTION and it is not
+         * optional — a reviewer who deletes a file, stages that, then writes
+         * a new file at the same path still needs the new content staged,
+         * and skipping on the strength of the staged deletion alone would
+         * commit the removal and silently drop the replacement.
+         *
+         * Every path stat'd here is one git itself just named out of the
+         * index, so `resolve` cannot be steered outside the worktree by the
+         * request; the client's own strings are guarded by
+         * `assertSafePathspec` inside `stage` as before.
+         */
+        const stagedDeletions = new Set(
+          already.filter((f) => f.status.startsWith('D')).map((f) => f.path),
+        );
+        if (stagedDeletions.size > 0) {
+          const kept: string[] = [];
+          for (const candidate of selected) {
+            if (!stagedDeletions.has(candidate)) {
+              kept.push(candidate);
+              continue;
+            }
+            const onDisk = await stat(resolve(path, candidate)).catch(() => null);
+            if (onDisk !== null) kept.push(candidate);
+          }
+          toStage = kept;
+        }
       }
-      if (input.all === true || selected.length > 0) {
+      if (input.all === true || toStage.length > 0) {
         await stage({
           worktreePath: path,
           expectedBranch: branch,
-          ...(input.paths === undefined ? {} : { paths: input.paths }),
+          ...(input.paths === undefined ? {} : { paths: toStage }),
           ...(input.all === undefined ? {} : { all: input.all }),
         });
       }
@@ -833,15 +974,18 @@ export class ExecutionGitService {
         input.action === 'unstage'
           ? await unstage(params).then((r) => ({ staged: r.staged, moved: r.paths }))
           : await stage(params).then((r) => ({ staged: r.staged, moved: [...(input.paths ?? [])] }));
-      const porcelain = await runGit(['status', '--porcelain=v1', '-z', '-uall'], { cwd: path });
-      if (porcelain.code !== 0) {
+      const porcelain = await readPorcelain(path);
+      if (porcelain === null) {
         // The index MOVED and then the read failed. Saying "failed" would be a
         // lie about the worktree, so the refusal says which half happened.
+        // `readPorcelain` folds an OVERFLOW into this branch too: before that,
+        // a worktree too large to re-read rejected past this `throw` entirely
+        // and reported neither half.
         throw new CollabError('upstream_unavailable', 'the index was updated but the worktree could not be re-read', {
           details: { reason: 'status_unreadable_after_apply', applied: true, action: input.action },
         });
       }
-      const { files, dirty } = parsePorcelain(porcelain.stdout);
+      const { files, dirty } = parsePorcelain(porcelain);
       return {
         sessionId: lane.session_id,
         worktreeId,

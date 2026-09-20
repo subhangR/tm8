@@ -20,6 +20,7 @@ import {
   SCOPE_CAPTION,
   isPartlyStaged,
   isStaged,
+  isUnmerged,
   isUnstaged,
   isUntracked,
   matchesFilter,
@@ -53,6 +54,48 @@ describe('the XY columns, read one at a time', () => {
     expect(isPartlyStaged(f('M '))).toBe(false);
     expect(isPartlyStaged(f(' M'))).toBe(false);
     expect(isPartlyStaged(f('??'))).toBe(false);
+  });
+
+  /**
+   * THE SEVEN UNMERGED PAIRS. Each has a non-blank letter in BOTH columns, so
+   * the positional read answered `true` to staged AND unstaged for every one
+   * of them — which rendered a Stage button and an Unstage button over a path
+   * the server refuses outright (`refuseMidMerge` → `merge_in_progress`).
+   *
+   * HAD THE DEFECT BEEN ABSENT this case would have been green from the
+   * start; it was red on all seven rows before `isUnmerged` existed, because
+   * `isStaged`/`isUnstaged` both returned true.
+   */
+  it.each([['DD'], ['AU'], ['UD'], ['UA'], ['DU'], ['AA'], ['UU']])(
+    '%s is unmerged, and therefore neither staged nor unstaged',
+    (status) => {
+      const file = f(status);
+      expect(isUnmerged(file)).toBe(true);
+      expect(isStaged(file)).toBe(false);
+      expect(isUnstaged(file)).toBe(false);
+      expect(isPartlyStaged(file)).toBe(false);
+      expect(isUntracked(file)).toBe(false);
+    },
+  );
+
+  /**
+   * THE TWO NEAR-MISSES, which is why the set is enumerated and not derived.
+   * `MM` is both-columns-non-blank and is NOT a conflict; `AM` likewise. A
+   * rule of "both columns filled" would swallow the ordinary split file this
+   * surface exists to show, and a rule of "either column is U" would miss
+   * `AA` and `DD`.
+   */
+  it('leaves the ordinary both-halves rows alone', () => {
+    for (const status of ['MM', 'AM', 'M ', ' M', 'D ', ' D', '??']) {
+      expect(isUnmerged(f(status))).toBe(false);
+    }
+    expect(isStaged(f('MM'))).toBe(true);
+    expect(isUnstaged(f('MM'))).toBe(true);
+  });
+
+  it('says conflicted in the row title, not a staged/unstaged story', () => {
+    expect(statusTitle(f('UU'))).toContain('conflicted');
+    expect(statusTitle(f('AA'))).toContain('resolve the merge');
   });
 
   /**

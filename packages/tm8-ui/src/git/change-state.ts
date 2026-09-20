@@ -23,16 +23,42 @@ export function isUntracked(file: SessionGitFile): boolean {
   return file.status === '??';
 }
 
+/**
+ * UNMERGED IS NOT A POSITION ON THE STAGED/UNSTAGED AXIS — it is the absence
+ * of one, and reading the columns positionally gets it exactly backwards.
+ *
+ * During a conflict git puts the path in the index at stages 1/2/3 instead of
+ * stage 0, and reports it with one of seven pairs: `DD AU UD UA DU AA UU`.
+ * Every one of those has a non-blank letter in BOTH columns, so the
+ * predicates below — which only ask "is this column blank" — answered true to
+ * both, and the row rendered a Stage button and an Unstage button over a path
+ * that has neither a resolved index entry nor a meaningful working-tree
+ * delta. The server refuses all three verbs here (`refuseMidMerge`), so the
+ * only thing those buttons could produce was a `merge_in_progress` error
+ * string in place of the banner the reviewer needed.
+ *
+ * THE SET IS ENUMERATED RATHER THAN DERIVED, because the two rules that look
+ * equivalent are not: "either column is `U`" misses `AA` and `DD`, and "both
+ * columns non-blank" swallows `MM`, which is the ordinary both-halves-pending
+ * row this surface is built to show under two chips at once.
+ */
+const UNMERGED_XY: ReadonlySet<string> = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
+
+/** A conflicted path: git holds it at stages 1/2/3, so no verb applies. */
+export function isUnmerged(file: SessionGitFile): boolean {
+  return UNMERGED_XY.has(file.status);
+}
+
 /** The index differs from HEAD for this path: a commit would write it. */
 export function isStaged(file: SessionGitFile): boolean {
   const x = file.status[0];
-  return !isUntracked(file) && x !== ' ' && x !== '?' && x !== undefined;
+  return !isUntracked(file) && !isUnmerged(file) && x !== ' ' && x !== '?' && x !== undefined;
 }
 
 /** The working tree differs from the index for this path. */
 export function isUnstaged(file: SessionGitFile): boolean {
   const y = file.status[1];
-  return !isUntracked(file) && y !== ' ' && y !== '?' && y !== undefined;
+  return !isUntracked(file) && !isUnmerged(file) && y !== ' ' && y !== '?' && y !== undefined;
 }
 
 /** Both halves pending — the case that must appear in two filters at once. */
@@ -88,6 +114,7 @@ export const SCOPE_CAPTION: Readonly<Record<'session' | 'staged' | 'unstaged', s
 /** Plain-language gloss of an XY pair, for the row's title and its badge. */
 export function statusTitle(file: SessionGitFile): string {
   if (isUntracked(file)) return 'untracked — git has no record of this file yet';
+  if (isUnmerged(file)) return 'conflicted — resolve the merge before staging or committing this';
   const parts: string[] = [];
   if (isStaged(file)) parts.push(`staged (${file.status[0] ?? '?'})`);
   if (isUnstaged(file)) parts.push(`unstaged (${file.status[1] ?? '?'})`);

@@ -4338,7 +4338,20 @@ export function createFixtureSeam(): FixtureSeam {
           worktreeId: 'fx-worktree-1' as EntityId,
           action: input.action,
           branch: gitLane.branch,
-          paths: [...paths],
+          // EMPTY FOR `all: true`, because `paths` reports ARGV and `git add
+          // -A` / `git reset HEAD` are handed no pathspecs at all. The server
+          // does exactly this (`execution-git.ts`, pinned by
+          // `execution-git-changes.test.ts`), and a fixture that echoed the
+          // request here would let a caller assert on `paths` for an `all`
+          // stage, pass against the fixture, and fail against the server —
+          // the failure mode the projectBranches rule above exists to stop.
+          //
+          // The other place the two differ, said out loud rather than left to
+          // be discovered: the server EXPANDS a staged rename on unstage, so
+          // `paths` can come back LONGER than the request. This fixture never
+          // does, which is honest only for as long as its dataset holds no
+          // rename — it holds none today.
+          paths: input.all === true ? [] : [...paths],
           all: input.all === true,
           staged,
           files: [...gitLane.dirty],

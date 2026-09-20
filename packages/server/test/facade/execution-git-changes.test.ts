@@ -16,7 +16,7 @@
  * would silently change the state every later case reads.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -490,6 +490,67 @@ describe('execution.gitStage / scoped gitDiff / exact gitCommit', () => {
   });
 
   /**
+   * A GITIGNORED FILE IS PERFECTLY CONTAINED AND STILL MUST NOT BE READ.
+   *
+   * Containment is the wrong question for this one. `.env` sits inside the
+   * worktree, resolves inside the worktree, and is a regular file — every
+   * check `containedFile` makes says yes. What says no is `.gitignore`, and
+   * `git diff --no-index` NEVER CONSULTS IT: its two arguments are filesystem
+   * paths and the repository has no say.
+   *
+   * That bites here and nowhere else because an ignored file is in neither
+   * the index nor HEAD, so it classifies as UNTRACKED and is routed straight
+   * down the `--no-index` branch. `status -uall` deliberately never lists it,
+   * so the surface cannot show it and nothing on screen suggests it is
+   * reachable — but the read is a public v1 operation that takes a `path`,
+   * and naming it returned the whole file.
+   */
+  it('refuses a gitignored path instead of serving its contents through --no-index', async () => {
+    await writeFile(join(repo, '.gitignore'), '.env\nsecrets/\n');
+    await writeFile(join(repo, '.env'), 'SECRET_KEY=hunter2\n');
+    await mkdir(join(repo, 'secrets'), { recursive: true });
+    await writeFile(join(repo, 'secrets', 'token'), 'DB_PASSWORD=swordfish\n');
+    // `beforeEach` runs `git clean -fdq` WITHOUT `-x`, which is exactly the
+    // flag that would remove these — so this case has to undo itself or it
+    // leaves two ignored files in every later case's status.
+    try {
+      // THE PREMISE, asserted rather than assumed: the surface's own listing
+      // cannot see either file, so no UI path could have offered them.
+      const listed = (await status()).files.map((f) => f.path);
+      expect(listed).toContain('.gitignore');
+      expect(listed).not.toContain('.env');
+      expect(listed).not.toContain('secrets/token');
+
+      for (const [path, secret] of [['.env', 'hunter2'], ['secrets/token', 'swordfish']] as const) {
+        await expect(diff({ path })).rejects.toMatchObject({
+          code: 'invalid_input',
+          details: { reason: 'path_ignored' },
+        });
+        // THE CLAIM THAT MATTERS, made against whatever came back rather than
+        // against the shape of a refusal: the bytes did not leave the worktree.
+        // Written this way so it would still fail if the refusal were ever
+        // softened back into an answer carrying the diff.
+        const answered = await diff({ path }).then(
+          (r) => r as unknown,
+          (e: unknown) => e,
+        );
+        expect(JSON.stringify(answered)).not.toContain(secret);
+      }
+
+      // AND IT REFUSES ONLY WHAT GIT IGNORES. An ordinary untracked file next
+      // door still diffs whole against /dev/null — a guard that refused both
+      // would satisfy every assertion above and break the surface.
+      await writeFile(join(repo, 'fresh.txt'), 'new work\n');
+      const fresh = await diff({ path: 'fresh.txt' });
+      expect(fresh.untracked).toBe(true);
+      expect(fresh.diff).toContain('+new work');
+    } finally {
+      await rm(join(repo, '.env'), { force: true });
+      await rm(join(repo, 'secrets'), { recursive: true, force: true });
+    }
+  });
+
+  /**
    * THE COMMIT GATE. `git commit` writes the INDEX, not the paths it was
    * handed, so a "Commit selected" that stages the selection and commits would
    * also sweep in anything already staged. The refusal names the offending
@@ -530,6 +591,78 @@ describe('execution.gitStage / scoped gitDiff / exact gitCommit', () => {
       ctxFor({}, { message: 'both', paths: ['a.txt', 'b.txt'] }),
     )) as SessionGitCommitResult;
     expect(committed.files.map((f) => f.path).sort()).toEqual(['a.txt', 'b.txt']);
+  });
+
+  /**
+   * STAGE, THEN COMMIT SELECTED — the sequence this surface actively invites,
+   * on the one row where it could not finish.
+   *
+   * `commit` re-runs `stage({paths})` before committing, and for a deletion
+   * the reviewer ALREADY STAGED that is `git add -- b.txt` against a path git
+   * holds in neither the working tree nor the index. An unmatched pathspec is
+   * not the harmless no-op it is for `git diff`: `git add` exits 128 and
+   * takes the whole commit down with it (MEASURED, and pinned below).
+   *
+   * The re-stage is NOT removed, because a reviewer may well tick a row that
+   * is only dirty on disk and expect Commit selected to carry it. What is
+   * removed is re-staging what is already staged and has nothing left to add.
+   */
+  it('commits a deletion that was already staged, instead of re-adding a path git no longer has', async () => {
+    await rm(join(repo, 'b.txt'));
+    await stage({ action: 'stage', paths: ['b.txt'] }); // the Stage button
+    // THE PREMISE: the index entry is gone, which is what breaks `git add`.
+    expect(git(repo, 'status', '--porcelain=v1')).toContain('D  b.txt');
+    expect(() => git(repo, '--literal-pathspecs', 'add', '--', 'b.txt')).toThrow();
+
+    const committed = (await handlerFor(registry, 'execution.gitCommit')(
+      ctxFor({}, { message: 'drop b', paths: ['b.txt'] }),
+    )) as SessionGitCommitResult; // the Commit selected button
+
+    expect(committed.files.map((f) => f.path)).toEqual(['b.txt']);
+    expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(baseOid);
+    expect(git(repo, 'ls-tree', '--name-only', 'HEAD')).toBe('a.txt');
+    expect((await status()).dirty.total).toBe(0);
+  });
+
+  /**
+   * The same row, but the reviewer never pressed Stage — the deletion is
+   * unstaged, the index entry is still there, and `git add` has something to
+   * match. This is the case the re-stage EXISTS for, pinned so the fix above
+   * cannot later be widened into "never stage anything".
+   */
+  it('still stages a deletion the reviewer did not stage before committing it', async () => {
+    await rm(join(repo, 'b.txt'));
+    // The `git()` helper trims, so porcelain's leading INDEX column cannot be
+    // asserted here; these two answer the same question without ambiguity.
+    expect(git(repo, 'diff', '--name-only')).toBe('b.txt');
+    expect(git(repo, 'diff', '--cached', '--name-only')).toBe('');
+
+    const committed = (await handlerFor(registry, 'execution.gitCommit')(
+      ctxFor({}, { message: 'drop b unstaged', paths: ['b.txt'] }),
+    )) as SessionGitCommitResult;
+
+    expect(committed.files.map((f) => f.path)).toEqual(['b.txt']);
+    expect(git(repo, 'ls-tree', '--name-only', 'HEAD')).toBe('a.txt');
+  });
+
+  /**
+   * And the recreated file: the deletion is staged, but the reviewer has put
+   * a new `b.txt` back on disk. Skipping the re-stage on the strength of
+   * "there is a staged deletion" ALONE would commit the removal and silently
+   * drop the replacement, so worktree presence is the second question.
+   */
+  it('stages a path whose deletion is staged but which is back on disk', async () => {
+    await rm(join(repo, 'b.txt'));
+    await stage({ action: 'stage', paths: ['b.txt'] });
+    await writeFile(join(repo, 'b.txt'), 'reborn\n');
+
+    const committed = (await handlerFor(registry, 'execution.gitCommit')(
+      ctxFor({}, { message: 'b again', paths: ['b.txt'] }),
+    )) as SessionGitCommitResult;
+
+    expect(committed.files.map((f) => f.path)).toEqual(['b.txt']);
+    expect(git(repo, 'show', 'HEAD:b.txt')).toBe('reborn');
+    expect((await status()).dirty.total).toBe(0);
   });
 
   /**

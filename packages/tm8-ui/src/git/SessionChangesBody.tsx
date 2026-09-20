@@ -10,6 +10,7 @@ import {
   SCOPE_CAPTION,
   isPartlyStaged,
   isStaged,
+  isUnmerged,
   isUnstaged,
   matchesFilter,
   statusTitle,
@@ -303,6 +304,28 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
   );
   const partlyStagedSelection = useMemo(() => selectedFiles.filter(isPartlyStaged), [selectedFiles]);
 
+  /**
+   * CONFLICTED PATHS — the three verbs on this bar are ALL refused while one
+   * exists, so the surface says it once instead of three times.
+   *
+   * `stage`, `unstage` and `commit` each call `refuseMidMerge` before they
+   * touch the index (`git-mutations.ts`), and it asks one question:
+   * does `MERGE_HEAD` exist. Not "is this path conflicted" — the whole
+   * worktree is refused, so narrowing the selection is not a way out and the
+   * bar must not imply it is.
+   *
+   * INFERRED FROM THE ROWS, BECAUSE THE READ DOES NOT CARRY THE FLAG.
+   * `SessionGitStatus` has no `mergeInProgress` field, so this is the closest
+   * true thing the client can see, and it is not the same predicate: a merge
+   * whose conflicts have all been resolved with `git add` but not yet
+   * committed has `MERGE_HEAD` and ZERO `U` rows. That case still reaches the
+   * server and is still refused by name — the banner is what makes the common
+   * case legible before the click, not what makes it safe. Same shape as
+   * `stagedOutside` above, and capped the same way: a conflict past the file
+   * cap is not on this screen and the server is the one that catches it.
+   */
+  const conflicted = useMemo(() => files.filter(isUnmerged).map((f) => f.path), [files]);
+
   const toggle = useCallback((path: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -353,8 +376,14 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
   const scope = FILTER_SCOPE[filter];
   const clean = s.dirty.total === 0;
   const selectionCount = selected.size;
-  const canStage = selectedFiles.some((f) => !isStaged(f) || isUnstaged(f));
-  const canUnstage = selectedFiles.some(isStaged);
+  // A conflict refuses the WORKTREE, not the selection — see `conflicted`.
+  const conflictBlocked = conflicted.length > 0;
+  const canStage = !conflictBlocked && selectedFiles.some((f) => !isStaged(f) || isUnstaged(f));
+  const canUnstage = !conflictBlocked && selectedFiles.some(isStaged);
+  const conflictCause = `${conflicted.length} path(s) are unresolved in a merge: ${conflicted
+    .slice(0, 3)
+    .join(', ')}${conflicted.length > 3 ? '…' : ''}`;
+  const conflictRemedy = 'resolve or abort the merge in a terminal — tm8 never finishes a merge for you';
   const selectedPaths = [...selected];
 
   return (
@@ -380,6 +409,30 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           Refresh
         </button>
       </div>
+
+      {/*
+        -- the merge banner -------------------------------------------------
+
+        ABOVE THE FILTERS ON PURPOSE. A conflicted row answers none of the
+        three filter chips (it is neither staged nor unstaged — git holds it
+        at stages 1/2/3, with no stage-0 entry to compare either way), so a
+        reviewer narrowed to `staged` would otherwise see an empty list and a
+        dead Commit button with nothing on screen saying why. The banner sits
+        outside the filtered list and names the paths whatever chip is on.
+      */}
+      {conflictBlocked ? (
+        <div className="pn-chg__conflict" role="alert" data-testid="session-changes-conflict">
+          <span className="pn-chg__conflict-title">Merge conflict — staging and committing are refused</span>
+          <ul className="pn-chg__conflict-paths">
+            {conflicted.map((p) => (
+              <li key={p}>
+                <code>{p}</code>
+              </li>
+            ))}
+          </ul>
+          <span className="pn-chg__conflict-remedy">{conflictRemedy}</span>
+        </div>
+      ) : null}
 
       {/*
         -- filters: the four states, each with its count ----------------------
@@ -491,7 +544,16 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
                         ) : null}
                       </button>
                       <span className="pn-chg__row-verbs">
-                        {isStaged(f) && !isUnstaged(f) ? null : (
+                        {/* Not `disabled` — there is no verb here to disable.
+                            `git add` on an unmerged path RESOLVES it, which
+                            is a decision about content, not a staging step,
+                            and this surface does not make that decision. */}
+                        {isUnmerged(f) ? (
+                          <span className="pn-chg__row-note" data-testid="session-changes-row-conflict">
+                            conflicted
+                          </span>
+                        ) : null}
+                        {isUnmerged(f) || (isStaged(f) && !isUnstaged(f)) ? null : (
                           <button
                             type="button"
                             className="pn-chg__row-verb"
@@ -511,7 +573,7 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
                             Stage
                           </button>
                         )}
-                        {isStaged(f) ? (
+                        {isStaged(f) && !isUnmerged(f) ? (
                           <button
                             type="button"
                             className="pn-chg__row-verb"
@@ -618,12 +680,16 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           </button>
         ) : (
           <DisabledAction
-            reason={{
-              cause:
-                selectionCount === 0
-                  ? 'Nothing is selected to stage.'
-                  : 'Everything selected is already staged in full.',
-            }}
+            reason={
+              conflictBlocked
+                ? { cause: conflictCause, remedy: conflictRemedy }
+                : {
+                    cause:
+                      selectionCount === 0
+                        ? 'Nothing is selected to stage.'
+                        : 'Everything selected is already staged in full.',
+                  }
+            }
           >
             Stage selected
           </DisabledAction>
@@ -646,13 +712,17 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           </button>
         ) : (
           <DisabledAction
-            reason={{
-              cause:
-                selectionCount === 0
-                  ? 'Nothing is selected to unstage.'
-                  : 'Nothing selected is staged, so there is nothing to take out of the index.',
-              remedy: 'unstage moves the index only — it never changes a file on disk',
-            }}
+            reason={
+              conflictBlocked
+                ? { cause: conflictCause, remedy: conflictRemedy }
+                : {
+                    cause:
+                      selectionCount === 0
+                        ? 'Nothing is selected to unstage.'
+                        : 'Nothing selected is staged, so there is nothing to take out of the index.',
+                    remedy: 'unstage moves the index only — it never changes a file on disk',
+                  }
+            }
           >
             Unstage selected
           </DisabledAction>
@@ -666,7 +736,16 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           onChange={(e) => setCommitMessage(e.target.value)}
         />
 
-        {selectionCount === 0 ? (
+        {/* Conflict is tested FIRST: it outranks an empty selection and an
+            empty message, because those two are things the reviewer can fix
+            on this screen and this one is not. */}
+        {conflictBlocked ? (
+          <span className="pn-chg__gate" data-testid="session-changes-conflict-gate">
+            <DisabledAction reason={{ cause: conflictCause, remedy: conflictRemedy }}>
+              Commit selected
+            </DisabledAction>
+          </span>
+        ) : selectionCount === 0 ? (
           <DisabledAction reason={{ cause: 'Select the files this commit should contain.' }}>
             Commit selected
           </DisabledAction>
