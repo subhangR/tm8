@@ -34,7 +34,7 @@ import {
 } from './pendingJoin';
 import { JoinScreen, refusalOf } from './JoinScreen';
 import { JoinBanner } from './JoinBanner';
-import { arriveInSpace, spaceAddress, type ArrivalPort } from './arrive';
+import { arriveInSpace, browserArrival, spaceAddress, type ArrivalPort } from './arrive';
 
 afterEach(cleanup);
 
@@ -380,5 +380,84 @@ describe('arriving in the space a join produced', () => {
 
   it('lands on the space\u2019s own address', () => {
     expect(spaceAddress('space-7')).toBe('/#/s/space-7');
+  });
+
+  /**
+   * THE REAL PORT, which is the one that actually ships.
+   *
+   * Everything above injects a spy, so all of it stays green even if
+   * `browserArrival` is gutted — and `browserArrival` is the DEFAULT argument
+   * of `arriveInSpace`, so gutting it breaks the fix in the browser while the
+   * suite says nothing. That gap is why this block exists.
+   *
+   * jsdom implements neither call for real, so each is replaced with a
+   * recorder and the assertion is on WHICH browser API was reached and in what
+   * order — not on any message.
+   */
+  describe('browserArrival — the adapter that ships', () => {
+    let calls: string[];
+    let realReplaceState: typeof history.replaceState;
+    let realLocation: PropertyDescriptor;
+
+    /**
+     * jsdom's `location.assign` / `location.reload` are non-configurable own
+     * properties that only log "Not implemented", so they cannot be spied on
+     * in place. `window.location` itself IS configurable (an accessor), so the
+     * whole object is swapped for a recorder and put back afterwards.
+     */
+    function installLocation(): void {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: {
+          assign: (url: string) => { calls.push(`assign:${url}`); },
+          reload: () => { calls.push('reload'); },
+        },
+      });
+    }
+
+    beforeEach(() => {
+      calls = [];
+      realReplaceState = history.replaceState;
+      realLocation = Object.getOwnPropertyDescriptor(window, 'location')!;
+      history.replaceState = ((_s: unknown, _t: string, url: string) => {
+        calls.push(`replaceState:${url}`);
+      }) as typeof history.replaceState;
+      installLocation();
+    });
+
+    afterEach(() => {
+      history.replaceState = realReplaceState;
+      Object.defineProperty(window, 'location', realLocation);
+    });
+
+    it('sets the address with replaceState — NOT assign, which is the bug', () => {
+      browserArrival().setAddress('/#/s/space-7');
+      // `location.assign` on a same-document fragment is the exact call that
+      // shipped and did not reload. Reaching it here would be the regression.
+      expect(calls).toEqual(['replaceState:/#/s/space-7']);
+    });
+
+    it('falls back to assign when a sandboxed frame refuses replaceState', () => {
+      history.replaceState = (() => {
+        throw new DOMException('sandboxed', 'SecurityError');
+      }) as typeof history.replaceState;
+
+      browserArrival().setAddress('/#/s/space-7');
+      // The catch arm, which nothing exercised before. A frame that refuses
+      // history still has to end up at the right address.
+      expect(calls).toEqual(['assign:/#/s/space-7']);
+    });
+
+    it('loads by reloading the document, which is what re-derives membership', () => {
+      browserArrival().load();
+      expect(calls).toEqual(['reload']);
+    });
+
+    it('DEFAULTS to the browser port: address first, then the load', () => {
+      // The binding that carries every assertion above into production.
+      // `arriveInSpace` with no second argument is what `GateApp` calls.
+      arriveInSpace('space-7');
+      expect(calls).toEqual(['replaceState:/#/s/space-7', 'reload']);
+    });
   });
 });
