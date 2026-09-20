@@ -13,6 +13,7 @@ import type {
   CredentialsStatusView,
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
+import { CREDENTIAL_PROVIDER_LABEL } from '../domain/launch';
 import { presentationOf, providerBinaryLabel } from './provider-presentation';
 import {
   disconnectVerdictOf,
@@ -301,9 +302,32 @@ function ProviderCard({
  * them from the same table spawn resolves against. Nothing here is hardcoded to
  * "kimi" or "anthropic": a card that names a pair the resolver does not agree
  * with would be worse than no card at all.
+ *
+ * THE COUNTERPART IS NAMED FROM THE VENDOR TABLE, NOT THE PRESENTATION TABLE,
+ * and the two disagree in exactly the place this sentence is about:
+ *
+ *   provider    presentationOf().name    CREDENTIAL_PROVIDER_LABEL
+ *   anthropic   'Claude Code'            'Anthropic'
+ *   openai      'Codex'                  'OpenAI'
+ *   kimi        'Kimi (Moonshot AI)'     'Moonshot AI'
+ *
+ * `presentationOf` names the PRODUCT — right for the card heading, which sits
+ * above the `binary` you type, and right for the icon beside it. This sentence
+ * is not about the product: "uses this key instead of X" is a claim about WHOSE
+ * SERVICE answers and whose account is billed, and the tool is the one thing
+ * that does not change. Rendered from the presentation table it said "every
+ * `claude-code` session you start uses this key instead of Claude Code", which
+ * reads as though connecting Kimi stops Claude Code running — the opposite of
+ * the truth, and the exact surprise the paragraph above exists to prevent.
+ *
+ * `CREDENTIAL_PROVIDER_LABEL` is the table whose docstring already states this
+ * rule in the other direction ("Vendor names, not product names ... The home
+ * and settings tiles name the product instead"), and which this feature
+ * extended with Moonshot AI and Groq. Using it here is not a new convention;
+ * it is the existing one, applied to the one line that had escaped it.
  */
 function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
-  const counterpart = presentationOf(routing.counterpart).name;
+  const counterpart = CREDENTIAL_PROVIDER_LABEL[routing.counterpart];
   const tool = <code>{routing.agentTool}</code>;
 
   return (
