@@ -89,6 +89,13 @@ describe('DbAgentCredentialHome', () => {
       cursor: ['cursor'],
       kimi: ['claude-code'],
       groq: ['codex'],
+      // Both codex backends REACH codex, and both must be listed. This table
+      // answers containment, not precedence: a member who connected Grok and is
+      // outranked by Groq still has the Grok key nowhere, but a member who
+      // connected only Grok has it in every live `codex` process. A projection
+      // that dropped the losing backend would make Disconnect miss exactly the
+      // processes that hold the key.
+      grok: ['codex'],
     });
 
     // THE REVERSE DIRECTION IS NO LONGER ONE-TO-ONE, AND IS DELIBERATELY NOT

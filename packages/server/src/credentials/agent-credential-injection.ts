@@ -188,6 +188,16 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     // restores the native provider with no other action — nothing about the
     // Anthropic credential is altered or revoked by connecting Kimi, it is
     // simply outranked while the key is live.
+    //
+    // `backends` IS NOW GENUINELY PLURAL, and the `find` below is doing real
+    // work because of it: `codex` has two, `groq` and `grok`, so a member can
+    // hold two connected keys that both claim one tool. `find` takes the first
+    // ACTIVE candidate in `API_KEY_CREDENTIAL_PROVIDERS` order, which is the
+    // documented precedence and the reason that array is ordered rather than a
+    // set. The loser is not an error and is not disconnected — it is simply not
+    // reached, and `credentials.status` says so on its own card through
+    // `routing.outrankedBy` rather than leaving the member to infer it from
+    // which vendor's dashboard shows the traffic.
     const candidates: AgentCredentialProvider[] = [
       ...backends,
       ...(nativeProvider ? [nativeProvider] : []),

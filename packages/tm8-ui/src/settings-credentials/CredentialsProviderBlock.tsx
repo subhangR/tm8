@@ -283,7 +283,7 @@ function ProviderCard({
 /**
  * Say, on the card, which sessions this credential redirects.
  *
- * WHY THIS EXISTS AT ALL. Kimi and Groq route ACCOUNT-WIDE and with no
+ * WHY THIS EXISTS AT ALL. Kimi, Groq and Grok route ACCOUNT-WIDE and with no
  * per-session opt-in: connect Kimi and every `claude-code` session this member
  * starts — including ones they started long before — reaches Moonshot instead
  * of Anthropic. That is a deliberate product decision, and the whole reason it
@@ -297,6 +297,16 @@ function ProviderCard({
  * those tenses in a template is exactly how a warning comes to say the opposite
  * of the truth.
  *
+ * THE FIFTH SENTENCE, AND WHY IT MUST BE TESTED FIRST. `groq` and `grok` both
+ * back `codex`, so a member can connect two keys that each claim one tool. The
+ * one that loses is still connected and still a backend — `role: 'backend'`,
+ * `active: true`, both true — and the sentence directly below would therefore
+ * tell it "every codex session you start uses this key", which is the single
+ * most damaging thing this card could say: the member reads a confirmation and
+ * their sessions go elsewhere. `outrankedBy` is checked BEFORE `active` for
+ * that reason. It names the winner so the sentence is actionable — disconnect
+ * that one and this key takes over, with nothing else to do.
+ *
  * `agentTool` and the counterpart's name come from the server, which computes
  * them from the same table spawn resolves against. Nothing here is hardcoded to
  * "kimi" or "anthropic": a card that names a pair the resolver does not agree
@@ -305,15 +315,25 @@ function ProviderCard({
 function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
   const counterpart = presentationOf(routing.counterpart).name;
   const tool = <code>{routing.agentTool}</code>;
+  // Read once: an outranked card is a different SENTENCE and a different test
+  // id, because a screen-reader user and a test both need to distinguish "this
+  // key is in use" from "this key is connected and idle".
+  const winner = routing.outrankedBy;
 
   return (
     <p
-      className={`cred-card__routing${routing.active ? ' cred-card__routing--active' : ''}`}
-      data-testid={`credential-routing-${routing.role}`}
+      className={`cred-card__routing${routing.active && !winner ? ' cred-card__routing--active' : ''}`}
+      data-testid={winner ? 'credential-routing-outranked' : `credential-routing-${routing.role}`}
       data-routing-active={routing.active ? 'true' : 'false'}
+      data-routing-outranked-by={winner ?? undefined}
     >
       {routing.role === 'backend' ? (
-        routing.active ? (
+        winner ? (
+          <>
+            Connected, but not in use: {presentationOf(winner).name} also backs {tool} and takes
+            priority. Disconnect it and this key takes over.
+          </>
+        ) : routing.active ? (
           <>Every {tool} session you start uses this key instead of {counterpart}.</>
         ) : (
           <>Connecting this will route every {tool} session you start here instead of {counterpart}.</>

@@ -119,7 +119,7 @@ const CREDENTIAL_PROBE_SPECS = {
     install:
       'Install Cursor Agent with `curl https://cursor.com/install -fsS | bash`, then make its `cursor-agent` binary available to tm8.',
   },
-  // THE API-KEY PROVIDERS. `command: null` for the same reason as Gemini — no
+  // THE API-KEY PROVIDERS — kimi, groq and grok. `command: null` for the same reason as Gemini — no
   // vendor status verb exists — but the resemblance ends there, and the
   // difference is worth stating because it makes these the STRONGEST probes in
   // this table rather than the weakest.
@@ -148,6 +148,12 @@ const CREDENTIAL_PROBE_SPECS = {
     install:
       "Groq needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
   },
+  grok: {
+    command: null,
+    credentialFile: ['grok', 'api-key'],
+    install:
+      "Grok needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
+  },
 } as const satisfies Record<
   CredentialProvider,
   {
@@ -166,8 +172,11 @@ const _kimiCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.kimi.credenti
   API_KEY_FILENAME;
 const _groqCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.groq.credentialFile[1] =
   API_KEY_FILENAME;
+const _grokCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.grok.credentialFile[1] =
+  API_KEY_FILENAME;
 void _kimiCredentialFilenameAgrees;
 void _groqCredentialFilenameAgrees;
+void _grokCredentialFilenameAgrees;
 
 /**
  * Only providers with measured, non-interactive status verbs appear here.

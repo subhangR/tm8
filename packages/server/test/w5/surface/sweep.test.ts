@@ -1019,7 +1019,27 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   git rev-list --count HEAD..origin/main                                  -> 0
     // Main has not moved under this branch, so the two differ by exactly this
     // branch's one file; the other difference is already on main.
-    expect(server.appliedMigrations.length).toBe(177);
+    //
+    // 177 -> 178 (196): ONE file, 196_grok_credentials.sql (Grok/xAI joining
+    // the admitted set as the second `codex` backend). This branch is STACKED
+    // on the kimi/groq branch rather than cut from main, so the 176 below is
+    // still main's own count and the gap is now three: 194 already on main,
+    // 195 from the branch underneath, 196 from this one. MEASURED, not
+    // incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 176
+    //   ls db/migrations/*.sql | wc -l                                          -> 178
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    //
+    // THIS IS THE EXACT COLLISION THE PARAGRAPH BELOW PREDICTS, and it is worth
+    // naming while it is happening: this branch and its parent both edit this
+    // one integer about a merged tree neither can see. Git will not conflict on
+    // it — the parent merges first and moves it to 177, then this branch's diff
+    // moves 177 to 178, which is right only because the two landed in that
+    // order. Merged in the other order, or merged alongside a third branch
+    // carrying a migration, the number is wrong and silent. The duplicate-prefix
+    // assertion below is the part that survives that, which is why it exists.
+    expect(server.appliedMigrations.length).toBe(178);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

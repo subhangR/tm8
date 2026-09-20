@@ -64,11 +64,33 @@ import type { CredentialProvider } from './credential-env.js';
  * branches on shape should fail to compile when a new one is added rather than
  * fall through a default that silently treats it as file-shaped.
  */
-export type ApiKeyCredentialProvider = 'kimi' | 'groq';
+export type ApiKeyCredentialProvider = 'kimi' | 'groq' | 'grok';
 
+/**
+ * THIS ARRAY'S ORDER IS THE PRECEDENCE RULE, and it is load-bearing.
+ *
+ * `apiKeyBackendsForAgentTool` filters this list, and the resolver takes the
+ * first ACTIVE entry, so when two backends serve one tool the earlier one wins.
+ * Two do now: `groq` and `grok` both back `codex`.
+ *
+ * `groq` stays ahead of `grok` for one reason, and it is not preference —
+ * ADDING A BACKEND MUST NOT CHANGE WHERE AN EXISTING MEMBER'S SESSIONS GO. A
+ * member who connected Groq before Grok existed has `codex` pointed at
+ * api.groq.com; inserting Grok above it would silently move every one of those
+ * sessions to x.ai on deploy, with no action by the member and nothing in the
+ * product that changed. Appending cannot do that. The same rule binds the next
+ * backend added here: it goes on the END.
+ *
+ * Deterministic is not the same as discoverable, so the losing card SAYS it is
+ * losing — see `apiKeyBackendOutrankedBy` and `CredentialRoutingView.outrankedBy`.
+ * A member choosing between two connected backends is a picker this codebase
+ * does not have yet; until it does, the rule is fixed and visible rather than
+ * fixed and hidden.
+ */
 export const API_KEY_CREDENTIAL_PROVIDERS: readonly ApiKeyCredentialProvider[] = [
   'kimi',
   'groq',
+  'grok',
 ];
 
 /** Narrowing helper so callers branch on the union rather than on a string. */
@@ -124,6 +146,19 @@ const API_KEY_PROVIDER_DEFINITIONS = {
     consoleUrl: 'https://console.groq.com/keys',
     verifyUrl: 'https://api.groq.com/openai/v1/models',
     keyPrefix: 'gsk_',
+  },
+  // GROK IS xAI, AND IT IS NOT GROQ. The two names differ by one transposed
+  // letter, serve different companies, and both speak an OpenAI-compatible
+  // wire — which is exactly the combination that produces a key pasted into
+  // the wrong card. The prefixes are the cheap guard: an `xai-` key in the
+  // Groq terminal and a `gsk_` key here each trip the advisory mismatch
+  // warning before the request is spent. The display name carries the vendor
+  // so the two cards are never distinguished by spelling alone.
+  grok: {
+    displayName: 'Grok (xAI)',
+    consoleUrl: 'https://console.x.ai/team/default/api-keys',
+    verifyUrl: 'https://api.x.ai/v1/models',
+    keyPrefix: 'xai-',
   },
 } as const satisfies Record<ApiKeyCredentialProvider, ApiKeyProviderDefinition>;
 
@@ -225,14 +260,37 @@ const API_KEY_BACKEND_ROUTING = {
     baseUrl: 'https://api.groq.com/openai/v1',
     keyVar: 'OPENAI_API_KEY',
   },
+  // THE SECOND BACKEND ON ONE TOOL. Every field below matches the Groq row
+  // except the base URL, and that is the whole point: both vendors serve an
+  // OpenAI-compatible surface, so both redirect `codex` by rewriting the same
+  // two variables. Nothing here decides which of them wins — that is
+  // `API_KEY_CREDENTIAL_PROVIDERS` order, documented at the top of this file,
+  // and it is reported to the member through `outrankedBy` rather than left to
+  // be discovered.
+  //
+  // `https://api.x.ai/v1` is the OpenAI-compatible base. xAI also publishes an
+  // Anthropic-compatible surface; it is deliberately NOT used here, because the
+  // tool being redirected is `codex`, which speaks OpenAI. Pointing an
+  // Anthropic-shaped path at the OpenAI SDK is the Moonshot mistake documented
+  // on the `kimi` row above, in the other direction.
+  grok: {
+    agentTool: 'codex',
+    displaces: 'openai',
+    baseUrlVar: 'OPENAI_BASE_URL',
+    baseUrl: 'https://api.x.ai/v1',
+    keyVar: 'OPENAI_API_KEY',
+  },
 } as const satisfies Record<ApiKeyCredentialProvider, ApiKeyBackendRouting>;
 
 /**
  * The API-key backends that can displace a native provider for `agentTool`, in
  * preference order.
  *
- * A list rather than a single value so a second Anthropic-compatible vendor is
- * an added entry rather than a restructure. Today each tool has exactly one.
+ * A list rather than a single value, and the list is now genuinely plural:
+ * `codex` returns `['groq', 'grok']`. Callers must treat the FIRST ACTIVE entry
+ * as the winner and must not assume length 1 — the resolver already does, and
+ * `apiKeyBackendOutrankedBy` exists so display code does not have to reimplement
+ * the walk.
  */
 export function apiKeyBackendsForAgentTool(
   agentTool: string | null | undefined,
@@ -241,6 +299,36 @@ export function apiKeyBackendsForAgentTool(
   return API_KEY_CREDENTIAL_PROVIDERS.filter(
     (provider) => API_KEY_BACKEND_ROUTING[provider].agentTool === agentTool,
   );
+}
+
+/**
+ * The backend that BEATS `provider` for the tool they share, or null.
+ *
+ * Answers the question a member with two keys connected actually has: "I pasted
+ * a Grok key, so why do my codex sessions still reach Groq?" The resolver's
+ * answer is precedence; this returns the specific provider responsible so the
+ * card can name it instead of describing the rule.
+ *
+ * Takes the set of ACTIVE providers rather than reading any store: this module
+ * holds vendor facts and must stay synchronous and side-effect free, and the
+ * caller already knows which rows are active because it just queried them.
+ *
+ * Returns null when `provider` wins, when it is not connected (an unconnected
+ * backend is not losing a contest it has not entered), and when nothing else
+ * serves its tool — the kimi case, and the only case before Grok existed.
+ */
+export function apiKeyBackendOutrankedBy(
+  provider: ApiKeyCredentialProvider,
+  activeProviders: ReadonlySet<string>,
+): ApiKeyCredentialProvider | null {
+  if (!activeProviders.has(provider)) return null;
+  for (const candidate of apiKeyBackendsForAgentTool(
+    API_KEY_BACKEND_ROUTING[provider].agentTool,
+  )) {
+    if (candidate === provider) return null;
+    if (activeProviders.has(candidate)) return candidate;
+  }
+  return null;
 }
 
 /** The native provider a connected `provider` key displaces, for display. */

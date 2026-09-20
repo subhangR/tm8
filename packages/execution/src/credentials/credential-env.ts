@@ -86,11 +86,11 @@ import { withAgentBinDirs } from '../spawn/manifest.js';
 /**
  * The vendors a Tier B login terminal can authenticate against.
  *
- * Six of them run a VENDOR login command. `kimi` and `groq` run a tm8-owned
- * paste prompt instead, because neither vendor ships one — see
+ * Six of them run a VENDOR login command. `kimi`, `groq` and `grok` run a
+ * tm8-owned paste prompt instead, because none of those vendors ships one — see
  * `api-key-credentials.ts`, which holds the measurement and every fact specific
- * to those two. They are members of this union rather than a parallel one so
- * that the session, probe, sweep and close machinery treats all eight
+ * to the three. They are members of this union rather than a parallel one so
+ * that the session, probe, sweep and close machinery treats all nine
  * identically; only the login command and the probe differ.
  */
 export type CredentialProvider =
@@ -101,7 +101,8 @@ export type CredentialProvider =
   | 'hermes'
   | 'cursor'
   | 'kimi'
-  | 'groq';
+  | 'groq'
+  | 'grok';
 
 export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'anthropic',
@@ -112,6 +113,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   'cursor',
   'kimi',
   'groq',
+  'grok',
 ];
 
 /**
@@ -137,6 +139,7 @@ export const CREDENTIAL_CONFIG_DIR_VAR = {
   // plus the provider name rather than through an override.
   kimi: null,
   groq: null,
+  grok: null,
 } as const satisfies Record<CredentialProvider, string | null>;
 
 /** Provider-only process behaviour, kept in one table so keys and values agree. */
@@ -153,6 +156,7 @@ const CREDENTIAL_BEHAVIOR_ENV = {
   // secret is CAPTURED, never where one is injected.
   kimi: {},
   groq: {},
+  grok: {},
 } as const satisfies Record<CredentialProvider, Readonly<Record<string, string>>>;
 
 /**

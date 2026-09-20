@@ -3,7 +3,7 @@
  *
  * Every other provider's probe asks a local question — does a CLI report a
  * session, is there a credential file — because that is all a local CLI can be
- * asked for free. Kimi and Groq are the first providers where tm8 HOLDS the
+ * asked for free. Kimi, Groq and Grok are the providers where tm8 HOLDS the
  * secret, so the probe can ask the vendor the real question and get a real
  * answer. That power is exactly why these tests exist: a probe that leaves the
  * machine has three more ways to be wrong than one that does not, and two of
@@ -160,6 +160,19 @@ describe('the API-key probe', () => {
      would be pinning someone else's string. What keeps that branch safe is that
      the key is sent as a HEADER — a URL carries it nowhere a fetch error could
      quote it — which the 200 test above pins directly. */
+  /* THE TWO OPENAI-COMPATIBLE VENDORS MUST NOT SHARE AN ENDPOINT. Groq and Grok
+     differ by one transposed letter, serve different companies, and speak the
+     same wire protocol — so a probe that sent a Grok key to api.groq.com would
+     get a well-formed 401 and report the member's perfectly good key as
+     rejected. This asserts the two verify URLs are distinct and each points at
+     its own vendor; it is the cheapest possible guard against the one mistake
+     these two names invite. */
+  it('verifies each OpenAI-compatible vendor against its OWN endpoint', () => {
+    expect(API_KEY_PROVIDER_VERIFY_URL.groq).toContain('api.groq.com');
+    expect(API_KEY_PROVIDER_VERIFY_URL.grok).toContain('api.x.ai');
+    expect(API_KEY_PROVIDER_VERIFY_URL.grok).not.toBe(API_KEY_PROVIDER_VERIFY_URL.groq);
+  });
+
   it('never puts the key itself in the detail it reports', async () => {
     const key = 'sk-do-not-leak-me-0123456789';
     for (const status of [401, 500]) {
