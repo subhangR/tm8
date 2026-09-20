@@ -19,23 +19,31 @@ const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
  * Narrowing them all until they fit would produce six surfaces that are each
  * unusable rather than two that work.
  *
- * SO THE PHONE OFFERS TWO AND SAYS SO ABOUT THE OTHER FOUR. Dropping them
+ * CHANGES WAS ONE OF THE REFUSALS AND IS NOT ANY MORE. Its reason was that
+ * reviewing means reading a diff and holding a selection across several files,
+ * and a 390px column can only do one of those at a time. That reason was right
+ * about the SPLIT and wrong about the SELECTION: a selection is state, and it
+ * survives a screen it is not currently drawn on. So the surface stopped
+ * trying to show both panes at once — on the phone it is the file list, or one
+ * full-width diff with a control back to the list, and never a 390px column cut
+ * in two. `SessionChangesBody` forks on `oneSurface` for it, the same way
+ * `ReaderSurface` forks for the editor. Three chips fit the bar the five that
+ * were measured did not.
+ *
+ * THE REFUSAL WAS RETIRED BY BUILDING THE ARRANGEMENT, not by deciding the
+ * reason had stopped mattering. The other three still have no arrangement, so
+ * they are still refused, by name.
+ *
+ * SO THE PHONE OFFERS THREE AND SAYS SO ABOUT THE OTHER THREE. Dropping them
  * silently is not the cheaper honest option — it is the DEF-003 pathology, the
  * one this program has already paid for: the phone had no account menu and
  * every tap census scored those screens as PASSING, because absence measures as
  * health and no instrument can see a thing that is not there. A surface removed
  * without a word is a surface nobody can report missing.
  *
- * THE FOUR REFUSALS, each with its own reason rather than one blanket
+ * THE THREE REFUSALS, each with its own reason rather than one blanket
  * sentence — a refusal that does not say WHY is a shrug:
  *
- *   changes  The review surface: a file list, a unified diff and a commit
- *            selection, side by side. It is not Git's reason borrowed — this
- *            one is about the WORK it asks for. Choosing which files go into a
- *            commit means reading diffs and holding a selection across them,
- *            and a 390px column shows one of those two at a time. Shipping it
- *            narrowed would invite a commit chosen from a diff nobody could
- *            actually read.
  *   git      Already ruled DEFER for the phone at the route level, and the note
  *            with that ruling is the useful half: the git facts a phone reader
  *            needs already live in entity detail. The surface itself is a
@@ -52,10 +60,9 @@ const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
  *
  * Each one is `wontfix-on-phone` and is STATED on screen, never merely absent.
  */
-const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal'];
+const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal', 'changes'];
 
 const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
-  changes: 'Reviewing changed files means reading a diff and holding a selection across several of them at once — two things a 390px column can only do one at a time. Choosing what goes into a commit from a diff you cannot read is worse than not offering it. This session’s changed files are in the entity’s own detail.',
   git: 'The worktree rail — status, diff, and the checkpoint, rollback, commit and merge verbs — has no phone arrangement. A diff read at this width is a diff misread. This session’s git facts are in the entity’s own detail.',
   debug: 'The session’s CLI journal is a wide monospace log for diagnosing an agent. It has no phone arrangement, and wrapping it to fit would not make it readable.',
   graph: 'The graph is refused on phones outright, at the route as well as here — so this is the same refusal you would meet by following a graph link, not a second opinion about it.',
@@ -187,8 +194,8 @@ export function WorkSessionContent({
   // the default; every other surface is always offered, and nothing is gated —
   // the last gate was Chat's immutable pin, and it went with Chat.
   //
-  // THE PHONE OFFERS TWO, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
-  // four are refused rather than narrowed, and PHONE_REFUSED for each reason.
+  // THE PHONE OFFERS THREE, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
+  // three are refused rather than narrowed, and PHONE_REFUSED for each reason.
   const surfaces = useMemo<ContentSurface[]>(
     () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph']),
     [oneSurface],

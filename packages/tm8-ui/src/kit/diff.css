@@ -139,6 +139,34 @@
   white-space: pre;
 }
 
+/*
+ * The checkbox rides IN the `@@` line rather than in a gutter beside it, so
+ * the control and the lines it governs cannot drift apart when the body
+ * scrolls sideways under a long line. `white-space: pre` above is why the
+ * header needs `display: flex` here to hold a child at all.
+ */
+.cv2-root .kit-diff__hunk:has(> .kit-diff__hunk-check) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cv2-root .kit-diff__hunk-check {
+  flex: none;
+  /* A 13px box is the package's list-row checkbox; matching it keeps the hit
+     target the same size a reviewer already learned in the file list. */
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--pn-info);
+  cursor: pointer;
+}
+
+.cv2-root .kit-diff__hunk-check:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .cv2-root .kit-diff__row {
   display: flex;
   align-items: flex-start;

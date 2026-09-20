@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, SessionGitDiff, SessionGitFile, SessionGitStatus } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { DiffView, Pill } from '../kit';
+import { useMobileSurface } from '../mobile';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import {
   CHANGE_FILTERS,
@@ -51,6 +52,31 @@ import './session-changes.css';
  *     surface makes no claim about authorship at all.
  *
  *   · NO SILENT WIDENING OF A COMMIT. See the `stagedOutside` gate below.
+ *
+ * WHAT IT DOES OFFER, added after the first cut shipped:
+ *
+ *   · PART OF A FILE. `git add -p` without the prompt — tick the `@@` lines
+ *     you want and stage only those. The client sends INDICES into the diff
+ *     the server just computed, never patch text: a patch accepted from a
+ *     client and fed to `git apply --cached` is a write primitive for every
+ *     path in the repository, and `--cached` means it would not even have to
+ *     touch the working tree to reach the next commit. It also echoes the
+ *     `hunkDigest` from the read it is choosing against, so an agent that
+ *     rewrites the file between render and click gets a refusal rather than a
+ *     stage of code nobody looked at.
+ *
+ *     ONE COMPARISON AT A TIME. Hunks are offered under Staged and Unstaged
+ *     and refused under All, because "the session diff" is neither the index
+ *     nor the working tree — there is no side for a partial patch to apply
+ *     against. The refusal says so by name rather than hiding the control.
+ *
+ *   · A PHONE ARRANGEMENT — see `oneSurface` below. The first cut refused the
+ *     phone outright on the grounds that reviewing means reading a diff and
+ *     holding a selection across several files at once. The selection part was
+ *     never the problem: a selection is state, and it survives a screen it is
+ *     not drawn on. The reading part was, and the answer is to stop trying to
+ *     show both at once — the phone gets the list, or one full-width diff with
+ *     a way back, and never a 390px column split in two.
  */
 
 const POLL_MS = 5_000;
@@ -83,6 +109,17 @@ type DiffState =
   | { phase: 'ready'; path: string; scope: DiffScope; diff: SessionGitDiff };
 
 type Verb = 'stage' | 'unstage' | 'commit';
+
+/**
+ * The hunk verbs say HUNKS out loud. "Stage" on its own already means the
+ * whole-file button in the bar below, and two controls reading the same word
+ * over two different scopes is how a reviewer stages a file they meant to
+ * take three lines of.
+ */
+const HUNK_VERB_LABEL: Readonly<Record<'stage' | 'unstage', string>> = {
+  stage: 'Stage hunks',
+  unstage: 'Unstage hunks',
+};
 
 /**
  * The refusal wording is written for THIS surface rather than shared with the
@@ -132,10 +169,28 @@ function messageOf(err: unknown, fallback: string): string {
 }
 
 export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBodyProps) {
+  /**
+   * THE FORK IS `oneSurface`, NOT A WIDTH — the same stance `ReaderSurface`
+   * takes and for the same reason: off the phone shell there is no provider,
+   * so the phone arrangement is unreachable by construction rather than by a
+   * media query that would also fire on a narrowed desktop window.
+   */
+  const { oneSurface } = useMobileSurface();
   const [status, setStatus] = useState<StatusState>({ phase: 'loading' });
   const [filter, setFilter] = useState<ChangeFilter>('all');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [diff, setDiff] = useState<DiffState>({ phase: 'idle' });
+  /**
+   * Ticked hunk indices for the diff that is open RIGHT NOW.
+   *
+   * Cleared by every diff read, including the re-read a mutation does in its
+   * own `finally`. It has to be: an index is 1-based into the hunks of ONE
+   * read, and after staging hunk 2 of four, "2" in the next read is a
+   * different piece of code. Carrying the set across would leave a tick on
+   * screen that points somewhere else — the exact failure the digest exists to
+   * catch on the server, arriving from our own side instead.
+   */
+  const [hunkSel, setHunkSel] = useState<ReadonlySet<number>>(() => new Set());
   const [busy, setBusy] = useState<Verb | null>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -212,6 +267,7 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
       openPath.current = path;
       const ticket = ++diffTicket.current;
       setDiff({ phase: 'loading', path, scope });
+      setHunkSel(new Set());
       try {
         // PATH-SCOPED ON THE SERVER, not sliced here: the whole-session diff is
         // byte-capped, so a file past the cap is absent from it rather than
@@ -227,6 +283,18 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
     },
     [seam, sessionId],
   );
+
+  /**
+   * Back, on the phone. It takes a ticket so an in-flight read cannot land on
+   * a pane the reviewer has already left, and drops `openPath` so a mutation's
+   * refresh does not quietly reopen the file they just closed.
+   */
+  const closeDiff = useCallback(() => {
+    diffTicket.current += 1;
+    openPath.current = null;
+    setDiff({ phase: 'idle' });
+    setHunkSel(new Set());
+  }, []);
 
   useEffect(() => {
     void loadStatus();
@@ -312,6 +380,15 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
     });
   }, []);
 
+  const toggleHunk = useCallback((index: number) => {
+    setHunkSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
   const selectShown = useCallback(() => {
     setSelected(new Set(shown.map((f) => f.path)));
   }, [shown]);
@@ -357,8 +434,53 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
   const canUnstage = selectedFiles.some(isStaged);
   const selectedPaths = [...selected];
 
+  /*
+   * THE PHONE SHOWS ONE PANE, and which one is simply whether a file is open.
+   * There is no third state and no animation to get wrong: the list IS the
+   * back destination, and `closeDiff` is the only way to it.
+   */
+  const showList = !oneSurface || diff.phase === 'idle';
+  const showDiff = !oneSurface || diff.phase !== 'idle';
+
+  const openDiff = diff.phase === 'ready' ? diff.diff : null;
+  const hunkList = openDiff === null || openDiff.hunks === null || openDiff.hunks.length === 0
+    ? null
+    : openDiff.hunks;
+  /*
+   * WHICH VERB A TICKED HUNK MEANS, and it is not a choice.
+   *
+   * The unstaged diff is index → working tree, so a hunk taken out of it goes
+   * INTO the index: stage. The staged diff is HEAD → index, so a hunk taken
+   * out of it comes back OUT: unstage. Offering both buttons over one scope
+   * would offer one that cannot work — the patch simply would not apply — so
+   * the surface shows the one the comparison on screen supports.
+   */
+  const hunkAction: Verb = openDiff !== null && openDiff.scope === 'staged' ? 'unstage' : 'stage';
+  /*
+   * WHY THERE ARE NO HUNKS, said by name. The server refuses in this order and
+   * this mirrors it, so a reviewer reading the two side by side sees the same
+   * reason rather than two guesses at it.
+   */
+  const hunkRefusal =
+    openDiff === null || hunkList !== null
+      ? null
+      : openDiff.scope === 'session'
+        ? 'Choosing hunks needs a one-sided comparison. The session diff compares this lane against where it branched, which is neither the index nor the working tree — there is no side for a partial patch to apply to. Pick Staged or Unstaged.'
+        : openDiff.diffTruncated
+          ? 'The server cut this diff at its byte cap, so these are not all of the file’s hunks. Numbering a choice against a partial list would stage something other than what was ticked.'
+          : openDiff.untracked
+            ? 'Untracked — git has no index entry to apply a partial patch against, so this file goes in whole or not at all.'
+            : diffRowIsBinary(openDiff)
+              ? 'Binary — git has no lines here to divide into hunks.'
+              : 'This comparison has no hunks to choose from.';
+
   return (
-    <div className="pn-chg" data-testid="session-changes-body">
+    <div
+      className="pn-chg"
+      data-testid="session-changes-body"
+      data-arrangement={oneSurface ? 'phone' : 'desktop'}
+      data-pane={diff.phase === 'idle' ? 'list' : 'diff'}
+    >
       {/* -- header: whose changes these are, and how many ------------------- */}
       <div className="pn-chg__header" data-testid="session-changes-header">
         <span className="pn-chg__branch" title={`branch ${s.branch ?? ''}`}>
@@ -421,6 +543,7 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
 
       <div className="pn-chg__split">
         {/* -- the file list ------------------------------------------------- */}
+        {showList ? (
         <div className="pn-chg__list-pane">
           {shown.length === 0 ? (
             <p className="pn-chg__note" data-testid="session-changes-empty">
@@ -544,9 +667,27 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
             </>
           )}
         </div>
+        ) : null}
 
         {/* -- the diff for one file ----------------------------------------- */}
+        {showDiff ? (
         <div className="pn-chg__diff-pane" data-testid="session-changes-diff-pane">
+          {/*
+            THE PHONE'S ONLY WAY BACK, and it is a real control rather than a
+            desktop button hidden by CSS: on the desktop both panes are on
+            screen at once and there is nothing to go back to, so the button
+            does not exist there at all.
+          */}
+          {oneSurface ? (
+            <button
+              type="button"
+              className="pn-chg__back"
+              data-testid="session-changes-back"
+              onClick={closeDiff}
+            >
+              <span aria-hidden>←</span> All changed files
+            </button>
+          ) : null}
           {diff.phase === 'idle' ? (
             <p className="pn-chg__note">Choose a file to see what changed in it.</p>
           ) : diff.phase === 'loading' ? (
@@ -583,16 +724,97 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
                   The server cut this diff at its byte cap; the counts above are complete.
                 </p>
               ) : null}
+              {/* -- choosing part of the file ------------------------------ */}
+              {hunkList !== null ? (
+                <div className="pn-chg__hunks" data-testid="session-changes-hunk-bar" data-scope={diff.diff.scope}>
+                  <span className="pn-chg__hunk-count" data-testid="session-changes-hunk-count">
+                    {hunkSel.size === 0
+                      ? `${hunkList.length} hunk${hunkList.length === 1 ? '' : 's'} — tick the @@ lines to take only some`
+                      : `${hunkSel.size} of ${hunkList.length} hunk${hunkList.length === 1 ? '' : 's'} selected`}
+                  </span>
+                  <button
+                    type="button"
+                    className="pn-chg__link"
+                    data-testid="session-changes-hunk-all"
+                    onClick={() => setHunkSel(new Set(hunkList.map((h) => h.index)))}
+                  >
+                    Select all {hunkList.length}
+                  </button>
+                  {hunkSel.size > 0 ? (
+                    <button
+                      type="button"
+                      className="pn-chg__link"
+                      data-testid="session-changes-hunk-clear"
+                      onClick={() => setHunkSel(new Set())}
+                    >
+                      Clear hunks
+                    </button>
+                  ) : null}
+                  {hunkSel.size === 0 ? (
+                    <DisabledAction
+                      reason={{
+                        cause: `No hunks are ticked, so there is nothing to ${hunkAction}.`,
+                        remedy: 'tick the @@ lines you want, or use Select all',
+                      }}
+                    >
+                      {HUNK_VERB_LABEL[hunkAction]}
+                    </DisabledAction>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pn-chg__verb"
+                      disabled={busy !== null}
+                      data-testid="session-changes-hunk-apply"
+                      data-action={hunkAction}
+                      onClick={() =>
+                        void runVerb(hunkAction, async () => {
+                          const indices = [...hunkSel].sort((a, b) => a - b);
+                          // The digest is echoed back UNCHANGED from the read
+                          // these indices were chosen against. It is what makes
+                          // an agent writing the file mid-review a refusal
+                          // rather than a stage of code nobody read.
+                          const digest = diff.diff.hunkDigest;
+                          const r = await seam.commands.gitStage(sessionId, {
+                            action: hunkAction,
+                            hunks: {
+                              path: diff.path,
+                              indices,
+                              ...(digest === null ? {} : { digest }),
+                            },
+                          });
+                          const applied = r.hunkSelection;
+                          return applied === undefined
+                            ? `${hunkAction}d ${indices.length} hunk(s) in ${diff.path}`
+                            : `${hunkAction}d ${applied.applied} of ${applied.total} hunk(s) in ${applied.path}`;
+                        })
+                      }
+                    >
+                      {busy === hunkAction
+                        ? `${hunkAction === 'stage' ? 'Staging' : 'Unstaging'} ${hunkSel.size}…`
+                        : `${HUNK_VERB_LABEL[hunkAction]} (${hunkSel.size})`}
+                    </button>
+                  )}
+                </div>
+              ) : hunkRefusal !== null ? (
+                <p className="pn-chg__note" data-testid="session-changes-hunk-refusal">
+                  {hunkRefusal}
+                </p>
+              ) : null}
+
               {diff.diff.diff === '' ? (
                 <p className="pn-chg__note" data-testid="session-changes-diff-empty">
                   No changes to this file in the {diff.diff.scope} comparison.
                 </p>
               ) : (
-                <DiffView diff={diff.diff.diff} />
+                <DiffView
+                  diff={diff.diff.diff}
+                  selection={hunkList === null ? undefined : { selected: hunkSel, onToggle: toggleHunk, disabled: busy !== null }}
+                />
               )}
             </>
           )}
         </div>
+        ) : null}
       </div>
 
       {/* -- the commit bar --------------------------------------------------- */}
@@ -728,7 +950,8 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
       {partlyStagedSelection.length > 0 ? (
         <p className="pn-chg__note" data-testid="session-changes-partial-note">
           {partlyStagedSelection.length} selected file(s) have unstaged changes as well. Commit selected
-          commits the whole file — staging one half of a file is not offered here.
+          commits the file as the INDEX has it, not as the disk has it. Open one under Staged or
+          Unstaged to see which half is which, and to move single hunks between them.
         </p>
       ) : null}
 
