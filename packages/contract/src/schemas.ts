@@ -3148,6 +3148,7 @@ export const SessionFileChangeSchema: z.ZodType<SessionFileChange> = z.object({
   linesRemoved: z.number().int().nonnegative(),
   hunks: z.array(SessionFileHunkSchema),
   hunksTruncated: z.boolean(),
+  lastTurn: z.boolean(),
 }).strict();
 
 export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object({
@@ -3156,6 +3157,7 @@ export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object(
   totalRemoved: z.number().int().nonnegative(),
   filesTruncated: z.boolean(),
   source: z.literal('transcript'),
+  turns: z.number().int().positive(),
 }).strict();
 
 export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
