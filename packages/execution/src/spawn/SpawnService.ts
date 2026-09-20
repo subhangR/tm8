@@ -49,6 +49,7 @@ import {
   type AgentCredentialHome,
   type AgentCredentialHomePort,
 } from './agent-credentials.js';
+import { isApiKeyCredentialProvider } from '../credentials/api-key-credentials.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
@@ -399,6 +400,20 @@ export class SpawnService {
    * member asked to run as themselves, and quietly running them as the node
    * instead is the exact lie the credential store exists to stop. Auto (null)
    * keeps the pre-field behaviour byte for byte.
+   *
+   * MEMBER REFUSES ON TWO DIFFERENT FACTS, and they are worth keeping apart.
+   * `null` means the member connected nothing. A KEYLESS API-key home means
+   * they connected something and its stored key could not be read — a state
+   * that only exists since `agent-credential-injection.ts` stopped answering
+   * `null` for it, because that `null` left the node's own key live in the
+   * composed environment and ran the member's session on the machine account.
+   * That fix is what makes this branch necessary: without it, the second fact
+   * would arrive here wearing the first one's clothes and the refusal would
+   * fire; with it, `!home` is false and a `member` launch that used to be
+   * refused legibly would instead proceed and fail inside the CLI, with
+   * nothing anywhere naming the unreadable key. AUTO IS DELIBERATELY NOT
+   * REFUSED: there the keyless home is the whole mechanism — it is what
+   * suppresses the node key — and it must reach `composeEnv` intact.
    */
   private async resolveCredentialHome(
     auth: GraphAuth,
@@ -416,6 +431,20 @@ export class SpawnService {
           "or launch with the node credential ('node')",
         'conflict',
         { agentTool, provider: agentCredentialProviderFor(agentTool) },
+      );
+    }
+    if (source === 'member' && home && isApiKeyCredentialProvider(home.provider)
+      && home.apiKey === undefined) {
+      throw new SpawnError(
+        `credentialSources.${home.provider} 'member' was requested and a ${home.provider} ` +
+          'credential is connected, but its stored key could not be read — reconnect it ' +
+          "under Settings → Connections, or launch with the node credential ('node')",
+        'conflict',
+        // The ACTUAL provider, not the tool's native one: a Kimi-backed
+        // `claude-code` session resolves `agentCredentialProviderFor` to
+        // `anthropic`, and telling the member to go and fix Anthropic would
+        // point them at the one credential that is not the problem.
+        { agentTool, provider: home.provider },
       );
     }
     return home;
