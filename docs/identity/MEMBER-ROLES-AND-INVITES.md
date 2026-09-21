@@ -33,7 +33,7 @@ before the caller is anybody on the node.
 | `public.create_invite(…, p_role)` | Old 5-arg signature **dropped**, not overloaded — see §4. Keeps 032's strip-at-rest and rehydrate-after-binding verbatim. |
 | `public.redeem_invite` | Attaches with `invite.role` instead of the hardcoded `'member'`. |
 | `public.set_member_role` | The writer. Four rules, §2. |
-| `public.preview_invite` | Claim-free. What a code lets you join, before you are anybody here. |
+| `public.preview_invite` | Claim-FREE, not claim-BLIND — see 195. What a code lets you join, before you are anybody here; and if you are somebody already inside, that you are. |
 
 ### Contract — two operations, 159 → 161
 
@@ -156,6 +156,44 @@ suite proves nothing run as the superuser, because the superuser bypasses the
 RLS and the definer guards that are the entire subject.
 
 ---
+
+## 5b. Amendment, 2026-09-19 — `preview_invite` learns who is asking (195)
+
+Filed as *"invite link is not working"* (task `01a0baf5-d198-77ac-bd09-abf38d401c2c`),
+with a screenshot of **"This invite is used up"** shown to somebody who was, at that
+moment, a member of the space the link pointed at. Two defects, one journey.
+
+**The preview and the redeem disagreed about the same code.** `redeem_invite` is
+claim-aware and checks membership BEFORE exhaustion, so an existing member spends no
+use and gets `{joined: false}`. `preview_invite` was claim-free in the strong sense —
+it could not see the caller at all — and answered purely on `use_count >= max_uses`.
+Measured on the production node, same code, same identity, same second:
+
+```
+tm8 space invite resolve inv_01a0…8d6f   →  exhausted  Syed
+tm8 space invite redeem  inv_01a0…8d6f   →  {"joined":false,"spaceId":"01a0b9be-…"}
+```
+
+The join screen asks the preview first, so the person was told a space they had joined
+ninety seconds earlier was out of reach. 195 gives the preview `internal.identity_id()`
+and a `member` status ahead of every dead one; the claim stays OPTIONAL, so an
+anonymous caller's answers are byte-for-byte 118's. `auth.invite.resolve` passes a
+bearer's identity when it has one and stays anonymous otherwise — deliberately NOT via
+`claimsFor()`, which refuses anonymous callers: this read has no authorization to get
+wrong, and a half-resolved session must not turn a working link into an error page.
+
+**Disclosure.** `member` carries `spaceId` as well as `spaceName`, which no dead status
+does. It discloses nothing: the branch is only reachable for somebody whose membership
+row already exists, and the screen needs the id to open the space.
+
+**And the join itself never left the screen.** `capturePendingJoin()` parks the code and
+rewrites the address to `/`, so `GateApp`'s `location.assign('/#/s/<id>')` differed from
+the current URL only in its FRAGMENT — a same-document navigation that does not reload.
+Proven in a real browser against the deployed node: a `window` marker set before the
+call survived it. Without a reload nothing re-derives `joinCode`, so the screen kept
+rendering with the button stuck on a disabled **"Joining…"** over a membership that had
+already committed. `join/arrive.ts` now sets the address and then loads it, behind an
+`ArrivalPort` so the ordering is testable.
 
 ## 6. Open, and owned by nobody yet
 

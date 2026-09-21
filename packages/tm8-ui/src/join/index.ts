@@ -16,4 +16,5 @@ export {
   readJoinCode,
 } from './pendingJoin';
 export { JoinScreen, DEAD_WORD, refusalOf, type JoinScreenProps } from './JoinScreen';
+export { arriveInSpace, browserArrival, spaceAddress, type ArrivalPort } from './arrive';
 export { JoinBanner, type JoinBannerProps } from './JoinBanner';

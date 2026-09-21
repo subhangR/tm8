@@ -270,11 +270,45 @@ async function profileDisplayName(
  * The short version: an unresolvable code returns `{status:'unknown'}` and
  * nothing else; a dead code names the space (so the holder can ask the right
  * person for a fresh one) but never the inviter.
+ *
+ * CLAIM-FREE IS NOT CLAIM-BLIND (195). An identity is never REQUIRED here —
+ * that is the whole point of the operation — but a join link is very often
+ * opened by somebody who does have a session, and refusing to look at it cost
+ * a real user a real Space: `preview_invite` answered `exhausted` to the very
+ * person whose redemption had spent the code, because nothing told it who was
+ * asking. So the bearer's identity is FORWARDED when the request carries one,
+ * and omitted when it does not. This is not `claimsFor`: that helper REFUSES
+ * an anonymous caller (context.ts:72), which is exactly the behaviour this
+ * handler must not have. An anonymous request binds no identity claim and SQL
+ * takes the branch it always took.
  */
 function authInviteResolve(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
     const body = ctx.body as ResolveInviteInput;
-    return deps.db.rpc<InvitePreview>({ requestId: ctx.requestId }, 'preview_invite', [body.code]);
+    // BOTH RESOLVED ARMS, not just the bearer. `auto-owner` is the person
+    // sitting at the node's own UI (`identity-resolver.ts:93`), and it carries
+    // a resolved `identityId` exactly as a bearer does. Forwarding only the
+    // bearer arm is how the reported bug survives on a local node: the owner
+    // opens their own spent link in their own browser, `internal.identity_id()`
+    // is NULL because nothing bound it, and 195's `member` branch cannot fire —
+    // the very failure this operation was changed to fix, on the deployment
+    // shape most likely to hit it. This is NOT the `deps.owner()` resolution
+    // the claim-bound services do (`files.ts:88`): the identity is already on
+    // the request, so no owner lookup is needed or wanted here.
+    //
+    // A bearer whose identity is unresolved is treated as anonymous rather
+    // than refused: this read has no authorization to get wrong, and a
+    // half-resolved session must not be able to turn a working join link into
+    // an error page. The same holds for a half-resolved auto-owner.
+    const viewer =
+      ctx.identity?.kind === 'bearer' || ctx.identity?.kind === 'auto-owner'
+        ? ctx.identity.identityId
+        : undefined;
+    return deps.db.rpc<InvitePreview>(
+      { requestId: ctx.requestId, ...(viewer ? { identityId: viewer } : {}) },
+      'preview_invite',
+      [body.code],
+    );
   };
 }
 

@@ -66,7 +66,7 @@ import {
   presenceHollowReason,
 } from '../fixtures';
 import type { Seam } from '../data/seam';
-import { JoinScreen, clearPendingJoin, newJoinMutationId } from '../join';
+import { JoinScreen, arriveInSpace, clearPendingJoin, newJoinMutationId } from '../join';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -1829,13 +1829,15 @@ export function GateApp(props: GateAppProps = {}) {
             : {})}
           onJoined={(spaceId) => {
             clearPendingJoin();
-            // A FULL RELOAD, not a state flip. Membership is an INPUT to boot:
-            // the spaces list, the menu, the counts and the socket
-            // subscription were all resolved for an account that was not in
-            // this space, and there is no partial-refresh path that re-derives
-            // them. Landing on the space's own address is the honest arrival,
-            // and this happens once per invite, never on a hot path.
-            location.assign(`/#/s/${spaceId}`);
+            // A FULL RELOAD, not a state flip — and until 01a0baf5 the line
+            // here said so while doing the opposite. `location.assign` to a
+            // url that differs only in its FRAGMENT does not reload anything,
+            // and `capturePendingJoin` has already stripped the path to `/`,
+            // so a successful join left the viewer staring at a disabled
+            // "Joining…" button over a membership that had already committed.
+            // `arriveInSpace` sets the address and then loads it. See
+            // `join/arrive.ts` for the measurement.
+            arriveInSpace(spaceId);
           }}
           onDismiss={() => {
             clearPendingJoin();
