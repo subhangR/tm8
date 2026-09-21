@@ -49,7 +49,7 @@ const backend = (
   connection(provider, {
     connected: true,
     login: null,
-    routing: { agentTool, role: 'backend' as const, counterpart, active: true },
+    routing: { agentTool, role: 'backend' as const, counterpart, active: true, outrankedBy: null },
   });
 
 function status(
@@ -335,18 +335,24 @@ describe('an API-key backend borrows the binary it displaces', () => {
         connection('openai'),
         backend('kimi', 'anthropic', 'claude-code'),
         backend('groq', 'openai', 'codex'),
+        backend('grok', 'openai', 'codex'),
         connected('github', 'octocat'),
       ]),
     );
     const by = new Map(state.agents.map((a) => [a.provider, a]));
     expect(by.get('kimi')?.borrowsMissingBinary).toBe(true);
     expect(by.get('groq')?.borrowsMissingBinary).toBe(false);
+    // The second codex backend borrows the same binary and answers the same
+    // way. Precedence between the two is a ROUTING question; whether the tool
+    // they borrow is installed is not, and this gate must not start conflating
+    // them.
+    expect(by.get('grok')?.borrowsMissingBinary).toBe(false);
     // One working backend is enough, exactly as one working vendor login is.
     expect(state.hasAgent).toBe(true);
   });
 
   /* The nudge branch this created. `agents.every(a => a.unavailable)` can never
-     be true once kimi and groq exist, because their measured binary is `node`
+     be true once kimi, groq and grok exist, because their measured binary is `node`
      and `node` is never absent — so without the second branch the "nothing is
      installed" sentence would silently retire on every node. */
   it('still says nothing is installed when every remaining agent borrows a missing binary', () => {
@@ -356,6 +362,7 @@ describe('an API-key backend borrows the binary it displaces', () => {
         connection('openai', { status: 'unavailable' }),
         backend('kimi', 'anthropic', 'claude-code'),
         backend('groq', 'openai', 'codex'),
+        backend('grok', 'openai', 'codex'),
         connected('github', 'octocat'),
       ]),
     );

@@ -172,7 +172,7 @@ describe('server spawn integration with a stub PTY', () => {
     // `objectContaining`: an ABSENT key and a `null` key are different claims —
     // "tm8 has no opinion about this vendor" versus "measured, and this session
     // carries no credential for it". Every admitted provider therefore appears,
-    // and a new one must appear here too. `kimi` and `groq` are null because
+    // and a new one must appear here too. `kimi`, `groq` and `grok` are null because
     // this spawn's request named neither and no key is connected; a connected
     // Kimi key would read `'member'` and would be routing this very session.
     expect(result.manifest.launch.credentialSources).toEqual({
@@ -184,6 +184,7 @@ describe('server spawn integration with a stub PTY', () => {
       github: 'member',
       kimi: null,
       groq: null,
+      grok: null,
     });
     expect(spawnIfAbsent).toHaveBeenCalledOnce();
     expect(spawnIfAbsent).toHaveBeenCalledWith(expect.objectContaining({

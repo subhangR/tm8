@@ -1805,7 +1805,7 @@ export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z
  * Every declared login-terminal provider; credential storage remains
  * shape-specific.
  *
- * `kimi` and `groq` are login-terminal providers like the rest — same Connect
+ * `kimi`, `groq` and `grok` are login-terminal providers like the rest — same Connect
  * button, same PTY, same probe — but the program that terminal runs is tm8's
  * own paste harness rather than a vendor CLI, because neither vendor ships one.
  * The wire does not distinguish them, and deliberately so: a client rendering
@@ -1813,7 +1813,17 @@ export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z
  * by which the secret was captured.
  */
 export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor', 'kimi', 'groq']);
+  z.enum([
+    'anthropic',
+    'openai',
+    'github',
+    'gemini',
+    'hermes',
+    'cursor',
+    'kimi',
+    'groq',
+    'grok',
+  ]);
 
 /** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
 const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
@@ -1826,6 +1836,14 @@ export const CredentialRoutingViewSchema: z.ZodType<CredentialRoutingView> = z.o
   role: z.enum(['backend', 'displaced']),
   counterpart: CredentialProviderNameSchema,
   active: z.boolean(),
+  // NULLABLE AND REQUIRED, never optional. `null` is the ordinary answer and
+  // has to travel: a card that receives no key cannot tell "this backend wins"
+  // from "the server is older than this field", and the second reading is the
+  // one that would have it print nothing while a member's codex sessions reach
+  // a vendor they did not choose. Making it required also puts every
+  // construction site in this repo on the compiler's list, which is how the
+  // field reaches the UI at all rather than being computed there.
+  outrankedBy: CredentialProviderNameSchema.nullable(),
 }).strict();
 
 export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView> = z.object({

@@ -75,6 +75,7 @@ import {
   CREDENTIAL_PROVIDERS,
   apiKeyBackendAgentTool,
   apiKeyBackendDisplaces,
+  apiKeyBackendOutrankedBy,
   apiKeyBackendsForAgentTool,
   isApiKeyCredentialProvider,
   type Logger,
@@ -120,11 +121,11 @@ function agentToolsForProvider(provider: CredentialProviderName): readonly strin
 /**
  * What connecting this provider does to the member's agent sessions.
  *
- * THE COMMITMENT THIS FUNCTION KEEPS. Kimi and Groq route account-wide with no
- * per-session opt-in: once a member connects Kimi, every `claude-code` session
- * they start reaches Moonshot instead of Anthropic, including the ones they
- * started before they had ever heard of Kimi. That was chosen on purpose, and
- * the price of choosing it is that the product must SAY so — a silent
+ * THE COMMITMENT THIS FUNCTION KEEPS. Kimi, Groq and Grok route account-wide
+ * with no per-session opt-in: once a member connects Kimi, every `claude-code`
+ * session they start reaches Moonshot instead of Anthropic, including the ones
+ * they started before they had ever heard of Kimi. That was chosen on purpose,
+ * and the price of choosing it is that the product must SAY so — a silent
  * redirection of which model answers your questions is the kind of thing a
  * member should never have to read the source to discover.
  *
@@ -146,6 +147,22 @@ function agentToolsForProvider(provider: CredentialProviderName): readonly strin
  * kimi/anthropic pair in the UI — is how a card comes to claim one thing while
  * spawn does another.
  *
+ * AND A BACKEND CAN NOW LOSE TO ANOTHER BACKEND. `groq` and `grok` both serve
+ * `codex`, so the loop above is no longer the only contest: a member with both
+ * keys connected has two cards each truthfully saying `role: 'backend'` while
+ * only one of them is reached. `outrankedBy` names the winner on the losing
+ * card. It is computed by `apiKeyBackendOutrankedBy`, which walks the SAME
+ * precedence list for the same reason the displacement walk does — a second
+ * implementation of precedence is a second answer waiting to disagree.
+ *
+ * Note what is deliberately NOT done here: the losing backend still reports
+ * `active: true` and `role: 'backend'`, because both are true. Its credential
+ * is connected and it IS a backend for `codex`; what it is not is the one
+ * currently winning, and that is a separate fact carried in a separate field.
+ * Folding the two together — reporting the loser as inactive — would make the
+ * card claim the key is not connected, which is both false and the opposite of
+ * the disclosure this function exists to make.
+ *
  * WHAT IT CANNOT SEE. `active` reflects the stored index row, which is the same
  * thing the resolver queries. It does not know whether the key FILE is still
  * readable; a row whose file has gone missing makes the resolver fall back to
@@ -164,6 +181,7 @@ function routingFor(
       role: 'backend',
       counterpart: apiKeyBackendDisplaces(provider),
       active: activeProviders.has(provider),
+      outrankedBy: apiKeyBackendOutrankedBy(provider, activeProviders),
     };
   }
 
@@ -174,7 +192,17 @@ function routingFor(
     for (const backend of apiKeyBackendsForAgentTool(agentTool)) {
       if (!activeProviders.has(backend)) continue;
       if (apiKeyBackendDisplaces(backend) !== provider) continue;
-      return { agentTool, role: 'displaced', counterpart: backend, active: true };
+      // `outrankedBy: null` on every displaced entry, and not by omission. A
+      // displaced NATIVE provider is not a loser in the backend precedence
+      // contest — it is the thing the winner of that contest replaces, and
+      // `counterpart` already names who replaced it.
+      return {
+        agentTool,
+        role: 'displaced',
+        counterpart: backend,
+        active: true,
+        outrankedBy: null,
+      };
     }
   }
   return null;

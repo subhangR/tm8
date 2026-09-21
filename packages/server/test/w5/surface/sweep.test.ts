@@ -1045,7 +1045,25 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and stated here so the next reader does not "fix" it back down to 177 and
     // hand main a silently-short count. If this branch ends up landing BEFORE
     // #635, this number is wrong and the correct edit is 177, not a re-guess.
-    expect(server.appliedMigrations.length).toBe(178);
+    //
+    // 178 -> 179 (197): ONE file, this branch's own, and it had to be RENUMBERED
+    // 196 -> 197 as part of this merge. The block above reserves 196 for
+    // 196_kimi_groq_credentials.sql on the branch underneath; this branch was cut
+    // while that file was still numbered 195, so it took 196 for itself, and the
+    // renumber on the parent turned a free prefix into a taken one. Both files
+    // then arrive here at 196 and the assertion below -- not the count -- is what
+    // catches it. That is the third time in this file the duplicate-prefix guard
+    // has caught what the count could not, and the first time it has done so
+    // during the merge that created the duplicate rather than after it.
+    //
+    // MEASURED on the merged tree, not incremented:
+    //   git ls-files db/migrations | grep -c '\.sql$'                     -> 179
+    //   duplicate prefixes after the renumber                             -> 0
+    //   tail: 194_drawing_kind · 195_preview_invite_knows_a_member ·
+    //         196_kimi_groq_credentials · 197_grok_credentials
+    // The 178 that stood here was correct against the tree this branch was cut
+    // from and is superseded by the merge, not repaired.
+    expect(server.appliedMigrations.length).toBe(179);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
