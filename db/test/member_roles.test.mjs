@@ -367,3 +367,129 @@ test('preview_invite reports an exhausted code as exhausted, not as valid', () =
   const preview = json(`select public.preview_invite(${literal(invite.code)})`);
   assert.equal(preview.status, 'exhausted');
 });
+
+// ---------------------------------------------------------------------------
+// preview_invite, 195 — the read learns who is asking.
+//
+// THE REPORTED BUG (task 01a0baf5). A one-use invite was minted for a Space
+// and sent to somebody; they redeemed it successfully and their member row
+// committed; they opened their own link a second time and the browser said
+// "This invite is used up". `redeem_invite` is claim-aware and short-circuits
+// on membership, so it answered `joined:false` for that identity and that code
+// in the same second the preview called it dead. Two functions, one invite,
+// opposite answers — and the person only ever saw the blind one.
+//
+// These assert the new branch AND the three ways it must not widen anything:
+// an anonymous caller's answers are byte-for-byte 118's, a signed-in stranger
+// is still refused, and `member` outranks EVERY dead status rather than only
+// exhaustion.
+// ---------------------------------------------------------------------------
+
+/** An account that exists on this node but is in no space yet. */
+function outsider(tag) {
+  const identity = `identity-roles-${tag}`;
+  json(
+    `select public.ensure_account(${literal(identity)}, ${literal(`roles-${tag}`)}, ` +
+      `${literal(`Outsider ${tag}`)}, null, false, false)`,
+    { claims: rootClaims() },
+  );
+  return identity;
+}
+
+test('preview_invite answers MEMBER to the person who already spent the code', () => {
+  const identity = outsider('member-preview');
+  const invite = json(
+    `select public.create_invite(${uuid(w.spaceA)}, 1, null, null, ${literal(cmid('prev-member'))})`,
+    { claims: w.claimsA },
+  ).invite;
+
+  // The successful join the report actually had. `joined` is true here; the
+  // whole defect is what the NEXT read said about the same code.
+  const redemption = json(`select public.redeem_invite(${literal(invite.code)})`, {
+    claims: claimsFor(identity),
+  });
+  assert.equal(redemption.joined, true);
+
+  const preview = json(`select public.preview_invite(${literal(invite.code)})`, {
+    claims: claimsFor(identity),
+  });
+  assert.equal(preview.status, 'member',
+    'the code is spent, but it was spent BY THIS PERSON — "exhausted" is the sentence that made the bug report');
+  assert.equal(preview.spaceId, w.spaceA,
+    'a member needs the space id to be sent anywhere; they are already in it, so it discloses nothing');
+  assert.equal(preview.spaceName, 'Space A');
+});
+
+test('preview_invite still says exhausted to an ANONYMOUS holder of the same code', () => {
+  const identity = outsider('member-anon');
+  const invite = json(
+    `select public.create_invite(${uuid(w.spaceA)}, 1, null, null, ${literal(cmid('prev-anon'))})`,
+    { claims: w.claimsA },
+  ).invite;
+  json(`select public.redeem_invite(${literal(invite.code)})`, { claims: claimsFor(identity) });
+
+  // No claims at all — the state a join page is in for most of its life.
+  const preview = json(`select public.preview_invite(${literal(invite.code)})`);
+  assert.equal(preview.status, 'exhausted', '195 must not change what a stranger is told');
+  assert.equal(preview.spaceId, undefined, 'a dead link must not hand out an addressable space id');
+});
+
+test('preview_invite says exhausted to a signed-in NON-member', () => {
+  const holder = outsider('member-holder');
+  const stranger = outsider('member-stranger');
+  const invite = json(
+    `select public.create_invite(${uuid(w.spaceA)}, 1, null, null, ${literal(cmid('prev-stranger'))})`,
+    { claims: w.claimsA },
+  ).invite;
+  json(`select public.redeem_invite(${literal(invite.code)})`, { claims: claimsFor(holder) });
+
+  // Bound identity, no membership. Binding a claim must not be what unlocks
+  // the branch — belonging to the space must be.
+  const preview = json(`select public.preview_invite(${literal(invite.code)})`, {
+    claims: claimsFor(stranger),
+  });
+  assert.equal(preview.status, 'exhausted');
+  assert.equal(preview.spaceId, undefined);
+});
+
+test('MEMBER outranks revoked — a membership outlives the link that granted it', () => {
+  const identity = outsider('member-revoked');
+  const invite = json(
+    `select public.create_invite(${uuid(w.spaceA)}, 5, null, null, ${literal(cmid('prev-mem-rev'))})`,
+    { claims: w.claimsA },
+  ).invite;
+  json(`select public.redeem_invite(${literal(invite.code)})`, { claims: claimsFor(identity) });
+  ok(
+    `select public.w2_revoke_invite(${uuid(w.spaceA)}, ${uuid(invite.id)}, ${literal(cmid('prev-mem-rev-x'))})`,
+    { claims: w.claimsA },
+  );
+
+  const preview = json(`select public.preview_invite(${literal(invite.code)})`, {
+    claims: claimsFor(identity),
+  });
+  assert.equal(preview.status, 'member',
+    'revoking the link cannot evict anybody, so telling a member the space "does not open any more" is false');
+
+  // And the revocation still bites for everybody else.
+  assert.equal(json(`select public.preview_invite(${literal(invite.code)})`).status, 'revoked');
+});
+
+test('a member of ANOTHER space gets the ordinary answer, not a false membership', () => {
+  // The branch matches on (invite.space_id, identity) and this is the pair
+  // that would catch a `where identity_id = viewer` with the space forgotten.
+  const identity = outsider('member-elsewhere');
+  const elsewhere = json(
+    `select public.create_invite(${uuid(w.spaceB)}, 1, null, null, ${literal(cmid('prev-else-b'))})`,
+    { claims: w.claimsB },
+  ).invite;
+  json(`select public.redeem_invite(${literal(elsewhere.code)})`, { claims: claimsFor(identity) });
+
+  const forA = json(
+    `select public.create_invite(${uuid(w.spaceA)}, 1, null, null, ${literal(cmid('prev-else-a'))})`,
+    { claims: w.claimsA },
+  ).invite;
+  const preview = json(`select public.preview_invite(${literal(forA.code)})`, {
+    claims: claimsFor(identity),
+  });
+  assert.equal(preview.status, 'valid', 'being in space B says nothing about space A');
+});

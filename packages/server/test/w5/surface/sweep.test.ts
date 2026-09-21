@@ -1002,7 +1002,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   git rev-list --count HEAD..origin/main                                  -> 0
     // Main has not moved under this branch, so the two differ by exactly its
     // one file.
-    expect(server.appliedMigrations.length).toBe(175);
+    //
+    // 175 -> 177 (195): TWO files, and only one of them is this lane's. The pin
+    // was ALREADY RED on main when this branch arrived — 194_drawing_kind.sql
+    // landed with #627 without moving it, the same silent drift the paragraph
+    // above describes. RE-MEASURED rather than incremented, 2026-09-19:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 176
+    //   ls db/migrations/*.sql | wc -l                                          -> 177
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main has not moved under this branch, so the two differ by exactly this
+    // lane's one file, 195_preview_invite_knows_a_member.sql — and the jump of
+    // two from the pin is 194's drift plus it.
+    expect(server.appliedMigrations.length).toBe(177);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

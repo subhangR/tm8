@@ -367,6 +367,12 @@ function renderInvitePreview(dto: unknown): string {
   const status = field(dto, 'status') ?? 'unknown';
   if (status === 'unknown') return 'unknown  this code does not resolve to anything on this Server';
   const space = field(dto, 'spaceName');
+  // `member` (195) is not a dead status and must not read like one: it means
+  // THIS caller is already in the Space, so it names it and says why there is
+  // nothing to redeem rather than printing a bare word beside a Space name.
+  if (status === 'member') {
+    return `member  ${space ?? ''}  you are already in this Space — nothing to redeem`.trimEnd();
+  }
   if (status !== 'valid') return `${status}  ${space ?? ''}`.trimEnd();
   return [
     'valid',
