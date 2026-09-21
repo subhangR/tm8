@@ -2205,16 +2205,36 @@ export function createFixtureSeam(): FixtureSeam {
       return [globalDefault, ...migrated];
     },
     /**
-     * Amendment 11 mirror. Answers WITHOUT consulting the viewer, exactly like
-     * the node's claim-free RPC, and reproduces its disclosure rule rather
-     * than a friendlier one: an unresolvable code returns `{status:'unknown'}`
-     * and nothing else, and a dead code names the space but never the inviter.
-     * A fixture that leaked more than the node would let a join screen look
+     * Amendment 11 mirror. Reproduces the node's disclosure rule rather than a
+     * friendlier one: an unresolvable code returns `{status:'unknown'}` and
+     * nothing else, and a dead code names the space but never the inviter. A
+     * fixture that leaked more than the node would let a join screen look
      * correct here and refuse to render against a real server.
+     *
+     * IT CONSULTS THE VIEWER NOW (195), because the RPC does. `preview_invite`
+     * used to answer without knowing who was asking, which is how it came to
+     * tell somebody their own spent code was "used up" while `redeem_invite`
+     * — which CAN see them — answered `joined: false` for the same code in the
+     * same second. The membership rung sits ABOVE every dead one here for the
+     * same reason it does there: a membership outlives the link that granted
+     * it, so a spent, revoked or expired code is not news to somebody already
+     * inside.
+     *
+     * The predicate is a real lookup in this world's own state, not a constant,
+     * and in this world it is always true — the fixture viewer owns the one
+     * fixture space, which is the same fact `redeemInvite` leans on when it
+     * always answers `joined: false`. A fixture cannot mint a second human to
+     * be a stranger with. The rungs below are therefore written for the reader
+     * and for the day this world gains a second viewer; the statuses they
+     * return are exercised against the screen in `join/join.test.tsx`, which
+     * supplies the preview directly.
      */
     async previewInvite(code: string): Promise<InvitePreview> {
       const invite = invites.find((i) => i.code === code);
       if (!invite) return { status: 'unknown' };
+      if (identityView.memberships.some((m) => m.spaceId === FIXTURE_SPACE_ID)) {
+        return { status: 'member', spaceId: FIXTURE_SPACE_ID, spaceName: spaceSummary.name };
+      }
       if (invite.revoked) return { status: 'revoked', spaceName: spaceSummary.name };
       if (invite.expiresAt !== null && invite.expiresAt < tick()) {
         return { status: 'expired', spaceName: spaceSummary.name };
