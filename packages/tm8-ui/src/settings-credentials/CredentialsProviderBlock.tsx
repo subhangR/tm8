@@ -7,12 +7,14 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   CredentialConnectionView,
   CredentialProviderName,
+  CredentialRoutingView,
   CredentialsDeleteResult,
   CredentialsLoginSessionFinishResult,
   CredentialsStatusView,
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
-import { presentationOf } from './provider-presentation';
+import { CREDENTIAL_PROVIDER_LABEL } from '../domain/launch';
+import { presentationOf, providerBinaryLabel } from './provider-presentation';
 import {
   disconnectVerdictOf,
   verdictOf,
@@ -204,12 +206,18 @@ function ProviderCard({
           <ProviderIcon />
         </span>
         <span className="cred-card__name">{presentation.name}</span>
-        <code className="cred-card__binary">{presentation.binary}</code>
+        <code className="cred-card__binary">{providerBinaryLabel(entry.provider)}</code>
       </header>
 
       <div className="cred-card__state" data-testid={`credential-verdict-${entry.provider}`}>
         <VerdictLine verdict={verdict} login={entry.login} binary={presentation.binary} />
       </div>
+
+      {/* The routing disclosure. It sits directly under the verdict because it
+          is part of the same answer: "connected" and "and therefore your
+          claude-code sessions now reach Moonshot" are one fact told in two
+          sentences, and separating them is how the second one gets missed. */}
+      {entry.routing ? <RoutingLine routing={entry.routing} /> : null}
 
       {/* A connected-null result is a complete probe answer, not an account
           name that is still loading. Only a real name earns an Account row. */}
@@ -232,7 +240,13 @@ function ProviderCard({
       <div className="cred-card__actions">
         {verdict === 'unavailable' ? (
           <span className="cred-install" data-testid={`credential-install-${entry.provider}`}>
-            Install <code>{presentation.binary}</code> on this node to enable sign-in.
+            {presentation.binary === null ? (
+              <>This provider cannot be reached from this node.</>
+            ) : (
+              <>
+                Install <code>{presentation.binary}</code> on this node to enable sign-in.
+              </>
+            )}
           </span>
         ) : (
           <>
@@ -267,6 +281,74 @@ function ProviderCard({
   );
 }
 
+/**
+ * Say, on the card, which sessions this credential redirects.
+ *
+ * WHY THIS EXISTS AT ALL. Kimi and Groq route ACCOUNT-WIDE and with no
+ * per-session opt-in: connect Kimi and every `claude-code` session this member
+ * starts — including ones they started long before — reaches Moonshot instead
+ * of Anthropic. That is a deliberate product decision, and the whole reason it
+ * is acceptable is that the member can see it. An invisible redirection of
+ * which model answers your questions is the kind of surprise that costs someone
+ * a day of debugging and their trust in the tool.
+ *
+ * FOUR SENTENCES, ONE PER STATE. They are spelled out rather than composed from
+ * fragments because each says something different about TIME — two describe what
+ * is happening now, one describes what pressing Connect would do, and mixing
+ * those tenses in a template is exactly how a warning comes to say the opposite
+ * of the truth.
+ *
+ * `agentTool` and the counterpart's name come from the server, which computes
+ * them from the same table spawn resolves against. Nothing here is hardcoded to
+ * "kimi" or "anthropic": a card that names a pair the resolver does not agree
+ * with would be worse than no card at all.
+ *
+ * THE COUNTERPART IS NAMED FROM THE VENDOR TABLE, NOT THE PRESENTATION TABLE,
+ * and the two disagree in exactly the place this sentence is about:
+ *
+ *   provider    presentationOf().name    CREDENTIAL_PROVIDER_LABEL
+ *   anthropic   'Claude Code'            'Anthropic'
+ *   openai      'Codex'                  'OpenAI'
+ *   kimi        'Kimi (Moonshot AI)'     'Moonshot AI'
+ *
+ * `presentationOf` names the PRODUCT — right for the card heading, which sits
+ * above the `binary` you type, and right for the icon beside it. This sentence
+ * is not about the product: "uses this key instead of X" is a claim about WHOSE
+ * SERVICE answers and whose account is billed, and the tool is the one thing
+ * that does not change. Rendered from the presentation table it said "every
+ * `claude-code` session you start uses this key instead of Claude Code", which
+ * reads as though connecting Kimi stops Claude Code running — the opposite of
+ * the truth, and the exact surprise the paragraph above exists to prevent.
+ *
+ * `CREDENTIAL_PROVIDER_LABEL` is the table whose docstring already states this
+ * rule in the other direction ("Vendor names, not product names ... The home
+ * and settings tiles name the product instead"), and which this feature
+ * extended with Moonshot AI and Groq. Using it here is not a new convention;
+ * it is the existing one, applied to the one line that had escaped it.
+ */
+function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
+  const counterpart = CREDENTIAL_PROVIDER_LABEL[routing.counterpart];
+  const tool = <code>{routing.agentTool}</code>;
+
+  return (
+    <p
+      className={`cred-card__routing${routing.active ? ' cred-card__routing--active' : ''}`}
+      data-testid={`credential-routing-${routing.role}`}
+      data-routing-active={routing.active ? 'true' : 'false'}
+    >
+      {routing.role === 'backend' ? (
+        routing.active ? (
+          <>Every {tool} session you start uses this key instead of {counterpart}.</>
+        ) : (
+          <>Connecting this will route every {tool} session you start here instead of {counterpart}.</>
+        )
+      ) : (
+        <>Not currently used for {tool} sessions — {counterpart} is connected and takes over.</>
+      )}
+    </p>
+  );
+}
+
 /** Four meanings, stated in words so colour is never the only state signal. */
 function VerdictLine({
   verdict,
@@ -275,7 +357,11 @@ function VerdictLine({
 }: {
   verdict: ConnectionVerdict;
   login: string | null;
-  binary: string;
+  // Null for providers with no vendor CLI. Only the `unavailable` arm reads it,
+  // and that arm is unreachable for those providers — the binary their probe
+  // measures is `node`, which ships with the server. The fallback below is
+  // correctness insurance, not a case anyone should see.
+  binary: string | null;
 }) {
   switch (verdict) {
     case 'connected-named':
@@ -283,7 +369,13 @@ function VerdictLine({
     case 'connected-unnamed':
       return <span>Connected — inference access</span>;
     case 'unavailable':
-      return <span>{`Unavailable — ${binary} is not installed on this node.`}</span>;
+      return (
+        <span>
+          {binary === null
+            ? 'Unavailable — this node cannot reach the provider.'
+            : `Unavailable — ${binary} is not installed on this node.`}
+        </span>
+      );
     case 'unknown':
       return (
         <span>

@@ -1132,9 +1132,15 @@ export function createFixtureSeam(): FixtureSeam {
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
 
   /**
-   * All six declared providers, drawn so that every honest-degradation state
-   * is on screen and a surface cannot pass by collapsing two of them. Mutable,
+   * Every declared provider, drawn so that each honest-degradation state is on
+   * screen and a surface cannot pass by collapsing two of them. Mutable,
    * because `disconnect` writes to it.
+   *
+   * The routing pair is scripted too, and in the shape that is hardest to get
+   * right: kimi CONNECTED (so anthropic is simultaneously connected and
+   * displaced — a card that must say both) and groq NOT connected (so its card
+   * must still describe what connecting it would do). A surface that only
+   * renders routing when `connected` is true fails on the second one.
    */
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -1147,6 +1153,12 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'active',
         connectedAt: FIXTURE_NOW,
         lastVerifiedAt: FIXTURE_NOW,
+        routing: {
+          agentTool: 'claude-code',
+          role: 'displaced',
+          counterpart: 'kimi',
+          active: true,
+        },
       },
       // The one true negative — so "not connected" has something real to mean.
       {
@@ -1157,6 +1169,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: null,
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       },
       // `connected: false` here is UNKNOWN, not measured — see gitCredentialStore.
       {
@@ -1167,6 +1180,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: null,
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       },
       // Binary present, but no connection result could be established.
       {
@@ -1177,6 +1191,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'stale',
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       },
       // A successful node-level measurement: this binary is absent.
       {
@@ -1187,6 +1202,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'unavailable',
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       },
       // Cursor has a real status verb: this is a positive probe, not a guess
       // from the presence of files or the login terminal's exit code.
@@ -1198,6 +1214,41 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'active',
         connectedAt: FIXTURE_NOW,
         lastVerifiedAt: FIXTURE_NOW,
+        routing: null,
+      },
+      // An API-key backend that IS in effect. Its `login` is null like every
+      // other file-shaped provider: a pasted key carries no account name.
+      {
+        provider: 'kimi',
+        connected: true,
+        login: null,
+        authMethod: 'api_key',
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
+        routing: {
+          agentTool: 'claude-code',
+          role: 'backend',
+          counterpart: 'anthropic',
+          active: true,
+        },
+      },
+      // Not connected, and still routing-bearing: `active: false` is the
+      // "here is what Connect would do" case.
+      {
+        provider: 'groq',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+        routing: {
+          agentTool: 'codex',
+          role: 'backend',
+          counterpart: 'openai',
+          active: false,
+        },
       },
     ],
     // 'absent' is the fixture's default deliberately: it is the state of the

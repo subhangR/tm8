@@ -4,8 +4,20 @@
 // is in what it REFUSES to accept rather than in what it does. Read
 // CREDENTIAL_LOGIN_COMMANDS below before changing anything here.
 
+import { fileURLToPath } from 'node:url';
+
 import type { PtyHostService } from '../pty/PtyHostService.js';
 import type { Logger } from '../pty/types.js';
+import { shellQuote } from '../spawn/manifest.js';
+import {
+  API_KEY_CREDENTIAL_PROVIDERS,
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_CONSOLE_URL,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_KEY_PREFIX,
+  API_KEY_PROVIDER_VERIFY_URL,
+  type ApiKeyCredentialProvider,
+} from './api-key-credentials.js';
 import { composeCredentialEnv, type CredentialProvider } from './credential-env.js';
 
 /**
@@ -94,15 +106,91 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    above. `cursor-agent logout` also exists, but tm8 Disconnect revokes the
  *    stored credential plus its sessions; invoking a vendor logout is a
  *    separate decision and is deliberately not wired here.
+ *
+ *  kimi, groq — TM8'S OWN HARNESS, not a vendor binary, and the only two
+ *    entries in this table that are not somebody else's program. Neither vendor
+ *    ships a login CLI; both issue an API key from a web console. The
+ *    measurement behind that claim — including the two npm packages whose names
+ *    suggest otherwise and are unrelated software — is recorded in
+ *    `api-key-credentials.ts` rather than repeated here.
+ *
+ *    `credentialBinaryFor` derives `node` from these entries, and that is a
+ *    TRUE answer rather than a convenient one: node is what runs, it is present
+ *    wherever the server is, and the install check consequently passes for the
+ *    right reason. These are the only entries whose binary is not the thing
+ *    being authenticated against, so an installability check for kimi or groq
+ *    says nothing about the vendor — which is correct, because there is nothing
+ *    vendor-supplied to install.
  */
-export const CREDENTIAL_LOGIN_COMMANDS = {
-  anthropic: 'claude auth login',
-  openai: 'codex login --device-auth',
-  github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
-  gemini: 'gemini',
-  hermes: 'hermes login',
-  cursor: 'cursor-agent login',
-} as const satisfies Record<CredentialProvider, string>;
+/**
+ * Absolute path to tm8's own credential paste harness.
+ *
+ * Mirrors {@link echoAgentPath} exactly, including WHY the relative specifier
+ * has the shape it does: `../../harness/credential-paste.mjs` lands on the same
+ * file from `src/credentials/` (vitest, running TypeScript directly) and from
+ * `dist/credentials/` (the built server), because both are two levels below the
+ * package root.
+ */
+export function credentialPastePath(): string {
+  return fileURLToPath(new URL('../../harness/credential-paste.mjs', import.meta.url));
+}
+
+/**
+ * The login command for an API-key provider: tm8's own harness, not a vendor's.
+ *
+ * Every argument is read from `api-key-credentials.ts` at composition time, so
+ * the vendor facts have ONE authority and the `.mjs` — which cannot import
+ * TypeScript — never restates them. Each is shell-quoted because this is a
+ * command STRING handed to a PTY, and the display names contain spaces.
+ *
+ * Nothing here is reachable from a client: the provider is validated against
+ * `CREDENTIAL_PROVIDERS` before a session is minted, and every other argument is
+ * a table lookup. That preserves the property the vendor entries have — the
+ * table is closed over the command, and no caller can influence what runs.
+ */
+function apiKeyLoginCommand(provider: ApiKeyCredentialProvider): string {
+  return [
+    'node',
+    shellQuote(credentialPastePath()),
+    '--provider',
+    shellQuote(provider),
+    '--display',
+    shellQuote(API_KEY_PROVIDER_DISPLAY_NAME[provider]),
+    '--console-url',
+    shellQuote(API_KEY_PROVIDER_CONSOLE_URL[provider]),
+    '--verify-url',
+    shellQuote(API_KEY_PROVIDER_VERIFY_URL[provider]),
+    '--key-prefix',
+    shellQuote(API_KEY_PROVIDER_KEY_PREFIX[provider]),
+    '--filename',
+    shellQuote(API_KEY_FILENAME),
+  ].join(' ');
+}
+
+/**
+ * NOTE ON THE TYPE. This was `as const satisfies Record<CredentialProvider,
+ * string>`, which gave each entry a string-literal type. The two API-key
+ * entries cannot be literals — they embed an absolute path resolved from
+ * `import.meta.url`, which differs between `src/` under vitest and `dist/` on
+ * the deployed server — so the table is now a frozen `Record` built once at
+ * module load. Nothing consumed the literal types: every reader indexes it at
+ * runtime (`credentialBinaryFor`, the launcher, the tests), and the exhaustive
+ * `Record<CredentialProvider, string>` annotation still fails the build if a
+ * provider is added to the union without an entry here, which was the only
+ * guarantee that mattered.
+ */
+export const CREDENTIAL_LOGIN_COMMANDS: Readonly<Record<CredentialProvider, string>> =
+  Object.freeze({
+    anthropic: 'claude auth login',
+    openai: 'codex login --device-auth',
+    github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
+    gemini: 'gemini',
+    hermes: 'hermes login',
+    cursor: 'cursor-agent login',
+    ...(Object.fromEntries(
+      API_KEY_CREDENTIAL_PROVIDERS.map((provider) => [provider, apiKeyLoginCommand(provider)]),
+    ) as Record<ApiKeyCredentialProvider, string>),
+  });
 
 /**
  * Everything the launcher accepts.

@@ -467,7 +467,7 @@ const serviceRpcs: RpcHandler = async (fn) => {
 // ---------------------------------------------------------------------------
 
 describe('credentials.status merges two stores and degrades honestly', () => {
-  it('answers all six providers in display order even when nothing is connected', async () => {
+  it('answers every provider in display order even when nothing is connected', async () => {
     const db = new FakeDb(serviceQueries);
     const registry = registryFor(db);
     const view = await invoke(registry, 'credentials.status', context('credentials.status', 'browser'));
@@ -480,8 +480,96 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       'gemini',
       'hermes',
       'cursor',
+      'kimi',
+      'groq',
     ]);
     expect(parsed.providers.every((p) => p.connected === false)).toBe(true);
+
+    // ROUTING IS REPORTED BEFORE IT HAPPENS, AND ONLY IN ONE DIRECTION.
+    //
+    // Nothing is connected here, so no displacement is in effect — and the
+    // anthropic and openai cards say nothing, because there is nothing yet to
+    // warn them about. The kimi and groq cards still describe themselves, with
+    // `active: false`, because "what would connecting this do" is precisely the
+    // question a member has in front of the Connect button. A surface that only
+    // emitted routing for connected providers would answer it only after it was
+    // too late to matter.
+    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+    expect(routingOf.get('anthropic')).toBeNull();
+    expect(routingOf.get('openai')).toBeNull();
+    expect(routingOf.get('github')).toBeNull();
+    expect(routingOf.get('kimi')).toEqual({
+      agentTool: 'claude-code',
+      role: 'backend',
+      counterpart: 'anthropic',
+      active: false,
+    });
+    expect(routingOf.get('groq')).toEqual({
+      agentTool: 'codex',
+      role: 'backend',
+      counterpart: 'openai',
+      active: false,
+    });
+  });
+
+  it('says on BOTH cards which one is actually serving claude-code', async () => {
+    // The member has connected Kimi AND still has a working Anthropic login.
+    // This is the state the whole disclosure exists for: two connected
+    // credentials, one silently outranking the other, and — until this field —
+    // nothing in the product that said which.
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('to_regclass')) return [{ present: false }];
+      if (sql.includes('account_agent_credentials')) {
+        return [
+          {
+            provider: 'anthropic',
+            login: null,
+            auth_method: 'oauth',
+            status: 'active',
+            connected_at: new Date('2026-09-01T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
+          },
+          {
+            provider: 'kimi',
+            login: null,
+            auth_method: 'api_key',
+            status: 'active',
+            connected_at: new Date('2026-09-02T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-02T00:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    });
+    const registry = registryFor(db);
+    const parsed = CredentialsStatusViewSchema.parse(
+      await invoke(registry, 'credentials.status', context('credentials.status', 'browser')),
+    );
+    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+
+    // The backend says what it is doing.
+    expect(routingOf.get('kimi')).toEqual({
+      agentTool: 'claude-code',
+      role: 'backend',
+      counterpart: 'anthropic',
+      active: true,
+    });
+
+    // And the provider it displaced says so from its own card, which is the
+    // half a member is far more likely to be looking at when their sessions
+    // start answering differently. Anthropic is still CONNECTED — nothing was
+    // revoked — it is simply not the one being used.
+    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
+    expect(routingOf.get('anthropic')).toEqual({
+      agentTool: 'claude-code',
+      role: 'displaced',
+      counterpart: 'kimi',
+      active: true,
+    });
+
+    // Groq is not connected, so codex is untouched and openai stays silent.
+    expect(routingOf.get('openai')).toBeNull();
+    expect(routingOf.get('groq')?.active).toBe(false);
   });
 
   it('reports an absent CLI as unavailable, never as a measured disconnection', async () => {

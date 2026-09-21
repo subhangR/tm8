@@ -16,7 +16,23 @@ export {
 } from './credential-env.js';
 
 export {
+  API_KEY_CREDENTIAL_PROVIDERS,
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_CONSOLE_URL,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_KEY_PREFIX,
+  API_KEY_PROVIDER_VERIFY_URL,
+  apiKeyBackendAgentTool,
+  apiKeyBackendDisplaces,
+  apiKeyBackendEnv,
+  apiKeyBackendsForAgentTool,
+  isApiKeyCredentialProvider,
+  type ApiKeyCredentialProvider,
+} from './api-key-credentials.js';
+
+export {
   CredentialSessionLauncher,
+  credentialPastePath,
   CREDENTIAL_LOGIN_COMMANDS,
   type CredentialLaunchRequest,
   type CredentialLaunchResult,

@@ -1003,18 +1003,49 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Main has not moved under this branch, so the two differ by exactly its
     // one file.
     //
-    // 175 -> 177 (195): TWO files, and only one of them is this lane's. The pin
-    // was ALREADY RED on main when this branch arrived — 194_drawing_kind.sql
-    // landed with #627 without moving it, the same silent drift the paragraph
-    // above describes. RE-MEASURED rather than incremented, 2026-09-19:
-    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 176
-    //   ls db/migrations/*.sql | wc -l                                          -> 177
-    //   duplicate prefixes                                                      -> 0
-    //   git rev-list --count HEAD..origin/main                                  -> 0
-    // Main has not moved under this branch, so the two differ by exactly this
-    // lane's one file, 195_preview_invite_knows_a_member.sql — and the jump of
-    // two from the pin is 194's drift plus it.
-    expect(server.appliedMigrations.length).toBe(177);
+    // 175 -> 178 (196): THREE files, and none of the three arithmetic is this
+    // branch's alone. The pin is a statement about the tree that exists AFTER
+    // this branch merges, and this branch is the THIRD of three to touch it in
+    // one afternoon, so the number cannot be derived from what is on disk here.
+    // Written out, because a bare integer is exactly what nobody can reconstruct
+    // later:
+    //
+    //   base main fa9a9aed                                              176 files, pin 175
+    //   #636  repairs the inherited red, adds no migration              176 files, pin 176
+    //   #635  adds 195_*.sql                                            177 files, pin 177
+    //   THIS  adds 196_kimi_groq_credentials.sql                        178 files, pin 178
+    //
+    // The 176/175 gap at the base is NOT this branch's to explain away:
+    // 194_drawing_kind.sql landed on main in 5e1f9e1e ("Drawing as an entity,
+    // with Excalidraw", #627) WITHOUT updating this number, so main has been red
+    // on this assertion since it merged. That is precisely the failure every
+    // paragraph above predicts — a bare integer no grep phrased as "drawing"
+    // could ever reach. It is recorded here rather than quietly absorbed,
+    // because a branch that silently fixes an inherited red teaches the next
+    // author that the pin drifts harmlessly. #636 owns that repair.
+    //
+    // THIS BRANCH'S FILE WAS RENUMBERED 195 -> 196, and that is the load-bearing
+    // half. #635 also adds a `195_*.sql`. Two files sharing a numeric prefix
+    // survive every pre-merge check on both branches — git does not conflict on
+    // two ADDED files with different names, `migrations-check.sh:70` sees one
+    // tree at a time, and `db/migrate.mjs:146` only refuses the duplicate at
+    // DEPLOY time, by which point it is on main. The duplicate-prefix assertion
+    // below is the check that would have caught it, and it can only catch it
+    // after the merge that creates it. So the collision is resolved BEFORE the
+    // merge instead: #635 keeps 195_, this branch takes 196_.
+    //
+    // MEASURED on this branch's tree, not incremented:
+    //   git ls-tree -r --name-only fa9a9aed db/migrations | grep -c '\.sql$' -> 176
+    //   ls db/migrations/*.sql | wc -l                                       -> 177
+    //   duplicate prefixes                                                   -> 0
+    //
+    // 177 on disk, 178 pinned: the one file of the difference is #635's 195_,
+    // which is not in this worktree and cannot be. THIS ASSERTION IS THEREFORE
+    // RED ON THIS BRANCH ALONE AND GREEN ONLY ONCE #635 HAS MERGED — deliberately,
+    // and stated here so the next reader does not "fix" it back down to 177 and
+    // hand main a silently-short count. If this branch ends up landing BEFORE
+    // #635, this number is wrong and the correct edit is 177, not a re-guess.
+    expect(server.appliedMigrations.length).toBe(178);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

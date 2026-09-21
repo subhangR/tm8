@@ -14,7 +14,19 @@ type ProviderMark = ComponentType<SVGProps<SVGSVGElement>>;
 
 export interface CredentialProviderPresentation {
   name: string;
-  binary: string;
+  /**
+   * The vendor CLI this credential belongs to, or `null` when there is no CLI.
+   *
+   * Nullable because of Kimi and Groq. Every other provider is reached by
+   * running someone's binary, and the card says which one so that "Unavailable"
+   * can name the thing to install. Those two have no vendor CLI at all — tm8's
+   * own paste prompt captures an API key — and the binary the server actually
+   * measures for them is `node`, which ships with the server and is never
+   * missing. Printing `node` on a Kimi card would answer a question nobody
+   * asked and imply that installing node is what connects Kimi. `null` says the
+   * true thing instead: this credential is a key, not a program.
+   */
+  binary: string | null;
   icon: ProviderMark;
   /** The only legacy store-completeness exception in the status response. */
   needsGitCredentialStore: boolean;
@@ -118,6 +130,36 @@ function CursorMark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// A crescent — Kimi/Moonshot. Drawn as one path with an even-odd bite taken out
+// of it so the shape reads at 22px without a second colour.
+function KimiMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} {...markProps}>
+      <path
+        d="M15.4 3.7a8.7 8.7 0 1 0 4.9 14.6A9.6 9.6 0 0 1 15.4 3.7Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle cx="9.6" cy="10.3" r="1.15" fill="currentColor" />
+    </svg>
+  );
+}
+
+// A bolt — Groq, whose one distinguishing claim is inference speed.
+function GroqMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} {...markProps}>
+      <path
+        d="M13.6 3.2 6.4 13h4.6l-1.6 7.8L17.6 11H13l.6-7.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
   anthropic: {
     name: 'Claude Code',
@@ -155,8 +197,36 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
     icon: CursorMark,
     needsGitCredentialStore: false,
   },
+  // The two API-key providers. `binary: null` is explained on the field above.
+  // The names carry the vendor rather than the model family — a member pastes a
+  // key from platform.moonshot.ai, and "Kimi" alone would not tell them which
+  // console to open.
+  kimi: {
+    name: 'Kimi (Moonshot AI)',
+    binary: null,
+    icon: KimiMark,
+    needsGitCredentialStore: false,
+  },
+  groq: {
+    name: 'Groq',
+    binary: null,
+    icon: GroqMark,
+    needsGitCredentialStore: false,
+  },
 } as const satisfies Record<CredentialProviderName, CredentialProviderPresentation>;
 
 export function presentationOf(provider: CredentialProviderName): CredentialProviderPresentation {
   return CREDENTIAL_PROVIDER_PRESENTATIONS[provider];
+}
+
+/**
+ * What to print in the small monospace chip beside a provider's name.
+ *
+ * One function rather than `?? 'API key'` at each call site: the fallback is a
+ * claim about the credential's SHAPE, and three copies of it would be three
+ * places to disagree the next time a provider arrives with neither a CLI nor a
+ * key.
+ */
+export function providerBinaryLabel(provider: CredentialProviderName): string {
+  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider].binary ?? 'API key';
 }

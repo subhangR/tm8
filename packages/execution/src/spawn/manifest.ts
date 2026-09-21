@@ -43,6 +43,13 @@ import {
   type AgentCredentialHome,
   type AgentCredentialProvider,
 } from './agent-credentials.js';
+// Type-only in the other direction: `api-key-credentials.ts` imports nothing
+// from this module at runtime, so this does not close the cycle the header of
+// `agent-credentials.ts` warns about between `manifest.ts` and `credential-env.ts`.
+import {
+  apiKeyBackendEnv,
+  isApiKeyCredentialProvider,
+} from '../credentials/api-key-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
 
 /** Fallback when neither the request nor the persona names a model. */
@@ -1094,6 +1101,30 @@ export function composeEnv(
     // NOT connected keeps today's behaviour exactly.
     for (const key of AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider]) {
       delete env[key];
+    }
+
+    // API-KEY BACKEND ROUTING — LAST, AND THE ORDER IS THE CORRECTNESS.
+    //
+    // A member who has connected Kimi runs `claude` against Moonshot, and one
+    // who has connected Groq runs `codex` against Groq. Both are expressed the
+    // same way: point the tool's vendor SDK at a different base URL and give it
+    // the member's key. Nothing about the launch changes — same binary, same
+    // manifest, same session row — which is why this is four lines rather than
+    // a second spawn path.
+    //
+    // It must come after the suppression loop above, and for Groq that is not a
+    // stylistic preference: `OPENAI_API_KEY` is BOTH the node key we delete and
+    // the variable we set. Inject first and the delete silently removes the
+    // member's key, leaving a session pointed at Groq's base URL with no
+    // credential — a 401 far from here, with nothing in the environment to
+    // suggest why. Suppress first, then route, and the node's value is gone and
+    // the member's is the only one present.
+    //
+    // `apiKey` is absent for every file-shaped provider, so this branch is
+    // inert for them rather than conditional on a provider list that would need
+    // maintaining in a third place.
+    if (isApiKeyCredentialProvider(credentialHome.provider) && credentialHome.apiKey) {
+      Object.assign(env, apiKeyBackendEnv(credentialHome.provider, credentialHome.apiKey));
     }
   }
 
