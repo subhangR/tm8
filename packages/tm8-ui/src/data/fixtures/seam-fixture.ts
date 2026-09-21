@@ -114,6 +114,8 @@ import {
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
   type SessionGitDiff,
+  type SessionGitDiffHunk,
+  type SessionGitDiffScope,
   type SessionGitFile,
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
@@ -182,6 +184,10 @@ const FIXTURE_FILE_CHANGES = {
         { tool: 'edit' as const, linesAdded: 5, linesRemoved: 1, oldText: 'const RETRY = 1;', newText: 'const RETRY = 3; // measured' },
       ],
       hunksTruncated: false,
+      // The agent's most recent turn touched the source but not the test —
+      // the fixture carries BOTH values so a surface that ignores the flag
+      // renders identically to one that reads it, and only a test can tell.
+      lastTurn: true,
     },
     {
       path: 'packages/execution/test/spawn-loop.test.ts',
@@ -192,12 +198,14 @@ const FIXTURE_FILE_CHANGES = {
         { tool: 'write' as const, linesAdded: 22, linesRemoved: 0, oldText: null, newText: null },
       ],
       hunksTruncated: true,
+      lastTurn: false,
     },
   ],
   totalAdded: 36,
   totalRemoved: 3,
   filesTruncated: false,
   source: 'transcript' as const,
+  turns: 4,
 };
 
 /**
@@ -1289,6 +1297,8 @@ export function createFixtureSeam(): FixtureSeam {
           diffTruncated: false,
           scope: 'session' as const,
           path: null,
+          hunks: null,
+          hunkDigest: null,
           untracked: false,
         };
   };
@@ -1329,6 +1339,53 @@ export function createFixtureSeam(): FixtureSeam {
       '',
     ].join('\n');
   };
+  /**
+   * The fixture's hunk listing, obeying the SAME four refusals the server
+   * does — no `path`, the `session` scope, a truncated diff, and an untracked
+   * file all answer null.
+   *
+   * Mirroring the refusals is the point, not the parsing. A fixture that
+   * cheerfully offered hunks for the session scope would let the Changes
+   * surface wire a selection the real server rejects, and every test would
+   * pass on the way to a feature that fails the first time it runs.
+   *
+   * The digest is a cheap deterministic hash, not sha256: the fixture never
+   * has to AGREE with the server's digest, only to change when the hunks do.
+   */
+  const fxHunks = (
+    diff: string,
+    scope: SessionGitDiffScope,
+    wantPath: string | null,
+    truncated: boolean,
+    untracked: boolean,
+  ): { hunks: SessionGitDiffHunk[] | null; hunkDigest: string | null } => {
+    if (wantPath === null || truncated || untracked) return { hunks: null, hunkDigest: null };
+    if (scope !== 'staged' && scope !== 'unstaged') return { hunks: null, hunkDigest: null };
+    const lines = diff.split('\n');
+    const hunks: SessionGitDiffHunk[] = [];
+    for (const line of lines) {
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
+      if (m !== null) {
+        hunks.push({
+          index: hunks.length + 1,
+          heading: (m[3] ?? '').trim(),
+          oldStart: Number(m[1]),
+          newStart: Number(m[2]),
+          text: line,
+        });
+      } else if (hunks.length > 0) {
+        const last = hunks[hunks.length - 1]!;
+        last.text = `${last.text}\n${line}`;
+      }
+    }
+    if (hunks.length === 0) return { hunks: null, hunkDigest: null };
+    let h = 0;
+    for (const hunk of hunks) {
+      for (const ch of hunk.text) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+    }
+    return { hunks, hunkDigest: `sha256:fixture-${(h >>> 0).toString(16)}` };
+  };
+
   const requireGitLane = (sessionId: EntityId): void => {
     requireSummary(sessionId);
     if (sessionId !== sessionLive.id) {
@@ -2883,6 +2940,7 @@ export function createFixtureSeam(): FixtureSeam {
           : { filesChanged: 0, additions: 0, deletions: 0 },
         files: hasWork ? rows : [],
         filesTruncated: false,
+        ...fxHunks(diff, scope, wantPath, diffTruncated, untracked),
         diff,
         diffTruncated,
         scope,

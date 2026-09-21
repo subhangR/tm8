@@ -415,3 +415,64 @@
 .cv2-root .pn-chg__empty {
   margin: var(--pn-space-4);
 }
+
+/* -- choosing part of a file ---------------------------------------------
+
+   The strip sits between the diff's head and its body, which is where the
+   choice it governs is made: the checkboxes themselves are on the `@@` lines
+   inside the diff, and a control strip anywhere else would be a count with no
+   visible relationship to the thing being counted. */
+.cv2-root .pn-chg__hunks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0;
+}
+
+.cv2-root .pn-chg__hunk-count {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  margin-right: auto;
+}
+
+/* -- the phone arrangement ------------------------------------------------
+
+   `[data-arrangement='phone']` is set from `oneSurface`, NOT from a width.
+   A media query here would also fire on a narrowed desktop window, where both
+   panes are still reachable and hiding one would strand the reviewer with no
+   back control — the button only exists under the phone shell.
+
+   ONE PANE FILLS THE SCREEN. The 60vh cap above keeps two side-by-side panes
+   from pushing the commit bar off a desktop page; on a phone only one pane is
+   mounted, so the same cap would draw a short scrolling window with dead space
+   under it and the bar floating below. */
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__split {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__list-pane,
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__diff-pane {
+  max-height: none;
+}
+
+.cv2-root .pn-chg__back {
+  align-self: flex-start;
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-info);
+  background: none;
+  border: none;
+  padding: var(--pn-space-2) 0;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__back:hover {
+  text-decoration: underline;
+}
+
+/* The commit message is the one control that cannot share a row at this width
+   without becoming a two-character box. */
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__message {
+  flex: 1 1 100%;
+}

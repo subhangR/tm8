@@ -749,6 +749,140 @@ describe('execution.gitStage / scoped gitDiff / exact gitCommit', () => {
       handlerFor(bare, 'execution.gitStage')(ctxFor({}, { action: 'stage', paths: ['a.txt'] })),
     ).rejects.toMatchObject({ code: 'conflict', details: { reason: 'no_worktree' } });
   });
+
+  /*
+   * PER-HUNK STAGING through the facade.
+   *
+   * The execution package proves the git mechanics; what is proved HERE is the
+   * seam a client actually touches: that `gitDiff` hands out hunks with a
+   * digest, that `gitStage` takes indices into exactly those hunks, and that
+   * the two agree without a round trip in between. If they ever disagreed,
+   * every selection would come back "stale" with no edit to explain it.
+   */
+  const HUNKY_BASE = Array.from({ length: 24 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+  /** First change INSERTS, so hunk 2's post-image start differs from its pre-image start. */
+  const HUNKY_EDIT = HUNKY_BASE
+    .replace('line 2\n', 'line 2\nINSERTED\n')
+    .replace('line 20\n', 'CHANGED 20\n');
+
+  async function twoHunkFile(): Promise<void> {
+    await writeFile(join(repo, 'h.txt'), HUNKY_BASE);
+    git(repo, 'add', 'h.txt');
+    git(repo, 'commit', '-m', 'hunky base');
+    await writeFile(join(repo, 'h.txt'), HUNKY_EDIT);
+  }
+
+  it('offers hunks with a digest on a path-scoped unstaged diff', async () => {
+    await twoHunkFile();
+    const d = await diff({ scope: 'unstaged', path: 'h.txt' });
+    expect(d.hunks).not.toBeNull();
+    expect(d.hunks).toHaveLength(2);
+    expect(d.hunkDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(d.hunks![0]!.index).toBe(1);
+    expect(d.hunks![1]!.text).toContain('CHANGED 20');
+  });
+
+  it('offers NO hunks for the session scope, whose pre-image is not the index', async () => {
+    await twoHunkFile();
+    const session = await diff({ scope: 'session', path: 'h.txt' });
+    // The diff text is there; the selection is not, because `git apply
+    // --cached` could not take it. Null, never an empty list.
+    expect(session.diff).toContain('CHANGED 20');
+    expect(session.hunks).toBeNull();
+    expect(session.hunkDigest).toBeNull();
+  });
+
+  it('offers no hunks for a whole-tree diff, where an index has no file to point into', async () => {
+    await twoHunkFile();
+    expect((await diff({ scope: 'unstaged' })).hunks).toBeNull();
+  });
+
+  it('stages one hunk of a file and leaves the other pending', async () => {
+    await twoHunkFile();
+    const listed = await diff({ scope: 'unstaged', path: 'h.txt' });
+
+    const res = await stage({
+      action: 'stage',
+      hunks: { path: 'h.txt', indices: [2], digest: listed.hunkDigest },
+    });
+    expect(res.hunkSelection).toEqual({ path: 'h.txt', applied: 1, total: 2 });
+    expect(res.paths).toEqual(['h.txt']);
+    expect(res.all).toBe(false);
+
+    // The index holds hunk 2 only — read the staged BYTES, not the porcelain.
+    const stagedText = git(repo, 'show', ':h.txt');
+    expect(stagedText).toContain('CHANGED 20');
+    expect(stagedText).not.toContain('INSERTED');
+    // and the file is now both staged and unstaged, which is the whole point.
+    expect(res.dirty.staged).toBe(1);
+    expect(res.dirty.unstaged).toBe(1);
+  });
+
+  it('unstages one hunk back out, reading the staged side for its indices', async () => {
+    await twoHunkFile();
+    git(repo, 'add', 'h.txt');
+
+    const stagedDiff = await diff({ scope: 'staged', path: 'h.txt' });
+    expect(stagedDiff.hunks).toHaveLength(2);
+
+    const res = await stage({
+      action: 'unstage',
+      hunks: { path: 'h.txt', indices: [1], digest: stagedDiff.hunkDigest },
+    });
+    expect(res.hunkSelection).toEqual({ path: 'h.txt', applied: 1, total: 2 });
+    const stagedText = git(repo, 'show', ':h.txt');
+    expect(stagedText).not.toContain('INSERTED');
+    expect(stagedText).toContain('CHANGED 20');
+    // An unstage never touches disk: the working tree still has both changes.
+    expect(await readFileText(join(repo, 'h.txt'))).toBe(HUNKY_EDIT);
+  });
+
+  it('refuses a selection whose digest went stale under a concurrent write', async () => {
+    await twoHunkFile();
+    const listed = await diff({ scope: 'unstaged', path: 'h.txt' });
+    // An agent turn writes the file between render and click.
+    await writeFile(join(repo, 'h.txt'), HUNKY_EDIT.replace('CHANGED 20', 'CHANGED 20 AGAIN'));
+
+    await expect(
+      stage({ action: 'stage', hunks: { path: 'h.txt', indices: [2], digest: listed.hunkDigest } }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    // Refusing means refusing: the index did not move on the way to the throw.
+    expect(git(repo, 'diff', '--cached', '--name-only')).toBe('');
+  });
+
+  it('refuses hunks combined with paths or all, rather than ranking two scopes', async () => {
+    await twoHunkFile();
+    await expect(
+      stage({ action: 'stage', paths: ['h.txt'], hunks: { path: 'h.txt', indices: [1] } }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(
+      stage({ action: 'stage', all: true, hunks: { path: 'h.txt', indices: [1] } }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('refuses a non-integer or zero hunk index before git is reached', async () => {
+    await twoHunkFile();
+    for (const bad of [0, -1, 1.5, 'two' as unknown as number]) {
+      await expect(
+        stage({ action: 'stage', hunks: { path: 'h.txt', indices: [bad] } }),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+    }
+  });
+
+  it('refuses a hunk path that escapes the worktree', async () => {
+    await twoHunkFile();
+    await expect(
+      stage({ action: 'stage', hunks: { path: '../outside.txt', indices: [1] } }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('offers no hunks for an untracked file, which has no diff to split', async () => {
+    await writeFile(join(repo, 'brand-new.txt'), 'hello\n');
+    const d = await diff({ scope: 'unstaged', path: 'brand-new.txt' });
+    expect(d.untracked).toBe(true);
+    expect(d.hunks).toBeNull();
+  });
+
 });
 
 async function readFileText(path: string): Promise<string> {

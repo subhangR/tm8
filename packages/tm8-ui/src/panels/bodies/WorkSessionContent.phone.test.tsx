@@ -61,6 +61,7 @@ describe('WorkSessionContent on a phone', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Transcript',
       'Terminal',
+      'Changes',
     ]);
     expect(screen.getByTestId('work-session-content').dataset.surface).toBe('transcript');
     /* Two fields, not one: `data-surface` says what is SHOWING and
@@ -73,13 +74,13 @@ describe('WorkSessionContent on a phone', () => {
   /**
    * THE ONE THIS FILE EXISTS FOR.
    *
-   * Removing four surfaces is defensible. Removing them QUIETLY is the DEF-003
+   * Removing three surfaces is defensible. Removing them QUIETLY is the DEF-003
    * pathology — the phone had no account menu, no space switcher and no sign-out
    * for months, and every tap census scored those screens as passing, because
    * absence measures as health. If this assertion is ever deleted along with the
    * marker, nothing else in the suite and nothing in the instrument will notice.
    */
-  it('states the four surfaces it refuses rather than dropping them silently', () => {
+  it('states the three surfaces it refuses rather than dropping them silently', () => {
     phone(
       <WorkSessionContent
         sessionId={SESSION}
@@ -90,17 +91,19 @@ describe('WorkSessionContent on a phone', () => {
     );
 
     const marker = screen.getByTestId('work-session-surface-refused-marker');
-    /* Changes is refused BY NAME like the other three. It is the newest
-       surface and the most tempting one to ship phone-shaped, and a reviewer
-       holding a selection across several diffs at 390px cannot see the file
-       list and the diff at the same time — so the phone says so. */
-    expect(marker.textContent).toContain('Changes');
     expect(marker.textContent).toContain('Git');
     expect(marker.textContent).toContain('Debug');
     expect(marker.textContent).toContain('Graph');
-    /* It is a STATEMENT, not a third tab: a screen reader walking the tablist
+    /* CHANGES IS NOT IN THE MARKER ANY MORE, and this assertion is the one that
+       has to be updated deliberately when a refusal is retired. Changes got a
+       phone arrangement — list, or one full-width diff with a way back — so it
+       is offered as a tab. Leaving its name in the refusal card while its chip
+       sat in the bar would be the same silence this file exists to catch,
+       pointing the other way: a surface REPORTED missing that is right there. */
+    expect(marker.textContent).not.toContain('Changes');
+    /* It is a STATEMENT, not a fourth tab: a screen reader walking the tablist
        must not be offered something it cannot select. */
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
   });
 
   /**

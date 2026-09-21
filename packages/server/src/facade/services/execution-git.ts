@@ -24,7 +24,7 @@
  * Reads cap their output — digest+partial, the transcript precedent: the
  * numstat digest is always complete, the unified diff text is byte-capped.
  */
-import { CollabError, type SessionGitBranchResult, type SessionGitCheckpointResult, type SessionGitCherryPickResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitDiffScope, type SessionGitFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStageResult, type SessionGitStashResult, type SessionGitStatus, type ExecutionGitBranchInput, type ExecutionGitCheckpointInput, type ExecutionGitCherryPickInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput, type ExecutionGitStageInput, type ExecutionGitStashInput } from '@tm8/contract';
+import { CollabError, type SessionGitBranchResult, type SessionGitCheckpointResult, type SessionGitCherryPickResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitDiffHunk, type SessionGitDiffScope, type SessionGitFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStageResult, type SessionGitStashResult, type SessionGitStatus, type ExecutionGitBranchInput, type ExecutionGitCheckpointInput, type ExecutionGitCherryPickInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput, type ExecutionGitStageInput, type ExecutionGitStashInput } from '@tm8/contract';
 import {
   WorktreeError,
   assertSafePathspec,
@@ -35,10 +35,12 @@ import {
   cherryPick,
   commit,
   mergeFromRef,
+  readHunks,
   resolveCommitish,
   rollback,
   runGit,
   stage,
+  stageHunks,
   stagedFiles,
   stashDrop,
   stashList,
@@ -297,6 +299,42 @@ function liftWorktreeError(error: unknown): never {
   throw error;
 }
 
+/**
+ * The selectable-hunk half of a `gitDiff` answer, or a pair of nulls.
+ *
+ * FOUR REASONS THERE IS NOTHING TO OFFER, and each is a correct answer rather
+ * than a gap in the read:
+ *
+ *   · no `path` — hunk indices are per-file, and a whole-tree diff has no file
+ *     for them to index into;
+ *   · `session` scope — it is measured from the MERGE-BASE, so its hunks have
+ *     a pre-image that is not the index and `git apply --cached` cannot take
+ *     them. Offering them would offer a selection the stage verb must refuse;
+ *   · the diff text was CUT by the byte cap — the hunks still parse, and that
+ *     is the trap: they would be a selection over a file whose end the
+ *     reviewer never saw. Better to offer none than to offer a truncated set
+ *     that looks complete;
+ *   · untracked or binary — `readHunks` answers null for both, because there
+ *     is no diff to split.
+ *
+ * A failure to READ is never swallowed into null. A client that cannot
+ * distinguish "no hunks here" from "the hunk read broke" would quietly lose
+ * the feature the day it regresses, so anything unexpected propagates.
+ */
+async function hunkListing(
+  worktreePath: string,
+  wantPath: string | null,
+  scope: SessionGitDiffScope,
+  truncated: boolean,
+): Promise<{ hunks: SessionGitDiffHunk[] | null; hunkDigest: string | null }> {
+  if (wantPath === null || truncated || (scope !== 'staged' && scope !== 'unstaged')) {
+    return { hunks: null, hunkDigest: null };
+  }
+  const listing = await readHunks({ worktreePath, path: wantPath, staged: scope === 'staged' });
+  if (listing === null) return { hunks: null, hunkDigest: null };
+  return { hunks: listing.hunks, hunkDigest: listing.digest };
+}
+
 export class ExecutionGitService {
   private readonly deps: FacadeDeps;
 
@@ -519,6 +557,8 @@ export class ExecutionGitService {
       scope,
       path: wantPath,
       untracked: false,
+      hunks: null,
+      hunkDigest: null,
       checkedAt: new Date().toISOString(),
     };
     if (reason !== null) return empty;
@@ -795,6 +835,7 @@ export class ExecutionGitService {
       diffTruncated: truncated,
       scope,
       path: wantPath,
+      ...(await hunkListing(path, wantPath, scope, truncated)),
       untracked,
       checkedAt: new Date().toISOString(),
     };
@@ -958,6 +999,25 @@ export class ExecutionGitService {
     const lane = await this.resolveLane(ctx);
     const { worktreeId, path, branch } = ExecutionGitService.requireActiveLane(lane);
     const input = ctx.body as ExecutionGitStageInput;
+
+    /*
+     * A HUNK SELECTION IS A DIFFERENT SCOPE, NOT AN EXTRA FILTER.
+     *
+     * `paths` and `all` name whole files; `hunks` names part of one. Combining
+     * them has no honest meaning — there is no ranking of "these three files,
+     * and also hunks 1 and 4 of the second one" that a reviewer could predict
+     * — so naming two scopes is refused rather than resolved. The refusal is
+     * cheap and the silent resolution would be a wrong commit.
+     */
+    if (input.hunks !== undefined) {
+      if (input.paths !== undefined || input.all !== undefined) {
+        throw new CollabError('invalid_input', 'hunks cannot be combined with paths or all', {
+          details: { reason: 'mixed_stage_scope', hint: 'send hunks alone; it already names its file' },
+        });
+      }
+      return await this.stageHunkSelection(ctx, lane, worktreeId, path, branch, input);
+    }
+
     const params = {
       worktreePath: path,
       expectedBranch: branch,
@@ -1002,6 +1062,77 @@ export class ExecutionGitService {
         files: files.slice(0, STATUS_FILES_CAP),
         filesTruncated: files.length > STATUS_FILES_CAP,
         dirty,
+        checkedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
+
+  /**
+   * The `hunks` branch of `execution.gitStage`.
+   *
+   * WHICH SIDE IS READ IS DECIDED BY THE ACTION, not by the caller: staging
+   * reads the unstaged diff (index -> worktree) and unstaging reads the staged
+   * one (HEAD -> index). A caller cannot ask to stage hunks "of the staged
+   * diff", because those hunks are already staged — the parameter would only
+   * exist to be got wrong.
+   */
+  private readonly stageHunkSelection = async (
+    ctx: RequestContext,
+    lane: { session_id: string; branch: string | null },
+    worktreeId: string,
+    path: string,
+    branch: string,
+    input: ExecutionGitStageInput,
+  ): Promise<SessionGitStageResult> => {
+    const selection = input.hunks as NonNullable<ExecutionGitStageInput['hunks']>;
+    if (!Array.isArray(selection.indices) || selection.indices.length === 0) {
+      throw new CollabError('invalid_input', 'hunks.indices must name at least one hunk', {
+        details: { reason: 'no_hunks_selected' },
+      });
+    }
+    for (const index of selection.indices) {
+      if (!Number.isInteger(index) || index < 1) {
+        throw new CollabError('invalid_input', `hunk index must be a positive integer, got ${String(index)}`, {
+          details: { reason: 'invalid_hunk_index', index },
+        });
+      }
+    }
+    try {
+      const result = await stageHunks({
+        worktreePath: path,
+        expectedBranch: branch,
+        path: requireSafePath(selection.path),
+        indices: selection.indices,
+        ...(selection.digest === undefined ? {} : { digest: selection.digest }),
+        reverse: input.action === 'unstage',
+      });
+      const porcelain = await runGit(['status', '--porcelain=v1', '-z', '-uall'], { cwd: path });
+      if (porcelain.code !== 0) {
+        // Same split as the whole-file path: the index MOVED and the re-read
+        // failed, so the refusal says which half happened rather than
+        // reporting a failure that would misdescribe the worktree.
+        throw new CollabError('upstream_unavailable', 'the index was updated but the worktree could not be re-read', {
+          details: { reason: 'status_unreadable_after_apply', applied: true, action: input.action },
+        });
+      }
+      const { files, dirty } = parsePorcelain(porcelain.stdout);
+      return {
+        sessionId: lane.session_id,
+        worktreeId,
+        action: input.action,
+        branch,
+        // The one file the selection touched. Unlike the whole-file path this
+        // can never expand: a rename has no hunks to split, so there is no
+        // second half for the server to have quietly included.
+        paths: [result.path],
+        all: false,
+        staged: result.staged,
+        files: files.slice(0, STATUS_FILES_CAP),
+        filesTruncated: files.length > STATUS_FILES_CAP,
+        dirty,
+        hunkSelection: { path: result.path, applied: result.appliedHunks, total: result.totalHunks },
         checkedAt: new Date().toISOString(),
       };
     } catch (error) {

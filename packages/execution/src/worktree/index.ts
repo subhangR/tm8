@@ -33,17 +33,21 @@ export {
   commit,
   currentBranch,
   mergeFromRef,
+  readHunks,
   resolveCommitish,
   rollback,
   stage,
+  stageHunks,
   stagedFiles,
   unstage,
   type ChangedFile,
   type CheckpointResult,
   type CommitResult,
   type GitIdentity,
+  type HunkListing,
   type MergeResult,
   type RollbackResult,
+  type StageHunksResult,
 } from './git-mutations.js';
 // Tier 2 completion — cherry-pick / branch ops / stash (same subpath law).
 export {

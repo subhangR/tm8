@@ -20,6 +20,11 @@
  *     removal count would be a claim with nothing behind it.
  *   * Sidechain (sub-agent) edits are INCLUDED: a file changed by a session's
  *     sub-agent was changed by that session's run.
+ *   * `lastTurn` marks the files the agent's MOST RECENT turn wrote, where a
+ *     turn is the work following one real user prompt. It can be a false
+ *     NEGATIVE — a shell-made change in that same turn is invisible here, as
+ *     above — so it is evidence a file WAS touched and never evidence that it
+ *     was not.
  *
  * Claude-code dialect only for now. Codex records patches as `apply_patch`
  * argument text in a different envelope; until that parser exists the caller
@@ -51,6 +56,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 interface Accumulator {
   change: SessionFileChange;
+  /** The turn number that last wrote this file; compared to the final one at EOF. */
+  lastEpoch: number;
 }
 
 function addHunk(
@@ -58,15 +65,18 @@ function addHunk(
   order: string[],
   path: string,
   hunk: SessionFileHunk,
+  epoch: number,
 ): void {
   let acc = byPath.get(path);
   if (acc === undefined) {
     acc = {
-      change: { path, edits: 0, linesAdded: 0, linesRemoved: 0, hunks: [], hunksTruncated: false },
+      change: { path, edits: 0, linesAdded: 0, linesRemoved: 0, hunks: [], hunksTruncated: false, lastTurn: false },
+      lastEpoch: epoch,
     };
     byPath.set(path, acc);
     order.push(path);
   }
+  acc.lastEpoch = epoch;
   acc.change.edits += 1;
   acc.change.linesAdded += hunk.linesAdded;
   acc.change.linesRemoved += hunk.linesRemoved;
@@ -155,10 +165,36 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
   const order: string[] = [];
   let filesTruncated = false;
 
+  /*
+   * TURN NUMBERING. `epoch` starts at 1 and advances on every real user
+   * prompt, so the work before anyone has replied is turn 1 — an autonomous
+   * run nobody prompted twice is one whole turn, and every file it touched is
+   * correctly its last turn's.
+   *
+   * A PROMPT IS NARROWER THAN A `user` RECORD, and the exclusions are the
+   * substance of this, not tidying:
+   *   · a tool RESULT arrives as a `type:'user'` record in claude's dialect,
+   *     so counting user records would start a new turn between an agent's
+   *     own tool call and its answer — every edit would land in a turn of its
+   *     own and `lastTurn` would mean "the final edit", not "the final turn";
+   *   · the harness re-injects a COMPACTION SUMMARY as a user turn. Counting
+   *     it would open a fresh turn the agent never worked in, and a panel
+   *     reading `lastTurn` would report that the agent changed nothing —
+   *     wrong precisely when a long session is most worth reviewing;
+   *   · a SIDECHAIN prompt is a sub-agent's, not the operator's. Its edits
+   *     belong to the turn that spawned it, which is where they already land.
+   * This is the same definition `transcript/session-usage` counts prompts by.
+   */
+  let epoch = 1;
+
   const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
   try {
     for await (const line of rl) {
-      if (line.trim() === '' || !line.includes('tool_use')) continue;
+      // The cheap pre-filter now has to admit prompt lines too, which carry no
+      // `tool_use`. It OVER-admits (any line mentioning "user" is parsed) and
+      // that is the safe direction: under-admitting would drop a turn boundary
+      // and silently widen `lastTurn` to cover work from earlier turns.
+      if (line.trim() === '' || (!line.includes('tool_use') && !line.includes('user'))) continue;
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);
@@ -170,6 +206,15 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
       const record = asRecord(parsed);
       const message = asRecord(record?.message);
       const content = message?.content;
+
+      if (record?.type === 'user') {
+        if (record.isSidechain === true || record.isCompactSummary === true || record.isMeta === true) continue;
+        const isToolResult = Array.isArray(content)
+          && content.some((b) => asRecord(b)?.type === 'tool_result');
+        if (!isToolResult) epoch += 1;
+        continue;
+      }
+
       if (!Array.isArray(content)) continue;
       for (const block of content) {
         const b = asRecord(block);
@@ -183,7 +228,7 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
             filesTruncated = true;
             continue;
           }
-          addHunk(byPath, order, filePath, hunk);
+          addHunk(byPath, order, filePath, hunk, epoch);
         }
       }
     }
@@ -191,12 +236,23 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
     rl.close();
   }
 
-  const files = order.map((p) => byPath.get(p)!.change);
+  /*
+   * `lastTurn` is resolved HERE, against the epoch the scan ended on, not
+   * while scanning. Mid-scan there is no way to know which turn is the last
+   * one — a file flagged when it was written would keep the flag through
+   * every turn that followed it.
+   */
+  const files = order.map((p) => {
+    const acc = byPath.get(p)!;
+    acc.change.lastTurn = acc.lastEpoch === epoch;
+    return acc.change;
+  });
   return {
     files,
     totalAdded: files.reduce((n, f) => n + f.linesAdded, 0),
     totalRemoved: files.reduce((n, f) => n + f.linesRemoved, 0),
     filesTruncated,
     source: 'transcript',
+    turns: epoch,
   };
 }

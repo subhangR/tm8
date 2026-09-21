@@ -40,6 +40,7 @@ import type {
   SessionGitStatus,
 } from '@tm8/contract';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture.js';
+import { MobileSurfaceProvider } from '../mobile';
 import type { GitDiffOpts, Seam } from '../data/seam.js';
 import { SessionChangesBody } from './SessionChangesBody.js';
 
@@ -83,8 +84,27 @@ function statusOf(files: SessionGitFile[]): SessionGitStatus {
   };
 }
 
-/** A diff whose BODY names the scope it came from, so a swap is visible. */
-function diffOf(path: string, scope: SessionGitDiffScope): SessionGitDiff {
+/**
+ * A diff whose BODY names the scope it came from, so a swap is visible.
+ *
+ * `hunkCount` builds a real multi-hunk body — headers and all — rather than a
+ * hunk LIST beside a one-hunk diff. The checkboxes are rendered by the diff
+ * renderer from the text, so a fixture whose list and text disagree would
+ * prove the boxes work against a shape the server cannot produce.
+ */
+function diffOf(path: string, scope: SessionGitDiffScope, hunkCount = 1): SessionGitDiff {
+  const hunks = Array.from({ length: hunkCount }, (_, i) => {
+    const at = i * 10 + 1;
+    const heading = i === 0 ? '' : ` fn${i + 1}()`;
+    const body = i === 0 ? `${scope} body for ${path}` : `${scope} hunk ${i + 1} for ${path}`;
+    return {
+      index: i + 1,
+      heading: heading.trim(),
+      oldStart: at,
+      newStart: at,
+      text: `@@ -${at} +${at} @@${heading}\n+${body}\n`,
+    };
+  });
   return {
     sessionId: SESSION,
     available: true,
@@ -97,11 +117,16 @@ function diffOf(path: string, scope: SessionGitDiffScope): SessionGitDiff {
     stat: { filesChanged: 1, additions: 1, deletions: 0 },
     files: [{ path, additions: 1, deletions: 0 }],
     filesTruncated: false,
-    diff: `--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n+${scope} body for ${path}\n`,
+    diff: `--- a/${path}\n+++ b/${path}\n${hunks.map((h) => h.text).join('')}`,
     diffTruncated: false,
     scope,
     path,
     untracked: false,
+    /* The server offers hunks only for a ONE-SIDED comparison, so the fixture
+       withholds them for `session` exactly as it does — otherwise these tests
+       would exercise a shape the server never sends. */
+    hunks: scope === 'session' ? null : hunks,
+    hunkDigest: scope === 'session' ? null : `sha256:${'d'.repeat(64)}`,
     checkedAt: '2026-09-19T00:00:00Z',
   };
 }
@@ -138,6 +163,8 @@ type Harness = {
    */
   readonly pendingStatus: (() => void)[];
   holdStatus: boolean;
+  /** How many hunks every one-sided diff this seam answers with carries. */
+  hunksPerDiff: number;
 };
 
 function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus> = {}): Harness {
@@ -154,6 +181,7 @@ function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus
     files,
     pendingStatus: [],
     holdStatus: false,
+    hunksPerDiff: 1,
   };
 
   const stageResult = (input: ExecutionGitStageInput): SessionGitStageResult => ({
@@ -168,6 +196,17 @@ function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus
     filesTruncated: false,
     dirty: statusOf(h.files).dirty,
     checkedAt: '2026-09-19T00:00:00Z',
+    // The server reports what it APPLIED against what it found, which is how
+    // the receipt can say "2 of 3" rather than echoing the request back.
+    ...(input.hunks === undefined
+      ? {}
+      : {
+          hunkSelection: {
+            path: input.hunks.path,
+            applied: input.hunks.indices.length,
+            total: h.hunksPerDiff,
+          },
+        }),
   });
 
   h.seam = {
@@ -183,9 +222,9 @@ function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus
       const path = opts?.path ?? '';
       const scope = opts?.scope ?? 'session';
       h.diffCalls.push({ path, scope });
-      if (!h.holdDiffs) return diffOf(path, scope);
+      if (!h.holdDiffs) return diffOf(path, scope, h.hunksPerDiff);
       return await new Promise<SessionGitDiff>((resolve) => {
-        h.pending.push({ path, scope, settle: () => resolve(diffOf(path, scope)) });
+        h.pending.push({ path, scope, settle: () => resolve(diffOf(path, scope, h.hunksPerDiff)) });
       });
     },
     commands: {
@@ -687,5 +726,274 @@ describe('the surface does not poll a session that is not running', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * PART OF A FILE — the half of `git add -p` that is not the prompt.
+ *
+ * Four things here are wrong in a way a screenshot cannot show:
+ *
+ *  1. WHAT CROSSES THE SEAM. The client sends INDICES into a diff the server
+ *     just computed, and the digest of that diff. It must never send patch
+ *     text: a patch handed to `git apply --cached` is a write primitive for
+ *     every path in the repository, and `--cached` means it would not even
+ *     have to touch the working tree to reach the next commit.
+ *  2. WHICH VERB A TICKED HUNK MEANS. Unstaged is index → working tree, so a
+ *     hunk out of it goes IN (stage). Staged is HEAD → index, so a hunk out of
+ *     it comes OUT (unstage). Offering the wrong one offers a patch that
+ *     cannot apply.
+ *  3. THAT A NEW READ CLEARS THE TICKS. An index is 1-based into ONE read.
+ *     After the file moves, "2" is different code, and a tick that survived
+ *     would point at it.
+ *  4. THAT A REFUSED CASE SAYS WHY. The session diff has no side for a partial
+ *     patch to apply to. Hiding the control would leave a reviewer wondering
+ *     where it went; naming the reason teaches the comparison.
+ */
+describe('choosing part of a file', () => {
+  const hunkBoxes = () => screen.getAllByTestId('kit-diff-hunk-check') as HTMLInputElement[];
+  const tickHunk = (index: number) =>
+    fireEvent.click(hunkBoxes().find((b) => b.dataset.hunk === String(index))!);
+
+  it('offers hunks on a one-sided comparison and names the reason it cannot on the session diff', async () => {
+    const h = harness();
+    h.hunksPerDiff = 3;
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    const bar = await screen.findByTestId('session-changes-hunk-bar');
+    expect(bar.dataset.scope).toBe('unstaged');
+    expect(screen.getByTestId('session-changes-hunk-count').textContent).toContain('3 hunks');
+    expect(hunkBoxes()).toHaveLength(3);
+
+    fireEvent.click(chip('all'));
+    const refusal = await screen.findByTestId('session-changes-hunk-refusal');
+    expect(refusal.textContent).toContain('one-sided');
+    expect(screen.queryByTestId('session-changes-hunk-bar')).toBeNull();
+    /* The boxes go with the bar — a checkbox with no verb behind it is a
+       control that does nothing, which is worse than no control. */
+    expect(screen.queryAllByTestId('kit-diff-hunk-check')).toHaveLength(0);
+  });
+
+  it('sends indices and the digest of the read they were chosen against — never patch text', async () => {
+    const h = harness();
+    h.hunksPerDiff = 3;
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    await screen.findByTestId('session-changes-hunk-bar');
+
+    tickHunk(3);
+    tickHunk(1);
+    expect(screen.getByTestId('session-changes-hunk-count').textContent).toContain('2 of 3');
+
+    fireEvent.click(screen.getByTestId('session-changes-hunk-apply'));
+    await waitFor(() => expect(h.stageCalls).toHaveLength(1));
+
+    const call = h.stageCalls[0]!;
+    expect(call.action).toBe('stage');
+    /* Sorted, so the server reads them in the order it numbered them. */
+    expect(call.hunks).toEqual({
+      path: 'notes.md',
+      indices: [1, 3],
+      digest: `sha256:${'d'.repeat(64)}`,
+    });
+    /* Neither scope is named alongside the other: `paths` would be a SECOND
+       scope in the same request, and the server refuses that rather than
+       guessing which one wins. */
+    expect(call.paths).toBeUndefined();
+    expect(call.all).toBeUndefined();
+    /* THE SECURITY ASSERTION. No diff body, no `@@`, nothing that could be
+       fed to `git apply` — only numbers and the path. */
+    expect(JSON.stringify(call)).not.toContain('@@');
+    expect(JSON.stringify(call)).not.toContain('unstaged body for');
+  });
+
+  it('says how many of how many moved, from the server’s count and not the request', async () => {
+    const h = harness();
+    h.hunksPerDiff = 3;
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    await screen.findByTestId('session-changes-hunk-bar');
+
+    tickHunk(2);
+    fireEvent.click(screen.getByTestId('session-changes-hunk-apply'));
+
+    const receipt = await screen.findByTestId('session-changes-receipt');
+    expect(receipt.textContent).toContain('staged 1 of 3 hunk(s) in notes.md');
+  });
+
+  it('offers Unstage — not Stage — over the staged comparison', async () => {
+    const h = harness();
+    h.hunksPerDiff = 2;
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('staged'));
+    openRow('src/a.ts');
+    await screen.findByTestId('session-changes-hunk-bar');
+
+    tickHunk(1);
+    const apply = screen.getByTestId('session-changes-hunk-apply');
+    expect(apply.dataset.action).toBe('unstage');
+    expect(apply.textContent).toContain('Unstage hunks');
+
+    fireEvent.click(apply);
+    await waitFor(() => expect(h.stageCalls).toHaveLength(1));
+    expect(h.stageCalls[0]!.action).toBe('unstage');
+  });
+
+  it('clears the ticks whenever the file is read again', async () => {
+    const h = harness();
+    h.hunksPerDiff = 3;
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    await screen.findByTestId('session-changes-hunk-bar');
+    tickHunk(2);
+    expect(hunkBoxes().find((b) => b.dataset.hunk === '2')!.checked).toBe(true);
+
+    /* A different comparison of the same path — the indices are still 1..3 and
+       still IN RANGE, which is exactly why a surviving tick would be silent. */
+    fireEvent.click(chip('staged'));
+    await waitFor(() =>
+      expect(screen.getByTestId('session-changes-diff-scope').dataset.scope).toBe('staged'),
+    );
+    expect(hunkBoxes().every((b) => !b.checked)).toBe(true);
+    expect(screen.getByTestId('session-changes-hunk-count').textContent).not.toContain('selected');
+  });
+
+  it('refuses hunks on a truncated diff rather than numbering a choice against half a file', async () => {
+    const h = harness();
+    const seam: Seam = {
+      ...h.seam,
+      async gitDiff(id: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
+        const full = await h.seam.gitDiff(id, opts);
+        return { ...full, diffTruncated: true, hunks: null, hunkDigest: null };
+      },
+    };
+    render(<SessionChangesBody seam={seam} sessionId={SESSION} live={false} />);
+    await screen.findByTestId('session-changes-files');
+
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    const refusal = await screen.findByTestId('session-changes-hunk-refusal');
+    expect(refusal.textContent).toContain('byte cap');
+    expect(screen.queryByTestId('session-changes-hunk-apply')).toBeNull();
+  });
+});
+
+/**
+ * THE PHONE, WHICH THIS SURFACE USED TO REFUSE.
+ *
+ * The refusal said reviewing means reading a diff and holding a selection
+ * across several files, and 390px can only do one at a time. That was right
+ * about the SPLIT and wrong about the SELECTION — a selection is state and
+ * survives a screen it is not drawn on. So the fork is: the list, or one
+ * full-width diff with a way back, and never both.
+ *
+ * THE FORK IS `oneSurface`, NOT A WIDTH. These cases mount the provider; the
+ * desktop case below mounts the same component without it and must keep both
+ * panes and no back control.
+ */
+describe('the phone shows one pane at a time', () => {
+  const phone = (h: Harness) =>
+    render(
+      <MobileSurfaceProvider sheetHost={null}>
+        <SessionChangesBody seam={h.seam} sessionId={SESSION} live={false} />
+      </MobileSurfaceProvider>,
+    );
+
+  it('shows the list alone until a file is opened, then the diff alone with a way back', async () => {
+    const h = harness();
+    h.hunksPerDiff = 2;
+    phone(h);
+    const body = await screen.findByTestId('session-changes-body');
+    expect(body.dataset.arrangement).toBe('phone');
+    expect(body.dataset.pane).toBe('list');
+    expect(screen.queryByTestId('session-changes-diff-pane')).toBeNull();
+    expect(screen.queryByTestId('session-changes-back')).toBeNull();
+
+    fireEvent.click(chip('unstaged'));
+    openRow('notes.md');
+    await screen.findByTestId('session-changes-diff-pane');
+    expect(body.dataset.pane).toBe('diff');
+    /* The list is GONE, not merely narrow: that is the whole arrangement. */
+    expect(screen.queryByTestId('session-changes-files')).toBeNull();
+    /* And the diff is the full thing, hunk boxes included — the phone is not
+       a reduced version of the surface, it is a different arrangement of it. */
+    expect(screen.getAllByTestId('kit-diff-hunk-check')).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId('session-changes-back'));
+    await screen.findByTestId('session-changes-files');
+    expect(body.dataset.pane).toBe('list');
+    expect(screen.queryByTestId('session-changes-diff-pane')).toBeNull();
+  });
+
+  it('keeps the selection across the pane it is not drawn on', async () => {
+    const h = harness();
+    phone(h);
+    await screen.findByTestId('session-changes-files');
+
+    check('src/a.ts');
+    expect(screen.getByTestId('session-changes-selection-count').textContent).toContain('1 selected');
+
+    openRow('src/a.ts');
+    await screen.findByTestId('session-changes-diff-pane');
+    fireEvent.click(screen.getByTestId('session-changes-back'));
+    await screen.findByTestId('session-changes-files');
+
+    /* THE ANSWER TO THE OLD REFUSAL, asserted. The reviewer never saw the
+       checkbox while the diff was up, and it is still ticked. */
+    expect(screen.getByTestId('session-changes-selection-count').textContent).toContain('1 selected');
+  });
+
+  it('does not reopen the closed file when a mutation refreshes', async () => {
+    const h = harness();
+    phone(h);
+    await screen.findByTestId('session-changes-files');
+
+    openRow('src/b.ts');
+    await screen.findByTestId('session-changes-diff-pane');
+    fireEvent.click(screen.getByTestId('session-changes-back'));
+    await screen.findByTestId('session-changes-files');
+
+    const before = h.diffCalls.length;
+    fireEvent.click(
+      [...screen.getAllByTestId('session-changes-row-stage')].find((b) => b.dataset.path === 'notes.md')!,
+    );
+    await waitFor(() => expect(h.stageCalls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByTestId('session-changes-receipt')).toBeTruthy());
+    /* `runVerb` re-reads the OPEN diff in its `finally`. Nothing is open, so
+       there is nothing to re-read — and the list must not flip back to a diff
+       the reviewer closed. */
+    expect(h.diffCalls).toHaveLength(before);
+    expect(screen.queryByTestId('session-changes-diff-pane')).toBeNull();
+  });
+
+  it('leaves the desktop arrangement alone — both panes, no back control', async () => {
+    const h = harness();
+    mount(h);
+    await screen.findByTestId('session-changes-files');
+    const body = screen.getByTestId('session-changes-body');
+
+    expect(body.dataset.arrangement).toBe('desktop');
+    /* Both panes are mounted before anything is opened: the diff pane is the
+       one holding "Choose a file to see what changed in it." */
+    expect(screen.getByTestId('session-changes-diff-pane')).toBeTruthy();
+    expect(screen.queryByTestId('session-changes-back')).toBeNull();
+
+    openRow('src/b.ts');
+    await screen.findByTestId('session-changes-diff-head');
+    expect(screen.getByTestId('session-changes-files')).toBeTruthy();
+    expect(screen.queryByTestId('session-changes-back')).toBeNull();
   });
 });
