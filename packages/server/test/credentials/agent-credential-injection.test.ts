@@ -203,6 +203,79 @@ describe('DbAgentCredentialHome', () => {
     expect(recorded).toHaveLength(0);
   });
 
+  /**
+   * AN UNREADABLE KEY MUST NOT SILENTLY BILL THE NODE'S ACCOUNT.
+   *
+   * `DATA_DIR` is `/var/lib/tm8`, which does not exist under the test runner, so
+   * `readApiKey` genuinely fails here — ENOENT from a real `readFile`, not a
+   * mocked rejection. That is the whole class: an `active` index row whose key
+   * file cannot be read. A partial write, a restored backup that skipped the
+   * 0700 directory, an operator `chown`; the row says connected and the bytes
+   * are not there.
+   *
+   * WHAT MAKES `null` THE WRONG ANSWER, AND WHY IT LOOKS LIKE THE RIGHT ONE.
+   * `null` is documented as "this identity has not connected this provider",
+   * and for that member it is exactly right — injecting an empty config
+   * directory would leave an unconnected member with no agent authentication at
+   * all, which is the over-eager failure the header of this file warns about.
+   * But this member DID connect. Returning the unconnected answer for a
+   * connected member is not conservative; it is a different claim, and it is
+   * false.
+   *
+   * The consequence is measured in `@tm8/execution`'s `spawn-manifest.test.ts`
+   * ("a keyless credential home suppresses the node key that a null home leaves
+   * behind") rather than asserted here, because it belongs to `composeEnv`:
+   * every line that removes the node's own `ANTHROPIC_API_KEY` lives inside
+   * `if (credentialHome)`, and `AUTH_ENV_KEYS` forwards that key a few lines
+   * earlier. So `null` does not mean "inject nothing" — it means the node's
+   * Anthropic key stays in the environment and a member who deliberately
+   * connected Kimi runs `claude-code` on the NODE's account. Wrong vendor,
+   * wrong bill, and nothing red anywhere.
+   *
+   * A KEYLESS HOME IS THE HONEST ANSWER. It carries the provider, so suppression
+   * runs and `CLAUDE_CONFIG_DIR` is pinned to the member's own `kimi/`
+   * directory; `apiKey` is `undefined`, so the routing step injects nothing.
+   * The session starts with no credential for anyone and fails visibly and
+   * attributably — the same treatment this file's own header already demands
+   * for a `stale` row, owed equally to a row that is active but unreadable.
+   */
+  it('returns a KEYLESS home, not null, when an active API key cannot be read', async () => {
+    const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
+      agentTool: 'claude-code',
+    });
+
+    // Not null. The member connected; the answer must say so.
+    expect(home).not.toBeNull();
+    // Asserted with `toEqual` on the whole object rather than field by field,
+    // because the ABSENCE of `apiKey` is the load-bearing half: a home carrying
+    // an empty-string key would pass every per-field check and then route the
+    // session to Moonshot with no credential, which is a 401 a long way from
+    // here instead of an immediately legible failure.
+    expect(home).toEqual({
+      provider: 'kimi',
+      homeDir: `${DATA_DIR}/credentials/${IDENTITY}`,
+      configDir: `${DATA_DIR}/credentials/${IDENTITY}/kimi`,
+    });
+    expect(home).not.toHaveProperty('apiKey');
+  });
+
+  /**
+   * The preference order still decides WHICH provider the keyless home names.
+   * A doubly-connected member whose Kimi key is unreadable must not quietly
+   * fall through to their working Anthropic login: `kimi` won the resolution,
+   * and silently substituting the vendor they did not choose is the same lie in
+   * the other direction. They get Kimi, keyless, and a failure they can read.
+   */
+  it('does not fall through to the native provider when the winning key is unreadable', async () => {
+    const home = await resolver([{ provider: 'kimi' }, { provider: 'anthropic' }]).resolve(
+      CLAIMS,
+      { agentTool: 'claude-code' },
+    );
+
+    expect(home?.provider).toBe('kimi');
+    expect(home).not.toHaveProperty('apiKey');
+  });
+
   it('asks only for ACTIVE credentials, so stale and revoked never inject', async () => {
     const recorded: RecordedQuery[] = [];
     await resolver([{ provider: 'anthropic' }], recorded).resolve(CLAIMS, {

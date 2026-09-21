@@ -627,6 +627,87 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     ).rejects.toMatchObject({ name: 'SpawnError', code: 'conflict' });
   }, 30000);
 
+  // The keyless home — the shape this PR's injection fix introduced — and the
+  // one place it changes an answer that was already correct.
+  //
+  // `agent-credential-injection.ts` used to answer `null` when an ACTIVE api-key
+  // row's key file could not be read, and this suite's refusal above fired on
+  // that `null`. It no longer can: the resolver now returns a home with no
+  // `apiKey`, because `null` there let the node's own key survive into the
+  // composed environment (proven in `spawn-manifest.test.ts`). That fix is
+  // right, and taken alone it would silently delete the member refusal for the
+  // one case where refusing matters most — the member DID connect, so a launch
+  // that quietly proceeds is one that fails later, inside the CLI, without ever
+  // naming the stored key as the reason.
+  //
+  // So `member` refuses on a keyless API-key home too, and says something
+  // different from the no-credential refusal, because the situation is
+  // different: connected, unreadable, reconnect.
+  it("credentialSource 'member' refuses when the connected key cannot be read", async () => {
+    const service = serviceWith({
+      async resolve() {
+        // Exactly what `DbAgentCredentialHome` now returns for an active kimi
+        // row whose `api-key` file is unreadable: provider and directories, no
+        // secret.
+        return {
+          provider: 'kimi',
+          homeDir: `${dataDir}/credentials/identity-alice`,
+          configDir: `${dataDir}/credentials/identity-alice/kimi`,
+        };
+      },
+    });
+
+    await expect(
+      service.spawn(AUTH, {
+        spaceId: SPACE_ID,
+        teamMemberId: MEMBER_ID,
+        credentialSource: 'member',
+      }),
+    ).rejects.toMatchObject({
+      name: 'SpawnError',
+      code: 'conflict',
+      // The discriminator carries the ACTUAL provider — kimi, not the native
+      // `anthropic` that `agentCredentialProviderFor('claude-code')` returns.
+      detail: { agentTool: 'claude-code', provider: 'kimi' },
+    });
+
+    // One message assertion, and only because the falsehood is the finding: the
+    // no-credential refusal's wording would be untrue here. The member is
+    // connected; the key is the problem.
+    await expect(
+      service.spawn(AUTH, {
+        spaceId: SPACE_ID,
+        teamMemberId: MEMBER_ID,
+        credentialSource: 'member',
+      }),
+    ).rejects.toThrow(/could not be read/);
+  }, 30000);
+
+  // The control for the test above, and the guard on the injection fix: the
+  // refusal is scoped to the member POSTURE, not to keyless homes in general.
+  // Auto must still receive the keyless home, because that home is the only
+  // thing that suppresses the node's own key — refusing here instead would be
+  // a second way to get the node's account, by way of no session at all.
+  it('auto still takes a keyless home, so the node key stays suppressed', async () => {
+    const service = serviceWith({
+      async resolve() {
+        return {
+          provider: 'kimi',
+          homeDir: `${dataDir}/credentials/identity-alice`,
+          configDir: `${dataDir}/credentials/identity-alice/kimi`,
+        };
+      },
+    });
+
+    const result = await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
+
+    // The member's own config directory is pinned...
+    expect(result.envVarNames).toContain('CLAUDE_CONFIG_DIR');
+    // ...and the routing step was skipped, because there was no key to route.
+    expect(result.envVarNames).not.toContain('ANTHROPIC_AUTH_TOKEN');
+    expect(result.envVarNames).not.toContain('ANTHROPIC_API_KEY');
+  }, 30000);
+
   it('auto (absent) still records what it did, as null', async () => {
     const service = serviceWith({ async resolve() { return null; } });
     await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });

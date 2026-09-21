@@ -276,7 +276,18 @@ export interface AgentCredentialHome {
   /** `<homeDir>/<provider>` — used by CLIs with a config-directory override. */
   configDir: string;
   /**
-   * The member's API key, present ONLY for an API-key provider.
+   * The member's API key, present ONLY for an API-key provider WHOSE KEY WAS
+   * READABLE.
+   *
+   * ABSENT IS A MEANINGFUL STATE FOR KIMI AND GROQ, not merely the shape every
+   * other provider has. The server returns a KEYLESS home — this provider, this
+   * directory, no secret — when an `active` index row's key file cannot be read,
+   * and `composeEnv` depends on the difference: the home is still present, so
+   * the node's own key is suppressed and the config directory is pinned to the
+   * member's, while the routing step is skipped because there is no key to send.
+   * The session then fails for want of any credential instead of silently
+   * succeeding on the node's. Injecting an empty string here instead would
+   * satisfy every type and route the session to Moonshot unauthenticated.
    *
    * THIS IS THE ONE SECRET THAT TRAVELS THROUGH THIS INTERFACE, and it is worth
    * saying why it has to. Every other provider's credential is delivered by
@@ -313,6 +324,12 @@ export interface AgentCredentialHome {
  * ordinary answer, not an error: injecting an EMPTY per-identity config
  * directory would leave every member who has not connected with no agent
  * authentication at all.
+ *
+ * It means ONLY that. A member who HAS connected always resolves to a home,
+ * even when their stored key turns out to be unreadable — see `apiKey` above.
+ * Answering `null` there would leave the node's own key live in the composed
+ * environment and run that member's session on the machine account, which is
+ * the one outcome this port exists to make impossible.
  */
 export interface AgentCredentialHomePort {
   resolve(

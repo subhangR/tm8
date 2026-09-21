@@ -229,18 +229,46 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     if (isApiKeyCredentialProvider(provider)) {
       const apiKey = await this.readApiKey(configDir, provider, claims.identityId);
       // An index row with no readable key is an INCONSISTENCY, and the honest
-      // response is the same one an unconnected member gets: inject nothing.
+      // response is a KEYLESS HOME — this provider, this directory, no secret.
       //
-      // The two alternatives are both worse. Falling through to the native
+      // `return null` WAS THE OBVIOUS ANSWER AND IT IS THE WRONG ONE, so the
+      // reason is written here rather than left to be rediscovered. `null` is
+      // this port's documented word for "has not connected", and for that member
+      // it is right: injecting an empty config directory would leave someone who
+      // never connected with no agent authentication at all. But this member DID
+      // connect — the index row is `active` and says so. Returning the
+      // unconnected answer for a connected member is not the conservative
+      // choice; it is a different claim, and a false one.
+      //
+      // WHAT IT ACTUALLY DOES, which is the opposite of "inject nothing".
+      // `composeEnv` forwards the node's own `ANTHROPIC_API_KEY` from
+      // `AUTH_ENV_KEYS`, and every line that removes it again — the C8
+      // suppression loop — lives inside `if (credentialHome)`. Hand back `null`
+      // and that block never runs, so the node's key stays in the environment
+      // and the member's `claude-code` session authenticates as the NODE. They
+      // connected Kimi; they get Anthropic, on the machine account's bill, with
+      // nothing red anywhere. That is the exact silent vendor substitution the
+      // paragraph below rules out, arriving through the door left open beside it.
+      //
+      // The keyless home closes it. It carries `provider`, so suppression runs
+      // and `CLAUDE_CONFIG_DIR` is pinned to the member's own `kimi/` directory,
+      // which holds no Anthropic login either; `apiKey` is absent, so the
+      // routing step injects no bearer token and no base URL — a base URL
+      // without a key would only move the failure to a 401 far from here. The
+      // session therefore starts with no credential for ANYONE and fails
+      // visibly and attributably, which is what this file's header already
+      // demands for a `stale` row and is owed equally to one that is active but
+      // unreadable.
+      //
+      // The two alternatives remain worse. Falling through to the native
       // provider would silently run the member on Anthropic's billing after
       // they deliberately connected Kimi — a quiet substitution of one vendor
       // for another, which is the precise class of lie this subsystem exists to
       // prevent. Throwing would fail the spawn outright over a credential
-      // problem, turning a degraded session into no session. So: no injection,
-      // the node's own configuration applies exactly as it would for anyone who
-      // has not connected, and the inconsistency is logged rather than
-      // swallowed, because nothing else in the system will notice it.
-      if (apiKey === null) return null;
+      // problem, turning a degraded session into no session. The inconsistency
+      // is logged by `readApiKey` rather than swallowed, because nothing else in
+      // the system will notice it.
+      if (apiKey === null) return { provider, homeDir, configDir };
       return { provider, homeDir, configDir, apiKey };
     }
 

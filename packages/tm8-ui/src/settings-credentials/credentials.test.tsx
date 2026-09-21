@@ -17,6 +17,7 @@ import type {
   CredentialsDeleteResult,
   CredentialsStatusView,
   CredentialProviderName,
+  CredentialRoutingView,
 } from '@tm8/contract';
 import { CredentialsSection } from './CredentialsSection';
 import { CREDENTIAL_PROVIDER_PRESENTATIONS } from './provider-presentation';
@@ -562,5 +563,137 @@ describe('Settings tells the other reader when the status changed', () => {
   it('is optional — a host that passes none still renders', async () => {
     render(<CredentialsSection port={portWith(status)} />);
     expect(await screen.findByTestId('credential-card-github')).toBeTruthy();
+  });
+});
+
+/**
+ * THE ROUTING SENTENCE NAMES A VENDOR, NOT A PRODUCT.
+ *
+ * This block exists because the sentence had NO coverage at all. The
+ * `settings-credentials` and `provider-rail` suites were green on 102/102 while
+ * the paragraph rendered "instead of Claude Code" — every `counterpart` in
+ * those fixtures was feeding a different assertion, and `routing` itself was
+ * `null` in the only connection factory. A suite that is green on a sentence it
+ * never reads proves nothing about the sentence.
+ *
+ * WHY THE DISTINCTION IS NOT PEDANTRY. `presentationOf(p).name` and
+ * `CREDENTIAL_PROVIDER_LABEL[p]` are two DIFFERENT tables that disagree for
+ * exactly the providers this feature is about:
+ *
+ *   provider    presentationOf().name    CREDENTIAL_PROVIDER_LABEL
+ *   anthropic   'Claude Code'            'Anthropic'
+ *   openai      'Codex'                  'OpenAI'
+ *
+ * The first is the PRODUCT — the thing you run, correct on a card heading and
+ * in the `binary` beside it. The second is the VENDOR — whose account is billed
+ * and whose model answers. This sentence is about the second: "uses this key
+ * instead of X" is a claim about WHOSE SERVICE the tokens come from. Rendering
+ * the product there says "every claude-code session uses this key instead of
+ * Claude Code", which reads as though the tool stops running — the opposite of
+ * the truth, since the tool is precisely what keeps running.
+ *
+ * Asserted on the FULL TEXT of the paragraph rather than on a substring, so
+ * that the product name reappearing anywhere in it fails. `toContain('Anthropic')`
+ * alone would pass on "instead of Claude Code (Anthropic)".
+ */
+describe('the routing sentence names the vendor whose account is billed', () => {
+  function routed(
+    over: Partial<CredentialRoutingView> & { counterpart: CredentialProviderName },
+  ): CredentialRoutingView {
+    return { agentTool: 'claude-code', role: 'backend', active: false, ...over };
+  }
+
+  it('names Anthropic, and never the product "Claude Code", on an ACTIVE kimi backend', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'kimi',
+              connected: true,
+              status: 'active',
+              routing: routed({ counterpart: 'anthropic', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Every claude-code session you start uses this key instead of Anthropic.',
+    );
+  });
+
+  it('names Anthropic on an UNCONNECTED kimi card, where the sentence is a warning', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'kimi',
+              routing: routed({ counterpart: 'anthropic', active: false }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Connecting this will route every claude-code session you start here instead of Anthropic.',
+    );
+  });
+
+  it('names Moonshot AI on the DISPLACED anthropic card — the other half of the same fact', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'anthropic',
+              connected: true,
+              status: 'active',
+              routing: routed({ counterpart: 'kimi', role: 'displaced', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-displaced');
+    expect(line.textContent).toBe(
+      'Not currently used for claude-code sessions — Moonshot AI is connected and takes over.',
+    );
+  });
+
+  /*
+   * THE GROQ/OPENAI PAIR, because a fix that special-cased `anthropic` would
+   * pass all three tests above and still render "instead of Codex" here.
+   */
+  it('names OpenAI, and never the product "Codex", on an active groq backend', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'groq',
+              connected: true,
+              status: 'active',
+              routing: routed({ agentTool: 'codex', counterpart: 'openai', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Every codex session you start uses this key instead of OpenAI.',
+    );
   });
 });

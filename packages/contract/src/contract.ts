@@ -2697,10 +2697,19 @@ export interface InviteRedemption {
  * interface with six optional fields cannot express "these are absent BY RULE".
  * `unknown` carries nothing at all: no space, no inviter, not even a hint that
  * some other code would have worked.
+ *
+ * `member` added 2026-09-19 (195, additive union widening). It is the answer
+ * for a caller who is ALREADY in the Space the code names, and it precedes
+ * every dead status because a membership outlives the link that granted it —
+ * the reported bug was a member being told "this invite is used up" about a
+ * Space they had joined ninety seconds earlier with that very code. It carries
+ * the id and name of a Space the reader is a member of, so it discloses
+ * nothing a dozen other reads would not; a stranger never sees it.
  */
 export type InvitePreview =
   | { status: 'unknown' }
   | { status: 'revoked' | 'expired' | 'exhausted'; spaceName: string }
+  | { status: 'member'; spaceId: SpaceId; spaceName: string }
   | {
       status: 'valid';
       spaceId: SpaceId;
