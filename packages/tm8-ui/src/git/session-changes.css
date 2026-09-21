@@ -1,0 +1,478 @@
+/* ==========================================================================
+   THE CHANGES SURFACE — filters, the file list, one file's diff, commit bar.
+
+   SEPARATE FROM session-git.css on purpose: the Git rail is a single column
+   of lane facts, this is a two-pane review layout, and sharing a stylesheet
+   would mean every rail tweak lands in a review surface it was not measured
+   against.
+
+   COLOURS ARE TOKENS (hex-ban applies). Additions read `run`, deletions read
+   `block` — the same two inks DiffView and the transcript change list already
+   use, so one green means one thing across the panel.
+
+   SCOPE. Every selector leads with `.cv2-root`: the theme tokens live there,
+   and a rule outside that scope silently loses its fonts and colours.
+   ========================================================================== */
+
+.cv2-root .pn-chg {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-4);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-chg__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-chg__branch {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  color: var(--pn-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cv2-root .pn-chg__branch-glyph {
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-chg__base {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__refresh {
+  margin-left: auto;
+}
+
+/* -- filter chips: four states, each carrying its own count --------------- */
+
+.cv2-root .pn-chg__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-chg__filter {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  padding: 3px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-chg__filter:hover {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-chg__filter--on {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-2);
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-chg__filter-count {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pn-chg__filter--on .pn-chg__filter-count {
+  color: var(--pn-ink-2);
+}
+
+/* -- the two panes: list on the left, one file's diff on the right -------- */
+
+.cv2-root .pn-chg__split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 20rem) minmax(0, 1fr);
+  gap: var(--pn-space-4);
+  align-items: start;
+}
+
+/* Desktop-first, but a narrow panel is a real layout here: the aux panel and
+   the graph inspector are both far narrower than a full page. Below that the
+   two panes stack rather than crushing the diff into an unreadable column. */
+@media (max-width: 860px) {
+  .cv2-root .pn-chg__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cv2-root .pn-chg__list-pane,
+.cv2-root .pn-chg__diff-pane {
+  min-width: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-chg__list-head {
+  display: flex;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-chg__link {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.cv2-root .pn-chg__link:hover {
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-chg__files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.cv2-root .pn-chg__file {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.cv2-root .pn-chg__file--open {
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-chg__check {
+  flex: none;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__open {
+  font: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.cv2-root .pn-chg__status {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-info);
+  white-space: pre;
+  flex: none;
+}
+
+.cv2-root .pn-chg__path {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-chg__file--open .pn-chg__path {
+  color: var(--pn-ink);
+}
+
+/* A file with changes on both sides of the index. The badge is a fact, not a
+   warning: it tells the reviewer why the same path is in two filters. */
+.cv2-root .pn-chg__split-badge {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-wait);
+  border: 1px solid var(--pn-wait);
+  padding: 0 4px;
+  flex: none;
+}
+
+.cv2-root .pn-chg__row-verbs {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  flex: none;
+}
+
+.cv2-root .pn-chg__row-verb {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__row-verb:hover:not(:disabled) {
+  color: var(--pn-ink);
+  border-color: var(--pn-line);
+}
+
+.cv2-root .pn-chg__row-verb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A conflicted row has no verb — this is a label where the buttons were, so
+   the row does not silently lose its right-hand column and reflow. */
+.cv2-root .pn-chg__row-note {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-block);
+  border: 1px solid var(--pn-block);
+  padding: 0 6px;
+  flex: none;
+}
+
+/* -- the merge banner ----------------------------------------------------- */
+
+/* Mirrors `.pn-git__conflict` in session-git.css deliberately: the same fact
+   (this worktree is mid-merge) should not look like two different facts
+   depending on which panel the reviewer is standing in. */
+.cv2-root .pn-chg__conflict {
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  padding: var(--pn-space-3);
+}
+
+.cv2-root .pn-chg__conflict-title {
+  display: block;
+  margin-bottom: var(--pn-space-2);
+  color: var(--pn-block);
+  font-weight: 600;
+}
+
+.cv2-root .pn-chg__conflict-paths {
+  margin: 0;
+  padding-left: var(--pn-space-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__conflict-remedy {
+  display: block;
+  margin-top: var(--pn-space-2);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/* -- the diff pane -------------------------------------------------------- */
+
+.cv2-root .pn-chg__diff-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  padding-bottom: var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-chg__scope {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pn-chg__counts {
+  display: inline-flex;
+  gap: var(--pn-space-2);
+  margin-left: auto;
+}
+
+.cv2-root .pn-chg__added {
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__removed {
+  color: var(--pn-block);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__binary {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+/* -- the commit bar ------------------------------------------------------- */
+
+.cv2-root .pn-chg__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-3);
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-chg__selection {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-chg__verb {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__verb:hover:not(:disabled) {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-chg__verb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cv2-root .pn-chg__verb--primary {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-chg__message {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  padding: 3px 6px;
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+
+/* The refusal and its escape hatch read as one control: a reason with no way
+   out is a dead end, and the reader should not have to hunt for the verb that
+   clears it. */
+.cv2-root .pn-chg__gate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-chg__note {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__remedy {
+  margin: var(--pn-space-1) 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__receipt {
+  margin: 0;
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-chg__empty {
+  margin: var(--pn-space-4);
+}
+
+/* -- choosing part of a file ---------------------------------------------
+
+   The strip sits between the diff's head and its body, which is where the
+   choice it governs is made: the checkboxes themselves are on the `@@` lines
+   inside the diff, and a control strip anywhere else would be a count with no
+   visible relationship to the thing being counted. */
+.cv2-root .pn-chg__hunks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0;
+}
+
+.cv2-root .pn-chg__hunk-count {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  margin-right: auto;
+}
+
+/* -- the phone arrangement ------------------------------------------------
+
+   `[data-arrangement='phone']` is set from `oneSurface`, NOT from a width.
+   A media query here would also fire on a narrowed desktop window, where both
+   panes are still reachable and hiding one would strand the reviewer with no
+   back control — the button only exists under the phone shell.
+
+   ONE PANE FILLS THE SCREEN. The 60vh cap above keeps two side-by-side panes
+   from pushing the commit bar off a desktop page; on a phone only one pane is
+   mounted, so the same cap would draw a short scrolling window with dead space
+   under it and the bar floating below. */
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__split {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__list-pane,
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__diff-pane {
+  max-height: none;
+}
+
+.cv2-root .pn-chg__back {
+  align-self: flex-start;
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-info);
+  background: none;
+  border: none;
+  padding: var(--pn-space-2) 0;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__back:hover {
+  text-decoration: underline;
+}
+
+/* The commit message is the one control that cannot share a row at this width
+   without becoming a two-character box. */
+.cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__message {
+  flex: 1 1 100%;
+}

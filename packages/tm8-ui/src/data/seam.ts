@@ -190,14 +190,17 @@ import type {
   ExecutionGitMergeInput,
   ExecutionGitCherryPickInput,
   ExecutionGitBranchInput,
+  ExecutionGitStageInput,
   ExecutionGitStashInput,
   ExecutionGitRollbackInput,
   SessionGitCheckpointResult,
   SessionGitCommitResult,
   SessionGitDiff,
+  SessionGitDiffScope,
   SessionGitMergeResult,
   SessionGitCherryPickResult,
   SessionGitBranchResult,
+  SessionGitStageResult,
   SessionGitStashResult,
   SessionGitRollbackResult,
   SessionGitStatus,
@@ -427,6 +430,21 @@ export interface FileBlameOpts {
 export interface GitDiffOpts {
   /** Unified-diff byte cap; server default 256 KiB, max 1 MiB. */
   maxBytes?: number;
+  /**
+   * NARROW TO ONE FILE. Not a client-side convenience: the whole-session text
+   * is byte-capped, so a file past the cap is ABSENT from it, not truncated —
+   * slicing the big diff cannot answer "show me this one file" for exactly the
+   * files a reviewer most needs to see. The server re-runs git scoped to the
+   * path, and an untracked path is answered against /dev/null.
+   */
+  path?: string;
+  /**
+   * WHICH COMPARISON. `session` (default) is working tree vs the merge-base —
+   * what this lane changed. `staged` is index vs HEAD: what a commit would
+   * write, exactly. `unstaged` is working tree vs index. Only git can tell
+   * these apart; a client cannot derive one from another.
+   */
+  scope?: SessionGitDiffScope;
 }
 
 export interface Seam {
@@ -1077,6 +1095,14 @@ export interface Seam {
     gitCheckpoint(id: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult>;
     gitRollback(id: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult>;
     gitCommit(id: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult>;
+    /**
+     * STAGE / UNSTAGE without committing — the review half of `gitCommit`.
+     * Unstage is a path-scoped MIXED reset (`git reset HEAD -- <paths>`): the
+     * index moves, the working tree does not, and `--hard` exists at no layer
+     * of this rail. Answers with the post-operation status so a caller never
+     * has to render a list it knows is one round-trip stale.
+     */
+    gitStage(id: EntityId, input: ExecutionGitStageInput): Promise<SessionGitStageResult>;
     gitMerge(id: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult>;
     /**
      * Tier 2 completion (Amendment 8). Cherry-pick's direction is fixed by

@@ -226,18 +226,23 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. All five surfaces are unconditional now: the last
+    // it its behaviour. All six surfaces are unconditional now: the last
     // gated one was Chat, and the gate retired with the name.
     //
     // READ AS ACCESSIBLE NAMES, NOT AS TEXT, because in the bar these chips are
     // MARKS: the labels were what made `.pn-panelbar__end` wide enough to scroll
     // the panel's own tabs off their edge. The name is the point of the
-    // assertion either way — a mark that dropped the word would be five
+    // assertion either way — a mark that dropped the word would be six
     // anonymous glyphs, which is the trade this change explicitly did not make.
     const tabEls = [...surfaceSwitch.querySelectorAll('[role="tab"]')];
     expect(tabEls.map((t) => t.getAttribute('aria-label'))).toEqual([
       'Terminal',
       'Transcript',
+      // Changes (Phase 1): the review surface. It sits between Transcript
+      // and Git because that is its slot in WorkSessionContent's surface
+      // list, not an alphabetical accident — the order here is RENDER
+      // order. PHONE_SURFACES is untouched, so the phone still shows two.
+      'Changes',
       'Git',
       'Debug',
       'Graph',
@@ -245,7 +250,7 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     // And they really are marks — otherwise this test would keep passing on the
     // labelled arrangement that caused the crowding.
     expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
-    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '']);
+    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {

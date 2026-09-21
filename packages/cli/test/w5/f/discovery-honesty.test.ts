@@ -103,7 +103,11 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
     // 197 -> 198 (187): execution.sessions.share, a v1 row. MEASURED.
-    expect(rows).toHaveLength(198);
+    // 197 -> 198 (Changes screen Phase 1): execution.gitStage, the index verb
+    // behind the Changes surface — public, v1, deliberately commandless like the
+    // rest of the session git rail. MEASURED from this file's own failing run.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
+    expect(rows).toHaveLength(199);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -127,7 +131,10 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // The `earned` set above is UNMOVED and that is the point of this pin:
     // adding a row must not quietly enlarge the population the contract
     // claims to have answered for. MEASURED.
-    expect(unknownRows).toHaveLength(196);
+    // 195 -> 196 (Changes screen Phase 1): execution.gitStage is a v1,
+    // non-reserved row, so it joins this population too. MEASURED.
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
+    expect(unknownRows).toHaveLength(197);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

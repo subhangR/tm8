@@ -203,6 +203,15 @@ describe('W5.C generator proof', () => {
     // like every other command and is NOT in UNBOUND_COMMAND_OPERATIONS —
     // the refinement that rejects an empty body is a constraint inside the
     // schema, not a reason to have none. MEASURED.
-    expect(ENTRIES).toHaveLength(119);
+    // +1 (2026-09-19, Changes screen Phase 1): `execution.gitStage` binds its
+    // command body. A path-scoped stage takes a real input DTO — the worktree
+    // and the pathspecs — so it binds the way every other execution.git*
+    // command does, and lands in ENTRIES rather than in
+    // UNBOUND_COMMAND_OPERATIONS. MEASURED from this assertion's own failing
+    // run (`expected ... length of 118 but got 119`), never hand-derived.
+    // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(ENTRIES).toHaveLength(120);
   });
 });

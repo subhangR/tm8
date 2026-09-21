@@ -13,12 +13,28 @@ const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
 /**
  * WHAT A PHONE OFFERS, AND — SEPARATELY — WHAT IT REFUSES.
  *
- * Five surfaces at 390px is the "do not ship them squashed" case: five chips in
- * a 30px bar measured 22px tall and helped push the panel's own control cluster
- * off the right edge (DEF-001, DEF-029). Narrowing them all until they fit
- * would produce five surfaces that are each unusable rather than two that work.
+ * Six surfaces at 390px is the "do not ship them squashed" case: five chips in
+ * a 30px bar already measured 22px tall and helped push the panel's own control
+ * cluster off the right edge (DEF-001, DEF-029), and Changes makes six.
+ * Narrowing them all until they fit would produce six surfaces that are each
+ * unusable rather than two that work.
  *
- * SO THE PHONE OFFERS TWO AND SAYS SO ABOUT THE OTHER THREE. Dropping them
+ * CHANGES WAS ONE OF THE REFUSALS AND IS NOT ANY MORE. Its reason was that
+ * reviewing means reading a diff and holding a selection across several files,
+ * and a 390px column can only do one of those at a time. That reason was right
+ * about the SPLIT and wrong about the SELECTION: a selection is state, and it
+ * survives a screen it is not currently drawn on. So the surface stopped
+ * trying to show both panes at once — on the phone it is the file list, or one
+ * full-width diff with a control back to the list, and never a 390px column cut
+ * in two. `SessionChangesBody` forks on `oneSurface` for it, the same way
+ * `ReaderSurface` forks for the editor. Three chips fit the bar the five that
+ * were measured did not.
+ *
+ * THE REFUSAL WAS RETIRED BY BUILDING THE ARRANGEMENT, not by deciding the
+ * reason had stopped mattering. The other three still have no arrangement, so
+ * they are still refused, by name.
+ *
+ * SO THE PHONE OFFERS THREE AND SAYS SO ABOUT THE OTHER THREE. Dropping them
  * silently is not the cheaper honest option — it is the DEF-003 pathology, the
  * one this program has already paid for: the phone had no account menu and
  * every tap census scored those screens as PASSING, because absence measures as
@@ -28,23 +44,23 @@ const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
  * THE THREE REFUSALS, each with its own reason rather than one blanket
  * sentence — a refusal that does not say WHY is a shrug:
  *
- *   git    Already ruled DEFER for the phone at the route level, and the note
- *          with that ruling is the useful half: the git facts a phone reader
- *          needs already live in entity detail. The surface itself is a
- *          worktree rail — status, diff, and the checkpoint / rollback / commit
- *          / merge verbs — which is a desktop arrangement, and a diff read at
- *          390px is a diff misread.
- *   debug  The CLI journal: a wide monospace log for diagnosing an agent. It
- *          wraps into unreadability at this width, and nothing about it is a
- *          phone task.
- *   graph  The `graph` route is REFUSED FOREVER by owner ruling. A graph canvas
- *          reached through a tab instead of an address is the same refused
- *          arrangement arriving by a side door, and shipping it here would make
- *          the route's refusal card the thing that is lying.
+ *   git      Already ruled DEFER for the phone at the route level, and the note
+ *            with that ruling is the useful half: the git facts a phone reader
+ *            needs already live in entity detail. The surface itself is a
+ *            worktree rail — status, diff, and the checkpoint / rollback /
+ *            commit / merge verbs — which is a desktop arrangement, and a diff
+ *            read at 390px is a diff misread.
+ *   debug    The CLI journal: a wide monospace log for diagnosing an agent. It
+ *            wraps into unreadability at this width, and nothing about it is a
+ *            phone task.
+ *   graph    The `graph` route is REFUSED FOREVER by owner ruling. A graph
+ *            canvas reached through a tab instead of an address is the same
+ *            refused arrangement arriving by a side door, and shipping it here
+ *            would make the route's refusal card the thing that is lying.
  *
  * Each one is `wontfix-on-phone` and is STATED on screen, never merely absent.
  */
-const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal'];
+const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal', 'changes'];
 
 const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
   git: 'The worktree rail — status, diff, and the checkpoint, rollback, commit and merge verbs — has no phone arrangement. A diff read at this width is a diff misread. This session’s git facts are in the entity’s own detail.',
@@ -91,6 +107,14 @@ export interface WorkSessionContentProps {
    * contrast, stay mounted throughout.
    */
   debug?: ReactNode;
+  /**
+   * The CHANGES surface (review what changed, stage it, commit a selection).
+   * A sibling of Git rather than a part of it: Git answers "where is this
+   * lane", Changes answers "what changed and what am I committing". Mounted
+   * only while selected, like Git — its status poll must stop the moment the
+   * viewer leaves it.
+   */
+  changes?: ReactNode;
   /**
    * The GIT surface (the session's worktree rail: status, diff, and the
    * checkpoint/rollback/commit/merge verbs). Offered on the same terms as
@@ -149,6 +173,7 @@ export function WorkSessionContent({
   requestedSurface = null,
   terminal,
   transcript,
+  changes,
   debug,
   git,
   graph,
@@ -169,10 +194,10 @@ export function WorkSessionContent({
   // the default; every other surface is always offered, and nothing is gated —
   // the last gate was Chat's immutable pin, and it went with Chat.
   //
-  // THE PHONE OFFERS TWO, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
+  // THE PHONE OFFERS THREE, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
   // three are refused rather than narrowed, and PHONE_REFUSED for each reason.
   const surfaces = useMemo<ContentSurface[]>(
-    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'git', 'debug', 'graph']),
+    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph']),
     [oneSurface],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
@@ -403,9 +428,9 @@ export function WorkSessionContent({
           {tabs}
         </div>
         {/*
-          THE THREE THAT ARE NOT HERE, SAID OUT LOUD.
+          THE FOUR THAT ARE NOT HERE, SAID OUT LOUD.
 
-          ONE control rather than three: three separate refusals would be three
+          ONE control rather than four: four separate refusals would be four
           things a thumb can find and none of them can perform, which is the
           furniture this program keeps removing. `DisabledIconControl` is the
           app-wide honesty form, so it carries its reason.
@@ -554,12 +579,12 @@ export function WorkSessionContent({
         {transcriptMounted ? transcript : null}
       </div>
       {/*
-        THE REFUSED THREE ARE NOT RENDERED AT ALL ON A PHONE — not even as the
+        THE REFUSED FOUR ARE NOT RENDERED AT ALL ON A PHONE — not even as the
         empty shells they would be.
 
         Each is a `tabpanel` pointing at `aria-labelledby={tabId(...)}`, and on
         this arrangement those tab ids do not exist. A dangling `aria-labelledby`
-        is not a cosmetic slip: it is three unlabelled tabpanels in the
+        is not a cosmetic slip: it is four unlabelled tabpanels in the
         accessibility tree of a surface whose whole claim is that it is honest
         about what it does not have. They were already inert here (`surface` is
         clamped, so their bodies never mount and their polls never start); this
@@ -579,6 +604,18 @@ export function WorkSessionContent({
             {/* Mounted only while selected: unmounting is how the journal poll
                 stops the instant the viewer switches away. */}
             {surface === 'debug' ? debug : null}
+          </div>
+          <div
+            id={panelId('changes')}
+            role="tabpanel"
+            aria-labelledby={tabId('changes')}
+            aria-hidden={surface !== 'changes'}
+            className="pn-work-session-content__surface"
+            data-active={surface === 'changes' ? 'true' : 'false'}
+            data-testid="work-session-changes-surface"
+          >
+            {/* Mounted only while selected — the status poll stops on unmount. */}
+            {surface === 'changes' ? changes : null}
           </div>
           <div
             id={panelId('git')}

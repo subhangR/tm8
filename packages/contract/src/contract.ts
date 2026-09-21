@@ -4537,6 +4537,102 @@ export interface ExecutionGitCommitInput extends CommandContext {
 }
 
 /**
+ * execution.gitStage — stage or UNSTAGE paths in the session's worktree.
+ *
+ * WHY A VERB OF ITS OWN when `execution.gitCommit` already stages what it is
+ * about to commit. Because review is not commit. A reviewer moves files in and
+ * out of the index while deciding what belongs in one change, and the only way
+ * to do that through `gitCommit` is to commit — which is the decision they have
+ * not made yet. Staging that can only be expressed by committing is not
+ * staging.
+ *
+ * UNSTAGE IS A MIXED RESET AND NOTHING ELSE: `git reset -q HEAD -- <paths>`.
+ * It moves the index back to HEAD for those paths and never touches a byte in
+ * the working tree. `--hard` is absent from this verb at every layer and must
+ * stay absent: rollback is the verb that discards work, it gates on `force`,
+ * and it says so. An unstage that could delete an agent's edits would be the
+ * same verb wearing a safer word.
+ *
+ * THE ANSWER IS THE POST-OPERATION STATUS, not an acknowledgement. A client
+ * that repainted from its own optimistic guess would drift from the worktree
+ * the moment a concurrent agent turn wrote a file, so the result carries the
+ * same `files` / `dirty` shape `execution.gitStatus` returns, read AFTER the
+ * index moved.
+ */
+export type ExecutionGitStageInput = CommandContext & {
+  action: 'stage' | 'unstage';
+  /** Pathspecs, each guarded (no absolute, no `..`, no leading dash). */
+  paths?: string[];
+  /** The whole worktree: `git add -A` / `git reset HEAD`. */
+  all?: boolean;
+  /**
+   * PART of one file instead of all of it — `git add -p` without the prompt.
+   * Mutually exclusive with `paths` and `all`; naming two scopes is a refusal,
+   * not a merge, because there is no honest way to rank them.
+   *
+   * INDICES, NEVER PATCH TEXT. The server re-derives the diff and slices it
+   * itself. A patch accepted from a client and fed to `git apply --cached` is
+   * a write primitive for any path in the repository — `--cached` writes the
+   * index, so such a patch would not even have to touch the working tree to
+   * put content into the next commit. An index into a diff the server just
+   * computed cannot express that.
+   *
+   * The indices are 1-based and come from `execution.gitDiff`'s `hunks`, read
+   * in the scope that matches the action: `unstaged` to stage, `staged` to
+   * unstage. Out of range is a refusal — never a clamp, never a partial apply.
+   */
+  hunks?: {
+    path: string;
+    /** 1-based, from the matching `gitDiff` read. Order and repeats do not matter. */
+    indices: number[];
+    /**
+     * `hunkDigest` from that read, echoed back.
+     *
+     * An agent lane can write the file between render and click, and the
+     * indices would still be IN RANGE while pointing at different code. The
+     * digest is what turns that into a refusal instead of a wrong stage.
+     * Optional so a scripted caller can opt out; a UI should always send it.
+     */
+    digest?: string;
+  };
+};
+
+export interface SessionGitStageResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  action: 'stage' | 'unstage';
+  branch: string;
+  /**
+   * The paths git was ACTUALLY given, so a client can assert what moved.
+   *
+   * For `stage` that is the request. For `unstage` it can be LONGER: a staged
+   * rename is one porcelain row (`path` new, `origPath` old) over two index
+   * entries, and resetting only the requested half leaves a staged deletion
+   * the reviewer never asked for. The server expands the rename and says so
+   * here rather than echoing a request that understates what it did.
+   *
+   * EMPTY when `all` is true: `git add -A` and `git reset HEAD` are given no
+   * pathspecs, and this field reports argv, not intent. Read `all` for that.
+   */
+  paths: string[];
+  all: boolean;
+  /** The staged half AFTER the operation — what a commit would write now. */
+  staged: SessionGitFile[];
+  /** Full porcelain status AFTER the operation, capped like gitStatus. */
+  files: SessionGitFile[];
+  filesTruncated: boolean;
+  dirty: { staged: number; unstaged: number; untracked: number; total: number };
+  /**
+   * Present only for a hunk request. `applied` is the selection after
+   * de-duplication and `total` is how many hunks the file had, so a client can
+   * say "2 of 5" without a second read — and can tell a full-file result from
+   * a partial one, which the porcelain alone does not distinguish.
+   */
+  hunkSelection?: { path: string; applied: number; total: number };
+  checkedAt: string;
+}
+
+/**
  * Merge the session's BASE REF forward into the session branch. The other
  * direction (session branch → base) is deliberately absent at every layer:
  * base is checked out in the user's primary tree or nowhere, and a session
@@ -4594,6 +4690,28 @@ export interface SessionGitStatus {
   checkedAt: string;
 }
 
+/**
+ * One selectable hunk of a single-file diff — the unit `execution.gitStage`
+ * takes an index into.
+ *
+ * ONLY EVER PRESENT FOR `staged` AND `unstaged` SCOPE, and only when `path`
+ * narrowed the read to one file. The `session` scope is measured from the
+ * MERGE-BASE, so its hunks have a pre-image that is not the index and cannot
+ * be handed to `git apply --cached` — offering them would be offering a
+ * selection the stage verb must then refuse. Absent is the honest answer.
+ */
+export interface SessionGitDiffHunk {
+  /** 1-based, and stable only within the read that produced it. */
+  index: number;
+  /** The text after the closing `@@` — git's guess at the enclosing function. */
+  heading: string;
+  /** Pre-image start line, which is the side a reviewer is looking at. */
+  oldStart: number;
+  newStart: number;
+  /** The hunk verbatim, header included, so a client need not re-split `diff`. */
+  text: string;
+}
+
 /** Per-file numstat digest — always complete even when the diff text is cut. */
 export interface SessionGitDiffFile {
   path: string;
@@ -4609,7 +4727,40 @@ export interface SessionGitDiffFile {
  * The digest (`stat`, `files`) is always complete; the unified `diff` text is
  * capped by `maxBytes` with `diffTruncated` saying so — digest+partial, the
  * transcript precedent.
+ *
+ * NARROWING IT: `scope` and `path`. Both are optional and both default to
+ * exactly the whole-session read described above, so every existing caller is
+ * unchanged. They exist because a REVIEWER asks two questions this read could
+ * not answer:
+ *
+ *   · "show me this ONE file" — and slicing the session diff client-side
+ *     cannot do it, because the text is byte-capped: a file past the cap is
+ *     not truncated in the payload, it is absent from it. So the narrowing
+ *     has to happen before the cap, which means server-side;
+ *   · "show me what is STAGED" vs "what is not" — the index/worktree split
+ *     the session diff deliberately flattens. `git diff --cached` and
+ *     `git diff` are different questions and only git can answer them.
+ *
+ * An UNTRACKED path is not compared the same way in all three scopes. It sits
+ * in the working tree and in neither the index nor HEAD, so:
+ *
+ *   · `session` asks what this lane changed, and the answer is the whole file.
+ *     The server produces it with `git diff --no-index` against /dev/null — a
+ *     real unified diff of a whole new file rather than a blank panel over a
+ *     file that plainly changed;
+ *   · `staged` (index vs HEAD) and `unstaged` (working tree vs index) have
+ *     nothing to compare: a commit would write none of it. Both answer EMPTY
+ *     — `diff: ''`, `files: []`, a zeroed `stat` — and that is the truthful
+ *     answer to those two questions, not a gap in the read.
  */
+export type SessionGitDiffScope =
+  /** Working tree vs the merge-base of the session's base ref. The default. */
+  | 'session'
+  /** Index vs HEAD — exactly what a commit would write. */
+  | 'staged'
+  /** Working tree vs index — what is NOT staged. */
+  | 'unstaged';
+
 export interface SessionGitDiff {
   sessionId: EntityId;
   available: boolean;
@@ -4626,6 +4777,49 @@ export interface SessionGitDiff {
   /** Unified diff text, capped at `maxBytes`. */
   diff: string;
   diffTruncated: boolean;
+  /**
+   * The scope this answer was measured in — ECHOED, never inferred. A client
+   * that asked for `staged` and rendered whatever came back would show the
+   * session diff under a "Staged" heading the day the param is dropped.
+   */
+  scope: SessionGitDiffScope;
+  /** The single path this answer was narrowed to, or null for the whole tree. */
+  path: string | null;
+  /**
+   * The selectable hunks of this file, or null when there are none to offer.
+   *
+   * Null rather than `[]`, and the distinction carries weight: `[]` would say
+   * "this file has zero hunks", which is never true of a file that appears in
+   * a diff. Null says the read cannot offer a selection at all — wrong scope,
+   * no `path`, an untracked or binary file, or a diff the byte cap cut, where
+   * the hunks parsed from a half-file would be a selection over text the
+   * reviewer never saw the end of.
+   */
+  hunks: SessionGitDiffHunk[] | null;
+  /**
+   * Pins `hunks` to the bytes they were read from. Echo it back in
+   * `execution.gitStage`; the server refuses the selection if the file moved
+   * underneath it. Null exactly when `hunks` is null.
+   *
+   * It covers hunk BODY text only — an edit elsewhere in the file renumbers
+   * every later `@@` header without changing the hunk the reviewer approved,
+   * and refusing that would make hunk staging unusable in a live agent lane,
+   * which is the only place it is used.
+   */
+  hunkDigest: string | null;
+  /**
+   * True when `path` names a file git is not tracking — recorded neither in
+   * the index nor in HEAD.
+   *
+   * A CLASSIFICATION of the path, never a claim about how the diff was
+   * produced. It is true in all three scopes, including the two that answer
+   * empty, and only `session` reaches `--no-index`. That is precisely what
+   * makes it useful: it is how a client tells a `staged` answer that is empty
+   * BECAUSE the file is untracked from one that is empty because the file is
+   * unchanged. The UI says so: "new file, not yet tracked" is a different fact
+   * from "a file with 400 added lines".
+   */
+  untracked: boolean;
   checkedAt: string;
 }
 
@@ -5151,6 +5345,21 @@ export interface SessionFileChange {
   linesRemoved: number;
   hunks: SessionFileHunk[];
   hunksTruncated: boolean;
+  /**
+   * True when the agent's MOST RECENT turn wrote this file.
+   *
+   * The counts beside it stay session-wide on purpose: "the agent has edited
+   * this file four times, most recently in the turn you just read" is the
+   * useful sentence, and two competing sets of numbers on one row is not.
+   *
+   * It inherits every honesty boundary of `source: 'transcript'` — it is what
+   * the harness OBSERVED through tool calls. A file the agent rewrote with a
+   * shell command in that same turn is not flagged, because nothing recorded
+   * it. This flag can therefore be a FALSE NEGATIVE and must never be
+   * rendered as "the agent did not touch this"; it is only ever evidence that
+   * it DID.
+   */
+  lastTurn: boolean;
 }
 
 export interface SessionFileChanges {
@@ -5160,6 +5369,22 @@ export interface SessionFileChanges {
   filesTruncated: boolean;
   /** The provenance label the UI must carry: observed tool calls, not git. */
   source: 'transcript';
+  /**
+   * How many agent turns the transcript contains, where a TURN is the work
+   * following one real user prompt.
+   *
+   * 1 for a session nobody has replied to yet, including an autonomous run
+   * that was never prompted a second time — there, the whole session is the
+   * one turn, and every file it touched is correctly `lastTurn`.
+   *
+   * A prompt is a MAIN-THREAD `user` record that is not a tool result, not a
+   * compaction summary, and not meta — the same definition `session-usage`
+   * counts prompts by. The exclusions are not tidying: the harness re-injects
+   * a compaction summary AS a user turn, so counting it would start a fresh
+   * "last turn" that the agent never worked in, and a panel reading from it
+   * would report that the agent had changed nothing.
+   */
+  turns: number;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

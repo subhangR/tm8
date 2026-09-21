@@ -91,7 +91,7 @@ describe('WorkSessionContent', () => {
     expect(screen.getByText('native terminal')).toBeTruthy();
     expect(
       screen.getAllByRole('tab').map((tab) => tab.textContent),
-    ).toEqual(['Terminal', 'Transcript', 'Git', 'Debug', 'Graph']);
+    ).toEqual(['Terminal', 'Transcript', 'Changes', 'Git', 'Debug', 'Graph']);
     // The retired name is gone from the strip entirely.
     expect(screen.queryByRole('tab', { name: 'Chat' })).toBeNull();
     expect(screen.getByTestId('work-session-transcript-surface')).toBeTruthy();

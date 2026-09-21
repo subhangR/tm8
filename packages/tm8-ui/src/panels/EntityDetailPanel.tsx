@@ -361,6 +361,12 @@ export interface EntityDetailPanelProps {
   debugSurface?: ReactNode;
   /** The GIT surface (worktree status/diff/verbs rail). Same contract as Debug. */
   gitSurface?: ReactNode;
+  /**
+   * The CHANGES surface (review changed files, stage a selection, commit it).
+   * Same contract as Debug and Git: self-fetching, host wires the seam through
+   * `views/changesSurface.tsx`.
+   */
+  changesSurface?: ReactNode;
   /** The task detail's git section (tracked PRs/commits + gate verdict). */
   taskGitSection?: ReactNode;
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
@@ -1536,6 +1542,11 @@ function PanelBody(
         git={props.gitSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             The session git host is unavailable in this view.
+          </p>
+        )}
+        changes={props.changesSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session changes host is unavailable in this view.
           </p>
         )}
         graph={props.graphSurface ?? (

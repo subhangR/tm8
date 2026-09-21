@@ -115,7 +115,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 197 = 195 v1 + 2 reserved, 195 mounted HTTP + 1 mounted WS boundary (+25 177)', () => {
+  it('keeps the exact 198 = 196 v1 + 2 reserved, 196 mounted HTTP + 1 mounted WS boundary (+25 177)', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
@@ -134,15 +134,27 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 197 -> 198 (187, session sharing): execution.sessions.share, one
     // POST command — registered and mounted, so every count below moves
     // by exactly one and the residual set is unchanged.
-    expect(OPERATIONS).toHaveLength(198); // +25 (177) containers, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(196);
+    // 197 -> 198 (2026-09-19, Changes screen Phase 1): execution.gitStage, the
+    // TENTH execution.git* row (measured: status/diff/checkpoint/rollback/commit/
+    // stage/merge/cherryPick/branch/stash) and the index verb the Changes
+    // surface needs.
+    // One public v1 POST command, so V1 moves with it: 195 -> 196. MEASURED
+    // from this file's own failing run, not derived.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(OPERATIONS).toHaveLength(199); // +25 (177) containers, MEASURED
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage are both v1. MEASURED on the merged tree from this assertion's own failing run.
+    expect(V1_OPERATIONS).toHaveLength(197);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
     // TWO WS ROWS now, one mounted socket: `containers.stream` re-declares
     // `events.subscribe`'s binding under the container family's own name.
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(196);
+    // 195 -> 196: execution.gitStage is HTTP, so it lands in this half. MEASURED.
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): mounted HTTP gains sharing + gitStage. MEASURED from this assertion's own failing run (Received 197).
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(197);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
       // The alias, and it must declare itself as one: `aliasOf` is what keeps
@@ -160,9 +172,14 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     // 141: +3 v1 non-WS (auth.password.change, auth.invite.signup,
     // auth.claim.reissue) — 163 -> 166.
+    // 193 -> 194 (2026-09-19, Changes screen Phase 1): execution.gitStage is
+    // v1 and HTTP, so it joins this half too. Forced by the assertions above
+    // exactly as the comment describes: 196 v1 rows minus the two v1 WS rows
+    // is 194. MEASURED — read off this assertion's own failing run, which
+    // printed `Received 194` against a stale `Expected 193`.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(194); // 169 -> 193 (177): the container handlers; +1 (187)
+    )).toHaveLength(195); // 169 -> 193 (177): the container handlers; +1 (187); +1 (execution.gitStage)
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

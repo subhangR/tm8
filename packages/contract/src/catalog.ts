@@ -263,6 +263,9 @@ export const OPERATIONS = [
   { name: 'execution.gitCheckpoint',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/checkpoint',  kind: 'command', status: 'v1' },
   { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
   { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
+  // Stage/UNSTAGE without committing — the review half of the commit verb.
+  // Unstage is a path-scoped MIXED reset; no working-tree bytes move.
+  { name: 'execution.gitStage',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/stage',       kind: 'command', status: 'v1' },
   { name: 'execution.gitMerge',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/merge',       kind: 'command', status: 'v1' },
   // Tier 2 completion (same laws as the six above): cherry-pick and stash
   // obey merge's abort-verify-surface contract — a conflict is DATA with the

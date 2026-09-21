@@ -307,9 +307,15 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
     // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
     // 193 -> 194 (187): execution.sessions.share, one POST command. MEASURED.
-    expect(SURFACE).toHaveLength(194);
-    expect(rows).toHaveLength(194);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(194);
+    // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(SURFACE).toHaveLength(195);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
+    expect(rows).toHaveLength(195);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
+    expect(new Set(rows.map((r) => r.op)).size).toBe(195);
   });
 
   /**

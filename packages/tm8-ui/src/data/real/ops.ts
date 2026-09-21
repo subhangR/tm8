@@ -122,6 +122,7 @@ import {
   type ExecutionGitMergeInput,
   type ExecutionGitCherryPickInput,
   type ExecutionGitBranchInput,
+  type ExecutionGitStageInput,
   type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
@@ -130,6 +131,7 @@ import {
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
   type SessionGitBranchResult,
+  type SessionGitStageResult,
   type SessionGitStashResult,
   type SessionGitRollbackResult,
   type SessionGitStatus,
@@ -646,7 +648,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
       return http.call<SessionGitDiff>('execution.gitDiff', {
         params: { workSessionId },
-        query: { maxBytes: opts?.maxBytes },
+        query: { maxBytes: opts?.maxBytes, path: opts?.path, scope: opts?.scope },
       });
     },
     gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
@@ -663,6 +665,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
     gitCommit(workSessionId: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
       return http.call<SessionGitCommitResult>('execution.gitCommit', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitStage(workSessionId: EntityId, input: ExecutionGitStageInput): Promise<SessionGitStageResult> {
+      return http.call<SessionGitStageResult>('execution.gitStage', {
         params: { workSessionId },
         body: input,
       });

@@ -24,9 +24,10 @@
  * Reads cap their output — digest+partial, the transcript precedent: the
  * numstat digest is always complete, the unified diff text is byte-capped.
  */
-import { CollabError, type SessionGitBranchResult, type SessionGitCheckpointResult, type SessionGitCherryPickResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStashResult, type SessionGitStatus, type ExecutionGitBranchInput, type ExecutionGitCheckpointInput, type ExecutionGitCherryPickInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput, type ExecutionGitStashInput } from '@tm8/contract';
+import { CollabError, type SessionGitBranchResult, type SessionGitCheckpointResult, type SessionGitCherryPickResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitDiffHunk, type SessionGitDiffScope, type SessionGitFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStageResult, type SessionGitStashResult, type SessionGitStatus, type ExecutionGitBranchInput, type ExecutionGitCheckpointInput, type ExecutionGitCherryPickInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput, type ExecutionGitStageInput, type ExecutionGitStashInput } from '@tm8/contract';
 import {
   WorktreeError,
+  assertSafePathspec,
   branchCreate,
   branchDelete,
   branchRename,
@@ -34,15 +35,23 @@ import {
   cherryPick,
   commit,
   mergeFromRef,
+  readHunks,
   resolveCommitish,
   rollback,
   runGit,
   stage,
+  stageHunks,
+  stagedFiles,
   stashDrop,
   stashList,
   stashPop,
   stashPush,
+  type ChangedFile,
+  unstage,
 } from '@tm8/execution';
+
+import { realpath, stat } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 
 import type { RequestContext } from '../../http/types.js';
 import { claimsFor, requireUuidParam } from '../context.js';
@@ -57,6 +66,51 @@ const DIFF_FILES_CAP = 500;
 const DIFF_BYTES_DEFAULT = 256 * 1024;
 const DIFF_BYTES_MAX = 1024 * 1024;
 
+/**
+ * THE STATUS READ'S OWN CAP, because `STATUS_FILES_CAP` is not one.
+ *
+ * `-uall` asks git to list untracked FILES rather than collapsing a new
+ * directory to `dir/`, which the Changes surface needs — it cannot stage,
+ * diff or name what it cannot see. The cost of that is unbounded in the
+ * worktree's content, and the 200-row cap does NOT bound it: that cap is
+ * applied to the parsed array AFTER git has already printed every row and
+ * node has already buffered them.
+ *
+ * Which matters because an overflow here is not a truncated answer. `runGit`
+ * resolves with an exit code for ordinary git failures, but node rejects a
+ * maxBuffer overflow out of `execFile` with a string-coded `RangeError`
+ * (`ERR_CHILD_PROCESS_STDIO_MAXBUFFER` — MEASURED), which `runGit` re-raises
+ * rather than resolving. Left at node's 1 MiB default and outside a `try`,
+ * an agent that generated a large unignored tree — a build directory or a
+ * dataset the repo's `.gitignore` does not cover — turned `execution.gitStatus`
+ * from `available: false, unavailableReason: 'worktree_unreadable'` into a
+ * throw out of the handler. Roughly 40 bytes a row, so order 25,000 files.
+ *
+ * So the buffer is raised to a size no honest worktree reaches, and passing
+ * it is only half the fix: the rejection is caught and answered with the
+ * `worktree_unreadable` this read already has a shape for. A worktree too
+ * large to read is a fact about the worktree, not a server error.
+ */
+const STATUS_BYTES_MAX = 8 * 1024 * 1024;
+
+/**
+ * The one status read, shared by `status` and by `stage`'s post-apply
+ * re-read, so the cap and the overflow contract cannot drift apart between
+ * the two call sites that have to agree about them.
+ *
+ * `null` means "could not be read" for either reason — a non-zero git exit or
+ * an overflow. The callers differ in what they say about it (one has applied
+ * nothing, the other has already moved the index), so they branch, not this.
+ */
+async function readPorcelain(cwd: string): Promise<string | null> {
+  const run = await runGit(['status', '--porcelain=v1', '-z', '-uall'], {
+    cwd,
+    maxBufferBytes: STATUS_BYTES_MAX,
+  }).catch(() => null);
+  if (run === null || run.code !== 0) return null;
+  return run.stdout;
+}
+
 interface SessionLaneRow {
   session_id: string;
   workdir_mode: string | null;
@@ -66,6 +120,167 @@ interface SessionLaneRow {
   branch: string | null;
   base_commit_oid: string | null;
   worktree_status: string | null;
+}
+
+/**
+ * `git status --porcelain=v1 -z` → the shape both `gitStatus` and `gitStage`
+ * answer with. Lifted out of the status handler when `gitStage` started
+ * returning the POST-operation status: two copies of this parser would be two
+ * definitions of "staged", and the XY column rules (a rename carries its
+ * source in the next NUL token; `??` is untracked and counts as neither half)
+ * are exactly the kind of detail that drifts between copies.
+ */
+function parsePorcelain(stdout: string): {
+  files: SessionGitFile[];
+  dirty: { staged: number; unstaged: number; untracked: number; total: number };
+} {
+  const tokens = stdout.split('\u0000');
+  const files: SessionGitFile[] = [];
+  let staged = 0;
+  let unstaged = 0;
+  let untracked = 0;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token === undefined || token.length < 4) continue;
+    const status = token.slice(0, 2);
+    const filePath = token.slice(3);
+    if (status === '??') untracked += 1;
+    else {
+      if (status[0] !== ' ' && status[0] !== '?') staged += 1;
+      if (status[1] !== ' ' && status[1] !== '?') unstaged += 1;
+    }
+    if (status[0] === 'R' || status[0] === 'C') {
+      const origPath = tokens[i + 1];
+      files.push(origPath === undefined ? { status, path: filePath } : { status, path: filePath, origPath });
+      i += 1;
+    } else {
+      files.push({ status, path: filePath });
+    }
+  }
+  return { files, dirty: { staged, unstaged, untracked, total: files.length } };
+}
+
+/**
+ * A caller-supplied path reaches a git argv slot, so it is guarded by the SAME
+ * function the mutating verbs use — one definition of "safe pathspec" for the
+ * reads and the writes both. `assertSafePathspec` throws a WorktreeError; this
+ * read wants a CollabError, so it is lifted like any other.
+ */
+function requireSafePath(path: string): string {
+  try {
+    assertSafePathspec(path);
+  } catch (error) {
+    liftWorktreeError(error);
+  }
+  return path;
+}
+
+/**
+ * IS THIS STAGED ROW THE OTHER HALF OF A FILE THE REVIEWER ALREADY TICKED?
+ *
+ * `git diff --cached --name-status` folds two index entries into one row for
+ * both renames (`R100 old new`) and copies (`C100 old new`), and `stagedFiles`
+ * parses both the same way: `path` is the destination, `origPath` the source.
+ * The commit gate has to treat the two rows differently, because they are not
+ * the same event.
+ *
+ * A RENAME is ONE logical file wearing two names. Its source no longer exists
+ * — the index holds a deletion of `old` and an addition of `new`, and the two
+ * cannot be committed apart without writing an index nobody asked for. So
+ * selecting either name selects the pair, and the destination row is not
+ * "outside" a selection that named the source.
+ *
+ * A COPY is TWO files. The source is UNTOUCHED by the copy and may carry a
+ * wholly unrelated staged change of its own; the destination is new work the
+ * reviewer may not have looked at. Aliasing them would mean a reviewer who
+ * ticks `src.txt` and presses Commit selected silently commits `dup.txt` as
+ * well — exactly the quiet widening this gate exists to refuse.
+ *
+ * This is the same distinction `expandStagedRenames` makes on the unstage
+ * side, pointed the other way: there it decides what an unstage must DRAG
+ * ALONG, here what a commit may LET PASS. Both answer it for `R*` only.
+ */
+function isRenameHalfOf(file: ChangedFile, wanted: ReadonlySet<string>): boolean {
+  return file.origPath !== undefined && file.status.startsWith('R') && wanted.has(file.origPath);
+}
+
+/** `git diff --numstat` → the digest half of a diff answer. */
+function parseNumstat(stdout: string): {
+  files: SessionGitDiffFile[];
+  additions: number;
+  deletions: number;
+} {
+  const files: SessionGitDiffFile[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const line of stdout.split('\n')) {
+    if (line.trim() === '') continue;
+    const [a, d, ...rest] = line.split('\t');
+    const filePath = rest.join('\t');
+    if (filePath === '') continue;
+    // A BINARY file's counts are `-` in both columns. That is not zero and it
+    // is not an error — it is "git cannot count lines here", and it stays null
+    // all the way to the UI rather than being flattened into a 0.
+    const add = a === '-' ? null : Number.parseInt(a ?? '', 10);
+    const del = d === '-' ? null : Number.parseInt(d ?? '', 10);
+    if (add !== null && Number.isInteger(add)) additions += add;
+    if (del !== null && Number.isInteger(del)) deletions += del;
+    files.push({
+      path: filePath,
+      additions: add !== null && Number.isInteger(add) ? add : null,
+      deletions: del !== null && Number.isInteger(del) ? del : null,
+    });
+  }
+  return { files, additions, deletions };
+}
+
+/**
+ * CONTAINMENT for the one code path that reads the filesystem instead of the
+ * object store.
+ *
+ * Every other read here hands its path to git as a PATHSPEC, and git resolves
+ * it against the repository — a pathspec cannot name a file the repository
+ * does not contain. `git diff --no-index` is different: its arguments are
+ * filesystem paths, resolved by the OS, and the repository has no say. So the
+ * pathspec guard (`assertSafePathspec`: no absolute, no `..`, no leading dash)
+ * is necessary but NOT sufficient — `link` can be a perfectly ordinary
+ * relative name inside the worktree and still be a symlink to `/etc/shadow`.
+ *
+ * Hence: resolve BOTH sides to their real paths and require the target to sit
+ * under the worktree root. An escape is refused BY NAME (`path_outside_worktree`)
+ * rather than silently answered empty, because a caller that asked for a path
+ * outside the lane needs to be told so.
+ *
+ * `absent` is the honest answer for a path that is simply not there (or is a
+ * directory, or a device): there is no file to diff, which is different from
+ * a refusal and different from an error.
+ */
+async function containedFile(
+  worktreePath: string,
+  relPath: string,
+): Promise<{ kind: 'file'; real: string } | { kind: 'absent' }> {
+  const rootReal = await realpath(worktreePath).catch(() => null);
+  if (rootReal === null) return { kind: 'absent' };
+  const inside = (candidate: string): boolean =>
+    candidate === rootReal || candidate.startsWith(rootReal + sep);
+  // Lexical first — cheap, and it catches anything the pathspec guard let
+  // through before the filesystem is touched at all.
+  const abs = resolve(rootReal, relPath);
+  if (!inside(abs)) {
+    throw new CollabError('invalid_input', 'path resolves outside the session worktree', {
+      details: { reason: 'path_outside_worktree', path: relPath },
+    });
+  }
+  const real = await realpath(abs).catch(() => null);
+  if (real === null) return { kind: 'absent' };
+  if (!inside(real)) {
+    throw new CollabError('invalid_input', 'path resolves outside the session worktree', {
+      details: { reason: 'path_outside_worktree', path: relPath },
+    });
+  }
+  const st = await stat(real).catch(() => null);
+  if (st === null || !st.isFile()) return { kind: 'absent' };
+  return { kind: 'file', real };
 }
 
 /** `mapWorktreeError` — the verbs' taxonomy is a strict subset of ours. */
@@ -82,6 +297,42 @@ function liftWorktreeError(error: unknown): never {
     });
   }
   throw error;
+}
+
+/**
+ * The selectable-hunk half of a `gitDiff` answer, or a pair of nulls.
+ *
+ * FOUR REASONS THERE IS NOTHING TO OFFER, and each is a correct answer rather
+ * than a gap in the read:
+ *
+ *   · no `path` — hunk indices are per-file, and a whole-tree diff has no file
+ *     for them to index into;
+ *   · `session` scope — it is measured from the MERGE-BASE, so its hunks have
+ *     a pre-image that is not the index and `git apply --cached` cannot take
+ *     them. Offering them would offer a selection the stage verb must refuse;
+ *   · the diff text was CUT by the byte cap — the hunks still parse, and that
+ *     is the trap: they would be a selection over a file whose end the
+ *     reviewer never saw. Better to offer none than to offer a truncated set
+ *     that looks complete;
+ *   · untracked or binary — `readHunks` answers null for both, because there
+ *     is no diff to split.
+ *
+ * A failure to READ is never swallowed into null. A client that cannot
+ * distinguish "no hunks here" from "the hunk read broke" would quietly lose
+ * the feature the day it regresses, so anything unexpected propagates.
+ */
+async function hunkListing(
+  worktreePath: string,
+  wantPath: string | null,
+  scope: SessionGitDiffScope,
+  truncated: boolean,
+): Promise<{ hunks: SessionGitDiffHunk[] | null; hunkDigest: string | null }> {
+  if (wantPath === null || truncated || (scope !== 'staged' && scope !== 'unstaged')) {
+    return { hunks: null, hunkDigest: null };
+  }
+  const listing = await readHunks({ worktreePath, path: wantPath, staged: scope === 'staged' });
+  if (listing === null) return { hunks: null, hunkDigest: null };
+  return { hunks: listing.hunks, hunkDigest: listing.digest };
 }
 
 export class ExecutionGitService {
@@ -206,34 +457,15 @@ export class ExecutionGitService {
     }
     const headOid = head.stdout.trim();
 
-    const porcelain = await runGit(['status', '--porcelain=v1', '-z'], { cwd: path });
-    if (porcelain.code !== 0) {
+    // `-uall` lists untracked FILES. Without it git collapses a new directory
+    // to `dir/`, and a Changes surface cannot stage, diff or even name what is
+    // inside it. What bounds the COST of asking is `STATUS_BYTES_MAX`, not the
+    // 200-row cap applied further down — see the constant.
+    const porcelain = await readPorcelain(path);
+    if (porcelain === null) {
       return { ...empty, headOid, unavailableReason: 'worktree_unreadable' };
     }
-    const tokens = porcelain.stdout.split('\u0000');
-    const files: SessionGitStatus['files'] = [];
-    let staged = 0;
-    let unstaged = 0;
-    let untracked = 0;
-    for (let i = 0; i < tokens.length; i += 1) {
-      const token = tokens[i];
-      if (token === undefined || token.length < 4) continue;
-      const status = token.slice(0, 2);
-      const filePath = token.slice(3);
-      if (status === '??') untracked += 1;
-      else {
-        if (status[0] !== ' ' && status[0] !== '?') staged += 1;
-        if (status[1] !== ' ' && status[1] !== '?') unstaged += 1;
-      }
-      if (status[0] === 'R' || status[0] === 'C') {
-        const origPath = tokens[i + 1];
-        files.push(origPath === undefined ? { status, path: filePath } : { status, path: filePath, origPath });
-        i += 1;
-      } else {
-        files.push({ status, path: filePath });
-      }
-    }
-    const total = files.length;
+    const { files, dirty } = parsePorcelain(porcelain);
 
     const { baseRef, baseOid } = await ExecutionGitService.resolveBase(lane, path);
     let ahead: number | null = null;
@@ -272,7 +504,7 @@ export class ExecutionGitService {
       headOid,
       ahead,
       behind,
-      dirty: { staged, unstaged, untracked, total },
+      dirty,
       files: files.slice(0, STATUS_FILES_CAP),
       filesTruncated: files.length > STATUS_FILES_CAP,
       ...(stashes === undefined ? {} : { stashes }),
@@ -294,6 +526,20 @@ export class ExecutionGitService {
       maxBytes = Math.min(parsed, DIFF_BYTES_MAX);
     }
 
+    // NARROWING PARAMS (both optional; absent = the whole-session read this
+    // handler has always answered). `path` is guarded by the mutating verbs'
+    // own pathspec guard before it can reach an argv slot.
+    const rawScope = ctx.query.get('scope');
+    let scope: SessionGitDiffScope = 'session';
+    if (rawScope !== null && rawScope !== '') {
+      if (rawScope !== 'session' && rawScope !== 'staged' && rawScope !== 'unstaged') {
+        throw new CollabError('invalid_input', `scope must be session|staged|unstaged, got ${rawScope}`);
+      }
+      scope = rawScope;
+    }
+    const rawPath = ctx.query.get('path');
+    const wantPath = rawPath !== null && rawPath !== '' ? requireSafePath(rawPath) : null;
+
     const empty: SessionGitDiff = {
       sessionId: lane.session_id,
       available: false,
@@ -308,6 +554,11 @@ export class ExecutionGitService {
       filesTruncated: false,
       diff: '',
       diffTruncated: false,
+      scope,
+      path: wantPath,
+      untracked: false,
+      hunks: null,
+      hunkDigest: null,
       checkedAt: new Date().toISOString(),
     };
     if (reason !== null) return empty;
@@ -329,32 +580,226 @@ export class ExecutionGitService {
       if (mb.code === 0) mergeBaseOid = mb.stdout.trim();
     }
     const from = mergeBaseOid ?? baseOid;
-    if (from === null) {
+    if (from === null && scope === 'session') {
       // No resolvable base: an honest empty diff with the reason visible in
-      // the nulls, not a fabricated diff against some guessed ancestor.
+      // the nulls, not a fabricated diff against some guessed ancestor. Only
+      // the SESSION scope needs a base — staged/unstaged are measured against
+      // the index and HEAD, which every worktree has.
       return { ...empty, available: true, headOid, baseRef, baseOid, unavailableReason: null };
     }
 
-    const numstat = await runGit(['diff', '--numstat', from], { cwd: path });
-    if (numstat.code !== 0) return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
-    const files: SessionGitDiffFile[] = [];
-    let additions = 0;
-    let deletions = 0;
-    for (const line of numstat.stdout.split('\n')) {
-      if (line.trim() === '') continue;
-      const [a, d, ...rest] = line.split('\t');
-      const filePath = rest.join('\t');
-      if (filePath === '') continue;
-      const add = a === '-' ? null : Number.parseInt(a ?? '', 10);
-      const del = d === '-' ? null : Number.parseInt(d ?? '', 10);
-      if (add !== null && Number.isInteger(add)) additions += add;
-      if (del !== null && Number.isInteger(del)) deletions += del;
-      files.push({
-        path: filePath,
-        additions: add !== null && Number.isInteger(add) ? add : null,
-        deletions: del !== null && Number.isInteger(del) ? del : null,
-      });
+    /*
+     * WHAT IS BEING COMPARED, spelled out in one place because these are three
+     * genuinely different questions and the argv is the only thing that says
+     * which one was asked:
+     *
+     *   session   `git diff <merge-base>`  — working tree vs where the lane
+     *                                        branched. The default, unchanged.
+     *   staged    `git diff --cached`      — index vs HEAD: what a commit
+     *                                        would write, exactly.
+     *   unstaged  `git diff`               — working tree vs index.
+     *
+     * AN UNTRACKED PATH DOES NOT ANSWER THE SAME WAY IN ALL THREE. It sits in
+     * the working tree and in neither the index nor HEAD, so each question
+     * gets a different true answer:
+     *
+     *   · session  — the whole file IS what this lane changed, so `--no-index`
+     *     against /dev/null is that answer: a real unified diff of every line,
+     *     not a blank panel over a file that is plainly new;
+     *   · staged   — the file contributes NOTHING to index-vs-HEAD. A commit
+     *     would write none of it, so EMPTY is the correct answer;
+     *   · unstaged — nothing to compare in worktree-vs-index either. EMPTY.
+     *
+     * Only the session branch takes `--no-index`. The other two fall through
+     * to the ordinary tracked read below and let git answer for itself:
+     * `git diff [--cached] -- <untracked path>` exits 0 with no output
+     * (MEASURED — an unmatched pathspec is not an error to `git diff` the way
+     * it is to `git add`).
+     *
+     * `untracked: true` rides on ALL THREE answers, because it CLASSIFIES the
+     * path; it is not a claim about which argv produced the text. It is how a
+     * reader tells an empty `staged` answer that is empty BECAUSE the file is
+     * untracked from one that is empty because the file is unchanged.
+     */
+    let untracked = false;
+    if (wantPath !== null) {
+      // `--literal-pathspecs` (see `git-invoker`): `wantPath` is an exact name
+      // out of a status listing. Without it a file called `a*.txt` would make
+      // `ls-files --error-unmatch` succeed on the strength of `abc.txt`
+      // existing, and a genuinely untracked file would be read as tracked.
+      const inIndex = await runGit(['--literal-pathspecs', 'ls-files', '--error-unmatch', '--', wantPath], { cwd: path });
+      if (inIndex.code !== 0) {
+        /*
+         * ABSENT FROM THE INDEX IS NOT THE SAME AS UNTRACKED, and a STAGED
+         * DELETION is exactly where the two come apart. `git rm a.txt` takes
+         * the index entry away — `ls-files --error-unmatch` exits 1 — while
+         * staging a deletion that `git diff --cached` renders in full and
+         * that a commit would write. Stopping at the index would classify it
+         * untracked, send it down the `--no-index` branch, find no file on
+         * disk, and answer with an EMPTY diff: the one change a reviewer most
+         * needs to see, reported as nothing to see.
+         *
+         * So HEAD is asked too. Untracked means git has no recorded state
+         * ANYWHERE — neither in the index nor in the commit the index is
+         * measured against. (`ls-tree` exits 0 with EMPTY OUTPUT for a path
+         * the tree does not hold, so the presence of output is the real test.)
+         *
+         * `-z` and a LENGTH check, not `.trim()`: a filename is bytes, and
+         * `'   '` is a legal one. Trimming git's answer for that path turns a
+         * found file into an empty string and misclassifies a real staged
+         * deletion as untracked — the very bug this block exists to fix,
+         * reintroduced by the check meant to confirm the fix. `-z` also stops
+         * git C-quoting the name, which would change the bytes it reports.
+         *
+         * An UNSTAGED deletion keeps its index entry and never reaches here.
+         */
+        const inHead = await runGit(['--literal-pathspecs', 'ls-tree', '-z', '--name-only', headOid, '--', wantPath], { cwd: path });
+        untracked = inHead.code !== 0 || inHead.stdout.length === 0;
+      }
     }
+    // Paired with `--literal-pathspecs` at every use below: `--` keeps the name
+    // from being read as an option, the global flag keeps it from being read as
+    // a glob. Neither implies the other.
+    const pathArgs = wantPath === null ? [] : ['--', wantPath];
+    const scopeArgs: string[] =
+      scope === 'staged' ? ['--cached']
+      : scope === 'unstaged' ? []
+      : [from as string];
+
+    /*
+     * `--no-index` ONLY FOR THE SESSION SCOPE, because it is only the session
+     * question a whole-file diff actually answers.
+     *
+     * An untracked file is in the working tree and in neither the index nor
+     * HEAD. "What did this session change" therefore includes all of it, and
+     * `/dev/null` vs the file is that answer. But `--cached` asks index vs
+     * HEAD, where the file contributes NOTHING — and this branch used to run
+     * for every scope, so asking for `staged` returned the entire file as an
+     * addition under a caption reading "exactly what a commit would write",
+     * when a commit would write none of it. Reachable without doing anything
+     * unusual: open an untracked file under All, then press the Staged chip —
+     * the open path persists and reloads in the new scope.
+     *
+     * The other two scopes fall through to the tracked read below, where git
+     * answers for itself: `git diff [--cached] -- <untracked path>` exits 0
+     * with no output. Measured, not assumed — an unmatched pathspec is not an
+     * error to `git diff` the way it is to `git add`. `untracked: true` still
+     * rides on the result, so a client can tell an empty-because-untracked
+     * answer from an empty-because-unchanged one.
+     */
+    if (untracked && wantPath !== null && scope === 'session') {
+      /*
+       * IGNORED IS A REFUSAL, AND THIS IS THE ONE BRANCH THAT HAS TO ASK.
+       *
+       * `git diff --no-index` compares two FILESYSTEM paths. `.gitignore`
+       * never enters into it, so a file the repository was explicitly told
+       * not to look at was returned in full — through a public v1 read, to
+       * anyone who could name it.
+       *
+       * Nothing already here catches it. Containment does not: `.env` sits
+       * inside the worktree and resolves inside it, which is all
+       * `containedFile` asks. The status listing does not: `-uall` omits
+       * ignored files, so the surface never offers the path — but the read
+       * takes `path` from the request, not from the listing it just served.
+       * And every OTHER read in this file is safe by construction rather
+       * than by care: they hand git a pathspec resolved against the index or
+       * a tree, where an ignored file simply is not present to be found.
+       *
+       * `git check-ignore` is the command that answers this, and it is the
+       * ONE git call in this file that must NOT carry `--literal-pathspecs`:
+       * it rejects the magic outright (`fatal: pathspec magic not supported
+       * by this command: 'literal'`, exit 128 — MEASURED, git 2.43). That is
+       * safe rather than a hole in the guarantee the flag buys everywhere
+       * else, because check-ignore matches the NAME it is handed against the
+       * ignore patterns instead of globbing the worktree with it: asked for
+       * `a?c.txt` while only `abc.txt` is ignored, it answers 1 (MEASURED).
+       * It also consults the index by default, so a TRACKED file matching an
+       * ignore pattern answers 1 and stays readable — which is correct, and
+       * moot here since this branch only runs for untracked paths.
+       *
+       * Exit 0 is "ignored" and refuses BY NAME, the same way containment
+       * does, because a caller that asked for a path it may not have needs
+       * telling. Exit 1 is the only code allowed through. Anything else is a
+       * question that did not get an answer, and an unanswered ignore check
+       * is not a licence to read the file — so it takes the honest
+       * `worktree_unreadable` exit rather than falling through.
+       */
+      const ignored = await runGit(['check-ignore', '-q', '--', wantPath], { cwd: path }).catch(
+        () => ({ code: 128, stdout: '', stderr: '' }),
+      );
+      if (ignored.code === 0) {
+        throw new CollabError('invalid_input', 'path is ignored by this repository', {
+          details: { reason: 'path_ignored', path: wantPath },
+        });
+      }
+      if (ignored.code !== 1) {
+        return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
+      }
+
+      // The ONLY read in this file whose argument is a filesystem path rather
+      // than a pathspec, so it is the only one that needs containment proved
+      // rather than inherited from git. See `containedFile`.
+      const target = await containedFile(path, wantPath);
+      if (target.kind === 'absent') {
+        // Neither tracked nor present: nothing to diff. Available and empty is
+        // the truth; a 404 would claim the SESSION was missing.
+        return { ...empty, available: true, unavailableReason: null, headOid, baseRef, baseOid, mergeBaseOid, untracked: true };
+      }
+
+      // `--no-index` exits 1 when the two inputs DIFFER, which for a new file
+      // against /dev/null is always. Exit 1 is therefore the success case here
+      // and only a code above it is a failure — the one place in this file
+      // where a non-zero git exit is not a problem.
+      const ok = (code: number): boolean => code === 0 || code === 1;
+      const noIndex = (extra: readonly string[]): string[] =>
+        ['diff', '--no-index', ...extra, '--', '/dev/null', wantPath];
+
+      const digest = await runGit(noIndex(['--numstat']), { cwd: path });
+      if (!ok(digest.code)) {
+        return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
+      }
+      // numstat names the pair as `/dev/null => <path>`; the file being
+      // described is the one that was ASKED for, so it is named that way.
+      const counted = parseNumstat(digest.stdout);
+      const first = counted.files[0];
+      const nsFiles: SessionGitDiffFile[] = [
+        { path: wantPath, additions: first?.additions ?? null, deletions: first?.deletions ?? null },
+      ];
+
+      // Identical cap discipline to the tracked path below: raise the buffer,
+      // salvage the partial bytes if even that overflows, cut at maxBytes and
+      // SAY that it was cut.
+      let text = '';
+      let overflow = false;
+      try {
+        const textRun = await runGit(noIndex([]), { cwd: path, maxBufferBytes: DIFF_BYTES_MAX + 1024 * 1024 });
+        text = ok(textRun.code) ? textRun.stdout : '';
+      } catch (error) {
+        const partial = (error as { stdout?: unknown }).stdout;
+        text = typeof partial === 'string' ? partial : '';
+        overflow = true;
+      }
+      const cut = overflow || Buffer.byteLength(text, 'utf8') > maxBytes;
+      return {
+        ...empty,
+        available: true,
+        unavailableReason: null,
+        headOid,
+        baseRef,
+        baseOid,
+        mergeBaseOid,
+        stat: { filesChanged: nsFiles.length, additions: counted.additions, deletions: counted.deletions },
+        files: nsFiles,
+        filesTruncated: false,
+        diff: cut ? Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8') : text,
+        diffTruncated: cut,
+        untracked: true,
+      };
+    }
+
+    const numstat = await runGit(['--literal-pathspecs', 'diff', '--numstat', ...scopeArgs, ...pathArgs], { cwd: path });
+    if (numstat.code !== 0) return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
+    const { files, additions, deletions } = parseNumstat(numstat.stdout);
 
     // A diff even bigger than the raised buffer rejects out of execFile with
     // the partial bytes attached — salvage them as an honestly-truncated
@@ -362,7 +807,7 @@ export class ExecutionGitService {
     let diffText = '';
     let overflowed = false;
     try {
-      const diffRun = await runGit(['diff', from], { cwd: path, maxBufferBytes: DIFF_BYTES_MAX + 1024 * 1024 });
+      const diffRun = await runGit(['--literal-pathspecs', 'diff', ...scopeArgs, ...pathArgs], { cwd: path, maxBufferBytes: DIFF_BYTES_MAX + 1024 * 1024 });
       diffText = diffRun.code === 0 ? diffRun.stdout : '';
     } catch (error) {
       const partial = (error as { stdout?: unknown }).stdout;
@@ -388,6 +833,10 @@ export class ExecutionGitService {
       filesTruncated: files.length > DIFF_FILES_CAP,
       diff,
       diffTruncated: truncated,
+      scope,
+      path: wantPath,
+      ...(await hunkListing(path, wantPath, scope, truncated)),
+      untracked,
       checkedAt: new Date().toISOString(),
     };
   };
@@ -425,21 +874,267 @@ export class ExecutionGitService {
     }
   };
 
+  /**
+   * COMMIT — and, when `paths` is given, commit THOSE PATHS AND NOTHING ELSE.
+   *
+   * The trap this refusal disarms: `git commit` writes the whole index, not
+   * the pathspecs it was handed. So "stage the selection, then commit" — the
+   * obvious implementation, and the one that was here — quietly sweeps up any
+   * file that was ALREADY staged for some other reason. A reviewer who ticks
+   * one file and presses Commit selected would get a commit containing work
+   * they never looked at, and nothing on screen would have said so.
+   *
+   * The alternative fix, `git commit -- <paths>`, is worse in a different
+   * direction: that form commits the WORKING TREE content of those paths,
+   * silently including hunks the reviewer had deliberately left unstaged. A
+   * screen built on the staged/unstaged distinction cannot use a verb that
+   * ignores it.
+   *
+   * So the index must genuinely hold only the selection, and when it does not,
+   * this refuses BY NAME and hands back the offending paths AS DATA. The
+   * caller's escapes are both honest and both visible: unstage them, or widen
+   * the selection to include them.
+   */
   readonly commit = async (ctx: RequestContext): Promise<SessionGitCommitResult> => {
     const lane = await this.resolveLane(ctx);
     const { worktreeId, path, branch } = ExecutionGitService.requireActiveLane(lane);
     const input = ctx.body as ExecutionGitCommitInput;
     try {
-      if (input.all === true || (input.paths !== undefined && input.paths.length > 0)) {
+      const selected = input.paths ?? [];
+      let toStage: readonly string[] = selected;
+      if (input.all !== true && selected.length > 0) {
+        const wanted = new Set(selected);
+        // Read with the SAME function `commit()` uses to decide what it is
+        // about to write, so the set being checked is the set being committed.
+        const already = await stagedFiles(path);
+        const outside = already
+          .filter((f) => !wanted.has(f.path) && !isRenameHalfOf(f, wanted))
+          .map((f) => f.path);
+        if (outside.length > 0) {
+          throw new CollabError(
+            'conflict',
+            `commit refused: ${outside.length} staged path(s) are outside the selection`,
+            {
+              details: {
+                reason: 'staged_outside_selection',
+                outsidePaths: outside.slice(0, STATUS_FILES_CAP),
+                outsideCount: outside.length,
+                hint: 'unstage them, or include them in paths',
+              },
+            },
+          );
+        }
+
+        /*
+         * RE-STAGING A DELETION THAT IS ALREADY STAGED IS NOT A NO-OP.
+         *
+         * This verb stages the selection before committing it, so that a
+         * reviewer who ticks a row that is only dirty on disk gets it in the
+         * commit. For one row that is fatal: once a deletion is staged, git
+         * holds the path in NEITHER the working tree nor the index, so
+         * `git add -- <path>` matches nothing — and an unmatched pathspec is
+         * not the harmless no-op it is for `git diff`. `git add` exits 128
+         * (MEASURED; `-A` does not help, it exits 128 too) and `stage` lifts
+         * that into a refusal that takes the whole commit down.
+         *
+         * So "Delete a file, press Stage, press Commit selected" — a
+         * sequence this surface actively invites — could not complete.
+         *
+         * The narrowest true fix, and the reason it is not just "skip the
+         * re-stage when something is already staged": drop from the stage
+         * list only those paths that have nothing left for `git add` to
+         * match. That is exactly a staged deletion with no file back on
+         * disk. WORKTREE PRESENCE IS THE SECOND QUESTION and it is not
+         * optional — a reviewer who deletes a file, stages that, then writes
+         * a new file at the same path still needs the new content staged,
+         * and skipping on the strength of the staged deletion alone would
+         * commit the removal and silently drop the replacement.
+         *
+         * Every path stat'd here is one git itself just named out of the
+         * index, so `resolve` cannot be steered outside the worktree by the
+         * request; the client's own strings are guarded by
+         * `assertSafePathspec` inside `stage` as before.
+         */
+        const stagedDeletions = new Set(
+          already.filter((f) => f.status.startsWith('D')).map((f) => f.path),
+        );
+        if (stagedDeletions.size > 0) {
+          const kept: string[] = [];
+          for (const candidate of selected) {
+            if (!stagedDeletions.has(candidate)) {
+              kept.push(candidate);
+              continue;
+            }
+            const onDisk = await stat(resolve(path, candidate)).catch(() => null);
+            if (onDisk !== null) kept.push(candidate);
+          }
+          toStage = kept;
+        }
+      }
+      if (input.all === true || toStage.length > 0) {
         await stage({
           worktreePath: path,
           expectedBranch: branch,
-          ...(input.paths === undefined ? {} : { paths: input.paths }),
+          ...(input.paths === undefined ? {} : { paths: toStage }),
           ...(input.all === undefined ? {} : { all: input.all }),
         });
       }
       const result = await commit({ worktreePath: path, expectedBranch: branch, message: input.message });
       return { sessionId: lane.session_id, worktreeId, ...result };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
+
+  /**
+   * STAGE / UNSTAGE — the review half of the commit verb, and the only pair in
+   * this rail that moves nothing but the index.
+   *
+   * It answers with the POST-OPERATION status rather than an acknowledgement,
+   * for the same reason `merge` answers with conflict paths: the client's next
+   * question is always "what does it look like now", and a client that has to
+   * ask again can render a stale list in between.
+   */
+  readonly stage = async (ctx: RequestContext): Promise<SessionGitStageResult> => {
+    const lane = await this.resolveLane(ctx);
+    const { worktreeId, path, branch } = ExecutionGitService.requireActiveLane(lane);
+    const input = ctx.body as ExecutionGitStageInput;
+
+    /*
+     * A HUNK SELECTION IS A DIFFERENT SCOPE, NOT AN EXTRA FILTER.
+     *
+     * `paths` and `all` name whole files; `hunks` names part of one. Combining
+     * them has no honest meaning — there is no ranking of "these three files,
+     * and also hunks 1 and 4 of the second one" that a reviewer could predict
+     * — so naming two scopes is refused rather than resolved. The refusal is
+     * cheap and the silent resolution would be a wrong commit.
+     */
+    if (input.hunks !== undefined) {
+      if (input.paths !== undefined || input.all !== undefined) {
+        throw new CollabError('invalid_input', 'hunks cannot be combined with paths or all', {
+          details: { reason: 'mixed_stage_scope', hint: 'send hunks alone; it already names its file' },
+        });
+      }
+      return await this.stageHunkSelection(ctx, lane, worktreeId, path, branch, input);
+    }
+
+    const params = {
+      worktreePath: path,
+      expectedBranch: branch,
+      ...(input.paths === undefined ? {} : { paths: input.paths }),
+      ...(input.all === undefined ? {} : { all: input.all }),
+    };
+    try {
+      // `moved` is the list git was actually given. For stage that is the
+      // request; for unstage it can be LONGER, because a staged rename is one
+      // row over two index entries and resetting half of it leaves a worse
+      // index than the reviewer started with. Echoing the request instead
+      // would hide exactly the paths a client most needs to know moved.
+      const { staged, moved } =
+        input.action === 'unstage'
+          ? await unstage(params).then((r) => ({ staged: r.staged, moved: r.paths }))
+          : await stage(params).then((r) => ({ staged: r.staged, moved: [...(input.paths ?? [])] }));
+      const porcelain = await readPorcelain(path);
+      if (porcelain === null) {
+        // The index MOVED and then the read failed. Saying "failed" would be a
+        // lie about the worktree, so the refusal says which half happened.
+        // `readPorcelain` folds an OVERFLOW into this branch too: before that,
+        // a worktree too large to re-read rejected past this `throw` entirely
+        // and reported neither half.
+        throw new CollabError('upstream_unavailable', 'the index was updated but the worktree could not be re-read', {
+          details: { reason: 'status_unreadable_after_apply', applied: true, action: input.action },
+        });
+      }
+      const { files, dirty } = parsePorcelain(porcelain);
+      return {
+        sessionId: lane.session_id,
+        worktreeId,
+        action: input.action,
+        branch,
+        // EMPTY for `all: true`, because that is literally what git was
+        // given: `add -A` / `reset HEAD` carry no pathspecs at all. Echoing
+        // the request's `paths` here would claim the server scoped an
+        // operation it deliberately did not scope — the same field saying two
+        // different things depending on a flag the reader has to notice.
+        paths: input.all === true ? [] : moved,
+        all: input.all === true,
+        staged,
+        files: files.slice(0, STATUS_FILES_CAP),
+        filesTruncated: files.length > STATUS_FILES_CAP,
+        dirty,
+        checkedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
+
+  /**
+   * The `hunks` branch of `execution.gitStage`.
+   *
+   * WHICH SIDE IS READ IS DECIDED BY THE ACTION, not by the caller: staging
+   * reads the unstaged diff (index -> worktree) and unstaging reads the staged
+   * one (HEAD -> index). A caller cannot ask to stage hunks "of the staged
+   * diff", because those hunks are already staged — the parameter would only
+   * exist to be got wrong.
+   */
+  private readonly stageHunkSelection = async (
+    ctx: RequestContext,
+    lane: { session_id: string; branch: string | null },
+    worktreeId: string,
+    path: string,
+    branch: string,
+    input: ExecutionGitStageInput,
+  ): Promise<SessionGitStageResult> => {
+    const selection = input.hunks as NonNullable<ExecutionGitStageInput['hunks']>;
+    if (!Array.isArray(selection.indices) || selection.indices.length === 0) {
+      throw new CollabError('invalid_input', 'hunks.indices must name at least one hunk', {
+        details: { reason: 'no_hunks_selected' },
+      });
+    }
+    for (const index of selection.indices) {
+      if (!Number.isInteger(index) || index < 1) {
+        throw new CollabError('invalid_input', `hunk index must be a positive integer, got ${String(index)}`, {
+          details: { reason: 'invalid_hunk_index', index },
+        });
+      }
+    }
+    try {
+      const result = await stageHunks({
+        worktreePath: path,
+        expectedBranch: branch,
+        path: requireSafePath(selection.path),
+        indices: selection.indices,
+        ...(selection.digest === undefined ? {} : { digest: selection.digest }),
+        reverse: input.action === 'unstage',
+      });
+      const porcelain = await runGit(['status', '--porcelain=v1', '-z', '-uall'], { cwd: path });
+      if (porcelain.code !== 0) {
+        // Same split as the whole-file path: the index MOVED and the re-read
+        // failed, so the refusal says which half happened rather than
+        // reporting a failure that would misdescribe the worktree.
+        throw new CollabError('upstream_unavailable', 'the index was updated but the worktree could not be re-read', {
+          details: { reason: 'status_unreadable_after_apply', applied: true, action: input.action },
+        });
+      }
+      const { files, dirty } = parsePorcelain(porcelain.stdout);
+      return {
+        sessionId: lane.session_id,
+        worktreeId,
+        action: input.action,
+        branch,
+        // The one file the selection touched. Unlike the whole-file path this
+        // can never expand: a rename has no hunks to split, so there is no
+        // second half for the server to have quietly included.
+        paths: [result.path],
+        all: false,
+        staged: result.staged,
+        files: files.slice(0, STATUS_FILES_CAP),
+        filesTruncated: files.length > STATUS_FILES_CAP,
+        dirty,
+        hunkSelection: { path: result.path, applied: result.appliedHunks, total: result.totalHunks },
+        checkedAt: new Date().toISOString(),
+      };
     } catch (error) {
       liftWorktreeError(error);
     }
@@ -571,6 +1266,7 @@ export function registerExecutionGitHandlers(registry: HandlerRegistry, deps: Fa
     'execution.gitCheckpoint': service.checkpoint,
     'execution.gitRollback': service.rollback,
     'execution.gitCommit': service.commit,
+    'execution.gitStage': service.stage,
     'execution.gitMerge': service.merge,
     'execution.gitCherryPick': service.cherryPick,
     'execution.gitBranch': service.branch,

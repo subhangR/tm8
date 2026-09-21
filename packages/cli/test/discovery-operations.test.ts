@@ -70,7 +70,12 @@ import { createOutput } from '../src/output.js';
 // 197 -> 198 (187, session sharing): execution.sessions.share — public, with a
 // `session share` command, so the commandless set is UNCHANGED and the derived
 // command-path count moves with this constant on its own. MEASURED.
-const EXPECTED_ROWS = 198;
+// 198 -> 199 (Changes screen Phase 1, INTEGRATED WITH main): execution.gitStage,
+// public and deliberately commandless like the rest of its family, so the
+// commandless subtraction below moves 26 -> 27 while 187's `session share`
+// leaves it alone. Both rows land, so this constant moves twice from 197.
+// MEASURED from this file's own failing run on the MERGED tree.
+const EXPECTED_ROWS = 199;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -188,7 +193,11 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // decision to anyone the RPC will accept — the owner, an actor who may act
     // as the owner, a space admin — and refuses everyone else with 42501, so
     // the gate lives in the database, not in the exposure.
-    expect(histogram).toEqual({ public: 194, composite: 1, internal: 1, reserved: 2 });
+    // 193 -> 194 (Changes screen Phase 1): execution.gitStage is public, like
+    // every other row in the session git rail. MEASURED from the failing run.
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
+    // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
+    expect(histogram).toEqual({ public: 195, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -221,9 +230,11 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
       'credentials.status',
-      // The nine execution.git* rows are deliberately commandless (see the
+      // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
+      // 9 -> 10 (Changes screen Phase 1): `execution.gitStage` joins them for
+      // the same reason — it is the index half of a verb the CLI already has.
       'execution.gitBranch',
       'execution.gitCheckpoint',
       'execution.gitCherryPick',
@@ -231,6 +242,7 @@ const COMMANDLESS_OPERATIONS = [
       'execution.gitDiff',
       'execution.gitMerge',
       'execution.gitRollback',
+      'execution.gitStage',
       'execution.gitStash',
       'execution.gitStatus',
       'execution.prompt',

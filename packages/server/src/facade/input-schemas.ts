@@ -72,6 +72,7 @@ import {
   ExecutionGitMergeInputSchema,
   ExecutionGitCherryPickInputSchema,
   ExecutionGitBranchInputSchema,
+  ExecutionGitStageInputSchema,
   ExecutionGitStashInputSchema,
   ExecutionSessionsShareInputSchema,
   ExecutionTerminalStartInputSchema,
@@ -312,6 +313,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.gitMerge': ExecutionGitMergeInputSchema,
   'execution.gitCherryPick': ExecutionGitCherryPickInputSchema,
   'execution.gitBranch': ExecutionGitBranchInputSchema,
+  'execution.gitStage': ExecutionGitStageInputSchema,
   'execution.gitStash': ExecutionGitStashInputSchema,
 
   // custom entity kinds (T-L4)

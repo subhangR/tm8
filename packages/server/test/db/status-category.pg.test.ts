@@ -259,6 +259,33 @@ describe.sequential('147 — entities.status_category', () => {
     // functions, so restating `w2_update_space` at its 161 body here changes
     // nothing it can observe.
     database.apply(['187_work_session_sharing.sql']);
+    // 194, the SIXTH instance of the one recurring shape this block is made of,
+    // and the same shape as 176/177/187 above: `entity-read.ts`'s shared summary
+    // SELECT — which this fixture exercises through PRODUCTION code — gained
+    //     left join public.drawings drw on drw.entity_id = e.id
+    // at facade/entity-read.ts:346, so current code refuses to run against a
+    // 147-era tranche with `relation "public.drawings" does not exist`. It is
+    // STATIC TypeScript SQL, so nothing defers the resolution.
+    //
+    // INHERITED, NOT INTRODUCED BY THIS LANE. main's 5e1f9e1e ("Drawing as an
+    // entity, with Excalidraw", #627) added both the join and 194, and did not
+    // extend this fixture, so main carries this red on its own; merging main in
+    // only surfaces it. This branch has zero commits touching this file or
+    // entity-read.ts. NO PRODUCTION CODE CHANGES HERE.
+    //
+    // MEASURED, not computed — from the authoritative gate's own failing run:
+    //   test/db/status-category.pg.test.ts (30 tests | 12 failed)
+    //   -> relation "public.drawings" does not exist
+    //
+    // LAST AND HIGHEST, and it needs nothing in between: there are NO migrations
+    // numbered 188-193, the chain goes 187 -> 194. Every table 194's recreated
+    // `internal.entity_content` reads is present by this point — `containers`
+    // from 177 above, `chats` from 176, `work_sessions` from 187, `drawings`
+    // from 194 itself, and the other ~21 from the pre-147 base slice.
+    //
+    // Per the note on 177: this suite applies a-la-carte (`apply([...])`), NOT
+    // `apply(migrationFiles())`, so this is a first apply of 194, not a second.
+    database.apply(['194_drawing_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

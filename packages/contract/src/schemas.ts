@@ -66,6 +66,7 @@ import type {
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
   ExecutionGitCherryPickInput, ExecutionGitBranchInput, ExecutionGitStashInput,
+  ExecutionGitStageInput,
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
@@ -2960,6 +2961,39 @@ export const ExecutionGitCommitInputSchema: z.ZodType<ExecutionGitCommitInput> =
   all: z.boolean().optional(),
 }).strict();
 
+/**
+ * Stage/unstage. `paths` and `all` are both optional HERE and the SERVER
+ * refuses the empty pair — the refusal names which verb wanted what
+ * (`nothing_to_stage` / `nothing_to_unstage`), which a schema error could not.
+ */
+export const ExecutionGitStageInputSchema: z.ZodType<ExecutionGitStageInput> = z.object({
+  ...commandContextShape,
+  action: z.enum(['stage', 'unstage']),
+  paths: z.array(z.string().min(1)).optional(),
+  all: z.boolean().optional(),
+  /**
+   * PART of one file. Absent from this object, the outer `.strict()` refused
+   * every hunk request with `Unrecognized key(s) in object: 'hunks'` while the
+   * contract type advertised the field — the feature was unreachable over HTTP
+   * and nothing was red, because `z.ZodType<T>` is covariant in its output and
+   * a MISSING OPTIONAL KEY still satisfies it. The compiler cannot catch this
+   * class; `packages/server/test/facade/input-schema-seam.test.ts` does.
+   *
+   * `indices` mirrors the contract's `number[]` rather than tightening to
+   * positive integers, for the reason stated above about `paths`/`all`: the
+   * SERVER refuses out-of-range and non-integer indices by name
+   * (`no_hunks_selected`, `invalid_hunk_index`, `hunk_index_out_of_range`, and
+   * it names the offending index), and a zod error here would replace those
+   * with a generic one. Shape belongs to the schema; which hunks exist is a
+   * fact only the worktree has.
+   */
+  hunks: z.object({
+    path: z.string().min(1),
+    indices: z.array(z.number()),
+    digest: z.string().min(1).optional(),
+  }).strict().optional(),
+}).strict();
+
 export const ExecutionGitMergeInputSchema: z.ZodType<ExecutionGitMergeInput> = z.object({
   ...commandContextShape,
   fromRef: z.string().min(1).optional(),
@@ -3158,6 +3192,7 @@ export const SessionFileChangeSchema: z.ZodType<SessionFileChange> = z.object({
   linesRemoved: z.number().int().nonnegative(),
   hunks: z.array(SessionFileHunkSchema),
   hunksTruncated: z.boolean(),
+  lastTurn: z.boolean(),
 }).strict();
 
 export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object({
@@ -3166,6 +3201,7 @@ export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object(
   totalRemoved: z.number().int().nonnegative(),
   filesTruncated: z.boolean(),
   source: z.literal('transcript'),
+  turns: z.number().int().positive(),
 }).strict();
 
 export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({

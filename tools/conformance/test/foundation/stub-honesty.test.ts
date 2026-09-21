@@ -27,7 +27,11 @@ describe('W1 stub route and honesty oracle', () => {
     // 162 -> 165 (W4/132): the three spaces.taskWorkflows routes.
     // 171 -> 195 (2026-09-03): the 24 HTTP containers.* rows. MEASURED.
     // 195 -> 196 (187): execution.sessions.share mounts one POST route.
-    expect(http).toHaveLength(196);
+    // 195 -> 196 (2026-09-19, Changes surface phase 1): execution.gitStage. MEASURED.
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(http).toHaveLength(197);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

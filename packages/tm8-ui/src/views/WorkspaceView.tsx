@@ -61,6 +61,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
@@ -498,6 +499,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
           gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
+          changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
           taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
           graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
           attachments={attachments}

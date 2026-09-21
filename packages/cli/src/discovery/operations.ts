@@ -1657,7 +1657,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.gitCommit': {
     cmd: null,
-    sum: 'Stage (optionally) and commit exactly what is staged in a session worktree',
+    sum: 'Commit exactly what is staged in a session worktree; a path-scoped commit refuses when other paths are already staged',
     authz: 'entity',
     input: 'bound',
     side: 'execution',
@@ -1690,6 +1690,15 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     side: 'execution',
     tags: ['git', 'branch', 'create', 'rename', 'delete', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitStage': {
+    cmd: null,
+    sum: 'Stage or unstage paths in a session worktree without committing; unstage is a path-scoped mixed reset that moves no working-tree bytes',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'stage', 'unstage', 'index', 'reset', 'worktree'],
     reason: 'cli_runs_git_locally',
   },
   'execution.gitStash': {
@@ -2527,10 +2536,12 @@ export const CATALOG_DIGEST =
   // containers.* rows). RECOMPUTED from JSON.stringify(OPERATIONS), never
   // adjusted from either side of the merge — neither branch's value is
   // correct once both landed.
-  // Re-measured 187 (+ execution.sessions.share) — RECOMPUTED from
-  // `JSON.stringify(OPERATIONS)` on this tree, then written into the
-  // regenerated conformance manifest, not read back out of a stale one.
-  'sha256:186723c6fa90a7d596eb15d50ec58ad783ba01aea9fdd3752d27bed8cfa3da6b';
+  // Re-measured on the MERGED tree (2026-09-19): it carries BOTH
+  // execution.sessions.share (187) and execution.gitStage, so the digest is a
+  // THIRD value — neither 186723c6.. nor 10d20505.. is correct here. RECOMPUTED
+  // from `JSON.stringify(OPERATIONS)` on this tree and read out of the failing
+  // run, then written into the regenerated conformance manifest.
+  'sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -39,6 +39,34 @@ import './diff.css';
  * an addition, and only position tells them apart.
  */
 
+/**
+ * PER-HUNK SELECTION, offered by the renderer rather than built beside it.
+ *
+ * A surface that wants "stage these three hunks" needs a checkbox sitting on
+ * the `@@` line it governs — a reviewer ticking a box two panes away from the
+ * lines it selects is choosing blind. The alternative was a second, smaller
+ * diff renderer in the Changes surface, which is exactly the fork this
+ * component exists to prevent.
+ *
+ * THE INDEX IS 1-BASED AND RUNS ACROSS THE WHOLE DIFF in git's own order, so
+ * it matches what `execution.gitDiff` numbered for the same text. For the
+ * single-path read the Changes surface always makes, per-file and whole-diff
+ * numbering are the same sequence.
+ *
+ * A HUNK PAST THE LINE BUDGET HAS NO BOX until its file is expanded — the cap
+ * is not suspended for selection. The count a caller shows must therefore come
+ * from its own hunk list, not from the boxes on screen.
+ */
+export interface DiffHunkSelection {
+  /** Currently ticked hunk indices. */
+  selected: ReadonlySet<number>;
+  onToggle: (index: number) => void;
+  /** A mutation is in flight — the boxes are frozen, not hidden. */
+  disabled?: boolean;
+  /** Names what a box selects, for its accessible name. Default "hunk". */
+  noun?: string;
+}
+
 export interface DiffViewProps {
   /** Raw unified diff text, as `git diff` emits it. */
   diff: string;
@@ -47,6 +75,8 @@ export interface DiffViewProps {
   /** Rows rendered across all files before later files collapse. Default 1500. */
   maxTotalLines?: number;
   className?: string;
+  /** Turn every rendered `@@` line into a checkbox. Read-only when absent. */
+  selection?: DiffHunkSelection;
 }
 
 const DEFAULT_MAX_LINES_PER_FILE = 300;
@@ -59,12 +89,20 @@ const STATUS_TONE: Record<DiffFile['status'], PillTone> = {
   modified: 'idle',
 };
 
-type Row = { kind: 'hunk'; hunk: DiffHunk } | { kind: 'line'; line: DiffLine };
+type Row =
+  | { kind: 'hunk'; hunk: DiffHunk; index: number }
+  | { kind: 'line'; line: DiffLine };
 
-function rowsOf(file: DiffFile): Row[] {
+/**
+ * `base` is how many hunks the earlier files already spent, so `index` counts
+ * from 1 across the whole diff rather than restarting per file.
+ */
+function rowsOf(file: DiffFile, base: number): Row[] {
   const out: Row[] = [];
+  let index = base;
   for (const hunk of file.hunks) {
-    out.push({ kind: 'hunk', hunk });
+    index += 1;
+    out.push({ kind: 'hunk', hunk, index });
     for (const line of hunk.lines) out.push({ kind: 'line', line });
   }
   return out;
@@ -72,12 +110,41 @@ function rowsOf(file: DiffFile): Row[] {
 
 const n = (value: number): string => value.toLocaleString('en-US');
 
-function FileRows({ rows }: { rows: readonly Row[] }) {
+/**
+ * `@@ -10,3 +12,3 @@ function foo()` read aloud is "at at minus ten comma
+ * three" — line arithmetic, not a place. The trailing text after the closing
+ * `@@` is git's guess at the enclosing function and is the only part of the
+ * header that tells a listener WHERE they are, so the accessible name is the
+ * index plus that, and falls back to the index alone when git had no guess.
+ */
+function hunkLabel(header: string, index: number, noun: string): string {
+  const close = header.indexOf('@@', 2);
+  const heading = close === -1 ? '' : header.slice(close + 2).trim();
+  return heading === '' ? `Select ${noun} ${index}` : `Select ${noun} ${index}: ${heading}`;
+}
+
+function FileRows({ rows, selection }: { rows: readonly Row[]; selection?: DiffHunkSelection }) {
+  const noun = selection?.noun ?? 'hunk';
   return (
     <>
       {rows.map((row, i) =>
         row.kind === 'hunk' ? (
-          <div key={i} className="kit-diff__hunk">
+          <div key={i} className="kit-diff__hunk" data-hunk={row.index}>
+            {selection ? (
+              <input
+                type="checkbox"
+                className="kit-diff__hunk-check"
+                checked={selection.selected.has(row.index)}
+                disabled={selection.disabled === true}
+                // The header text alone reads as "at at minus ten comma three"
+                // to a screen reader, so the index and git's function guess
+                // carry the meaning instead.
+                aria-label={hunkLabel(row.hunk.header, row.index, noun)}
+                data-testid="kit-diff-hunk-check"
+                data-hunk={row.index}
+                onChange={() => selection.onToggle(row.index)}
+              />
+            ) : null}
             {row.hunk.header}
           </div>
         ) : (
@@ -104,6 +171,7 @@ export function DiffView({
   maxLinesPerFile = DEFAULT_MAX_LINES_PER_FILE,
   maxTotalLines = DEFAULT_MAX_TOTAL_LINES,
   className,
+  selection,
 }: DiffViewProps) {
   const parsed = useMemo(() => parseUnifiedDiff(diff), [diff]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set<number>());
@@ -125,6 +193,16 @@ export function DiffView({
       return allowed;
     });
   }, [parsed, maxLinesPerFile, maxTotalLines]);
+
+  /** How many hunks the files BEFORE each one hold, so indices never restart. */
+  const hunkBases = useMemo(() => {
+    let base = 0;
+    return parsed.files.map((file) => {
+      const at = base;
+      base += file.hunks.length;
+      return at;
+    });
+  }, [parsed]);
 
   if (parsed.files.length === 0) {
     return (
@@ -167,7 +245,7 @@ export function DiffView({
       </ul>
 
       {parsed.files.map((file, i) => {
-        const rows = rowsOf(file);
+        const rows = rowsOf(file, hunkBases[i] ?? 0);
         const open = expanded.has(i);
         const shown = open ? rows.length : limits[i];
         const hidden = rows.length - shown;
@@ -191,7 +269,7 @@ export function DiffView({
               <p className="kit-diff__empty">Binary file — not shown.</p>
             ) : (
               <div className="kit-diff__body">
-                <FileRows rows={shown === rows.length ? rows : rows.slice(0, shown)} />
+                <FileRows rows={shown === rows.length ? rows : rows.slice(0, shown)} selection={selection} />
                 {hidden > 0 ? (
                   <button
                     type="button"

@@ -409,6 +409,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,
       // gitCherryPick, gitStash join the rail's verbs.
       'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
+      // Changes surface (Phase 1): `gitStage` — `execution.gitStage`, the
+      // INDEX verb the review surface needs. It is the stage/unstage pair
+      // behind one method, because both are one route and one DTO; two
+      // methods would be two places for the same pathspec list to drift.
+      // Inserted at its sorted position between gitRollback and gitStash
+      // rather than appended — one insertion, so the silent-duplicate
+      // risk the appended groups below guard against does not arise.
+      'gitStage',
       'gitStash',
       'markRead',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
