@@ -71,9 +71,9 @@ describe('context activation provenance', () => {
       },
       {
         memories: [entity('sheet-1', 5, 'sheet memory')],
-        skills: [entity('skill-kept', 1, 'duplicate skill'), entity('skill-new', 2, 'widened skill', 'lint')],
+        skills: [entity('skill-sheet', 1, 'sheet-selected skill', 'review')],
       },
-      [entity('skill-kept', 1, 'persona skill', 'deploy'), entity('skill-new', 2, 'widened skill', 'lint')],
+      [entity('skill-sheet', 1, 'eligible sheet skill', 'review'), entity('skill-new', 2, 'widened skill', 'lint')],
     );
 
     expect(intent.memories).toMatchObject([
@@ -84,7 +84,8 @@ describe('context activation provenance', () => {
     ]);
     expect(intent.skills).toMatchObject([
       { id: 's0', source: 'persona', widened: false },
-      { id: 's1', source: 'jev', widened: true, entityId: 'skill-new', entityVersion: 2 },
+      { id: 's1', source: 'sheet', widened: true, entityId: 'skill-sheet', entityVersion: 1 },
+      { id: 's2', source: 'jev', widened: true, entityId: 'skill-new', entityVersion: 2 },
     ]);
     expect(intent.graph).toMatchObject([{ id: 't0', source: 'task', entityId: 'task-graph', entityVersion: 4 }]);
   });
