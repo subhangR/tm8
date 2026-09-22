@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import type { ExecutionSpawnInput, ProjectId } from '@tm8/contract';
 
+import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import type { LaunchProjectOption } from '../domain/launch';
 import { LaunchComposerPopup, type LaunchComposerPopupProps } from './LaunchComposerPopup';
 
@@ -200,5 +201,61 @@ describe('dismissal and refusal honesty', () => {
     const { getByTestId, getByRole } = renderPopup({ onSpawn: undefined });
     expect(getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('true');
     expect(getByRole('alert').textContent).toContain('isn’t connected');
+  });
+});
+
+/**
+ * THE MODEL MENU IS THE NODE'S CATALOG, not the selected persona's slice of it.
+ *
+ * Both of these were live defects in the Run popup until 2026-09-22, and they
+ * are opposite failures of the same tool filter: a space with no roster got an
+ * EMPTY menu, and a space whose front-row persona runs Claude Code could not
+ * reach a single Codex — or, once the cross-provider keys landed, Groq — row.
+ */
+describe('the model menu', () => {
+  const openModelMenu = (over: Partial<LaunchComposerPopupProps> = {}) => {
+    const rendered = renderPopup(over);
+    fireEvent.click(rendered.getByTestId('nsx-model'));
+    return rendered;
+  };
+
+  it('offers EVERY catalog model, not only the front-row persona’s tool', () => {
+    const { getByTestId } = openModelMenu();
+    const menu = getByTestId('nsx-model-menu');
+    // The seeded persona is claude-code; a Codex row and a Groq row prove the
+    // menu is no longer a function of it.
+    expect(menu.textContent).toContain('OpenAI GPT 6 Astra');
+    expect(menu.textContent).toContain('GPT-OSS 120B (Groq)');
+    expect(menu.textContent).toContain('Kimi K2 Thinking');
+    expect(menu.querySelectorAll('[role="menuitemradio"]')).toHaveLength(LAUNCH_MODEL_CATALOG.length);
+  });
+
+  it('still shows the catalog when the space has NO teammates at all', () => {
+    const { getByTestId } = openModelMenu({ teammates: [] });
+    const menu = getByTestId('nsx-model-menu');
+    expect(menu.textContent).not.toContain('no known models for this agent tool');
+    expect(menu.querySelectorAll('[role="menuitemradio"]')).toHaveLength(LAUNCH_MODEL_CATALOG.length);
+  });
+
+  it('carries the picked model’s OWN tool into the spawn, across the vendor line', async () => {
+    // The teammate records claude-code. Picking a Codex model has to move the
+    // tool with it, or the node builds `claude --model gpt-6-astra` and the
+    // spawn fails at the CLI for a choice the picker offered.
+    const { getByTestId, getByText, props } = openModelMenu();
+    fireEvent.click(getByText('OpenAI GPT 6 Astra'));
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.model).toBe('gpt-6-astra');
+    expect(input.agentTool).toBe('codex');
+  });
+
+  it('leaves a persona’s own model on its recorded tool when nothing was picked', async () => {
+    const { getByTestId, props } = renderPopup();
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.model).toBe('claude-sonnet-5');
+    expect(input.agentTool).toBe('claude-code');
   });
 });

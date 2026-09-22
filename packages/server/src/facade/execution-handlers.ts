@@ -1,3 +1,6 @@
+import { loadSkillEquipment } from '../skills/equipment.js';
+import { computeEffectiveSkills } from '@tm8/execution';
+import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
  *
@@ -19,13 +22,13 @@
  */
 
 import {
+  DEFAULT_MODEL,
   CREDENTIAL_PROVIDERS,
   NODE_BOOT_ID,
   SpawnError,
   SpawnService,
   PtyHostService,
   PromptSettlementWaiter,
-  resolveSkills,
   readSessionTranscript,
   knownAgentConfigDirs,
   type CreateWorkSessionInput,
@@ -59,6 +62,7 @@ import {
   type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
+import { contextAdvisorFromEnv, routingAdvisorFromEnv } from '@tm8/jev';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
@@ -160,21 +164,6 @@ interface TaskRow {
   thread_channel_id: string | null;
 }
 
-interface SkillRow {
-  entity_id: string;
-  name: string;
-  content: string;
-  /** pg returns `min(...)` over an int as a string via node-postgres. */
-  depth: string | number;
-}
-
-/**
- * How far the skill resolver will walk up a team member hierarchy. These are
- * org charts, not trees, so this is a runaway guard rather than a real product
- * limit — but it is also what stops a recursive CTE spinning if the hierarchy's
- * acyclicity trigger is ever bypassed (a restore, a direct write).
- */
-const MAX_HIERARCHY_DEPTH = 16;
 
 interface MemoryRow {
   entity_id: string;
@@ -270,6 +259,7 @@ export class DbGraphPort implements GraphPort {
    * have been authorised.
    */
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
+    const skillScan = await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true });
     return this.db.tx(this.claims(auth), async (q) => {
       const members = await q.query<TeamMemberRow>(
         `select tm.entity_id, tm.name, tm.role, tm.identity, tm.memories, tm.model,
@@ -391,43 +381,13 @@ export class DbGraphPort implements GraphPort {
       // produce a manifest describing capability the persona no longer has.
       //
       // `depth` is hops from the invoked member (0 = itself). The recursion is
-      // bounded by MAX_HIERARCHY_DEPTH rather than trusting the hierarchy to be
+      // bounded to 16 ancestor hops rather than trusting the hierarchy to be
       // acyclic: 001_core_graph.sql's trigger does enforce acyclicity, but a
       // recursive CTE that meets a cycle anyway spins until it exhausts memory,
       // and this query runs on the spawn path.
-      const skillRows = await q.query<SkillRow>(
-        `with recursive chain as (
-             select e.id, e.parent_id, 0 as depth
-               from public.entities e
-              where e.id = $1 and e.space_id = $2
-                and e.kind = 'team_member' and e.deleted_at is null
-             union all
-             select p.id, p.parent_id, c.depth + 1
-               from chain c
-               join public.entities p on p.id = c.parent_id
-              where p.space_id = $2 and p.kind = 'team_member'
-                and p.deleted_at is null and c.depth < $3
-           )
-         select s.entity_id, s.name, s.content, min(chain.depth) as depth
-           from chain
-           join public.edges ed
-             on ed.src_id = chain.id and ed.type = 'equips' and ed.space_id = $2
-           join public.entities se
-             on se.id = ed.dst_id and se.kind = 'skill' and se.deleted_at is null
-           join public.skills s on s.entity_id = se.id
-          group by s.entity_id, s.name, s.content
-          order by depth, s.name`,
-        [input.teamMemberId, input.spaceId, MAX_HIERARCHY_DEPTH],
-      );
-
-      const resolution = resolveSkills(
-        skillRows.map((r) => ({
-          entityId: r.entity_id,
-          name: r.name,
-          body: r.content,
-          depth: Number(r.depth),
-        })),
-      );
+      const skillEquips = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      // Candidates stay untruncated; native scope is resolved with the actual launch later.
+      const candidates = computeEffectiveSkills({ agentTool: '', workdir: '/', projectRoot: null, equips: skillEquips });
 
       const taskIds = input.taskIds ?? [];
       const tasks =
@@ -529,8 +489,10 @@ export class DbGraphPort implements GraphPort {
             threadRootMessageId: t.thread_root_message_id ?? null,
             threadChannelId: t.thread_channel_id ?? null,
           })),
-        skills: resolution.skills,
-        droppedSkills: resolution.dropped,
+        skills: candidates.indexed,
+        skillEquips,
+        skillsScannedAt: skillScan.scannedAt,
+        droppedSkills: [],
       };
     });
   }
@@ -1399,6 +1361,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // built without a data root simply does not advertise it (§7.4), rather than
   // quietly handing back the shared project directory.
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
 
   spawnService = new SpawnService({
     graph,
@@ -1423,6 +1392,11 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
 
@@ -1559,6 +1533,13 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
   const spawnService = new SpawnService({
     graph,
     pty: deps.pty,
@@ -1580,6 +1561,11 @@ export function registerExecutionHandlers(
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);

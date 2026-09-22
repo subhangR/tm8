@@ -3,6 +3,7 @@ export { SpawnService, type SpawnServiceOptions } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
   DEFAULT_MODEL,
+  type LaunchAdvice,
   DEFAULT_PERMISSION_MODE,
   ECHO_AGENT_CMD,
   CODEX_LOOPBACK_CONFIG_OVERRIDES,
@@ -21,6 +22,8 @@ export {
   withAgentResume,
   type ComposeManifestInput,
   type ResolvedLaunchConfig,
+  routingIntentFor,
+  taskFactsFor,
 } from './manifest.js';
 export {
   assertCodexNetworkFeatureList,
@@ -30,12 +33,9 @@ export {
   type CodexNetworkPreflight,
 } from './codex-network-preflight.js';
 export {
-  DEFAULT_MAX_SKILLS,
   resolveSkills,
-  type ManifestSkill,
   type ResolvedSkillRow,
   type SkillResolution,
-  type SkillResolutionOptions,
 } from './skills.js';
 export {
   extractCodexRolloutIdentity,
@@ -106,3 +106,5 @@ export type {
   WorktreeAllocationState,
   GhostReconcileReport,
 } from './types.js';
+
+export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';

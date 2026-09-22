@@ -328,6 +328,19 @@ export function pageOf<T>(item: z.ZodType<T>): z.ZodType<Page<T>> {
   }).strict();
 }
 
+export const SkillIndexEntrySchema = z.object({
+  entityId: z.string(), name: z.string(), description: z.string(),
+  provider: z.enum(['claude', 'agents', 'codex', 'hermes', 'tm8']),
+  level: z.enum(['system', 'admin', 'user', 'project', 'nested', 'plugin', 'synced', 'session', 'space']),
+  sourcePath: z.string().optional(), loadPointer: z.string(), native: z.boolean(), hash: z.string().optional(),
+  allowImplicitInvocation: z.boolean().optional(),
+}).strict();
+export const EffectiveSkillsSchema = z.object({
+  native: z.array(SkillIndexEntrySchema), indexed: z.array(SkillIndexEntrySchema),
+  skipped: z.array(z.object({ entityId: z.string(), name: z.string(), hash: z.string().optional(), sourcePath: z.string().optional(), reason: z.string() }).strict()),
+  scannedAt: z.string().nullable(),
+}).strict();
+
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
@@ -438,12 +451,32 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     sizeBytes: z.number().nonnegative(),
   }).strict(),
   z.object({
-    kind: z.enum(['spell', 'skill']),
+    kind: z.literal('skill'),
+    description: z.string().optional(),
+    equipped: z.boolean(),
+    changedOnDisk: z.boolean(),
+    provider: z.enum(['claude', 'agents', 'codex', 'hermes', 'tm8']),
+    level: z.enum(['system', 'admin', 'user', 'project', 'nested', 'plugin', 'synced', 'session', 'space']),
+    root: z.object({ kind: z.enum(['home', 'project', 'plugin', 'subdir']), ref: z.string().nullable() }).strict().optional(),
+    sourcePath: z.string().optional(),
+    dirName: z.string().optional(),
+    frontmatter: z.record(z.unknown()),
+    loaderMetadata: z.record(z.unknown()).optional(),
+    contentHash: z.string().optional(),
+    fileMtime: z.string().optional(),
+    bodyBytes: z.number().int().nonnegative().optional(),
+    bundle: z.object({ scripts: z.number().int().nonnegative(), references: z.number().int().nonnegative(), assets: z.number().int().nonnegative() }).strict().optional(),
+    missing: z.boolean(),
+    lastSeenAt: z.string().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('spell'),
     description: z.string().optional(),
     equipped: z.boolean(),
   }).strict(),
   z.object({
     kind: z.literal('work_session'),
+    skills: EffectiveSkillsSchema.optional(),
     status: WorkSessionStatusSchema,
     agentTool: z.string().nullable(),
     model: z.string().nullable(),

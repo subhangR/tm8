@@ -40,6 +40,10 @@ export interface FakeGraphOptions {
   permissionMode?: string | null;
   /** What `parentSessionId` points at (176). Defaults to "not resolved". */
   parentKind?: SpawnContext['parentKind'];
+  /** Persona memories, as the graph column hands them over. Default: none. */
+  memories?: unknown[];
+  /** Skills already resolved across the ancestor chain. Default: none. */
+  skills?: SpawnContext['skills'];
 }
 
 export class FakeGraph implements GraphPort {
@@ -87,6 +91,7 @@ export class FakeGraph implements GraphPort {
       // answers from a field so a chat-parented spawn can be composed without a
       // database, and a resume can change it mid-test.
       parentKind: this.parentKind,
+      ...(this.options.skills ? { skills: this.options.skills } : {}),
       project:
         this.options.withProject === false
           ? null
@@ -101,7 +106,7 @@ export class FakeGraph implements GraphPort {
         name: 'Draco',
         role: 'PTY engineer',
         identity: 'You own the terminal seam.',
-        memories: [],
+        memories: this.options.memories ?? [],
         model: this.options.model === undefined ? 'opus' : this.options.model,
         agentTool: null,
         mode: 'worker',

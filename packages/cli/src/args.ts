@@ -73,6 +73,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   // §7.5 destructive confirmation
   'yes',
   // §4 per-command booleans
+  'all',                 // skill scan --all
   'off',                 // entity react --off
   'ready',               // entity query --ready
   'unread',              // inbox list --unread

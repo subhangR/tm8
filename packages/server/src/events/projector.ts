@@ -1,3 +1,4 @@
+import type { EffectiveSkills } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -27,6 +28,7 @@
  * because the leak happens AFTER the policy that filtered the event rows ran.
  * The projector never opens its own transaction and never holds a `Db`.
  */
+import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import {
   EntityKindSchema,
   plainExcerpt,
@@ -186,6 +188,8 @@ export interface EntityProjector {
 
 /** Row shape of the wide hydration join. Every kind-specific column is nullable. */
 interface SummaryRow {
+  skill_reference?: Record<string, unknown> | null;
+  equipped?: boolean;
   id: string;
   space_id: string;
   kind: string;
@@ -259,6 +263,7 @@ interface SummaryRow {
   ws_checkout_branch: string | null;
   ws_workdir_mode: string | null;
   ws_ended_kind: string | null;
+  ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
   file_name: string | null;
   file_mime_type: string | null;
@@ -409,6 +414,7 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -427,6 +433,8 @@ select
   cm.committed_at    as commit_committed_at,
   sp.name            as spell_name,
   sp.description     as spell_description,
+  ${SKILL_REFERENCE_SQL} as skill_reference,
+  exists (select 1 from public.edges eq where eq.dst_id = e.id and eq.type = 'equips') as equipped,
   sk.name            as skill_name,
   sk.description     as skill_description,
   col.name           as collection_name,
@@ -1073,6 +1081,8 @@ export class PgEntityProjector implements EntityProjector {
     if (r.kind === 'message' && r.msg_redacted_at !== null) return null;
     const source =
       r.kind === 'task' ? r.task_description
+      : r.kind === 'skill' ? r.skill_description
+      : r.kind === 'spell' ? r.spell_description
       : r.kind === 'doc' ? r.doc_body
       : r.kind === 'message' ? r.msg_body
       : r.kind === 'channel' ? r.channel_topic
@@ -1210,6 +1220,7 @@ export class PgEntityProjector implements EntityProjector {
       case 'work_session':
         return {
           kind: 'work_session',
+          ...(r.ws_skills ? { skills: r.ws_skills } : {}),
           status: oneOf(r.ws_status, WS_STATUSES, 'spawning'),
           agentTool: r.ws_agent_tool,
           model: r.ws_model,
@@ -1269,15 +1280,9 @@ export class PgEntityProjector implements EntityProjector {
           committedAt: iso(r.commit_committed_at),
         };
       case 'spell':
-      case 'skill': {
-        const description = r.kind === 'spell' ? r.spell_description : r.skill_description;
-        // `equipped` is relative to a context (a task/persona equips a spell via
-        // an `equips` edge); an event has no such context. False is the honest
-        // default for "not equipped in any context I was told about".
-        return description === null
-          ? { kind: r.kind, equipped: false }
-          : { kind: r.kind, description, equipped: false };
-      }
+        return { kind: 'spell', description: r.spell_description ?? undefined, equipped: r.equipped === true };
+      case 'skill':
+        return { kind: 'skill', description: r.skill_description ?? undefined, equipped: r.equipped === true, ...skillReferenceOf(r.skill_reference), changedOnDisk: false };
       case 'collection':
         return {
           kind: 'collection',

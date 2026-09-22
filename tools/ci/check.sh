@@ -169,6 +169,11 @@ fi
 # while packages are still being authored.
 TEST_PACKAGES=(
   packages/contract
+  # packages/jev is the decisioning layer. It is TYPECHECKED transitively (the
+  # execution project references it), so its absence here would not have shown
+  # up as a red build — only as a package whose whole suite never ran, which is
+  # the exact shape of the packages/tm8-ui gap documented below.
+  packages/jev
   packages/server
   packages/execution
   packages/cli

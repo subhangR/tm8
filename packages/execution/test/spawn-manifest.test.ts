@@ -17,7 +17,9 @@ import {
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
+  routingIntentFor,
   supportsPositionalPrompt,
+  taskFactsFor,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -1155,5 +1157,167 @@ describe('composeManifest', () => {
     };
     expect(composeManifest({ ...args, context: withTask }).session.title).toBe('wire the prompt seam');
     expect(composeManifest({ ...args, context: context() }).session.title).toBe('Draco session');
+  });
+});
+
+// --- routing (@tm8/jev) -----------------------------------------------------
+//
+// The whole point of these is that `resolveLaunchConfig` stayed PURE. A
+// routing verdict is a plain object literal here — no network, no fake client,
+// no jev package at all — because it arrives as a parameter rather than as a
+// call. If a later change moves the ask inside this function, these tests are
+// the ones that stop compiling, which is the alarm they exist to be.
+
+function taskCtx(task: Partial<SpawnContext['tasks'][number]> = {}): SpawnContext {
+  const c = context();
+  return {
+    ...c,
+    tasks: [
+      {
+        id: 'task-1',
+        version: 1,
+        title: 'Fix a typo in the README',
+        description: 'One word.',
+        priority: 'low',
+        status: 'open',
+        acceptanceCriteria: ['reads correctly'],
+        ...task,
+      },
+    ],
+  };
+}
+
+describe('resolveLaunchConfig with routing advice', () => {
+  const advice = { model: 'claude-haiku-4-5-20251001', agentTool: 'claude-code', effort: 'medium' };
+
+  it('lets advice replace the persona default, but never an explicit request', () => {
+    // Nobody asked: the router's choice beats the persona's static default.
+    expect(resolveLaunchConfig(base, context(), {}, null, advice).model).toBe(
+      'claude-haiku-4-5-20251001',
+    );
+    // A human typed a model. It wins, and it must keep winning — the policy
+    // that decides whether to overrule a human lives upstream, and by the time
+    // a verdict reaches here it has already been cleared to apply.
+    expect(resolveLaunchConfig({ ...base, model: 'opus' }, context(), {}, null, advice).model).toBe(
+      'opus',
+    );
+  });
+
+  it('is a no-op when absent, in every form', () => {
+    const plain = resolveLaunchConfig(base, context(), {});
+    for (const nothing of [undefined, null, {}] as const) {
+      expect(resolveLaunchConfig(base, context(), {}, null, nothing)).toEqual(plain);
+    }
+  });
+
+  it('carries the harness across providers, and the effort with it', () => {
+    const codex = { model: 'gpt-6-astra', agentTool: 'codex', effort: 'high' };
+    // agentToolForModel already derives codex from the model name, so the
+    // interesting assertion is that nothing fights it and effort survives.
+    expect(resolveLaunchConfig(base, context({ model: null }), {}, null, codex)).toMatchObject({
+      model: 'gpt-6-astra',
+      agentTool: 'codex',
+      reasoningEffort: 'high',
+    });
+    // An effort the caller named is still the caller's.
+    expect(
+      resolveLaunchConfig({ ...base, reasoningEffort: 'low' }, context(), {}, null, codex)
+        .reasoningEffort,
+    ).toBe('low');
+  });
+
+  it('rejects a malformed effort rather than passing it through', () => {
+    expect(
+      resolveLaunchConfig(base, context(), {}, null, { ...advice, effort: 'turbo' })
+        .reasoningEffort,
+    ).toBeNull();
+  });
+});
+
+describe('taskFactsFor', () => {
+  it('projects the first task, which the seam has always carried', () => {
+    expect(taskFactsFor(taskCtx())).toEqual({
+      id: 'task-1',
+      title: 'Fix a typo in the README',
+      description: 'One word.',
+      priority: 'low',
+      status: 'open',
+      acceptanceCriteriaCount: 1,
+    });
+  });
+
+  it('declines on no task and on an empty one', () => {
+    expect(taskFactsFor(context())).toBeNull();
+    expect(taskFactsFor(taskCtx({ title: '  ', description: '' }))).toBeNull();
+  });
+
+  it('routes a multi-task session by its lead assignment, not an average', () => {
+    const c = taskCtx();
+    const two: SpawnContext = {
+      ...c,
+      tasks: [...c.tasks, { ...c.tasks[0]!, id: 'task-2', title: 'Migrate the billing schema' }],
+    };
+    expect(taskFactsFor(two)?.id).toBe('task-1');
+  });
+});
+
+describe('routingIntentFor', () => {
+  it('reads the human choice from the REQUEST alone', () => {
+    // The persona's model is a default, not a choice. Folding it in here would
+    // make every spawn look deliberate and silently disable routing.
+    expect(routingIntentFor(base, context())).toEqual({
+      requestedModel: null,
+      memberModel: 'opus',
+      requestedAgentTool: null,
+    });
+    expect(routingIntentFor({ ...base, model: ' haiku ' }, context()).requestedModel).toBe('haiku');
+  });
+});
+
+describe('composeManifest routing block', () => {
+  const args = {
+    sessionId: 's-1',
+    request: base,
+    context: context(),
+    launch: resolveLaunchConfig(base, context(), {}),
+    workdir: { mode: 'project' as const, path: '/tmp/tm8-fixture' },
+    command: 'claude',
+    baseUrl: 'http://127.0.0.1:17777',
+  };
+
+  it('is null on an unrouted launch — the field is present, the decision is not', () => {
+    expect(composeManifest(args).launch.routing).toBeNull();
+  });
+
+  it('records the decision beside the model it produced', () => {
+    const activation = {
+      at: '2026-09-21T00:00:00.000Z',
+      mode: 'inline' as const,
+      policy: 'advise' as const,
+      jevModel: 'jev-1.13.0',
+      latencyMs: 930,
+      jevInputTokens: 1262,
+      jevCostUsd: 0.000053,
+      verdict: {
+        tier: 'economy' as const,
+        model: 'claude-haiku-4-5-20251001',
+        agentTool: 'claude-code' as const,
+        effort: 'medium',
+        need: 0.45,
+        reasons: [],
+        attention: 0,
+      },
+      baselineModel: 'opus',
+      appliedModel: 'claude-haiku-4-5-20251001',
+      appliedAgentTool: 'claude-code' as const,
+      changed: true,
+      overriddenByHuman: false,
+      savings: null,
+      summary: 'Jev routed opus -> claude-haiku-4-5-20251001 (economy, need 0.45) — cheaper.',
+    };
+    const m = composeManifest({ ...args, routing: activation });
+    expect(m.launch.routing).toMatchObject({ appliedModel: 'claude-haiku-4-5-20251001', changed: true });
+    // It must survive redactSecretsDeep, which every manifest passes through.
+    expect(m.launch.routing?.summary).toContain('economy');
   });
 });

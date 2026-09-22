@@ -11,6 +11,7 @@
  * `not_implemented` naming itself — not a 400, which would say the caller was
  * wrong when in fact the server is unfinished.
  */
+import { hydrateDetail } from '../entity-read.js';
 import {
   CollabError,
   decodeCursor,
@@ -341,7 +342,7 @@ export async function buildDetail(
 
   return {
     ...summary,
-    content: contentOf(row),
+    ...await hydrateDetail(q, row, summary.state, contentOf(row), viewerIdentityId),
     hierarchy,
     connections,
     capabilities: entityCapabilities(row),

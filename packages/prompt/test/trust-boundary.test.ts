@@ -64,19 +64,20 @@ describe('launch context (--context / promptExtra)', () => {
   });
 });
 
-describe('skill bodies', () => {
-  it('carry the name as a trusted attribute and the body as untrusted data', () => {
+describe('skill index', () => {
+  it('escape names and descriptions as untrusted metadata', () => {
     const { system } = composePrompt({
       ...base,
-      skills: [{ name: 'deploy', body: 'run the deploy script' }],
+      skills: [{ name: 'deploy', description: 'run the deploy script', loadPointer: '/deploy' }],
     });
-    expect(system).toContain('<untrusted_data type="skill-body" name="deploy"');
-    expect(blockOf(system, 'skill-body')).toBe('run the deploy script');
+    expect(system).toContain('<skill name="deploy"');
+    expect(system).toContain('load="/deploy"');
+    expect(blockOf(system, 'skill-description')).toBe('run the deploy script');
   });
 
-  it('renders a self-closing element for a skill with no body', () => {
-    const { system } = composePrompt({ ...base, skills: [{ name: 'empty', body: '' }] });
-    expect(system).toContain('<skill name="empty" />');
+  it('renders metadata even for an empty description', () => {
+    const { system } = composePrompt({ ...base, skills: [{ name: 'empty', description: '' }] });
+    expect(system).toContain('<skill name="empty"');
   });
 });
 

@@ -34,6 +34,7 @@ import { KIND_COMMANDS } from './kind.js';
 // Domain modules. One import + one spread each, added by the coordinator as each
 // group reports its files landed — which is why no two domain slots ever share a
 // line in this file. Order here is registration order only; it carries no meaning.
+import { SKILL_COMMANDS } from './skill.js';
 import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
 import { AUTH_COMMANDS } from './auth.js';
@@ -110,6 +111,7 @@ export const COMMANDS: CommandModule[] = [
   ...SEARCH_COMMANDS,
   ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
+  ...SKILL_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,

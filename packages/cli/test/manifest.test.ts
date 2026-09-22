@@ -82,3 +82,11 @@ describe('parseManifest', () => {
     expect(() => JSON.parse(readFileSync(FIXTURE, 'utf8'))).not.toThrow();
   });
 });
+
+
+it('retains the compact skill index on worker-init reads and drops legacy bodies', () => {
+  const skill = { entityId: 'skill', name: 'demo', description: 'Load when needed', provider: 'agents', level: 'project', sourcePath: '/repo/.agents/skills/demo/SKILL.md', loadPointer: '$demo', native: true, hash: 'hash', allowImplicitInvocation: false };
+  const result = parseManifest({ manifestVersion: '1', skills: [{ ...skill, body: 'PRIVATE LEGACY BODY' }] });
+  expect(result.skills).toEqual([skill]);
+  expect(JSON.stringify(result)).not.toContain('PRIVATE LEGACY BODY');
+});

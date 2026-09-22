@@ -47,6 +47,10 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'skills.scan', method: 'POST', path: '/v2/spaces/:spaceId/skills/scan', kind: 'command', status: 'v1' },
+  { name: 'skills.list', method: 'GET', path: '/v2/spaces/:spaceId/skills', kind: 'read', status: 'v1' },
+  { name: 'skills.preview', method: 'GET', path: '/v2/spaces/:spaceId/skills/preview', kind: 'read', status: 'v1' },
+  { name: 'skills.show', method: 'GET', path: '/v2/skills/:id', kind: 'read', status: 'v1' },
   // identity & spaces
   { name: 'identity.get',            method: 'GET',    path: '/v2/identity',                                kind: 'read',    status: 'v1' },
   { name: 'serverConnections.list',  method: 'GET',    path: '/v2/server-connections',                      kind: 'read',    status: 'v1' },
