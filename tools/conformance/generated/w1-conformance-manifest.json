@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4",
+  "catalogDigest": "sha256:8274a7b39cd985d1d38d11de8f6fdd03e1d42ebec509c972a26af2622598f0f2",
   "catalog": {
-    "total": 199,
-    "v1": 197,
+    "total": 203,
+    "v1": 201,
     "reserved": 2,
-    "http": 197,
+    "http": 201,
     "ws": 1,
-    "registerableV1Http": 195,
+    "registerableV1Http": 199,
     "methods": {
-      "GET": 65,
-      "POST": 100,
+      "GET": 68,
+      "POST": 101,
       "PATCH": 12,
       "DELETE": 12,
       "PUT": 8,
       "WS": 2
     },
     "kinds": {
-      "read": 69,
-      "command": 128,
+      "read": 72,
+      "command": 129,
       "stream": 2
     },
-    "uniqueNames": 199,
-    "uniqueBindings": 198
+    "uniqueNames": 203,
+    "uniqueBindings": 202
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,34 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "skills.scan",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/skills/scan",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/skills",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.preview",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/skills/preview",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.show",
+        "method": "GET",
+        "path": "/v2/skills/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "identity.get",
         "method": "GET",
@@ -1797,7 +1825,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 167
+    "unimplementedV1Http": 171
   },
   "schemas": {
     "additive": {
@@ -1963,6 +1991,70 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "skills.scan",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.scan",
+        "intentTags": [
+          "skills",
+          "scan"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.list",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.list",
+        "intentTags": [
+          "skills",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.preview",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.preview",
+        "intentTags": [
+          "skills",
+          "preview"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.show",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.show",
+        "intentTags": [
+          "skills",
+          "show"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "identity.get",
         "noun": "identity",

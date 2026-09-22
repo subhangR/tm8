@@ -1090,6 +1090,10 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
+  'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
+  'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
+  'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },
+  'skills.show': { cmd: ['skill', 'show'], syn: 'tm8 skill show <skill-id>', sum: 'Read a skill and its current filesystem body', authz: 'entity', input: 'none' },
   // ── projects ─────────────────────────────────────────────────────────────
   'projects.list': {
     cmd: ['project', 'list'],
@@ -2448,6 +2452,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   commands: 'undo',
   search: 'search',
   projects: 'project',
+  skills: 'skill',
   files: 'file',
   bridge: 'bridge',
   inbox: 'inbox',
@@ -2541,7 +2546,10 @@ export const CATALOG_DIGEST =
   // THIRD value — neither 186723c6.. nor 10d20505.. is correct here. RECOMPUTED
   // from `JSON.stringify(OPERATIONS)` on this tree and read out of the failing
   // run, then written into the regenerated conformance manifest.
-  'sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4';
+  // Re-measured on the MERGED tree (2026-09-23): filesystem skills add
+  // skills.scan/list/show/preview on top of main's 199 rows. RECOMPUTED from
+  // `JSON.stringify(OPERATIONS)` and matched to the regenerated manifest.
+  'sha256:8274a7b39cd985d1d38d11de8f6fdd03e1d42ebec509c972a26af2622598f0f2';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -42,10 +42,23 @@
       "version": "0.1.0",
       "dependencies": {
         "@tm8/contract": "workspace:*",
+        "@tm8/jev": "workspace:*",
         "@tm8/prompt": "workspace:*",
         "@xterm/addon-serialize": "^0.14.0",
         "@xterm/headless": "^6.0.0",
         "node-pty": "^1.0.0",
+      },
+      "devDependencies": {
+        "@types/node": "^20.14.0",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0",
+      },
+    },
+    "packages/jev": {
+      "name": "@tm8/jev",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tm8/contract": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^20.14.0",
@@ -87,11 +100,14 @@
       "name": "@tm8/server",
       "version": "0.1.0",
       "dependencies": {
+        "@iarna/toml": "^2.2.5",
         "@tm8/contract": "workspace:*",
         "@tm8/execution": "workspace:*",
+        "@tm8/jev": "workspace:*",
         "@tm8/mcp": "workspace:*",
         "@tm8/prompt": "workspace:*",
         "pg": "^8.22.0",
+        "yaml": "^2.9.1",
         "zod": "^3.23.0",
       },
       "devDependencies": {
@@ -301,6 +317,8 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
 
+    "@iarna/toml": ["@iarna/toml@2.2.5", "", {}, "sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg=="],
+
     "@iconify/types": ["@iconify/types@2.0.0", "", {}, "sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg=="],
 
     "@iconify/utils": ["@iconify/utils@3.1.4", "", { "dependencies": { "@antfu/install-pkg": "^1.1.0", "@iconify/types": "^2.0.0", "import-meta-resolve": "^4.2.0" } }, "sha512-b1S7B1k9ohZ+iNTi2ATxbRYG9fTrJmUT0rc46bvVnNxqNRGW7dyo/vRREwyniI5IRN2RSJHDcm+s3BjWrSAjHw=="],
@@ -470,6 +488,8 @@
     "@tm8/contract": ["@tm8/contract@workspace:packages/contract"],
 
     "@tm8/execution": ["@tm8/execution@workspace:packages/execution"],
+
+    "@tm8/jev": ["@tm8/jev@workspace:packages/jev"],
 
     "@tm8/mcp": ["@tm8/mcp@workspace:packages/mcp"],
 
@@ -1304,6 +1324,8 @@
     "xtend": ["xtend@4.0.2", "", {}, "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="],
 
     "yallist": ["yallist@3.1.1", "", {}, "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="],
+
+    "yaml": ["yaml@2.9.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw=="],
 
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 

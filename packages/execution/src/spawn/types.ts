@@ -14,7 +14,8 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
-import type { CredentialProviderName } from '@tm8/contract';
+import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName } from '@tm8/contract';
+import type { ContextActivation, RoutingActivation } from '@tm8/jev';
 import type { CoordinatorKind } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
@@ -304,17 +305,17 @@ export interface SpawnContext {
    * caller predating row #11) stay valid; absent is read as "none".
    */
   skills?: ManifestSkillContext[];
+  skillEquips?: import('./skills.js').ResolvedSkillRow[];
+  skillsScannedAt?: string | null;
+  skippedSkills?: import('@tm8/contract').SkippedSkill[];
   /**
-   * Skills the resolver dropped to stay inside its cap. Carried through to the
+   * Skills omitted by context selection or serialized index budgeting. Carried through to the
    * manifest so a truncated persona is visible rather than merely smaller.
    */
   droppedSkills?: string[];
 }
 
-export interface ManifestSkillContext {
-  name: string;
-  body: string;
-}
+export type ManifestSkillContext = SkillIndexEntry;
 
 export interface CreateWorkSessionInput {
   spaceId: string;
@@ -815,6 +816,38 @@ export interface Tm8Manifest {
     sandboxDegraded?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
+    /**
+     * WHY this launch runs the model it runs, when a router decided it.
+     *
+     * Same argument as `sandboxDegraded` above, applied to the model: `model`
+     * records what will RUN, and on a routed launch that is not what the
+     * persona or the caller said. Reading the two together is the only way to
+     * tell a deliberate Opus from a routed one — and without this block a
+     * routing decision is invisible, which for a system whose own dispatcher
+     * rule is "work nobody can see has not happened" makes it not have
+     * happened.
+     *
+     * Carries the counterfactual too: `savings` prices what the baseline model
+     * WOULD have cost against what the chosen one will, so the bill has a
+     * reason attached rather than a number. Absent (null) on every unrouted
+     * launch, which is all of them until a node wires an advisor.
+     */
+    routing?: RoutingActivation | null;
+    /**
+     * What Jev chose to PUT IN FRONT of the agent, beside `routing`'s record
+     * of what will run it.
+     *
+     * Same argument as `sandboxDegraded`: the manifest is where a launch says
+     * what actually happened versus what was asked for, and "this persona was
+     * offered 41 memories and given 9" is exactly that kind of fact. Without
+     * it a thinner prompt is indistinguishable from a teammate who never had
+     * the memory, which is the failure `droppedSkills` was added to prevent
+     * one layer down.
+     *
+     * Absent or null means nothing selected — every candidate was injected,
+     * which is what every launch before this did.
+     */
+    contextEngineering?: ContextActivation | null;
   };
 
   session: {
@@ -831,10 +864,11 @@ export interface Tm8Manifest {
 
   tasks: TaskContext[];
 
-  /** Skills the agent should load. G1A composes none — the graph-side skill
-   *  resolution is post-loop work. Emitted as an empty array rather than
-   *  omitted so the CLI's shape stays stable. */
-  skills: Array<{ name: string; body: string }>;
+  /** Equipped skill metadata and explicit load pointers, never bodies. */
+  skills: ManifestSkillContext[];
+  effectiveSkills?: EffectiveSkills;
+  /** Names omitted by relevance selection or the serialized index byte budget. */
+  droppedSkills?: string[];
 
   /**
    * Present for coordinated modes — the concrete return path, and since 176

@@ -16,7 +16,7 @@ import {
   type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
-import { catalogModelsFor } from '../domain/model-catalog';
+import { modelCatalog } from '../domain/model-catalog';
 import type { ComposerWorkdir, NewSessionComposerProps } from './NewSessionComposer';
 
 /**
@@ -83,7 +83,6 @@ export function useLaunchComposerState(args: {
      rather than pinning a ghost — computed, never patched into state. */
   const teammate = (teammateId ? teammates.find((t) => t.id === teammateId) : null)
     ?? teammates[0] ?? null;
-  const toolId = teammate?.agentTool ?? null;
 
   const projectOptions = useMemo<readonly LaunchProjectOption[]>(
     () => projects
@@ -122,9 +121,27 @@ export function useLaunchComposerState(args: {
     ? workdirPick
     : defaultWorkdirId;
 
-  /* The catalog rows WITH their effort stops — `modelsFor` drops `efforts`,
-     and the composer's effort dial is drawn over the model's own list. */
-  const catalog = useMemo(() => catalogModelsFor(currentNodeKey(), toolId), [toolId]);
+  /* EVERY model this node offers, not the selected persona's tool's subset.
+     The catalog rows come WITH their effort stops — `modelsFor` drops
+     `efforts`, and the composer's effort dial is drawn over the model's own
+     list.
+
+     WHY NOT FILTERED BY TOOL, which is what this was until 2026-09-22. The
+     filter made the picker a function of the teammate, and it failed in both
+     directions. With NO teammate on the roster there was no tool, so
+     `catalogModelsFor` returned [] and the popup rendered an EMPTY model menu
+     — the launch card's most important control, blank, with no reason given.
+     With a claude-code persona selected it hid every Codex row, so half this
+     node's catalog was unreachable from the Run popup unless you first went
+     and found a persona that happened to record the other tool. Cross-provider
+     routing made that sharply worse: connecting the Groq key buys six models
+     that a Claude persona could never be used to reach.
+
+     THE TOOL NOW FOLLOWS THE MODEL instead, below. That is the right direction
+     of travel — the catalog entry KNOWS its tool, a teammate merely remembers
+     one — and it keeps the pair honest either way, because `canLaunch` still
+     refuses a (tool, model) combination the catalog does not pair. */
+  const catalog = useMemo(() => modelCatalog(currentNodeKey()), []);
   const models = useMemo(
     () => catalog.map((entry) => ({
       id: entry.model,
@@ -133,13 +150,29 @@ export function useLaunchComposerState(args: {
     })),
     [catalog],
   );
-  /* An override survives only while the tool still offers it. Switching
+  /* An override survives only while the catalog still offers it. Switching
      teammate clears it entirely (see `pickTeammate`) — the LaunchQuickConfig
      rule: a persona's recorded tool and model travel together, and keeping
-     half would mix two personas' settings. */
+     half would mix two personas' settings.
+
+     The last fallback is what makes a rosterless space launchable at all: with
+     no persona to inherit from, the card names the catalog's first model
+     rather than leaving `model` null and failing `canLaunch` with "this
+     teammate has no persisted model" about a teammate that does not exist. */
   const model = modelOverride && catalog.some((entry) => entry.model === modelOverride)
     ? modelOverride
-    : teammate?.model ?? null;
+    : teammate?.model ?? catalog[0]?.model ?? null;
+
+  /* THE TOOL, resolved in the order of most-specific fact first:
+       1. an explicit model pick carries its own tool — that IS the pick;
+       2. otherwise the persona's recorded tool, because a hand-edited teammate
+          whose tool and model disagree should keep behaving as it has;
+       3. otherwise the resolved model's tool, for a space with no roster.
+     Null only when nothing above names one, which `canLaunch` reports. */
+  const modelEntry = model ? catalog.find((entry) => entry.model === model) : undefined;
+  const toolId = (modelOverride && modelEntry)
+    ? modelEntry.agentTool
+    : teammate?.agentTool ?? modelEntry?.agentTool ?? null;
   const effortStops = useMemo<readonly LaunchModelEffort[]>(
     () => catalog.find((entry) => entry.model === model)?.efforts ?? [],
     [catalog, model],
