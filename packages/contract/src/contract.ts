@@ -17,6 +17,7 @@
  * are constrained to them — drift fails the build.
  */
 
+import type { SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 
 // ===========================================================================
@@ -300,7 +301,8 @@ export type CoreEntityState =
       headRef?: string | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
-  | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
+  | { kind: 'spell'; description?: string; equipped: boolean }
+  | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
   // tm8 additions (03 §1) — see §2 for the enums.
   | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;

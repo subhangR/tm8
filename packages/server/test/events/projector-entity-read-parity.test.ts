@@ -44,7 +44,7 @@ const PROJECTOR_SRC = join(SERVER_ROOT, 'src', 'events', 'projector.ts');
    agree on it. The gap was costing more than parity: every commit reached the
    API as `title:"commit"`, `state.fields:{}`, hiding a sha the database had for
    all 396 rows. */
-const FROZEN_LEGACY_ENTITY_READ_GAP = new Set(['spell', 'skill']);
+const FROZEN_LEGACY_ENTITY_READ_GAP = new Set<string>();
 
 /**
  * Kinds whose contract entry has landed but whose dispatch arms are still

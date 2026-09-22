@@ -44,6 +44,7 @@ import {
   assembleSummaries,
   entityCapabilities,
   contentOf,
+  hydrateDetail,
   ENTITY_COLUMNS,
   readAncestorRows,
   ENTITY_FROM,
@@ -216,19 +217,8 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
   const content = row.content ?? {};
   switch (row.kind) {
     case 'spell':
-      return {
-        ...summary,
-        title: contentString(content, 'name') ?? 'Spell',
-        excerpt: contentString(content, 'description') ?? undefined,
-        state: { kind: 'spell', description: contentString(content, 'description') ?? undefined, equipped: false },
-      };
     case 'skill':
-      return {
-        ...summary,
-        title: contentString(content, 'name') ?? 'Skill',
-        excerpt: contentString(content, 'description', 'content') ?? undefined,
-        state: { kind: 'skill', description: contentString(content, 'description') ?? undefined, equipped: false },
-      };
+      return summary; // Already derived by the shared read projection, including equips.
     case 'pull_request': {
       const fetchedAt = contentString(content, 'fetched_at', 'fetchedAt');
       return {
@@ -310,8 +300,6 @@ async function loadEnrichments(q: Querier, ids: readonly string[]): Promise<Map<
     `select e.id, e.kind,
             case
               when e.kind like 'c:%' then jsonb_build_object('title', custom_detail.title, 'fields', custom_detail.fields)
-              when e.kind = 'spell' then to_jsonb(spell_detail) - 'entity_id'
-              when e.kind = 'skill' then to_jsonb(skill_detail) - 'entity_id'
               when e.kind = 'file' then to_jsonb(file_detail) - 'entity_id'
               when e.kind = 'pull_request' then to_jsonb(pr_detail) - 'entity_id'
               when e.kind = 'commit' then to_jsonb(commit_detail) - 'entity_id'
@@ -323,8 +311,6 @@ async function loadEnrichments(q: Querier, ids: readonly string[]): Promise<Map<
             profile_version.draft_json profile_draft
        from public.entities e
        left join public.custom_entities custom_detail on custom_detail.entity_id = e.id
-       left join public.spells spell_detail on spell_detail.entity_id = e.id
-       left join public.skills skill_detail on skill_detail.entity_id = e.id
        left join public.files file_detail on file_detail.entity_id = e.id
        left join public.pull_requests pr_detail on pr_detail.entity_id = e.id
        left join public.commits commit_detail on commit_detail.entity_id = e.id
@@ -414,7 +400,7 @@ function detailContent(row: EntityRow, enrichment: EnrichmentRow | undefined): E
       generatedByTeamMemberId: contentString(content, 'generated_by_team_member_id', 'generatedByTeamMemberId'),
     };
   }
-  if (['pull_request', 'commit', 'file', 'spell', 'skill'].includes(row.kind)) {
+  if (['pull_request', 'commit', 'file'].includes(row.kind)) {
     return { kind: row.kind, ...camelContent(content) } as EntityContent;
   }
   return contentOf(row);
@@ -772,9 +758,11 @@ async function buildUniversalDetail(
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
   ).length;
-  const content = detailContent(row, enrichment);
+  const hydrated = await hydrateDetail(q, row, summary.state, detailContent(row, enrichment), viewerIdentityId);
+  const content = hydrated.content;
   return {
     ...summary,
+    state: hydrated.state,
     content: content.kind === 'collection'
       ? { ...content, items: await collectionItems(q, id, viewerIdentityId) }
       : content,
