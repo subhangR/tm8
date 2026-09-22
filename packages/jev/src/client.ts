@@ -98,18 +98,12 @@ export class JevClient {
           const controller = new AbortController();
           const timeoutReason = remaining <= attemptTimeout ? 'budget' : 'timeout';
           let timer: ReturnType<typeof setTimeout> | undefined;
-          // Give an already-resolved HTTP response a microtask-sized grace
-          // window when the remaining logical budget is shorter than the
-          // per-attempt bound. This keeps a fast definitive/retryable response
-          // observable before the hard budget closes the attempt; a stalled
-          // body still resolves on the same bounded timer below.
-          const timerDelay = remaining <= attemptTimeout ? remaining + 10 : attemptTimeout;
           const timedOut = new Promise<AttemptResult>((resolve) => {
             timer = setTimeout(() => {
               // Resolve the race before abort listeners can reject fetch.
               resolve({ reason: timeoutReason, retryable: timeoutReason !== 'budget' });
               controller.abort();
-            }, timerDelay);
+            }, Math.min(remaining, attemptTimeout));
           });
           const request = async (): Promise<AttemptResult> => {
             let response: Response;
