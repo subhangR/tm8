@@ -14,6 +14,7 @@ import { SectionAbsent, SectionFrame } from '../settings-space';
 import { CredentialsProviderBlock } from './CredentialsProviderBlock';
 import { presentationOf } from './provider-presentation';
 import {
+  recognisedProviders,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
@@ -81,7 +82,10 @@ function pillFor(
 function CredentialHealthSummary({ status }: { status: CredentialsStatusView }) {
   return (
     <div className="set-cred__health" aria-label="Credential health">
-      {status.providers.map((entry) => {
+      {/* Named providers only. The block below carries the one notice about a
+          node that lists more than this build can name, so this summary stays
+          a list of health readings rather than repeating it. */}
+      {recognisedProviders(status).renderable.map((entry) => {
         const verdict = verdictOf(entry, status.gitCredentialStore);
         const health = healthOf(entry, verdict);
         const pill = pillFor(verdict, health);

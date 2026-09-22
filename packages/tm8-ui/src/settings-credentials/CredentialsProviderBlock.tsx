@@ -17,10 +17,12 @@ import { CREDENTIAL_PROVIDER_LABEL } from '../domain/launch';
 import { presentationOf, providerBinaryLabel } from './provider-presentation';
 import {
   disconnectVerdictOf,
+  recognisedProviders,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
 } from './port';
+import { StalePageNotice } from './stale-page';
 import './credentials.css';
 
 export interface CredentialsProviderBlockProps {
@@ -156,9 +158,15 @@ export function CredentialsProviderBlock({
         />
       ) : null}
 
+      {status ? <StalePageNotice unrecognised={recognisedProviders(status).unrecognised} /> : null}
+
       {status ? (
         <div className="cred-grid" data-testid="credential-provider-grid">
-          {status.providers.map((entry) => (
+          {/* Only the providers this build can name and draw. A node that has
+              been upgraded under an open page lists more than that, and a card
+              for one of them would have no name and no mark; the notice above
+              says so once instead. */}
+          {recognisedProviders(status).renderable.map((entry) => (
             <ProviderCard
               key={entry.provider}
               entry={entry}
@@ -327,7 +335,15 @@ function ProviderCard({
  * it is the existing one, applied to the one line that had escaped it.
  */
 function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
-  const counterpart = CREDENTIAL_PROVIDER_LABEL[routing.counterpart];
+  /* `undefined` when this build has never heard of the counterpart — a node
+     ahead of this page names providers the compiled table does not contain.
+     The card itself is only rendered for a provider this build knows, but the
+     provider it is ROUTED AGAINST can still be a newer one. The sentences then
+     keep the fact and drop the name: a blank where a vendor belonged would read
+     as a rendering fault, and saying nothing at all would hide the routing
+     change this whole block exists to disclose. */
+  const named: string | undefined = CREDENTIAL_PROVIDER_LABEL[routing.counterpart];
+  const counterpart = named ?? 'another connected account';
   const tool = <code>{routing.agentTool}</code>;
 
   return (
@@ -342,8 +358,10 @@ function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
         ) : (
           <>Connecting this will route every {tool} session you start here instead of {counterpart}.</>
         )
+      ) : named ? (
+        <>Not currently used for {tool} sessions — {named} is connected and takes over.</>
       ) : (
-        <>Not currently used for {tool} sessions — {counterpart} is connected and takes over.</>
+        <>Not currently used for {tool} sessions — another connected account takes over.</>
       )}
     </p>
   );

@@ -39,7 +39,8 @@ import type {
   CredentialsStatusView,
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
-import { presentationOf } from './provider-presentation';
+import { isKnownCredentialProvider, presentationOf } from './provider-presentation';
+import { STALE_PAGE_HEAD, stalePageWhy } from './stale-page';
 import type { CredentialsPort } from './port';
 import {
   credentialSetupState,
@@ -639,11 +640,25 @@ function ProviderList({
   /* GitHub sorts LAST and is labelled as its own half of the gate — it is not
      one of the interchangeable agent tools above it, and a list that mixes
      them invites a member to connect six agents and still not be finished. */
-  const agents = setup.agents;
+  /* A row needs a name and a mark, so only the providers this build knows get
+     one. The GATE behind this list is not filtered — see `recognisedProviders`
+     — so a member whose only connection is one of these is still told they are
+     finished; it is the step list that cannot draw it. */
+  const agents = setup.agents.filter((s) => isKnownCredentialProvider(s.provider));
   const git = setup.git;
+  const unrecognised = setup.standings.filter(
+    (s) => !isKnownCredentialProvider(s.provider),
+  ).length;
 
   return (
     <>
+      {unrecognised > 0 ? (
+        <p className="cset-notice" data-testid="cset-stale-page">
+          {STALE_PAGE_HEAD}
+          <span className="cset-notice__why">{stalePageWhy(unrecognised)}</span>
+        </p>
+      ) : null}
+
       <p className="cset-grouphead">Pick an agent tool — one is enough</p>
       <div className="cset-list">
         {agents.map((standing) => (

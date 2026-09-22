@@ -12,6 +12,7 @@ export {
 } from './CredentialsProviderBlock';
 export {
   CREDENTIAL_PROVIDER_PRESENTATIONS,
+  isKnownCredentialProvider,
   presentationOf,
   type CredentialProviderPresentation,
 } from './provider-presentation';
@@ -34,8 +35,10 @@ export {
 export {
   credentialsPortFromSeam,
   disconnectVerdictOf,
+  recognisedProviders,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
   type DisconnectVerdict,
+  type RecognisedProviders,
 } from './port';
