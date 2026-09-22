@@ -9,12 +9,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "@tm8/contract": "workspace:*",
     "@tm8/execution": "workspace:*",
     "@tm8/jev": "workspace:*",
     "@tm8/mcp": "workspace:*",
     "@tm8/prompt": "workspace:*",
     "pg": "^8.22.0",
+    "yaml": "^2.9.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {
