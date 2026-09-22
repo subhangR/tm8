@@ -23,7 +23,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { presentationOf } from './provider-presentation';
+import { isKnownCredentialProvider, presentationOf } from './provider-presentation';
 
 /** The narrow surface the credentials components consume. */
 export interface CredentialsPort {
@@ -108,6 +108,52 @@ export function verdictOf(
     return 'unknown';
   }
   return 'disconnected';
+}
+
+// ---------------------------------------------------------------------------
+// What this BUILD can render, versus what the NODE reported
+// ---------------------------------------------------------------------------
+
+/** One node's provider list, split by whether this build can present it. */
+export interface RecognisedProviders {
+  /** The entries this build has a name and a mark for, in the node's order. */
+  renderable: CredentialConnectionView[];
+  /** How many entries the node listed that this build has no entry for. */
+  unrecognised: number;
+}
+
+/**
+ * Split a status response into the part this build can draw and a count of the
+ * part it cannot.
+ *
+ * WHY A SCREEN HAS TO ASK THIS AT ALL. The provider list is read from the node
+ * at request time; the table that turns a provider into a name and a mark was
+ * compiled into this bundle. A page open across a node upgrade holds the older
+ * of the two and is handed the newer, so ids it has never seen arrive as
+ * ordinary entries. Rendering one produces a card with no name, no mark and an
+ * install instruction nobody can act on; before `presentationOf` was made
+ * total it produced a crash that took the whole panel down.
+ *
+ * COUNTED, NOT NAMED. The count is all a surface may say about them, because
+ * the id is the only thing this build holds and an id is not a name — printing
+ * it would show a reader plumbing and still not tell them what it is. The
+ * honest sentence is that this page is behind the node, and the honest remedy
+ * is to reload it.
+ *
+ * THE GATE IS NOT FILTERED THIS WAY, deliberately. `credentialSetupState` asks
+ * whether this account is set up, and a connection that is real but unnameable
+ * is still a real connection — dropping it there would nag a member who has
+ * already finished. Recognition is a question about rendering, so it is asked
+ * by the things that render.
+ */
+export function recognisedProviders(status: CredentialsStatusView): RecognisedProviders {
+  const renderable = status.providers.filter((entry) =>
+    isKnownCredentialProvider(entry.provider),
+  );
+  return {
+    renderable,
+    unrecognised: status.providers.length - renderable.length,
+  };
 }
 
 /**

@@ -215,8 +215,78 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
   },
 } as const satisfies Record<CredentialProviderName, CredentialProviderPresentation>;
 
+/**
+ * THE TABLE IS TOTAL AT COMPILE TIME AND PARTIAL AT RUN TIME, AND THAT GAP IS
+ * WHAT THIS MARK EXISTS FOR.
+ *
+ * `CredentialProviderName` is a union THIS BUNDLE was compiled against. The
+ * provider list in a `credentials.status` response is a fact about the NODE,
+ * read at the moment of the request. The two are not the same clock: a page
+ * that has been open across a node upgrade holds the old union and receives the
+ * new list, and every provider added since that page loaded arrives as an id
+ * this build has never seen. `Record<Union, T>` types the lookup as total, so
+ * the miss is not a type error — it is an `undefined` that the next property
+ * access turns into a crash.
+ *
+ * That is not hypothetical. It took the Connections panel down in production:
+ * a node started reporting a provider added minutes earlier, and every tab open
+ * from before the upgrade read `.needsGitCredentialStore` off the miss.
+ *
+ * So the lookup answers something for every id, and the screens filter with
+ * {@link isKnownCredentialProvider} rather than rendering this fallback — see
+ * {@link StalePageNotice}. The fallback is the floor under a call site
+ * that forgets to, not the intended path, which is why its wording claims
+ * nothing about the provider beyond the one thing that is certainly true.
+ */
+function UnrecognisedMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} {...markProps}>
+      <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M9.6 9.6a2.5 2.5 0 1 1 2.9 2.9v1.3"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12.5" cy="16.6" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+const UNRECOGNISED_PROVIDER: CredentialProviderPresentation = {
+  name: 'A newer connection',
+  // Neither a CLI nor a key is claimed: this build cannot know which, and
+  // guessing would put a wrong install instruction on the card.
+  binary: null,
+  icon: UnrecognisedMark,
+  // The legacy store exception belongs to GitHub, which every build has known
+  // since the field existed. `false` cannot mislabel a provider added later.
+  needsGitCredentialStore: false,
+};
+
+/**
+ * Can this build name and draw this provider?
+ *
+ * Read from the presentation table's own keys rather than from a second list,
+ * so "known" cannot come to mean something different from "has an entry here".
+ * The parameter is `string` on purpose: the whole point is to be asked about
+ * values the compile-time union does not contain.
+ */
+export function isKnownCredentialProvider(
+  provider: string,
+): provider is CredentialProviderName {
+  return Object.prototype.hasOwnProperty.call(CREDENTIAL_PROVIDER_PRESENTATIONS, provider);
+}
+
+/**
+ * How this build presents one provider — total, never `undefined`.
+ *
+ * See {@link isKnownCredentialProvider} for why a total lookup over a
+ * compile-time union needs saying out loud.
+ */
 export function presentationOf(provider: CredentialProviderName): CredentialProviderPresentation {
-  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider];
+  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider] ?? UNRECOGNISED_PROVIDER;
 }
 
 /**
@@ -228,5 +298,5 @@ export function presentationOf(provider: CredentialProviderName): CredentialProv
  * key.
  */
 export function providerBinaryLabel(provider: CredentialProviderName): string {
-  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider].binary ?? 'API key';
+  return presentationOf(provider).binary ?? 'API key';
 }
