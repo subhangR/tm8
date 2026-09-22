@@ -105,8 +105,12 @@ describe('W1 adopted catalog target', () => {
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(OPERATIONS).toHaveLength(199);
-    expect(V1_OPERATIONS).toHaveLength(197);
+    // 199 -> 203 (2026-09-23, filesystem skills INTEGRATED WITH main): skills.scan,
+    // skills.list, skills.show and skills.preview, all v1, so 197 -> 201. The
+    // stack pinned against its own older base and never saw main's 199.
+    // MEASURED on the merged tree from this assertion's own failing run.
+    expect(OPERATIONS).toHaveLength(203);
+    expect(V1_OPERATIONS).toHaveLength(201);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -146,7 +150,9 @@ describe('W1 adopted catalog target', () => {
     // 2026-09-19 (Changes surface phase 1): POST 98->99 — execution.gitStage,
     // a command row on the session's git path. MEASURED on this tree.
     // POST 99 -> 100 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows are POST commands. MEASURED on the merged tree from this assertion's own failing run.
-    }).toEqual({ GET: 65, POST: 100, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
+    // 2026-09-23 (filesystem skills INTEGRATED WITH main): GET 65->68 (skills.list,
+    // skills.show, skills.preview), POST 100->101 (skills.scan). MEASURED on the merged tree.
+    }).toEqual({ GET: 68, POST: 101, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -160,7 +166,9 @@ describe('W1 adopted catalog target', () => {
     // command 127 -> 128 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main):
     // execution.sessions.share and execution.gitStage are both kind: command.
     // MEASURED from this assertion's own failing run (Received: command 128).
-    }).toEqual({ read: 69, command: 128, stream: 2 });
+    // 2026-09-23 (filesystem skills INTEGRATED WITH main): read 69->72, command 128->129.
+    // MEASURED on the merged tree.
+    }).toEqual({ read: 72, command: 129, stream: 2 });
   });
 });
 

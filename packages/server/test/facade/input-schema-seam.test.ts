@@ -256,6 +256,10 @@ function acceptedKeys(schema: unknown, depth = 0): Set<string> | null {
  * All fourteen resolve to one of two local schemas, `RequiredCommandContext`
  * and `UndoCommandInput`. Neither is a defect; both are shapes the contract
  * does not name 1:1. They are simply outside what this guard can prove.
+ *
+ * `skills.scan` is the fifteenth and the exception to "two schemas": it binds
+ * `SkillScanInputSchema`, declared beside its handler in `skills/handlers.ts`,
+ * because the contract names the scan's RESULT, not its request.
  */
 const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'collections.removeItem',
@@ -266,6 +270,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'projects.unlink',
   'readMarks.upsert',
   'savedViews.delete',
+  'skills.scan',
   'spaces.invites.create',
   'spaces.invites.redeem',
   'spaces.invites.revoke',

@@ -2546,7 +2546,10 @@ export const CATALOG_DIGEST =
   // THIRD value — neither 186723c6.. nor 10d20505.. is correct here. RECOMPUTED
   // from `JSON.stringify(OPERATIONS)` on this tree and read out of the failing
   // run, then written into the regenerated conformance manifest.
-  'sha256:c021df875297e62a6c71ddecd777432fad65e7d375a63361e225f989d410aa42';
+  // Re-measured on the MERGED tree (2026-09-23): filesystem skills add
+  // skills.scan/list/show/preview on top of main's 199 rows. RECOMPUTED from
+  // `JSON.stringify(OPERATIONS)` and matched to the regenerated manifest.
+  'sha256:8274a7b39cd985d1d38d11de8f6fdd03e1d42ebec509c972a26af2622598f0f2';
 
 export const GRAMMAR_VERSION = '2';
 

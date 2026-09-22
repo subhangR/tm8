@@ -76,7 +76,7 @@ import { createOutput } from '../src/output.js';
 // leaves it alone. Both rows land, so this constant moves twice from 197.
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
-const EXPECTED_ROWS = 202;
+const EXPECTED_ROWS = 203;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -198,7 +198,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 198, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 199, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -257,6 +257,9 @@ const COMMANDLESS_OPERATIONS = [
       'projects.folderUploads.abort',
       'projects.folderUploads.complete',
       'projects.folderUploads.init',
+      // #646: the launch-sheet preview is a read the composer calls; its row
+      // records "effective CLI is deferred", so it is commandless by decision.
+      'skills.preview',
 ];
 
 describe('the CLI command projection', () => {
