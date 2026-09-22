@@ -2020,8 +2020,10 @@ export function createFixtureSeam(): FixtureSeam {
           sizeBytes: (c.sizeBytes as number) ?? 0,
         };
       case 'spell':
-      case 'skill':
         return { kind, description: c.description as string | undefined, equipped: false };
+      case 'skill':
+        return { kind, description: c.description as string | undefined, equipped: false,
+          provider: 'tm8', level: 'space', frontmatter: {}, missing: false, changedOnDisk: false };
       case 'pull_request':
         return {
           kind: 'pull_request', repository: (c.repository as string) ?? '',

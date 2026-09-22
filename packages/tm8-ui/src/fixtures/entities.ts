@@ -1018,7 +1018,8 @@ export const skillReview = summary({
   id: 'skill-review',
   kind: 'skill',
   title: 'code-review',
-  state: { kind: 'skill', description: 'Adversarial review checklist.', equipped: false },
+  state: { kind: 'skill', description: 'Adversarial review checklist.', equipped: false,
+    provider: 'tm8', level: 'space', frontmatter: {}, missing: false, changedOnDisk: false },
 });
 
 export const collectionInbox = summary({

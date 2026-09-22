@@ -25,6 +25,7 @@
  *
  * All of it is plain SELECT through RLS. Nothing in this file writes.
  */
+import { SKILL_REFERENCE_SQL, skillReferenceOf, readSkillDetail } from '../skills/reference.js';
 import type {
   WorkSessionEndedKind,
   WorkSessionKind,
@@ -100,6 +101,10 @@ export const ENTITY_COLUMNS = `
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
   t.completion_gate,
+  sk.name as skill_name, sk.description as skill_description, sk.content as skill_content,
+  ${SKILL_REFERENCE_SQL} as skill_reference,
+  sp.name as spell_name, sp.description as spell_description, sp.rule as spell_rule,
+  exists (select 1 from public.edges eq where eq.dst_id = e.id and eq.type = 'equips') as equipped,
   d.title as doc_title, d.body as doc_body, d.format as doc_format,
   ch.name as channel_name, ch.topic as channel_topic,
   vc.name as voice_channel_name,
@@ -299,6 +304,8 @@ function ctrSurfaceDetailOf(
 
 export const ENTITY_FROM = `
   from public.entities e
+  left join public.skills sk on sk.entity_id = e.id
+  left join public.spells sp on sp.entity_id = e.id
   left join public.entity_counters ec on ec.entity_id = e.id
   left join public.tasks t            on t.entity_id  = e.id
   left join public.documents d        on d.entity_id  = e.id
@@ -375,6 +382,14 @@ export const ENTITY_FROM = `
 // are node-side reads with their own authorization.
 
 export interface EntityRow {
+  skill_name?: string | null;
+  skill_description?: string | null;
+  skill_content?: string | null;
+  skill_reference?: Record<string, unknown> | null;
+  spell_name?: string | null;
+  spell_description?: string | null;
+  spell_rule?: Record<string, unknown> | null;
+  equipped?: boolean;
   id: string;
   space_id: string;
   kind: string;
@@ -1356,6 +1371,9 @@ export async function loadUnreadCounts(
 export function titleOf(row: EntityRow): string {
   if (row.deleted_at) return TOMBSTONE_TITLE;
   switch (row.kind) {
+    case 'skill': return row.skill_name ?? '';
+    case 'spell': return row.spell_name ?? '';
+
     case 'task':
       return row.task_title ?? 'Untitled task';
     case 'doc':
@@ -1457,6 +1475,9 @@ export function titleOf(row: EntityRow): string {
 function excerptOf(row: EntityRow): string | undefined {
   if (row.deleted_at) return undefined;
   switch (row.kind) {
+    case 'skill': return excerpt(row.skill_description ?? null);
+    case 'spell': return excerpt(row.spell_description ?? null);
+
     case 'task':
       return excerpt(row.task_description);
     case 'doc':
@@ -1548,6 +1569,9 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
  */
 export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
+    case 'skill': return { kind: 'skill', description: row.skill_description ?? undefined, equipped: row.equipped === true, ...skillReferenceOf(row.skill_reference), changedOnDisk: false };
+    case 'spell': return { kind: 'spell', description: row.spell_description ?? undefined, equipped: row.equipped === true };
+
     case 'task':
       return {
         kind: 'task',
@@ -2306,6 +2330,10 @@ export function contentOf(row: EntityRow): EntityContent {
     }
   }
   switch (row.kind) {
+    case 'skill':
+      return { kind: 'skill', name: row.skill_name ?? '', description: row.skill_description ?? '', content: row.deleted_at || row.skill_reference?.source_path ? '' : row.skill_content ?? '' };
+    case 'spell':
+      return { kind: 'spell', name: row.spell_name ?? '', description: row.spell_description ?? '', rule: row.deleted_at ? {} : row.spell_rule ?? {} };
     case 'task':
       return {
         kind: 'task',
@@ -2664,4 +2692,19 @@ export async function readAncestorRows(
     if (hit) rows.push({ ...hit, hierarchy_depth: ancestor.hierarchy_depth });
   }
   return rows;
+}
+
+/** Detail-only IO, shared by the original and universal entity doors. */
+export async function hydrateDetail(
+  q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
+): Promise<{ state: EntityState; content: EntityContent }> {
+  if (row.deleted_at) return { state, content };
+  if (content.kind === 'team_member') {
+    const edges = await q.query<{ dst_id: string }>(
+      "select dst_id from public.edges where src_id = $1 and type = 'equips' order by created_at, id", [row.id],
+    );
+    const equipped = await loadEntitySummariesByIds(q, edges.map((edge) => edge.dst_id), viewerIdentityId);
+    return { state, content: { ...content, equipped } };
+  }
+  return readSkillDetail(state, content);
 }
