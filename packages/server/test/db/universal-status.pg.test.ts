@@ -282,8 +282,10 @@ describe('152 — every entity is born with a status', () => {
   // `project` is absent deliberately: its envelope is materializer-owned and
   // refuses a direct insert, so it cannot be created this way. Its birth path
   // runs the same trigger as every other kind here.
-  const TO_DO_KINDS = ['doc', 'channel', 'work_session', 'spell', 'skill', 'loop', 'graph'];
-  const DONE_KINDS = ['commit', 'message', 'file', 'memory', 'artifact'];
+  // `skill` moved to DONE in 197: a skill is a reference to a file that
+  // already exists, not work to be done, so `internal.kind_seeds_done` names it.
+  const TO_DO_KINDS = ['doc', 'channel', 'work_session', 'spell', 'loop', 'graph'];
+  const DONE_KINDS = ['commit', 'message', 'file', 'memory', 'artifact', 'skill'];
 
   it.each(TO_DO_KINDS)('%s is born in the default workflow’s to_do state', async (kind) => {
     const id = await createEntity(kind);

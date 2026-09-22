@@ -259,7 +259,17 @@ export class DbGraphPort implements GraphPort {
    * have been authorised.
    */
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
-    const skillScan = await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true });
+    // The scan REFRESHES cached skill metadata; it is not an authorization
+    // step. A scan that cannot run (a caller the scan's membership check does
+    // not recognise, an unreadable root) leaves the last cached references in
+    // place and the spawn proceeds — RLS on the transaction below is what
+    // decides whether this spawn is allowed at all.
+    let skillsScannedAt: string | null = null;
+    try {
+      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true })).scannedAt;
+    } catch (error) {
+      console.warn(`[tm8:skills] pre-spawn scan skipped for space ${input.spaceId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return this.db.tx(this.claims(auth), async (q) => {
       const members = await q.query<TeamMemberRow>(
         `select tm.entity_id, tm.name, tm.role, tm.identity, tm.memories, tm.model,
@@ -491,7 +501,7 @@ export class DbGraphPort implements GraphPort {
           })),
         skills: candidates.indexed,
         skillEquips,
-        skillsScannedAt: skillScan.scannedAt,
+        skillsScannedAt,
         droppedSkills: [],
       };
     });

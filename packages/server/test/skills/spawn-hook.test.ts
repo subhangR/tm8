@@ -18,3 +18,13 @@ it('finishes the scoped scan before opening the spawn context transaction', asyn
   await expect(loading).rejects.toThrow('context transaction reached');
   expect(db.tx).toHaveBeenCalledOnce();
 });
+it('a scan that cannot run leaves the spawn to the context transaction instead of refusing it', async () => {
+  vi.mocked(scanSpaceSkills).mockRejectedValueOnce(new Error('space membership required for skill scanning'));
+  const db = { tx: vi.fn(async () => { throw new Error('context transaction reached'); }) } as unknown as Db;
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  await expect(new DbGraphPort(db).loadSpawnContext({ identityId: 'identity' }, { spaceId: 'space', teamMemberId: 'teammate' }))
+    .rejects.toThrow('context transaction reached');
+  expect(db.tx).toHaveBeenCalledOnce();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('pre-spawn scan skipped'));
+  warn.mockRestore();
+});

@@ -20,7 +20,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   // 136 -> 137 (2026-08-09): execution.dispatch. NOTE this counts ROUTES, not
   // catalog rows — the catalog is 138, of which `events.subscribe` is WS and
   // never becomes an HTTP route.
-  expect(h.operations).toBe(197) /* 196→197 2026-09-19 Changes screen Phase 1 INTEGRATED WITH main: execution.gitStage mounts one more HTTP route on top of 187’s. Both land, so this moves twice from 195. MEASURED on the MERGED tree, never hand-derived. */ /* 195→196 187: execution.sessions.share — POST /v2/entities/:id/commands/sharing, a mounted HTTP route */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
+  expect(h.operations).toBe(206) /* 197→206 2026-09-23: the nine skills.* routes (#647 + #649). MEASURED off /health. */ /* 196→197 2026-09-19 Changes screen Phase 1 INTEGRATED WITH main: execution.gitStage mounts one more HTTP route on top of 187’s. Both land, so this moves twice from 195. MEASURED on the MERGED tree, never hand-derived. */ /* 195→196 187: execution.sessions.share — POST /v2/entities/:id/commands/sharing, a mounted HTTP route */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */; // +3 W4/132 — ROUTES, not catalog rows
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

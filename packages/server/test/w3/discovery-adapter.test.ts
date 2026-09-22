@@ -44,12 +44,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
         // reserved (2) and ws (1) are UNMOVED: neither new row is reserved,
         // and neither mounts a socket.
-        total: 199,
-        v1: 197,
+        // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+        total: 208,
+        v1: 206,
         reserved: 2,
-        http: 197,
+        http: 206,
         ws: 1,
-        registerableV1Http: 195,
+        registerableV1Http: 204,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

@@ -387,6 +387,22 @@ const CHAT_NET_NEW_OPERATIONS = [
   'chat.start',
 ] as const;
 
+/**
+ * Filesystem skills (2026-09-23, #647 + #649): scan/list/show/preview, then
+ * F4's roots/create/edit/equip/unequip. Net-new — no replacements.
+ */
+const SKILLS_NET_NEW_OPERATIONS = [
+  'skills.scan',
+  'skills.list',
+  'skills.show',
+  'skills.preview',
+  'skills.roots',
+  'skills.create',
+  'skills.edit',
+  'skills.equip',
+  'skills.unequip',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -400,6 +416,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
   ...WORKFLOW_NET_NEW_OPERATIONS,
   ...CONTAINER_NET_NEW_OPERATIONS,
+  ...SKILLS_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -540,7 +557,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // the facade tranche. The derived assertion immediately below re-checks the
     // same number from the component lists, so this literal cannot drift alone.
     // MEASURED from this assertion's own failing run.
-    expect(registry.size).toBe(177);
+    // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
+    expect(registry.size).toBe(186);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -554,7 +572,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + MEMBER_ROLES_NET_NEW_OPERATIONS.length
         + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
         + WORKFLOW_NET_NEW_OPERATIONS.length
-        + CONTAINER_NET_NEW_OPERATIONS.length,
+        + CONTAINER_NET_NEW_OPERATIONS.length
+        + SKILLS_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -721,7 +740,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // POST that carries a JSON body (the paths to stage), so it binds an input
     // schema like the other four git commands. MEASURED.
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(120);
+    // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(125);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -897,8 +917,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 196/194 -> 197/195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(health).toMatchObject({ ok: true, operations: 197, implemented: 195 });
-    expect(harness.production.server.registry.size).toBe(195);
+    // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
+    expect(health).toMatchObject({ ok: true, operations: 206, implemented: 204 });
+    expect(harness.production.server.registry.size).toBe(204);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -924,7 +945,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // residual, so the whole +1 lands in `registered.size` and the empty
     // residual asserted above stays empty. MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
-    expect(registered.size + residual.length).toBe(195);
+    // 195 -> 204 (2026-09-23): nine skills.* rows. MEASURED.
+    expect(registered.size + residual.length).toBe(204);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

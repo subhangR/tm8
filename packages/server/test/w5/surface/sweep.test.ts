@@ -311,11 +311,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(SURFACE).toHaveLength(195);
+    // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
+    expect(SURFACE).toHaveLength(204);
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(195);
+    expect(rows).toHaveLength(204);
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(195);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(204);
   });
 
   /**
@@ -1051,7 +1052,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and stated here so the next reader does not "fix" it back down to 177 and
     // hand main a silently-short count. If this branch ends up landing BEFORE
     // #635, this number is wrong and the correct edit is 177, not a re-guess.
-    expect(server.appliedMigrations.length).toBe(178);
+    // 178 -> 181 (2026-09-23): 197, 198 and 199, the filesystem-skills migrations. MEASURED.
+    expect(server.appliedMigrations.length).toBe(181);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

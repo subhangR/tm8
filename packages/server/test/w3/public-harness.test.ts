@@ -52,7 +52,8 @@ describe.sequential('W3 production-Server public harness', () => {
       // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
       // branch's execution.gitStage BOTH land, so this moves twice. Git merged
       // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-      operations: 197,
+      // 197 -> 206 (2026-09-23): nine skills.* rows, all mounted. MEASURED off /health.
+      operations: 206,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -75,7 +76,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // first, which is the distinction these two pins exist to keep visible.
     // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new commands ship a real handler. MEASURED on the merged tree from this assertion's own failing run.
-    expect(body.implemented).toBe(195); // +24 (177): the container handlers
+    expect(body.implemented).toBe(204); // +9 skills.* (2026-09-23), MEASURED; // +24 (177): the container handlers
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });
