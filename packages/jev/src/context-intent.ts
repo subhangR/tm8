@@ -67,23 +67,21 @@ export function contextIntentFor(
     return { memories, skills, ...(graph.length ? { graph, graphSubject: 'other task assigned to the same agent' } : {}) };
   }
 
-  // Earlier sources win provenance on duplicates. Indexes refer to the offered
-  // sequence, before deduplication or blank filtering, as legacy ledger IDs do.
+  // Earlier sources win provenance on duplicates. New multi-source candidates
+  // are numbered after deduplication; the legacy overload preserves old indexes.
   const collect = (
     groups: readonly { rows: readonly (string | ContextEntity)[]; source: ContextSource }[],
     prefix: string, equipped?: ReadonlySet<string>,
   ): ContextCandidate[] => {
     const seen = new Set<string>();
     const out: ContextCandidate[] = [];
-    let index = 0;
     for (const group of groups) for (const row of group.rows) {
-      const id = `${prefix}${index++}`;
       const entityId = typeof row === 'string' ? null : row.entityId;
       const text = typeof row === 'string' ? row : row.text;
       if (!text.trim() || (entityId !== null && seen.has(entityId))) continue;
       if (entityId !== null) seen.add(entityId);
       out.push({
-        id, text, ...(typeof row === 'string' ? {} : { name: row.name }),
+        id: `${prefix}${out.length}`, text, ...(typeof row === 'string' ? {} : { name: row.name }),
         entityId, entityVersion: typeof row === 'string' ? null : row.entityVersion,
         widened: equipped !== undefined && entityId !== null && !equipped.has(entityId),
         source: group.source,
