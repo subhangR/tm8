@@ -19,6 +19,7 @@
  */
 
 import {
+  DEFAULT_MODEL,
   CREDENTIAL_PROVIDERS,
   NODE_BOOT_ID,
   SpawnError,
@@ -59,6 +60,7 @@ import {
   type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
+import { contextAdvisorFromEnv, routingAdvisorFromEnv } from '@tm8/jev';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
@@ -1399,6 +1401,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // built without a data root simply does not advertise it (§7.4), rather than
   // quietly handing back the shared project directory.
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
 
   spawnService = new SpawnService({
     graph,
@@ -1423,6 +1432,11 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
 
@@ -1559,6 +1573,13 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
   const spawnService = new SpawnService({
     graph,
     pty: deps.pty,
@@ -1580,6 +1601,11 @@ export function registerExecutionHandlers(
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);

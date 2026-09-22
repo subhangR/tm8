@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -16,6 +16,20 @@ import type {
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
+import type {
+  ContextActivation,
+  ContextAdvisorPort,
+  ContextPlan,
+  RoutingActivation,
+  RoutingAdvice,
+  RoutingAdvisorPort,
+} from '@tm8/jev';
+import {
+  LEDGER_FILENAME,
+  appendLedger,
+  entryFromActivation,
+  realisedSavings,
+} from '@tm8/jev';
 import { composePrompt } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
@@ -34,6 +48,10 @@ import {
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
+  routingIntentFor,
+  applyContextPlan,
+  contextIntentFor,
+  taskFactsFor,
   supportsPositionalPrompt,
   withAgentPrompt,
   withAgentResume,
@@ -42,7 +60,7 @@ import {
 import { detectCheckoutBranch } from './checkout-branch.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
-import { readSessionUsage } from '../transcript/session-usage.js';
+import { readSessionUsage, type WorkSessionUsage } from '../transcript/session-usage.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
   agentCredentialProviderFor,
@@ -127,6 +145,28 @@ export interface SpawnServiceOptions {
    * screen that populates the credentials, without a feature flag.
    */
   credentialHome?: AgentCredentialHomePort;
+  /**
+   * Chooses the model from the TASK rather than from the persona's default.
+   *
+   * OPTIONAL, and unwired is a no-op — the same contract `credentialHome`
+   * above lands under. A node that injects nothing calls nothing, resolves the
+   * model through the exact precedence chain it always did, and emits a
+   * manifest with `launch.routing: null`. That is what lets a router land
+   * without a migration, without a feature flag, and without a second code
+   * path to keep honest.
+   *
+   * The port never throws and never blocks: `advise()` returns `null` for any
+   * failure — policy off, no task, service down, malformed answer — and a
+   * `null` verdict means carry on exactly as before. A routing service being
+   * unavailable must not be able to stop tm8 from spawning agents.
+   */
+  routingAdvisor?: RoutingAdvisorPort;
+  /**
+   * Optional context engineer. Unwired is a no-op: every memory and every
+   * skill the graph resolved is injected, which is what tm8 has always done.
+   * Never throws, never blocks a spawn, and can only ever REMOVE candidates.
+   */
+  contextAdvisor?: ContextAdvisorPort;
   /** Caller-owned GitHub token store, resolved independently of agent vendor. */
   gitHubCredentials?: GitHubCredentialPort;
   /**
@@ -332,6 +372,8 @@ export class SpawnService {
   private readonly failedTransitionRetryMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
+  private readonly routingAdvisor: RoutingAdvisorPort | undefined;
+  private readonly contextAdvisor: ContextAdvisorPort | undefined;
   private readonly gitHubCredentials: GitHubCredentialPort | undefined;
   private readonly worktrees: WorktreeManager | null;
   private readonly worktreeCap: number;
@@ -383,6 +425,8 @@ export class SpawnService {
     this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
+    this.routingAdvisor = options.routingAdvisor;
+    this.contextAdvisor = options.contextAdvisor;
     this.gitHubCredentials = options.gitHubCredentials;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
@@ -574,6 +618,15 @@ export class SpawnService {
 
   private manifestPathFor(sessionId: string): string {
     return join(this.dataDir, 'manifests', `${sessionId}.json`);
+  }
+
+  /**
+   * The routing ledger — a sibling of `manifests/` so one confidentiality and
+   * backup boundary covers both, and so "what did routing save" is answerable
+   * from the same data root that already holds what routing decided.
+   */
+  private ledgerPath(): string {
+    return join(this.dataDir, LEDGER_FILENAME);
   }
 
   /**
@@ -772,6 +825,53 @@ export class SpawnService {
   }
 
   /**
+   * What Jev decided for this session at SPAWN, re-read for a resume.
+   *
+   * Resume recomposes the manifest from scratch and rewrites the FILE, and
+   * `composeManifest` defaults both of these blocks to null. Everything else a
+   * resume needs survives that because it lives in the graph — the posture is
+   * re-read through `loadSessionLaunchPosture`, the model and mode come off the
+   * work_sessions row. These two live in the manifest file and NOWHERE else,
+   * so without this read a resume silently erased them.
+   *
+   * That was not merely a lost audit trail. `settleRoutingLedger` reads
+   * `launch.routing` back out of this same file when the session ends, and an
+   * absent block makes it return without writing the realised row — so every
+   * resumed session would have kept its PROJECTED saving forever, and
+   * `foldLedger` would have folded a counterfactual where a measurement
+   * existed. Its own docblock calls that the easiest way for a number like
+   * this to become a lie.
+   *
+   * Carried forward rather than re-decided, for the same reason resume is not
+   * routed: these describe the launch that actually happened. Re-asking Jev on
+   * resume would record a fresh opinion as if it had been the launch decision,
+   * and the context plan in particular describes a prompt that was composed
+   * once and cannot be un-composed.
+   *
+   * Fail-open like every other jev path: an unreadable or pre-existing
+   * manifest yields no blocks, which is exactly what a launch before this
+   * feature recorded.
+   */
+  private async recordedDecisions(
+    sessionId: string,
+  ): Promise<{ routing?: RoutingActivation | null; contextEngineering?: ContextActivation | null }> {
+    try {
+      const raw = await readFile(this.manifestPathFor(sessionId), 'utf8');
+      const launch = (JSON.parse(raw) as Tm8Manifest).launch;
+      return {
+        ...(launch?.routing ? { routing: launch.routing } : {}),
+        ...(launch?.contextEngineering ? { contextEngineering: launch.contextEngineering } : {}),
+      };
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not re-read a resuming session\'s launch decisions', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {};
+    }
+  }
+
+  /**
    * The parent session's recorded posture, when this spawn is a child and named
    * no posture of its own.
    *
@@ -790,6 +890,140 @@ export class SpawnService {
    *     failing a launch over a convenience would trade a stalled child for no
    *     child at all
    */
+  /**
+   * Ask the wired router what model this task deserves. Never throws, never
+   * blocks a spawn.
+   *
+   * WHY IT IS HERE AND NOT IN `resolveLaunchConfig`. That function is pure by
+   * contract — the header says "no I/O, no graph, no PTY, so every precedence
+   * rule below is directly unit-testable" — and a network call inside it would
+   * make it async and cost the suite that guards every precedence rule tm8
+   * has. So the call happens here, where the method is already async and the
+   * context is already loaded, and the verdict arrives there as one more
+   * precedence link. `resolveLaunchConfig` stays pure and every existing test
+   * of it keeps passing unchanged.
+   *
+   * The try/catch is belt-and-braces: the port's own contract is that it
+   * returns `null` rather than throwing, but a port is an injection point and
+   * an injected implementation is not tm8's code. A router that throws must
+   * degrade to "no opinion", not to a failed spawn.
+   */
+  private async adviseRouting(
+    request: SpawnRequest,
+    context: SpawnContext,
+    mode: 'inline' | 'on-demand' = 'inline',
+  ): Promise<RoutingAdvice | null> {
+    if (!this.routingAdvisor) return null;
+    try {
+      return await this.routingAdvisor.advise(
+        taskFactsFor(context),
+        routingIntentFor(request, context),
+        mode,
+      );
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: the routing advisor failed; launching unrouted', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Ask the wired context engineer WHAT THIS PERSONA SHOULD KNOW for this
+   * task. Never throws, never blocks a spawn, and can only ever remove.
+   *
+   * WHY IT RUNS BESIDE THE ROUTER AND NOT AFTER IT. Both read the same task
+   * facts and neither needs the other's answer, so they go out together and
+   * the context decision costs no wall-clock beyond the slower of the two.
+   * Sequencing them would add a whole round trip to every spawn to buy
+   * nothing.
+   *
+   * WHY IT RUNS AT SPAWN AND NOT AT DISPATCH. Dispatch picks a teammate;
+   * spawn is the last moment anything can still change what that teammate
+   * READS. After this point the material is composed, and §8.1 makes the next
+   * failure a thrown `BudgetExceededError` rather than a smaller prompt —
+   * silent truncation being a contract failure. So the cut belongs here, on
+   * purpose, with a record of what was cut.
+   */
+  private async planContext(context: SpawnContext): Promise<ContextPlan | null> {
+    if (!this.contextAdvisor) return null;
+    try {
+      return await this.contextAdvisor.plan(taskFactsFor(context), contextIntentFor(context));
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: the context advisor failed; injecting everything', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Say out loud what the agent will and will not be carrying.
+   *
+   * The counts are the point. "9/41 memories" is a sentence an operator can
+   * argue with; "context engineered" is not. A dropped-critical warning is
+   * raised to `warn` because it means the byte budget beat a relevance
+   * judgement, which is the one outcome this feature was built to prevent.
+   */
+  private announceContext(plan: ContextPlan, request: SpawnRequest): void {
+    const a = plan.activation;
+    const critical = [...a.memories.droppedCritical, ...a.skills.droppedCritical];
+    const meta = {
+      taskId: request.taskIds?.[0] ?? null,
+      memories: `${a.memories.keptIds.length}/${a.memories.decisions.length}`,
+      skills: `${a.skills.keptIds.length}/${a.skills.decisions.length}`,
+      bytesSaved: a.bytesSaved,
+      pctSaved: Number(a.pctSaved.toFixed(1)),
+      jevCostUsd: a.jevCostUsd,
+      latencyMs: a.latencyMs,
+    };
+    this.logger?.info(a.summary, meta);
+    if (critical.length) {
+      this.logger?.warn?.('SpawnService: the byte budget cut a candidate Jev rated critical', {
+        ...meta,
+        dropped: critical,
+      });
+    }
+  }
+
+  /**
+   * Say out loud that a router ran. One line, always — including when it
+   * changed nothing.
+   *
+   * A silent router is indistinguishable from a broken one. The activation
+   * record on the manifest is the durable half of this (it reaches the graph
+   * through `recordManifest`, needing no new port); this is the half an
+   * operator tailing a node actually reads, and it carries the number that
+   * makes the decision arguable: what the alternative would have cost.
+   *
+   * `changed: false` is logged at the same level as `changed: true` on
+   * purpose. "Jev agrees with sonnet" is the answer to "is this thing even
+   * running", and demoting it to debug is how a router quietly stops working
+   * for a month without anyone noticing.
+   */
+  private announceRouting(activation: RoutingActivation, request: SpawnRequest): void {
+    const saved = activation.savings;
+    this.logger?.info?.(`SpawnService: ${activation.summary}`, {
+      taskId: request.taskIds?.[0] ?? null,
+      tier: activation.verdict.tier,
+      baselineModel: activation.baselineModel,
+      appliedModel: activation.appliedModel,
+      agentTool: activation.appliedAgentTool,
+      changed: activation.changed,
+      overriddenByHuman: activation.overriddenByHuman,
+      // What the routing decision itself cost to make, against what it is
+      // projected to save. Both, or neither: a saving quoted without its
+      // overhead is the oldest way to lie with a number.
+      routerCostUsd: activation.jevCostUsd,
+      projectedNetSavingUsd: saved?.savedUsd ?? null,
+      projectedBaselineUsd: saved?.baselineUsd ?? null,
+      projectedChosenUsd: saved?.chosenUsd ?? null,
+      measured: saved?.measured ?? false,
+      latencyMs: activation.latencyMs,
+      jevModel: activation.jevModel,
+    });
+  }
+
   private async inheritedPosture(
     auth: GraphAuth,
     request: SpawnRequest,
@@ -841,7 +1075,22 @@ export class SpawnService {
     });
 
     const inherited = await this.inheritedPosture(auth, request);
-    const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    // Routed BEFORE the work_session row exists, so the row, the manifest and
+    // the PTY all name the same model. Deciding after the row was written
+    // would leave the graph recording a launch that never happened.
+    // One round trip, two questions: which model runs this, and what it should
+    // be carrying when it does. They are independent, so they go out together.
+    const [advice, contextPlan] = await Promise.all([
+      this.adviseRouting(request, context),
+      this.planContext(context),
+    ]);
+    const launch = resolveLaunchConfig(request, context, this.env, inherited, advice);
+    if (advice) this.announceRouting(advice.activation, request);
+    if (contextPlan) this.announceContext(contextPlan, request);
+    // From here on the persona is the ENGINEERED one. `applyContextPlan` is
+    // pure and only ever removes; a null plan returns `context` itself, so the
+    // unwired path is the same object it always was.
+    const engineered = applyContextPlan(context, contextPlan);
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
     // guard so direct callers cannot manufacture an unroutable prompt.
@@ -941,12 +1190,14 @@ export class SpawnService {
       const manifest = composeManifest({
         sessionId,
         request,
-        context,
+        context: engineered,
         launch,
         commandNetwork,
         interactionProfile: { ...resolvedProfile, pinRevision: 0 },
         workdir: { mode: workdir.mode, path: cwd },
         command,
+        routing: advice?.activation ?? null,
+        contextEngineering: contextPlan?.activation ?? null,
         baseUrl: this.baseUrl,
       });
       return {
@@ -1025,13 +1276,15 @@ export class SpawnService {
       const manifest = composeManifest({
         sessionId,
         request,
-        context,
+        context: engineered,
         launch,
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
         sandboxDegraded: sandbox.degradedReason,
+        routing: advice?.activation ?? null,
+        contextEngineering: contextPlan?.activation ?? null,
         baseUrl: this.baseUrl,
       });
 
@@ -1132,6 +1385,22 @@ export class SpawnService {
         : launch.agentTool === 'codex'
           ? env.CODEX_HOME ?? join(env.HOME ?? homedir(), '.codex')
           : null);
+
+      // The decision joins the ledger the moment it has a session to belong to.
+      // Projected, not measured — the session has not run yet; the realised row
+      // is written from its own token profile when it ends
+      // (see recordUsageAfterExit).
+      if (advice) {
+        await appendLedger(
+          this.ledgerPath(),
+          entryFromActivation({
+            activation: advice.activation,
+            sessionId,
+            taskId: request.taskIds?.[0] ?? null,
+          }),
+          this.logger,
+        );
+      }
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
@@ -1480,6 +1749,9 @@ export class SpawnService {
     // on its first approval. The recorded manifest is where that fact is
     // durable, and resume does not rewrite it, so it still describes the launch.
     const recordedPosture = await this.recordedPosture(auth, sessionId);
+    // Read BEFORE the manifest below is composed, because composing it is what
+    // overwrites the only copy. See `recordedDecisions`.
+    const recordedDecisions = await this.recordedDecisions(sessionId);
 
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
@@ -1496,6 +1768,10 @@ export class SpawnService {
       title: info.title || null,
       clientMutationId: request.clientMutationId ?? null,
     };
+    // NOT routed. A resume continues a conversation the agent already has, and
+    // switching models underneath it would hand a transcript written by one
+    // model to another — the native session id in `--resume` belongs to the
+    // model that created it. Resume replays the recorded posture, full stop.
     const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
 
@@ -1765,6 +2041,8 @@ export class SpawnService {
         command: baseCommand,
         sandboxDegraded: sandbox.degradedReason,
         baseUrl: this.baseUrl,
+        // The spawn-time verdicts, carried through rather than re-decided.
+        ...recordedDecisions,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
       const command = withAgentResume(
@@ -2235,10 +2513,68 @@ export class SpawnService {
         messages: read.usage.transcript.messages,
         transcriptBytes: read.usage.transcriptBytes,
       });
+      // The one moment a routing saving stops being a projection. The chosen
+      // side is now this session's real token counts at the model it really
+      // ran on; only the baseline side stays counterfactual, which is why the
+      // row still reports `measured: false` for the DIFFERENCE.
+      await this.settleRoutingLedger(sessionId, read.usage);
     } catch (error) {
       // Logged, never thrown: the ending is already recorded and nothing that
       // follows this may fail because a measurement did.
       this.logger?.warn?.('SpawnService: could not record session usage', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Re-price a routed session against what it actually burned, and append the
+   * realised row.
+   *
+   * Reads the baseline back off the session's own manifest FILE rather than
+   * holding it in memory, so a node that restarted between the spawn and the
+   * exit still settles its ledger. A session that was never routed has no
+   * `launch.routing` block and this does nothing at all.
+   *
+   * NEVER THROWS, for the same reason `recordUsageAfterExit` does not: the
+   * ending is already written, and nothing after it may fail because a
+   * measurement did.
+   */
+  private async settleRoutingLedger(sessionId: string, usage: WorkSessionUsage): Promise<void> {
+    try {
+      const raw = await readFile(this.manifestPathFor(sessionId), 'utf8');
+      const activation = (JSON.parse(raw) as Tm8Manifest).launch?.routing;
+      if (!activation) return;
+
+      const t = usage.transcript.totals;
+      const savings = realisedSavings({
+        baselineModel: activation.baselineModel,
+        chosenModel: activation.appliedModel,
+        profile: {
+          input: t.inputTokens,
+          output: t.outputTokens,
+          cacheRead: t.cacheReadTokens,
+          cacheWrite: t.cacheCreationTokens,
+        },
+        jevInputTokens: activation.jevInputTokens,
+      });
+
+      await appendLedger(
+        this.ledgerPath(),
+        entryFromActivation({ activation, sessionId, stage: 'realised', savings }),
+        this.logger,
+      );
+      this.logger?.info('SpawnService: settled the routing ledger', {
+        sessionId,
+        baselineModel: activation.baselineModel,
+        chosenModel: activation.appliedModel,
+        // Measured tokens, counterfactual baseline — both said plainly.
+        measuredTokens: t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheCreationTokens,
+        realisedSavedUsd: savings?.savedUsd ?? null,
+      });
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not settle the routing ledger', {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       });

@@ -28,9 +28,9 @@
     "prod:restart": "bash deploy/prod/deploy.sh --restart",
     "prod:rollback": "bash deploy/prod/deploy.sh --rollback",
     "prod:stop": "bash deploy/prod/deploy.sh --stop",
-    "build": "tsc -b packages/contract packages/prompt packages/server packages/execution packages/cli packages/mcp tools/conformance && chmod +x packages/cli/dist/index.js packages/mcp/dist/cli.js && ln -sf index.js packages/cli/dist/tm8",
+    "build": "tsc -b packages/contract packages/jev packages/prompt packages/server packages/execution packages/cli packages/mcp tools/conformance && chmod +x packages/cli/dist/index.js packages/mcp/dist/cli.js && ln -sf index.js packages/cli/dist/tm8",
     "typecheck": "bun run typecheck:core && bun run typecheck:ui",
-    "typecheck:core": "tsc -b packages/contract packages/prompt packages/server packages/execution packages/cli packages/mcp tools/conformance",
+    "typecheck:core": "tsc -b packages/contract packages/jev packages/prompt packages/server packages/execution packages/cli packages/mcp tools/conformance",
     "typecheck:ui": "tsc -p packages/tm8-ui/tsconfig.json --noEmit",
     "build:contract": "tsc -b packages/contract",
     "build:server": "tsc -b packages/server",
@@ -42,7 +42,8 @@
     "check": "bash tools/ci/check.sh",
     "check:migrations": "bash tools/ci/migrations-check.sh",
     "hooks:install": "git config core.hooksPath tools/ci/hooks && echo 'tm8 git hooks enabled (pre-push runs tools/ci/check.sh --fast)'",
-    "hooks:uninstall": "git config --unset core.hooksPath && echo 'tm8 git hooks disabled'"
+    "hooks:uninstall": "git config --unset core.hooksPath && echo 'tm8 git hooks disabled'",
+    "build:jev": "tsc -b packages/jev"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

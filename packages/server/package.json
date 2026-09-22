@@ -11,10 +11,11 @@
   "dependencies": {
     "@tm8/contract": "workspace:*",
     "@tm8/execution": "workspace:*",
+    "@tm8/jev": "workspace:*",
+    "@tm8/mcp": "workspace:*",
     "@tm8/prompt": "workspace:*",
     "pg": "^8.22.0",
-    "zod": "^3.23.0",
-    "@tm8/mcp": "workspace:*"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
