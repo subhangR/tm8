@@ -1,3 +1,4 @@
+import type { EffectiveSkills } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
  *
@@ -124,7 +125,7 @@ export const ENTITY_COLUMNS = `
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
-  ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason,
+  ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason, ws.skills as ws_skills,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -466,6 +467,7 @@ export interface EntityRow {
   ws_workdir_mode?: string | null;
   /** Ending facts (171); optional for the same fixture-compatibility reason. */
   ws_ended_kind?: string | null;
+  ws_skills?: EffectiveSkills | null;
   ws_ended_reason?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
@@ -1666,6 +1668,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
     case 'work_session':
       return {
         kind: 'work_session',
+        ...(row.ws_skills ? { skills: row.ws_skills } : {}),
         status: (row.ws_status ?? 'spawning') as 'spawning' | 'running' | 'idle' | 'exited' | 'failed',
         agentTool: row.ws_agent_tool,
         model: row.ws_model,

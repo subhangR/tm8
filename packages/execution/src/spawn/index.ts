@@ -33,12 +33,9 @@ export {
   type CodexNetworkPreflight,
 } from './codex-network-preflight.js';
 export {
-  DEFAULT_MAX_SKILLS,
   resolveSkills,
-  type ManifestSkill,
   type ResolvedSkillRow,
   type SkillResolution,
-  type SkillResolutionOptions,
 } from './skills.js';
 export {
   extractCodexRolloutIdentity,
@@ -109,3 +106,5 @@ export type {
   WorktreeAllocationState,
   GhostReconcileReport,
 } from './types.js';
+
+export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';

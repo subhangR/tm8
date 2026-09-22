@@ -1090,6 +1090,7 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
+  'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
   'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },
   'skills.show': { cmd: ['skill', 'show'], syn: 'tm8 skill show <skill-id>', sum: 'Read a skill and its current filesystem body', authz: 'entity', input: 'none' },

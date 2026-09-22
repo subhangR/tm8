@@ -17,7 +17,7 @@
  * are constrained to them — drift fails the build.
  */
 
-import type { SkillReference } from './skill-reference.js';
+import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 
 // ===========================================================================
@@ -304,7 +304,7 @@ export type CoreEntityState =
   | { kind: 'spell'; description?: string; equipped: boolean }
   | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
   // tm8 additions (03 §1) — see §2 for the enums.
-  | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
+  | { kind: 'work_session'; skills?: EffectiveSkills; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
       /**
        * OPTIONAL, AND ITS ABSENCE MEANS `owner` — the same degrade-to-the-old-

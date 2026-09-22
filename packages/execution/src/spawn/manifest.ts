@@ -1,3 +1,5 @@
+import { computeEffectiveSkills } from './effective-skills.js';
+import { composePrompt, BYTE_BUDGETS, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -38,6 +40,7 @@ import type {
   ReasoningEffort,
   ResolvedCredentialSources,
   SessionLaunchPosture,
+  ManifestSkillContext,
   SpawnContext,
   SpawnRequest,
   Tm8Manifest,
@@ -386,9 +389,8 @@ export function routingIntentFor(request: SpawnRequest, context: SpawnContext): 
  * What a spawn is ABOUT to inject, as candidates a ranker can judge.
  *
  * IDS ARE POSITIONAL (`m0`, `s3`) because neither side has a stable one to
- * offer: `TeamMemberContext.memories` is `unknown[]` straight off the graph
- * column with no per-row identity at all, and a skill's only key is a name
- * that `resolveSkills` has already had to disambiguate. A position is enough
+ * offer in the original advisor seam: memories have no per-row identity.
+ * Skills now carry entity IDs; the existing advisor protocol remains positional. A position is enough
  * because a plan is computed and applied inside ONE spawn — it is never
  * stored, compared across spawns, or sent anywhere that outlives this call.
  *
@@ -402,7 +404,7 @@ export function contextIntentFor(context: SpawnContext): ContextIntent {
     if (typeof m === 'string' && m.trim()) memories.push({ id: `m${i}`, text: m });
   });
   const skills = (context.skills ?? []).map((skill, i) => ({
-    id: `s${i}`, text: skill.body, name: skill.name,
+    id: `s${i}`, text: skill.description, name: skill.name,
   }));
   // The GRAPH group: the bodies of the other tasks in a multi-task assignment.
   //
@@ -474,6 +476,11 @@ export function applyContextPlan(context: SpawnContext, plan: ContextPlan | null
     const kept = context.skills.filter((_, i) => keep.has(`s${i}`));
     const dropped = context.skills.filter((_, i) => !keep.has(`s${i}`)).map((sk) => sk.name);
     next.skills = kept;
+    next.skippedSkills = [...(context.skippedSkills ?? []), ...context.skills.filter((_, i) => !keep.has(`s${i}`)).map(skill => ({ entityId: skill.entityId, name: skill.name, hash: skill.hash, sourcePath: skill.sourcePath, reason: 'relevance' }))];
+    if (context.skillEquips) {
+      const ids = new Set(kept.map(skill => skill.entityId));
+      next.skillEquips = context.skillEquips.filter(row => row.missing || ids.has(row.entityId));
+    }
     // Appended, not replaced: a skill the HIERARCHY cap already dropped is
     // still dropped, and a reader of this field wants both losses in one list.
     if (dropped.length) next.droppedSkills = [...(context.droppedSkills ?? []), ...dropped];
@@ -1515,6 +1522,8 @@ export interface ComposeManifestInput {
   routing?: RoutingActivation | null;
   contextEngineering?: ContextActivation | null;
   now?: Date;
+  agentConfigDir?: string;
+  homeDir?: string;
 }
 
 /** Assemble the manifest. Pure — every input is already resolved.
@@ -1544,7 +1553,13 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   };
   const member = context.teamMember;
 
-  return redactSecretsDeep({
+  const effectiveSkills = computeEffectiveSkills({
+    agentTool: launch.agentTool, workdir: workdir.path, projectRoot: context.project?.workingDir ?? null,
+    equips: context.skillEquips ?? (context.skills ?? []).map(skill => ({ ...skill, depth: 0 })),
+    scannedAt: context.skillsScannedAt, agentConfigDir: input.agentConfigDir, homeDir: input.homeDir,
+  });
+  effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
+  const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
     sessionId,
     spaceId: context.spaceId,
@@ -1597,7 +1612,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // and already de-duplicated nearest-first. Still defaults to [] — a spawn
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
-    skills: context.skills ?? [],
+    skills: [...effectiveSkills.native, ...effectiveSkills.indexed].sort((a, b) => {
+      const rows = context.skillEquips ?? context.skills ?? [];
+      return rows.findIndex(row => row.entityId === a.entityId) - rows.findIndex(row => row.entityId === b.entityId);
+    }),
+    effectiveSkills,
     ...(context.droppedSkills?.length ? { droppedSkills: context.droppedSkills } : {}),
     coordinator: coordinatorSessionId
       ? { sessionId: coordinatorSessionId, kind: resolveCoordinatorKind(context.parentKind) }
@@ -1605,6 +1624,28 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });
+  // Measure the real non-skill prompt once, then account for the exact escaped
+  // serializer. This stays linear even when a deep equipment chain has no count cap.
+  const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
+  const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
+  let indexBytes = manifest.skills.length ? utf8Bytes(serializeSkillIndex(manifest.skills)) + 1 : 0;
+  const dropped: ManifestSkillContext[] = [];
+  while (baseBytes + indexBytes > BYTE_BUDGETS.combinedInitialInjection && manifest.skills.length) {
+    const removed = manifest.skills.pop()!;
+    dropped.push(removed);
+    indexBytes = manifest.skills.length ? indexBytes - utf8Bytes(serializeSkillIndexEntry(removed)) - 1 : 0;
+  }
+  if (dropped.length) {
+    dropped.reverse();
+    manifest.droppedSkills = [...(manifest.droppedSkills ?? []), ...dropped.map(skill => skill.name)];
+    const kept = new Set(manifest.skills.map(skill => skill.entityId));
+    const audit = manifest.effectiveSkills!;
+    audit.native = audit.native.filter(skill => kept.has(skill.entityId));
+    audit.indexed = audit.indexed.filter(skill => kept.has(skill.entityId));
+    audit.skipped.push(...dropped.map(skill => ({ entityId: skill.entityId, name: skill.name, hash: skill.hash, sourcePath: skill.sourcePath, reason: 'byte-budget' })));
+  }
+  composePrompt(manifest, { sessionId, baseUrl });
+  return manifest;
 }
 
 /**

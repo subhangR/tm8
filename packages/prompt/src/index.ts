@@ -1,3 +1,5 @@
+import { serializeSkillIndex, type PromptSkill } from './skill-index.js';
+export { serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
 /**
  * `@tm8/prompt` — the ONE agent-prompt composer, shared by the spawn path and
  * the CLI.
@@ -139,7 +141,7 @@ export interface PromptManifest {
     | { subject?: string; message?: string; fromSessionId?: string }
     | null
     | undefined;
-  skills?: ReadonlyArray<{ name?: string | undefined; body?: string | undefined }> | undefined;
+  skills?: ReadonlyArray<PromptSkill> | undefined;
   promptExtra?: string | null | undefined;
 }
 
@@ -902,23 +904,8 @@ export function composePrompt(
   }
   s.push('  </command_surface>');
 
-  const skills = manifest.skills ?? [];
-  if (skills.length > 0) {
-    // A skill body is `public.skills.content` — graph text any space member can
-    // write through `entities.patch`. The NAME stays a trusted attribute (the
-    // frame owns it as an identifier); the BODY is authored content and travels
-    // as untrusted data like every other authored payload.
-    s.push('  <skills>');
-    for (const skill of skills) {
-      const name = skill.name ?? 'unnamed';
-      if (skill.body) {
-        s.push(untrustedData({ type: 'skill-body', body: skill.body, extraAttrs: { name } }));
-      } else {
-        s.push(`    <skill name="${esc(name)}" />`);
-      }
-    }
-    s.push('  </skills>');
-  }
+  const skillIndex = serializeSkillIndex(manifest.skills ?? []);
+  if (skillIndex) s.push(skillIndex);
 
   if (manifest.promptExtra) {
     // `--context` / `ExecutionSpawnInput.promptExtra`, and the most exposed

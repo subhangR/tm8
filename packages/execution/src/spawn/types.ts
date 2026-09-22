@@ -14,7 +14,7 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
-import type { CredentialProviderName } from '@tm8/contract';
+import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName } from '@tm8/contract';
 import type { ContextActivation, RoutingActivation } from '@tm8/jev';
 import type { CoordinatorKind } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
@@ -305,17 +305,17 @@ export interface SpawnContext {
    * caller predating row #11) stay valid; absent is read as "none".
    */
   skills?: ManifestSkillContext[];
+  skillEquips?: import('./skills.js').ResolvedSkillRow[];
+  skillsScannedAt?: string | null;
+  skippedSkills?: import('@tm8/contract').SkippedSkill[];
   /**
-   * Skills the resolver dropped to stay inside its cap. Carried through to the
+   * Skills omitted by context selection or serialized index budgeting. Carried through to the
    * manifest so a truncated persona is visible rather than merely smaller.
    */
   droppedSkills?: string[];
 }
 
-export interface ManifestSkillContext {
-  name: string;
-  body: string;
-}
+export type ManifestSkillContext = SkillIndexEntry;
 
 export interface CreateWorkSessionInput {
   spaceId: string;
@@ -864,23 +864,10 @@ export interface Tm8Manifest {
 
   tasks: TaskContext[];
 
-  /** Skills the agent should load. G1A composes none — the graph-side skill
-   *  resolution is post-loop work. Emitted as an empty array rather than
-   *  omitted so the CLI's shape stays stable. */
-  skills: Array<{ name: string; body: string }>;
-  /**
-   * Names of skills the persona was equipped with and did NOT get.
-   *
-   * `SkillResolution.dropped` has claimed since row #11 that it is "carried
-   * through to the manifest so a truncated persona is visible rather than
-   * merely smaller" — and until now nothing carried it, so a persona that
-   * lost half its skills to the `maxSkills` cap looked exactly like a persona
-   * that was never equipped with them. Jev's relevance cut can drop skills
-   * too, and it appends here rather than opening a second list: a reader
-   * wants both losses in one place, whichever rule caused them.
-   *
-   * Absent means nothing was dropped.
-   */
+  /** Equipped skill metadata and explicit load pointers, never bodies. */
+  skills: ManifestSkillContext[];
+  effectiveSkills?: EffectiveSkills;
+  /** Names omitted by relevance selection or the serialized index byte budget. */
   droppedSkills?: string[];
 
   /**
