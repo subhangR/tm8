@@ -1,6 +1,6 @@
 import type { ActorSummary, EntitySummary, StatusCategory } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
-import { actorPresentation } from '../../domain';
+import { actorPresentation, modelFamilyOf, type ModelFamily } from '../../domain';
 import type { PillTone } from '../../kit';
 
 /**
@@ -30,8 +30,17 @@ export type TileSlot =
   | { slot: 'status'; word: string; tone: PillTone; dot: 'solid' | 'hollow' }
   /** Line 2 right: the small radius-4 tag (priority). */
   | { slot: 'tag'; label: string; tone: PillTone }
-  /** Line 2 left: mono facts, joined with a middot. */
-  | { slot: 'meta'; text: string }
+  /**
+   * Line 2 left: mono facts, joined with a middot.
+   *
+   * `mark` is set ONLY by the `model` source, and it is why this variant grew
+   * a second field. A model id is the one meta fact on these rows that a
+   * reader cannot tell apart by reading it quickly — the ids that matter most
+   * differ by a suffix (`kimi-k2-thinking` / `kimi-k2-thinking-turbo`) — and
+   * the row already has no room for a longer string. A renderer that does not
+   * draw marks ignores the field and prints the same text it always did.
+   */
+  | { slot: 'meta'; text: string; mark?: ModelFamily }
   /** Line 1: provenance avatar. */
   | { slot: 'avatar'; actorId: string; label: string; provenance: 'human' | 'agent'; src?: string | null };
 
@@ -314,8 +323,11 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
     case 'agentTool':
       return meta(str(field(row, 'agentTool')));
-    case 'model':
-      return meta(str(field(row, 'model')));
+    case 'model': {
+      const id = str(field(row, 'model'));
+      if (!id) return null;
+      return { slot: 'meta', text: id, mark: modelFamilyOf(id) };
+    }
     /*
      * CHAT (migration 176). Three facts no other kind has; `model` above
      * already answers for a chat, because that source reads `state.model`

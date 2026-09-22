@@ -52,6 +52,7 @@ import {
 } from '../domain';
 import {
   Avatar,
+  ModelFamilyMark,
   Timestamp,
   ancestorPath,
   usePanelChoice,
@@ -3207,7 +3208,16 @@ export function Tile({
   const badgeStatus = slots.find((s) => s.slot === 'status');
   const tag = slots.find((s) => s.slot === 'tag');
   const avatar = slots.find((s) => s.slot === 'avatar');
-  const metas = slots.filter((s) => s.slot === 'meta').map((s) => s.text);
+  const metaSlots = slots.filter((s) => s.slot === 'meta');
+  const metas = metaSlots.map((s) => s.text);
+  /*
+   * At most one meta fact carries a family mark (the model), so the row draws
+   * one and puts it at the head of the run. This is the fix for "I can't tell
+   * which model is spawning": the text was already there and already
+   * ellipsised at 128px, which is narrower than several of the ids it has to
+   * tell apart.
+   */
+  const metaMark = metaSlots.find((s) => s.mark != null)?.mark ?? null;
 
   /**
    * PRECEDENCE: the seam VERDICT outranks the record's own status badge.
@@ -3681,6 +3691,7 @@ export function Tile({
               height. Both ellipsise before the title gives up any width. */}
           {metas.length > 0 ? (
             <span className="lp__meta" title={metas.join(' · ')}>
+              {metaMark ? <ModelFamilyMark className="lp__meta-mark" family={metaMark} size={11} /> : null}
               {metas.join(' · ')}
             </span>
           ) : null}

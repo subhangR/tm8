@@ -10,6 +10,8 @@
 import type { ComponentType, SVGProps } from 'react';
 import type { CredentialProviderName } from '@tm8/contract';
 
+import { GroqMark, KimiMark } from '../kit/ModelMark';
+
 type ProviderMark = ComponentType<SVGProps<SVGSVGElement>>;
 
 export interface CredentialProviderPresentation {
@@ -130,35 +132,14 @@ function CursorMark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-// A crescent — Kimi/Moonshot. Drawn as one path with an even-odd bite taken out
-// of it so the shape reads at 22px without a second colour.
-function KimiMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} {...markProps}>
-      <path
-        d="M15.4 3.7a8.7 8.7 0 1 0 4.9 14.6A9.6 9.6 0 0 1 15.4 3.7Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <circle cx="9.6" cy="10.3" r="1.15" fill="currentColor" />
-    </svg>
-  );
-}
-
-// A bolt — Groq, whose one distinguishing claim is inference speed.
-function GroqMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} {...markProps}>
-      <path
-        d="M13.6 3.2 6.4 13h4.6l-1.6 7.8L17.6 11H13l.6-7.8Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+/*
+ * Kimi's crescent and Groq's bolt are NOT drawn here. They live in
+ * `kit/ModelMark.tsx`, because those two vendors are the only ones in this
+ * table that a person also meets as a MODEL — a session row spawned on
+ * `kimi-k2-thinking` wears the same crescent as the credential that pays for
+ * it, and two copies of one shape drift the moment either is retouched. The
+ * kit marks default to this file's 22px, so the cards are unchanged.
+ */
 
 export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
   anthropic: {

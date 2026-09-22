@@ -77,6 +77,7 @@ export {
 } from './registry';
 
 export { KIND_ART, SURFACE_ART, SURFACE_LABEL, VIEW_ART, type KindArt } from './kind-art';
+export { MODEL_FAMILY_LABEL, modelFamilyOf, modelMarkLabel, modelServedBy, modelServedNote, type ModelFamily } from './model-family';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 

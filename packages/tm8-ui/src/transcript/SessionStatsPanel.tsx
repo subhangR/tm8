@@ -34,6 +34,8 @@
 import type { SessionFileChanges, SessionTranscriptStats } from '@tm8/contract';
 import { transcriptUnavailableReason, type TranscriptState } from './transcript-model';
 import { HOLLOW, formatCount, formatTokens, tokenShares, tokenTotal } from './session-stats';
+import { ModelMark } from '../kit';
+import { modelMarkLabel } from '../domain/model-family';
 import './session-stats.css';
 
 /** Beyond this the list stops informing and starts being a scroll. */
@@ -261,7 +263,8 @@ function Models({ models }: { models: string[] }) {
       {models.length > 0 ? (
         <ul className="sst__chips">
           {models.map((model) => (
-            <li className="sst__chip" key={model}>
+            <li className="sst__chip" key={model} title={modelMarkLabel(model)}>
+              <ModelMark className="sst__chipmark" model={model} size={11} decorative />
               {model}
             </li>
           ))}

@@ -242,3 +242,12 @@
 .cv2-root .sst__note-remedy {
   color: var(--pn-ink-3);
 }
+
+/* "models seen" names every model a transcript touched; the mark says which
+   families those were without the reader parsing eight mono ids. */
+.cv2-root .sst__chipmark {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+  color: var(--pn-ink-3);
+}

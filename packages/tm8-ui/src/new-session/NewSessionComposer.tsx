@@ -21,7 +21,8 @@ import {
   type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
-import { Avatar } from '../kit';
+import { Avatar, ModelMark } from '../kit';
+import { modelMarkLabel, modelServedNote } from '../domain/model-family';
 import { useDismissable } from '../panels/useDismissable';
 import { TITLE_MAX } from './prompt-title';
 
@@ -591,10 +592,15 @@ export function NewSessionComposer({
               data-testid="nsx-model"
               aria-haspopup="menu"
               aria-expanded={open === 'model'}
-              aria-label={`Model: ${modelLabel}`}
+              aria-label={`Model: ${modelLabel} (${modelMarkLabel(model)})`}
               onClick={stopThen(() => toggle('model'))}
             >
-              <span className="nsx-tool__glyph" aria-hidden="true">✳</span>
+              {/* The family's own mark, not one glyph for every model: this
+                  button is the only place the composer says WHOSE model is
+                  about to run, and `✳` said "a model" on Kimi, Grok, GPT and
+                  Claude alike. The label beside it still carries the exact id,
+                  so the mark adds recognition without replacing precision. */}
+              <ModelMark className="nsx-tool__glyph" model={model} size={13} decorative />
               <span>{modelLabel}</span>
             </button>
             {open === 'model' ? (
@@ -617,7 +623,14 @@ export function NewSessionComposer({
                     onClick={stopThen(() => { onPickModel(m.id); close(); })}
                   >
                     <span className="nsx-menu__body">
+                      <ModelMark className="nsx-menu__mark" model={m.id} size={14} decorative />
                       <span className="nsx-menu__name nsx-menu__name--plain">{m.label}</span>
+                      {/* Who actually serves it, said only when that is not the
+                          family's own home. Six rows in this menu are Groq-hosted
+                          and four of those are families Groq did not make. */}
+                      {modelServedNote(m.id) ? (
+                        <span className="nsx-menu__served">{modelServedNote(m.id)}</span>
+                      ) : null}
                     </span>
                     <span className="nsx-menu__check" aria-hidden="true">{model === m.id ? '✓' : ''}</span>
                   </button>

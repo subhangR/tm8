@@ -681,3 +681,28 @@
   /* The shake is decorative; the refusal text carries the fact without it. */
   .nsx-popup__frame[data-shake] { animation: none; }
 }
+
+/* THE MODEL ROW LEADS WITH A DRAWING, and only the model row does.
+   Every other menu in this composer picks between words that differ by more
+   than a suffix. The model list does not: `kimi-k2-thinking` against
+   `kimi-k2-thinking-turbo`, `gpt-5-codex` against `openai/gpt-oss-120b`. A
+   family mark in front of the name is the part a reader recognises before
+   reading, so `nsx-menu__body` becomes a row here instead of a stack. */
+.nsx-menu--model .nsx-menu__body { display: flex; align-items: center; gap: 8px; }
+.nsx-menu--model .nsx-menu__name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.nsx-menu__mark { flex: none; color: var(--pn-ink-2); }
+
+/* Who serves it, when that is not the family's own home. Quiet on purpose:
+   it is a qualifier on the name, never a second name. */
+.nsx-menu__served {
+  flex: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label)/1.35 var(--pn-ui);
+  white-space: nowrap;
+}
+
+/* The trigger's glyph is an SVG now, not a character. The font-size rule above
+   sized the old asterisk and does nothing for a drawing, so hold it to the
+   line box explicitly. */
+svg.nsx-tool__glyph { flex: none; display: block; }

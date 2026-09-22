@@ -4627,3 +4627,26 @@
   font-size: var(--pn-fs-micro);
   color: var(--pn-brand-2);
 }
+
+/* THE MODEL'S FAMILY MARK, at the head of a row's meta run.
+   `lp__meta` is an inline text run, not a flex box, so the drawing has to sit
+   on the text baseline the way a character would rather than claim its own
+   line. 11px is the cap height of the 9px mono beside it. */
+.cv2-root .lp__meta-mark {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+  flex: none;
+  color: var(--pn-ink-3);
+}
+
+/* The family mark riding in front of the session row's model id. Inline, on
+   the text baseline, and it must NOT be eaten by the 88px cap that ellipsises
+   the id beside it — that cap is why the mark is here at all. */
+.cv2-root .pn-st__modelmark {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+  flex: none;
+  color: var(--pn-ink-3);
+}
