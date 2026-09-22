@@ -55,12 +55,26 @@ export interface JevNoulAnswer {
 export interface JevChoiceAnswer {
   choice: string;
   confidence: number;
+  /**
+   * THE WIRE CALLS THIS `probabilities`. Verified against jev-1.13.0 on
+   * 2026-09-22: every choice and score answer carries `probabilities`, and no
+   * real response has ever carried `distribution`. The alias below is kept
+   * because the field was named that in the design doc and in every test
+   * fixture written before the first live call — see {@link massOf}.
+   */
+  probabilities?: Record<string, number>;
+  /** @deprecated The name the fixtures used before the wire was observed. */
   distribution?: Record<string, number>;
 }
 export interface JevScoreAnswer {
   score: number;
   confidence: number;
+  /** See {@link JevChoiceAnswer.probabilities}. */
+  probabilities?: Record<string, number>;
+  /** @deprecated */
   distribution?: Record<string, number>;
+  /** Echoed by the API: the ordered criteria, keyed by their index. */
+  legend?: Record<string, string>;
 }
 
 export type JevAnswer = JevNoulAnswer | JevChoiceAnswer | JevScoreAnswer;
@@ -93,11 +107,23 @@ export function isScore(a: JevAnswer | undefined): a is JevScoreAnswer {
  * THIS is the safety signal for acting on a Choice, not `confidence`. When the
  * top two options between them hold most of the mass, the answer is "one of
  * these two" even if neither individually looks confident — which is exactly
- * the situation a spread-but-agreeing distribution produces. Measured on 60 real
- * tm8 tasks: top-2 mass ran 0.69-0.98 where argmax confidence ran 0.28-0.49.
+ * the situation a spread-but-agreeing distribution produces. Measured 2026-09-22
+ * across 114 live answers: top-2 mass ran 0.75-1.00 (median 0.99) where argmax
+ * confidence ran 0.13-1.00 (median 0.77), and on 40 of the 114 the confidence
+ * sat at or below the 0.6 harness gate while the top-2 mass sat above it.
  */
+export function massOf(a: JevChoiceAnswer | JevScoreAnswer): Record<string, number> | undefined {
+  return a.probabilities ?? a.distribution;
+}
+
 export function topTwoMass(a: JevChoiceAnswer | JevScoreAnswer): number {
-  const dist = a.distribution;
+  const dist = massOf(a);
+  // Falling back to `confidence` is a LAST RESORT, not a soft default. On a
+  // real answer the two numbers are not interchangeable: measured against
+  // jev-1.13.0, one harness_fit answer reported confidence 0.29 while its top
+  // two options held 0.89 of the mass. Reading the wrong field does not make
+  // the gate stricter, it makes it wrong — 0.29 fails a 0.6 gate that 0.89
+  // passes, so a silent fallback here closes cross-provider routing entirely.
   if (!dist) return a.confidence;
   const sorted = Object.values(dist).sort((x, y) => y - x);
   return (sorted[0] ?? 0) + (sorted[1] ?? 0);

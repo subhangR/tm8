@@ -120,6 +120,35 @@ describe('SpawnService model routing', () => {
     expect(manifest?.launch.routing).toBeNull();
   });
 
+  it('falls back to the chain tm8 always had when the router has no opinion', async () => {
+    // `null` is not an edge case, it is the shape of EVERY Jev failure: the
+    // client swallows timeouts, 401s, 429s and unparseable bodies and returns
+    // `null` rather than throwing, so this is what a Jev outage actually looks
+    // like from here. Verified against the live API on 2026-09-22 — a refused
+    // endpoint, a dead DNS name, a bad key, a 1ms budget and a non-Jev JSON
+    // body all produced `null` and none threw.
+    //
+    // The assertion is not "it did not crash". It is that the launch is
+    // INDISTINGUISHABLE from the unrouted one: same model, same null routing
+    // block on the manifest. Old logic is not bypassed when Jev is silent; it
+    // is the fallback, and it still decides.
+    const unrouted = serviceWith();
+    await unrouted.spawn(AUTH, REQUEST);
+    const baseline = graph.manifests[0]?.manifest.launch;
+
+    graph.manifests.length = 0;
+    graph.created.length = 0;
+
+    const advisor = fixedAdvisor(null);
+    await serviceWith(advisor).spawn(AUTH, REQUEST);
+    const routed = graph.manifests[0]?.manifest.launch;
+
+    expect(advisor.advise).toHaveBeenCalledTimes(1);
+    expect(routed?.model).toBe(baseline?.model);
+    expect(routed?.model).toBe('sonnet');
+    expect(routed?.routing).toBeNull();
+  });
+
   it('applies the verdict to the model, harness and effort the PTY will run', async () => {
     const advisor = fixedAdvisor({
       verdict: activation().verdict,

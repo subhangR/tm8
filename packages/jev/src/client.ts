@@ -19,10 +19,12 @@ export const JEV_DEFAULT_MODEL = 'jev-latest';
 /**
  * 1.5s, one retry.
  *
- * Measured median on 60 real tm8 tasks was ~840ms, p90 well under 1.5s. The
- * budget is a backstop for a wedged connection, not a target: a spawn already
- * spends seconds on worktree provisioning, PTY boot and credential injection,
- * so 840ms is noise — but 30s of a hung socket is not.
+ * MEASURED, not guessed. 2026-09-22, jev-1.13.0, 114 live calls over two passes
+ * of 57 real tm8 tasks pulled from the graph: median 341ms, p90 412ms, max
+ * 1629ms, zero failures. The budget is a backstop for a wedged connection, not
+ * a target: a spawn already spends seconds on worktree provisioning, PTY boot
+ * and credential injection, so 341ms is noise — but 30s of a hung socket is
+ * not. The max is the one that matters for the 1.5s choice; it sat inside it.
  */
 export const JEV_DEFAULT_TIMEOUT_MS = 1_500;
 

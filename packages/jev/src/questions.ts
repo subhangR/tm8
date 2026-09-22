@@ -1,9 +1,16 @@
 // @tm8/jev — the routing question set.
 //
-// Eight questions, one call, evaluated in parallel against one state. This
-// exact set was run against 60 real tm8 tasks twice: 60/60 answered both times,
-// ~840ms median, 97,852 input tokens per run, 98% run-to-run agreement on the
-// final model.
+// Eight questions, one call, evaluated in parallel against one state.
+//
+// MEASURED 2026-09-22 against the live API (jev-1.13.0). This exact set was run
+// twice over 57 real tm8 tasks read out of the graph: 57/57 answered both
+// times, zero failures, median 341ms, 103,774 input tokens per pass, $0.0044
+// per pass. Run-to-run agreement was 95% on the final model, 96% on the tier
+// and 98% on the harness. Three tasks moved: two by one rung inside the same
+// provider, and one — a sharing-provenance task sitting almost exactly on the
+// harness boundary — from claude-sonnet-5 to gpt-5.6-terra. That single
+// provider flip is the honest ceiling on how stable this is; a task on a
+// boundary lands on whichever side the distribution tips that minute.
 //
 // WHY EIGHT AND NOT THREE. State is ingested once and questions are answered in
 // parallel, so the marginal cost of a question is its own tokens and no extra

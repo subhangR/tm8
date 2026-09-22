@@ -35,8 +35,13 @@ export interface RoutingWeights {
 }
 
 /**
- * Calibrated on 60 real tm8 tasks. See §9 of the design doc for the threshold
- * that would have shipped broken and why it is no longer a gate.
+ * Exercised against 57 real tm8 tasks on 2026-09-22 (jev-1.13.0), which is not
+ * the same as calibrated: the weights are a considered starting point that
+ * produced a defensible spread on real work — 2 economy, 31 standard, 22
+ * premium, 2 frontier — not numbers fitted to an outcome. Treat them as data to
+ * be revised once routed sessions have reported what they actually cost. See §9
+ * of the design doc for the threshold that would have shipped broken and why it
+ * is no longer a gate.
  */
 export const DEFAULT_WEIGHTS: RoutingWeights = {
   depth: 0.45,
@@ -77,7 +82,8 @@ export interface RoutingVerdict {
   /**
    * Attention points 1-100, or 0 for none.
    *
-   * spec_complete is NOT a gate. Gating on it blocked 36 of 60 real tm8 tasks,
+   * spec_complete is NOT a gate. Measured 2026-09-22 across 114 live answers,
+   * its median is 0.22 and a gate at >0.6 would have blocked 80 of them (70%),
    * because the median real task scores 0.22 — tm8 tasks are genuinely terse
    * and an agent starts anyway. It raises attention instead: a human sees the
    * thin ones, and nothing stalls waiting for a human who is not there.
