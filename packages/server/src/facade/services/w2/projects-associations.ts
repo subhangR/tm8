@@ -1,3 +1,4 @@
+import { scanSpaceSkills } from '../../../skills/service.js';
 import {
   CollabError,
   isCollabError,
@@ -655,6 +656,11 @@ export class W2ProjectsAssociationsService {
         envelope.clientMutationId ?? null,
       ],
     );
+    const linked = await this.deps.db.query<{ space_id: string }>(claims,
+      'select space_id from public.space_projects where project_id = $1', [raw.project.id]);
+    for (const link of linked) {
+      await scanSpaceSkills(this.deps.db, claims, link.space_id, { root: raw.project.id });
+    }
     return toProjectResource(raw.project);
   };
 
@@ -686,6 +692,7 @@ export class W2ProjectsAssociationsService {
         'link_project_w2',
         [spaceId, input.projectId, envelope.actorId ?? null, envelope.clientMutationId ?? null],
       );
+      await scanSpaceSkills(this.deps.db, claimsFor(owner, ctx, envelope), raw.spaceId, { root: raw.projectId });
       return { spaceId: raw.spaceId, projectId: raw.projectId, patches: [] };
     } catch (error) {
       normalizeFrozenProjectReason(error);

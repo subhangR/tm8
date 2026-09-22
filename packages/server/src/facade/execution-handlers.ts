@@ -1,3 +1,4 @@
+import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
  *
@@ -272,6 +273,7 @@ export class DbGraphPort implements GraphPort {
    * have been authorised.
    */
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
+    await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true });
     return this.db.tx(this.claims(auth), async (q) => {
       const members = await q.query<TeamMemberRow>(
         `select tm.entity_id, tm.name, tm.role, tm.identity, tm.memories, tm.model,

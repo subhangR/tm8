@@ -11,7 +11,9 @@ import {
   getOperation,
   type OperationName,
 } from '@tm8/contract';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { scanSpaceSkills } from '../../src/skills/service.js';
+vi.mock('../../src/skills/service.js', () => ({ scanSpaceSkills: vi.fn(async () => ({ scannedAt: 'test', discovered: 0, upserted: 0, missing: 0, errors: [] })) }));
 
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -349,6 +351,7 @@ describe('W2.G06 projects and association correction facade', () => {
         body: { projectId: IDS.project, actorId: IDS.actor, clientMutationId: 'g06-link' },
       }),
     );
+    expect(scanSpaceSkills).toHaveBeenCalledWith(db, expect.objectContaining({ actorId: IDS.actor }), IDS.space, { root: IDS.project });
     await handler(registry, 'projects.unlink')(
       request('projects.unlink', {
         params: { spaceId: IDS.space, projectId: IDS.project },
