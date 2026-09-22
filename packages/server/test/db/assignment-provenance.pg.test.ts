@@ -335,6 +335,12 @@ describe.sequential('task assignment provenance (129)', () => {
     // FIRST apply of 194, not a second.
     database.apply(['194_drawing_kind.sql']);
     // Current session projection includes the F3 effective-skill audit column.
+    // 197, the SEVENTH instance: `entity-read.ts` and the projector select
+    // `sk.provider` and the other file-reference columns, so current code
+    // refuses a 147-era schema with `column sk.provider does not exist`. 197
+    // only adds columns to `public.skills` and replaces
+    // `internal.kind_seeds_done`, which no assertion here reads.
+    database.apply(['197_skill_filesystem_references.sql']);
     database.apply(['199_session_skill_audit.sql']);
   }, 180_000);
 

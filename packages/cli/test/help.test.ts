@@ -122,7 +122,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // reachable through the `session` noun shard like its six git siblings.
     // 195 -> 196 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is reachable through the `session`
     // noun shard like its git siblings. MEASURED from this assertion's own failing run.
-    expect(wanted).toHaveLength(196); // 169 -> 194 (2026-09-03): +25 containers. MEASURED.
+    expect(wanted).toHaveLength(205); // 169 -> 194 (2026-09-03): +25 containers. MEASURED. +9 skills (2026-09-23).
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -134,7 +134,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     }
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(swept).toBe(199);
+    expect(swept).toBe(208); // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -223,7 +223,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
     }
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(seen.size).toBe(199);
+    expect(seen.size).toBe(208); // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

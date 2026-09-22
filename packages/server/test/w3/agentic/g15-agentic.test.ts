@@ -44,7 +44,8 @@ import {
 // READ OUT OF THE FAILING RUN: this assertion compares the LIVE server digest
 // against this literal, so the run printed the live value on its `Received:`
 // line and this is that string, copied.
-const CATALOG_DIGEST = 'sha256:25fec0a3adb47be1059a1e6b0524ec79374beca02e41e25d8234792ba65dc8d4';
+// Re-measured 2026-09-23: the catalog with the nine skills.* rows (#647 + #649).
+const CATALOG_DIGEST = 'sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -120,7 +121,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage.
     // MEASURED on the merged tree.
-    expect(root.catalog.total).toBe(199); // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage
+    expect(root.catalog.total).toBe(208); // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23)
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

@@ -146,6 +146,9 @@ describe('W5.C generator proof', () => {
       'execution.terminate',
       'files.uploadAbort',
       'projects.update',
+      // 2026-09-23: skills.scan — every field optional; a bare {} scans the
+      // Space's authorized roots.
+      'skills.scan',
       'spaces.update',
       'tracking.refresh',
       // 2026-07-31: voice.token.create's whole input is the optional command
@@ -212,6 +215,7 @@ describe('W5.C generator proof', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(ENTRIES).toHaveLength(120);
+    // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
+    expect(ENTRIES).toHaveLength(125);
   });
 });

@@ -181,8 +181,9 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 190 -> 191 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(REGISTERABLE).toHaveLength(191);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(191);
+    // 191 -> 200 (2026-09-23): the nine skills.* rows are unconditional v1 HTTP. MEASURED.
+    expect(REGISTERABLE).toHaveLength(200);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(200);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
@@ -193,7 +194,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 190 -> 191 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(withPresence.size).toBe(191);
+    expect(withPresence.size).toBe(200);
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -207,7 +208,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 189 -> 190 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(withoutPresence.size).toBe(190);
+    expect(withoutPresence.size).toBe(199);
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -235,8 +236,8 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // value, it is the subtrahend: leaving it at 190 turned the residual into
     // -1 rather than failing on the count. Both readings shift by one and the
     // 0/1 residual split — the actual claim — is unchanged. MEASURED on the merged tree from this assertion's own failing run.
-    expect([withPresence.size, 191 - withPresence.size]).toEqual([191, 0]);
-    expect([withoutPresence.size, 191 - withoutPresence.size]).toEqual([190, 1]);
+    expect([withPresence.size, 200 - withPresence.size]).toEqual([200, 0]);
+    expect([withoutPresence.size, 200 - withoutPresence.size]).toEqual([199, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {

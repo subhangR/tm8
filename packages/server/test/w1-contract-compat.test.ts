@@ -418,7 +418,9 @@ describe('W1 contract-to-Server DTO compatibility', () => {
     };
     const q = {
       query: vi.fn(async (sql: string, params?: readonly unknown[]) => {
-        if (sql.includes('from public.edges')) return [];
+        // The summary SELECT itself names `public.edges` (the skill `equipped`
+        // subquery), so an edge read is one that does NOT select entities.
+        if (sql.includes('from public.edges') && !sql.includes('from public.entities e')) return [];
         const ids = (params?.[0] ?? []) as string[];
         return ids.includes(MESSAGE) ? [messageRow] : [];
       }),
@@ -455,7 +457,9 @@ describe('W1 contract-to-Server DTO compatibility', () => {
     };
     const q = {
       query: vi.fn(async (sql: string, params?: readonly unknown[]) => {
-        if (sql.includes('from public.edges')) return [];
+        // The summary SELECT itself names `public.edges` (the skill `equipped`
+        // subquery), so an edge read is one that does NOT select entities.
+        if (sql.includes('from public.edges') && !sql.includes('from public.entities e')) return [];
         const ids = (params?.[0] ?? []) as string[];
         return ids.includes(SOURCE) ? [sessionRow] : [];
       }),
