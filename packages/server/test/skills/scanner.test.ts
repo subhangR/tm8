@@ -37,3 +37,29 @@ it('debounces successful scans and coalesces concurrent callers', async () => {
   await debounce.run('p', scan, true);
   expect(calls).toBe(2);
 });
+it('does not mark additional-dir agents skills missing during a project-only scan', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tm8-scan-scope-'));
+  try {
+    const subdir = join(root, 'subdir');
+    const agents = join(subdir, '.agents/skills/demo');
+    const claude = join(subdir, '.claude/skills/demo');
+    await mkdir(agents, { recursive: true }); await mkdir(claude, { recursive: true });
+    for (const dir of [agents, claude]) await writeFile(join(dir, 'SKILL.md'), '---\ndescription: Demo\n---\nBody');
+    const records = new Map<string, { id: string; sourcePath: string; missing: boolean }>();
+    const store: SkillScanStore = {
+      async listReferences() { return [...records.values()]; },
+      async upsert(file) { records.set(file.path, { id: file.path, sourcePath: file.path, missing: false }); },
+      async markMissing(ids) { for (const row of records.values()) if (ids.includes(row.id)) row.missing = true; },
+    };
+    const roots = { projects: [{ id: 'p', workingDir: root }], homes: [], codexAdminDir: join(root, 'admin') };
+    await scanSkills({ roots: { ...roots, additionalDirs: [subdir] }, store });
+    expect((await scanSkills({ roots, store })).missing).toBe(0);
+    // Even a removed agents skill is outside the project-only scan's coverage;
+    // the deleted nested Claude skill IS in that coverage.
+    await rm(subdir, { recursive: true });
+    expect((await scanSkills({ roots, store })).missing).toBe(1);
+    expect(records.get(join(agents, 'SKILL.md'))?.missing).toBe(false);
+    expect(records.get(join(claude, 'SKILL.md'))?.missing).toBe(true);
+    expect((await scanSkills({ roots: { ...roots, additionalDirs: [subdir] }, store })).missing).toBe(1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

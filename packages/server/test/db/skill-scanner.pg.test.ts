@@ -57,8 +57,39 @@ it('persists metadata with entity events, preserves equips across missing/reappe
   expect((await database.query("select id from public.workspace_events where payload->>'id'=$1 and event_type like 'entity.%'", [id])).length).toBeGreaterThan(1);
   const otherSpace = await db.rpc<{ space: { id: string } }>({ identityId }, 'create_space', ['Second scanner space', '', 'private', null, randomUUID()]);
   const foreignScan = await scanSkills({ ...context, store: skillScanStore(db, { identityId }, otherSpace.space.id) });
-  expect(foreignScan.upserted).toBe(0);
-  expect(foreignScan.errors).toHaveLength(1);
+  expect(foreignScan.upserted).toBe(1);
+  expect(foreignScan.errors).toEqual([]);
+  const otherId = (await database.query<{ entity_id: string }>('select entity_id from public.skills where space_id=$1 and source_path=$2', [otherSpace.space.id, path]))[0]!.entity_id;
+  expect(otherId).not.toBe(id);
+  const otherMember = (await database.query<{ entity_id: string }>('select entity_id from public.members where space_id=$1 and identity_id=$2', [otherSpace.space.id, identityId]))[0]!.entity_id;
+  const otherTeammate = randomUUID();
+  await database.transaction(async q => {
+    await q.query('set local role tm8_graph_owner');
+    await q.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'team_member',$3)", [otherTeammate, otherSpace.space.id, otherMember]);
+    await q.query("insert into public.team_members(entity_id,owner_member_id,name) values($1,$2,'Other teammate')", [otherTeammate, otherMember]);
+    await q.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'equips',$4)", [otherSpace.space.id, otherTeammate, otherId, otherMember]);
+  });
+  const eventsBefore = (await database.query('select id from public.workspace_events where space_id=$1', [spaceId])).length;
+  await db.rpc({ identityId }, 'mark_skill_references_missing', [otherSpace.space.id, [otherId], new Date().toISOString()]);
+  expect((await database.query<{ missing: boolean }>('select missing from public.skills where entity_id=$1', [otherId]))[0]!.missing).toBe(true);
+  expect((await database.query<{ missing: boolean }>('select missing from public.skills where entity_id=$1', [id]))[0]!.missing).toBe(false);
+  expect((await database.query('select id from public.workspace_events where space_id=$1', [spaceId])).length).toBe(eventsBefore);
+  expect((await database.query("select id from public.workspace_events where space_id=$1 and payload->>'id'=$2", [otherSpace.space.id, otherId])).length).toBeGreaterThan(1);
+  expect((await database.query("select id from public.edges where dst_id=any($1::uuid[]) and type='equips'", [[id, otherId]]))).toHaveLength(2);
+  await expect(db.rpc({ identityId }, 'mark_skill_references_missing', [otherSpace.space.id, [id], new Date().toISOString()])).rejects.toThrow();
+  await expect(database.transaction(async q => {
+    await q.query('set local role tm8_graph_owner');
+    await q.query('update public.skills set space_id=$1 where entity_id=$2', [otherSpace.space.id, id]);
+  })).rejects.toThrow('space_id must match its envelope');
+  await expect(database.transaction(async q => {
+    await q.query('set local role tm8_graph_owner');
+    const mismatched = randomUUID();
+    await q.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'skill',$3)", [mismatched, spaceId, memberId]);
+    await q.query("insert into public.skills(entity_id,space_id,name) values($1,$2,'Mismatch')", [mismatched, otherSpace.space.id]);
+  })).rejects.toThrow('space_id must match its envelope');
+  // The old graph-only RPC still omits space_id; its trigger supplies the envelope's space.
+  await db.rpc(claims, 'create_skill_entity', [spaceId, 'Legacy graph skill', memberId, 'Description', 'Graph body', null, null, randomUUID()]);
+  expect((await database.query<{ space_id: string; content: string }>("select space_id,content from public.skills where name='Legacy graph skill'"))[0]).toEqual({ space_id: spaceId, content: 'Graph body' });
   const unchanged = (await database.query<{ space_id: string; version: number }>('select space_id,version from public.entities where id=$1', [id]))[0]!;
   expect(unchanged).toEqual({ space_id: spaceId, version: current.version });
   await expect(db.rpc({ identityId: 'outsider' }, 'mark_skill_references_missing', [spaceId, [id], new Date().toISOString()])).rejects.toThrow();

@@ -19,11 +19,11 @@ export interface SkillRoots {
   codexAdminDir?: string;
   additionalDirs?: string[];
 }
-export interface DiscoveryResult { candidates: SkillCandidate[]; scanRoots: string[]; excludedRoots: string[]; errors: Array<{ path: string; error: string }> }
+export interface DiscoveryResult { candidates: SkillCandidate[]; scanRoots: string[]; nestedRoots: string[]; excludedRoots: string[]; errors: Array<{ path: string; error: string }> }
 
 /** Do not follow directory symlinks: provider trees cannot escape authorized roots. */
 export async function discoverSkillFiles(roots: SkillRoots): Promise<DiscoveryResult> {
-  const result: DiscoveryResult = { candidates: [], scanRoots: [], excludedRoots: [], errors: [] };
+  const result: DiscoveryResult = { candidates: [], scanRoots: [], nestedRoots: [], excludedRoots: [], errors: [] };
   const seen = new Set<string>();
   const disabledPaths = new Set<string>();
   const boundaries = new Set([...(roots.projectBoundaries ?? []), ...roots.projects.map(p => p.workingDir)].map(p => resolve(p)));
@@ -109,7 +109,7 @@ export async function discoverSkillFiles(roots: SkillRoots): Promise<DiscoveryRe
         await nested(child);
       }
     };
-    result.scanRoots.push(dir);
+    result.nestedRoots.push(dir);
     await nested(dir);
   }
   for (const dir of roots.additionalDirs ?? []) await conventions(dir, 'session', resolve(dir));

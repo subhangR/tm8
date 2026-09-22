@@ -31,7 +31,14 @@ export async function scanSkills(context: SkillScanContext): Promise<SkillScanRe
   const missing = (await context.store.listReferences()).filter(row =>
     !row.missing && !seen.has(row.sourcePath) &&
     !discovery.excludedRoots.some(root => within(row.sourcePath, root)) &&
-    discovery.scanRoots.some(root => within(row.sourcePath, root)) &&
+    (discovery.scanRoots.some(root => within(row.sourcePath, root)) ||
+      discovery.nestedRoots.some(root => {
+        const parts = relative(root, row.sourcePath).split('/');
+        const prefix = parts.slice(0, -4);
+        return prefix.length > 0 && prefix.every(p => p && !p.startsWith('.') && !['node_modules', 'vendor'].includes(p)) &&
+          parts.at(-4) === '.claude' && parts.at(-3) === 'skills' &&
+          !parts.at(-2)!.startsWith('.') && parts.at(-1) === 'SKILL.md';
+      })) &&
     !boundaries.some(root => !selected.has(root) && within(row.sourcePath, root)) &&
     !result.errors.some(error => within(row.sourcePath, error.path)),
   );

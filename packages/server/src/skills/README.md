@@ -27,8 +27,10 @@ uses description, then when_to_use, then the first body paragraph. Full bodies
 never enter the write RPC. `scannedAt` is returned on every scan and stored as
 `last_seen_at` when observed; marking missing preserves the last observation time.
 
-The schema specifies global path uniqueness. A reference already owned by a
-different space causes an explicit per-file scan error; it is never modified or
-reassigned. This means the same node-home file currently cannot be imported into
-multiple spaces. This limitation needs a schema decision before wider multi-space
-support. File reference reads and effective-set computation belong to F1/F3.
+Reference identity is `(space_id, source_path)`: the same node-home file can be
+imported independently into multiple Spaces with separate entities, equips,
+versions, and events. The database fills omitted `space_id` from the envelope for
+legacy graph-only create calls and rejects explicitly mismatched Spaces.
+Project scans cover only their discovered conventions; nested `.agents` references
+from additional directories are refreshed or marked missing only by a scan that
+includes those directories. File reads and effective sets belong to F1/F3.
