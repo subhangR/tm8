@@ -444,6 +444,13 @@ export function reduceCounterChanged(
  * live)`), not by adding a third copy here.
  */
 
+function equipmentSummaries(state: DomainState, edge: EdgeView): Partial<DomainState> {
+  if (edge.type !== 'equips') return {};
+  let next = state;
+  for (const summary of [edge.source, edge.target]) next = { ...next, ...reduceEntityEvent(next, summary, false) };
+  return { entities: next.entities, details: next.details };
+}
+
 /** `edge.upsert`: upsert the edge and index it under both endpoints. */
 export function reduceEdgeUpsert(state: DomainState, edge: EdgeView): Partial<DomainState> {
   const current = state.edges[edge.id];
@@ -454,10 +461,10 @@ export function reduceEdgeUpsert(state: DomainState, edge: EdgeView): Partial<Do
   index = { ...index, [edge.source.id]: indexEdge(index, edge.source.id, edge.id) };
   index = { ...index, [edge.target.id]: indexEdge(index, edge.target.id, edge.id) };
   const edges = { ...state.edges, [edge.id]: edge };
-  if (!tombstone) return { edges, edgeIdsByEntity: index };
+  if (!tombstone) return { ...equipmentSummaries(state, edge), edges, edgeIdsByEntity: index };
   const edgeTombstones = { ...state.edgeTombstones };
   delete edgeTombstones[edge.id];
-  return { edges, edgeIdsByEntity: index, edgeTombstones };
+  return { ...equipmentSummaries(state, edge), edges, edgeIdsByEntity: index, edgeTombstones };
 }
 
 /** `edge.deleted`: drop the edge and unindex it from both endpoints. */
@@ -473,6 +480,7 @@ export function reduceEdgeDeleted(state: DomainState, edge: EdgeView): Partial<D
     if (index[endpoint]) index[endpoint] = index[endpoint].filter((id) => id !== edge.id);
   }
   return {
+    ...equipmentSummaries(state, edge),
     edges,
     edgeIdsByEntity: index,
     edgeTombstones: setBounded(
@@ -879,6 +887,10 @@ export function reduceEvents(
         const tombstone = (edgeTombstones ?? state.edgeTombstones)[e.edge.id];
         if (current && isAfter(current.updatedAt, e.edge.updatedAt)) break;
         if (tombstone && isAtOrAfter(tombstone, e.edge.updatedAt)) break;
+        if (e.edge.type === 'equips') {
+          const patch = equipmentSummaries({ ...state, entities: entities ?? state.entities, details: details ?? state.details }, e.edge);
+          entities = patch.entities; details = patch.details;
+        }
         edges ??= { ...state.edges };
         edgeIdsByEntity ??= { ...state.edgeIdsByEntity };
         edges[e.edge.id] = e.edge;
@@ -903,6 +915,10 @@ export function reduceEvents(
         const tombstone = (edgeTombstones ?? state.edgeTombstones)[e.edge.id];
         if (current && isAfter(current.updatedAt, e.edge.updatedAt)) break;
         if (tombstone && isAfter(tombstone, e.edge.updatedAt)) break;
+        if (e.edge.type === 'equips') {
+          const patch = equipmentSummaries({ ...state, entities: entities ?? state.entities, details: details ?? state.details }, e.edge);
+          entities = patch.entities; details = patch.details;
+        }
         edges ??= { ...state.edges };
         edgeIdsByEntity ??= { ...state.edgeIdsByEntity };
         edgeTombstones ??= { ...state.edgeTombstones };

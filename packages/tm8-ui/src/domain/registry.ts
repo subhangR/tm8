@@ -1495,17 +1495,24 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '✦', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
-      tile: { badges: [{ source: 'equipped' }] },
-      inlineEdit: { title: true },
+      tile: { badges: [{ source: 'provider' }, { source: 'level' }, { source: 'skillRoot' }, { source: 'equipped' }, { source: 'missing' }] },
+      filters: [
+        { id: 'provider', label: 'Provider', options: ['agents', 'claude', 'codex', 'hermes', 'tm8'].map(value => ({ id: value, label: value, filter: { skillProvider: value } })) },
+        { id: 'level', label: 'Level', options: ['project', 'user', 'nested', 'system', 'admin', 'plugin', 'synced', 'session', 'space'].map(value => ({ id: value, label: value, filter: { skillLevel: value } })) },
+        { id: 'missing', label: 'Missing', options: [{ id: 'missing', label: 'Missing files', filter: { skillMissing: true } }] },
+        { id: 'equipped', label: 'Equipped', options: [{ id: 'mine', label: 'Equipped by me', filter: { edge: { type: 'equips', direction: 'incoming', entityId: VIEWER_ACTOR } } }] },
+      ],
+      inlineEdit: { title: false },
     }),
     panel: {
-      archetype: 'generic',
+      archetype: 'skill',
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
         { block: 'items', label: 'EQUIPPED BY' },
         COLLECTIONS_BLOCK,
       ],
     },
+    createForm: 'skill-file',
     palette: { createLabel: 'New skill' },
   },
 

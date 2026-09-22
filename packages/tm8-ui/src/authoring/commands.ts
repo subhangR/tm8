@@ -1,3 +1,4 @@
+import type { SkillPort } from '../skills/port';
 /**
  * THE AUTHORING PORT — the narrow slice of the facade seam the create and save
  * flows need, plus the vocabulary for the ways they can fail.
@@ -44,6 +45,7 @@ import {
 } from '@tm8/contract';
 
 export interface AuthoringCommands {
+  skills?: SkillPort;
   createEntity(input: CreateEntityInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
   /**

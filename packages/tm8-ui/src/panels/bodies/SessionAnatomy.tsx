@@ -1,3 +1,4 @@
+import { SkillGroups } from '../../skills/SkillPreview';
 import type { EntityDetail, HandoffView } from '@tm8/contract';
 import { Chip, Eyebrow } from '../../kit';
 import {
@@ -69,6 +70,7 @@ export function SessionAnatomy({ detail, blocks, handoffs = [], onOpenEntity }: 
   if (blocks.length === 0) return null;
   return (
     <div className="pn-anatomy" data-testid="session-anatomy">
+      {'skills' in detail.state && detail.state.skills && <section aria-label="Recorded skills"><h3>RECORDED SKILLS</h3><SkillGroups skills={detail.state.skills} onOpenEntity={onOpenEntity} /></section>}
       {blocks.map((block, i) => (
         <AnatomyBlock
           key={`${block.block}:${i}`}
