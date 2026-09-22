@@ -511,6 +511,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // left alone, never defaulted. Two methods would be two places for a
       // caller to clobber the dial it was not thinking about.
       'shareSession',
+      // F4 (#648): `skills` — the skill port (roots, create, edit, equip,
+      // unequip, preview), one namespaced member. Appended like the rows above.
+      'skills',
       'terminate',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and

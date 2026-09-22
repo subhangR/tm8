@@ -76,7 +76,8 @@ import { createOutput } from '../src/output.js';
 // leaves it alone. Both rows land, so this constant moves twice from 197.
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
-const EXPECTED_ROWS = 203;
+// 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
+const EXPECTED_ROWS = 208;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -198,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 199, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 204, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -260,6 +261,8 @@ const COMMANDLESS_OPERATIONS = [
       // #646: the launch-sheet preview is a read the composer calls; its row
       // records "effective CLI is deferred", so it is commandless by decision.
       'skills.preview',
+      // F4: authoring roots are a composer read with no CLI verb.
+      'skills.roots',
 ];
 
 describe('the CLI command projection', () => {
@@ -637,6 +640,17 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
 const GUARD_DTOS_BOUND_TO_NO_OPERATION = ['PatchTaskInputSchema'];
 
 /**
+ * Guard-bearing rows whose DTO lives on the SERVER, not in the contract, so
+ * this sweep cannot introspect it. Named exactly, each with the schema that
+ * does carry the guard: `skills.edit` binds `SkillEditInputSchema`
+ * (packages/server/src/skills/mutations.ts), whose `expectedVersion` is
+ * REQUIRED and is compared to the entity's version before any write.
+ */
+const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>> = {
+  'skills.edit': 'SkillEditInputSchema',
+};
+
+/**
  * Direction-B rows still awaiting an amendment. **Currently EMPTY — the class
  * is closed.**
  *
@@ -709,6 +723,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       const flags = guardFlagsIn(d.syntax);
       if (flags.length === 0) continue;
       swept++;
+      if (GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA[d.operation] !== undefined) continue;
       const dto = DTO_BY_OPERATION[d.operation];
       const fields = dto === undefined ? [] : guardFieldsOf(dto);
       if (fields.length === 0) {

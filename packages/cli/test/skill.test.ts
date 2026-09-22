@@ -43,3 +43,14 @@ it('routes scan/list/show through server operations and rejects conflicting scop
   expect(requests.at(-1)?.path).toBe(`/v2/skills/${ID}`);
   await expect(invoke(['skill', 'scan', '--all', '--root', ID])).rejects.toThrow('mutually exclusive');
 });
+it('routes equipment and filesystem authoring with required version and scope', async () => {
+ await invoke(['skill', 'equip', ID, '--teammate', SPACE]);
+ expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/skills/${ID}/equip`, body: { teamMemberId: SPACE } });
+ await invoke(['skill', 'unequip', ID, '--teammate', SPACE]);
+ expect(requests.at(-1)?.path).toBe(`/v2/skills/${ID}/unequip`);
+ await invoke(['skill', 'create', '--root', SPACE, '--name', 'demo', '--body', 'instructions']);
+ expect(requests.at(-1)).toMatchObject({ method: 'POST', body: { root: SPACE, name: 'demo', body: 'instructions' } });
+ await invoke(['skill', 'edit', ID, '--expected-version', '3', '--description', 'updated']);
+ expect(requests.at(-1)).toMatchObject({ method: 'PATCH', body: { expectedVersion: 3, description: 'updated' } });
+ await expect(invoke(['skill', 'edit', ID])).rejects.toThrow('expected-version');
+});

@@ -63,7 +63,8 @@ import { isExitCode } from '../src/exit.js';
 // MERGED tree, not derived.
 // F2 adds three public HTTP operations.
 // skills.preview (#646) adds a fourth public HTTP operation; the stack never re-pinned it. 203 MEASURED on the main merge.
-const EXPECTED_ROWS = 203;
+// 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
+const EXPECTED_ROWS = 208;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
@@ -73,7 +74,7 @@ describe('the catalog itself is the shape W4 was briefed on', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is v1 and non-reserved, so it joins
     // V1_OPERATIONS on top of 187's row. MEASURED from this assertion's own failing run.
-    expect(V1_OPERATIONS.length).toBe(201);
+    expect(V1_OPERATIONS.length).toBe(206);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     // TWO WS ROWS, ONE MOUNTED SOCKET, and the difference is the point.
     // `containers.stream` re-declares `events.subscribe`'s `WS /v2/ws` so the
@@ -84,7 +85,7 @@ describe('the catalog itself is the shape W4 was briefed on', () => {
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(2);
     expect(MOUNTED_OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows mount and neither is WS. MEASURED on the merged tree from this assertion's own failing run.
-    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(201);
+    expect(MOUNTED_OPERATIONS.filter((o) => o.method !== 'WS')).toHaveLength(206);
   });
 });
 
@@ -182,11 +183,11 @@ describe('every row resolves through the client and the error mapping', () => {
     // The HTTP rows produced an honest 8; BOTH WS rows produced usage 2
     // without a request. Every one is a resolution; none is a fall-through.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one more HTTP row resolving to an honest 8. MEASURED.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(201);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(206);
     expect([...resolved.entries()].filter(([, c]) => c === 2).map(([name]) => name))
       .toEqual(['events.subscribe', 'containers.stream']);
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(requested).toHaveLength(201);
+    expect(requested).toHaveLength(206);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -229,7 +230,7 @@ describe('every row resolves through the client and the error mapping', () => {
       }
     }
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage mounts one more HTTP route. MEASURED.
-    expect(httpRows).toBe(201);
+    expect(httpRows).toBe(206);
   });
 });
 

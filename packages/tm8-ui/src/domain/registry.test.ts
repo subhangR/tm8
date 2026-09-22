@@ -976,7 +976,7 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     message: 'generic',
     file: 'generic',
     spell: 'generic',
-    skill: 'generic',
+    skill: 'equipment',
     pull_request: 'generic',
     commit: 'generic',
     collection: 'generic',

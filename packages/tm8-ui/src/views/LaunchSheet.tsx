@@ -1,3 +1,6 @@
+import { SkillPreview } from '../skills/SkillPreview';
+import type { SkillPort } from '../skills/port';
+import type { SkillPreviewResult } from '@tm8/contract';
 /**
  * LaunchSheet — the full launch configuration (D44/D51, T5-5 anatomy).
  *
@@ -83,6 +86,7 @@ import {
 import { MEMORY_IDS_MAX } from '../domain/memory';
 
 export interface LaunchSheetProps {
+  loadSkillPreview?: (input: Parameters<SkillPort['preview']>[1]) => Promise<SkillPreviewResult>;
   /** The entity being launched from. The sheet is bound to it and dies with it. */
   subjectId: EntityId;
   /** T5-5's FROM strip: the launch context, named honestly. */
@@ -798,6 +802,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
             pinned at launch — immutable for this session&apos;s whole life (T2-4)
           </span>
         </section>
+
+        <SkillPreview load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
 
         {/*
           * MEMORIES — the spawn-time hand-off (D3a, `memoryIds`).

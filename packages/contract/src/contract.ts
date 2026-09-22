@@ -959,6 +959,7 @@ export interface CollectionQuery {
     /** Tasks with any current assignment performed by one of these actors. */
     assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
+    skillProvider?: string; skillLevel?: string; skillRoot?: string; skillMissing?: boolean;
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
      * Additive (board/people wave): entities this actor WORKED, resolved

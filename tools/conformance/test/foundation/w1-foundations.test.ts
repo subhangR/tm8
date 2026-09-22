@@ -75,16 +75,17 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // branch's execution.gitStage BOTH land, so this moves twice. Git merged
       // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
       // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-      total: 203,
-      v1: 201,
+      // 2026-09-23 F4 (#648): skills.roots/create/edit/equip/unequip, all mounted v1 HTTP. MEASURED on the merged tree.
+      total: 208,
+      v1: 206,
       reserved: 2,
-      http: 201,
+      http: 206,
       ws: 1,
-      registerableV1Http: 199,
-      methods: { GET: 68, POST: 101, PATCH: 12, DELETE: 12, PUT: 8, WS: 2 },
-      kinds: { read: 72, command: 129, stream: 2 },
-      uniqueNames: 203,
-      uniqueBindings: 202,
+      registerableV1Http: 204,
+      methods: { GET: 69, POST: 104, PATCH: 13, DELETE: 12, PUT: 8, WS: 2 },
+      kinds: { read: 73, command: 133, stream: 2 },
+      uniqueNames: 208,
+      uniqueBindings: 207,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
@@ -94,7 +95,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // +24 (177): the container HTTP rows. 195 -> 196 (187): execution.sessions.share.
     // 196 -> 197 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-    expect(manifest.routes.http).toHaveLength(201);
+    expect(manifest.routes.http).toHaveLength(206);
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -148,7 +149,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(171);
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(176);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -179,7 +180,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // +24 (177). 165 -> 166 (187), 166 -> 167 (2026-09-19, execution.gitStage):
       // registerableV1Http 195 minus the frozen 28. MEASURED on the merged tree.
       // 167 -> 171 (2026-09-23): the four skills.* rows; registerableV1Http 199 minus 28.
-      unimplementedV1Http: 171,
+      // 171 -> 176 (2026-09-23 F4): registerableV1Http 204 minus 28.
+      unimplementedV1Http: 176,
     });
   });
 
@@ -234,7 +236,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // +25 (177) containers; 197 -> 198 (187): execution.sessions.share.
     // 198 -> 199 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-    expect(manifest.help.operations).toHaveLength(203);
+    expect(manifest.help.operations).toHaveLength(208);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -461,7 +463,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 180 -> 181 (2026-09-19, Changes surface phase 1): execution.gitStage is
     // served by the same facade execution-git service as the other git rows.
     // 181 -> 185 (2026-09-23): the four skills.* handlers. MEASURED on the merged tree.
-    expect(handlers.facade).toHaveLength(185);
+    // 185 -> 190 (2026-09-23 F4): five skills.* handlers. MEASURED.
+    expect(handlers.facade).toHaveLength(190);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -489,7 +492,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 194 -> 195 (2026-09-19, Changes surface phase 1): the execution.gitStage
     // facade handler. MEASURED on the merged tree.
     // 195 -> 199 (2026-09-23): the four skills.* facade handlers. MEASURED on the merged tree.
-    expect(handlers.all).toHaveLength(199);
+    // 199 -> 204 (2026-09-23 F4). MEASURED.
+    expect(handlers.all).toHaveLength(204);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -514,7 +518,8 @@ describe('W2.C01 current mounted registry inventory', () => {
       // own failing-run Received line on the merged tree, never computed.
       // Re-measured 2026-09-23: the four skills.* handlers join — computed by
       // CALLING readHandlerSourceInventory on the merged tree, never by hand.
-      .toBe('9fcab0996ed88826afe912ee967b9b232b7b232aa3b4fb658eed7e682ef17391');
+      // Re-measured 2026-09-23 with F4 by CALLING readHandlerSourceInventory.
+      .toBe('5c8580bb6397d24f1f6d360bce6b8b16d0a69fc61fc40afdc11eb7d68c6e1b81');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -536,7 +541,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // ExecutionSessionsShareInput. 119 -> 120 (2026-09-19): GitStageInput binds
     // execution.gitStage's command body. MEASURED on the merged tree.
     // 120 -> 121 (2026-09-23): skills.scan binds SkillScanInputSchema. MEASURED on the merged tree.
-    expect(inputSchemas.bound).toHaveLength(121)
+    // 121 -> 125 (2026-09-23 F4): create/edit/equip/unequip bind local schemas. MEASURED.
+    expect(inputSchemas.bound).toHaveLength(125)
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -571,7 +577,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // registerable v1 HTTP command. MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 199 (2026-09-23): the four skills.* rows, all mounted v1 HTTP. MEASURED on the merged tree.
-    expect(registerableV1Http).toHaveLength(199);
+    // 199 -> 204 (2026-09-23 F4). MEASURED.
+    expect(registerableV1Http).toHaveLength(204);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

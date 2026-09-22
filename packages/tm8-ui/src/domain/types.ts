@@ -109,6 +109,9 @@ export type TileBadgeSource =
   | 'sha'
   | 'mimeType'
   | 'sizeBytes'
+  | 'level'
+  | 'missing'
+  | 'skillRoot'
   | 'equipped'
   | 'collectionType'
   | 'itemCount'
@@ -1000,6 +1003,9 @@ export type BodyArchetype =
   | 'hub'
   | 'profile'
   | 'generic'
+  // F4 (#648): a file-backed body with its equipment. Named for what the
+  // body SHOWS, never after a kind (§15.2 no-branching).
+  | 'equipment'
   | 'terminal'
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
@@ -1332,7 +1338,7 @@ export interface KindConfig {
    * `list.quickCreate` continues to decide whether the header has a create
    * affordance at all.
    */
-  createForm?: 'scheduled-work' | 'file-upload';
+  createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

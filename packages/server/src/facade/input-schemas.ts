@@ -1,3 +1,4 @@
+import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
  * Operation → zod input schema bindings.
@@ -267,6 +268,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // projects (AM-2 §1)
   'projects.create': ProjectCreateInputSchema,
+  'skills.create': SkillCreateInputSchema,
+  'skills.edit': SkillEditInputSchema,
+  'skills.equip': SkillEquipInputSchema,
+  'skills.unequip': SkillEquipInputSchema,
   'skills.scan': SkillScanInputSchema,
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,

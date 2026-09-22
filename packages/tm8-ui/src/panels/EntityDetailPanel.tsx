@@ -1,3 +1,6 @@
+import { SkillBody } from '../skills/SkillBody';
+import { SkillEquipment } from '../skills/SkillEquipment';
+import type { SkillPort } from '../skills/port';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   CommandResult,
@@ -443,7 +446,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: (AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
+  commands?: ({ skills?: SkillPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -1697,6 +1700,8 @@ function PanelBody(
   }
   if (config.panel.archetype === 'profile') {
     return (
+      <>
+      <SkillEquipment detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />
       <ProfileBody
         detail={detail}
         blocks={config.panel.blocks ?? []}
@@ -1705,8 +1710,11 @@ function PanelBody(
         memoryAuthoring={props.memoryAuthoring}
         onMarkMemory={props.onMarkMemory}
       />
+      </>
     );
   }
+
+  if (config.panel.archetype === 'equipment') return <SkillBody detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />;
 
   if (config.panel.archetype === 'governed') {
     return (

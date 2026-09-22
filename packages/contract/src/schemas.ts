@@ -1040,6 +1040,7 @@ const CollectionFiltersSchema = z.object({
     direction: z.enum(['incoming', 'outgoing']),
     entityId: EntityIdSchema,
   }).strict().optional(),
+  skillProvider: z.string().optional(), skillLevel: z.string().optional(), skillRoot: z.string().optional(), skillMissing: z.boolean().optional(),
   readyToPull: z.boolean().optional(),
   inReviewForActorId: EntityIdSchema.optional(),
   mentionedActorId: EntityIdSchema.optional(),
