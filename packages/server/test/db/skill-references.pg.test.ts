@@ -36,7 +36,7 @@ async function rows(ids: string[]): Promise<EntityRow[]> {
 beforeAll(async () => {
   db = await createW1ScratchDatabase('skill_refs');
   dir = await mkdtemp(join(tmpdir(), 'tm8-skill-ref-'));
-  db.apply(migrationFiles().filter((name) => !name.startsWith('197_')));
+  db.apply(migrationFiles().filter((name) => Number(name.slice(0, 3)) < 197));
   await db.query("insert into public.user_profiles(identity_id,display_name) values($1,'Skill owner')", [identity]);
   await db.query("insert into public.spaces(id,name,created_by_identity) values($1,'Skills',$2)", [space,identity]);
   await entity('member',member);
@@ -48,7 +48,7 @@ beforeAll(async () => {
   await entity('spell',spell);
   await db.query(`insert into public.spells(entity_id,name,description,rule) values($1,'Spell','Spell description','{"test":true}')`, [spell]);
   await db.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'equips',$4)", [space,teammate,legacy,member]);
-  db.apply(['197_skill_filesystem_references.sql']);
+  db.apply(migrationFiles().filter((name) => Number(name.slice(0, 3)) >= 197));
 });
 afterAll(async () => { if (db) await db.destroy(); if (dir) await rm(dir, {recursive:true,force:true}); });
 
