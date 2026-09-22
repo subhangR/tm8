@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:8274a7b39cd985d1d38d11de8f6fdd03e1d42ebec509c972a26af2622598f0f2",
+  "catalogDigest": "sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e",
   "catalog": {
-    "total": 203,
-    "v1": 201,
+    "total": 208,
+    "v1": 206,
     "reserved": 2,
-    "http": 201,
+    "http": 206,
     "ws": 1,
-    "registerableV1Http": 199,
+    "registerableV1Http": 204,
     "methods": {
-      "GET": 68,
-      "POST": 101,
-      "PATCH": 12,
+      "GET": 69,
+      "POST": 104,
+      "PATCH": 13,
       "DELETE": 12,
       "PUT": 8,
       "WS": 2
     },
     "kinds": {
-      "read": 72,
-      "command": 129,
+      "read": 73,
+      "command": 133,
       "stream": 2
     },
-    "uniqueNames": 203,
-    "uniqueBindings": 202
+    "uniqueNames": 208,
+    "uniqueBindings": 207
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,41 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "skills.roots",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/skills/roots",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/skills",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.edit",
+        "method": "PATCH",
+        "path": "/v2/skills/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.equip",
+        "method": "POST",
+        "path": "/v2/skills/:id/equip",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "skills.unequip",
+        "method": "POST",
+        "path": "/v2/skills/:id/unequip",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "skills.scan",
         "method": "POST",
@@ -1825,7 +1860,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 171
+    "unimplementedV1Http": 176
   },
   "schemas": {
     "additive": {
@@ -1991,6 +2026,86 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "skills.roots",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.roots",
+        "intentTags": [
+          "skills",
+          "roots"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.create",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.create",
+        "intentTags": [
+          "skills",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.edit",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.edit",
+        "intentTags": [
+          "skills",
+          "edit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.equip",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.equip",
+        "intentTags": [
+          "skills",
+          "equip"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "skills.unequip",
+        "noun": "skill",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/skills.unequip",
+        "intentTags": [
+          "skills",
+          "unequip"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "skills.scan",
         "noun": "skill",

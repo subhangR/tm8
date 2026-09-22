@@ -1093,7 +1093,7 @@ const ROWS: Record<OperationName, Row> = {
   'skills.equip': { cmd: ['skill', 'equip'], syn: 'tm8 skill equip <skill-id> --teammate <teammate-id>', sum: 'Equip a teammate with a skill', authz: 'entity', input: 'bound' },
   'skills.unequip': { cmd: ['skill', 'unequip'], syn: 'tm8 skill unequip <skill-id> --teammate <teammate-id>', sum: 'Remove a skill from a teammate', authz: 'entity', input: 'bound' },
   'skills.create': { cmd: ['skill', 'create'], syn: 'tm8 skill create --root <project-id|home> --name <name> [--provider agents|claude|codex|hermes] [--level project|user] [--description <text>] [--body <text-source>]', sum: 'Write SKILL.md and scan its reference', authz: 'space', input: 'bound' },
-  'skills.edit': { cmd: ['skill', 'edit'], syn: 'tm8 skill edit <skill-id> --expected-version <version> [--content-hash <hash>] [--name <name>] [--description <text>] [--body <text-source>]', sum: 'Edit a writable skill, preserving unknown frontmatter', authz: 'entity', input: 'bound' },
+  'skills.edit': { cmd: ['skill', 'edit'], syn: 'tm8 skill edit <skill-id> --expected-version <version> [--content-hash <hash>] [--name <name>] [--description <text>] [--body <text-source>]', sum: 'Edit a writable skill, preserving unknown frontmatter', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
   'skills.roots': { cmd: null, sum: 'List authorized skill authoring roots', authz: 'space', input: 'none', tags: ['skills'] },
   'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
@@ -2554,7 +2554,8 @@ export const CATALOG_DIGEST =
   // Re-measured on the MERGED tree (2026-09-23): filesystem skills add
   // skills.scan/list/show/preview on top of main's 199 rows. RECOMPUTED from
   // `JSON.stringify(OPERATIONS)` and matched to the regenerated manifest.
-  'sha256:8274a7b39cd985d1d38d11de8f6fdd03e1d42ebec509c972a26af2622598f0f2';
+  // Re-measured 2026-09-23 with F4 (#648): skills.roots/create/edit/equip/unequip.
+  'sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e';
 
 export const GRAMMAR_VERSION = '2';
 

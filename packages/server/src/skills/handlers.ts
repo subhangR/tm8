@@ -1,4 +1,3 @@
-import { registerSkillMutations } from './mutations.js';
 import { computeEffectiveSkills } from '@tm8/execution';
 import { serializeSkillIndexEntry } from '@tm8/prompt';
 import type { SkillPreviewResult } from '@tm8/contract';
@@ -13,7 +12,6 @@ import { W2EntitiesCommandsTrackingService } from '../facade/services/w2/entitie
 import { scanSpaceSkills } from './service.js';
 export const SkillScanInputSchema = z.object({ root: z.string().uuid().optional(), all: z.boolean().optional(), clientMutationId: z.string().optional(), actorId: z.string().uuid().optional() }).strict().refine(value => !(value.root && value.all), { message: 'root and all are mutually exclusive' });
 export function registerSkillHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
-  registerSkillMutations(registry, deps);
   registry.register('skills.scan', async ctx => {
     const input = SkillScanInputSchema.parse(ctx.body);
     const owner = await deps.owner();

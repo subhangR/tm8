@@ -1505,7 +1505,7 @@ const ROWS: readonly KindConfig[] = [
       inlineEdit: { title: false },
     }),
     panel: {
-      archetype: 'skill',
+      archetype: 'equipment',
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
         { block: 'items', label: 'EQUIPPED BY' },

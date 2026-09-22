@@ -253,6 +253,9 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       'WORKING DIRECTORY',
       'SESSION MODE',
       'INTERACTION PROFILE',
+      // F4 (#648): the equipped-skills preview sits beside memories, the other
+      // thing the teammate wakes up knowing.
+      'SKILLS',
       'MEMORIES',
     ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');

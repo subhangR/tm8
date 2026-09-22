@@ -1003,7 +1003,9 @@ export type BodyArchetype =
   | 'hub'
   | 'profile'
   | 'generic'
-  | 'skill'
+  // F4 (#648): a file-backed body with its equipment. Named for what the
+  // body SHOWS, never after a kind (§15.2 no-branching).
+  | 'equipment'
   | 'terminal'
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.

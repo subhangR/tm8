@@ -1714,7 +1714,7 @@ function PanelBody(
     );
   }
 
-  if (config.panel.archetype === 'skill') return <SkillBody detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />;
+  if (config.panel.archetype === 'equipment') return <SkillBody detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />;
 
   if (config.panel.archetype === 'governed') {
     return (

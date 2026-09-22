@@ -259,7 +259,9 @@ function acceptedKeys(schema: unknown, depth = 0): Set<string> | null {
  *
  * `skills.scan` is the fifteenth and the exception to "two schemas": it binds
  * `SkillScanInputSchema`, declared beside its handler in `skills/handlers.ts`,
- * because the contract names the scan's RESULT, not its request.
+ * because the contract names the scan's RESULT, not its request. F4's
+ * `skills.create`, `skills.edit`, `skills.equip` and `skills.unequip` likewise
+ * bind schemas declared in `skills/mutations.ts`.
  */
 const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'collections.removeItem',
@@ -270,7 +272,11 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'projects.unlink',
   'readMarks.upsert',
   'savedViews.delete',
+  'skills.create',
+  'skills.edit',
+  'skills.equip',
   'skills.scan',
+  'skills.unequip',
   'spaces.invites.create',
   'spaces.invites.redeem',
   'spaces.invites.revoke',

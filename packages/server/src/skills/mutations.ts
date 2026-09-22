@@ -21,7 +21,9 @@ export function registerSkillMutations(registry: HandlerRegistry, deps: FacadeDe
     const roots = await resolveSkillRoots(deps.db, claims, spaceId, {});
     return { projects: roots.projects, homes: roots.homes };
   });
-  for (const operation of ['equip', 'unequip'] as const) registry.register(`skills.${operation}`, async ctx => {
+  // Each operation is registered by its LITERAL name: the conformance source
+  // inventory reads registrations statically and cannot see a template string.
+  const equipment = (operation: 'equip' | 'unequip') => async (ctx: Parameters<Parameters<HandlerRegistry['register']>[1]>[0]) => {
     const input = SkillEquipInputSchema.parse(ctx.body);
     const owner = await deps.owner();
     const id = requireUuidParam(ctx, 'id');
@@ -37,7 +39,9 @@ export function registerSkillMutations(registry: HandlerRegistry, deps: FacadeDe
       await q.rpc('delete_edge', [edges[0].id, command.actorId ?? null, command.clientMutationId ?? null]);
       return { removed: true };
     });
-  });
+  };
+  registry.register('skills.equip', equipment('equip'));
+  registry.register('skills.unequip', equipment('unequip'));
   registry.register('skills.create', async ctx => {
     const input = SkillCreateInputSchema.parse(ctx.body);
     const owner = await deps.owner();
