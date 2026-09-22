@@ -906,6 +906,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               /* Undefined until the kind is hydrated, and the sheet draws that
                  as "unknown" rather than "none" — see the picker's comment. */
               memories={data.launch.memories}
+          loadSkillPreview={data.launch.loadSkillPreview}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
               onCancel={() => props.onLaunchCancel?.()}

@@ -1,3 +1,4 @@
+import type { SkillPort } from '../skills/port';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -810,6 +811,7 @@ export interface Seam {
      * omitted context earns an honest `invalid_input` rather than a
      * synthesized id the caller could not reconcile.
      */
+    skills?: SkillPort;
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     /**

@@ -47,6 +47,11 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
+  { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
+  { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
+  { name: 'skills.equip', method: 'POST', path: '/v2/skills/:id/equip', kind: 'command', status: 'v1' },
+  { name: 'skills.unequip', method: 'POST', path: '/v2/skills/:id/unequip', kind: 'command', status: 'v1' },
   { name: 'skills.scan', method: 'POST', path: '/v2/spaces/:spaceId/skills/scan', kind: 'command', status: 'v1' },
   { name: 'skills.list', method: 'GET', path: '/v2/spaces/:spaceId/skills', kind: 'read', status: 'v1' },
   { name: 'skills.preview', method: 'GET', path: '/v2/spaces/:spaceId/skills/preview', kind: 'read', status: 'v1' },

@@ -1090,6 +1090,11 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
+  'skills.equip': { cmd: ['skill', 'equip'], syn: 'tm8 skill equip <skill-id> --teammate <teammate-id>', sum: 'Equip a teammate with a skill', authz: 'entity', input: 'bound' },
+  'skills.unequip': { cmd: ['skill', 'unequip'], syn: 'tm8 skill unequip <skill-id> --teammate <teammate-id>', sum: 'Remove a skill from a teammate', authz: 'entity', input: 'bound' },
+  'skills.create': { cmd: ['skill', 'create'], syn: 'tm8 skill create --root <project-id|home> --name <name> [--provider agents|claude|codex|hermes] [--level project|user] [--description <text>] [--body <text-source>]', sum: 'Write SKILL.md and scan its reference', authz: 'space', input: 'bound' },
+  'skills.edit': { cmd: ['skill', 'edit'], syn: 'tm8 skill edit <skill-id> --expected-version <version> [--content-hash <hash>] [--name <name>] [--description <text>] [--body <text-source>]', sum: 'Edit a writable skill, preserving unknown frontmatter', authz: 'entity', input: 'bound' },
+  'skills.roots': { cmd: null, sum: 'List authorized skill authoring roots', authz: 'space', input: 'none', tags: ['skills'] },
   'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
   'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },

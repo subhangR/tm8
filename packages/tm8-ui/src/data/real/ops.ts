@@ -1,3 +1,4 @@
+import type { SkillPort } from '../../skills/port';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -884,6 +885,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
     },
 
+    skills: {
+      roots(spaceId) { return http.call('skills.roots', { params: { spaceId } }); },
+      async list(spaceId, kind) {
+        const items: EntitySummary[] = [];
+        let cursor: string | undefined;
+        do {
+          const result = await http.call<CollectionResult>('collections.query', { body: { spaceId, kinds: [kind], limit: 100, cursor } });
+          items.push(...result.page.items); cursor = result.page.nextCursor ?? undefined;
+        } while (cursor);
+        return items;
+      },
+      equip(id, teamMemberId, equipped) { return http.call(equipped ? 'skills.equip' : 'skills.unequip', { params: { id }, body: { teamMemberId, clientMutationId: newId('skill') } }); },
+      create(spaceId, input) { return http.call('skills.create', { params: { spaceId }, body: { ...input, clientMutationId: newId('skill') } }); },
+      edit(id, input) { return http.call('skills.edit', { params: { id }, body: { ...input, clientMutationId: newId('skill') } }); },
+      preview(spaceId, input) { return http.call('skills.preview', { params: { spaceId }, query: input }); },
+    } satisfies SkillPort,
     createEdge(input: CreateEdgeInput): Promise<CommandResult> {
       return http.call<CommandResult>('edges.create', { body: input });
     },

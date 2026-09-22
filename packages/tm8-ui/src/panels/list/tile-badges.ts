@@ -395,6 +395,9 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const n = num(field(row, 'sizeBytes'));
       return n ? meta(humanBytes(n)) : null;
     }
+    case 'level': return meta(str(field(row, 'level')));
+    case 'missing': return field(row, 'missing') === true ? meta('missing') : null;
+    case 'skillRoot': { const root = field(row, 'root') as { ref?: string } | undefined; return meta(root?.ref ?? null); }
     case 'equipped':
       return meta(field(row, 'equipped') === true ? 'equipped' : 'library');
     case 'collectionType':
@@ -442,7 +445,7 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'messages', 'points', 'agentTool', 'model', 'shareMode', 'driveMode',
   'channelTopic', 'unread', 'workingAgents', 'docFormat', 'childCount',
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
-  'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
+  'level', 'missing', 'skillRoot', 'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
   'chatMode', 'chatTurnState', 'chatLastTurnAt',
   // container (migration 177) — a source listed here and nowhere else would

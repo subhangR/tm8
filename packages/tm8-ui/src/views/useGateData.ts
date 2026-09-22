@@ -1,3 +1,5 @@
+import type { SkillPort } from '../skills/port';
+import type { SkillPreviewResult } from '@tm8/contract';
 /**
  * Gate boot: seam → domain store → the selectors the views hand to the panels.
  *
@@ -695,6 +697,7 @@ export interface GateData {
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
   /** Launch resources from the active seam; never presentation fixtures. */
   launch: {
+    loadSkillPreview?: (input: Parameters<SkillPort['preview']>[1]) => Promise<SkillPreviewResult>;
     teammates: readonly LaunchTeammate[];
     projects: readonly LaunchProject[];
     profiles: readonly LaunchProfile[];
@@ -2429,13 +2432,14 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
          takes `teammates[0]` as the teammate. Sorting in the surfaces instead
          would be three call sites that can drift, and would leave whichever one
          nobody remembered on the old insertion order. */
+      ...(seam.commands.skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => seam.commands.skills!.preview(spaceId, input) } : {}),
       teammates: orderTeammatesByRecency(teammates, launchRecents),
       projects,
       profiles,
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, seam]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty
