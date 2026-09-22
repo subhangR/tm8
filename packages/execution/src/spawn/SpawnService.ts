@@ -1273,7 +1273,17 @@ export class SpawnService {
         sandboxUnavailable: sandbox.unavailable,
       });
       const manifestPath = this.manifestPathFor(sessionId);
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
+      const [credentialHome, gitHubCredential] = await Promise.all([
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
+      ]);
       const manifest = composeManifest({
+        agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
+        homeDir: this.env.HOME ?? homedir(),
         sessionId,
         request,
         context: engineered,
@@ -1333,14 +1343,6 @@ export class SpawnService {
         this.env,
       );
 
-      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
-      const agentCredentialSource = agentCredentialProvider
-        ? launch.credentialSources[agentCredentialProvider]
-        : null;
-      const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSources.github),
-      ]);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -2030,7 +2032,17 @@ export class SpawnService {
       const baseCommand = buildAgentCommand(launch, this.env, {
         sandboxUnavailable: sandbox.unavailable,
       });
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
+      const [credentialHome, gitHubCredential] = await Promise.all([
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
+      ]);
       const manifest = composeManifest({
+        agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
+        homeDir: this.env.HOME ?? homedir(),
         sessionId,
         request: syntheticRequest,
         context,
@@ -2058,14 +2070,6 @@ export class SpawnService {
       // credential on the way back up, and one that has been disconnected must
       // stop being injected. A resume that kept the launch-time answer would be
       // the one path where Ruling 3's "disconnect terminates" could be undone.
-      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
-      const agentCredentialSource = agentCredentialProvider
-        ? launch.credentialSources[agentCredentialProvider]
-        : null;
-      const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSources.github),
-      ]);
       const env = composeEnv(
         manifest,
         manifestPath,

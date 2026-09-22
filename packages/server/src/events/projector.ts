@@ -1,3 +1,4 @@
+import type { EffectiveSkills } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -262,6 +263,7 @@ interface SummaryRow {
   ws_checkout_branch: string | null;
   ws_workdir_mode: string | null;
   ws_ended_kind: string | null;
+  ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
   file_name: string | null;
   file_mime_type: string | null;
@@ -412,6 +414,7 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -1217,6 +1220,7 @@ export class PgEntityProjector implements EntityProjector {
       case 'work_session':
         return {
           kind: 'work_session',
+          ...(r.ws_skills ? { skills: r.ws_skills } : {}),
           status: oneOf(r.ws_status, WS_STATUSES, 'spawning'),
           agentTool: r.ws_agent_tool,
           model: r.ws_model,

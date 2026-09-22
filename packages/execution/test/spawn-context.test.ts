@@ -42,8 +42,8 @@ const MEMORIES = [
   'Worktree is shared — the branch moves under you.',
 ];
 const SKILLS = [
-  { name: 'deploy-runbook', body: 'Swap the dist, never restart the unit.' },
-  { name: 'figma-connector', body: 'OAuth-only server, catalog-gated clients.' },
+  { entityId: 'deploy', provider: 'tm8', level: 'space', native: false, loadPointer: 'tm8 entity get deploy', name: 'deploy-runbook', description: 'Swap the dist, never restart the unit.' },
+  { entityId: 'figma', provider: 'tm8', level: 'space', native: false, loadPointer: 'tm8 entity get figma', name: 'figma-connector', description: 'OAuth-only server, catalog-gated clients.' },
 ];
 
 function group(keptIds: string[], decisions: number): ContextActivation['memories'] {
@@ -157,7 +157,7 @@ describe('SpawnService context engineering', () => {
       expect.objectContaining({ id: TASK_ID, title: 'fixture task 1' }),
       {
         memories: MEMORIES.map((text, i) => ({ id: `m${i}`, text })),
-        skills: SKILLS.map((s, i) => ({ id: `s${i}`, text: s.body, name: s.name })),
+        skills: SKILLS.map((s, i) => ({ id: `s${i}`, text: s.description, name: s.name })),
       },
     );
   });

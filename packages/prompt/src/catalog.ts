@@ -613,10 +613,10 @@ const AUTHORED_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'authored',
     title: 'Skills',
     summary:
-      'Named instruction bodies attached to a session, each rendered as an escaped <skill> block.',
+      'Equipped skill metadata and load pointers, each rendered as an escaped index entry.',
     status: 'reference',
     statusNote:
-      'The live spawn path DOES resolve skills (execution-handlers joins public.skills) — this row claimed otherwise until 2026-09-22. Two rules can now remove one: the persona\'s `maxSkills` cap, and Jev\'s relevance cut when TM8_CONTEXT_POLICY is on. Both report what they took in manifest.droppedSkills, so a thinner persona is visible rather than merely smaller.',
+      'Equipped skills reach the prompt as escaped metadata and load pointers, never bodies. Missing or disabled entries are skipped. Serialized index byte drops and relevance cuts remain observable in manifest.droppedSkills; the effective set is recorded in work_session.state.skills.',
     rendering: 'pointer',
     source: 'packages/prompt/src/index.ts · composed at packages/execution/src/spawn/manifest.ts',
     injectedWhen: 'Inside <skills> on a v1 envelope, when the manifest carries any.',

@@ -334,6 +334,8 @@ describe.sequential('task assignment provenance (129)', () => {
     // a-la-carte (`apply([…])`), never `apply(migrationFiles())`, so this is a
     // FIRST apply of 194, not a second.
     database.apply(['194_drawing_kind.sql']);
+    // Current session projection includes the F3 effective-skill audit column.
+    database.apply(['199_session_skill_audit.sql']);
   }, 180_000);
 
   afterAll(async () => {

@@ -7,12 +7,12 @@
 // equipped twice, and when there is genuinely nothing to prefer.
 
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MAX_SKILLS, resolveSkills, type ResolvedSkillRow } from '../src/spawn/skills.js';
+import { resolveSkills, type ResolvedSkillRow } from '../src/spawn/skills.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
 function row(over: Partial<ResolvedSkillRow> & { entityId: string }): ResolvedSkillRow {
-  return { name: `skill-${over.entityId}`, body: `body-${over.entityId}`, depth: 0, ...over };
+  return { name: `skill-${over.entityId}`, description: `body-${over.entityId}`, depth: 0, ...over };
 }
 
 describe('resolveSkills', () => {
@@ -29,27 +29,27 @@ describe('resolveSkills', () => {
     expect(resolved.skills.map((s) => s.name)).toEqual(['Own', 'Parent', 'Root']);
   });
 
-  it('carries the skill body through — the whole point of the feature', () => {
-    const resolved = resolveSkills([row({ entityId: 'a', name: 'Review', body: '# how to review' })]);
-    expect(resolved.skills).toEqual([{ name: 'Review', body: '# how to review' }]);
+  it('carries cached description metadata through', () => {
+    const resolved = resolveSkills([row({ entityId: 'a', name: 'Review', description: '# how to review' })]);
+    expect(resolved.skills).toMatchObject([{ name: 'Review', description: '# how to review' }]);
   });
 
   it('lets a nearer skill shadow a same-named ancestor skill', () => {
     // The specific persona beats the general one — this is what makes nesting
     // useful rather than merely additive.
     const resolved = resolveSkills([
-      row({ entityId: 'child-review', name: 'Review', body: 'child version', depth: 0 }),
-      row({ entityId: 'parent-review', name: 'Review', body: 'parent version', depth: 1 }),
+      row({ entityId: 'child-review', name: 'Review', description: 'child version', depth: 0 }),
+      row({ entityId: 'parent-review', name: 'Review', description: 'parent version', depth: 1 }),
     ]);
-    expect(resolved.skills).toEqual([{ name: 'Review', body: 'child version' }]);
+    expect(resolved.skills).toMatchObject([{ name: 'Review', description: 'child version' }]);
   });
 
   it('treats case and surrounding whitespace as the same name when shadowing', () => {
     const resolved = resolveSkills([
-      row({ entityId: 'child', name: 'code review', body: 'child', depth: 0 }),
-      row({ entityId: 'parent', name: '  Code Review  ', body: 'parent', depth: 1 }),
+      row({ entityId: 'child', name: 'code review', description: 'child', depth: 0 }),
+      row({ entityId: 'parent', name: '  Code Review  ', description: 'parent', depth: 1 }),
     ]);
-    expect(resolved.skills).toEqual([{ name: 'code review', body: 'child' }]);
+    expect(resolved.skills).toMatchObject([{ name: 'code review', description: 'child' }]);
   });
 
   it('counts the SAME skill equipped at two levels once, not as a collision', () => {
@@ -94,29 +94,12 @@ describe('resolveSkills', () => {
     expect(backward).toEqual(forward);
   });
 
-  it('caps the effective set and REPORTS what it dropped', () => {
-    // Silent truncation is the failure this guards: a persona with 70 skills
-    // would otherwise spawn looking exactly like one correctly holding 64.
-    const many = Array.from({ length: DEFAULT_MAX_SKILLS + 6 }, (_, i) =>
-      row({ entityId: `s${i}`, name: `S${i}`, depth: i }),
-    );
-    const resolved = resolveSkills(many);
-    expect(resolved.skills).toHaveLength(DEFAULT_MAX_SKILLS);
-    expect(resolved.dropped).toHaveLength(6);
-    expect(resolved.dropped[0]).toBe(`S${DEFAULT_MAX_SKILLS}`);
+  it('has no count cap, including more than 64 inherited entries', () => {
+    const resolved = resolveSkills(Array.from({ length: 100 }, (_, i) => row({ entityId: `s${i}`, depth: i })));
+    expect(resolved.skills).toHaveLength(100);
+    expect(resolved.dropped).toEqual([]);
   });
 
-  it('drops the FURTHEST skills, keeping the nearest', () => {
-    const resolved = resolveSkills(
-      [
-        row({ entityId: 'far', name: 'Far', depth: 9 }),
-        row({ entityId: 'near', name: 'Near', depth: 0 }),
-      ],
-      { maxSkills: 1 },
-    );
-    expect(resolved.skills.map((s) => s.name)).toEqual(['Near']);
-    expect(resolved.dropped).toEqual(['Far']);
-  });
 });
 
 // --- the projection into the manifest the CLI actually reads ----------------
@@ -164,10 +147,10 @@ describe('composeManifest — skills', () => {
     const manifest = composeManifest({
       sessionId: 'sess-1',
       request,
-      context: context([{ name: 'Review', body: '# how to review' }]),
+      context: context([{ entityId: 's1', name: 'Review', description: '# how to review', provider: 'tm8', level: 'space', loadPointer: 'tm8 entity get s1', native: false }]),
       ...manifestFixtures(),
     });
-    expect(manifest.skills).toEqual([{ name: 'Review', body: '# how to review' }]);
+    expect(manifest.skills).toMatchObject([{ name: 'Review', description: '# how to review' }]);
   });
 
   it('still emits [] when the context carries no skills', () => {
