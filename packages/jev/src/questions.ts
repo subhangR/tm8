@@ -128,6 +128,8 @@ export const ROUTING_QUESTIONS: JevQuestionSet = {
 /** The task facts Jev routes on. Every field is already in `SpawnContext.tasks`. */
 export interface TaskFacts {
   id?: string;
+  /** Usage attribution only; never added to routing state. */
+  spaceId?: string;
   title: string;
   description: string;
   priority?: string;

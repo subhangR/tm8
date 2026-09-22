@@ -13,7 +13,7 @@
 // only its verdict travels. The manifest's redaction pass would catch a leak,
 // but the design is to have nothing to catch.
 
-import { JevClient, jevKeyFromEnv } from './client.js';
+import { JevClient, jevKeyFromEnv, type JevClientOptions } from './client.js';
 import type { JevLogger } from './primitives.js';
 import {
   DEFAULT_ROUTING_POLICY,
@@ -45,6 +45,8 @@ export function routingPolicyFromEnv(env: NodeJS.ProcessEnv): RoutingPolicy {
 }
 
 export interface RoutingAdvisorFromEnvOptions {
+  /** Shared node ledger/transport options; credentials still come from env. */
+  clientOptions?: Omit<JevClientOptions, 'apiKey'>;
   env?: NodeJS.ProcessEnv;
   logger?: JevLogger;
   /** tm8's own fallback, so the counterfactual baseline matches DEFAULT_MODEL. */
@@ -80,7 +82,7 @@ export function routingAdvisorFromEnv(
 
   options.logger?.info?.('jev: model routing is active', { policy });
   return new JevRoutingAdvisor({
-    client: new JevClient({ apiKey }),
+    client: new JevClient({ dataDir: env.TM8_DATA_DIR, ...options.clientOptions, apiKey }),
     policy,
     ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
@@ -113,6 +115,7 @@ export function contextPolicyFromEnv(env: NodeJS.ProcessEnv): ContextPolicy {
 }
 
 export interface ContextAdvisorFromEnvOptions {
+  clientOptions?: Omit<JevClientOptions, 'apiKey'>;
   env?: NodeJS.ProcessEnv;
   logger?: JevLogger;
   budget?: ContextBudget;
@@ -152,7 +155,7 @@ export function contextAdvisorFromEnv(
 
   options.logger?.info?.('jev: context engineering is active', { bytes: bytes ?? 'default' });
   return new JevContextAdvisor({
-    client: new JevClient({ apiKey }),
+    client: new JevClient({ dataDir: env.TM8_DATA_DIR, ...options.clientOptions, apiKey }),
     budget: { ...options.budget, ...(bytes ? { bytes } : {}) },
     ...(options.logger ? { logger: options.logger } : {}),
   });
@@ -185,6 +188,7 @@ export function rosterPolicyFromEnv(env: NodeJS.ProcessEnv): RosterPolicy {
 }
 
 export interface RosterAdvisorFromEnvOptions {
+  clientOptions?: Omit<JevClientOptions, 'apiKey'>;
   env?: NodeJS.ProcessEnv;
   logger?: JevLogger;
 }
@@ -211,7 +215,7 @@ export function rosterAdvisorFromEnv(
 
   options.logger?.info?.('jev: teammate selection is active');
   return new JevRosterAdvisor({
-    client: new JevClient({ apiKey }),
+    client: new JevClient({ dataDir: env.TM8_DATA_DIR, ...options.clientOptions, apiKey }),
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

@@ -17,7 +17,8 @@
 
 import type { JevQuestionSet } from './primitives.js';
 import { isScore } from './primitives.js';
-import type { JevClient } from './client.js';
+import type { JevClient, JevCallFailure } from './client.js';
+import type { JevUsageContext } from './usage.js';
 
 export interface RankCandidate {
   readonly id: string;
@@ -37,6 +38,8 @@ export interface RankResult {
   readonly ranked: readonly RankedCandidate[];
   readonly latencyMs: number;
   readonly inputTokens: number;
+  readonly jevModel: string | null;
+  readonly jevModels: readonly string[];
 }
 
 /**
@@ -75,47 +78,49 @@ function relevanceQuestions(
  * chunks is by score, which is comparable because every candidate is scored
  * against the same levels and the same state.
  */
-export async function rankByRelevance(
-  client: JevClient,
-  input: {
-    task: Record<string, unknown>;
-    candidates: readonly RankCandidate[];
-    /** Noun used in the question text: 'memory', 'skill', 'teammate'. */
-    subject: string;
-    chunk?: number;
-  },
-): Promise<RankResult | null> {
-  if (input.candidates.length === 0) {
-    return { ranked: [], latencyMs: 0, inputTokens: 0 };
-  }
-  const chunkSize = input.chunk ?? 60;
-  const chunks: RankCandidate[][] = [];
-  for (let i = 0; i < input.candidates.length; i += chunkSize) {
-    chunks.push(input.candidates.slice(i, i + chunkSize));
-  }
+export interface RankInput {
+  task: Record<string, unknown>;
+  candidates: readonly RankCandidate[];
+  subject: string;
+  chunk?: number;
+  usage?: JevUsageContext;
+}
 
+export async function rankByRelevance(client: JevClient, input: RankInput): Promise<RankResult | null> {
+  const result = await rankByRelevanceDetailed(client, input);
+  return result.ok ? result : null;
+}
+
+export async function rankByRelevanceDetailed(
+  client: JevClient, input: RankInput,
+): Promise<(RankResult & { ok: true }) | JevCallFailure> {
+  const chunkSize = Math.max(1, Math.floor(input.chunk ?? 60));
   const out: RankedCandidate[] = [];
   let latency = 0;
   let tokens = 0;
-
-  for (const group of chunks) {
-    const call = await client.ask({ task: input.task }, relevanceQuestions(group, input.subject));
-    if (!call) return null;
+  const models = new Set<string>();
+  let unknownModel = false;
+  for (let i = 0; i < input.candidates.length; i += chunkSize) {
+    const group = input.candidates.slice(i, i + chunkSize);
+    const call = await client.askDetailed({ task: input.task }, relevanceQuestions(group, input.subject), {
+      usage: input.usage,
+    });
     latency += call.latencyMs;
+    if (!call.ok) return { ...call, latencyMs: latency, inputTokens: tokens + call.inputTokens };
     tokens += call.response.usage?.input_tokens ?? 0;
-    group.forEach((c, i) => {
-      const a = call.response.answers[`c${i}`];
-      if (!isScore(a)) return;
-      out.push({ ...c, score: a.score, confidence: a.confidence, rank: 0 });
+    if (call.jevModel) models.add(call.jevModel);
+    else unknownModel = true;
+    group.forEach((c, j) => {
+      const answer = call.response.answers[`c${j}`];
+      if (isScore(answer)) out.push({ ...c, score: answer.score, confidence: answer.confidence, rank: 0 });
     });
   }
-
-  // A candidate whose answer did not parse is dropped from the RANKING, never
-  // from the caller's list — the caller keeps its own rows and uses this only
-  // to order them.
   out.sort((a, b) => b.score - a.score);
-  const ranked = out.map((c, i) => ({ ...c, rank: i + 1 }));
-  return { ranked, latencyMs: latency, inputTokens: tokens };
+  return {
+    ok: true, ranked: out.map((c, i) => ({ ...c, rank: i + 1 })),
+    latencyMs: latency, inputTokens: tokens, jevModels: [...models],
+    jevModel: !unknownModel && models.size === 1 ? [...models][0]! : null,
+  };
 }
 
 /**

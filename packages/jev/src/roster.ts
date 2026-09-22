@@ -22,7 +22,8 @@ import type { JevClient } from './client.js';
 import type { JevLogger } from './primitives.js';
 import type { TaskFacts } from './questions.js';
 import { routingState } from './questions.js';
-import { rankByRelevance, type RankCandidate } from './rerank.js';
+import { rankByRelevanceDetailed, type RankCandidate } from './rerank.js';
+import { failureActivation, type JevActivationResult } from './activation.js';
 
 /** One teammate, as the roster already describes them. */
 export interface TeammateCandidate {
@@ -47,6 +48,8 @@ export interface TeammateFit {
 }
 
 export interface RosterVerdict {
+  readonly jevModel: string | null;
+  readonly jevModels: readonly string[];
   /** Best FIT that is also available, or null when nobody free fits. */
   readonly pick: TeammateFit | null;
   /** Best fit overall, available or not. Equal to `pick` on a free roster. */
@@ -78,6 +81,7 @@ const JEV_USD_PER_INPUT_TOKEN = 42 / 1_000_000_000;
 export interface RosterAdvisorPort {
   /** `null` = no opinion. The caller dispatches exactly as it does today. */
   choose(task: TaskFacts | null, roster: readonly TeammateCandidate[]): Promise<RosterVerdict | null>;
+  chooseDetailed?(task: TaskFacts | null, roster: readonly TeammateCandidate[]): Promise<JevActivationResult<RosterVerdict, RosterVerdict>>;
 }
 
 export const nullRosterAdvisor: RosterAdvisorPort = {
@@ -132,19 +136,22 @@ export class JevRosterAdvisor implements RosterAdvisorPort {
     task: TaskFacts | null,
     roster: readonly TeammateCandidate[],
   ): Promise<RosterVerdict | null> {
-    if (!task || !(task.title || task.description)) return null;
-    if (roster.length === 0) return null;
+    return (await this.chooseDetailed(task, roster)).value;
+  }
+
+  async chooseDetailed(
+    task: TaskFacts | null, roster: readonly TeammateCandidate[],
+  ): Promise<JevActivationResult<RosterVerdict, RosterVerdict>> {
+    if (!task || !(task.title || task.description) || roster.length === 0) return { value: null, activation: null };
 
     const candidates: RankCandidate[] = roster.map((t) => ({ id: t.id, text: describeTeammate(t) }));
-    const result = await rankByRelevance(this.client, {
+    const result = await rankByRelevanceDetailed(this.client, {
+      usage: { caller: 'roster', subjectId: task.id, spaceId: task.spaceId },
       task: routingState(task),
       candidates,
       subject: 'teammate',
     });
-    if (!result) {
-      this.logger?.warn?.('jev: roster ranking failed; dispatching unchanged', { taskId: task.id });
-      return null;
-    }
+    if (!result.ok) return { value: null, activation: failureActivation('roster', result) };
 
     const byId = new Map(roster.map((t) => [t.id, t]));
     const ranked: TeammateFit[] = result.ranked.map((r) => ({
@@ -168,7 +175,9 @@ export class JevRosterAdvisor implements RosterAdvisorPort {
       latencyMs: result.latencyMs,
     });
 
-    return {
+    const verdict: RosterVerdict = {
+      jevModel: result.jevModel,
+      jevModels: result.jevModels,
       pick,
       best,
       ranked,
@@ -178,6 +187,7 @@ export class JevRosterAdvisor implements RosterAdvisorPort {
       noFit,
       summary: summarise(pick, best, ranked, noFit),
     };
+    return { value: verdict, activation: verdict };
   }
 }
 

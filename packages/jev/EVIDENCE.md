@@ -55,8 +55,12 @@ than one written by the same hand as the code.
 | input tokens | 103,774 | 103,774 |
 | cost | $0.0044 | $0.0044 |
 
-Combined: median 341 ms, p90 412 ms, max 1629 ms — inside the 1.5 s budget,
-which is the number that justified it.
+Combined: median 341 ms, p90 412 ms, max 1629 ms. The maximum exceeded
+the former 1500 ms per-attempt timeout by 129 ms; the earlier claim that it
+was inside that budget was incorrect. The client now defaults to a 2000 ms
+per-attempt timeout, one retry, and a hard 5000 ms total budget covering
+fetch, response-body parsing and all retries. These are configured bounds,
+not a claim that the historical measurements exercised the new deadline.
 
 **Run-to-run agreement:** 95% same final model, 96% same tier, 98% same harness.
 Three tasks moved; two by one rung inside the same provider, one across the

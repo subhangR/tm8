@@ -38,10 +38,17 @@ import type { JevClient } from './client.js';
 import type { JevLogger } from './primitives.js';
 import type { TaskFacts } from './questions.js';
 import { routingState } from './questions.js';
-import { rankByRelevance, type RankCandidate, type RankedCandidate } from './rerank.js';
+import { rankByRelevanceDetailed, type RankCandidate, type RankedCandidate, type RankResult } from './rerank.js';
+import { failureActivation, type JevActivationResult } from './activation.js';
+
+export type ContextSource = 'persona' | 'task' | 'sheet' | 'jev';
 
 /** One memory or one skill, as the spawn path already holds it. */
 export interface ContextCandidate {
+  readonly entityId?: string | null;
+  readonly entityVersion?: number | null;
+  readonly widened?: boolean;
+  readonly source?: ContextSource;
   readonly id: string;
   /** What Jev judges, and what is measured against the byte budget. */
   readonly text: string;
@@ -107,6 +114,10 @@ export const DEFAULT_CONTEXT_BUDGET: Required<ContextBudget> = {
 
 /** One candidate's fate, and why. This is the audit trail, not a debug log. */
 export interface ContextDecision {
+  readonly entityId: string | null;
+  readonly entityVersion: number | null;
+  readonly widened: boolean;
+  readonly source: ContextSource;
   readonly id: string;
   readonly name: string | null;
   readonly kept: boolean;
@@ -138,7 +149,9 @@ export interface ContextGroupPlan {
  */
 export interface ContextActivation {
   readonly at: string;
-  readonly jevModel: string;
+  readonly jevModel: string | null;
+  /** Concrete versions across groups/chunks; jevModel is null if mixed or unknown. */
+  readonly jevModels: readonly string[];
   readonly latencyMs: number;
   readonly jevInputTokens: number;
   readonly jevCostUsd: number;
@@ -175,6 +188,7 @@ export interface ContextAdvisorPort {
    * which is today's behaviour exactly.
    */
   plan(task: TaskFacts | null, intent: ContextIntent): Promise<ContextPlan | null>;
+  planDetailed?(task: TaskFacts | null, intent: ContextIntent): Promise<JevActivationResult<ContextPlan, ContextActivation>>;
 }
 
 /** The default. Wired everywhere, opinionated nowhere. */
@@ -258,6 +272,10 @@ export function selectByRelevance(
     const r = byId.get(c.id);
     return {
       id: c.id,
+      entityId: c.entityId ?? null,
+      entityVersion: c.entityVersion ?? null,
+      widened: c.widened ?? false,
+      source: c.source ?? 'persona',
       name: c.name ?? null,
       kept: keep.has(c.id),
       score: r?.score ?? 0,
@@ -358,13 +376,18 @@ export class JevContextAdvisor implements ContextAdvisorPort {
   }
 
   async plan(task: TaskFacts | null, intent: ContextIntent): Promise<ContextPlan | null> {
-    if (!task || !(task.title || task.description)) return null;
+    return (await this.planDetailed(task, intent)).value;
+  }
+
+  async planDetailed(task: TaskFacts | null, intent: ContextIntent): Promise<JevActivationResult<ContextPlan, ContextActivation>> {
+    if (!task || !(task.title || task.description)) return { value: null, activation: null };
     const memories = intent.memories.filter((c) => c.text.trim());
     const skills = intent.skills.filter((c) => c.text.trim());
     const graph = (intent.graph ?? []).filter((c) => c.text.trim());
-    if (memories.length === 0 && skills.length === 0 && graph.length === 0) return null;
+    if (memories.length === 0 && skills.length === 0 && graph.length === 0) return { value: null, activation: null };
 
     const state = routingState(task);
+    const usage = { caller: 'context' as const, subjectId: task.id, spaceId: task.spaceId };
     // Three subjects, three question sets, but the SAME small state — asking
     // them separately costs one round trip and re-sends a few hundred tokens of
     // task. Asking them together would blur the question wording ("this memory"
@@ -374,20 +397,26 @@ export class JevContextAdvisor implements ContextAdvisorPort {
     const graphSubject = intent.graphSubject ?? 'entity read from the work graph';
     const [mRank, sRank, gRank] = await Promise.all([
       memories.length
-        ? rankByRelevance(this.client, { task: state, candidates: asRank(memories), subject: 'memory' })
+        ? rankByRelevanceDetailed(this.client, { usage, task: state, candidates: asRank(memories), subject: 'memory' })
         : empty(),
       skills.length
-        ? rankByRelevance(this.client, { task: state, candidates: asRank(skills), subject: 'skill' })
+        ? rankByRelevanceDetailed(this.client, { usage, task: state, candidates: asRank(skills), subject: 'skill' })
         : empty(),
       graph.length
-        ? rankByRelevance(this.client, { task: state, candidates: asRank(graph), subject: graphSubject })
+        ? rankByRelevanceDetailed(this.client, { usage, task: state, candidates: asRank(graph), subject: graphSubject })
         : empty(),
     ]);
-    if (!mRank || !sRank || !gRank) {
-      this.logger?.warn?.('jev: context ranking failed; keeping every candidate', {
-        taskId: task.id,
-      });
-      return null;
+    if (!mRank.ok || !sRank.ok || !gRank.ok) {
+      const results = [mRank, sRank, gRank];
+      const failed = results.find((result) => !result.ok)!;
+      if (!failed.ok) return {
+        value: null,
+        activation: failureActivation('context', {
+          ...failed, latencyMs: Math.max(...results.map((r) => r.latencyMs)),
+          inputTokens: results.reduce((n, r) => n + r.inputTokens, 0),
+        }, this.now().toISOString()),
+      };
+      return { value: null, activation: null };
     }
 
     const [mBytes = 0, sBytes = 0, gBytes = 0] = splitBudgetAcross(
@@ -403,9 +432,12 @@ export class JevContextAdvisor implements ContextAdvisorPort {
     const bytesBefore = plans.reduce((n, pl) => n + pl.bytesBefore, 0);
     const jevInputTokens = mRank.inputTokens + sRank.inputTokens + gRank.inputTokens;
 
+    const ranks = [mRank, sRank, gRank].filter((r) => r.ranked.length > 0);
+    const models = [...new Set(ranks.flatMap((r) => r.jevModels))];
     const activation: ContextActivation = {
       at: this.now().toISOString(),
-      jevModel: 'jev-latest',
+      jevModel: models.length === 1 && ranks.every((r) => r.jevModel !== null) ? models[0]! : null,
+      jevModels: models,
       latencyMs: Math.max(mRank.latencyMs, sRank.latencyMs, gRank.latencyMs),
       jevInputTokens,
       jevCostUsd: jevInputTokens * JEV_USD_PER_INPUT_TOKEN,
@@ -426,10 +458,13 @@ export class JevContextAdvisor implements ContextAdvisorPort {
     });
 
     return {
+      value: {
+        activation,
+        keepMemoryIds: memories.length ? mPlan.keptIds : null,
+        keepSkillIds: skills.length ? sPlan.keptIds : null,
+        keepGraphIds: graph.length ? gPlan.keptIds : null,
+      },
       activation,
-      keepMemoryIds: memories.length ? mPlan.keptIds : null,
-      keepSkillIds: skills.length ? sPlan.keptIds : null,
-      keepGraphIds: graph.length ? gPlan.keptIds : null,
     };
   }
 }
@@ -441,8 +476,8 @@ function asRank(candidates: readonly ContextCandidate[]): RankCandidate[] {
   return candidates.map((c) => ({ id: c.id, text: c.text.slice(0, 1200) }));
 }
 
-async function empty(): Promise<{ ranked: RankedCandidate[]; latencyMs: number; inputTokens: number }> {
-  return { ranked: [], latencyMs: 0, inputTokens: 0 };
+async function empty(): Promise<RankResult & { ok: true }> {
+  return { ok: true, ranked: [], latencyMs: 0, inputTokens: 0, jevModel: null, jevModels: [] };
 }
 
 function summarise(

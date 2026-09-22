@@ -21,6 +21,8 @@ import type { JevLogger } from './primitives.js';
 import { DEFAULT_WEIGHTS, verdictFrom, type RoutingWeights } from './policy.js';
 import { ROUTING_QUESTIONS, routingState, type TaskFacts } from './questions.js';
 import { JevClient } from './client.js';
+import { failureActivation, type JevActivationResult } from './activation.js';
+import { jevCallCostUsd } from './tiers.js';
 import { projectSavings, type SavingsEstimate } from './savings.js';
 
 export type RoutingPolicy = 'off' | 'advise' | 'auto';
@@ -51,7 +53,7 @@ export interface RoutingActivation {
   readonly mode: ActivationMode;
   readonly policy: RoutingPolicy;
   /** Jev's concrete version, echoed by the API (e.g. `jev-1.13.0`). */
-  readonly jevModel: string;
+  readonly jevModel: string | null;
   readonly latencyMs: number;
   readonly jevInputTokens: number;
   readonly jevCostUsd: number;
@@ -88,6 +90,7 @@ export interface RoutingAdvisorPort {
    * malformed answers, missing key. Callers must treat it as "carry on".
    */
   advise(task: TaskFacts | null, intent: LaunchIntent, mode?: ActivationMode): Promise<RoutingAdvice | null>;
+  adviseDetailed?(task: TaskFacts | null, intent: LaunchIntent, mode?: ActivationMode): Promise<JevActivationResult<RoutingAdvice, RoutingActivation>>;
 }
 
 /** The default. Wired everywhere, opinionated nowhere. */
@@ -129,20 +132,25 @@ export class JevRoutingAdvisor implements RoutingAdvisorPort {
     intent: LaunchIntent,
     mode: ActivationMode = 'inline',
   ): Promise<RoutingAdvice | null> {
-    if (this.policy === 'off') return null;
+    return (await this.adviseDetailed(task, intent, mode)).value;
+  }
+
+  async adviseDetailed(
+    task: TaskFacts | null, intent: LaunchIntent, mode: ActivationMode = 'inline',
+  ): Promise<JevActivationResult<RoutingAdvice, RoutingActivation>> {
+    if (this.policy === 'off') return { value: null, activation: null };
     // No task means nothing to route ON. A bare session with no assignment is
     // exactly the case where the persona's default is the best information
     // anyone has, so Jev declines rather than guessing from an empty state.
-    if (!task || !(task.title || task.description)) return null;
+    if (!task || !(task.title || task.description)) return { value: null, activation: null };
 
-    const call = await this.client.ask(routingState(task), ROUTING_QUESTIONS);
-    if (!call) return null;
-
-    const verdict = verdictFrom(call.response, this.weights);
-    if (!verdict) {
-      this.logger?.warn?.('jev: answers did not parse into a verdict', { taskId: task.id });
-      return null;
-    }
+    const call = await this.client.askDetailed(routingState(task), ROUTING_QUESTIONS, {
+      usage: { caller: 'routing', subjectId: task.id, spaceId: task.spaceId },
+      validateResponse: (response) => verdictFrom(response, this.weights) !== null,
+    });
+    if (!call.ok) return { value: null, activation: failureActivation('routing', call, this.now().toISOString()) };
+    // The parser already accepted this response before the usage row was written.
+    const verdict = verdictFrom(call.response, this.weights)!;
 
     const humanChose = Boolean(intent.requestedModel?.trim());
     const baselineModel =
@@ -168,10 +176,10 @@ export class JevRoutingAdvisor implements RoutingAdvisorPort {
       at: this.now().toISOString(),
       mode,
       policy: this.policy,
-      jevModel: call.response.model,
+      jevModel: call.jevModel,
       latencyMs: call.latencyMs,
       jevInputTokens,
-      jevCostUsd: (savings?.jevCostUsd ?? 0),
+      jevCostUsd: jevCallCostUsd(jevInputTokens),
       verdict,
       baselineModel,
       appliedModel,
@@ -191,11 +199,11 @@ export class JevRoutingAdvisor implements RoutingAdvisorPort {
     });
 
     return {
-      verdict,
+      value: {
+        verdict, activation, model: applies ? verdict.model : null,
+        agentTool: applies ? verdict.agentTool : null, effort: applies ? verdict.effort : null,
+      },
       activation,
-      model: applies ? verdict.model : null,
-      agentTool: applies ? verdict.agentTool : null,
-      effort: applies ? verdict.effort : null,
     };
   }
 }
