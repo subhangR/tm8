@@ -316,6 +316,21 @@ export type CoreEntityState =
        * as "no" for a write capability.
        */
       driveMode?: WorkSessionDriveMode;
+      /**
+       * WHEN A HUMAN LAST SET THIS SESSION'S DIALS, OR null IF NOBODY HAS — 202.
+       * Only `set_work_session_sharing` writes it.
+       *
+       * It matters only on an agent-launched session (`createdBy` a teammate).
+       * There, 075 lets any active member act as the teammate, and while this is
+       * null that arm still opens BOTH gates: every member may watch and type,
+       * whatever the two dials above say. Once it is set the dials hold, for
+       * every member. On a member-launched session the dials always held, and
+       * this is bookkeeping.
+       *
+       * OPTIONAL: a pre-202 node omits it, and that node is enforcing the
+       * null case for every session — so absence and null read the same way.
+       */
+      sharingSetAt?: string | null;
       startedAt: string | null; exitedAt: string | null;
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client

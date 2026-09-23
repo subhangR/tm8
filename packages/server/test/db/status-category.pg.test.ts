@@ -294,6 +294,13 @@ describe.sequential('147 — entities.status_category', () => {
     // `internal.kind_seeds_done`, which no assertion here reads.
     database.apply(['197_skill_filesystem_references.sql']);
     database.apply(['199_session_skill_audit.sql']);
+    // 202, same shape: `entity-read.ts` and the projector select
+    // `ws.sharing_set_at`. It adds that one nullable column, a guard trigger
+    // that fires only when the column itself changes (a spawn leaves it null),
+    // and `create or replace`s `grant_stream_attach` and
+    // `set_work_session_sharing` at their 187 signatures. No assertion here
+    // reads any of them.
+    database.apply(['202_work_session_sharing_provenance.sql']);
   }, 180_000);
 
   afterAll(async () => {

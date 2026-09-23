@@ -448,6 +448,46 @@ describe('session spawn', () => {
   });
 });
 
+// ── session share ───────────────────────────────────────────────────────────
+
+describe('session share', () => {
+  const shared = () => {
+    reply = {
+      status: 200,
+      body: { data: { entity: { id: SESSION, kind: 'work_session' }, patches: [] }, requestId: 'req_t' },
+    };
+  };
+
+  it('sends only the dial it was given — the server coalesces the other', async () => {
+    shared();
+    const r = await drive(['session', 'share', SESSION, '--drive', 'space']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.pathname).toBe(bindPath('execution.sessions.share', { id: SESSION }));
+    expect(Object.keys(body()).sort()).toEqual(['clientMutationId', 'driveMode']);
+    expect(r.stdout).toContain('type: everyone in the space');
+    expect(r.stdout).not.toContain('watch:');
+  });
+
+  // Since 202 a narrowing HOLDS on an agent-launched session, and closes it to
+  // the caller too (no launcher column). The note says so; before 202 it said
+  // the opposite — that 075 kept the session open to every member.
+  it('says a narrowing binds the caller too on an agent-launched session', async () => {
+    shared();
+    const r = await drive(['session', 'share', SESSION, '--share', 'none']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('watch: not shared');
+    expect(r.stdout).toContain('on an agent-launched session there is no owner to exempt');
+    expect(r.stdout).not.toContain('may still attach');
+  });
+
+  it('prints no note when nothing was narrowed', async () => {
+    shared();
+    const r = await drive(['session', 'share', SESSION, '--share', 'space', '--drive', 'space']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain('note:');
+  });
+});
+
 // ── session terminate ───────────────────────────────────────────────────────
 
 describe('session terminate', () => {

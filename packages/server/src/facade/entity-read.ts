@@ -121,7 +121,7 @@ export const ENTITY_COLUMNS = `
   col.collection_type,
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
   ws.model as ws_model, ws.share_mode as ws_share_mode,
-  ws.drive_mode as ws_drive_mode, ws.started_at as ws_started_at,
+  ws.drive_mode as ws_drive_mode, ws.sharing_set_at as ws_sharing_set_at, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
@@ -456,6 +456,7 @@ export interface EntityRow {
   ws_share_mode: string | null;
   /** 187. Optional so pre-187 row fixtures stay source-compatible. */
   ws_drive_mode?: string | null;
+  ws_sharing_set_at?: Date | string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_node_id: string | null;
@@ -1680,6 +1681,12 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         ...(row.ws_drive_mode === 'owner' || row.ws_drive_mode === 'space'
           ? { driveMode: row.ws_drive_mode }
           : {}),
+        // 202. Carried when the column was read — null is a fact here
+        // ("nobody has set the dials", so on an agent-launched session 075
+        // still opens both gates) — and omitted only when it was not.
+        ...(row.ws_sharing_set_at === undefined
+          ? {}
+          : { sharingSetAt: isoOrNull(row.ws_sharing_set_at) }),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
         // OMITTED, never defaulted, when the column has no value: the DTO

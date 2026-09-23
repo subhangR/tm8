@@ -1055,7 +1055,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 178 -> 181 (2026-09-23): 197, 198 and 199, the filesystem-skills migrations. MEASURED.
     // 181 -> 183 (2026-09-23, Jev lane F): 200_continue_a_session (#652, which
     // left this pin at 181 — main read 182 here) and 201_jev_runs. MEASURED.
-    expect(server.appliedMigrations.length).toBe(183);
+    // 183 -> 184 (2026-09-23): 202_work_session_sharing_provenance. MEASURED:
+    //   ls db/migrations/*.sql | wc -l -> 184, duplicate prefixes -> 0.
+    expect(server.appliedMigrations.length).toBe(184);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

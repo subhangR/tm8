@@ -821,20 +821,21 @@ function renderTerminated(dto: unknown): string {
  * would be an invention — so an omitted dial prints nothing about itself
  * rather than printing a guess at its unchanged value.
  *
- * IT NAMES THE SETTING, NOT THE OUTCOME. An earlier draft printed "owner only"
- * for both narrowed dials, and on an agent-launched session that was false:
- * `grant_stream_attach` opens on `internal.can_act_as(created_by, space)`, and
- * 075 makes that true for EVERY active member whenever `created_by` is a
- * team_member entity — 46% of the sessions on the live node. Setting the dial
- * to `none` does not close that arm, so a line claiming it did would tell the
- * user they were private when they were not. The dial is real for a
- * human-launched session and the gate is genuinely narrowed for everyone who
- * cannot act as the creator; what it cannot do is override 075.
+ * IT NAMES THE SETTING, NOT THE OUTCOME — and on an agent-launched session the
+ * outcome has one surprise worth saying out loud. `grant_stream_attach` opens on
+ * `internal.can_act_as(created_by, space)`, and 075 makes that true for EVERY
+ * active member whenever `created_by` is a team_member entity. Until 202 that
+ * arm outranked both dials, and this note used to warn that narrowing did not
+ * close it. Since 202 a dial set here holds (`work_sessions.sharing_set_at`
+ * retires the arm for that session), so the warning inverted: `created_by` is
+ * the persona, no column records which human pressed launch, and so there is
+ * no owner to exempt — `none` closes watching, and `owner` closes typing, to
+ * every member, the one who ran this command included.
  *
  * The note is printed on any narrowing rather than only when it bites, because
- * this result does not carry `createdBy` and a caveat that guesses wrong in the
- * reassuring direction is the one failure worth avoiding here. It is phrased as
- * a condition ("on an agent-launched session") so it is true either way.
+ * this result does not carry `createdBy` and guessing would be worse than a
+ * condition. It is phrased as one ("on an agent-launched session") so it is
+ * true either way.
  */
 function renderShared(
   dto: unknown,
@@ -852,7 +853,7 @@ function renderShared(
   const head = entity?.id === undefined ? 'shared' : String(entity.id);
   const narrowed = shareMode === 'none' || driveMode === 'owner';
   const note = narrowed
-    ? '\nnote: on an agent-launched session any space member may still attach as the agent (075).'
+    ? '\nnote: on an agent-launched session there is no owner to exempt, so this narrows it for you too.'
     : '';
   return `${head}  ${parts.join('  ')}${note}`;
 }
