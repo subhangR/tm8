@@ -1,0 +1,352 @@
+{
+  "schemaVersion": "tm8.entity-context.v1",
+  "root": {
+    "id": "00000000-0000-7000-8000-000000000d02",
+    "spaceId": "00000000-0000-7000-8000-000000000d01",
+    "kind": "task",
+    "title": "G13 anchor task",
+    "parentId": null,
+    "position": 1,
+    "visibility": "space",
+    "version": 3,
+    "activityAt": "2026-07-26T10:00:00.000Z",
+    "createdAt": "2026-07-26T09:00:00.000Z",
+    "updatedAt": "2026-07-26T10:00:00.000Z",
+    "deletedAt": null,
+    "createdBy": {
+      "id": "00000000-0000-7000-8000-000000000d04",
+      "kind": "member",
+      "displayName": "G13 Owner",
+      "avatar": null,
+      "role": "owner",
+      "isAgent": false
+    },
+    "counters": {
+      "likes": 0,
+      "dislikes": 0,
+      "stars": 0,
+      "points": 0,
+      "messages": 0,
+      "viewerReaction": null
+    },
+    "state": {
+      "kind": "task",
+      "status": "open",
+      "priority": "medium",
+      "axes": {},
+      "dueDate": null,
+      "startDate": null,
+      "assignees": [],
+      "assignments": [],
+      "acceptance": {
+        "total": 0,
+        "completed": 0
+      },
+      "completionGate": "none"
+    },
+    "badges": {},
+    "capabilities": {
+      "canEdit": true,
+      "canDelete": true,
+      "canAddChild": true,
+      "canLink": true,
+      "canPull": true,
+      "canReact": true,
+      "canGrantPoints": false,
+      "canComplete": true
+    },
+    "excerpt": "anchor"
+  },
+  "content": {
+    "excerpt": "anchor",
+    "source": "entity",
+    "truncated": false
+  },
+  "parents": [],
+  "children": [
+    {
+      "id": "00000000-0000-7000-8000-000000000d0a",
+      "spaceId": "00000000-0000-7000-8000-000000000d01",
+      "kind": "task",
+      "title": "G13 child",
+      "parentId": null,
+      "position": 1,
+      "visibility": "space",
+      "version": 3,
+      "activityAt": "2026-07-26T10:00:00.000Z",
+      "createdAt": "2026-07-26T09:00:00.000Z",
+      "updatedAt": "2026-07-26T10:00:00.000Z",
+      "deletedAt": null,
+      "createdBy": {
+        "id": "00000000-0000-7000-8000-000000000d04",
+        "kind": "member",
+        "displayName": "G13 Owner",
+        "avatar": null,
+        "role": "owner",
+        "isAgent": false
+      },
+      "counters": {
+        "likes": 0,
+        "dislikes": 0,
+        "stars": 0,
+        "points": 0,
+        "messages": 0,
+        "viewerReaction": null
+      },
+      "state": {
+        "kind": "task",
+        "status": "open",
+        "priority": "medium",
+        "axes": {},
+        "dueDate": null,
+        "startDate": null,
+        "assignees": [],
+        "assignments": [],
+        "acceptance": {
+          "total": 0,
+          "completed": 0
+        },
+        "completionGate": "none"
+      },
+      "badges": {},
+      "capabilities": {
+        "canEdit": true,
+        "canDelete": true,
+        "canAddChild": true,
+        "canLink": true,
+        "canPull": true,
+        "canReact": true,
+        "canGrantPoints": false,
+        "canComplete": true
+      },
+      "excerpt": "anchor"
+    }
+  ],
+  "edges": [
+    {
+      "id": "00000000-0000-7000-8000-000000000d0c",
+      "type": "relates_to",
+      "source": {
+        "id": "00000000-0000-7000-8000-000000000d02",
+        "spaceId": "00000000-0000-7000-8000-000000000d01",
+        "kind": "task",
+        "title": "G13 anchor task",
+        "parentId": null,
+        "position": 1,
+        "visibility": "space",
+        "version": 3,
+        "activityAt": "2026-07-26T10:00:00.000Z",
+        "createdAt": "2026-07-26T09:00:00.000Z",
+        "updatedAt": "2026-07-26T10:00:00.000Z",
+        "deletedAt": null,
+        "createdBy": {
+          "id": "00000000-0000-7000-8000-000000000d04",
+          "kind": "member",
+          "displayName": "G13 Owner",
+          "avatar": null,
+          "role": "owner",
+          "isAgent": false
+        },
+        "counters": {
+          "likes": 0,
+          "dislikes": 0,
+          "stars": 0,
+          "points": 0,
+          "messages": 0,
+          "viewerReaction": null
+        },
+        "state": {
+          "kind": "task",
+          "status": "open",
+          "priority": "medium",
+          "axes": {},
+          "dueDate": null,
+          "startDate": null,
+          "assignees": [],
+          "assignments": [],
+          "acceptance": {
+            "total": 0,
+            "completed": 0
+          },
+          "completionGate": "none"
+        },
+        "badges": {},
+        "capabilities": {
+          "canEdit": true,
+          "canDelete": true,
+          "canAddChild": true,
+          "canLink": true,
+          "canPull": true,
+          "canReact": true,
+          "canGrantPoints": false,
+          "canComplete": true
+        },
+        "excerpt": "anchor"
+      },
+      "target": {
+        "id": "00000000-0000-7000-8000-000000000d0a",
+        "spaceId": "00000000-0000-7000-8000-000000000d01",
+        "kind": "task",
+        "title": "G13 child",
+        "parentId": null,
+        "position": 1,
+        "visibility": "space",
+        "version": 3,
+        "activityAt": "2026-07-26T10:00:00.000Z",
+        "createdAt": "2026-07-26T09:00:00.000Z",
+        "updatedAt": "2026-07-26T10:00:00.000Z",
+        "deletedAt": null,
+        "createdBy": {
+          "id": "00000000-0000-7000-8000-000000000d04",
+          "kind": "member",
+          "displayName": "G13 Owner",
+          "avatar": null,
+          "role": "owner",
+          "isAgent": false
+        },
+        "counters": {
+          "likes": 0,
+          "dislikes": 0,
+          "stars": 0,
+          "points": 0,
+          "messages": 0,
+          "viewerReaction": null
+        },
+        "state": {
+          "kind": "task",
+          "status": "open",
+          "priority": "medium",
+          "axes": {},
+          "dueDate": null,
+          "startDate": null,
+          "assignees": [],
+          "assignments": [],
+          "acceptance": {
+            "total": 0,
+            "completed": 0
+          },
+          "completionGate": "none"
+        },
+        "badges": {},
+        "capabilities": {
+          "canEdit": true,
+          "canDelete": true,
+          "canAddChild": true,
+          "canLink": true,
+          "canPull": true,
+          "canReact": true,
+          "canGrantPoints": false,
+          "canComplete": true
+        },
+        "excerpt": "anchor"
+      },
+      "props": {},
+      "createdBy": {
+        "id": "00000000-0000-7000-8000-000000000d04",
+        "kind": "member",
+        "displayName": "G13 Owner",
+        "avatar": null,
+        "role": "owner",
+        "isAgent": false
+      },
+      "createdAt": "2026-07-26T09:10:00.000Z",
+      "updatedAt": "2026-07-26T09:10:00.000Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "00000000-0000-7000-8000-000000000d06",
+      "spaceId": "00000000-0000-7000-8000-000000000d01",
+      "kind": "message",
+      "title": "a durable message",
+      "parentId": null,
+      "position": 1,
+      "visibility": "space",
+      "version": 3,
+      "activityAt": "2026-07-26T10:00:00.000Z",
+      "createdAt": "2026-07-26T09:00:00.000Z",
+      "updatedAt": "2026-07-26T10:00:00.000Z",
+      "deletedAt": null,
+      "createdBy": {
+        "id": "00000000-0000-7000-8000-000000000d04",
+        "kind": "member",
+        "displayName": "G13 Owner",
+        "avatar": null,
+        "role": "owner",
+        "isAgent": false
+      },
+      "counters": {
+        "likes": 0,
+        "dislikes": 0,
+        "stars": 0,
+        "points": 0,
+        "messages": 0,
+        "viewerReaction": null
+      },
+      "state": {
+        "kind": "message",
+        "anchorId": "00000000-0000-7000-8000-000000000d02",
+        "rootMessageId": null,
+        "author": {
+          "id": "00000000-0000-7000-8000-000000000d05",
+          "kind": "team_member",
+          "displayName": "G13 Agent",
+          "avatar": null,
+          "role": null,
+          "ownerMemberId": "00000000-0000-7000-8000-000000000d04",
+          "isAgent": true
+        },
+        "messageBatchId": "batch-g13-1",
+        "editedAt": null,
+        "redactedAt": null
+      },
+      "badges": {},
+      "capabilities": {
+        "canEdit": false,
+        "canDelete": false,
+        "canAddChild": false,
+        "canLink": true,
+        "canPull": false,
+        "canReact": true,
+        "canGrantPoints": false,
+        "canComplete": false
+      },
+      "excerpt": "a durable message",
+      "content": {
+        "kind": "message",
+        "body": "a durable message",
+        "mentions": [],
+        "attachments": []
+      },
+      "replyCount": 0,
+      "lastReplyAt": null,
+      "replyParticipants": []
+    }
+  ],
+  "actions": [
+    {
+      "id": "action:entities.get:g13",
+      "label": "entities get",
+      "kind": "navigate",
+      "operation": "entities.get",
+      "targetEntityId": "00000000-0000-7000-8000-000000000d02",
+      "targetVersion": 3,
+      "capabilityEpoch": "cap:g13",
+      "authzTarget": "entity",
+      "exposure": "public",
+      "helpRef": "tm8://help/operation/entities.get"
+    }
+  ],
+  "provenance": {
+    "operation": "entities.context",
+    "fetchedAt": "2026-07-26T12:00:00.000Z",
+    "eventSeq": 4211
+  },
+  "cursors": {
+    "children": null,
+    "messages": null,
+    "activity": "eyJ2IjoyLCJrIjpbIjY2OWU5M2FiM2FjOTg1YjdlMDc5YWY2YzhkYmM5NGJjMmEwZmQ0ZDBiZGRkNzg2NmEyZmE1MGUxZmUyNmExNWUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
+  },
+  "byteSize": 6227,
+  "truncated": false
+}

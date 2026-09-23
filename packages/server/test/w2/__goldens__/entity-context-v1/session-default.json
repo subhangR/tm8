@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "tm8.entity-context.v1",
+  "root": {
+    "id": "00000000-0000-7000-8000-000000000d03",
+    "spaceId": "00000000-0000-7000-8000-000000000d01",
+    "kind": "work_session",
+    "title": "G13 session",
+    "parentId": null,
+    "position": 1,
+    "visibility": "space",
+    "version": 3,
+    "activityAt": "2026-07-26T10:00:00.000Z",
+    "createdAt": "2026-07-26T09:00:00.000Z",
+    "updatedAt": "2026-07-26T10:00:00.000Z",
+    "deletedAt": null,
+    "createdBy": {
+      "id": "00000000-0000-7000-8000-000000000d04",
+      "kind": "member",
+      "displayName": "G13 Owner",
+      "avatar": null,
+      "role": "owner",
+      "isAgent": false
+    },
+    "counters": {
+      "likes": 0,
+      "dislikes": 0,
+      "stars": 0,
+      "points": 0,
+      "messages": 0,
+      "viewerReaction": null
+    },
+    "state": {
+      "kind": "work_session",
+      "status": "running",
+      "agentTool": null,
+      "model": null,
+      "shareMode": "space",
+      "startedAt": "2026-07-26T09:00:00.000Z",
+      "exitedAt": null,
+      "checkoutBranch": null,
+      "endedKind": null,
+      "endedReason": null,
+      "teammate": null
+    },
+    "badges": {},
+    "capabilities": {
+      "canEdit": true,
+      "canDelete": false,
+      "canAddChild": false,
+      "canLink": true,
+      "canPull": false,
+      "canReact": true,
+      "canGrantPoints": false,
+      "canComplete": true
+    }
+  },
+  "content": {
+    "excerpt": "",
+    "source": "entity",
+    "truncated": false
+  },
+  "parents": [],
+  "children": [],
+  "edges": [],
+  "messages": [
+    {
+      "id": "00000000-0000-7000-8000-000000000d06",
+      "spaceId": "00000000-0000-7000-8000-000000000d01",
+      "kind": "message",
+      "title": "coordinator: go",
+      "parentId": null,
+      "position": 1,
+      "visibility": "space",
+      "version": 3,
+      "activityAt": "2026-07-26T10:00:00.000Z",
+      "createdAt": "2026-07-26T09:00:00.000Z",
+      "updatedAt": "2026-07-26T10:00:00.000Z",
+      "deletedAt": null,
+      "createdBy": {
+        "id": "00000000-0000-7000-8000-000000000d04",
+        "kind": "member",
+        "displayName": "G13 Owner",
+        "avatar": null,
+        "role": "owner",
+        "isAgent": false
+      },
+      "counters": {
+        "likes": 0,
+        "dislikes": 0,
+        "stars": 0,
+        "points": 0,
+        "messages": 0,
+        "viewerReaction": null
+      },
+      "state": {
+        "kind": "message",
+        "anchorId": "00000000-0000-7000-8000-000000000d03",
+        "rootMessageId": null,
+        "author": {
+          "id": "00000000-0000-7000-8000-000000000d05",
+          "kind": "team_member",
+          "displayName": "G13 Agent",
+          "avatar": null,
+          "role": null,
+          "ownerMemberId": "00000000-0000-7000-8000-000000000d04",
+          "isAgent": true
+        },
+        "messageBatchId": "batch-g13-1",
+        "editedAt": null,
+        "redactedAt": null
+      },
+      "badges": {},
+      "capabilities": {
+        "canEdit": false,
+        "canDelete": false,
+        "canAddChild": false,
+        "canLink": true,
+        "canPull": false,
+        "canReact": true,
+        "canGrantPoints": false,
+        "canComplete": false
+      },
+      "excerpt": "coordinator: go",
+      "content": {
+        "kind": "message",
+        "body": "coordinator: go",
+        "mentions": [],
+        "attachments": []
+      },
+      "replyCount": 0,
+      "lastReplyAt": null,
+      "replyParticipants": []
+    }
+  ],
+  "actions": [
+    {
+      "id": "action:entities.get:g13",
+      "label": "entities get",
+      "kind": "navigate",
+      "operation": "entities.get",
+      "targetEntityId": "00000000-0000-7000-8000-000000000d02",
+      "targetVersion": 3,
+      "capabilityEpoch": "cap:g13",
+      "authzTarget": "entity",
+      "exposure": "public",
+      "helpRef": "tm8://help/operation/entities.get"
+    }
+  ],
+  "provenance": {
+    "operation": "entities.context",
+    "fetchedAt": "2026-07-26T12:00:00.000Z",
+    "eventSeq": 6120
+  },
+  "cursors": {
+    "children": null,
+    "messages": "eyJ2IjoyLCJrIjpbIjIyNmFkNzhkOTIzMjNlNGQ1NjhhYzI0YTExYzZlMDVhZDAxOGUzOTJhZDQ5NmM1YmMxNTk4NTI4NmE4ZWUyYzUiLCIyMDI2LTA3LTI2VDA5OjIwOjAwLjEyMzQ1NloiLCIwMDAwMDAwMC0wMDAwLTcwMDAtODAwMC0wMDAwMDAwMDBkMDYiXX0",
+    "activity": "eyJ2IjoyLCJrIjpbIjIyNmFkNzhkOTIzMjNlNGQ1NjhhYzI0YTExYzZlMDVhZDAxOGUzOTJhZDQ5NmM1YmMxNTk4NTI4NmE4ZWUyYzUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
+  },
+  "byteSize": 3270,
+  "truncated": false
+}

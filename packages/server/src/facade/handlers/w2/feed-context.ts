@@ -3,6 +3,7 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import {
   W2FeedContextService,
+  taggedDb,
   type W2FeedContextServiceOptions,
 } from '../../services/w2/feed-context.js';
 import type { RequestContext } from '../../../http/types.js';
@@ -40,14 +41,18 @@ export function registerW2FeedContextHandlers(
  * The synthesised context carries ONLY the target id: availability is derived
  * from the caller's claims and the stored row, never from anything the feed or
  * focus request said about itself.
+ *
+ * Its statements run in G09's own transaction, so the `actions` section tag is
+ * applied to the `db` handed over rather than to the context's querier.
  */
 function defaultActions(
   registry: HandlerRegistry,
   deps: FacadeDeps,
 ): NonNullable<W2FeedContextServiceOptions['actions']> {
+  const actionDeps: FacadeDeps = { ...deps, db: taggedDb(deps.db, 'actions') };
   return async (ctx, entityId) => {
     const query = new URLSearchParams({ contextEntityId: entityId });
-    const discovery = await createSavedViewsActionsService(deps, registry).listActions({
+    const discovery = await createSavedViewsActionsService(actionDeps, registry).listActions({
       ...ctx,
       query,
       body: undefined,
