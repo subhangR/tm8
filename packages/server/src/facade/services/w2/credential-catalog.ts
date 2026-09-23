@@ -74,8 +74,7 @@ import type {
 import {
   CREDENTIAL_PROVIDERS,
   apiKeyBackendAgentTool,
-  apiKeyBackendDisplaces,
-  apiKeyBackendsForAgentTool,
+  apiKeyBackendNativeProvider,
   isApiKeyCredentialProvider,
   type Logger,
 } from '@tm8/execution';
@@ -120,64 +119,24 @@ function agentToolsForProvider(provider: CredentialProviderName): readonly strin
 /**
  * What connecting this provider does to the member's agent sessions.
  *
- * THE COMMITMENT THIS FUNCTION KEEPS. Kimi and Groq route account-wide with no
- * per-session opt-in: once a member connects Kimi, every `claude-code` session
- * they start reaches Moonshot instead of Anthropic, including the ones they
- * started before they had ever heard of Kimi. That was chosen on purpose, and
- * the price of choosing it is that the product must SAY so — a silent
- * redirection of which model answers your questions is the kind of thing a
- * member should never have to read the source to discover.
- *
- * TWO CARDS DESCRIBE ONE FACT, FROM BOTH ENDS.
- *
- *   * On the kimi card: `role: 'backend'`, always non-null, `active` telling
- *     the member whether this is happening now or is what WOULD happen. An
- *     unconnected backend still carries routing, because the consequence of
- *     pressing Connect is precisely what is worth knowing before pressing it.
- *   * On the anthropic card: `role: 'displaced'`, and ONLY while a backend is
- *     actually connected. There is nothing to tell an Anthropic user until
- *     something displaces them, and a permanent "could be replaced" banner on
- *     the card of a provider that is working fine is noise, not disclosure.
- *
- * THE ORDER MIRRORS THE RESOLVER, DELIBERATELY. `DbAgentCredentialHome.resolve`
- * builds its candidates as `[...apiKeyBackendsForAgentTool(tool), native]` and
- * takes the first ACTIVE one, so this walks the same list in the same order.
- * Computing the displacement here from a different rule — say, a hardcoded
- * kimi/anthropic pair in the UI — is how a card comes to claim one thing while
- * spawn does another.
- *
- * WHAT IT CANNOT SEE. `active` reflects the stored index row, which is the same
- * thing the resolver queries. It does not know whether the key FILE is still
- * readable; a row whose file has gone missing makes the resolver fall back to
- * no injection at all (and log), and this card would still say the routing is
- * active. That gap is narrow — the file and the row are written together and
- * removed together — and closing it would mean a filesystem read per provider
- * per status call.
+ * Only an API-key backend has anything to say: the kimi card states that it
+ * serves the Kimi models on `claude-code` and that every other `claude-code`
+ * model stays on Anthropic, whether or not the key is connected yet (`active`
+ * says which). A native provider's card carries no routing — routing is per
+ * model (`apiKeyBackendForModel`), so connecting Kimi never takes a session
+ * away from the Anthropic login, and there is nothing to warn about there.
  */
 function routingFor(
   provider: CredentialProviderName,
   activeProviders: ReadonlySet<CredentialProviderName>,
 ): CredentialRoutingView | null {
-  if (isApiKeyCredentialProvider(provider)) {
-    return {
-      agentTool: apiKeyBackendAgentTool(provider),
-      role: 'backend',
-      counterpart: apiKeyBackendDisplaces(provider),
-      active: activeProviders.has(provider),
-    };
-  }
-
-  // A native provider is displaced only by a backend that is connected RIGHT
-  // NOW. `agentToolsForProvider` returns null for github — which no backend
-  // serves — and the loop below simply finds nothing for it.
-  for (const agentTool of agentToolsForProvider(provider) ?? []) {
-    for (const backend of apiKeyBackendsForAgentTool(agentTool)) {
-      if (!activeProviders.has(backend)) continue;
-      if (apiKeyBackendDisplaces(backend) !== provider) continue;
-      return { agentTool, role: 'displaced', counterpart: backend, active: true };
-    }
-  }
-  return null;
+  if (!isApiKeyCredentialProvider(provider)) return null;
+  return {
+    agentTool: apiKeyBackendAgentTool(provider),
+    role: 'backend',
+    counterpart: apiKeyBackendNativeProvider(provider),
+    active: activeProviders.has(provider),
+  };
 }
 
 /** Statuses that mean a work session may still be holding a credential. */

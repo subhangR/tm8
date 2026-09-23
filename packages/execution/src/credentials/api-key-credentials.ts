@@ -50,9 +50,11 @@
 //
 // What both vendors DO serve is a wire-compatible endpoint for a CLI tm8
 // already launches: Kimi speaks the Anthropic message API, Groq speaks the
-// OpenAI one. So a connected key does not add a tool — it REDIRECTS an existing
-// tool at a different backend, which is why the routing table below is keyed by
-// `agentTool` and not by provider.
+// OpenAI one. So a connected key does not add a tool — it points an existing
+// tool at a different backend FOR THE MODELS THAT BACKEND SERVES, which is why
+// the routing table below names both the tool and the catalog provider.
+
+import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry } from '@tm8/contract';
 
 import type { CredentialProvider } from './credential-env.js';
 
@@ -166,8 +168,17 @@ export const API_KEY_PROVIDER_KEY_PREFIX: Readonly<
 interface ApiKeyBackendRouting {
   /** The already-launchable tool this key backs. */
   readonly agentTool: string;
-  /** The provider this key DISPLACES when connected. */
-  readonly displaces: CredentialProvider;
+  /**
+   * The `LAUNCH_MODEL_CATALOG` provider whose models this key serves. A
+   * session is routed here only when its model is one of those rows.
+   */
+  readonly servesCatalogProvider: LaunchModelCatalogEntry['provider'];
+  /**
+   * The native provider of `agentTool`: the one that keeps serving every
+   * OTHER model on that tool. Named on the card so the member reads that their
+   * native login is still in use.
+   */
+  readonly nativeProvider: CredentialProvider;
   /** Base-URL variable for the tool's vendor SDK. */
   readonly baseUrlVar: string;
   readonly baseUrl: string;
@@ -187,26 +198,25 @@ interface ApiKeyBackendRouting {
 // of a facts table, so the composer owns it.
 
 /**
- * The account-wide backend override, by agent tool.
+ * Which backend each pasted key serves, and for which models.
  *
- * ACCOUNT-WIDE IS A DELIBERATE PRODUCT CHOICE AND IT IS NOT SILENT. A member
- * who connects Kimi has every `claude-code` session routed to Kimi, not just
- * new ones they opt in per session. That is what makes "connect" mean
- * something without a picker in every launch surface — but it also means the
- * model behind an existing workflow changes the moment a key is pasted, so
- * `credentials.status` reports the displacement in words and the credential
- * card states it on the tile. An override the member cannot see is the failure
- * mode this note exists to prevent; disconnecting the key restores the native
- * provider with no other action.
+ * ROUTING IS PER MODEL, NOT PER ACCOUNT. A Kimi key serves the Kimi models in
+ * the launch catalog (`provider: 'moonshot'`) and nothing else: a `claude-code`
+ * session launched on a Claude model keeps authenticating with the member's
+ * Anthropic login whether or not a Kimi key is connected, and a session
+ * launched on a Kimi model uses the Kimi key and never the Anthropic login.
+ * The same holds for Groq and `codex`/OpenAI. See `apiKeyBackendForModel`.
  *
- * Keyed by tool rather than by provider because the relation is many-to-one in
- * that direction: `AGENT_TOOL_CREDENTIAL_PROVIDER` already maps each tool to
- * its NATIVE provider, and this table names the alternative that outranks it.
+ * This replaced an account-wide override (#638) under which a connected Kimi
+ * key outranked the Anthropic login for EVERY `claude-code` session. That sent
+ * `claude --model claude-opus-…` to Moonshot, a server that does not serve it,
+ * and sent a Kimi model to Anthropic whenever the key was not connected.
  */
 const API_KEY_BACKEND_ROUTING = {
   kimi: {
     agentTool: 'claude-code',
-    displaces: 'anthropic',
+    servesCatalogProvider: 'moonshot',
+    nativeProvider: 'anthropic',
     // Moonshot serves an Anthropic-wire-compatible surface at this path; the
     // plain `/v1` base is the OpenAI-compatible one and is NOT what Claude Code
     // speaks. Pointing the Anthropic SDK at `/v1` yields 404s on every message.
@@ -220,7 +230,8 @@ const API_KEY_BACKEND_ROUTING = {
   },
   groq: {
     agentTool: 'codex',
-    displaces: 'openai',
+    servesCatalogProvider: 'groq',
+    nativeProvider: 'openai',
     baseUrlVar: 'OPENAI_BASE_URL',
     baseUrl: 'https://api.groq.com/openai/v1',
     keyVar: 'OPENAI_API_KEY',
@@ -228,8 +239,8 @@ const API_KEY_BACKEND_ROUTING = {
 } as const satisfies Record<ApiKeyCredentialProvider, ApiKeyBackendRouting>;
 
 /**
- * The API-key backends that can displace a native provider for `agentTool`, in
- * preference order.
+ * The API-key backends that serve some of `agentTool`'s models. Which one a
+ * given session uses is decided by its model; see `apiKeyBackendForModel`.
  *
  * A list rather than a single value so a second Anthropic-compatible vendor is
  * an added entry rather than a restructure. Today each tool has exactly one.
@@ -243,14 +254,43 @@ export function apiKeyBackendsForAgentTool(
   );
 }
 
-/** The native provider a connected `provider` key displaces, for display. */
-export function apiKeyBackendDisplaces(
-  provider: ApiKeyCredentialProvider,
-): CredentialProvider {
-  return API_KEY_BACKEND_ROUTING[provider].displaces;
+/**
+ * The API-key backend that must serve `model` on `agentTool`, or null when the
+ * tool's native provider serves it.
+ *
+ * Decided by the launch catalog: a model is a Kimi model because its catalog
+ * row says `provider: 'moonshot'`, not because of how its id is spelled. Groq's
+ * ids have no common prefix (`llama-3.3-70b-versatile`, `qwen/qwen3-32b`), so
+ * a spelling rule could not work for both backends anyway.
+ *
+ * A model that is not in the catalog, or no model at all (the CLI's own
+ * default), resolves to null — the native provider — because the native
+ * provider is the one that serves the tool's own default model. The row's
+ * `agentTool` must match too: a catalog model launched on a tool that cannot
+ * speak its backend's wire protocol is not rerouted by guessing.
+ */
+export function apiKeyBackendForModel(
+  agentTool: string | null | undefined,
+  model: string | null | undefined,
+): ApiKeyCredentialProvider | null {
+  if (!agentTool || !model) return null;
+  const entry = LAUNCH_MODEL_CATALOG.find((row) => row.model === model);
+  if (!entry || entry.agentTool !== agentTool) return null;
+  return API_KEY_CREDENTIAL_PROVIDERS.find((provider) => {
+    const routing = API_KEY_BACKEND_ROUTING[provider];
+    return routing.agentTool === agentTool
+      && routing.servesCatalogProvider === entry.provider;
+  }) ?? null;
 }
 
-/** The tool a connected `provider` key redirects, for display. */
+/** The native provider that keeps serving `provider`'s tool for other models. */
+export function apiKeyBackendNativeProvider(
+  provider: ApiKeyCredentialProvider,
+): CredentialProvider {
+  return API_KEY_BACKEND_ROUTING[provider].nativeProvider;
+}
+
+/** The tool a connected `provider` key runs its models on, for display. */
 export function apiKeyBackendAgentTool(provider: ApiKeyCredentialProvider): string {
   return API_KEY_BACKEND_ROUTING[provider].agentTool;
 }

@@ -1149,11 +1149,11 @@ export function createFixtureSeam(): FixtureSeam {
    * screen and a surface cannot pass by collapsing two of them. Mutable,
    * because `disconnect` writes to it.
    *
-   * The routing pair is scripted too, and in the shape that is hardest to get
-   * right: kimi CONNECTED (so anthropic is simultaneously connected and
-   * displaced — a card that must say both) and groq NOT connected (so its card
-   * must still describe what connecting it would do). A surface that only
-   * renders routing when `connected` is true fails on the second one.
+   * The routing is scripted too: kimi CONNECTED alongside a connected
+   * anthropic (which carries no routing — a Kimi key never takes Claude
+   * sessions away from it) and groq NOT connected (so its card must still
+   * describe what connecting it would do). A surface that only renders
+   * routing when `connected` is true fails on the second one.
    */
   const serviceKeysState: CredentialsServiceKeysStatusView = {
     keys: [{ provider: 'typesafe', connected: false, keyHint: null, updatedAt: null, nodeFallback: false }],
@@ -1170,12 +1170,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'active',
         connectedAt: FIXTURE_NOW,
         lastVerifiedAt: FIXTURE_NOW,
-        routing: {
-          agentTool: 'claude-code',
-          role: 'displaced',
-          counterpart: 'kimi',
-          active: true,
-        },
+        routing: null,
       },
       // The one true negative — so "not connected" has something real to mean.
       {

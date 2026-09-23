@@ -516,11 +516,10 @@ describe('credentials.status merges two stores and degrades honestly', () => {
     });
   });
 
-  it('says on BOTH cards which one is actually serving claude-code', async () => {
-    // The member has connected Kimi AND still has a working Anthropic login.
-    // This is the state the whole disclosure exists for: two connected
-    // credentials, one silently outranking the other, and — until this field —
-    // nothing in the product that said which.
+  it('says on the Kimi card which models it serves, and leaves the Anthropic card alone', async () => {
+    // The member has connected Kimi AND still has a working Anthropic login —
+    // the state that used to read as Kimi taking over. Each now serves its own
+    // models, and only the backend's card needs a routing line to say so.
     const db = new FakeDb(async (sql) => {
       if (sql.includes('to_regclass')) return [{ present: false }];
       if (sql.includes('account_agent_credentials')) {
@@ -559,17 +558,13 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       active: true,
     });
 
-    // And the provider it displaced says so from its own card, which is the
-    // half a member is far more likely to be looking at when their sessions
-    // start answering differently. Anthropic is still CONNECTED — nothing was
-    // revoked — it is simply not the one being used.
+    // And the native provider is NOT displaced. Routing is per model: Claude
+    // models keep running on the Anthropic login while Kimi is connected, so
+    // the Anthropic card carries no routing line and says nothing about Kimi.
+    // (Before per-model routing it read "Not currently used for claude-code
+    // sessions — Moonshot AI is connected and takes over".)
     expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
-    expect(routingOf.get('anthropic')).toEqual({
-      agentTool: 'claude-code',
-      role: 'displaced',
-      counterpart: 'kimi',
-      active: true,
-    });
+    expect(routingOf.get('anthropic')).toBeNull();
 
     // Groq is not connected, so codex is untouched and openai stays silent.
     expect(routingOf.get('openai')).toBeNull();
