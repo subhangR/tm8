@@ -1,11 +1,11 @@
 /**
- * 204 — `workspace_events.subject_ids`, its online backfill, and the
+ * 205 — `workspace_events.subject_ids`, its online backfill, and the
  * `index_incomplete` gate (change-feed spec doc 01a0cf35, §4 Storage, §5, §6.5).
  *
- * The chain is applied in TWO parts on purpose: everything before 204, then a
- * seeded log written with no `subject_ids` column at all, then 204. That is the
+ * The chain is applied in TWO parts on purpose: everything before 205, then a
+ * seeded log written with no `subject_ids` column at all, then 205. That is the
  * state a live node is in when it upgrades, and it is the only way to test the
- * backfill against rows 204 did not write.
+ * backfill against rows 205 did not write.
  */
 import { randomUUID } from 'node:crypto';
 import { type QueryResultRow } from 'pg';
@@ -28,11 +28,11 @@ import {
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
-const MIGRATION = '204_workspace_event_subject_ids.sql';
-/** Rows seeded before 204, so the backfill has several batches to do. */
+const MIGRATION = '205_workspace_event_subject_ids.sql';
+/** Rows seeded before 205, so the backfill has several batches to do. */
 const SEEDED = 1_200;
 
-describe.sequential('204 — subject_ids, the online backfill, and the index gate', () => {
+describe.sequential('205 — subject_ids, the online backfill, and the index gate', () => {
   let database: W1ScratchDatabase;
   let db: TestDb;
   let spaceId: string;
@@ -80,7 +80,7 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
   }
 
   beforeAll(async () => {
-    database = await createW1ScratchDatabase('subject_ids_204');
+    database = await createW1ScratchDatabase('subject_ids_205');
     const chain = migrationFiles();
     const at = chain.indexOf(MIGRATION);
     expect(at, `${MIGRATION} is not in the chain`).toBeGreaterThan(0);
@@ -98,7 +98,7 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
       [spaceId, identityId],
     ))[0]!.entity_id;
 
-    // A log written before 204 existed: real captures from the space's
+    // A log written before 205 existed: real captures from the space's
     // creation, plus a bulk of synthetic rows of mixed types.
     await ownerRows(
       `insert into public.workspace_events(space_id, seq, event_type, payload)
@@ -120,7 +120,7 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
     await database?.destroy();
   }, 120_000);
 
-  it('leaves every pre-204 row NULL and puts the watermark just above them', async () => {
+  it('leaves every pre-205 row NULL and puts the watermark just above them', async () => {
     expect(await nullCount()).toBeGreaterThanOrEqual(SEEDED);
     const row = await watermarkRow();
     expect(Number(row!.indexed_from)).toBe(seededMax + 1);
@@ -180,7 +180,7 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
          from public.workspace_events where space_id = $1 and seq > $2 order by seq`,
       [spaceId, before],
     );
-    expect(rows.every((r) => r.subject_ids !== null), 'a post-204 row was written with NULL subject_ids').toBe(true);
+    expect(rows.every((r) => r.subject_ids !== null), 'a post-205 row was written with NULL subject_ids').toBe(true);
 
     const types = new Set(rows.map((r) => r.event_type));
     for (const t of ['entity.upsert', 'edge.upsert', 'message.created', 'activity.created']) {
@@ -292,7 +292,7 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
     expect(mismatched[0]!.n).toBe('0');
   });
 
-  it('re-applying 204 is safe: no error, no rows touched, the watermark stays put', async () => {
+  it('re-applying 205 is safe: no error, no rows touched, the watermark stays put', async () => {
     const before = await ownerRows<{ n: string; s: string }>(
       `select count(*)::text n, coalesce(sum(cardinality(subject_ids)), 0)::text s
          from public.workspace_events where space_id = $1`,
@@ -314,9 +314,9 @@ describe.sequential('204 — subject_ids, the online backfill, and the index gat
     expect(triggers[0]!.n).toBe('1');
   });
 
-  it('a space created after 204 has no backfill row and reads as fully indexed', async () => {
+  it('a space created after 205 has no backfill row and reads as fully indexed', async () => {
     const fresh = await db.rpc<{ space: { id: string } }>({ identityId }, 'public.create_space', [
-      'post-204 space', '', 'private', null, null,
+      'post-205 space', '', 'private', null, null,
     ]);
     expect(await readIndexedFrom(db, claims(), fresh.space.id)).toBe(1);
     const nulls = await ownerRows<{ n: string }>(

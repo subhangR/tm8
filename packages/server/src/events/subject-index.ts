@@ -2,7 +2,7 @@
  * The `subject_ids` index gate — what the scoped change feed (`events.changes`,
  * spec doc 01a0cf35 §5) asks before it reads `workspace_events` by subject.
  *
- * Migration 204 added `workspace_events.subject_ids` and backfills existing rows
+ * Migration 205 added `workspace_events.subject_ids` and backfills existing rows
  * online, newest first. Per space it records `indexedFrom`: EVERY row with
  * `seq >= indexedFrom` has `subject_ids` set. Below it, a row may still be NULL,
  * and a NULL row is NOT a non-match — it is unknown. There is one query path and

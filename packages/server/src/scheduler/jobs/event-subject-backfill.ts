@@ -1,9 +1,9 @@
 /**
- * The `workspace_events.subject_ids` backfill (migration 204) — online, batched,
+ * The `workspace_events.subject_ids` backfill (migration 205) — online, batched,
  * resumable.
  *
  * Why a server job and not a script: the backfill has to finish on EVERY node
- * that applies 204 (dev machines, prod), and until it does the change feed
+ * that applies 205 (dev machines, prod), and until it does the change feed
  * refuses windows below the watermark. A script someone must remember to run is
  * the failure mode where one node stays `index_incomplete` indefinitely. This
  * runner already exists, already runs on every node, and already carries

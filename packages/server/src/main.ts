@@ -839,8 +839,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       }),
     );
-    // Migration 204's online subject_ids backfill. It runs on every node that
-    // applied 204 — until it finishes, the change feed refuses windows below
+    // Migration 205's online subject_ids backfill. It runs on every node that
+    // applied 205 — until it finishes, the change feed refuses windows below
     // the watermark — and each batch is its own short transaction.
     scheduler.register(
       createEventSubjectBackfillJob({

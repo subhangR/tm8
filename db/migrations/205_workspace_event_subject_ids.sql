@@ -1,5 +1,5 @@
 -- =============================================================================
--- 204  WORKSPACE_EVENTS.SUBJECT_IDS -- the index the scoped change feed reads.
+-- 205  WORKSPACE_EVENTS.SUBJECT_IDS -- the index the scoped change feed reads.
 --
 -- Spec: "scoped change feed (`tm8 event changes`)", doc 01a0cf35, sections 2
 -- fact 3, 4 Storage, 5 `index_incomplete` and 8 step 2.
@@ -72,7 +72,7 @@ alter table public.workspace_events add column if not exists subject_ids uuid[];
 comment on column public.workspace_events.subject_ids is
   'Entity ids this event is about (see internal.event_subject_ids). NULL means '
   'NOT YET INDEXED and never "about nothing" -- an event about nothing is ''{}''. '
-  'Readers must gate on public.event_subject_indexed_from (migration 204).';
+  'Readers must gate on public.event_subject_indexed_from (migration 205).';
 
 -- -----------------------------------------------------------------------------
 -- The derivation. IMMUTABLE: a pure function of (event_type, payload).
@@ -110,7 +110,7 @@ $$;
 
 comment on function internal.event_subject_ids(text, jsonb) is
   'The entity ids a workspace_events row is about, from its type and payload. '
-  'Shared by the insert trigger and the backfill (migration 204). Never NULL.';
+  'Shared by the insert trigger and the backfill (migration 205). Never NULL.';
 
 create or replace function internal.workspace_events_fill_subject_ids() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
@@ -140,7 +140,7 @@ create table if not exists internal.event_subject_index (
 );
 
 comment on table internal.event_subject_index is
-  'Per-space low watermark of the subject_ids backfill (migration 204): every '
+  'Per-space low watermark of the subject_ids backfill (migration 205): every '
   'workspace_events row of the space with seq >= indexed_from has subject_ids set. '
   'No row = fully indexed.';
 
@@ -257,23 +257,23 @@ begin
        where tgrelid = 'public.workspace_events'::regclass
          and tgname = 'workspace_events_fill_subject_ids'
          and tgenabled = 'O' and not tgisinternal) <> 1 then
-    raise exception '204: workspace_events_fill_subject_ids must exist exactly once and be enabled';
+    raise exception '205: workspace_events_fill_subject_ids must exist exactly once and be enabled';
   end if;
 
   if not exists (select 1 from pg_indexes
                   where schemaname = 'public' and indexname = 'workspace_events_subject_ids_gin_idx') then
-    raise exception '204: workspace_events_subject_ids_gin_idx is missing';
+    raise exception '205: workspace_events_subject_ids_gin_idx is missing';
   end if;
 
   -- The derivation must never yield NULL: NULL is reserved for "not indexed".
   if internal.event_subject_ids('some.unknown_type', '{}'::jsonb) is null then
-    raise exception '204: event_subject_ids returned NULL for an unknown type -- NULL means not indexed';
+    raise exception '205: event_subject_ids returned NULL for an unknown type -- NULL means not indexed';
   end if;
 
   if internal.event_subject_ids('edge.upsert',
        '{"src_id":"00000000-0000-0000-0000-000000000001","dst_id":"00000000-0000-0000-0000-000000000002"}')
      <> array['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002']::uuid[] then
-    raise exception '204: edge subjects must be {src_id, dst_id}';
+    raise exception '205: edge subjects must be {src_id, dst_id}';
   end if;
 
   -- The watermark invariant, checked against the table as it stands now.
@@ -282,7 +282,7 @@ begin
       left join internal.event_subject_index s on s.space_id = e.space_id
      where e.subject_ids is null
        and e.seq >= coalesce(s.indexed_from, 1)) then
-    raise exception '204: a NULL subject_ids row sits at or above its space''s indexed_from';
+    raise exception '205: a NULL subject_ids row sits at or above its space''s indexed_from';
   end if;
 end
 $verify$;
