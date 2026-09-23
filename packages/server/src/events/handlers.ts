@@ -76,6 +76,19 @@ function parseLimit(raw: string | null): number {
   return value;
 }
 
+/**
+ * `?entity=<id>`: optional. A malformed id is refused rather than matched —
+ * it could never match, and an always-empty filtered page would read as
+ * "nothing happened to that entity".
+ */
+function parseEntity(raw: string | null): string | undefined {
+  if (raw === null || raw === '') return undefined;
+  if (!UUID_RE.test(raw)) {
+    throw new CollabError('invalid_input', `entity must be an entity id (uuid), got '${raw}'`);
+  }
+  return raw.toLowerCase();
+}
+
 export function registerEventHandlers(registry: HandlerRegistry, deps: EventHandlerDeps): void {
   // One identity path (see test/one-identity-path.test.ts). Claims come from
   // facade/context.ts's `claimsFor` and nowhere else — this file used to define
@@ -97,11 +110,13 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
       throw new CollabError('invalid_input', 'spaceId is required');
     }
 
+    const entity = parseEntity(ctx.query.get('entity'));
     const page = await log.since(
       spaceId,
       parseSince(ctx.query.get('since')),
       parseLimit(ctx.query.get('limit')),
       claimsFor(await owner(), ctx),
+      entity === undefined ? {} : { entityId: entity },
     );
 
     return json(page);

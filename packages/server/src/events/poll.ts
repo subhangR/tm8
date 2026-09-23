@@ -33,7 +33,26 @@ export interface DurableEventLog {
    * Events for `spaceId` with `seq > sinceSeq`, in ascending seq order,
    * at most `limit` of them.
    */
-  since(spaceId: string, sinceSeq: number, limit: number, claims: DbClaims): Promise<DurableEventPage>;
+  since(
+    spaceId: string,
+    sinceSeq: number,
+    limit: number,
+    claims: DbClaims,
+    filter?: DurableEventFilter,
+  ): Promise<DurableEventPage>;
+}
+
+/**
+ * Optional server-side narrowing of one poll page.
+ *
+ * `entityId` keeps only events whose SUBJECT is that entity: the entity itself
+ * (`entity.*`), either edge endpoint, a message's own entity or its anchor, an
+ * activity's `entityId`, and a notification's target. The page's `hasMore` and
+ * `examinedThrough` still describe the rows EXAMINED, so a filtered reader
+ * pages exactly as an unfiltered one does.
+ */
+export interface DurableEventFilter {
+  entityId?: string;
 }
 
 /**
@@ -51,7 +70,45 @@ export interface DurableEventLog {
 export interface DurableEventPage {
   items: DurableWorkspaceEvent[];
   nextCursor: string | null;
+  /**
+   * The examine cap was hit (`rows.length === limit`): there MAY be more rows
+   * past `examinedThrough`. This, not `items.length`, is the end-of-feed signal
+   * — `items` omits rows skipped for RLS, deletion or failed hydration, and
+   * rows a filter did not match, so a short page is not "caught up".
+   *
+   * Optional only so a log that cannot know (test fakes, a future log) may omit
+   * it; `PgDurableEventLog` always sets it. A reader treats absence as unknown.
+   */
+  hasMore?: boolean;
+  /**
+   * The last seq EXAMINED, including rows skipped for RLS, deletion, failed
+   * hydration or a non-matching filter. On an empty page it echoes `since`.
+   * Numerically equal to `nextCursor`, typed as the seq it is.
+   */
+  examinedThrough?: number;
 }
+
+/** `WORKSPACE_EVENT_COLUMNS`, qualified to the `examined` window alias. */
+const EXAMINED_COLUMNS = WORKSPACE_EVENT_COLUMNS.split(', ').map((c) => `e.${c}`).join(', ');
+
+/**
+ * Is `$4` (an entity id, as text) the SUBJECT of window row `e`?
+ *
+ * The same subject rules as `WorkspaceEventMapper`'s payload keys: entity id,
+ * edge src/dst, message entity/anchor, activity `entity_id`, notification
+ * target. Unindexed jsonb: it only ever scans the `limit`-row window, never the
+ * log. Change feed step 2 replaces this with the indexed
+ * `workspace_events.subject_ids uuid[]` column (GIN, filled by the capture
+ * trigger) — one query path then, no jsonb.
+ */
+const SUBJECT_MATCH_SQL = `(
+  (e.event_type in ('entity.upsert', 'entity.deleted', 'entity.activity_touched') and e.payload->>'id' = $4)
+  or (e.event_type in ('edge.upsert', 'edge.deleted') and $4 in (e.payload->>'src_id', e.payload->>'dst_id'))
+  or (e.event_type in ('message.created', 'message.updated', 'message.deleted')
+      and $4 in (e.payload->>'entity_id', e.payload->>'anchor_id'))
+  or (e.event_type = 'activity.created' and e.payload->>'entity_id' = $4)
+  or (e.event_type in ('notification.created', 'notification.read') and e.payload->>'target_entity_id' = $4)
+)`;
 
 /**
  * Used when the node has no database. It exists so that a misconfigured node
@@ -103,8 +160,15 @@ export class PgDurableEventLog implements DurableEventLog {
     this.onSkip = opts.onSkip;
   }
 
-  async since(spaceId: string, sinceSeq: number, limit: number, claims: DbClaims): Promise<DurableEventPage> {
+  async since(
+    spaceId: string,
+    sinceSeq: number,
+    limit: number,
+    claims: DbClaims,
+    filter: DurableEventFilter = {},
+  ): Promise<DurableEventPage> {
     const capped = Math.min(Math.max(1, limit), MAX_POLL_LIMIT);
+    const entityId = filter.entityId;
 
     return this.db.tx(claims, async (q) => {
       // DROP TO tm8_app FOR THE WHOLE READ, page and hydration alike.
@@ -124,14 +188,49 @@ export class PgDurableEventLog implements DurableEventLog {
       // `set local` dies at COMMIT/ROLLBACK with the claims, so nothing leaks
       // to the pooled connection's next transaction.
       await q.query('set local role tm8_app');
-      const rows = await q.query<WorkspaceEventRow>(
-        `select ${WORKSPACE_EVENT_COLUMNS}
-           from public.workspace_events
-          where space_id = $1 and seq > $2
-          order by seq asc
-          limit $3`,
-        [spaceId, sinceSeq, capped],
-      );
+      // `examined` is the page WINDOW — the first `capped` rows after `since` —
+      // and the filter narrows within it, never past it. So `hasMore` and
+      // `examinedThrough` are over rows examined, not rows returned, on a
+      // filtered page exactly as on an unfiltered one.
+      let rows: WorkspaceEventRow[];
+      let examinedCount: number;
+      let examinedLast: number | null;
+      if (entityId === undefined) {
+        rows = await q.query<WorkspaceEventRow>(
+          `select ${WORKSPACE_EVENT_COLUMNS}
+             from public.workspace_events
+            where space_id = $1 and seq > $2
+            order by seq asc
+            limit $3`,
+          [spaceId, sinceSeq, capped],
+        );
+        examinedCount = rows.length;
+        const last = rows.at(-1);
+        examinedLast = last === undefined ? null : Number(last.seq);
+      } else {
+        // `bounds` LEFT JOIN the matches: a window with no match still returns
+        // one all-null row carrying the counts, so an empty filtered page
+        // still advances.
+        const hits = await q.query<WorkspaceEventRow & { examined_count: number; examined_last: string | number | null }>(
+          `with examined as (
+             select ${WORKSPACE_EVENT_COLUMNS}
+               from public.workspace_events
+              where space_id = $1 and seq > $2
+              order by seq asc
+              limit $3
+           ),
+           bounds as (select count(*)::int as examined_count, max(seq) as examined_last from examined)
+           select b.examined_count, b.examined_last, ${EXAMINED_COLUMNS}
+             from bounds b
+             left join examined e on ${SUBJECT_MATCH_SQL}
+            order by e.seq asc`,
+          [spaceId, sinceSeq, capped, entityId],
+        );
+        const head = hits[0];
+        examinedCount = head?.examined_count ?? 0;
+        examinedLast = head?.examined_last == null ? null : Number(head.examined_last);
+        rows = hits.filter((r) => r.id !== null);
+      }
 
       const items = await this.mapper.mapRows(q, rows, (err) => this.onSkip?.(err.message));
 
@@ -146,10 +245,14 @@ export class PgDurableEventLog implements DurableEventLog {
       // but this feed has no end — it means "caught up" — and a client that
       // stored a null would lose its place and replay from zero on the next
       // poll. Echoing is always a valid `?since=` and cannot lose a position.
-      const lastExamined = rows.at(-1);
+      const examinedThrough = examinedLast ?? sinceSeq;
       return {
         items,
-        nextCursor: String(lastExamined === undefined ? sinceSeq : Number(lastExamined.seq)),
+        nextCursor: String(examinedThrough),
+        // The examine cap was hit — NOT `items.length === capped`, which a
+        // page padded with unreadable or non-matching rows never reaches.
+        hasMore: examinedCount === capped,
+        examinedThrough,
       };
     });
   }
