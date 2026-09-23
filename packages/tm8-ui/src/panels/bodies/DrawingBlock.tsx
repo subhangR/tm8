@@ -108,8 +108,14 @@ export function DrawingBlock({
    * pinned over the app with its own bar. Not `requestFullscreen` — that is
    * the browser's exit path, drops out on a tab switch, and needs a user
    * gesture.
+   *
+   * AN EMPTY CANVAS OPENS FULLSCREEN — "+ New drawing" lands where drawing
+   * happens, not in a 440px strip. Only the INITIAL value: once the block is
+   * mounted the user decides, so leaving fullscreen on a still-empty canvas,
+   * or the save that follows the first stroke, never bounces it back. A
+   * read-only empty scene has nothing to draw, so it stays in the panel.
    */
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(() => editable && scene.elements.length === 0);
   /** The canvas's state as of its last render — what Escape is judged against. */
   const appStateRef = useRef<unknown>(null);
 

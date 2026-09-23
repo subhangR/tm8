@@ -270,6 +270,46 @@ describe('DrawingBlock', () => {
       expect(block().classList.contains('drw--fullscreen')).toBe(true);
     });
 
+    const empty = () => detailOf({
+      content: { kind: 'drawing', format: 'excalidraw', elements: [], appState: {}, files: {} },
+      state: { kind: 'drawing', format: 'excalidraw', elementCount: 0 },
+    } as Partial<EntityDetail>);
+
+    it('an EMPTY editable scene opens fullscreen — "+ New drawing" lands on the canvas', async () => {
+      await mountBlock(<DrawingBlock detail={empty()} commands={{ patchEntity: vi.fn() }} />);
+      expect(block().classList.contains('drw--fullscreen')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeTruthy();
+    });
+
+    it('a scene with ANY element opens in the panel', async () => {
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+    });
+
+    it('a READ-ONLY empty scene opens in the panel — nothing to draw', async () => {
+      await mountBlock(<DrawingBlock detail={empty()} commands={null} />);
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+    });
+
+    it('leaving fullscreen on an empty canvas STAYS left — across a re-render and a save', async () => {
+      const patchEntity = vi.fn().mockResolvedValue({ entity: { version: 8 }, patches: [] });
+      const { rerender } = render(<DrawingBlock detail={empty()} commands={{ patchEntity }} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+      fireEvent.click(toggle());
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+
+      // Still empty, re-rendered by the host with a fresh detail object.
+      rerender(<DrawingBlock detail={{ ...empty(), version: 7 }} commands={{ patchEntity }} />);
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+
+      // The first stroke saves; the host hands back the row it wrote.
+      act(() => mounted.onChange!([el('a', 1)], {}));
+      await vi.advanceTimersByTimeAsync(1000);
+      await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+      rerender(<DrawingBlock detail={{ ...detailOf(), version: 8 }} commands={{ patchEntity }} />);
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+    });
+
     it('Escape outside fullscreen is left alone for the panel stack', async () => {
       await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
       expect(fireEvent.keyDown(toggle(), { key: 'Escape' })).toBe(true);
