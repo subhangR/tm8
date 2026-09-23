@@ -1352,11 +1352,10 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // reached, like credentials.delete above.
   'credentials.serviceKeys.delete',
   'credentials.serviceKeys.put',
-  // SC-3: space-credential create is refused by the harness's deterministic
-  // vendor probe (the synthetic key is not a real key; nothing is stored).
-  // policy.set on both space and node read `:provider` off the PATH and refuse
-  // the sweep's synthetic value, like the service-key ops above.
-  'credentials.space.create',
+  // SC-3: policy.set on both space and node read `:provider` off the PATH and
+  // refuse the sweep's synthetic value, like the service-key ops above.
+  // credentials.space.create is NOT here: it refuses a non-member of the
+  // synthetic space (403) before the vendor probe, so it never reaches a 400.
   'credentials.space.policy.set',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
