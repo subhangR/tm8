@@ -439,16 +439,19 @@
    it. The palette takes the full row width so the tiles always start a new
    line, whatever the panel width. */
 .fn-tiles--palette { row-gap: var(--pn-space-2); }
+/* The picker hangs from the ROW, not from its chip: a chip near the right edge
+   would push a 320px card out of the panel. */
 .fn-palette {
+  position: relative;
   flex: 1 0 100%;
   display: flex;
   flex-wrap: wrap;
   gap: var(--pn-space-1);
   min-width: 0;
 }
-.fn-palette__slot { position: relative; display: inline-flex; }
+.fn-palette__slot { display: inline-flex; }
 
-.fn-chip {
+.fn-pal-chip {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -463,21 +466,22 @@
   font-size: var(--pn-fs-sm);
   cursor: pointer;
 }
-.fn-chip:hover { background: var(--pn-hover); color: var(--pn-ink); border-color: var(--pn-line-2); }
-.fn-chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
-.fn-chip[aria-expanded='true'] { border-color: var(--pn-brand); color: var(--pn-ink); }
-.fn-chip[aria-disabled='true'] { cursor: not-allowed; color: var(--pn-ink-4); }
-.fn-chip--attach { border-style: dashed; border-color: var(--pn-line-2); }
-.fn-chip__icon { display: inline-flex; line-height: 1; color: var(--pn-ink-3); }
+.fn-pal-chip:hover { background: var(--pn-hover); color: var(--pn-ink); border-color: var(--pn-line-2); }
+.fn-pal-chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.fn-pal-chip[aria-expanded='true'] { border-color: var(--pn-brand); color: var(--pn-ink); }
+.fn-pal-chip[aria-disabled='true'] { cursor: not-allowed; color: var(--pn-ink-4); }
+.fn-pal-chip--attach { border-style: dashed; border-color: var(--pn-line-2); }
+.fn-pal-chip__icon { display: inline-flex; line-height: 1; color: var(--pn-ink-3); }
 
 /* The picker: a search box, the server's matches, and "＋ New …" for the kinds
    that may be created here. Same card, shadow and z-index as the ＋ menu. */
-.fn-picker {
+.fn-pal-picker {
   position: absolute;
   top: calc(100% + var(--pn-space-1));
   left: 0;
   z-index: 60;
-  width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
+  width: min(320px, 100%);
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-1);
@@ -487,7 +491,7 @@
   border-radius: var(--pn-r-sm);
   box-shadow: var(--pn-sh-md);
 }
-.fn-picker__input {
+.fn-pal-picker__input {
   box-sizing: border-box;
   width: 100%;
   padding: var(--pn-space-1) var(--pn-space-2);
@@ -498,9 +502,9 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
 }
-.fn-picker__list { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
-.fn-picker__option,
-.fn-picker__new {
+.fn-pal-picker__list { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.fn-pal-picker__option,
+.fn-pal-picker__new {
   appearance: none;
   display: flex;
   align-items: center;
@@ -515,20 +519,20 @@
   text-align: left;
   cursor: pointer;
 }
-.fn-picker__option--active,
-.fn-picker__option:hover,
-.fn-picker__new:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.fn-picker__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fn-picker__new { border-top: 1px solid var(--pn-line); border-radius: 0; color: var(--pn-brand); }
-.fn-picker__empty,
-.fn-picker__error {
+.fn-pal-picker__option--active,
+.fn-pal-picker__option:hover,
+.fn-pal-picker__new:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.fn-pal-picker__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fn-pal-picker__new { border-top: 1px solid var(--pn-line); border-radius: 0; color: var(--pn-brand); }
+.fn-pal-picker__empty,
+.fn-pal-picker__error {
   margin: 0;
   padding: var(--pn-space-1) var(--pn-space-2);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
-.fn-picker__error { color: var(--pn-ink); }
+.fn-pal-picker__error { color: var(--pn-ink); }
 
 /* A linked entity's tile: the file tile's shape, a kind icon for a face, and
    an × to unlink sitting on its corner. */
@@ -573,8 +577,9 @@
 .fn-tile__remove:hover { color: var(--pn-ink); border-color: var(--pn-line-2); }
 /* A candidate whose title collides with one already linked: still pickable,
    but it says, before the pick, what a Run will do with it. */
-.fn-picker__option[data-collides='true'] { flex-wrap: wrap; }
-.fn-picker__warn {
+.fn-pal-picker__option[data-collides='true'] { flex-wrap: wrap; }
+.fn-pal-picker__warn {
+  box-sizing: border-box;
   flex: 1 0 100%;
   padding-left: calc(18px + var(--pn-space-2));
   font-size: var(--pn-fs-micro);

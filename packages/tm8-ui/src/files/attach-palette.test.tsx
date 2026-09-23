@@ -9,6 +9,7 @@
  *   · "＋ New …" only where the row allows it AND the host can do it;
  *   · linked entities become tiles in the strip, with the ＋ Attach chip first.
  */
+import { readdirSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CollectionQuery, CreateEdgeInput, CreateEntityInput, EntityDetail, EntitySummary } from '@tm8/contract';
@@ -333,5 +334,25 @@ describe('the port reaches the node through a real seam', () => {
     expect(edges[0]).toMatchObject({ srcId: task, dstId: peer, type: 'relates_to' });
     expect(creates[0]).toMatchObject({ kind: 'doc', attachTo: { entityId: task, edgeType: 'attached_to' } });
     expect((creates[0] as { parentId?: unknown }).parentId).toBeUndefined();
+  });
+});
+
+describe('the palette owns its class names', () => {
+  /* Measured in a browser: the palette first used `.fn-chip` and `.fn-picker`,
+     which `files.css` and `project-folder-picker.css` already style. The
+     picker got a full-screen overlay's `inset: 0`, and inside `.cv2-root` the
+     chips got 9.5px mono. jsdom loads no CSS, so only a check like this sees it. */
+  it('no other stylesheet in src styles a palette class', () => {
+    const sheet = readFileSync(`${process.cwd()}/src/files/attachment-strip.css`, 'utf8');
+    const ours = new Set(sheet.match(/\.fn-pal-[\w-]+/g) ?? []);
+    expect(ours.size).toBeGreaterThan(0);
+    const root = `${process.cwd()}/src`;
+    const clashes: string[] = [];
+    for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.css') || entry.name === 'attachment-strip.css') continue;
+      const text = readFileSync(`${entry.parentPath}/${entry.name}`, 'utf8');
+      for (const name of ours) if (new RegExp(`\\${name}(?![\\w-])`).test(text)) clashes.push(`${entry.name}: ${name}`);
+    }
+    expect(clashes).toEqual([]);
   });
 });

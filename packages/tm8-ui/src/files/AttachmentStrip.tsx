@@ -399,7 +399,7 @@ export function AttachmentStrip({
       }}>
         <button
           type="button"
-          className={palette ? 'fn-chip fn-chip--attach' : idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
+          className={palette ? 'fn-pal-chip fn-pal-chip--attach' : idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
           data-testid="attachment-add"
           ref={plusRef}
           /* THE ACCESSIBLE NAME IS EXPLICIT because the idle form has no
@@ -412,7 +412,7 @@ export function AttachmentStrip({
           onClick={plusAct}
         >
           <span
-            className={palette ? 'fn-chip__icon' : idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
+            className={palette ? 'fn-pal-chip__icon' : idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
             aria-hidden
           >
             {idle && !palette ? '📎' : '＋'}
@@ -424,7 +424,7 @@ export function AttachmentStrip({
               to nobody looking. Both states now render glyph AND word, and
               the long sentence that sat above the strip as its own paragraph
               rides the `title` instead. */}
-          <span className={palette ? 'fn-chip__label' : 'fn-tile__name'}>Attach</span>
+          <span className={palette ? 'fn-pal-chip__label' : 'fn-tile__name'}>Attach</span>
         </button>
         {/* The trailing note the ProseField paragraph used to carry, beside
             the button rather than above the strip. Drawn only where drop and

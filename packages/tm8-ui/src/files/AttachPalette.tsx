@@ -79,7 +79,7 @@ export function AttachPalette({
         <span className="fn-palette__slot" key={row.kind}>
           <button
             type="button"
-            className="fn-chip"
+            className="fn-pal-chip"
             data-testid="attach-palette-chip"
             data-kind={row.kind}
             aria-haspopup="dialog"
@@ -91,8 +91,8 @@ export function AttachPalette({
               setOpenKind((current) => (current === row.kind ? null : row.kind));
             }}
           >
-            <span className="fn-chip__icon" aria-hidden><KindIcon kind={row.kind as never} /></span>
-            <span className="fn-chip__label">{row.label}</span>
+            <span className="fn-pal-chip__icon" aria-hidden><KindIcon kind={row.kind as never} /></span>
+            <span className="fn-pal-chip__label">{row.label}</span>
           </button>
           {openRow === row && !refusal ? (
             <PalettePicker
@@ -227,7 +227,7 @@ function PalettePicker({
 
   return (
     <div
-      className="fn-picker"
+      className="fn-pal-picker"
       data-testid="attach-palette-picker"
       data-kind={row.kind}
       role="dialog"
@@ -253,7 +253,7 @@ function PalettePicker({
       <input
         ref={inputRef}
         type="text"
-        className="fn-picker__input"
+        className="fn-pal-picker__input"
         data-testid="attach-palette-search"
         placeholder={`Search ${row.label.toLowerCase()} by title…`}
         aria-label={`Search ${row.label.toLowerCase()} by title`}
@@ -262,7 +262,7 @@ function PalettePicker({
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
-      <div className="fn-picker__list" id={listId} role="listbox" aria-busy={loading || busy}>
+      <div className="fn-pal-picker__list" id={listId} role="listbox" aria-busy={loading || busy}>
         {options.map((option, index) => {
           const collides = Boolean(takenTitles?.has(titleKey(option.title)));
           return (
@@ -272,7 +272,7 @@ function PalettePicker({
             id={`${listId}-${option.id}`}
             role="option"
             aria-selected={index === active}
-            className={index === active ? 'fn-picker__option fn-picker__option--active' : 'fn-picker__option'}
+            className={index === active ? 'fn-pal-picker__option fn-pal-picker__option--active' : 'fn-pal-picker__option'}
             data-testid="attach-palette-option"
             data-collides={collides ? 'true' : undefined}
             title={collides ? row.titleCollision : undefined}
@@ -281,9 +281,9 @@ function PalettePicker({
             onClick={() => pick(option)}
           >
             <KindIcon kind={option.kind} />
-            <span className="fn-picker__title">{option.title}</span>
+            <span className="fn-pal-picker__title">{option.title}</span>
             {collides ? (
-              <span className="fn-picker__warn" data-testid="attach-palette-collision">
+              <span className="fn-pal-picker__warn" data-testid="attach-palette-collision">
                 {row.titleCollision}
               </span>
             ) : null}
@@ -291,7 +291,7 @@ function PalettePicker({
           );
         })}
         {!loading && options.length === 0 && !error ? (
-          <p className="fn-picker__empty" data-testid="attach-palette-empty">
+          <p className="fn-pal-picker__empty" data-testid="attach-palette-empty">
             {text.trim() ? `No ${kindWord} titled “${text.trim()}” to link.` : `No ${kindWord} to link yet.`}
           </p>
         ) : null}
@@ -299,7 +299,7 @@ function PalettePicker({
       {makeNew ? (
         <button
           type="button"
-          className="fn-picker__new"
+          className="fn-pal-picker__new"
           data-testid="attach-palette-new"
           disabled={busy}
           onClick={makeNew}
@@ -307,7 +307,7 @@ function PalettePicker({
           ＋ New {kindWord}{text.trim() ? ` “${text.trim()}”` : ''}
         </button>
       ) : null}
-      {error ? <p className="fn-picker__error" role="alert">{error}</p> : null}
+      {error ? <p className="fn-pal-picker__error" role="alert">{error}</p> : null}
     </div>
   );
 }
