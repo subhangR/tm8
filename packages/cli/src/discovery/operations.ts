@@ -2486,6 +2486,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
   credentials: 'credential',
+  // `launch.suggest` groups under `session`: it advises the launch of one, and
+  // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
+  // would name no command. `tools/conformance`'s generator holds the same map.
+  launch: 'session',
 };
 
 function nounFor(operation: OperationName): string {
