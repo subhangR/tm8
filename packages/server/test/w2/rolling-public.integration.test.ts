@@ -403,6 +403,15 @@ const SKILLS_NET_NEW_OPERATIONS = [
   'skills.unequip',
 ] as const;
 
+/**
+ * Jev Launch Advisor lane F (#655): `launch.suggest`, mounted as a
+ * not_implemented placeholder (jev/handlers.ts) until lane B lands the real
+ * handler. Net-new — no replacements.
+ */
+const JEV_NET_NEW_OPERATIONS = [
+  'launch.suggest',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -417,6 +426,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...WORKFLOW_NET_NEW_OPERATIONS,
   ...CONTAINER_NET_NEW_OPERATIONS,
   ...SKILLS_NET_NEW_OPERATIONS,
+  ...JEV_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -558,7 +568,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // same number from the component lists, so this literal cannot drift alone.
     // MEASURED from this assertion's own failing run.
     // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
-    expect(registry.size).toBe(186);
+    expect(registry.size).toBe(187); // +1 launch.suggest (Jev lane F #655). MEASURED.
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -573,7 +583,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
         + WORKFLOW_NET_NEW_OPERATIONS.length
         + CONTAINER_NET_NEW_OPERATIONS.length
-        + SKILLS_NET_NEW_OPERATIONS.length,
+        + SKILLS_NET_NEW_OPERATIONS.length
+        + JEV_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -741,7 +752,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // schema like the other four git commands. MEASURED.
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(125);
+    // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(126);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -918,8 +930,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
-    expect(health).toMatchObject({ ok: true, operations: 206, implemented: 204 });
-    expect(harness.production.server.registry.size).toBe(204);
+    expect(health).toMatchObject({ ok: true, operations: 207, implemented: 205 }); // +1/+1 launch.suggest (Jev lane F #655). MEASURED.
+    expect(harness.production.server.registry.size).toBe(205); // +1 launch.suggest (Jev lane F #655). MEASURED.
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -946,7 +958,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // residual asserted above stays empty. MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): nine skills.* rows. MEASURED.
-    expect(registered.size + residual.length).toBe(204);
+    expect(registered.size + residual.length).toBe(205); // +1 launch.suggest (Jev lane F #655): registerable v1 HTTP. MEASURED.
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 
