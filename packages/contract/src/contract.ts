@@ -2275,6 +2275,151 @@ export interface CredentialsServiceKeyDeleteResult {
   revoked: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Space credentials (206, design 01a0cfa8) — `credentials.space.*`, `node.credentials.*`
+// ---------------------------------------------------------------------------
+
+/** The providers a space may own a credential for (D2, D10). */
+export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
+
+/** `login` is a vendor CLI login in a space home; the other two are pasted strings. */
+export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
+
+/** `pending` is a login that has not finished; `stale` failed its last probe. */
+export type SpaceCredentialStatus = 'pending' | 'active' | 'stale' | 'revoked';
+
+/** A launch source as a policy names it (D4/D5). */
+export type CredentialPolicySource = 'member' | 'space' | 'node';
+
+/**
+ * One space credential as a member may see it: metadata only (I5). The secret
+ * is never on this type — `keyHint` is its last four characters at most, and
+ * `status` is the probed DB row's, never a file on disk (I6).
+ */
+export interface SpaceCredentialView {
+  id: string;
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  shape: SpaceCredentialShape;
+  label: string;
+  isDefault: boolean;
+  status: SpaceCredentialStatus;
+  /** Null once the creator's account is gone: the space owns it (D12). */
+  createdByAccountId: string | null;
+  /** The vendor account the key belongs to, when the probe named one (a GitHub login, D10). */
+  displayLogin: string | null;
+  keyHint: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  lastProbeAt: string | null;
+}
+
+/** `credentials.space.list`. Revoked tombstones are not listed. */
+export interface CredentialsSpaceListView {
+  spaceId: string;
+  credentials: SpaceCredentialView[];
+}
+
+/**
+ * `credentials.space.create` — paste an API key (anthropic/openai) or a token
+ * (github). The vendor is asked before anything is stored, and a key it
+ * refuses is never written. A login-shaped credential starts elsewhere.
+ */
+export interface CredentialsSpaceCreateInput {
+  provider: SpaceCredentialProviderName;
+  shape: 'api_key' | 'token';
+  label: string;
+  secret: string;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.rekey` — creator or space admin; the next spawn uses it (D7). */
+export interface CredentialsSpaceRekeyInput {
+  secret: string;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpaceRenameInput {
+  label: string;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.setDefault` and `credentials.space.delete` carry no fields. */
+export interface CredentialsSpaceCommandInput {
+  clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.delete` (design §5): the row is revoked first, then every
+ * live session recorded on it is killed WHOEVER launched it, then the file
+ * home is removed. Best effort after the revoke, which is never rolled back:
+ * `failures` names each step that did not complete.
+ */
+export interface CredentialsSpaceDeleteResult {
+  credentialId: string;
+  /** False when the credential was already revoked. */
+  revoked: boolean;
+  terminatedLoginSessionIds: string[];
+  terminatedAgentSessionIds: string[];
+  failures: Array<{
+    step: 'loginSession' | 'agentSession' | 'files';
+    sessionId?: string;
+    reason: string;
+  }>;
+}
+
+/** A provider's space policy. `allowedSources: null` means no policy: every source is allowed. */
+export interface SpaceCredentialPolicyEntry {
+  provider: SpaceCredentialProviderName;
+  allowedSources: CredentialPolicySource[] | null;
+}
+
+/** A provider's node policy. `allowNode: null` means no policy: node fallback is allowed. */
+export interface NodeCredentialPolicyEntry {
+  provider: SpaceCredentialProviderName;
+  allowNode: boolean | null;
+}
+
+/** `credentials.space.policy.get` — the space's policy, and the node's that bounds it. */
+export interface CredentialsSpacePolicyView {
+  spaceId: string;
+  providers: SpaceCredentialPolicyEntry[];
+  node: NodeCredentialPolicyEntry[];
+}
+
+/** `credentials.space.policy.set` — space admin. The provider rides the path. */
+export interface CredentialsSpacePolicySetInput {
+  allowedSources: CredentialPolicySource[] | null;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpacePolicySetResult {
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  allowedSources: CredentialPolicySource[] | null;
+}
+
+/** One provider's node fallback as a node admin sees it (D9). */
+export interface NodeCredentialStatusEntry extends NodeCredentialPolicyEntry {
+  /**
+   * The server's environment carries this provider's key (for example
+   * `ANTHROPIC_API_KEY`). A boolean only — the key is never described.
+   */
+  envKeyPresent: boolean;
+}
+
+/** `node.credentials.status` — node admin. */
+export interface NodeCredentialsStatusView {
+  providers: NodeCredentialStatusEntry[];
+}
+
+/** `node.credentials.policy.set` — node admin. `null` removes the policy. */
+export interface NodeCredentialsPolicySetInput {
+  allowNode: boolean | null;
+  clientMutationId?: string;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;

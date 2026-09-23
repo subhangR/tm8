@@ -440,6 +440,22 @@ export const OPERATIONS = [
   { name: 'credentials.serviceKeys.status',              method: 'GET',    path: '/v2/identity/credentials/service-keys',                              kind: 'read',    status: 'v1' },
   { name: 'credentials.serviceKeys.put',                 method: 'PUT',    path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
   { name: 'credentials.serviceKeys.delete',              method: 'DELETE', path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
+  // Space credentials (206, design 01a0cfa8) — agent credentials a SPACE owns.
+  // Any member adds one (D1) and every member launches with it (D3); only its
+  // creator or a space admin changes it (D11). Every row is human-only (I2)
+  // and answers metadata, never the secret (I5). The spawn reader is not a
+  // catalog operation (A1). A login-shaped create/finish is SC-4's.
+  { name: 'credentials.space.list',                      method: 'GET',    path: '/v2/spaces/:spaceId/credentials',                                    kind: 'read',    status: 'v1' },
+  { name: 'credentials.space.create',                    method: 'POST',   path: '/v2/spaces/:spaceId/credentials',                                    kind: 'command', status: 'v1' },
+  { name: 'credentials.space.rekey',                     method: 'PUT',    path: '/v2/space-credentials/:credentialId/secret',                         kind: 'command', status: 'v1' },
+  { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
+  { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
+  { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
+  // The node's own fallback credentials (D5/D9): node admin, and human-only.
+  { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
+  { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native

@@ -58,6 +58,12 @@ import type {
   CredentialsServiceKeyDeleteInput, CredentialsServiceKeyDeleteResult,
   CredentialsServiceKeyPutInput, CredentialsServiceKeysStatusView,
   ServiceKeyProviderName, ServiceKeyView,
+  CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
+  CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
+  CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
+  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, SpaceCredentialPolicyEntry,
+  SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -1957,6 +1963,135 @@ export const CredentialsServiceKeyDeleteInputSchema: z.ZodType<CredentialsServic
 export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServiceKeyDeleteResult> = z.object({
   provider: ServiceKeyProviderNameSchema,
   revoked: z.boolean(),
+}).strict();
+
+// ---------------------------------------------------------------------------
+// credentials.space.* and node.credentials.* — space credentials (206)
+// ---------------------------------------------------------------------------
+
+export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
+  z.enum(['anthropic', 'openai', 'github']);
+export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token']);
+export const SpaceCredentialStatusSchema: z.ZodType<SpaceCredentialStatus> =
+  z.enum(['pending', 'active', 'stale', 'revoked']);
+export const CredentialPolicySourceSchema: z.ZodType<CredentialPolicySource> = z.enum(['member', 'space', 'node']);
+
+/** 206's label CHECK: 1..80 characters once trimmed. */
+export const SPACE_CREDENTIAL_LABEL_MAX_LENGTH = 80;
+/** The longest pasted secret accepted; 206 bounds the ciphertext at 8192 bytes. */
+export const SPACE_CREDENTIAL_SECRET_MAX_LENGTH = 4096;
+
+const SpaceCredentialLabelSchema = z.string().trim().min(1).max(SPACE_CREDENTIAL_LABEL_MAX_LENGTH);
+// Trimmed before the bound so a paste's trailing newline is not a key
+// character; whitespace INSIDE is refused because no API key or PAT has any.
+const SpaceCredentialSecretSchema = z.string().trim().min(8).max(SPACE_CREDENTIAL_SECRET_MAX_LENGTH)
+  .regex(/^\S+$/, 'a key contains no whitespace');
+
+export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.object({
+  id: z.string(),
+  spaceId: z.string(),
+  provider: SpaceCredentialProviderNameSchema,
+  shape: SpaceCredentialShapeSchema,
+  label: z.string(),
+  isDefault: z.boolean(),
+  status: SpaceCredentialStatusSchema,
+  createdByAccountId: z.string().nullable(),
+  displayLogin: z.string().nullable(),
+  // Four characters at most: a hint for recognition, never enough to use.
+  keyHint: z.string().max(4).nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+  lastProbeAt: z.string().nullable(),
+}).strict();
+
+export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView> = z.object({
+  spaceId: z.string(),
+  credentials: z.array(SpaceCredentialViewSchema),
+}).strict();
+
+export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreateInput> = z.object({
+  provider: SpaceCredentialProviderNameSchema,
+  shape: z.enum(['api_key', 'token']),
+  label: SpaceCredentialLabelSchema,
+  secret: SpaceCredentialSecretSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict().refine(
+  // 206's provider/shape CHECK, stated here so the refusal names the rule
+  // instead of arriving as a constraint violation after the vendor probe.
+  (input) => (input.provider === 'github') === (input.shape === 'token'),
+  { message: 'github takes a token; anthropic and openai take an api_key', path: ['shape'] },
+);
+
+export const CredentialsSpaceRekeyInputSchema: z.ZodType<CredentialsSpaceRekeyInput> = z.object({
+  secret: SpaceCredentialSecretSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpaceRenameInputSchema: z.ZodType<CredentialsSpaceRenameInput> = z.object({
+  label: SpaceCredentialLabelSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpaceCommandInputSchema: z.ZodType<CredentialsSpaceCommandInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpaceDeleteResultSchema: z.ZodType<CredentialsSpaceDeleteResult> = z.object({
+  credentialId: z.string(),
+  revoked: z.boolean(),
+  terminatedLoginSessionIds: z.array(z.string()),
+  terminatedAgentSessionIds: z.array(z.string()),
+  failures: z.array(z.object({
+    step: z.enum(['loginSession', 'agentSession', 'files']),
+    sessionId: z.string().optional(),
+    reason: z.string(),
+  }).strict()),
+}).strict();
+
+export const SpaceCredentialPolicyEntrySchema: z.ZodType<SpaceCredentialPolicyEntry> = z.object({
+  provider: SpaceCredentialProviderNameSchema,
+  allowedSources: z.array(CredentialPolicySourceSchema).nullable(),
+}).strict();
+
+export const NodeCredentialPolicyEntrySchema: z.ZodType<NodeCredentialPolicyEntry> = z.object({
+  provider: SpaceCredentialProviderNameSchema,
+  allowNode: z.boolean().nullable(),
+}).strict();
+
+export const CredentialsSpacePolicyViewSchema: z.ZodType<CredentialsSpacePolicyView> = z.object({
+  spaceId: z.string(),
+  providers: z.array(SpaceCredentialPolicyEntrySchema),
+  node: z.array(NodeCredentialPolicyEntrySchema),
+}).strict();
+
+export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({
+  // 206's A11 set rule: non-empty, no repeats. Null removes the policy.
+  allowedSources: z.array(CredentialPolicySourceSchema).min(1).max(3)
+    .refine((sources) => new Set(sources).size === sources.length, 'a source is named twice')
+    .nullable(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpacePolicySetResultSchema: z.ZodType<CredentialsSpacePolicySetResult> = z.object({
+  spaceId: z.string(),
+  provider: SpaceCredentialProviderNameSchema,
+  allowedSources: z.array(CredentialPolicySourceSchema).nullable(),
+}).strict();
+
+export const NodeCredentialStatusEntrySchema: z.ZodType<NodeCredentialStatusEntry> = z.object({
+  provider: SpaceCredentialProviderNameSchema,
+  allowNode: z.boolean().nullable(),
+  envKeyPresent: z.boolean(),
+}).strict();
+
+export const NodeCredentialsStatusViewSchema: z.ZodType<NodeCredentialsStatusView> = z.object({
+  providers: z.array(NodeCredentialStatusEntrySchema),
+}).strict();
+
+export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolicySetInput> = z.object({
+  allowNode: z.boolean().nullable(),
+  clientMutationId: z.string().min(1).optional(),
 }).strict();
 
 /**
