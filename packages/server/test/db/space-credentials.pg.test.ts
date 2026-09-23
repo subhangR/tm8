@@ -332,6 +332,15 @@ describe('the sealed store', () => {
     await expect(store.readForSpawn(claims(A), ids.S!, 'anthropic', source.credential.id)).resolves.toMatchObject({ secret: source.secret });
   });
 
+  it('t1-9: a space id given in uppercase seals as Postgres answers it, so the key still opens', async () => {
+    const secret = `sk-ant-${randomUUID()}`;
+    const credential = await store.create(claims(A), {
+      spaceId: ids.S!.toUpperCase(), provider: 'anthropic', shape: 'api_key', label: label('upper'), secret,
+    });
+    expect(credential.spaceId).toBe(ids.S);
+    await expect(store.readForSpawn(claims(A), ids.S!, 'anthropic', credential.id)).resolves.toMatchObject({ secret });
+  });
+
   it('t1-13: rekey is creator-or-admin, and the next read gets the new key', async () => {
     const { credential } = await newApiKey(A, 'openai');
     await expect(store.rekey(claims(B), credential.id, key('b'))).rejects.toThrow(/creator or a space admin/);

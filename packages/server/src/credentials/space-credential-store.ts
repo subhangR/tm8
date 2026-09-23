@@ -217,14 +217,17 @@ export class DbSpaceCredentialStore {
   ): Promise<SpaceCredential> {
     const secret = normaliseSecret(input.secret);
     const credentialId = randomUUID();
+    // The AAD must be the text Postgres hands back to the spawn reader: a uuid
+    // column answers lowercase, so an uppercase id sealed as given never opens.
+    const spaceId = input.spaceId.toLowerCase();
     const sealed = sealSecret(await this.key(), secret, {
-      spaceId: input.spaceId,
+      spaceId,
       credentialId,
       provider: input.provider,
     });
     return this.db.rpc<SpaceCredential>(claims, 'create_space_credential', [
       credentialId,
-      input.spaceId,
+      spaceId,
       input.provider,
       input.shape,
       input.label,
