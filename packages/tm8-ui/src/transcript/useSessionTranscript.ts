@@ -44,11 +44,21 @@
  * window is held and say so. `resumeLive()` drops the walk and re-reads the
  * tail, which is the one operation that cannot leave a gap. A session that is
  * not live never polls at all, and that is the session a reader usually walks.
+ *
+ * ── THE TAIL IS SHARED ─────────────────────────────────────────────────────
+ *
+ * A caller asking for the default window (no `last`, no `files`) reads it
+ * through `tail-resource`, the one per-session tail read that the panel bar's
+ * context number also watches. Pausing here only withdraws THIS reader's
+ * interval and stops applying updates; the shared read may go on for the
+ * others, which is exactly why a pause is enforced on apply, not on fetch.
+ * Any other window is this hook's own read, as before.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, SessionTranscriptEntry, SessionTranscriptPage } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import type { TranscriptState } from './transcript-model';
+import { refreshTail, subscribeTail, type TailSnapshot, type TailSubscription } from './tail-resource';
 
 export interface UseSessionTranscriptOptions {
   /** How often to re-read. `null` means read once and stop — use it for any
@@ -162,6 +172,12 @@ export function useSessionTranscript(
    */
   const stalledAt = useRef<number | null>(null);
 
+  /** Whether the tail read goes through the shared store — see the header. */
+  const shared = !files && last === undefined;
+  const tailSub = useRef<TailSubscription | null>(null);
+  /** Mirrors the pause below, for the shared listener, which is not a render. */
+  const paused = useRef(false);
+
   /* Built rather than always-passed so a caller that asks for neither sends no
      opts at all — the shape the seam has served since before either option
      existed, and the one every fixture arm is written against. */
@@ -178,6 +194,10 @@ export function useSessionTranscript(
   );
 
   const load = useCallback(async () => {
+    if (shared) {
+      await refreshTail(seam, sessionId);
+      return;
+    }
     const gen = generation.current;
     const seq = ++loadSeq.current;
     const stale = () => gen !== generation.current || seq !== loadSeq.current;
@@ -197,7 +217,7 @@ export function useSessionTranscript(
         });
       }
     }
-  }, [seam, sessionId, windowOpts]);
+  }, [seam, sessionId, windowOpts, shared]);
 
   // A new session is a new read from scratch — otherwise the previous session's
   // turns stay on screen under the new session's header, and its walked-back
@@ -206,14 +226,39 @@ export function useSessionTranscript(
     generation.current += 1;
     stalledAt.current = null;
     hasLoaded.current = false;
+    paused.current = false;
     setState({ phase: 'loading' });
     setOlder([]);
     setOlderRead(IDLE);
   }, [sessionId]);
 
   useEffect(() => {
+    if (shared) return;
     void load();
-  }, [load]);
+  }, [load, shared]);
+
+  const pollMs = useRef(intervalMs);
+  pollMs.current = intervalMs;
+
+  // The shared tail: the subscription reads on arrival, so it IS the first load.
+  useEffect(() => {
+    if (!shared) return;
+    const apply = (snap: TailSnapshot) => {
+      if (paused.current) return;
+      if (snap.page) {
+        hasLoaded.current = true;
+        setState({ phase: 'ready', page: snap.page });
+      } else if (snap.error !== null && !hasLoaded.current) {
+        setState({ phase: 'error', message: snap.error });
+      }
+    };
+    const sub = subscribeTail(seam, sessionId, apply, paused.current ? null : pollMs.current);
+    tailSub.current = sub;
+    return () => {
+      tailSub.current = null;
+      sub.close();
+    };
+  }, [seam, sessionId, shared]);
 
   useEffect(() => {
     /*
@@ -223,12 +268,19 @@ export function useSessionTranscript(
      * has committed to reading history and the accumulation does not exist
      * yet to prove it.
      */
-    if (intervalMs === null || older.length > 0 || olderRead.phase === 'loading') return;
+    const pause = older.length > 0 || olderRead.phase === 'loading';
+    if (shared) {
+      paused.current = pause;
+      // A pause is not an exit: no final read that `paused` would only drop.
+      tailSub.current?.setInterval(pause ? null : intervalMs, { finalRead: !pause });
+      return;
+    }
+    if (intervalMs === null || pause) return;
     const timer = setInterval(() => void load(), intervalMs);
     return () => {
       clearInterval(timer);
     };
-  }, [intervalMs, load, older.length, olderRead.phase]);
+  }, [intervalMs, load, older.length, olderRead.phase, shared]);
 
   const newest = state.phase === 'ready' ? state.page : null;
   // The oldest window held is the one whose cursor names what comes before it.
@@ -312,6 +364,9 @@ export function useSessionTranscript(
     stalledAt.current = null;
     setOlder([]);
     setOlderRead(IDLE);
+    // The walk is dropped, so the next tail may land — before the re-render
+    // that would otherwise lift the pause.
+    paused.current = false;
     void load();
   }, [load]);
 

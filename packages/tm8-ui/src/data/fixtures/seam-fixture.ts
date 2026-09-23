@@ -2842,6 +2842,19 @@ export function createFixtureSeam(): FixtureSeam {
           // Non-zero: the "some lines did not parse" marker has a story, and it
           // is the honest explanation for why a count looks low.
           malformed: 3,
+          // Hollow cache parts make the occupancy unknown, not 12,400: a
+          // count missing its cached prefix would understate it by most of it.
+          context: {
+            usedTokens: null,
+            capacityTokens: null,
+            cacheReadTokens: null,
+            requestInputTokens: null,
+            model: 'claude-fable-5',
+            observedAt: '2026-01-02T11:41:00.000Z',
+            source: 'claude_request_usage' as const,
+            capacitySource: null,
+            unavailableReason: 'incomplete_usage' as const,
+          },
           // A SHORT transcript read whole: the window reaches byte 0, so the
           // top of this one is the real beginning of the session. This is the
           // arm that proves the earned `hasOlder: false` claim renders.
@@ -2925,6 +2938,22 @@ export function createFixtureSeam(): FixtureSeam {
         stuck: null,
         lastActivityAt: liveTurns[liveTurns.length - 1]?.at ?? null,
         malformed: 0,
+        // The panel bar's context number: the newest request of THIS window,
+        // sized against the live session's 1M launch model. Only the tail
+        // carries one — a historical window has no standing to say "now".
+        context: opts?.before === undefined
+          ? {
+              usedTokens: 48_000,
+              capacityTokens: 1_000_000,
+              cacheReadTokens: 38_400,
+              requestInputTokens: 48_000,
+              model: 'claude-opus-4-6',
+              observedAt: liveTurns[liveTurns.length - 1]?.at ?? null,
+              source: 'claude_request_usage' as const,
+              capacitySource: 'runtime' as const,
+              unavailableReason: null,
+            }
+          : null,
         // The transcript-derived file accounting — attached only when asked,
         // like the real server's `files=1`. Observed tool calls, not git.
         ...(opts?.files ? { fileChanges: clone(FIXTURE_FILE_CHANGES) } : {}),

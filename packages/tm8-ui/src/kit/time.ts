@@ -200,3 +200,101 @@ export function useNow(): number {
   useEffect(() => subscribe(setNow), []);
   return now;
 }
+
+/* ── the seconds clock ──────────────────────────────────────────────────── */
+
+/**
+ * Cadence of the OPT-IN seconds clock. A separate clock rather than a faster
+ * `CLOCK_TICK_MS`, because the list clock's coarseness is what makes it free:
+ * only a surface that reads "8s ago" pays per second, and only while it is
+ * both mounted and visible.
+ */
+export const SECONDS_TICK_MS = 1_000;
+
+/** A sample this far in the future is clock skew; past it, the instant is not trusted. */
+export const FUTURE_SKEW_MS = 5_000;
+
+const secondListeners = new Set<ClockListener>();
+let secondTimer: ReturnType<typeof setInterval> | null = null;
+
+function broadcastSeconds(): void {
+  const now = Date.now();
+  for (const listener of secondListeners) listener(now);
+}
+
+function startSeconds(): void {
+  if (secondTimer === null && !document.hidden) secondTimer = setInterval(broadcastSeconds, SECONDS_TICK_MS);
+}
+
+function stopSeconds(): void {
+  if (secondTimer !== null) {
+    clearInterval(secondTimer);
+    secondTimer = null;
+  }
+}
+
+// Hidden tabs do not tick at all — nobody is reading the seconds.
+function onSecondsVisibility(): void {
+  if (document.hidden) {
+    stopSeconds();
+    return;
+  }
+  broadcastSeconds();
+  startSeconds();
+}
+
+function subscribeSeconds(listener: ClockListener): () => void {
+  secondListeners.add(listener);
+  if (secondListeners.size === 1) {
+    document.addEventListener('visibilitychange', onSecondsVisibility);
+    startSeconds();
+  }
+  return () => {
+    secondListeners.delete(listener);
+    if (secondListeners.size === 0) {
+      stopSeconds();
+      document.removeEventListener('visibilitychange', onSecondsVisibility);
+    }
+  };
+}
+
+/**
+ * Current wall clock at one-second resolution, from ONE interval shared by
+ * every subscriber and running only while one is `active` and the tab is
+ * visible. Pass `active: false` when nothing on screen needs seconds — the
+ * caller then re-renders never, and `now` is its mount time.
+ */
+export function useNowSeconds(active = true): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    return subscribeSeconds(setNow);
+  }, [active]);
+  return now;
+}
+
+/**
+ * Compact age — '8s' / '4m' / '2h' / '3d' — for a label that updates every
+ * second and has no room for 'ago'. Null when the instant is unusable or lies
+ * materially in the future, so a skewed or garbled timestamp reads as unknown
+ * rather than as a confident '0s'.
+ */
+export function ageLabel(value: string | number | Date | null | undefined, now: number = Date.now()): string | null {
+  const t = parseInstant(value);
+  if (t === null) return null;
+  const delta = now - t;
+  if (delta < -FUTURE_SKEW_MS) return null;
+  const s = Math.max(0, Math.floor(delta / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/** '8s' → '8s ago': the one place a compact age gains its suffix. */
+export function ageAgo(age: string): string {
+  return `${age} ago`;
+}

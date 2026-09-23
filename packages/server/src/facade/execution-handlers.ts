@@ -2600,10 +2600,11 @@ function registerHandlers(
       workdir_mode: string | null;
       agent_tool: string | null;
       agent_config_dir: string | null;
+      model: string | null;
     }>(
       claims,
       `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool,
-              ws.agent_config_dir
+              ws.agent_config_dir, ws.model
          from public.entities e
          join public.work_sessions ws on ws.entity_id = e.id
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
@@ -2677,6 +2678,9 @@ function registerHandlers(
         last,
         ...(before === undefined ? {} : { before }),
         includeFileChanges,
+        // The launch model, for the context reading's capacity — a column of
+        // the same authorized row, never a request parameter.
+        runtimeModel: session.model,
       }),
     );
   });

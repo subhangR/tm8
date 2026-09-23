@@ -97,6 +97,8 @@ export {
 // the PTY ring (ANSI repaints a coordinator cannot read) and NOT the CLI
 // journal (which holds no model output at all).
 export {
+  collectContext,
+  modelSwitchedBefore,
   encodeClaudeProjectDir,
   locateTranscript,
   readSessionTranscript,

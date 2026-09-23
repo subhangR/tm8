@@ -386,6 +386,13 @@ export interface EntityDetailPanelProps {
    */
   sessionStatsSurface?: ReactNode;
   /**
+   * The live context number on the panel bar — `views/sessionContextSurface.tsx`.
+   * Rendered for the terminal archetype only, first in the end cluster, on the
+   * EXISTING bar row (user ruling: no new row, no taller bar). Not on the phone
+   * shell, whose end cluster collapses when empty and would grow a row for it.
+   */
+  sessionContextSurface?: ReactNode;
+  /**
    * ATTENTION HISTORY — every request ever escalated on this entity, settled or
    * not. Self-fetching; the host wires the seam (`views/attentionSurface.tsx`).
    *
@@ -1033,6 +1040,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             </>
           ) : (
           <>
+            {isTerminal && props.sessionContextSurface ? props.sessionContextSurface : null}
             {controlsRideBar ? (
               <div
                 className="pn-panelbar__surface"

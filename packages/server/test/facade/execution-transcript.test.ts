@@ -40,6 +40,7 @@ interface SessionRow {
   workdir_mode: string | null;
   agent_tool: string | null;
   agent_config_dir: string | null;
+  model?: string | null;
 }
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
@@ -177,6 +178,36 @@ describe('execution.transcript handler', () => {
     expect(page.entries[1]?.text).toBe('Reading the PTY resize path.');
     expect(page.stats?.assistantMessages).toBe(1);
     expect(page.lastActivityAt).toBe('2026-08-01T10:00:20.000Z');
+  });
+
+  it('sizes the context reading against the session row’s launch model', async () => {
+    await plantClaude(home, '/work/tm8', [
+      userTurn('Go.', '2026-08-01T10:00:00.000Z'),
+      {
+        type: 'assistant',
+        timestamp: '2026-08-01T10:00:20.000Z',
+        message: {
+          role: 'assistant',
+          model: 'claude-opus-4-6',
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input_tokens: 2, cache_read_input_tokens: 38_400, cache_creation_input_tokens: 9_598 },
+        },
+      },
+    ]);
+    const oneM = buildHandler({ dataDir, home, rows: () => [row({ model: 'claude-opus-4-6[1m]' })] });
+    expect((await call(oneM, ctxFor(SESSION_ID))).context).toMatchObject({
+      usedTokens: 48_000,
+      cacheReadTokens: 38_400,
+      capacityTokens: 1_000_000,
+      capacitySource: 'runtime',
+      observedAt: '2026-08-01T10:00:20.000Z',
+    });
+    // Without a proven window the reading still carries the count, never a guessed capacity.
+    const plain = buildHandler({ dataDir, home, rows: () => [row({ model: null })] });
+    expect((await call(plain, ctxFor(SESSION_ID))).context).toMatchObject({
+      usedTokens: 48_000,
+      capacityTokens: null,
+    });
   });
 
   it('reads a member-credential transcript from the config dir recorded at spawn', async () => {

@@ -60,6 +60,7 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
+import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
@@ -498,6 +499,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
+          sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
           gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
           changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
           taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}

@@ -39,6 +39,7 @@ import { mergePrPortFor } from './mergePrPort';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
+import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
@@ -107,6 +108,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       attentionSection={attentionSectionFor(data.seam, data.spaceId, entityId, () => data.pull?.(entityId))}
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, entityId)}
+      sessionContextSurface={sessionContextSurfaceFor(data.seam, entityId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
       changesSurface={changesSurfaceFor(data.seam, entityId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}

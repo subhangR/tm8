@@ -30,6 +30,7 @@ import { GraphView, type GraphTimelineStep } from './GraphView';
 import { attentionSectionFor } from '../views/attentionSurface';
 import { debugSurfaceFor } from '../views/debugSurface';
 import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
+import { sessionContextSurfaceFor } from '../views/sessionContextSurface';
 import { gitSurfaceFor } from '../views/gitSurface';
 import { changesSurfaceFor } from '../views/changesSurface';
 import { mergePrPortFor } from '../views/mergePrPort';
@@ -229,6 +230,7 @@ export function GraphScreen(props: GraphScreenProps) {
       attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
+      sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       changesSurface={changesSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail ?? null, (id) => setSelectedId(id as EntityId))}

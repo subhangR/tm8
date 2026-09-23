@@ -109,7 +109,7 @@ import type {
   SessionLaunchRecord,
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
-  SessionTranscriptStuck,
+  SessionTranscriptStuck, SessionTranscriptContext,
   ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
   Workflow, WorkflowInput, WorkflowState, WorkflowStateInput, WorkflowTransition, WorkflowTransitionInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
@@ -3280,6 +3280,26 @@ export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object(
   turns: z.number().int().positive(),
 }).strict();
 
+const TokenCount = z.number().int().nonnegative().nullable();
+
+export const SessionTranscriptContextSchema: z.ZodType<SessionTranscriptContext> = z.object({
+  // Null is unknown and 0 is a reported zero — never collapsed into each other.
+  usedTokens: TokenCount,
+  capacityTokens: z.number().int().positive().nullable(),
+  cacheReadTokens: TokenCount,
+  requestInputTokens: TokenCount,
+  model: z.string().nullable(),
+  observedAt: IsoTimestamp.nullable(),
+  source: z.enum(['claude_request_usage', 'codex_request_usage']).nullable(),
+  capacitySource: z.enum(['provider', 'runtime']).nullable(),
+  unavailableReason: z.enum([
+    'not_reported',
+    'incomplete_usage',
+    'sample_outside_window',
+    'awaiting_new_sample',
+  ]).nullable(),
+}).strict();
+
 export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),
@@ -3306,6 +3326,8 @@ export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.o
   windowStart: z.number().int().nonnegative().nullable(),
   hasOlder: z.boolean(),
   fileChanges: SessionFileChangesSchema.nullable().optional(),
+  // Optional: an older server omits it, and that is distinct from null.
+  context: SessionTranscriptContextSchema.nullable().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
