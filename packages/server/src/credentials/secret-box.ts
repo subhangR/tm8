@@ -11,13 +11,30 @@ export interface SealedSecret {
   readonly nonce: Buffer;
 }
 
-export interface SecretBinding {
+/** A member's credential (079, 203): AAD `<account_id>|<provider>`. */
+export interface AccountSecretBinding {
   readonly accountId: string;
   readonly provider: string;
 }
 
+/**
+ * A space credential (206): AAD `<space_id>|<credential_id>|<provider>`. Two
+ * separators against the account form's one, so the two binding spaces cannot
+ * collide: an account-bound ciphertext never opens as a space one, or back.
+ */
+export interface SpaceSecretBinding {
+  readonly spaceId: string;
+  readonly credentialId: string;
+  readonly provider: string;
+}
+
+export type SecretBinding = AccountSecretBinding | SpaceSecretBinding;
+
 function bindingBytes(binding: SecretBinding): Buffer {
-  return Buffer.from(`${binding.accountId}|${binding.provider}`, 'utf8');
+  const aad = 'spaceId' in binding
+    ? `${binding.spaceId}|${binding.credentialId}|${binding.provider}`
+    : `${binding.accountId}|${binding.provider}`;
+  return Buffer.from(aad, 'utf8');
 }
 
 function assertKey(key: Buffer): void {
