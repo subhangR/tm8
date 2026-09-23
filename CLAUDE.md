@@ -2,9 +2,11 @@
 
 ## Answer structural questions from the code graph, not from grep
 
-A pre-built graph of this repository sits at `graphify-out/merged-graph.json` (every file
-and symbol from an AST pass, plus recent tm8 tasks, sessions and commits, joined by
-`commit -> file` edges extracted from `git show`). It costs no model tokens to build or query.
+A pre-built graph of this repository sits at `graphify-out/merged-graph.json`: every file
+and symbol from an AST pass, plus every tm8 task, session and commit in the space (paged,
+not sampled), joined by `commit -> file` edges extracted from `git show`. Link order is
+caller -> callee, so `affected` and `path` answer in the right direction. It costs no model
+tokens to build or query. The refresh prints its current counts.
 
 It is not committed (`/graphify-out` is gitignored). `scripts/graphify-refresh.sh` writes it
 into the **launch project** — the checkout worker lanes are cut from — and worktree

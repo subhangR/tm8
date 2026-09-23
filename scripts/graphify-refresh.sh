@@ -43,6 +43,9 @@ REPO="${1:-${GRAPHIFY_REPO:-/home/tm8/prod-workspace/tm8}}"
 SPACE="${2:-${TM8_SPACE_ID:-019fbd5a-3c5b-71ea-9b91-1d3baa50da25}}"
 REF="${3:-${GRAPHIFY_REF:-}}"
 export PATH="$HOME/.local/bin:$PATH"
+# The exporter and the merge run from THIS script's checkout, not from $REF's:
+# a fix to either takes effect on the next refresh, not after it reaches $REF.
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
 
 if [ -L graphify-out ]; then
@@ -56,8 +59,6 @@ if [ -z "$REF" ]; then
   SRC="$REPO"
 else
   git fetch --quiet origin
-  # Named after the repo: merge-graphs prefixes node ids with this directory's
-  # name, so the scratch tree must carry the same one an in-place build would.
   SRC="${GRAPHIFY_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/tm8-graphify}/$(basename "$REPO")"
   rm -rf "$SRC"
   mkdir -p "$SRC"
@@ -70,30 +71,20 @@ fi
 #     the same as one built in place.
 (cd "$SRC" && graphify update . --no-cluster)
 
-# 2 · the work half, and the commit->file edges that cross between them. `git
-#     show` runs against $REPO, which holds every object $REF has.
-node "$SRC/scripts/tm8-to-graphify.mjs" --space "$SPACE" \
+# 2 · the work half — the whole space, paged — and the commit->file edges that
+#     cross between them. `git show` runs against $REPO, which holds every
+#     object $REF has.
+node "$TOOLS/tm8-to-graphify.mjs" --space "$SPACE" \
   --code "$SRC/graphify-out/graph.json" \
   --out  "$SRC/graphify-out/tm8-work.json" \
   --repo "$REPO"
 
-#     Both halves must say what they are. graphify 0.8.39's `update` writes
-#     graph.json with no `directed` or `multigraph` key, networkx then loads it
-#     as a MultiGraph, and `merge-graphs` — which composes into a plain Graph —
-#     dies with "All graphs must be graphs or multigraphs". The exporter at an
-#     older $REF omits the key too.
-node -e '
-  const fs = require("node:fs");
-  for (const f of process.argv.slice(1)) {
-    const g = JSON.parse(fs.readFileSync(f, "utf8"));
-    if (g.multigraph !== undefined && g.directed !== undefined) continue;
-    g.directed ??= false; g.multigraph ??= false;
-    fs.writeFileSync(f, JSON.stringify(g));
-  }' "$SRC/graphify-out/graph.json" "$SRC/graphify-out/tm8-work.json"
-
-# 3 · one graph a person can query.
-graphify merge-graphs "$SRC/graphify-out/graph.json" "$SRC/graphify-out/tm8-work.json" \
-  --out "$SRC/graphify-out/merged-graph.json"
+# 3 · one graph a person can query. Not `graphify merge-graphs`: in 0.8.39 it
+#     re-serializes through an undirected nx.Graph and flips about two thirds of
+#     `calls` edges callee -> caller (measured; see graphify-merge.mjs). The tag
+#     is the repo's directory name, the prefix merge-graphs would have used.
+node "$TOOLS/graphify-merge.mjs" "$(basename "$REPO")" "$SRC/graphify-out/merged-graph.json" \
+  "$SRC/graphify-out/graph.json" "$SRC/graphify-out/tm8-work.json"
 
 # 4 · publish (ref mode only; in place it is already there). Copy beside, then
 #     rename: a reader sees the old file or the new one, never a torn one.

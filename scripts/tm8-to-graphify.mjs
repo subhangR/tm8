@@ -39,7 +39,12 @@ const SPACE = flag('space', process.env.TM8_SPACE_ID);
 // tsconfig `include`, so it cannot reach a build.
 const CODE = flag('code', 'graphify-out/graph.json');
 const OUT = flag('out', 'graphify-out/tm8-work.json');
-const LIMIT = flag('limit', '150');
+// No cap by default. This used to be `--limit 150` on one `graph query`, which
+// is also the only page that route has (it reads at most 200 candidates and
+// returns no cursor): the work half was the 150 most recent entities, and
+// "which files did this task touch" had no answer for anything older.
+const LIMIT = Number(flag('limit', 'Infinity'));
+const PAGE = 200; // the server's MAX_LIMIT for a page
 const REPO = flag('repo', process.cwd());
 
 if (!SPACE) {
@@ -49,10 +54,29 @@ if (!SPACE) {
 
 /* -- 1 · read the work graph ------------------------------------------------ */
 
-const raw = JSON.parse(
-  execFileSync('tm8', ['graph', 'query', '--space', SPACE, '--limit', LIMIT, '--format', 'json'],
-    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }),
+/* Paged, not traversed: `entity query` (collections.query) and `edge list`
+   (edges.list) both return `nextCursor`, so the whole space is reachable in
+   PAGE-sized reads. The rows are the same projection the traversal returned —
+   and commits arrive with `state.sha`, which the traversal never carried. */
+const tm8Json = (args) => JSON.parse(
+  execFileSync('tm8', [...args, '--format', 'json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }),
 );
+const pageAll = (args, pageOf, max = Infinity) => {
+  const rows = [];
+  let cursor;
+  do {
+    const { items, nextCursor } = pageOf(tm8Json([...args, '--limit', String(PAGE), ...(cursor ? ['--cursor', cursor] : [])]));
+    rows.push(...items);
+    cursor = nextCursor ?? undefined;
+  } while (cursor && rows.length < max);
+  return rows.slice(0, max);
+};
+
+const raw = {
+  nodes: pageAll(['entity', 'query', '--space', SPACE], (d) => d.page, LIMIT),
+  edges: pageAll(['--space', SPACE, 'edge', 'list'], (d) => d)
+    .map((e) => ({ sourceId: e.source?.id, targetId: e.target?.id, type: e.type })),
+};
 
 /* -- 2 · read the code graph, and index it BY SOURCE FILE -------------------
    graphify derives a node id from the path, but the derivation is its own
@@ -246,7 +270,6 @@ const out = {
   nodes,
   links,
   directed: code.directed ?? false,
-  multigraph: false,
 };
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(out));
