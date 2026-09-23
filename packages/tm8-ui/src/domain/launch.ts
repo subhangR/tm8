@@ -512,6 +512,8 @@ export interface LaunchConfig {
   accessMode: 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess' | null;
   /** Independent source selection per provider. An absent key means auto. */
   credentialSources?: NonNullable<ExecutionSpawnInput['credentialSources']> | null;
+  /** A pinned space credential per provider whose source is `space`; absent means its default. */
+  spaceCredentialIds?: NonNullable<ExecutionSpawnInput['spaceCredentialIds']> | null;
   /** Compatibility for cached configs created before provider splitting. */
   credentialSource?: NonNullable<ExecutionSpawnInput['credentialSource']> | null;
   mode: LaunchMode;
@@ -873,6 +875,9 @@ export function buildSpawnInput(args: {
   if (config.accessMode) input.accessMode = config.accessMode;
   if (config.credentialSources && Object.keys(config.credentialSources).length > 0) {
     input.credentialSources = { ...config.credentialSources };
+    if (config.spaceCredentialIds && Object.keys(config.spaceCredentialIds).length > 0) {
+      input.spaceCredentialIds = { ...config.spaceCredentialIds };
+    }
   } else if (config.credentialSource) {
     input.credentialSource = config.credentialSource;
   }
