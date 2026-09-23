@@ -25,8 +25,16 @@ import type { RequestContext } from '../../src/http/types.js';
 
 const PROJECT_ID = '00000000-0000-7000-8000-000000000901';
 
+// Every agent session on this fleet exports GIT_AUTHOR_NAME and friends, and
+// the environment outranks every config form — so the `user.name T4` the
+// fixture sets below loses to an inherited identity unless these are cleared.
+const FIXTURE_ENV: NodeJS.ProcessEnv = { ...process.env };
+for (const name of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+  delete FIXTURE_ENV[name];
+}
+
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+  return execFileSync('git', args, { cwd, encoding: 'utf8', env: FIXTURE_ENV });
 }
 
 let root: string;

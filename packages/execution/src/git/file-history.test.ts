@@ -4,13 +4,17 @@
 // module builds (`--follow` with one pathspec behind `--`, `--porcelain`,
 // `-L 1,N` and its "has only N lines" refusal). Canned stdout would pass while
 // every one of those spellings was wrong.
+import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { runGit, WorktreeError } from '../worktree/git-invoker.js';
 import { UNCOMMITTED_OID, readFileBlame, readFileHistory, readFileRevisionDiff } from './file-history.js';
+
+const execFileAsync = promisify(execFile);
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
@@ -24,10 +28,22 @@ const AUTHOR = ['-c', 'user.email=t@t', '-c', 'user.name=t'];
 // Argv-only invocation must carry it as inert bytes.
 const HOSTILE = 'feat-x;echo>pwned.txt';
 
+// Every agent session on this fleet exports GIT_AUTHOR_NAME and friends, and
+// the environment outranks every config form, `-c user.name=` included — so
+// AUTHOR loses to an inherited identity unless these are cleared. runGit
+// spreads process.env, so fixture setup spawns git itself with an explicit env.
+const FIXTURE_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_EDITOR: 'true' };
+for (const name of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+  delete FIXTURE_ENV[name];
+}
+
 async function git(args: string[], cwd: string): Promise<string> {
-  const res = await runGit(args, { cwd });
-  if (res.code !== 0) throw new Error(`git ${args.join(' ')} failed: ${res.stderr}`);
-  return res.stdout.trim();
+  try {
+    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', env: FIXTURE_ENV });
+    return stdout.trim();
+  } catch (err) {
+    throw new Error(`git ${args.join(' ')} failed: ${(err as { stderr?: string }).stderr ?? String(err)}`);
+  }
 }
 
 async function commitFile(file: string, content: string, message: string): Promise<string> {
