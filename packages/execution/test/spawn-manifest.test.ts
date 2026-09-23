@@ -1163,9 +1163,9 @@ describe('composeManifest', () => {
 //
 // Jev is a launch-UI advisor now (design 01a0cb80 §7.4): spawn resolves nothing
 // from it. The launch block a plain spawn writes is exactly what it was before
-// spawn-time routing existed, minus the two always-null `routing` and
-// `contextEngineering` fields. Pinning the key set means a field that sneaks
-// back in — null or not — fails here rather than in a reviewer's diff.
+// spawn-time routing existed, minus the two always-null Jev blocks that #647
+// added. Pinning the key set means a field that sneaks back in — null or
+// not — fails here rather than in a reviewer's diff.
 
 describe('composeManifest launch block without Jev', () => {
   const args = {
@@ -1192,8 +1192,6 @@ describe('composeManifest launch block without Jev', () => {
       'sandboxDegraded',
       'tool',
     ]);
-    expect(launch).not.toHaveProperty('routing');
-    expect(launch).not.toHaveProperty('contextEngineering');
   });
 
   it('resolves the model from the request, then the persona, then the default — nothing else', () => {

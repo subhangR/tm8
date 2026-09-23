@@ -3,7 +3,7 @@
 //
 // Spawn-time context engineering (@tm8/jev) is gone (design 01a0cb80 §7.4).
 // Nothing between the graph read and the manifest may trim, reorder or rank
-// this material, and the manifest records no `contextEngineering` block.
+// this material, and the manifest's launch block carries no Jev record.
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -69,7 +69,17 @@ describe('SpawnService persona context', () => {
     const manifest = graph.manifests[0]?.manifest;
     expect(manifest?.agent.memory).toEqual(MEMORIES);
     expect(manifest?.skills?.map((s) => s.name)).toEqual(['deploy-runbook', 'figma-connector']);
-    expect(manifest?.launch).not.toHaveProperty('contextEngineering');
-    expect(manifest?.launch).not.toHaveProperty('routing');
+    expect(Object.keys(manifest?.launch ?? {}).sort()).toEqual([
+      'accessMode',
+      'command',
+      'commandNetwork',
+      'credentialSource',
+      'credentialSources',
+      'model',
+      'permissionMode',
+      'reasoningEffort',
+      'sandboxDegraded',
+      'tool',
+    ]);
   });
 });
