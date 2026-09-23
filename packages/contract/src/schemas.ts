@@ -84,7 +84,7 @@ import type {
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
   NavChannelNode,
-  NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
+  NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
   StartChatResult,
@@ -3557,6 +3557,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   sections: uniqueArray(z.enum(['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
+  actionsSchema: z.enum(['v1', 'v2']).optional(),
 }).strict();
 
 export const EntityContextViewSchema: z.ZodType<EntityContextView> = z.lazy(() => z.object({
@@ -3571,7 +3572,7 @@ export const EntityContextViewSchema: z.ZodType<EntityContextView> = z.lazy(() =
   children: z.array(EntitySummarySchema),
   edges: z.array(EdgeViewSchema),
   messages: z.array(MessageViewSchema),
-  actions: z.array(PaletteActionSchema),
+  actions: z.union([z.array(PaletteActionSchema), ActionRowsSchema]),
   provenance: z.object({
     operation: z.custom<OperationName>(isOperationName),
     fetchedAt: IsoTimestamp,
@@ -4013,6 +4014,34 @@ export const ActionDiscoveryResultSchema: z.ZodType<ActionDiscoveryResult> = z.o
   targetVersion: z.number().int().positive().optional(),
   capabilityEpoch: z.string().min(1),
   actions: z.array(PaletteActionSchema),
+}).strict();
+
+const ActionRowsShape = {
+  schema: z.literal('tm8.actions.v2'),
+  actorId: EntityIdSchema,
+  target: z.object({
+    id: EntityIdSchema,
+    kind: z.string().min(1),
+    version: z.number().int().positive(),
+  }).strict().optional(),
+  capabilityEpoch: z.string().min(1),
+  columns: z.tuple([
+    z.literal('operation'), z.literal('kind'), z.literal('authzTarget'), z.literal('exposure'),
+  ]),
+  rows: z.array(z.tuple([
+    OperationNameSchema,
+    z.string(),
+    z.enum(['server', 'space', 'project', 'entity', 'session']),
+    z.enum(['public', 'composite', 'internal', 'reserved']),
+  ])),
+  total: z.number().int().nonnegative(),
+};
+
+export const ActionRowsSchema: z.ZodType<ActionRows> = z.object(ActionRowsShape).strict();
+
+export const ActionDiscoveryPageSchema: z.ZodType<ActionDiscoveryPage> = z.object({
+  ...ActionRowsShape,
+  nextCursor: CursorSchema.nullable(),
 }).strict();
 
 // ---------------------------------------------------------------------------

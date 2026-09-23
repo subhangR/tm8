@@ -10,7 +10,10 @@
  * as a hidden mutation seam.
  */
 import {
+  ACTION_ROW_COLUMNS,
   EntityContextViewSchema,
+  expandActionRows,
+  type ActionRows,
   EntityFeedPageSchema,
   decodeCursor,
   encodeCursor,
@@ -32,6 +35,7 @@ import {
   type W2FeedContextServiceOptions,
 } from '../../src/facade/services/w2/feed-context.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import type { ActionDiscovery } from '../../src/facade/services/w2/saved-views-actions.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
 import { UNTAGGED, countStatements } from './context-statement-counter.js';
 
@@ -408,7 +412,7 @@ function request(
 
 const PALETTE: PaletteAction[] = [
   {
-    id: 'action:entities.get:g13',
+    id: `action:entities.get:${IDS.task}`,
     label: 'entities get',
     kind: 'navigate',
     operation: 'entities.get',
@@ -421,12 +425,26 @@ const PALETTE: PaletteAction[] = [
   },
 ];
 
+/** The discovery `PALETTE` is the v1 expansion of — one row, factored. */
+const DISCOVERY: ActionDiscovery = {
+  compact: {
+    schema: 'tm8.actions.v2',
+    actorId: IDS.member,
+    target: { id: IDS.task, kind: 'task', version: 3 },
+    capabilityEpoch: 'cap:g13',
+    columns: ACTION_ROW_COLUMNS,
+    rows: [['entities.get', 'navigate', 'entity', 'public']],
+    total: 1,
+  },
+  fingerprint: 'g13',
+};
+
 function registryFor(db: Db, options: W2FeedContextServiceOptions = {}): HandlerRegistry {
   const registry = new HandlerRegistry();
   registerW2FeedContextHandlers(
     registry,
     { db, config: {} as never, owner: async () => OWNER },
-    { actions: async () => PALETTE, ...options },
+    { actions: async () => DISCOVERY, ...options },
   );
   return registry;
 }
@@ -1138,6 +1156,57 @@ describe('W2.G13 entities.context bounded focus', () => {
     expect(view.provenance.eventSeq).toBe(4211);
     expect(view.actions).toEqual(PALETTE);
     expect(view.byteSize).toBeGreaterThan(0);
+  });
+
+  it('serves the actions section as tm8.actions.v2 rows on request, with a cursor actions.list continues', async () => {
+    const ops = [
+      'entities.commands.complete', 'messages.post', 'entities.commands.linkPr', 'entities.commands.linkCommit',
+      'entities.patch', 'edges.create', 'tracking.refresh', 'entities.context', 'messages.list', 'entities.get',
+      'entities.children', 'entities.hierarchy', 'entities.connections', 'edges.list', 'entities.activity',
+    ] as const;
+    const many: ActionDiscovery = {
+      compact: {
+        ...DISCOVERY.compact,
+        rows: ops.map((op) => [op, 'navigate', 'entity', 'public']),
+        total: ops.length,
+      },
+      fingerprint: 'g13',
+    };
+    const { run } = contextOn(CONTEXT_STUB, { actions: async () => many });
+
+    const whole = await run('sections=summary,actions&actionsSchema=v2');
+    expect(EntityContextViewSchema.parse(whole)).toBeTruthy();
+    expect(whole.actions).toEqual(many.compact);
+    expect(whole.cursors['actions']).toBeNull();
+
+    // A section cap that holds only some rows keeps the header once, the
+    // leading rows, and a cursor naming the last row kept.
+    const capped = await run('sections=summary,actions&actionsSchema=v2&sectionBytes=512');
+    const section = capped.actions as ActionRows;
+    expect(section.rows.length).toBeGreaterThan(0);
+    expect(section.rows.length).toBeLessThan(ops.length);
+    expect(section.rows).toEqual(many.compact.rows.slice(0, section.rows.length));
+    expect(section.total).toBe(ops.length);
+    expect(Buffer.byteLength(JSON.stringify(section), 'utf8')).toBeLessThanOrEqual(512);
+    expect(capped.truncated).toBe(true);
+    expect(decodeCursor(capped.cursors['actions']!).k).toEqual(['g13', section.rows.at(-1)![0]]);
+
+    // v1 is untouched: the same discovery, expanded and capped at the
+    // section's bytes (fewer rows fit as objects), and no actions cursor.
+    const legacy = await run('sections=summary,actions');
+    const objects = legacy.actions as PaletteAction[];
+    expect(objects.length).toBeLessThan(ops.length);
+    expect(objects).toEqual(expandActionRows(many.compact).actions.slice(0, objects.length));
+    expect(legacy.cursors).not.toHaveProperty('actions');
+  });
+
+  it('collapses a v2 actions section the byte budget emptied to [], exactly like v1', async () => {
+    const { run } = contextOn(CONTEXT_STUB);
+    const view = await run('sections=summary,hierarchy,connections,messages,actions&actionsSchema=v2&totalBytes=1024');
+    expect(EntityContextViewSchema.parse(view)).toBeTruthy();
+    expect(view.actions).toEqual([]);
+    expect(view.truncated).toBe(true);
+    expect(view.cursors['actions']).toBeNull();
   });
 
   it('refuses an unknown key or an out-of-range cap before any database work', async () => {

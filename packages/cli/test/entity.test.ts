@@ -651,6 +651,36 @@ describe('entity context', () => {
     expect(seen[0]?.query).toBe('?sections=summary%2Cactions');
   });
 
+  describe('the actions section rolls out to tm8.actions.v2 rows', () => {
+    afterEach(() => {
+      delete process.env.TM8_JOURNAL_CLASS;
+    });
+
+    it('asks for v2 rows for an agent-class structured read, silently', async () => {
+      process.env.TM8_JOURNAL_CLASS = 'agent';
+      const r = await drive(['entity', 'context', ENT, '--format', 'json']);
+      expect(r.code).toBe(0);
+      expect(seen[0]?.query).toBe('?actionsSchema=v2');
+      expect(r.stderr).toBe('');
+    });
+
+    it('keeps a non-agent --format json read on v1 with a notice; --actions-schema pins either', async () => {
+      process.env.TM8_JOURNAL_CLASS = 'human';
+      const legacy = await drive(['entity', 'context', ENT, '--format', 'json']);
+      expect(seen[0]?.query).toBe('');
+      expect(legacy.stderr).toMatch(/still emits the v1 shape.*--actions-schema v2/s);
+
+      const pinned = await drive(['entity', 'context', ENT, '--format', 'json', '--actions-schema', 'v2']);
+      expect(seen[1]?.query).toBe('?actionsSchema=v2');
+      expect(pinned.stderr).toBe('');
+
+      // No actions section, no question about its shape.
+      const none = await drive(['entity', 'context', ENT, '--format', 'json', '--sections', 'summary']);
+      expect(seen[2]?.query).toBe('?sections=summary');
+      expect(none.stderr).toBe('');
+    });
+  });
+
   it('--total-bytes and --section-bytes bind as integers', async () => {
     const r = await drive([
       'entity', 'context', ENT,

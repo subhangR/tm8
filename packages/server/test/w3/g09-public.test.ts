@@ -1,3 +1,11 @@
+import {
+  ActionDiscoveryPageSchema,
+  EntityContextViewSchema,
+  expandActionRows,
+  type ActionDiscoveryPage,
+  type ActionDiscoveryResult,
+  type ActionRows,
+} from '@tm8/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -218,6 +226,45 @@ describe.sequential('W3.G09 saved views and actions through the production Serve
     const kept = context.actions.map((action) => action.operation);
     expect(kept).toEqual(expect.arrayContaining(['entities.commands.complete', 'messages.post']));
     expect(kept.filter((operation) => operation.startsWith('auth.'))).toEqual([]);
+  });
+
+  it('serves tm8.actions.v2: a bounded first page, lossless against v1, continued by the context cursor', async () => {
+    type Page = ActionDiscoveryPage;
+    const legacy = successData<ActionDiscoveryResult>(
+      await harness.request('GET', `/v2/actions?contextEntityId=${taskId}`),
+    );
+    const first = ActionDiscoveryPageSchema.parse(successData<Page>(
+      await harness.request('GET', `/v2/actions?contextEntityId=${taskId}&schema=v2`),
+    ));
+    expect(first.rows.length).toBe(Math.min(20, legacy.actions.length));
+    expect(first.total).toBe(legacy.actions.length);
+    expect(Buffer.byteLength(JSON.stringify(first), 'utf8')).toBeLessThanOrEqual(1500);
+
+    const rows = [...first.rows];
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const next = successData<Page>(await harness.request(
+        'GET', `/v2/actions?contextEntityId=${taskId}&schema=v2&cursor=${encodeURIComponent(cursor)}`,
+      ));
+      rows.push(...next.rows);
+      cursor = next.nextCursor;
+    }
+    expect(JSON.stringify(expandActionRows({ ...first, rows }))).toBe(JSON.stringify(legacy));
+
+    // The context's actions section is the same rows, and the cursor it emits
+    // is one `actions.list` accepts (never a cursor its consumer rejects).
+    const context = EntityContextViewSchema.parse(successData<unknown>(await harness.request(
+      'GET', `/v2/entities/${taskId}/context?sections=summary,actions&sectionBytes=512&actionsSchema=v2`,
+    )));
+    const section = context.actions as ActionRows;
+    expect(section.schema).toBe('tm8.actions.v2');
+    expect(section.rows).toEqual(first.rows.slice(0, section.rows.length));
+    expect(section.rows.length).toBeLessThan(section.total);
+    const continued = successData<Page>(await harness.request(
+      'GET',
+      `/v2/actions?contextEntityId=${taskId}&schema=v2&cursor=${encodeURIComponent(context.cursors['actions']!)}`,
+    ));
+    expect(continued.rows[0]).toEqual(rows[section.rows.length]);
   });
 
   it('rejects strict unknown saved-view input without a row or ledger effect', async () => {

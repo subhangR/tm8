@@ -3366,6 +3366,46 @@ export interface ActionDiscoveryResult {
   actions: PaletteAction[];
 }
 
+/**
+ * `tm8.actions.v2` — the same answer as `ActionDiscoveryResult`, factored.
+ *
+ * Every `PaletteAction` repeats the target, its version and the epoch, and
+ * carries `id`, `label` and `helpRef`, which are pure functions of `operation`
+ * and the target. Here each is stated once and a row carries only what varies:
+ * `[operation, kind, authzTarget, exposure]`, in `columns` order. The shape is
+ * reversible — `expandActionRows` (./actions.ts) rebuilds every original
+ * `PaletteAction` exactly — so nothing is lost, only no longer repeated.
+ *
+ * Requested with `schema=v2` on `actions.list` (`actionsSchema=v2` on
+ * `entities.context`). Only v2 pages: `limit` (default 20, max 100) and a
+ * keyset `cursor` bound to the `capabilityEpoch` it was issued under.
+ */
+export const ACTION_ROW_COLUMNS = ['operation', 'kind', 'authzTarget', 'exposure'] as const;
+
+export type ActionRow = [
+  operation: OperationName,
+  kind: PaletteAction['kind'],
+  authzTarget: PaletteAction['authzTarget'],
+  exposure: PaletteAction['exposure'],
+];
+
+export interface ActionRows {
+  schema: 'tm8.actions.v2';
+  actorId: EntityId;
+  /** Absent in global discovery (no context entity), exactly as in v1. */
+  target?: { id: EntityId; kind: string; version: number };
+  capabilityEpoch: string;
+  columns: typeof ACTION_ROW_COLUMNS;
+  rows: ActionRow[];
+  /** Rows in the requested scope before paging or byte caps. */
+  total: number;
+}
+
+export interface ActionDiscoveryPage extends ActionRows {
+  /** Continues in `actions.list?cursor=`; null when the scope is exhausted. */
+  nextCursor: Cursor | null;
+}
+
 export type Unsubscribe = () => void;
 
 // ===========================================================================
@@ -5807,6 +5847,8 @@ export interface EntityContextQuery {
   sections?: EntityContextSection[];
   totalBytes?: number;
   sectionBytes?: number;
+  /** `v2` returns the actions section as `ActionRows`; `v1` (default) as `PaletteAction[]`. */
+  actionsSchema?: 'v1' | 'v2';
 }
 
 export interface EntityContextView {
@@ -5817,7 +5859,12 @@ export interface EntityContextView {
   children: EntitySummary[];
   edges: EdgeView[];
   messages: MessageView[];
-  actions: PaletteAction[];
+  /**
+   * `PaletteAction[]` under `actionsSchema=v1` (default), `ActionRows` under
+   * `v2` — or `[]` under either when the section was not requested or the
+   * byte budget left no action row (then `truncated` is true).
+   */
+  actions: PaletteAction[] | ActionRows;
   provenance: { operation: OperationName; fetchedAt: string; eventSeq: number };
   cursors: Record<string, Cursor | null>;
   byteSize: number;

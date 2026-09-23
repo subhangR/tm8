@@ -83,7 +83,7 @@ export class Output {
    * The command's result. Exactly one of these per command in `human`/`json`;
    * `jsonl` callers use `line()` instead.
    */
-  data<T>(dto: T, human: HumanRenderer<T>): void {
+  data<T>(dto: T, human: HumanRenderer<T>, opts: { minify?: boolean } = {}): void {
     this.assertNoBytes();
     this.wroteStructured = true;
     if (this.format === 'human') {
@@ -92,7 +92,9 @@ export class Output {
     }
     const payload = this.render === 'terse' ? projectTerse(dto) : dto;
     if (this.format === 'json') {
-      this.streams.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+      // `minify`: the same JSON without indentation — for an agent-class
+      // reader, where whitespace is paid for and read by nobody.
+      this.streams.stdout(`${opts.minify ? JSON.stringify(payload) : JSON.stringify(payload, null, 2)}\n`);
       return;
     }
     this.streams.stdout(`${JSON.stringify(payload)}\n`);

@@ -41,6 +41,9 @@ import {
   EntityFeedQuerySchema,
   decodeCursor,
   encodeCursor,
+  expandActionRows,
+  type ActionRow,
+  type ActionRows,
   type ActivityItem,
   type Cursor,
   type DeliverySummary,
@@ -59,6 +62,8 @@ import {
   type PaletteAction,
 } from '@tm8/contract';
 import type { ZodTypeAny } from 'zod';
+
+import { cursorAfter, type ActionDiscovery } from './saved-views-actions.js';
 
 import type { Db, DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
@@ -830,9 +835,11 @@ export interface W2FeedContextServiceOptions {
    *
    * Injected rather than reimplemented: G09 already owns availability, and two
    * action discoverers would let the focus view and `actions.list` disagree
-   * about what the same caller may do.
+   * about what the same caller may do. The discovery is the contextual scope,
+   * ranked and unpaged; this service caps it and continues it with a cursor
+   * `actions.list` accepts.
    */
-  readonly actions?: (ctx: RequestContext, entityId: string) => Promise<PaletteAction[]>;
+  readonly actions?: (ctx: RequestContext, entityId: string) => Promise<ActionDiscovery>;
 }
 
 // ---------------------------------------------------------------------------
@@ -995,7 +1002,7 @@ interface ContextRowSet {
    * DTO inherits whatever that DTO did to the value.
    */
   messageCursors: Map<string, string>;
-  actions: PaletteAction[];
+  actions: ActionDiscovery | null;
   newestActivity: NewestActivity | null;
   eventSeq: number;
   /** A section had more rows than the fetch cap — the view is already partial. */
@@ -1154,7 +1161,9 @@ export class W2FeedContextService {
     // the total-budget priority loop can let its conversation win. An explicit
     // sectionBytes remains an exact caller-requested cap.
     const messageBytes = input.sectionBytes === undefined ? totalBytes : sectionBytes;
-    return boundedView(id, loaded, sections, totalBytes, sectionBytes, messageBytes);
+    return boundedView(id, loaded, sections, {
+      totalBytes, sectionBytes, messageBytes, actionsSchema: input.actionsSchema ?? 'v1',
+    });
   };
 
   private async loadContext(
@@ -1308,7 +1317,7 @@ export class W2FeedContextService {
     // registration seam tags `actions` (handlers/w2/feed-context.ts).
     const actions = plan.actions && this.options.actions
       ? await this.options.actions(ctx, id)
-      : [];
+      : null;
 
     return {
       root,
@@ -1336,22 +1345,53 @@ export class W2FeedContextService {
  * order, until the whole view fits — which is what makes the cap enforced
  * rather than advertised.
  */
+interface ViewBudget {
+  totalBytes: number;
+  sectionBytes: number;
+  messageBytes: number;
+  actionsSchema: 'v1' | 'v2';
+}
+
+/**
+ * The actions section in the shape the caller asked for. Under v2 the list
+ * being capped is the ROWS, and the factored header (target, epoch, actor,
+ * columns, total) is stated once around whatever rows survive.
+ */
+function actionsSection(
+  discovery: ActionDiscovery | null,
+  schema: ViewBudget['actionsSchema'],
+): { list: unknown[]; wrap: (list: unknown[]) => PaletteAction[] | ActionRows; headerBytes: number } {
+  // A section that was not requested is `[]` in either shape.
+  if (schema === 'v1' || !discovery) {
+    const list = discovery ? expandActionRows(discovery.compact).actions : [];
+    return { list, wrap: (kept) => kept as PaletteAction[], headerBytes: 0 };
+  }
+  // With no row left to carry, the header is dead weight: the section is `[]`
+  // exactly as v1's would be once the byte budget has dropped every row, and
+  // `truncated` says so.
+  const compact = discovery.compact;
+  const wrap = (kept: unknown[]): PaletteAction[] | ActionRows =>
+    kept.length === 0 ? [] : { ...compact, rows: kept as ActionRow[] };
+  const headerBytes = byteLength({ ...compact, rows: [] });
+  return { list: [...compact.rows], wrap, headerBytes };
+}
+
 function boundedView(
   id: string,
   loaded: ContextRowSet,
   sections: ReadonlySet<EntityContextSection>,
-  totalBytes: number,
-  sectionBytes: number,
-  messageBytes: number,
+  budget: ViewBudget,
 ): EntityContextView {
+  const { totalBytes, sectionBytes, messageBytes } = budget;
   let truncated = loaded.overfetched;
+  const actions = actionsSection(loaded.actions, budget.actionsSchema);
 
   const capped = {
     parents: capList(loaded.parents, sectionBytes),
     children: capList(loaded.children, sectionBytes),
     edges: capList(loaded.edges, sectionBytes),
     messages: capList(loaded.messages, messageBytes),
-    actions: capList(loaded.actions, sectionBytes),
+    actions: capList(actions.list, Math.max(0, sectionBytes - actions.headerBytes)),
   };
   for (const section of Object.values(capped)) truncated ||= section.truncated;
 
@@ -1367,7 +1407,7 @@ function boundedView(
     children: loaded.children.length,
     edges: loaded.edges.length,
     messages: loaded.messages.length,
-    actions: loaded.actions.length,
+    actions: actions.list.length,
   };
 
   let content: EntityContextView['content'];
@@ -1387,9 +1427,9 @@ function boundedView(
     children: lists.children as EntitySummary[],
     edges: lists.edges as EdgeView[],
     messages: lists.messages as MessageView[],
-    actions: lists.actions as PaletteAction[],
+    actions: actions.wrap(lists.actions),
     provenance: { operation: 'entities.context', fetchedAt, eventSeq: loaded.eventSeq },
-    cursors: cursorsFor(id, loaded, sections, lists, fetched),
+    cursors: cursorsFor(id, loaded, sections, lists, fetched, budget),
     byteSize: 0,
     truncated: false,
   });
@@ -1436,6 +1476,7 @@ function cursorsFor(
   sections: ReadonlySet<EntityContextSection>,
   lists: Record<ListName, unknown[]>,
   fetched: Record<ListName, number>,
+  budget: ViewBudget,
 ): Record<string, Cursor | null> {
   const cursors: Record<string, Cursor | null> = {};
   if (sections.has('hierarchy')) {
@@ -1445,6 +1486,15 @@ function cursorsFor(
     // child: an empty list with a null cursor would claim there are none.
     cursors['children'] = loaded.childrenOverfetched || fetched.children > lists.children.length
       ? childCursor(id, last ? { position: last.position, id: last.id } : null)
+      : null;
+  }
+  // Only v2 rows carry a continuation: the cursor continues in
+  // `actions.list?schema=v2&contextEntityId=<id>&cursor=` (CLI:
+  // `tm8 action list --for <id> --cursor <c>`), the one consumer that pages.
+  if (sections.has('actions') && loaded.actions && budget.actionsSchema === 'v2') {
+    const last = lists.actions.at(-1) as ActionRow | undefined;
+    cursors['actions'] = last && fetched.actions > lists.actions.length
+      ? cursorAfter(loaded.actions, last[0])
       : null;
   }
   if (sections.has('messages') || sections.has('activity')) {

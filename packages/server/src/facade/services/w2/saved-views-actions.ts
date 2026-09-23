@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
 
 import {
+  ACTION_ROW_COLUMNS,
   CollabError,
+  decodeCursor,
+  encodeCursor,
+  expandActionRows,
   getOperation,
+  type ActionDiscoveryPage,
   type ActionDiscoveryResult,
+  type ActionRow,
+  type ActionRows,
   type OperationName,
   type PaletteAction,
   type SavedView,
@@ -561,16 +568,48 @@ async function actionContext(q: Querier, entityId: string): Promise<ActionContex
   return row;
 }
 
-async function listActions(
+/** A v2 page's default and maximum row count. Every page is bounded by these. */
+const ACTIONS_PAGE_DEFAULT = 20;
+const ACTIONS_PAGE_MAX = 100;
+
+/**
+ * One discovery answer in the factored form, before paging, plus the means to
+ * continue it. Both `actions.list` and `entities.context`'s actions section
+ * are projections of this, so they cannot disagree about rows, order or epoch.
+ */
+export interface ActionDiscovery {
+  /** Every row in the requested scope, ranked; `total === rows.length`. */
+  readonly compact: ActionRows;
+  /** Names this listing: context entity, scope and capabilityEpoch. */
+  readonly fingerprint: string;
+}
+
+/** The keyset cursor that continues a listing after `operation`. */
+export function cursorAfter(discovery: ActionDiscovery, operation: OperationName): string {
+  return encodeCursor([discovery.fingerprint, operation]);
+}
+
+/**
+ * The cursor names the listing it continues: the context entity, the scope and
+ * the capabilityEpoch. A different epoch means the authorized inventory, the
+ * target's version or its state moved, so the ranked list the cursor points
+ * into no longer exists — `invalid_cursor` is honest, a silent restart is not.
+ */
+function listingFingerprint(contextEntityId: string | null, scope: DiscoveryScope, epoch: string): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ contextEntityId, scope, epoch }))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+async function discover(
   deps: FacadeDeps,
   registry: HandlerRegistry,
   ctx: RequestContext,
-): Promise<ActionDiscoveryResult> {
+  contextEntityId: string | null,
+  scope: DiscoveryScope,
+): Promise<ActionDiscovery> {
   const owner = await deps.owner();
-  const rawContextId = ctx.query.get('contextEntityId');
-  const contextEntityId = optionalUuid(rawContextId, 'contextEntityId');
-  const scope = discoveryScope(ctx.query.get('scope'));
-
   return deps.db.tx(claimsFor(owner, ctx), async (q) => {
     const row = contextEntityId ? await actionContext(q, contextEntityId) : null;
     const actorId = row?.actor_id ?? owner.identityId;
@@ -588,25 +627,96 @@ async function listActions(
       ? rankForContext(authorized, row).filter((operation) =>
         scope === 'all' || actionScope(operation, row) === 'entity')
       : authorized;
-    const actions: PaletteAction[] = operations.map((operation) => ({
-      id: `action:${operation}:${row?.id ?? 'global'}`,
-      label: operation.replaceAll('.', ' '),
-      kind: actionKind(operation),
-      operation,
-      ...(row ? { targetEntityId: row.id, targetVersion: row.version } : {}),
-      capabilityEpoch: epoch,
-      authzTarget: authzTarget(operation),
-      exposure: exposure(operation),
-      helpRef: `tm8://help/operation/${operation}`,
-    }));
-
     return {
-      actorId,
-      ...(row ? { targetEntityId: row.id, targetVersion: row.version } : {}),
-      capabilityEpoch: epoch,
-      actions,
+      compact: {
+        schema: 'tm8.actions.v2',
+        actorId,
+        ...(row ? { target: { id: row.id, kind: row.kind, version: row.version } } : {}),
+        capabilityEpoch: epoch,
+        columns: ACTION_ROW_COLUMNS,
+        rows: operations.map((operation): ActionRow => [
+          operation, actionKind(operation), authzTarget(operation), exposure(operation),
+        ]),
+        total: operations.length,
+      },
+      fingerprint: listingFingerprint(row?.id ?? null, scope, epoch),
     };
   });
+}
+
+type ActionsSchema = 'v1' | 'v2';
+
+function actionsSchema(raw: string | null): ActionsSchema {
+  if (raw === null || raw === 'v1') return 'v1';
+  if (raw === 'v2') return 'v2';
+  throw new CollabError('invalid_input', 'schema must be v1 or v2');
+}
+
+function pageLimit(raw: string | null): number {
+  if (raw === null) return ACTIONS_PAGE_DEFAULT;
+  const value = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+  if (!Number.isInteger(value) || value < 1 || value > ACTIONS_PAGE_MAX) {
+    throw new CollabError('invalid_input', `limit must be an integer from 1 to ${ACTIONS_PAGE_MAX}`);
+  }
+  return value;
+}
+
+/** Where a page starts: 0, or one past the operation the cursor names. */
+function pageStart(discovery: ActionDiscovery, cursor: string | null): number {
+  if (cursor === null) return 0;
+  const { k } = decodeCursor(cursor);
+  const last = k[1];
+  const index = typeof last === 'string'
+    ? discovery.compact.rows.findIndex(([operation]) => operation === last)
+    : -1;
+  if (k.length !== 2 || k[0] !== discovery.fingerprint || index < 0) {
+    throw new CollabError(
+      'invalid_cursor',
+      'cursor does not continue this listing: its target, scope or capabilityEpoch changed; list again without a cursor',
+    );
+  }
+  return index + 1;
+}
+
+/** A v2 page of a discovery answer. */
+function actionPage(
+  discovery: ActionDiscovery,
+  options: { limit: number; cursor: string | null },
+): ActionDiscoveryPage {
+  const start = pageStart(discovery, options.cursor);
+  const rows = discovery.compact.rows.slice(start, start + options.limit);
+  const last = rows.at(-1);
+  const more = start + rows.length < discovery.compact.rows.length;
+  return {
+    ...discovery.compact,
+    rows,
+    nextCursor: more && last ? cursorAfter(discovery, last[0]) : null,
+  };
+}
+
+async function listActions(
+  deps: FacadeDeps,
+  registry: HandlerRegistry,
+  ctx: RequestContext,
+): Promise<ActionDiscoveryResult | ActionDiscoveryPage> {
+  const rawContextId = ctx.query.get('contextEntityId');
+  const contextEntityId = optionalUuid(rawContextId, 'contextEntityId');
+  const scope = discoveryScope(ctx.query.get('scope'));
+  const schema = actionsSchema(ctx.query.get('schema'));
+  const rawLimit = ctx.query.get('limit');
+  const cursor = ctx.query.get('cursor');
+  // v1 is the unpaged legacy shape, kept for one release; paging is a v2
+  // capability, and a v1 caller asking to page is told so rather than
+  // silently handed the whole inventory.
+  if (schema === 'v1' && (rawLimit !== null || cursor !== null)) {
+    throw new CollabError('invalid_input', 'limit and cursor require schema=v2');
+  }
+  const limit = pageLimit(rawLimit);
+
+  const discovery = await discover(deps, registry, ctx, contextEntityId, scope);
+  return schema === 'v2'
+    ? actionPage(discovery, { limit, cursor })
+    : expandActionRows(discovery.compact);
 }
 
 export function createSavedViewsActionsService(deps: FacadeDeps, registry: HandlerRegistry) {
@@ -616,5 +726,7 @@ export function createSavedViewsActionsService(deps: FacadeDeps, registry: Handl
     updateSavedView: (ctx: RequestContext) => updateSavedView(deps, ctx),
     deleteSavedView: (ctx: RequestContext) => deleteSavedView(deps, ctx),
     listActions: (ctx: RequestContext) => listActions(deps, registry, ctx),
+    discoverActions: (ctx: RequestContext, contextEntityId: string) =>
+      discover(deps, registry, ctx, contextEntityId, 'contextual'),
   };
 }

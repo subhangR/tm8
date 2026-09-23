@@ -78,9 +78,29 @@ describe('tool curation', () => {
         operation: 'entities.context',
         options: {
           params: { id: '019fa297-64e3-7000-8000-000000000001' },
-          query: { sections: 'summary,actions', tag: ['one', 'two'] },
+          query: { actionsSchema: 'v2', sections: 'summary,actions', tag: ['one', 'two'] },
         },
       },
+    ]);
+  });
+
+  it('asks for tm8.actions.v2 rows by default, and honours a shape the model names', async () => {
+    const transport = new RecordingTransport();
+    const router = new Tm8ToolRouter(transport);
+    await router.call('tm8_read', {
+      operation: 'actions.list',
+      query: { contextEntityId: '019fa297-64e3-7000-8000-000000000001' },
+    });
+    await router.call('tm8_read', {
+      operation: 'actions.list',
+      query: { contextEntityId: '019fa297-64e3-7000-8000-000000000001', schema: 'v1' },
+    });
+    await router.call('tm8_read', { operation: 'actions.list' });
+
+    expect(transport.calls.map((call) => call.options.query)).toEqual([
+      { schema: 'v2', contextEntityId: '019fa297-64e3-7000-8000-000000000001' },
+      { schema: 'v1', contextEntityId: '019fa297-64e3-7000-8000-000000000001' },
+      { schema: 'v2' },
     ]);
   });
 

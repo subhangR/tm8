@@ -128,10 +128,14 @@ beforeEach(() => {
   delete process.env.TM8_SPACE_ID;
   delete process.env.TM8_ACTOR_ID;
   delete process.env.TM8_CONFIG_PATH;
+  // Pin the caller class: the rollout default depends on it, and the machine
+  // running the suite may itself be a tm8-spawned agent session.
+  process.env.TM8_JOURNAL_CLASS = 'human';
   ledger.clear();
 });
 
 afterEach(() => {
+  delete process.env.TM8_JOURNAL_CLASS;
   ledger.clear();
 });
 
@@ -238,3 +242,71 @@ describe('permission is rendered as permission, and never as availability', () =
     expect(r.stdout).not.toMatch(/not implemented|unavailable/i);
   });
 });
+
+describe('tm8.actions.v2 rollout, paging and the factored render', () => {
+  const PAGE = {
+    schema: 'tm8.actions.v2',
+    actorId: ACTOR,
+    target: { id: TARGET, kind: 'task', version: 7 },
+    capabilityEpoch: EPOCH,
+    columns: ['operation', 'kind', 'authzTarget', 'exposure'],
+    rows: [['entities.patch', 'status', 'entity', 'public']],
+    total: 31,
+    nextCursor: 'eyJ2IjoyLCJrIjpbImZwIiwiZW50aXRpZXMucGF0Y2giXX0',
+  };
+
+  it('gives an agent-class caller v2, minified, with no notice', async () => {
+    process.env.TM8_JOURNAL_CLASS = 'agent';
+    reply = { data: PAGE, requestId: 'req_t' };
+    const r = await tm8(['action', 'list', '--for', TARGET, '--format', 'json']);
+    expect(r.code).toBe(0);
+    expect(recorded[0]?.query.get('schema')).toBe('v2');
+    expect(r.stdout).toBe(`${JSON.stringify(PAGE)}\n`);
+    expect(r.stderr).toBe('');
+  });
+
+  it('keeps a non-agent --format json caller on v1 this release, and says so on stderr', async () => {
+    const r = await tm8(['action', 'list', '--for', TARGET, '--format', 'json']);
+    expect(recorded[0]?.query.has('schema')).toBe(false);
+    expect(JSON.parse(r.stdout)).toMatchObject({ actions: [ACTION] });
+    expect(r.stderr).toMatch(/still emits the v1 shape.*--schema v2.*--schema v1/s);
+  });
+
+  it('lets --schema pin either shape without a notice', async () => {
+    const pinned = await tm8(['action', 'list', '--for', TARGET, '--format', 'json', '--schema', 'v2']);
+    expect(recorded[0]?.query.get('schema')).toBe('v2');
+    expect(pinned.stderr).toBe('');
+
+    process.env.TM8_JOURNAL_CLASS = 'agent';
+    await tm8(['action', 'list', '--for', TARGET, '--format', 'json', '--schema', 'v1']);
+    expect(recorded[1]?.query.has('schema')).toBe(false);
+
+    const bad = await tm8(['action', 'list', '--schema', 'v3']);
+    expect(bad.code).toBe(2);
+    expect(recorded).toHaveLength(2);
+  });
+
+  it('sends --limit and --cursor, which only v2 can page', async () => {
+    await tm8(['action', 'list', '--for', TARGET, '--format', 'json', '--limit', '5', '--cursor', 'c1']);
+    expect(recorded[0]?.query.get('schema')).toBe('v2');
+    expect(recorded[0]?.query.get('limit')).toBe('5');
+    expect(recorded[0]?.query.get('cursor')).toBe('c1');
+
+    for (const limit of ['0', '101']) {
+      const r = await tm8(['action', 'list', '--limit', limit]);
+      expect(r.code).toBe(2);
+    }
+    expect(recorded).toHaveLength(1);
+  });
+
+  it('renders a v2 page like v1, plus how to fetch the next page', async () => {
+    reply = { data: PAGE, requestId: 'req_t' };
+    const r = await tm8(['action', 'list', '--for', TARGET, '--all']);
+    expect(recorded[0]?.query.get('schema')).toBe('v2');
+    const lines = r.stdout.trim().split('\n');
+    expect(lines[0]).toBe(`actor ${ACTOR}  target ${TARGET}@v7  epoch ${EPOCH}`);
+    expect(lines[1]).toBe('entities.patch  status  entity  public');
+    expect(lines[2]).toBe(`1 of 31 shown; next: tm8 action list --for ${TARGET} --all --cursor ${PAGE.nextCursor}`);
+  });
+});
+
