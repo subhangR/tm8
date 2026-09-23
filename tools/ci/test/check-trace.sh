@@ -52,11 +52,18 @@ run() {
 [ "$name" = bun ] && [ "\${1:-}" = --version ] && { echo 1.2.0; exit 0; }
 line="$name \$* @\${PWD#$t}"
 echo "  [stub] \$line"
-if [ -n "\${TRACE_FAIL:-}" ] && [[ "\$line" =~ \$TRACE_FAIL ]]; then exit 1; fi
+shard=; [ "$name" = bun ] && [[ "\$*" == *--shard=* ]] && shard=1
+if [ -n "\${TRACE_FAIL:-}" ] && [[ "\$line" =~ \$TRACE_FAIL ]]; then
+  # A failing sharded vitest still prints a summary with files in it, so only
+  # the exit code can make this red (the control for PIPESTATUS propagation).
+  [ -z "\$shard" ] || printf ' Test Files  1 failed | 2 passed (3)\n'
+  exit 1
+fi
 # A sharded vitest prints its summary; TRACE_SHARD_FILES=0 is vitest's empty shard.
-if [ "$name" = bun ] && [[ "\$*" == *--shard=* ]]; then
+if [ -n "\$shard" ]; then
   n="\${TRACE_SHARD_FILES:-3}"
   if [ "\$n" = none ]; then :
+  elif [ "\$n" = skipped ]; then printf ' Test Files  3 skipped (3)\n'
   elif [ "\$n" = 0 ]; then printf ' Test Files  no tests\\n'
   else printf ' \\033[2mTest Files \\033[22m \\033[1m\\033[32m%s passed\\033[39m\\033[22m (%s)\\n' "\$n" "\$n"; fi
 fi
@@ -144,9 +151,11 @@ expect 0 "W1 server shard: builds in full, shards only the test" \
   -- "tsc -b packages/contract" "@/packages/cli" "bun install" "migrations-check"
 TRACE_SHARD_FILES=0 run "$NEW_CHECK" "$WORK/o" - --only typecheck:packages/server,test:packages/server --shard 4/4
 expect 1 "an EMPTY shard (vitest: 'Test Files  no tests', exit 0) is red, not a vacuous green" \
-  "ran no test files" "FAIL  test packages/server" "PASS  typecheck packages/server"
+  "passed no test files" "FAIL  test packages/server" "PASS  typecheck packages/server"
 TRACE_SHARD_FILES=none run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 1/4
-expect 1 "a shard with no recognisable summary is red (the check is positive)" "ran no test files"
+expect 1 "a shard with no recognisable summary is red (the check is positive)" "passed no test files"
+TRACE_SHARD_FILES=skipped run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 1/4
+expect 1 "an all-skipped shard ('3 skipped (3)') is red" "passed no test files"
 TRACE_FAIL="^bun run test --shard=2/4 @/packages/server$" run "$NEW_CHECK" "$WORK/o" - --only typecheck:packages/server --only test:packages/server --shard=2/4
 expect 1 "a failing selected stage still fails the run (repeated --only, --shard=)" "FAIL  test packages/server"
 run "$NEW_CHECK" "$WORK/o" - --only test:packages/cli,typecheck:packages/execution,typecheck:packages/cli

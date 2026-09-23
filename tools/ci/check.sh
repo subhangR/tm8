@@ -191,14 +191,17 @@ skip_or_fail() {
 # 2.1.9 with `--shard=8/8` over 6 files. A shard that tested nothing is not a
 # pass, so the output is also captured (in memory: this script never writes
 # outside the repo) and the run must end in a `Test Files ... (N)` summary with
-# N >= 1. A missing or unrecognised summary fails too: the check is positive.
+# N >= 1 of which at least one PASSED (an all-skipped shard, "1 skipped (1)",
+# tested nothing either). A missing or unrecognised summary fails too: the
+# check is positive. A non-zero vitest exit is returned before any parsing.
+# Under --shard vitest's stderr is merged into stdout (same order, same log).
 run_tests() {
   local pkg="$1"
   if [ -z "$SHARD" ]; then
     (cd "$pkg" && bun run test)
     return
   fi
-  local out rc files
+  local out rc summary files
   # Stream and capture. Not `tee /dev/fd/3`: opening /dev/fd/N re-opens the
   # target through /proc, which TRUNCATES it when stdout is a regular file
   # (`check.sh ... > log`) — caught by check-trace.sh. `>&3` duplicates instead.
@@ -206,10 +209,11 @@ run_tests() {
       | while IFS= read -r l || [ -n "$l" ]; do printf '%s\n' "$l"; printf '%s\n' "$l" >&3; done
       exit "${PIPESTATUS[0]}" )"; rc=$?; } 3>&1
   [ "$rc" -eq 0 ] || return "$rc"
-  files="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' \
-    | sed -n 's/^[[:space:]]*Test Files[[:space:]].*(\([0-9][0-9]*\))[[:space:]]*$/\1/p' | tail -n 1)"
-  if [ -z "$files" ] || [ "$files" -eq 0 ]; then
-    printf '%s    shard %s of %s ran no test files — a shard that tests nothing is not a pass%s\n' \
+  summary="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' \
+    | grep -E '^[[:space:]]*Test Files[[:space:]].*\([0-9]+\)[[:space:]]*$' | tail -n 1)"
+  files="$(printf '%s\n' "$summary" | sed -n 's/.*(\([0-9][0-9]*\))[[:space:]]*$/\1/p')"
+  if [ -z "$files" ] || [ "$files" -eq 0 ] || ! printf '%s\n' "$summary" | grep -qE '(^|[^0-9])[1-9][0-9]* passed'; then
+    printf '%s    shard %s of %s passed no test files — a shard that tests nothing is not a pass%s\n' \
       "$C_RED" "$SHARD" "$pkg" "$C_RESET"
     return 1
   fi
