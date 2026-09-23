@@ -441,6 +441,61 @@ describe('entity update', () => {
     await drive(['entity', 'update', ENT, '--expect-version', '3', '--title', 'x']);
     expect((seen[0]?.body as { expectedVersion?: unknown }).expectedVersion).toBe(3);
   });
+
+  // The Server re-reads the row on a stale write and ships it under
+  // `details.current` (plus the RPC's `currentVersion`). Both used to be
+  // dropped, so every conflict cost the caller a re-read to learn the version.
+  describe('a version_conflict carries what the write lost to', () => {
+    const current = {
+      id: ENT,
+      kind: 'task',
+      title: 'Ship it',
+      version: 5,
+      parentId: null,
+      createdBy: { id: ACTOR, kind: 'team_member', displayName: 'Ada' },
+      counters: {},
+      state: { kind: 'task', status: 'working', priority: 'high' },
+      content: { kind: 'task', description: 'x'.repeat(10_000) },
+      hierarchy: { parents: [], children: [] },
+      connections: [],
+    };
+    beforeEach(() => {
+      reply = {
+        status: 409,
+        body: {
+          error: {
+            code: 'version_conflict',
+            message: `version conflict on ${ENT}`,
+            details: { sqlstate: '40001', entityId: ENT, currentVersion: 5, current },
+            requestId: 'req_c',
+            retryable: false,
+          },
+        },
+      };
+    });
+
+    it('human stderr names currentVersion and a one-line current state; exit stays 6', async () => {
+      const r = await drive(['entity', 'update', ENT, '--expect-version', '3', '--title', 'x']);
+      expect(r.code).toBe(6);
+      expect(r.stdout).toBe('');
+      expect(r.stderr.split('\n').filter(Boolean)).toEqual([
+        `tm8: version_conflict: version conflict on ${ENT} · requestId: req_c`,
+        '  currentVersion: 5',
+        '  current: task "Ship it" · status: working',
+      ]);
+    });
+
+    // JSON error output belongs to the receipts contract (stdout); stderr
+    // stays the same human text under every format, and never the whole row.
+    it('--format json keeps the same human stderr and leaves stdout empty; exit stays 6', async () => {
+      const r = await drive(['entity', 'update', ENT, '--expect-version', '3', '--title', 'x', '--format', 'json']);
+      expect(r.code).toBe(6);
+      expect(r.stdout).toBe('');
+      expect(r.stderr).toContain('  currentVersion: 5\n');
+      expect(r.stderr).toContain('  current: task "Ship it" · status: working\n');
+      expect(r.stderr).not.toContain('xxxxxxxxxx');
+    });
+  });
 });
 
 describe('entity move', () => {

@@ -923,6 +923,70 @@ function assertGenericLifecycle(kind: string, operation: string): void {
   }
 }
 
+/**
+ * THE CONTENT MEMBERS EACH `entities.patch` ARM FORWARDS — and therefore the
+ * only ones it may accept. Every arm below reads a fixed list of members off
+ * `content` and hands them to its RPC; anything else used to fall on the floor
+ * while the call reported success, so `{"body": …}` aimed at a task (whose
+ * prose member is `description`) exited 0 having changed nothing. A member no
+ * arm reads is now refused BY NAME, the rule the `work_session` and `worktree`
+ * arms already state for themselves (they keep their own, stricter checks and
+ * are absent here).
+ *
+ * `kind` is admitted when it names the STORED kind: the content shapes the
+ * CLI documents carry it as a discriminator. A `kind` naming another kind is a
+ * patch aimed at the wrong entity, refused rather than ignored. A patch that
+ * carries neither a title nor any forwarded member is refused too: it can
+ * only ever be a no-op reported as an update.
+ *
+ * `graph` and `drawing` are absent on purpose: their doors are SOFT gates by
+ * design (Craft P1 — see `softGraphContent`), validating the members they name
+ * and passing the rest through.
+ *
+ * This list and the switch in `patchEntity` must move together.
+ */
+const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+  task: ['description', 'axes', 'status', 'priority', 'acceptanceCriteria', 'pointsEstimate',
+    'dueDate', 'startDate'],
+  doc: ['body', 'format'],
+  channel: ['topic'],
+  collection: ['description', 'collectionType'],
+  team_member: ['role', 'identity', 'model', 'agentTool', 'mode', 'permissionMode', 'capabilities',
+    'commandPermissions', 'avatar', 'memories'],
+  file: ['mimeType'],
+  spell: ['description', 'rule'],
+  skill: ['description', 'content'],
+  pull_request: ['url', 'state', 'headSha'],
+  commit: ['url', 'author', 'committedAt'],
+  memory: ['statement', 'mechanism', 'subjectScope', 'doesNotEstablish', 'measuredAt'],
+  loop: ['schedule', 'teamMemberId', 'subjectId', 'prompt', 'config', 'enabled', 'nextRunAt'],
+};
+
+function assertPatchContentMembers(
+  kind: string,
+  title: string | undefined,
+  content: Record<string, unknown>,
+): void {
+  const accepted = PATCH_CONTENT_MEMBERS[kind] ?? (kind.startsWith('c:') ? ['fields'] : undefined);
+  if (!accepted) return;
+  if (content.kind !== undefined && content.kind !== kind) {
+    throw new CollabError('invalid_input',
+      `content.kind '${String(content.kind)}' does not match this entity's kind '${kind}'`);
+  }
+  const ignored = Object.keys(content).filter((k) => k !== 'kind' && !accepted.includes(k));
+  if (ignored.length > 0) {
+    throw new CollabError('invalid_input',
+      `${kind} patch does not accept content ${ignored.length === 1 ? 'field' : 'fields'} `
+        + `${ignored.join(', ')}; accepted: ${accepted.join(', ')}`);
+  }
+  // With no title and no member an arm forwards, the RPC would still run —
+  // and report an update that changed nothing.
+  if (title === undefined && !Object.keys(content).some((k) => accepted.includes(k))) {
+    throw new CollabError('invalid_input',
+      `${kind} patch changes nothing: it carries no title and no content member (accepted: ${accepted.join(', ')})`);
+  }
+}
+
 async function kindFor(q: Querier, id: string): Promise<string> {
   const rows = await q.query<{ kind: string }>(
     `select kind from public.entities where id = $1 and deleted_at is null`,
@@ -1243,6 +1307,7 @@ export class W2EntitiesCommandsTrackingService {
         // reads in a list of live agents, so this one door is opened by name
         // rather than by taking the kind out of the set (085).
         if (kind !== 'work_session') assertGenericLifecycle(kind, 'entities.patch');
+        assertPatchContentMembers(kind, input.title, content);
         let raw: RpcCommandResult;
         switch (kind) {
           case 'task':
