@@ -793,6 +793,10 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(ofA.sessions.map((x) => x.workSessionId)).not.toContain(byB);
     await expect(store.memberSessions(claims(A), ids.S!, accounts[A]!)).resolves.toBeTruthy();
     await expect(store.memberSessions(claims(B), ids.S!, accounts[A]!)).rejects.toThrow(/space admin required/);
+    // C2: B owns teammate TB, yet A's launch of TB is A's, not B's.
+    const ofB = await store.memberSessions(claims(B), ids.S!, accounts[B]!);
+    expect(ofB.sessions.map((x) => x.workSessionId)).toContain(byB);
+    expect(ofB.sessions.map((x) => x.workSessionId)).not.toContain(byAforTB);
 
     // MUST-FIX 5: a node admin asks across every space (account disable);
     // a space admin may not drop the space; the account itself may.
