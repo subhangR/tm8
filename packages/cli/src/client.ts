@@ -41,6 +41,15 @@ import { readCache, type CacheEntry, type ReadCache } from './read-cache.js';
 export type ResponseMode = 'envelope' | 'bytes' | 'stream';
 
 /**
+ * Read-cache revalidation paging. The page asks for the server's cap
+ * (poll.ts MAX_POLL_LIMIT) so one call covers as much as it can, and at most
+ * REVALIDATE_MAX_PAGES full pages are inspected before the revalidator gives
+ * up and refetches: a busy space must not turn a ~free check into a crawl.
+ */
+const REVALIDATE_PAGE_LIMIT = 500;
+const REVALIDATE_MAX_PAGES = 3;
+
+/**
  * Operations whose success body is raw bytes rather than the JSON envelope.
  * Closed and explicit: a new blob route must be added here deliberately, and
  * the exhaustiveness test proves every catalog row lands in exactly one mode.
@@ -267,45 +276,68 @@ export class Tm8Client {
   }
 
   /**
-   * The ~free revalidation: one `events.poll ?since=<seq>` against the entry's
+   * The ~free revalidation: `events.poll ?since=<seq>` against the entry's
    * Space. UNCHANGED means no replayed event names any entity the payload is
    * about. Every uncertain outcome — poll refused, envelope unparseable,
    * transport down — answers CHANGED, so uncertainty always costs a refetch
    * and never serves a stale byte. A quiet replay also advances the session's
    * per-space watermark: evidence this cheap is worth keeping.
+   *
+   * A FULL page proves nothing about what lies past it (`nextCursor` is never
+   * null on this feed — it echoes the position when caught up), so a full
+   * page pages on from its `nextCursor`, at most REVALIDATE_MAX_PAGES times;
+   * still full after that answers CHANGED — a refetch is cheaper than a crawl.
+   * The watermark advances only over pages actually inspected.
    */
   private async unchangedSince(entry: CacheEntry): Promise<boolean> {
+    let since = entry.seq;
+    let seen: number | null = null;
     try {
-      const { res, text } = await this.send(
-        'events.poll',
-        { params: { spaceId: entry.spaceId }, query: { since: String(entry.seq) } },
-        'text',
-        true,
-      );
-      if (res.status >= 400) return false;
-      const data = (JSON.parse(text) as { data?: unknown }).data;
-      // The LIVE page shape is `{items, nextCursor}` (poll.ts DurableEventPage,
-      // pinned by the conformance suite). `data.events` and a bare array are
-      // kept as accepted legacy shapes; anything else is still unreadable and
-      // fails CLOSED to a refetch.
-      const page = data as { events?: unknown; items?: unknown } | null | undefined;
-      const events = Array.isArray(data)
-        ? data
-        : Array.isArray(page?.events)
-          ? (page.events as unknown[])
-          : Array.isArray(page?.items)
-            ? (page.items as unknown[])
-            : null;
-      if (events === null) return false; // a page shape this build cannot read
-      const replay = JSON.stringify(events).toLowerCase();
-      if (entry.entityIds.some((id) => replay.includes(id))) return false;
-      const seqs = events
-        .map((e) => (e as { seq?: unknown }).seq)
-        .filter((s): s is number => typeof s === 'number');
-      if (seqs.length > 0) this.cache.advanceWatermark(entry.spaceId, Math.max(...seqs));
-      return true;
+      for (let pageNo = 0; pageNo < REVALIDATE_MAX_PAGES; pageNo += 1) {
+        const { res, text } = await this.send(
+          'events.poll',
+          {
+            params: { spaceId: entry.spaceId },
+            query: { since: String(since), limit: String(REVALIDATE_PAGE_LIMIT) },
+          },
+          'text',
+          true,
+        );
+        if (res.status >= 400) return false;
+        const data = (JSON.parse(text) as { data?: unknown }).data;
+        // The LIVE page shape is `{items, nextCursor}` (poll.ts DurableEventPage,
+        // pinned by the conformance suite). `data.events` and a bare array are
+        // kept as accepted legacy shapes; anything else is still unreadable and
+        // fails CLOSED to a refetch.
+        const page = data as { events?: unknown; items?: unknown; nextCursor?: unknown } | null | undefined;
+        const events = Array.isArray(data)
+          ? data
+          : Array.isArray(page?.events)
+            ? (page.events as unknown[])
+            : Array.isArray(page?.items)
+              ? (page.items as unknown[])
+              : null;
+        if (events === null) return false; // a page shape this build cannot read
+        const replay = JSON.stringify(events).toLowerCase();
+        if (entry.entityIds.some((id) => replay.includes(id))) return false;
+        const seqs = events
+          .map((e) => (e as { seq?: unknown }).seq)
+          .filter((s): s is number => typeof s === 'number');
+        const pageMax = seqs.length > 0 ? Math.max(...seqs) : null;
+        if (pageMax !== null) seen = Math.max(seen ?? pageMax, pageMax);
+        if (events.length < REVALIDATE_PAGE_LIMIT) return true; // caught up
+        // Full page: resume from the cursor (it covers skipped rows too), else
+        // the highest seq it carried. No forward progress is unreadable.
+        const cursor = Array.isArray(data) ? NaN : Number(page?.nextCursor);
+        const next = Number.isSafeInteger(cursor) ? cursor : pageMax;
+        if (next === null || next <= since) return false;
+        since = next;
+      }
+      return false; // still full at the cap: refetch rather than crawl
     } catch {
       return false;
+    } finally {
+      if (seen !== null) this.cache.advanceWatermark(entry.spaceId, seen);
     }
   }
 

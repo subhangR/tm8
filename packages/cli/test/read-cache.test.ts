@@ -126,7 +126,7 @@ describe('store refuses what it cannot keep coherent (property 1)', () => {
 
 interface Route {
   match: (url: string) => boolean;
-  body: () => string;
+  body: (url: string) => string;
 }
 
 function fetchStub(routes: Route[]): { impl: typeof fetch; calls: string[] } {
@@ -136,7 +136,7 @@ function fetchStub(routes: Route[]): { impl: typeof fetch; calls: string[] } {
     calls.push(url);
     const route = routes.find((r) => r.match(url));
     if (!route) return new Response(JSON.stringify({ error: { code: 'not_found', message: 'x', requestId: 'r', retryable: false } }), { status: 404 });
-    return new Response(route.body(), { status: 200, headers: { 'x-tm8-request-id': 'r' } });
+    return new Response(route.body(url), { status: 200, headers: { 'x-tm8-request-id': 'r' } });
   }) as typeof fetch;
   return { impl, calls };
 }
@@ -280,6 +280,7 @@ describe('the client seam: hit, revalidate, serve, invalidate, --fresh', () => {
     expect(after.marker).toBe('v2'); // the write evicted the entry; this refetched
   });
 
+
   it('the cache dir stays inside the session directory, next to the journal', async () => {
     const env = tempEnv();
     const cache = createReadCache(env, AGENT_CWD);
@@ -287,5 +288,93 @@ describe('the client seam: hit, revalidate, serve, invalidate, --fresh', () => {
     await clientWith(cache, routes).client.invoke('entities.context', { params: { id: ENTITY } });
     const dir = `${env.TM8_JOURNAL_PATH}.cache`;
     expect(readdirSync(dir).some((f) => f.endsWith('.entry.json'))).toBe(true);
+  });
+});
+
+// ── revalidation past the first poll page ────────────────────────────────────
+
+/**
+ * A durable feed of `seq`s after 41 that honours `?since=` and `?limit=` the
+ * way poll.ts does: ascending, capped (default 200, max 500), and a
+ * `nextCursor` that is never null — it echoes `since` when caught up.
+ */
+function feedRoute(lastSeq: number, relevantSeq: number | null = null): Route {
+  return {
+    match: (u) => u.includes('/events'),
+    body: (u) => {
+      const q = new URL(u).searchParams;
+      const since = Number(q.get('since'));
+      const limit = Math.min(Number(q.get('limit') ?? 200), 500);
+      const items: unknown[] = [];
+      for (let seq = since + 1; seq <= lastSeq && items.length < limit; seq += 1) {
+        const id = seq === relevantSeq ? ENTITY : `019fc06c-0000-7000-8000-${String(seq).padStart(12, '0')}`;
+        items.push({ seq, entity: { id } });
+      }
+      const last = (items.at(-1) as { seq: number } | undefined)?.seq ?? since;
+      return livePollBody(items, String(last));
+    },
+  };
+}
+
+describe('revalidation past the first poll page (fails closed on a busy space)', () => {
+  it('a change AFTER a full page of unrelated events still forces a refetch', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    // 41 → 641 unrelated, the cached entity changes at 642: past any first page.
+    const routes: Route[] = [contextRoute(() => 41, () => { version += 1; return `v${version}`; }), feedRoute(700, 642)];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2'); // pre-fix: 'v1', a stale byte from one page
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(2);
+    const polls = calls.filter((u) => u.includes('/events'));
+    expect(polls).toHaveLength(2);
+    expect(polls[1]).toContain('since=541'); // paged from the first page's nextCursor
+    // Only the INSPECTED quiet page advanced the watermark, not the one that matched.
+    expect(cache.watermark(SPACE)).toBe(541);
+  });
+
+  it('several pages of unrelated events page to the head, serve the cache, and advance the watermark', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let served = 0;
+    const routes: Route[] = [contextRoute(() => 41, () => { served += 1; return `serve-${served}`; }), feedRoute(741)];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('serve-1');
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(1);
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(2);
+    expect(cache.watermark(SPACE)).toBe(741);
+  });
+
+  it('a feed still full at the page cap refetches instead of crawling', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const routes: Route[] = [contextRoute(() => 41, () => { version += 1; return `v${version}`; }), feedRoute(100_000)];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(3);
+    expect(cache.watermark(SPACE)).toBe(1541); // three inspected pages, no further
+  });
+
+  it('a full page whose cursor does not advance fails closed', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const stuck = Array.from({ length: 500 }, () => ({ note: 'no seq' }));
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { version += 1; return `v${version}`; }),
+      { match: (u) => u.includes('/events'), body: () => livePollBody(stuck, '41') },
+    ];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(1);
   });
 });
