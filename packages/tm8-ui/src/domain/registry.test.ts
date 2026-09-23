@@ -246,7 +246,8 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // by `sharingControlFor` inside `RowActionCluster`, which is the only place
     // that sees the row's `shareMode`. So the ref in this array is not always
     // the ref the list draws — see `row-action-cluster.test.tsx`.
-    expect(session.rowActions).toEqual(['complete', 'share-session', 'terminate', 'chat-about']);
+    // `run` leads — `applyLaunch` prepends it (▶ continues a session, 200).
+    expect(session.rowActions).toEqual(['run', 'complete', 'share-session', 'terminate', 'chat-about']);
   });
 
   it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
@@ -261,15 +262,17 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // running session off In Progress without killing it, which is exactly the
     // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
+    // ▶ leads (migration 200 — a session can be continued), derived by
+    // `applyLaunch` like every other kind's.
     expect(session.list.rowActions).toEqual([
-      'complete', 'share-session', 'terminate', 'chat-about',
+      'run', 'complete', 'share-session', 'terminate', 'chat-about',
     ]);
     // The PANEL's budget is untouched by the row's third verb: `chat-about` is
     // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
     // because Run is a verb about the entity; this one opens a conversation
-    // ELSEWHERE, and the panel's one-primary budget is for acting on what you
-    // are looking at.
-    expect(session.panel.primaries).toEqual(['terminate']);
+    // ELSEWHERE, and the panel's budget is for acting on what you are looking
+    // at — continuing this session (▶) and ending it (⏻).
+    expect(session.panel.primaries).toEqual(['run', 'terminate']);
   });
 
   /**
@@ -298,7 +301,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    *
    * This used to enumerate the eight launchable kinds, and the enumeration was
    * the bug it should have caught: launching is open to every kind the server
-   * will derive a task for (all but `work_session`), so the eight were not a
+   * will derive a task for (every kind, since 200), so the eight were not a
    * ruling but the subset somebody had remembered to flag — eleven kinds were
    * silently missing a Run button and this test agreed with them.
    *
@@ -306,18 +309,15 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * join a list; it is launchable by default, and taking that away is an edit
    * to `NOT_LAUNCHABLE` that lands right here.
    */
-  it('4b. work_session is the ONLY unlaunchable kind; everything else launches', () => {
+  it('4b. every kind launches — work_session included since 200', () => {
     const notLaunchable = allKinds().filter((r) => !r.launchable).map((r) => r.kind).sort();
-    // One refusal, and it is the server's: `derive_task_for_entity` raises for
-    // `work_session` and derives a task for every other live kind. So this list
-    // is not a product preference to be re-argued per kind — it mirrors what
-    // the backend will actually do, and it should only ever change when that
+    // The list mirrors the server: `derive_task_for_entity` derives a task for
+    // every live kind. Its one refusal, `work_session`, was lifted by migration
+    // 200 (▶ on a session continues it). It is not a product preference to be
+    // re-argued per kind, and it should only ever change when the backend
     // does. (`graph` and `loop` were briefly here on inherited rationale;
     // owner ruling 2026-08-17 launches both.)
-    expect(notLaunchable).toEqual(['work_session']);
-    // The complement is everything else — stated as a relationship rather than
-    // a second list, so the two cannot disagree.
-    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 1);
+    expect(notLaunchable).toEqual([]);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
@@ -390,9 +390,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     const rowActions = getKind('work_session').list.rowActions ?? [];
     expect(rowActions).toContain('complete');
     expect(rowActions).toContain('terminate');
-    // `run` stays out for its own reason: `derive_task_for_entity` raises for a
-    // work_session, which is what `NOT_LAUNCHABLE` records.
-    expect(getKind('work_session').launchable).toBe(false);
+    // `run` is here too since 200: ▶ continues the session in a new one.
+    expect(rowActions).toContain('run');
+    expect(getKind('work_session').launchable).toBe(true);
   });
 
   it('D56 — no tab anywhere carries a client-side partition any more', () => {

@@ -189,6 +189,9 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     expect(marks).toEqual([
       'collections',
       'Complete',
+      // ▶ — continue this session in a new one (migration 200). It follows
+      // the tick by `RULED_ORDER`, exactly as on a task row.
+      'run',
       // THE SHARING SLOT (187), reading `unshare-session` because SESSION's
       // own `shareMode` is 'space'. Declared as `share-session` and swapped
       // here by `sharingControlFor` — the same per-row derivation the tail

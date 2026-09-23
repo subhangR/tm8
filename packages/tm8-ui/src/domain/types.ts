@@ -1366,7 +1366,7 @@ export interface KindConfig {
    *
    * It was declared per-row when `task` was the only launchable kind, and the
    * cost of that showed up as absence: launching is open to every kind the
-   * server will derive a task for (migration 064 — all but `work_session`), but
+   * server will derive a task for (migration 064; `work_session` too since 200), but
    * eleven kinds simply never set the flag and so never grew a Run button.
    * Making the permissive case the default turns a forgotten flag from a
    * silently missing feature into a deliberate opt-out.

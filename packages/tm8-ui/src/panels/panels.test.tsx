@@ -1514,6 +1514,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         liveness="live"
         onAction={(ref) => fired.push(ref)}
         wiredActions={['terminate']}
+        /* ▶ (continue this session, migration 200) shares the bar; with launch
+           sources it is a live flow verb rather than an unwired one. */
+        launch={LAUNCH_SOURCES}
       />,
     );
     const bar = getByTestId('panel-action-bar');
@@ -1559,6 +1562,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         liveness="exited"
         onAction={(ref) => dispatched.push(ref)}
         wiredActions={['terminate', 'resume']}
+        launch={LAUNCH_SOURCES}
       />,
     );
     const bar = getByTestId('panel-action-bar');
@@ -1592,6 +1596,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         liveness="unknown"
         onAction={() => {}}
         wiredActions={['terminate', 'resume']}
+        launch={LAUNCH_SOURCES}
       />,
     );
     const bar = getByTestId('panel-action-bar');
