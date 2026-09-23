@@ -42,6 +42,7 @@ import type { SpaceCredentialProbe } from './credentials/space-credential-probe.
 import { DbServiceKeyStore } from './credentials/service-key-store.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
+import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
@@ -838,6 +839,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       }),
     );
+    // Migration 204's online subject_ids backfill. It runs on every node that
+    // applied 204 — until it finishes, the change feed refuses windows below
+    // the watermark — and each batch is its own short transaction.
+    scheduler.register(
+      createEventSubjectBackfillJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'event-subject-backfill' };
+        },
+      }),
+    );
     // The file-upload slot sweep — expiry + staged-byte cleanup (094). Only
     // where a blob store exists; the doors are node-admin-only by design.
     if (blobStore) {
@@ -856,6 +869,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
     console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
+    console.log('  events: subject_ids backfill indexing older events every 60s until done');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
       console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');
