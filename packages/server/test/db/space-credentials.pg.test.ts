@@ -108,13 +108,13 @@ async function newApiKey(who: string, provider: 'anthropic' | 'openai' = 'anthro
   return { credential, secret };
 }
 
-/** Wait until at least one backend is blocked on a heavyweight lock. */
-async function waitForLockWait(): Promise<void> {
+/** Wait until at least `atLeast` backends are blocked on a heavyweight lock. */
+async function waitForLockWait(atLeast = 1): Promise<void> {
   for (let i = 0; i < 200; i += 1) {
     const [row] = await database.query<{ n: number }>(
       `select count(*)::int n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
     );
-    if ((row?.n ?? 0) > 0) return;
+    if ((row?.n ?? 0) >= atLeast) return;
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error('no backend ever waited on a lock');
@@ -411,7 +411,7 @@ describe('logins (083 split, M3, M4)', () => {
     await store.finishLogin(claims(B), space.workSessionId, true);
     await store.startLogin(claims(B), { spaceId: ids.S!, provider: 'anthropic', credentialId: space.credential.id, sessionCap: 100 });
     await expect(store.startLogin(claims(ADM), { spaceId: ids.S!, provider: 'anthropic', credentialId: space.credential.id, sessionCap: 100 }))
-      .rejects.toThrow(/one_live_per_space_credential/);
+      .rejects.toMatchObject({ code: 'invariant_violation', message: expect.stringMatching(/a login onto this credential is open until/) });
   });
 
   it('t1-11: re-login is creator-or-admin; finish refuses a revoked credential', async () => {
@@ -541,6 +541,90 @@ describe('logins (083 split, M3, M4)', () => {
       .rejects.toMatchObject({ code: 'invalid_input' });
     const { credential } = await newApiKey(A);
     await expect(store.rename(claims(A), credential.id, '')).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('N1: past expires_at a manager closes an abandoned login; the credential is logged into again (control: not before)', async () => {
+    const made = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: label('abandon'), sessionCap: 100 });
+    await store.finishLogin(claims(A), made.workSessionId, true);
+    const cred = made.credential.id;
+    // ADM opens a re-login onto A's credential and never comes back.
+    const abandoned = await store.startLogin(claims(ADM), { spaceId: ids.S!, provider: 'openai', credentialId: cred, sessionCap: 100 });
+    // Before expiry: the creator cannot close it, and a re-login is refused by name, not by a raw 23505.
+    await expect(store.finishLogin(claims(A), abandoned.workSessionId, false)).rejects.toThrow(/no space login terminal of yours/);
+    await expect(store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', credentialId: cred, sessionCap: 100 }))
+      .rejects.toMatchObject({ code: 'invariant_violation', details: expect.objectContaining({ reason: 'login_open' }) });
+
+    await asOwner((c) => c.query(`update public.credential_sessions set expires_at = now() - interval '1 minute' where work_session_id = $1`, [abandoned.workSessionId]));
+    // A plain member is neither creator nor admin; ok=true is never a manager's.
+    await expect(store.finishLogin(claims(B), abandoned.workSessionId, false)).rejects.toThrow(/no space login terminal of yours/);
+    await expect(store.finishLogin(claims(A), abandoned.workSessionId, true)).rejects.toThrow(/no space login terminal of yours/);
+    const before = await asOwner(async (c) => (await c.query('select * from public.space_credentials where id = $1', [cred])).rows[0]);
+    await expect(store.finishLogin(claims(A), abandoned.workSessionId, false)).resolves.toMatchObject({ finished: true, connected: false });
+    const after = await asOwner(async (c) => (await c.query('select * from public.space_credentials where id = $1', [cred])).rows[0]);
+    expect(after).toEqual(before);
+    // B2: the late opener cannot now report a success onto the closed terminal.
+    await expect(store.finishLogin(claims(ADM), abandoned.workSessionId, true)).rejects.toThrow(/already finished/);
+    // Unwedged: a re-login opens and finishes.
+    const again = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', credentialId: cred, sessionCap: 100 });
+    await expect(store.finishLogin(claims(A), again.workSessionId, true)).resolves.toMatchObject({ connected: true });
+  });
+
+  it('N1: an abandoned PENDING login is closed by an admin past expiry, and the sweep then removes it', async () => {
+    const pending = await store.startLogin(claims(B), { spaceId: ids.S!, provider: 'anthropic', label: label('pend-abandon'), sessionCap: 100 });
+    await asOwner(async (c) => {
+      await c.query(`update public.credential_sessions set expires_at = now() - interval '1 minute' where work_session_id = $1`, [pending.workSessionId]);
+      await c.query(`update public.space_credentials set pending_expires_at = now() - interval '1 minute' where id = $1`, [pending.credential.id]);
+    });
+    await store.expirePending(agent(A));
+    expect(await db.query(claims(A), 'select 1 from public.space_credentials where id = $1', [pending.credential.id])).toHaveLength(1);
+    await expect(store.finishLogin(claims(A), pending.workSessionId, false)).rejects.toThrow(/no space login terminal of yours/);
+    await expect(store.finishLogin(claims(ADM), pending.workSessionId, false)).resolves.toMatchObject({ finished: true, credential: { status: 'pending' } });
+    // B2: the opener's late success cannot activate it.
+    await expect(store.finishLogin(claims(B), pending.workSessionId, true)).rejects.toThrow(/already finished/);
+    expect(await store.expirePending(agent(A))).toBeGreaterThanOrEqual(1);
+    expect(await db.query(claims(A), 'select 1 from public.space_credentials where id = $1', [pending.credential.id])).toHaveLength(0);
+  });
+
+  it('B1: set_default on Y and a repair of the stale default X, queued on the slot together, both complete (no 40P01)', async () => {
+    const provider = 'github';
+    const gh = () => `ghp_${randomUUID().replaceAll('-', '')}`;
+    // A fresh space so the (space, github) slot and its defaults are this test's alone.
+    const space = await asOwner(async (c) => {
+      const id = await newId(c);
+      await c.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'B1', $2)`, [id, A]);
+      const member = await newId(c);
+      await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [member, id]);
+      await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'owner', $3)`, [member, id, A]);
+      return id;
+    });
+    const x = await store.create(claims(A), { spaceId: space, provider, shape: 'token', label: label('x'), secret: gh() });
+    const y = await store.create(claims(A), { spaceId: space, provider, shape: 'token', label: label('y'), secret: gh() });
+    expect([x.isDefault, y.isDefault]).toEqual([true, false]);
+    await store.recordProbe(claims(A), x.id, false); // X: stale, still flagged default
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let held!: () => void;
+    const holding = new Promise<void>((r) => { held = r; });
+    const holder = asOwner(async (c) => {
+      await c.query(`select pg_advisory_xact_lock(hashtextextended($1::text || '|' || $2, 206))`, [space, provider]);
+      held();
+      await gate;
+    });
+    await holding;
+    const setDefault = store.setDefault(claims(A), y.id).then(() => 'ok', (e: unknown) => e);
+    await waitForLockWait(1);
+    const repair = store.recordProbe(claims(A), x.id, true).then(() => 'ok', (e: unknown) => e);
+    await waitForLockWait(2);
+    release();
+    await holder;
+    expect([await setDefault, await repair]).toEqual(['ok', 'ok']);
+    const rows = await db.query<{ id: string; is_default: boolean; status: string }>(claims(A),
+      'select id, is_default, status from public.space_credentials where space_id = $1 order by created_at', [space]);
+    expect(rows).toEqual([
+      { id: x.id, is_default: false, status: 'active' },
+      { id: y.id, is_default: true, status: 'active' },
+    ]);
   });
 
   it('t1-13: pending is outside the default index, and expired pending rows are swept', async () => {

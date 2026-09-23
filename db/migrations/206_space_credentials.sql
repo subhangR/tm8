@@ -66,10 +66,15 @@
 --     finish_space_credential_login(p_work_session_id uuid, p_ok boolean,
 --         p_display_login text default null)       the login's own account
 --       Locks the credential FOR UPDATE; refuses unless pending/active/stale.
---       Exception: a REVOKED credential with p_ok = false only stamps the
---       terminal finished (no status, default or file change); the opener,
---       the credential's creator or a space admin may do it. This is how the
---       delete path closes a terminal after killing its PTY.
+--       Exception: once the credential is REVOKED or the terminal is past
+--       expires_at, p_ok = false from the credential's creator or a space
+--       admin stamps another member's terminal finished (no status, default
+--       or file change). Delete's step 2 and the abandoned-login close. p_ok
+--       = true is refused on a revoked credential or a finished terminal.
+--     start_space_credential_login onto a credential with an unfinished
+--       terminal: 23514 'a login onto this credential is open until <ts>'.
+--     LOCK ORDER: the (space, provider) advisory slot before any credential
+--       row (internal.lock_space_credential_default_slot).
 --     rekey_space_credential(p_credential_id uuid, p_key_hint text,
 --         p_secret_ciphertext bytea, p_secret_nonce bytea,
 --         p_display_login text default null)                 manager (D7/D11)
@@ -376,6 +381,27 @@ begin
 end
 $$;
 
+-- LOCK ORDER (B1): the (space, provider) default slot BEFORE any credential
+-- row. set_space_credential_default clears the flag on other rows — including
+-- a stale default another transaction may be repairing — so a path that held
+-- a credential row and then waited on the slot could deadlock with it (40P01).
+-- Every path that can touch is_default (set_default, probe, rekey, login
+-- finish) takes the slot first, through this. space_id and provider never
+-- change, so reading them unlocked cannot pick the wrong slot; an id the
+-- caller cannot see takes no lock and is refused by the row lock that follows.
+create or replace function internal.lock_space_credential_default_slot(p_credential_id uuid)
+returns void
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare v_space_id uuid; v_provider text;
+begin
+  select space_id, provider into v_space_id, v_provider
+    from public.space_credentials where id = p_credential_id;
+  if v_space_id is not null then
+    perform pg_advisory_xact_lock(hashtextextended(v_space_id::text || '|' || v_provider, 206));
+  end if;
+end
+$$;
+
 -- Called by every path that makes a credential ACTIVE again (login finish,
 -- probe, rekey). A default that went stale keeps is_default (the badge
 -- survives staleness), but while it was stale default_space_credential_if_none
@@ -410,6 +436,7 @@ begin
 end
 $$;
 
+revoke all on function internal.lock_space_credential_default_slot(uuid) from public;
 revoke all on function internal.prepare_space_credential_activation(uuid) from public;
 revoke all on function internal.require_space_credential_label(text) from public;
 revoke all on function internal.can_manage_space_credential(public.space_credentials) from public;
@@ -606,6 +633,19 @@ begin
     if target.status not in ('active', 'stale') then
       raise exception 'space credential is %', target.status using errcode = '23514';
     end if;
+    -- The row lock above serialises re-logins onto this credential, so the
+    -- one-live index is never the one to answer. An abandoned terminal is
+    -- closed by its opener, or past expires_at by a manager (finish, p_ok
+    -- false).
+    select expires_at into v_expires_at from public.credential_sessions
+     where space_credential_id = target.id and finished_at is null
+     order by expires_at desc limit 1;
+    if found then
+      raise exception 'a login onto this credential is open until %', v_expires_at
+        using errcode = '23514',
+              detail = jsonb_build_object('reason', 'login_open', 'expiresAt', v_expires_at)::text;
+    end if;
+    v_expires_at := now() + make_interval(secs => v_ttl);
   end if;
 
   v_actor := internal.current_member_id(p_space_id);
@@ -633,12 +673,17 @@ $$;
 -- (M3/M6). 'stale' is admitted because re-login is exactly how a stale login
 -- is repaired. Only the account that opened the terminal can finish it.
 --
--- One exception (coordinator decision (a), SC-3): on a REVOKED credential,
--- p_ok = false stamps the terminal finished and does nothing else — no status,
--- no default, no file. This is how delete's second step (and anything else
--- that has killed the PTY) closes the terminal. The opener, the credential's
--- creator or a space admin may do it: an admin deleting a credential must be
--- able to close another member's login (M6). p_ok = true stays refused.
+-- One exception (coordinator decision (a), SC-3; N1): once the credential is
+-- REVOKED, or the terminal is past its expires_at, p_ok = false from the
+-- credential's creator or a space admin stamps someone else's terminal
+-- finished. On a revoked credential it does nothing else — no status, no
+-- default, no file; on a live one p_ok = false never changes the credential
+-- anyway. Kill-then-stamp holds: delete's step 2 kills the PTY first, and
+-- past expires_at the node sweep has killed it or a restart took it. This
+-- is how an admin closes another member's login (M6), and how an abandoned
+-- login stops wedging its credential (a pending row could never expire, a
+-- live one never be logged into again). p_ok = true stays the opener's, is
+-- refused on a revoked credential, and is refused on a finished terminal (B2).
 create or replace function public.finish_space_credential_login(
   p_work_session_id uuid,
   p_ok boolean,
@@ -661,16 +706,24 @@ begin
      and space_credential_id is not null
    for update;
   if login.work_session_id is not null then
+    -- Slot before row (B1's lock order): p_ok may activate and default it.
+    perform internal.lock_space_credential_default_slot(login.space_credential_id);
     select * into target from public.space_credentials
      where id = login.space_credential_id for update;
   end if;
-  -- Someone else's terminal is visible only as the revoked-close exception
+  -- Someone else's terminal is visible only as the manager-close exception
   -- admits it; otherwise it answers exactly as a missing one.
   if login.work_session_id is null
      or (login.account_id is distinct from v_account_id
-         and not (target.status = 'revoked' and not coalesce(p_ok, false)
+         and not ((target.status = 'revoked' or login.expires_at <= now())
+                  and not coalesce(p_ok, false)
                   and internal.can_manage_space_credential(target))) then
     raise exception 'no space login terminal of yours with that id' using errcode = 'P0002';
+  end if;
+  -- B2: a terminal already closed (by a manager, or earlier by its opener)
+  -- cannot then report a successful login and activate its credential.
+  if coalesce(p_ok, false) and login.finished_at is not null then
+    raise exception 'this login terminal is already finished' using errcode = '23514';
   end if;
 
   if target.status = 'revoked' and not coalesce(p_ok, false) then
@@ -729,6 +782,7 @@ language plpgsql security definer set search_path = public, internal, pg_temp as
 declare stored public.space_credentials;
 begin
   perform internal.require_human_auth_kind();
+  perform internal.lock_space_credential_default_slot(p_credential_id);
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.shape = 'login' then
     raise exception 'a login credential is rotated by logging in again' using errcode = '22023';
@@ -772,11 +826,11 @@ language plpgsql security definer set search_path = public, internal, pg_temp as
 declare stored public.space_credentials;
 begin
   perform internal.require_human_auth_kind();
+  perform internal.lock_space_credential_default_slot(p_credential_id);
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.status <> 'active' then
     raise exception 'only an active credential can be the default' using errcode = '23514';
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(stored.space_id::text || '|' || stored.provider, 206));
   update public.space_credentials set is_default = false
    where space_id = stored.space_id and provider = stored.provider
      and is_default and id <> stored.id;
@@ -793,6 +847,7 @@ language plpgsql security definer set search_path = public, internal, pg_temp as
 declare stored public.space_credentials;
 begin
   perform internal.require_human_auth_kind();
+  perform internal.lock_space_credential_default_slot(p_credential_id);
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.status not in ('active', 'stale') then
     raise exception 'space credential is %', stored.status using errcode = '23514';
