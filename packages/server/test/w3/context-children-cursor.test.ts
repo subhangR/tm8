@@ -17,10 +17,19 @@ import { startW3PublicServer, successData, type W3PublicServer } from './public-
  * "accepted": a token that is accepted but resumes at the wrong row is the
  * quieter failure. Positions are forced into ties so the `id` half of the
  * keyset carries the ordering across page boundaries too.
+ *
+ * The second case is the byte cap rather than the row cap: when every child
+ * summary is larger than `sectionBytes`, the section keeps none of them. It
+ * used to answer `children: []` with `cursors.children: null` — a non-empty
+ * list reading as empty with no way to continue.
  */
 describe.sequential('entities.context children cursor continues in entities.children', () => {
   let harness: W3PublicServer;
+  let spaceId = '';
   let parentId = '';
+  let smallParentId = '';
+  /** A handful of children, each bigger than the smallest legal section cap. */
+  const SMALL = 3;
   /** More than the context section's 50-row cap. */
   const CHILDREN = 57;
 
@@ -41,6 +50,7 @@ describe.sequential('entities.context children cursor continues in entities.chil
         content: { priority: 'medium' },
       }),
     );
+    spaceId = space.space.id;
     parentId = parent.entity.id;
 
     for (let index = 0; index < CHILDREN; index += 1) {
@@ -50,6 +60,26 @@ describe.sequential('entities.context children cursor continues in entities.chil
         parentId,
         kind: 'task',
         title: `child ${index}`,
+        content: { priority: 'low' },
+      }));
+    }
+    const small = successData<{ entity: { id: string } }>(
+      await harness.request('POST', '/v2/entities', {
+        clientMutationId: 'ctxchildren-small-parent',
+        spaceId,
+        kind: 'task',
+        title: 'context children byte-cap parent',
+        content: { priority: 'medium' },
+      }),
+    );
+    smallParentId = small.entity.id;
+    for (let index = 0; index < SMALL; index += 1) {
+      successData(await harness.request('POST', '/v2/entities', {
+        clientMutationId: `ctxchildren-small-child-${index}`,
+        spaceId,
+        parentId: smallParentId,
+        kind: 'task',
+        title: `byte-cap child ${index} ${'x'.repeat(400)}`,
         content: { priority: 'low' },
       }));
     }
@@ -99,5 +129,47 @@ describe.sequential('entities.context children cursor continues in entities.chil
 
     expect(cursor, 'paging did not terminate').toBeNull();
     expect(seen).toEqual(truth);
+  }, 120_000);
+
+  it('never reads a non-empty children list as empty with no continuation', async () => {
+    const truth = (await harness.rows<{ id: string }>(
+      `select id from public.entities
+        where parent_id = $1 and deleted_at is null
+        order by position, id`,
+      [smallParentId],
+    )).map((row) => row.id);
+    expect(truth).toHaveLength(SMALL);
+
+    const context = successData<{
+      children: Array<{ id: string }>;
+      cursors: Record<string, string | null>;
+      truncated: boolean;
+    }>(await harness.request(
+      'GET', `/v2/entities/${smallParentId}/context?sections=hierarchy&sectionBytes=512`,
+    ));
+    // Non-vacuous: the byte cap really did drop every child.
+    expect(context.children).toEqual([]);
+    expect(context.truncated).toBe(true);
+    expect(context.cursors['children'], 'an emptied section must still continue').toBeTruthy();
+
+    const page = successData<{ items: Array<{ id: string }>; nextCursor: string | null }>(
+      await harness.request(
+        'GET',
+        `/v2/entities/${smallParentId}/children?cursor=${encodeURIComponent(context.cursors['children']!)}`,
+      ),
+    );
+    expect(page.items.map((item) => item.id)).toEqual(truth);
+    expect(page.nextCursor).toBeNull();
+  }, 120_000);
+
+  it('CONTROL: emits no children continuation when every child is already shown', async () => {
+    const context = successData<{
+      children: Array<{ id: string }>;
+      cursors: Record<string, string | null>;
+    }>(await harness.request(
+      'GET', `/v2/entities/${smallParentId}/context?sections=hierarchy&sectionBytes=8192`,
+    ));
+    expect(context.children).toHaveLength(SMALL);
+    expect(context.cursors['children']).toBeNull();
   }, 120_000);
 });
