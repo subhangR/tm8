@@ -33,6 +33,7 @@ import {
 } from '../../src/facade/services/w2/feed-context.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
+import { UNTAGGED, countStatements } from './context-statement-counter.js';
 
 const IDS = {
   space: '00000000-0000-7000-8000-000000000d01',
@@ -313,8 +314,30 @@ interface Stub {
   eventSeq?: number;
 }
 
+/**
+ * Each `entities.context` section's OWN statement, told apart from the helper
+ * statements (`assembleSummaries`, `loadActors`, …) that the service also tags
+ * with the section: only the own statement is answered from the section stub.
+ */
+const CONTEXT_PRIMARY: Record<string, (sql: string) => boolean> = {
+  root: () => true,
+  children: (sql) => sql.includes('e.parent_id = $1'),
+  edges: (sql) => sql.includes('from public.edges g'),
+  messages: (sql) => sql.includes('where m.anchor_id = $1'),
+  activity: () => true,
+  seq: () => true,
+};
+
+/** A helper statement minus the section tag the service led it with. */
+function untagged(sql: string): string {
+  const tag = /^\/\* entities\.context:([a-z]+) \*\/\n/.exec(sql);
+  if (!tag || CONTEXT_PRIMARY[tag[1]!]?.(sql)) return sql;
+  return sql.slice(tag[0].length);
+}
+
 function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Promise<R[]> {
-  return async <R>(sql: string): Promise<R[]> => {
+  return async <R>(tagged: string): Promise<R[]> => {
+    const sql = untagged(tagged);
     const marker = /\/\* (entities\.[a-z]+:[a-z]+) \*\//.exec(sql)?.[1];
     switch (marker) {
       case 'entities.feed:anchor':
@@ -347,6 +370,12 @@ function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Pro
         return [{ seq: String(stub.eventSeq ?? 0) }] as R[];
       default:
         break;
+    }
+    if (sql.includes('internal.current_member_id(e.space_id)::text actor_id')) {
+      return [{
+        id: IDS.task, space_id: IDS.space, kind: 'task', version: 3, deleted_at: null,
+        work_status: 'open', message_author_id: null, actor_id: IDS.member, is_space_admin: true,
+      }] as R[];
     }
     if (sql.includes('left join public.user_profiles up')) return ACTOR_ROWS as R[];
     if (sql.includes('root_message_id = any(')) return [] as R[];
@@ -1520,4 +1549,71 @@ describe('W2.G13 entities.context v1 output is byte-identical (M2/S2 goldens)', 
       }
     });
   }
+});
+
+describe('W2.G13 entities.context loads only the selected sections (M2/S2)', () => {
+  /** The real registration seam, so `actions` goes through G09 and its tagged db. */
+  function counted(stub: Stub) {
+    const { db, run } = contextOn(stub, { actions: undefined });
+    const counter = countStatements(db);
+    return { counter, run };
+  }
+
+  const OPTIONAL = ['parents', 'children', 'edges', 'messages', 'activity', 'actions'] as const;
+
+  it('tags every statement a context read issues, including helpers and the palette', async () => {
+    const { counter, run } = counted(CONTEXT_STUB);
+    await run();
+    expect(counter.total()).toBeGreaterThan(0);
+    expect(counter.byTag()[UNTAGGED], counter.statements.join('\n---\n')).toBeUndefined();
+  });
+
+  it('--sections summary runs no children, edges, messages, actions or activity query', async () => {
+    const { counter, run } = counted(CONTEXT_STUB);
+    const view = await run('sections=summary');
+    const tags = counter.byTag();
+    expect(Object.keys(tags).sort()).toEqual(['root', 'seq', 'summary']);
+    expect(tags['root']).toBe(1);
+    expect(tags['seq']).toBe(1);
+    expect(view.content).toBeDefined();
+  });
+
+  it('the v1 default runs exactly the loaders v1 renders, each read-once where it is one row', async () => {
+    const { counter, run } = counted(CONTEXT_STUB);
+    const view = await run();
+    const tags = counter.byTag();
+    // v1's default selects every section, and every one of them is rendered:
+    // lists as lists, activity as `cursors.activity`.
+    expect(Object.keys(tags).sort()).toEqual(
+      ['actions', 'activity', 'children', 'edges', 'messages', 'parents', 'root', 'seq', 'summary'],
+    );
+    expect(view.cursors['activity']).toEqual(expect.any(String));
+    expect(tags['root']).toBe(1);
+    expect(tags['seq']).toBe(1);
+    // Activity is only ever a cursor in v1, so it is one `limit 1` keyset read.
+    expect(tags['activity']).toBe(1);
+    const activitySql = counter.statements.find((sql) => sql.includes('entities.context:activity'))!;
+    expect(activitySql).toContain('limit 1');
+    expect(activitySql).not.toMatch(/select a\.id, a\.created_at/);
+  });
+
+  it('a single selected section loads only itself beside the root', async () => {
+    const own: Record<string, readonly string[]> = {
+      hierarchy: ['parents', 'children'],
+      connections: ['edges'],
+      messages: ['messages'],
+      activity: ['activity'],
+      actions: ['actions'],
+    };
+    for (const [section, loaders] of Object.entries(own)) {
+      const { counter, run } = counted(CONTEXT_STUB);
+      await run(`sections=${section}`);
+      const loaded = Object.keys(counter.byTag()).filter((tag) =>
+        (OPTIONAL as readonly string[]).includes(tag));
+      // `parents` issues no statement when the ancestor walk finds none, so
+      // assert containment for the section's own loaders and absence for the rest.
+      for (const tag of loaded) expect(loaders, `${section} loaded ${tag}`).toContain(tag);
+      expect(loaded.length, section).toBeGreaterThan(0);
+    }
+  });
 });

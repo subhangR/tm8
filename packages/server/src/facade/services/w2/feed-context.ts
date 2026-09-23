@@ -60,7 +60,7 @@ import {
 } from '@tm8/contract';
 import type { ZodTypeAny } from 'zod';
 
-import type { DbClaims, Querier } from '../../../db/types.js';
+import type { Db, DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import { claimsFor, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -857,6 +857,83 @@ const DROP_ORDER = ['actions', 'edges', 'children', 'parents', 'messages', 'cont
 type Droppable = (typeof DROP_ORDER)[number];
 type ListName = Exclude<Droppable, 'content'>;
 
+/**
+ * The tag every `entities.context` statement carries, by the loader it serves.
+ *
+ * c904 §2.6 / §5 test 8: "select before load" is asserted by COUNTING tagged
+ * statements, not by reading the output — a section that is loaded and then
+ * dropped looks identical to one never loaded. So the tag has to reach every
+ * statement, including those issued inside shared helpers (`assembleSummaries`,
+ * `loadActors`, `loadMessageViewsByIds`) and the actions palette's own
+ * transaction; `taggedQuerier` / `taggedDb` put it there. It is a leading SQL
+ * comment so the same attribution shows up in `pg_stat_statements` and logs.
+ */
+export const CONTEXT_LOAD_TAGS = [
+  'root', 'summary', 'parents', 'children', 'edges', 'messages', 'activity', 'seq', 'actions',
+] as const;
+export type ContextLoadTag = (typeof CONTEXT_LOAD_TAGS)[number];
+
+function contextTag(tag: ContextLoadTag): string {
+  return `/* entities.context:${tag} */`;
+}
+
+function tagSql(tag: ContextLoadTag, sql: string): string {
+  const prefix = contextTag(tag);
+  return sql.startsWith(prefix) ? sql : `${prefix}\n${sql}`;
+}
+
+/** `q`, with every statement it issues led by `tag`. */
+export function taggedQuerier(q: Querier, tag: ContextLoadTag): Querier {
+  return {
+    query: <R = Record<string, unknown>>(sql: string, params?: readonly unknown[]) =>
+      q.query<R>(tagSql(tag, sql), params),
+    rpc: <T = unknown>(fn: string, args?: readonly unknown[]) => q.rpc<T>(fn, args),
+  };
+}
+
+/** `db`, with every statement it issues — in any transaction — led by `tag`. */
+export function taggedDb(db: Db, tag: ContextLoadTag): Db {
+  return {
+    tx: <T>(claims: DbClaims, fn: (q: Querier) => Promise<T>) =>
+      db.tx(claims, (q) => fn(taggedQuerier(q, tag))),
+    rpc: <T = unknown>(claims: DbClaims, fn: string, args?: readonly unknown[]) =>
+      db.rpc<T>(claims, fn, args),
+    query: <R = Record<string, unknown>>(claims: DbClaims, sql: string, params?: readonly unknown[]) =>
+      db.query<R>(claims, tagSql(tag, sql), params),
+    end: () => db.end(),
+  };
+}
+
+/**
+ * Which optional loaders a read runs. `root`, `summary` and `seq` are not
+ * here: every view carries the root and its as-of watermark.
+ *
+ * A plan rather than `sections.has(...)` at each loader, so the rule "load only
+ * what the selected output consumes" is stated once per schema: v1 below, and
+ * the v2 projection (M2/S3) with its own, narrower plan.
+ */
+interface ContextLoadPlan {
+  readonly parents: boolean;
+  readonly children: boolean;
+  readonly edges: boolean;
+  readonly messages: boolean;
+  /** v1 renders activity only as `cursors.activity`, so this reads one row. */
+  readonly activity: boolean;
+  readonly actions: boolean;
+}
+
+/** v1: a selected section loads exactly what v1 renders for it, nothing else. */
+function v1LoadPlan(sections: ReadonlySet<EntityContextSection>): ContextLoadPlan {
+  return {
+    parents: sections.has('hierarchy'),
+    children: sections.has('hierarchy'),
+    edges: sections.has('connections'),
+    messages: sections.has('messages'),
+    activity: sections.has('activity'),
+    actions: sections.has('actions'),
+  };
+}
+
 function byteLength(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value) ?? '', 'utf8');
 }
@@ -893,6 +970,12 @@ function capText(value: string, limit: number): { text: string; truncated: boole
   return { text: buffer.subarray(0, end).toString('utf8'), truncated: true };
 }
 
+/** The only activity v1 consumes: the key of the newest row, for its cursor. */
+interface NewestActivity {
+  id: string;
+  cursor_created_at: string;
+}
+
 interface ContextRowSet {
   root: EntityRow;
   rootSummary: EntitySummary;
@@ -912,7 +995,7 @@ interface ContextRowSet {
    */
   messageCursors: Map<string, string>;
   actions: PaletteAction[];
-  newestActivity: { id: string; created_at: Date | string; cursor_created_at: string } | null;
+  newestActivity: NewestActivity | null;
   eventSeq: number;
   /** A section had more rows than the fetch cap — the view is already partial. */
   overfetched: boolean;
@@ -1062,7 +1145,7 @@ export class W2FeedContextService {
     const { claims, viewerIdentityId } = await accessFor(this.deps, ctx);
 
     const loaded = await this.deps.db.tx(claims, (q) =>
-      this.loadContext(q, ctx, id, sections, viewerIdentityId));
+      this.loadContext(q, ctx, id, v1LoadPlan(sections), viewerIdentityId));
     // The default section cap is a fair-share guard for structural sections,
     // but applying it to messages first starves a coordination anchor before
     // the total-budget priority loop can let its conversation win. An explicit
@@ -1075,7 +1158,7 @@ export class W2FeedContextService {
     q: Querier,
     ctx: RequestContext,
     id: string,
-    sections: ReadonlySet<EntityContextSection>,
+    plan: ContextLoadPlan,
     viewerIdentityId: string,
   ): Promise<ContextRowSet> {
     const rootRows = await q.query<EntityRow>(
@@ -1085,13 +1168,14 @@ export class W2FeedContextService {
     );
     const root = rootRows[0];
     if (!root) throw new CollabError('not_found', `no readable entity: ${id}`);
-    const [rootSummary] = await assembleSummaries(q, [root], viewerIdentityId);
+    const [rootSummary] = await assembleSummaries(
+      taggedQuerier(q, 'summary'), [root], viewerIdentityId,
+    );
     if (!rootSummary) throw new CollabError('not_found', `no readable entity: ${id}`);
 
     let overfetched = false;
     let parents: EntitySummary[] = [];
-    let children: EntitySummary[] = [];
-    if (sections.has('hierarchy')) {
+    if (plan.parents) {
       // Read as ids and then one point read each, NOT by joining the
       // recursive CTE onto ENTITY_FROM -- see `readAncestorRows` for the
       // measurement (~700ms joined vs ~26ms split) and the planner reason.
@@ -1103,10 +1187,15 @@ export class W2FeedContextService {
       // join happened to emit. The helper returns nearest-parent-first, which
       // is now explicit and is the order that matters once `capList` truncates
       // this list: the nearest ancestors are the ones worth keeping.
-      const parentRows = await readAncestorRows(q, id, { includeDeleted: true });
-      parents = await assembleSummaries(q, parentRows, viewerIdentityId);
+      const pq = taggedQuerier(q, 'parents');
+      const parentRows = await readAncestorRows(pq, id, { includeDeleted: true });
+      parents = await assembleSummaries(pq, parentRows, viewerIdentityId);
+    }
 
-      const childRows = await q.query<EntityRow>(
+    let children: EntitySummary[] = [];
+    if (plan.children) {
+      const cq = taggedQuerier(q, 'children');
+      const childRows = await cq.query<EntityRow>(
         `/* entities.context:children */
          select ${ENTITY_COLUMNS} ${ENTITY_FROM}
           where e.parent_id = $1 and e.deleted_at is null
@@ -1116,13 +1205,14 @@ export class W2FeedContextService {
       );
       overfetched ||= childRows.length > SECTION_ROW_LIMIT;
       children = await assembleSummaries(
-        q, childRows.slice(0, SECTION_ROW_LIMIT), viewerIdentityId,
+        cq, childRows.slice(0, SECTION_ROW_LIMIT), viewerIdentityId,
       );
     }
 
     let edges: EdgeView[] = [];
-    if (sections.has('connections')) {
-      const edgeRows = await q.query<{
+    if (plan.edges) {
+      const eq = taggedQuerier(q, 'edges');
+      const edgeRows = await eq.query<{
         id: string; src_id: string; dst_id: string; type: string;
         props: Record<string, unknown> | null; created_by: string;
         created_at: Date | string; updated_at: Date | string; dst_resolved: boolean | null;
@@ -1141,9 +1231,9 @@ export class W2FeedContextService {
       const page = edgeRows.slice(0, SECTION_ROW_LIMIT);
       const endpointIds = [...new Set(page.flatMap((edge) => [edge.src_id, edge.dst_id]))];
       const endpoints = new Map(
-        (await loadEntitySummariesByIds(q, endpointIds, viewerIdentityId)).map((s) => [s.id, s]),
+        (await loadEntitySummariesByIds(eq, endpointIds, viewerIdentityId)).map((s) => [s.id, s]),
       );
-      const actors = await loadActors(q, page.map((edge) => edge.created_by));
+      const actors = await loadActors(eq, page.map((edge) => edge.created_by));
       edges = page.flatMap((edge) => {
         const source = endpoints.get(edge.src_id);
         const target = endpoints.get(edge.dst_id);
@@ -1165,8 +1255,9 @@ export class W2FeedContextService {
 
     let messages: MessageView[] = [];
     const messageCursors = new Map<string, string>();
-    if (sections.has('messages')) {
-      const messageRows = await q.query<{ entity_id: string; cursor_created_at: string }>(
+    if (plan.messages) {
+      const mq = taggedQuerier(q, 'messages');
+      const messageRows = await mq.query<{ entity_id: string; cursor_created_at: string }>(
         `/* entities.context:messages */
          select m.entity_id, ${MICROS('m.created_at')} cursor_created_at
            from public.messages m
@@ -1178,17 +1269,17 @@ export class W2FeedContextService {
       overfetched ||= messageRows.length > SECTION_ROW_LIMIT;
       for (const row of messageRows) messageCursors.set(row.entity_id, row.cursor_created_at);
       messages = await loadMessageViewsByIds(
-        q, messageRows.slice(0, SECTION_ROW_LIMIT).map((row) => row.entity_id), viewerIdentityId,
+        mq, messageRows.slice(0, SECTION_ROW_LIMIT).map((row) => row.entity_id), viewerIdentityId,
       );
     }
 
-    let newestActivity:
-      { id: string; created_at: Date | string; cursor_created_at: string } | null = null;
-    if (sections.has('activity')) {
-      const rows = await q.query<{ id: string; created_at: Date | string; cursor_created_at: string }>(
+    // Only the newest row's keyset: `cursors.activity` is all v1 renders from
+    // this section, so nothing else about the row is read.
+    let newestActivity: NewestActivity | null = null;
+    if (plan.activity) {
+      const rows = await q.query<NewestActivity>(
         `/* entities.context:activity */
-         select a.id, a.created_at,
-                ${MICROS('a.created_at')} cursor_created_at
+         select a.id, ${MICROS('a.created_at')} cursor_created_at
            from public.activity a
           where a.entity_id = $1
           order by a.created_at desc, a.id desc
@@ -1208,7 +1299,9 @@ export class W2FeedContextService {
       [root.space_id],
     );
 
-    const actions = sections.has('actions') && this.options.actions
+    // The palette reads in its own transaction, through a `deps.db` the
+    // registration seam tags `actions` (handlers/w2/feed-context.ts).
+    const actions = plan.actions && this.options.actions
       ? await this.options.actions(ctx, id)
       : [];
 
