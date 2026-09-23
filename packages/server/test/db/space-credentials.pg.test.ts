@@ -455,6 +455,94 @@ describe('logins (083 split, M3, M4)', () => {
     await expect(store.finishLogin(claims(A), login.workSessionId, true)).resolves.toMatchObject({ connected: true });
   });
 
+  it('delete leaves an open login terminal listed; an admin then stamps another member’s terminal on the revoked credential (decision (a))', async () => {
+    const first = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: label('del-open'), sessionCap: 100 });
+    await store.finishLogin(claims(A), first.workSessionId, true);
+    const cred = first.credential.id;
+    const terminal = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', credentialId: cred, sessionCap: 100 });
+    await store.revoke(claims(ADM), cred);
+    // MUST-FIX 1: the revoke did not stamp it — it is still found for step 2.
+    const live = await store.liveSessions(claims(ADM), cred);
+    expect(live.loginTerminals.map((x) => x.workSessionId)).toEqual([terminal.workSessionId]);
+
+    // ok=true on a revoked credential is refused, even for the opener.
+    await expect(store.finishLogin(claims(A), terminal.workSessionId, true)).rejects.toThrow(/is revoked/);
+    // B is neither the opener, the creator nor an admin: answered as missing.
+    await expect(store.finishLogin(claims(B), terminal.workSessionId, false)).rejects.toThrow(/no space login terminal of yours/);
+    expect((await store.liveSessions(claims(ADM), cred)).loginTerminals).toHaveLength(1);
+
+    // The admin closes A's terminal: finished_at only, nothing else moves.
+    const before = await asOwner(async (c) => (await c.query('select * from public.space_credentials where id = $1', [cred])).rows[0]);
+    const closed = await store.finishLogin(claims(ADM), terminal.workSessionId, false);
+    expect(closed).toMatchObject({ finished: true, connected: false, credential: { id: cred, status: 'revoked' } });
+    const after = await asOwner(async (c) => (await c.query('select * from public.space_credentials where id = $1', [cred])).rows[0]);
+    expect(after).toEqual(before);
+    expect((await store.liveSessions(claims(ADM), cred)).loginTerminals).toEqual([]);
+  });
+
+  it('decision (a): the credential’s creator may stamp an admin’s terminal on a revoked credential; not while it is live', async () => {
+    const made = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: label('creator-close'), sessionCap: 100 });
+    await store.finishLogin(claims(A), made.workSessionId, true);
+    const terminal = await store.startLogin(claims(ADM), { spaceId: ids.S!, provider: 'openai', credentialId: made.credential.id, sessionCap: 100 });
+    // Live credential: the exception does not apply, the creator cannot finish the admin's login.
+    await expect(store.finishLogin(claims(A), terminal.workSessionId, false)).rejects.toThrow(/no space login terminal of yours/);
+    await store.revoke(claims(A), made.credential.id);
+    await expect(store.finishLogin(claims(A), terminal.workSessionId, false)).resolves.toMatchObject({ finished: true, connected: false });
+  });
+
+  it('MUST-FIX 2: repairing a stale default after another became default clears its flag (finish, probe, rekey)', async () => {
+    const provider = 'github';
+    const ghKey = (who: string) => `ghp_${randomUUID().replaceAll('-', '')}${who}`;
+    const mk = (who: string, shape: 'token' = 'token') =>
+      store.create(claims(who), { spaceId: ids.S!, provider, shape, label: label(`${who} gh`), secret: ghKey(who) });
+    const defaults = async () => (await db.query<{ id: string }>(claims(A),
+      `select id from public.space_credentials where space_id = $1 and provider = $2 and is_default and status = 'active'`, [ids.S, provider])).map((r) => r.id);
+
+    // Probe path.
+    const old = await mk(A);
+    expect(old.isDefault).toBe(true);
+    await store.recordProbe(claims(A), old.id, false);
+    const replacement = await mk(A);
+    expect(replacement.isDefault).toBe(true);
+    const repaired = await store.recordProbe(claims(A), old.id, true);
+    expect(repaired).toMatchObject({ status: 'active', isDefault: false });
+    expect(await defaults()).toEqual([replacement.id]);
+
+    // Rekey path.
+    await store.recordProbe(claims(A), replacement.id, false);
+    const third = await mk(A);
+    expect(third.isDefault).toBe(true);
+    const rekeyed = await store.rekey(claims(A), replacement.id, ghKey('re'));
+    expect(rekeyed).toMatchObject({ status: 'active', isDefault: false });
+    expect(await defaults()).toEqual([third.id]);
+    // Control: a repaired default with no rival keeps its flag.
+    await store.recordProbe(claims(A), third.id, false);
+    await expect(store.recordProbe(claims(A), third.id, true)).resolves.toMatchObject({ isDefault: true });
+
+    // Finish path (login shape). T has no openai credential at this point.
+    const lp = 'openai';
+    const login = await store.startLogin(claims(OUT), { spaceId: ids.T!, provider: lp, label: label('t-login'), sessionCap: 100 });
+    const done = await store.finishLogin(claims(OUT), login.workSessionId, true);
+    expect(done.credential.isDefault).toBe(true);
+    await store.recordProbe(claims(OUT), login.credential.id, false);
+    const rival = await store.create(claims(OUT), { spaceId: ids.T!, provider: lp, shape: 'api_key', label: label('t-key'), secret: key('t') });
+    expect(rival.isDefault).toBe(true);
+    const relogin = await store.startLogin(claims(OUT), { spaceId: ids.T!, provider: lp, credentialId: login.credential.id, sessionCap: 100 });
+    const refinished = await store.finishLogin(claims(OUT), relogin.workSessionId, true);
+    expect(refinished.credential).toMatchObject({ status: 'active', isDefault: false });
+  });
+
+  it('A1: a missing or blank label is invalid input, not a raw constraint', async () => {
+    await expect(store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: null as never, sessionCap: 100 }))
+      .rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: '   ', sessionCap: 100 }))
+      .rejects.toThrow(/label of 1 to 80 characters/);
+    await expect(store.create(claims(A), { spaceId: ids.S!, provider: 'anthropic', shape: 'api_key', label: ' ', secret: key('l') }))
+      .rejects.toMatchObject({ code: 'invalid_input' });
+    const { credential } = await newApiKey(A);
+    await expect(store.rename(claims(A), credential.id, '')).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
   it('t1-13: pending is outside the default index, and expired pending rows are swept', async () => {
     const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'openai', label: label('expire'), sessionCap: 100 });
     expect(login.credential).toMatchObject({ status: 'pending', isDefault: false });
@@ -467,10 +555,17 @@ describe('logins (083 split, M3, M4)', () => {
     await store.expirePending(claims(A));
     expect(await db.query(claims(A), 'select 1 from public.space_credentials where id = $1', [login.credential.id])).toHaveLength(1);
 
+    // Expired, and its terminal's own deadline passed too — but the terminal
+    // is still UNFINISHED (its PTY may outlive expires_at): still left.
     await asOwner(async (c) => {
       await c.query(`update public.space_credentials set pending_expires_at = now() - interval '1 minute' where id = $1`, [login.credential.id]);
       await c.query(`update public.credential_sessions set expires_at = now() - interval '1 minute' where work_session_id = $1`, [login.workSessionId]);
     });
+    await store.expirePending(agent(A));
+    expect(await db.query(claims(A), 'select 1 from public.space_credentials where id = $1', [login.credential.id])).toHaveLength(1);
+    // A failed finish closes the terminal and leaves the row pending; now it goes.
+    const failed = await store.finishLogin(claims(A), login.workSessionId, false);
+    expect(failed).toMatchObject({ finished: true, connected: false, credential: { status: 'pending' } });
     expect(await store.expirePending(agent(A))).toBeGreaterThanOrEqual(1);
     expect(await db.query(claims(A), 'select 1 from public.space_credentials where id = $1', [login.credential.id])).toHaveLength(0);
   });
@@ -495,7 +590,7 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(await recorded(s)).toEqual([]);
   });
 
-  it('t1-10: the writer refuses another space, a non-spawning session, a duplicate, and an inactive credential', async () => {
+  it('t1-10: the writer refuses another space, a non-spawning session, a different credential, and an inactive one', async () => {
     const { credential } = await newApiKey(A);
     // A session in T, where A is a member — the credential is S's.
     const inT = await session(ids.T!, ids['member:T:' + A]!);
@@ -506,7 +601,14 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
 
     const dup = await session(ids.S!, ids.TB!);
     await recordManifest(agent(A), dup, manifest({ anthropic: credential.id }));
-    await expect(recordManifest(agent(A), dup, manifest({ anthropic: credential.id }))).rejects.toThrow(/already records a anthropic space credential/);
+    // A2: a retried identical write is a no-op (a timed-out write may have committed)…
+    await recordManifest(agent(A), dup, manifest({ anthropic: credential.id }));
+    expect(await recorded(dup)).toEqual([{ provider: 'anthropic', space_credential_id: credential.id, launcher_account_id: accounts[A] }]);
+    // …while a DIFFERENT credential for the same provider is refused.
+    const other = await newApiKey(A);
+    await expect(recordManifest(agent(A), dup, manifest({ anthropic: other.credential.id })))
+      .rejects.toThrow(/already records a different anthropic space credential/);
+    expect((await recorded(dup))[0]!.space_credential_id).toBe(credential.id);
 
     const stale = await newApiKey(A);
     await store.recordProbe(claims(A), stale.credential.id, false);
@@ -598,6 +700,39 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(ofA.sessions.map((x) => x.workSessionId)).not.toContain(byB);
     await expect(store.memberSessions(claims(A), ids.S!, accounts[A]!)).resolves.toBeTruthy();
     await expect(store.memberSessions(claims(B), ids.S!, accounts[A]!)).rejects.toThrow(/space admin required/);
+
+    // MUST-FIX 5: a node admin asks across every space (account disable);
+    // a space admin may not drop the space; the account itself may.
+    const inT = await session(ids.T!, ids['member:T:' + A]!);
+    const tKey = await newApiKey(A, 'openai', ids.T!);
+    await recordManifest(agent(A), inT, manifest({ openai: tKey.credential.id }));
+    const nodeAdmin = { ...claims(OUT), nodeAdmin: true } as DbClaims;
+    const everywhere = await store.memberSessions(nodeAdmin, null, accounts[A]!);
+    expect(everywhere.spaceId).toBeNull();
+    expect(everywhere.sessions.map((x) => x.workSessionId)).toEqual(expect.arrayContaining([byAforTB, inT]));
+    expect(everywhere.sessions.find((x) => x.workSessionId === inT)!.spaceId).toBe(ids.T);
+    expect(everywhere.sessions.map((x) => x.workSessionId)).not.toContain(byB);
+    await expect(store.memberSessions({ ...agent(OUT), nodeAdmin: true } as DbClaims, null, accounts[A]!)).rejects.toThrow(/human-only/);
+    await expect(store.memberSessions(claims(ADM), null, accounts[A]!)).rejects.toThrow(/space admin required/);
+    await expect(store.memberSessions(claims(A), null, accounts[A]!)).resolves.toMatchObject({ accountId: accounts[A] });
+  });
+
+  it('A3: a malformed spaceCredentialIds entry is invalid input, not a cast error', async () => {
+    const s = await session(ids.S!, ids.TB!);
+    await expect(recordManifest(agent(A), s, manifest({ anthropic: 'not-a-uuid' }))).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(recordManifest(agent(A), s, manifest({ anthropic: 'not-a-uuid' }))).rejects.toThrow(/is not a credential id/);
+    expect(await recorded(s)).toEqual([]);
+  });
+
+  it('(d): 206 leaves record_session_manifest owned by the migration role, not tm8_graph_owner', async () => {
+    const [row] = await database.query<{ owner: string; me: string }>(
+      `select pg_get_userbyid(p.proowner) owner, current_user me from pg_proc p
+        where p.oid = 'public.record_session_manifest(uuid, jsonb, text[], text, text, text)'::regprocedure`);
+    expect(row!.owner).not.toBe('tm8_graph_owner');
+    expect(row!.owner).toBe(row!.me);
+    const [finish] = await database.query<{ owner: string }>(
+      `select pg_get_userbyid(proowner) owner from pg_proc where oid = 'public.finish_credential_session(uuid)'::regprocedure`);
+    expect(finish!.owner).toBe('tm8_graph_owner');
   });
 
   it('C3: resume re-points the launcher to the resumer, and refuses once a credential is no longer active', async () => {
