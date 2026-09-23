@@ -105,9 +105,16 @@ export interface SpaceCredentialLiveSessions {
 }
 
 export interface MemberSpaceCredentialSessions {
-  spaceId: string;
+  /** Null when the question spanned every space. */
+  spaceId: string | null;
   accountId: string;
-  sessions: Array<{ workSessionId: string; provider: SpaceCredentialProvider; spaceCredentialId: string; status: string }>;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProvider;
+    spaceId: string;
+    spaceCredentialId: string;
+    status: string;
+  }>;
 }
 
 export interface RepointedSessionSpaceCredentials {
@@ -253,7 +260,11 @@ export class DbSpaceCredentialStore {
     ]);
   }
 
-  /** Close a space login with the probe's verdict. Refuses a revoked credential. */
+  /**
+   * Close a space login with the probe's verdict. On a REVOKED credential,
+   * `ok = false` only stamps the terminal finished (the opener, the creator or
+   * a space admin may; delete's second step), and `ok = true` is refused.
+   */
   async finishLogin(
     claims: DbClaims,
     workSessionId: string,
@@ -326,7 +337,12 @@ export class DbSpaceCredentialStore {
   }
 
   /** Live sessions a member launched on this space's credentials (SC-6). */
-  async memberSessions(claims: DbClaims, spaceId: string, accountId: string): Promise<MemberSpaceCredentialSessions> {
+  /** A null `spaceId` asks across every space (node admin, or the account itself). */
+  async memberSessions(
+    claims: DbClaims,
+    spaceId: string | null,
+    accountId: string,
+  ): Promise<MemberSpaceCredentialSessions> {
     return this.db.rpc<MemberSpaceCredentialSessions>(claims, 'member_space_credential_sessions', [spaceId, accountId]);
   }
 
