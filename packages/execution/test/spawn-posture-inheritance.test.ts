@@ -86,7 +86,9 @@ describe('a spawned session inherits its spawner posture', () => {
     expect(result.manifest.launch.permissionMode).toBe('interactive');
   });
 
-  it('asks nothing when the child named its own posture', async () => {
+  it("keeps the child's own posture, and still reads the parent for its credentials", async () => {
+    // SC-2: the parent is read even when the child names a posture, because
+    // its credential sources and exact space credential ids carry down (A4).
     graph.postures.set(PARENT_ID, BYPASS);
 
     const result = await service.spawn(AUTH, {
@@ -96,7 +98,7 @@ describe('a spawned session inherits its spawner posture', () => {
       accessMode: 'plan',
     });
 
-    expect(graph.postureQueries).toEqual([]);
+    expect(graph.postureQueries).toEqual([PARENT_ID]);
     expect(result.manifest.launch).toMatchObject({
       permissionMode: 'readOnly',
       accessMode: 'plan',

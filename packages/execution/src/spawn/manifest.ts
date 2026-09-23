@@ -216,8 +216,9 @@ export interface ResolvedLaunchConfig {
    * Space credential ids known BEFORE the spawn reads the space: the request's
    * own pins, and the exact id an inherited or resumed `space` source carries.
    * A `space` source with no entry here takes the space default at spawn.
+   * Optional so a hand-built launch (tests, embedders) means "none".
    */
-  spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>>;
+  spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>>;
   /** D9: set by the spawn path once it has resolved auto; absent before that. */
   effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
 }
@@ -476,6 +477,16 @@ function resolveCredentialSources(
   }
 
 
+  // What a scalar `space` covers (A4): the tool's own provider, GitHub, and any
+  // provider the request pinned. NOT every space-capable provider — a codex
+  // launch saying `space` must not demand an anthropic space credential it
+  // will never inject.
+  const scalarSpaceCovers = new Set<string>(['github']);
+  if (toolProvider !== null) scalarSpaceCovers.add(toolProvider);
+  for (const [provider, id] of Object.entries(request.spaceCredentialIds ?? {})) {
+    if (id != null) scalarSpaceCovers.add(provider);
+  }
+
   // The exhaustive FILE-provider table is the runtime provider source here;
   // GitHub is the one string-shaped exception. This avoids another hand-kept
   // list at the manifest seam: a seventh file provider added to the table is
@@ -486,7 +497,12 @@ function resolveCredentialSources(
   const spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>> = {};
   const credentialSources = Object.fromEntries(
     [...agentProviders, 'github' as const].map((provider) => {
-      const { source, spaceCredentialId } = resolveCredentialSource(provider, request, inherited);
+      const { source, spaceCredentialId } = resolveCredentialSource(
+        provider,
+        request,
+        inherited,
+        scalarSpaceCovers,
+      );
       if (spaceCredentialId !== undefined && isSpaceCredentialProvider(provider)) {
         spaceCredentialIds[provider] = spaceCredentialId;
       }
@@ -511,6 +527,7 @@ function resolveCredentialSource(
   provider: keyof ResolvedCredentialSources,
   request: SpawnRequest,
   inherited: SessionLaunchPosture | null | undefined,
+  scalarSpaceCovers: ReadonlySet<string>,
 ): { source: CredentialSource | null; spaceCredentialId?: string } {
   const spaceCapable = isSpaceCredentialProvider(provider);
   const own = asRequestedSource(request.credentialSources?.[provider]);
@@ -522,10 +539,12 @@ function resolveCredentialSource(
       { provider },
     );
   }
-  // A scalar `space` means nothing for a provider a space cannot hold, so it
-  // leaves that provider on auto (the tool's own provider was refused above).
+  // A scalar `space` names only what it covers (see `scalarSpaceCovers`); every
+  // other provider stays on auto, uninherited (the tool's own non-space
+  // provider was refused above).
   const scalar = asRequestedSource(request.credentialSource);
-  const requested = own ?? (scalar === 'space' && !spaceCapable ? undefined : scalar);
+  const requested =
+    own ?? (scalar === 'space' && (!spaceCapable || !scalarSpaceCovers.has(provider)) ? undefined : scalar);
   if (requested !== undefined) {
     if (requested !== 'space') return { source: requested };
     const pin = spaceCapable ? request.spaceCredentialIds?.[provider] : undefined;
@@ -1558,7 +1577,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // Absent, not `{}`, when nothing ran on a space credential: 206's writer
       // checks every key against a `space` source, and a launch that never
       // touched the space writes the manifest it always wrote.
-      ...(Object.keys(launch.spaceCredentialIds).length > 0
+      ...(launch.spaceCredentialIds && Object.keys(launch.spaceCredentialIds).length > 0
         ? { spaceCredentialIds: { ...launch.spaceCredentialIds } }
         : {}),
       ...(launch.effectiveCredentialSources &&

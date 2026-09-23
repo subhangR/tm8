@@ -75,6 +75,8 @@ describe('SpawnService persona context', () => {
       'commandNetwork',
       'credentialSource',
       'credentialSources',
+      // D9 (SC-2): which source each provider actually ran on, node included.
+      'effectiveCredentialSources',
       'model',
       'permissionMode',
       'reasoningEffort',
