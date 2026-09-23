@@ -34,6 +34,11 @@
 --     asserts the manifest path writes the row, so the revert goes red.
 --   * Drop or rename credential_sessions_one_live_per_account_provider without
 --     keeping its `space_credential_id is null` predicate (section 5).
+--   * Re-create public.finish_credential_session (083) without its
+--     `space_credential_id is null` predicate: the member finish must never
+--     close a space login (section 5).
+--   * Raise 55000 for a state refusal. 206 uses 23514 (invariant_violation):
+--     55000 is unmapped in SQLSTATE_TO_ERROR_CODE and would surface as a 503.
 --   * 206 deliberately does NOT touch public.start_credential_session,
 --     internal.is_credential_provider or credential_sessions_provider_check.
 --     Open PR #666 (203_grok_credentials) re-creates the latter two; because
@@ -401,6 +406,51 @@ create unique index credential_sessions_one_live_per_space_credential
 
 grant select (space_credential_id) on public.credential_sessions to tm8_app;
 
+-- 083's member finish, re-created with ONE change: it never closes a login
+-- INTO a space credential (`and space_credential_id is null`). The member
+-- path probes the member's own home and records a member credential; a space
+-- login is finished only by finish_space_credential_login, which probes the
+-- space home and checks the credential's state. A space login id answers
+-- exactly as another account's id does (`finished: false`), so the guard
+-- holds even if the TypeScript routing sends the wrong id here (SC-4, M5).
+-- A later migration re-creating this function must keep the predicate.
+create or replace function public.finish_credential_session(p_work_session_id uuid)
+returns jsonb
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  v_account_id uuid;
+  stored public.credential_sessions;
+begin
+  perform internal.require_human_auth_kind();
+  v_account_id := internal.current_account_id();
+  if v_account_id is null then
+    raise exception 'no active account for this identity' using errcode = 'P0002';
+  end if;
+
+  update public.credential_sessions
+     set finished_at = now()
+   where work_session_id = p_work_session_id
+     and account_id = v_account_id
+     and finished_at is null
+     and space_credential_id is null
+  returning * into stored;
+
+  if stored.work_session_id is null then
+    -- Either already finished, or not this account's, or a space login. All
+    -- answer the same way on purpose: distinguishing them tells a caller
+    -- whether someone else's session exists.
+    return jsonb_build_object('workSessionId', p_work_session_id, 'finished', false);
+  end if;
+
+  return jsonb_build_object(
+    'workSessionId', stored.work_session_id,
+    'provider', stored.provider,
+    'finished', true,
+    'finishedAt', stored.finished_at
+  );
+end
+$$;
+
 -- -----------------------------------------------------------------------------
 -- 6. Management RPCs (human-only).
 -- -----------------------------------------------------------------------------
@@ -513,7 +563,7 @@ begin
         using errcode = '22023';
     end if;
     if target.status not in ('active', 'stale') then
-      raise exception 'space credential is %', target.status using errcode = '55000';
+      raise exception 'space credential is %', target.status using errcode = '23514';
     end if;
   end if;
 
@@ -572,7 +622,7 @@ begin
   if target.status not in ('pending', 'active', 'stale') then
     update public.credential_sessions set finished_at = coalesce(finished_at, now())
      where work_session_id = p_work_session_id;
-    raise exception 'space credential is %', target.status using errcode = '55000';
+    raise exception 'space credential is %', target.status using errcode = '23514';
   end if;
   if not internal.is_space_member(target.space_id) then
     raise exception 'not a member of this space' using errcode = '42501';
@@ -621,7 +671,7 @@ begin
     raise exception 'a login credential is rotated by logging in again' using errcode = '22023';
   end if;
   if stored.status not in ('active', 'stale') then
-    raise exception 'space credential is %', stored.status using errcode = '55000';
+    raise exception 'space credential is %', stored.status using errcode = '23514';
   end if;
   update public.space_credentials
      set key_hint = p_key_hint,
@@ -644,7 +694,7 @@ begin
   perform internal.require_human_auth_kind();
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.status = 'revoked' then
-    raise exception 'space credential is revoked' using errcode = '55000';
+    raise exception 'space credential is revoked' using errcode = '23514';
   end if;
   update public.space_credentials set label = btrim(p_label)
    where id = stored.id returning * into stored;
@@ -660,7 +710,7 @@ begin
   perform internal.require_human_auth_kind();
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.status <> 'active' then
-    raise exception 'only an active credential can be the default' using errcode = '55000';
+    raise exception 'only an active credential can be the default' using errcode = '23514';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(stored.space_id::text || '|' || stored.provider, 206));
   update public.space_credentials set is_default = false
@@ -681,7 +731,7 @@ begin
   perform internal.require_human_auth_kind();
   stored := internal.lock_managed_space_credential(p_credential_id);
   if stored.status not in ('active', 'stale') then
-    raise exception 'space credential is %', stored.status using errcode = '55000';
+    raise exception 'space credential is %', stored.status using errcode = '23514';
   end if;
   update public.space_credentials
      set status = case when coalesce(p_ok, false) then 'active' else 'stale' end,
@@ -894,7 +944,7 @@ begin
         detail = jsonb_build_object('reason', 'not_found', 'provider', p_provider)::text;
     end if;
     if stored.status <> 'active' then
-      raise exception 'space credential "%" is %', stored.label, stored.status using errcode = '55000',
+      raise exception 'space credential "%" is %', stored.label, stored.status using errcode = '23514',
         detail = jsonb_build_object('reason', stored.status, 'provider', p_provider)::text;
     end if;
   end if;
@@ -976,9 +1026,9 @@ begin
   end if;
   if v_session_status is distinct from 'spawning' then
     raise exception 'a space credential is recorded only while a session is spawning'
-      using errcode = '55000';
+      using errcode = '23514';
   end if;
-  raise exception 'space credential is %', v_credential.status using errcode = '55000';
+  raise exception 'space credential is %', v_credential.status using errcode = '23514';
 end
 $$;
 
@@ -1017,7 +1067,7 @@ begin
   ) locked;
   if v_active <> v_recorded then
     raise exception 'a space credential this session launched on is no longer active'
-      using errcode = '55000';
+      using errcode = '23514';
   end if;
 
   update public.session_space_credentials
