@@ -406,6 +406,33 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
+  /*
+   * KINDS THAT TAB BY THEIR OWN FACTS, not the ruled four. A skill is a file on
+   * disk, seeded `done` like the fact kinds, so the four-stage row was three
+   * empty tabs and a Done holding everything (user ruling, task 01a0ccd9). It
+   * tabs by whether anyone equips it and whether its files are still there.
+   * Listed literally, like FACT_KINDS, so adding a kind is a deliberate edit.
+   */
+  const OWN_TAB_KINDS = ['skill'];
+
+  it('skill tabs by its own facts: All · Equipped · Not equipped · Missing files', () => {
+    const list = getKind('skill').list;
+    expect(list.categories?.map((t) => [t.id, t.label, t.filter])).toEqual([
+      ['all', 'All', { deleted: 'exclude' }],
+      ['equipped', 'Equipped', { skillEquipped: true, deleted: 'exclude' }],
+      ['not_equipped', 'Not equipped', { skillEquipped: false, deleted: 'exclude' }],
+      ['missing', 'Missing files', { skillMissing: true, deleted: 'exclude' }],
+    ]);
+    // The bands overlap, so the total is All's own count, never their sum.
+    expect(list.tabTotal).toBe('all');
+    // Missing files moved from a filter chip to a tab; it is not offered twice.
+    expect(list.filters.some((f) => f.id === 'missing')).toBe(false);
+    // Only kinds whose tabs overlap name a total tab.
+    for (const row of allKinds()) {
+      if (!OWN_TAB_KINDS.includes(row.kind)) expect(row.list.tabTotal, row.kind).toBeUndefined();
+    }
+  });
+
   it('PHASE 7 — every kind carries THE SAME four category tabs, in order', () => {
     // Universal by ruling, and now universal in the strongest sense: not four
     // tabs each kind spells its own way, but ONE declaration. The ids are the
@@ -432,6 +459,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         expect(row.list.categories, `${row.kind} is a fact kind: no lifecycle row`).toBeUndefined();
         continue;
       }
+      if (OWN_TAB_KINDS.includes(row.kind)) continue;
       expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
       expect(row.list.categories?.map((t) => t.label)).toEqual([
         'To Do',
@@ -454,6 +482,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // everywhere else — one tab id, three incompatible predicates. There is
     // one predicate now and it follows from the id.
     for (const row of allKinds()) {
+      if (OWN_TAB_KINDS.includes(row.kind)) continue;
       for (const tab of row.list.categories ?? []) {
         expect(tab.filter, `${row.kind}/${tab.id}`).toEqual({
           category: [tab.id],
@@ -492,7 +521,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // Only kinds that HAVE a lifecycle row: the five fact kinds carry none,
     // and that exemption is asserted by the four-tabs test above rather than
     // being re-derived (or silently tolerated by `?.`) here.
-    const tabbed = allKinds().filter((row) => row.list.categories !== undefined);
+    const tabbed = allKinds().filter(
+      (row) => row.list.categories !== undefined && !OWN_TAB_KINDS.includes(row.kind),
+    );
     expect(tabbed.length, 'no kind has tabs — this test would pass vacuously').toBeGreaterThan(0);
     for (const row of tabbed) {
       const done = row.list.categories?.find((t) => t.id === 'done');
@@ -568,6 +599,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          version-guarded content patch, and deliberately so; only the input
          differs. See `DateControl`. */
       'dateControls',
+      /* Opened 2026-09-23 with skills' own tabs. Tabs that overlap cannot be
+         summed into a kind total, so the kind names the tab that IS the total. */
+      'tabTotal',
       /* Opened 2026-08-16 with W1: axis pickers are DATA-driven — the field
          only marks the kind whose state carries `axes`; the vocabulary is the
          space's own `task_axes` rows, handed over by the host. Not

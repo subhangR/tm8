@@ -611,9 +611,19 @@ export interface ListSection {
  * you are looking at, the sections are triage grouping WITHIN it. T0-1 draws
  * both at once — tabs above, group headers below — so neither supersedes the
  * other.
+ *
+ * A KIND WITH NO WORKFLOW MAY DECLARE ITS OWN TABS. The ruled four are the
+ * default, not a requirement. A skill is a file on disk, seeded `done` as a
+ * resolution predicate, so its four-tab row always opened on an empty To Do
+ * and kept everything under Done (user report on task 01a0ccd9: "they dont
+ * make sense"). A skill tabs by the facts it does have (All · Equipped · Not
+ * equipped · Missing files), so the id is a plain string. Only the ruled four
+ * are `StatusCategory` literals, and only those get a `CategoryGlyph`. Tabs
+ * that overlap rather than partition name their total with
+ * `ListConfig.tabTotal`.
  */
 export interface StatusCategoryTab {
-  id: StatusCategory;
+  id: StatusCategory | (string & {});
   label: string;
   filter: QueryFilter;
 }
@@ -632,6 +642,15 @@ export interface ListConfig {
    * the query it claims to summarise.
    */
   categories?: readonly StatusCategoryTab[];
+  /**
+   * The tab whose count IS the kind's total, for a tab row that OVERLAPS
+   * rather than partitions (skills: All · Equipped · Not equipped · Missing
+   * files). Omitted means the tabs partition the kind: the selector total is
+   * their sum and the footer lists each band. When set, the selector total is
+   * this tab's count, and the footer is dropped, because a line of overlapping
+   * counts reads as a breakdown that adds up.
+   */
+  tabTotal?: string;
   /**
    * WHICH of those four the panel OPENS ON, before the viewer has ever picked
    * a tab for this kind. Omitted means the first one, which is `to_do`.

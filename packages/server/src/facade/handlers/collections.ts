@@ -415,6 +415,12 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   for (const [key, column] of [['skillProvider', 'provider'], ['skillLevel', 'level'], ['skillRoot', 'root_ref'], ['skillMissing', 'missing']] as const) {
     if (f[key] !== undefined) where.push(`exists(select 1 from public.skills sf where sf.entity_id = e.id and sf.${column} = ${p.add(f[key])})`);
   }
+  if (f.skillEquipped !== undefined) {
+    // The same predicate the read projections compute `state.equipped` from
+    // (entity-read.ts), so the Equipped tab and the row's equipped badge
+    // cannot disagree about which skills are equipped.
+    where.push(`${f.skillEquipped ? '' : 'not '}exists (select 1 from public.edges eq where eq.dst_id = e.id and eq.type = 'equips')`);
+  }
   if (f.readyToPull) {
     // Phase 5 (152): the category, not the two literals it used to enumerate.
     // `open` and `pulled` were exactly the `to_do` literals, so this is the same
