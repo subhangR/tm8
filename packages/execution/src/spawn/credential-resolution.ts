@@ -276,6 +276,19 @@ export async function resolveSessionCredentials(
         { provider: toolProvider, model: launch.model },
       );
     }
+    // That key is a MEMBER credential of the tool's provider (design §4, last
+    // bullet), so D5's space policy for that provider governs it: a space that
+    // requires 'space' refuses it, on every resume too, as policy is read now.
+    // The node policy is irrelevant here — a backend model has no node route.
+    if (!allowedBy(policies, toolProvider).member) {
+      throw new SpawnError(
+        `${launch.model} runs only on your own ${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key, which ` +
+          `is not allowed: ${spacePolicySentence(policies, toolProvider)} — pick a model ` +
+          `${launch.agentTool} runs natively, which can use this space's credential`,
+        'forbidden',
+        { provider: toolProvider, model: launch.model },
+      );
+    }
     credentialHome = await deps.resolveMemberHome(null);
     effective[toolProvider] = 'member';
   } else if (toolProvider === 'anthropic' || toolProvider === 'openai') {

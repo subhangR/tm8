@@ -331,6 +331,50 @@ describe('I3 — an explicit source fails closed, with a sentence naming the fix
     );
     expect(e.message).toContain("credentialSources.anthropic 'space' cannot serve it");
   });
+
+  // A Kimi or Groq key is a MEMBER credential of the tool's provider (design
+  // §4, last bullet), so D5's space policy for that provider governs it.
+  describe('D5 × API-key-backend models (Kimi on claude-code, Groq on codex)', () => {
+    const REQUIRE_SPACE = { space: { anthropic: ['space'], openai: ['space'] }, node: {} } as SpaceCredentialPolicies;
+    const cases = [
+      { agentTool: 'claude-code', model: 'kimi-k2-thinking', provider: 'anthropic' },
+      { agentTool: 'codex', model: 'openai/gpt-oss-120b', provider: 'openai' },
+    ] as const;
+
+    for (const { agentTool, model, provider } of cases) {
+      it(`${model} on ${agentTool}: "require space" refuses before any member home is resolved`, async () => {
+        const d = deps(fakePort({ policies: REQUIRE_SPACE, defaults: { anthropic: ANT_DEFAULT, openai: OAI_DEFAULT } }), { home: MEMBER_HOME });
+        const e = await refusal(resolve(launch({}, null, agentTool, model), d));
+        expect(e.code).toBe('forbidden');
+        expect(e.message).toContain(`a space admin allows only 'space' for ${provider} in this space`);
+        expect(e.message).toContain(`pick a model ${agentTool} runs natively, which can use this space's credential`);
+        expect(d.memberAsks).toEqual([]);
+        expect(d.materialized).toEqual([]);
+      });
+
+      it(`${model} on ${agentTool}: control — with no policy it lands on the member's own key`, async () => {
+        const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT, openai: OAI_DEFAULT } }), { home: MEMBER_HOME });
+        const r = await resolve(launch({}, null, agentTool, model), d);
+        expect(r.credentialHome).toBe(MEMBER_HOME);
+        expect(r.launch.effectiveCredentialSources?.[provider]).toBe('member');
+        expect(d.memberAsks).toEqual([null]);
+      });
+    }
+
+    it('a policy set AFTER launch refuses the resumed Kimi session (policy is read now)', async () => {
+      const recorded = { credentialSources: { anthropic: 'member' } } as SessionLaunchPosture;
+      const d = deps(fakePort({ policies: REQUIRE_SPACE }), { home: MEMBER_HOME });
+      const e = await refusal(resolve(launch({}, recorded, 'claude-code', 'kimi-k2-thinking'), d, true));
+      expect(e.code).toBe('forbidden');
+      expect(d.memberAsks).toEqual([]);
+    });
+
+    it('the node policy is irrelevant: a backend model has no node route, so "forbid node" still lands on member', async () => {
+      const d = deps(fakePort({ policies: { space: {}, node: { anthropic: false } } }), { home: MEMBER_HOME });
+      const r = await resolve(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d);
+      expect(r.launch.effectiveCredentialSources?.anthropic).toBe('member');
+    });
+  });
 });
 
 describe('M8 — every broken space credential refuses; none degrades', () => {
