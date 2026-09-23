@@ -3263,7 +3263,12 @@ export interface SavedView {
   createdAt: string;
 }
 
-/** GET /v2/actions?contextEntityId= — palette action descriptors. */
+/**
+ * GET /v2/actions?contextEntityId=&scope=contextual|all — palette action
+ * descriptors. With a context entity the default (`contextual`) lists only the
+ * operations on that entity, most relevant first; `all` appends the Space-level
+ * and global ones. Without a context entity every row is global.
+ */
 export interface PaletteAction {
   id: string;
   label: string;

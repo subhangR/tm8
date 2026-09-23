@@ -46,8 +46,16 @@ async function actionList(cmd: CommandContext): Promise<ExitCode> {
   // `--for <entity-id>` is the operation's `contextEntityId`. Omitted entirely
   // when absent: a global palette and a palette on a target are different
   // questions, and an empty context id is neither.
+  //
+  // On a target the Server answers with that entity's own operations, most
+  // relevant first. `--all` asks for the complete authorized inventory: the
+  // same rows followed by the Space-level and global ones (`auth.*`,
+  // `spaces.create`, …) that answer identically on every entity.
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'actions.list', {
-    query: { contextEntityId: cmd.options.value('for') },
+    query: {
+      contextEntityId: cmd.options.value('for'),
+      scope: cmd.options.bool('all') ? 'all' : undefined,
+    },
   });
 
   cmd.out.data(data, renderActions);

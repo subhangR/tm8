@@ -153,6 +153,15 @@ describe('tm8 action list — actions.list', () => {
     expect(recorded[0]?.query.has('contextEntityId')).toBe(false);
   });
 
+  it('sends --all as scope=all, and no scope at all without it', async () => {
+    await tm8(['action', 'list', '--for', TARGET, '--all']);
+    expect(recorded[0]?.query.get('scope')).toBe('all');
+    expect(recorded[0]?.query.get('contextEntityId')).toBe(TARGET);
+
+    await tm8(['action', 'list', '--for', TARGET]);
+    expect(recorded[1]?.query.has('scope')).toBe(false);
+  });
+
   it('refuses --mutation-id on a read', async () => {
     const r = await tm8(['action', 'list', '--mutation-id', 'x']);
     expect(r.code).toBe(2);

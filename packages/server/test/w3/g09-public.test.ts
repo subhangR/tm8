@@ -178,6 +178,48 @@ describe.sequential('W3.G09 saved views and actions through the production Serve
     }
   });
 
+  it('leads a working task\'s palette with its own operations and keeps them under the context cap', async () => {
+    const worked = await harness.request('POST', `/v2/entities/${taskId}/commands/work`, {
+      clientMutationId: 'w3-g09-work',
+      status: 'working',
+    });
+    expect(worked.status, JSON.stringify(worked.body)).toBe(200);
+
+    type Discovery = { capabilityEpoch: string; actions: Array<{ operation: string }> };
+    const contextual = successData<Discovery>(
+      await harness.request('GET', `/v2/actions?contextEntityId=${taskId}`),
+    );
+    const operations = contextual.actions.map((action) => action.operation);
+    expect(operations.slice(0, 2)).toEqual(['entities.commands.complete', 'messages.post']);
+    expect(operations.filter((operation) => operation.startsWith('auth.'))).toEqual([]);
+    expect(operations).not.toContain('spaces.create');
+
+    // The complete authorized inventory is still one parameter away, with the
+    // task's own operations ahead of every global one and the same epoch.
+    const all = successData<Discovery>(
+      await harness.request('GET', `/v2/actions?contextEntityId=${taskId}&scope=all`),
+    );
+    const allOps = all.actions.map((action) => action.operation);
+    expect(allOps.slice(0, operations.length)).toEqual(operations);
+    expect(allOps).toEqual(expect.arrayContaining(['auth.logout', 'spaces.create']));
+    expect(all.capabilityEpoch).toBe(contextual.capabilityEpoch);
+
+    // Global discovery is unchanged: parameter-free composers, no target.
+    const global = successData<Discovery>(await harness.request('GET', '/v2/actions'));
+    expect(global.actions.map((action) => action.operation)).toEqual(
+      expect.arrayContaining(['auth.logout', 'spaces.create', 'messages.post']),
+    );
+
+    // `entities.context` trims its actions section from the END; ranking is
+    // what keeps the operations that matter inside the default byte cap.
+    const context = successData<{ actions: Array<{ operation: string }> }>(
+      await harness.request('GET', `/v2/entities/${taskId}/context`),
+    );
+    const kept = context.actions.map((action) => action.operation);
+    expect(kept).toEqual(expect.arrayContaining(['entities.commands.complete', 'messages.post']));
+    expect(kept.filter((operation) => operation.startsWith('auth.'))).toEqual([]);
+  });
+
   it('rejects strict unknown saved-view input without a row or ledger effect', async () => {
     const response = await harness.request('POST', '/v2/saved-views', {
       clientMutationId: 'w3-g09-invalid',

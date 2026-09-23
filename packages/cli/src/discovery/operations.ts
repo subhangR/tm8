@@ -1405,7 +1405,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── capability discovery ─────────────────────────────────────────────────
   'actions.list': {
     cmd: ['action', 'list'],
-    syn: 'tm8 action list [--for <entity-id>]',
+    syn: 'tm8 action list [--for <entity-id>] [--all]',
     sum: 'Ask what THIS actor may actually do on a target right now',
     authz: 'entity',
     input: 'none',
@@ -1413,6 +1413,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'static help answers "what can tm8 express?"; this answers "what may I do here now?" — they are different questions',
       'results are bound to an actor, a Space, a target version, and a capabilityEpoch, and go stale in 30 seconds',
+      'with --for, only operations on that entity are listed, most relevant first; --all appends the Space-level and global ones (auth, spaces.create, ...) — the complete authorized inventory',
     ],
   },
 
