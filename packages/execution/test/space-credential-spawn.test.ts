@@ -17,7 +17,7 @@
 // The same orderings against the real migration are in
 // packages/server/test/db/space-credential-spawn.pg.test.ts.
 
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,6 +43,8 @@ const TEAMMATE_OF_B = '22222222-2222-4222-8222-222222222222';
 const SESSION_ID = '44444444-4444-4444-8444-444444444444';
 const ANT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const OAI = 'bbbbbbbb-0000-4000-8000-000000000001';
+const GH = 'cccccccc-0000-4000-8000-000000000001';
+const GH_TOKEN = `ghp_${'G'.repeat(36)}`;
 const ANT_KEY = `sk-ant-api03-${'S'.repeat(40)}`;
 const OAI_KEY = `sk-proj-${'O'.repeat(40)}`;
 const NODE_ANT_KEY = `sk-ant-api03-${'N'.repeat(40)}`;
@@ -67,6 +69,8 @@ class FakeSpacePort implements SpaceCredentialPort {
   readonly recorded = new Map<string, Array<{ provider: SpaceCredentialProvider; spaceCredentialId: string }>>();
   /** Flip a credential to inactive when this call count of activeIds is reached. */
   revokeOnActiveIds: string | null = null;
+  /** A space GitHub token, when the space holds one; github has no default otherwise. */
+  githubToken: { id: string; token: string; login: string } | null = null;
 
   constructor(
     private readonly events: Event[],
@@ -89,6 +93,13 @@ class FakeSpacePort implements SpaceCredentialPort {
   async read(auth: GraphAuth, _space: string, provider: SpaceCredentialProvider, id: string | null): Promise<SpaceCredentialRead> {
     this.events.push(`read:${provider}:${this.who(auth)}`);
     if (!this.members.has(this.who(auth))) return { ok: false, reason: id ? 'not_found' : 'no_default' };
+    if (provider === 'github' && this.githubToken) {
+      if (id !== null && id !== this.githubToken.id) return { ok: false, reason: 'not_found' };
+      return {
+        ok: true,
+        grant: { kind: 'secret', credentialId: this.githubToken.id, provider, shape: 'token', label: 'gh', displayLogin: this.githubToken.login, secret: this.githubToken.token },
+      };
+    }
     const credentialId = id ?? (provider === 'anthropic' ? ANT : provider === 'openai' ? OAI : null);
     if (!credentialId) return { ok: false, reason: 'no_default' };
     if (!this.active.has(credentialId)) return { ok: false, reason: 'revoked' };
@@ -280,6 +291,17 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     expect(graph.transitions.at(-1)?.status).toBe('failed');
     const sessionId = graph.manifests[0]!.sessionId;
     await expect(stat(join(dataDir, 'credentials', 'sessions', sessionId, 'openai', 'auth.json'))).rejects.toThrow();
+    // I5 canary on the failure path: the key is in none of the error, the
+    // logs, or anything written to the graph.
+    for (const surface of [
+      (error as SpawnError).message,
+      JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      JSON.stringify(logs),
+      JSON.stringify(graph.transitions),
+      JSON.stringify(graph.manifests),
+    ]) {
+      expect(surface).not.toContain(OAI_KEY);
+    }
   });
 
   it("t2-10: member A launches B's teammate — resolution runs under A's claims, never B's", async () => {
@@ -419,5 +441,100 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       await service(port).resume(B, { sessionId: SESSION_ID });
       expect(port.launcher.get(SESSION_ID)).toBe('identity-B');
     });
+
+    it('M4: a session recorded on auto resumes on auto WITHOUT newly picking the space default, even with one available', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
+      graph.resumeInfo = { ...INFO };
+      // Launched on auto, landed on the node: nothing space in the manifest.
+      graph.postures.set(SESSION_ID, { credentialSources: {}, spaceCredentialIds: {} } as SessionLaunchPosture);
+      const { spawnIfAbsent } = spyPty();
+      await service(port).resume(A, { sessionId: SESSION_ID });
+      // The space default (ANT) is readable by A, yet resume never asks for it:
+      // a credential picked now would have no ssc row for containment (D7).
+      expect(events.some((e) => e.startsWith('read:'))).toBe(false);
+      expect(events.some((e) => e.startsWith('repoint:'))).toBe(false);
+      const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+      expect(env.ANTHROPIC_API_KEY).not.toBe(ANT_KEY);
+      expect(env.CLAUDE_CONFIG_DIR ?? '').not.toContain(join('credentials', 'sessions'));
+    });
+  });
+
+  describe('the space key leaves the disk when the PTY exits; the conversation stays', () => {
+    it('codex: a PTY exit removes auth.json and keeps the session dir and its rollouts', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A']));
+      spyPty();
+      const svc = service(port);
+      const { sessionId } = await svc.spawn(A, {
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        model: 'gpt-5.5',
+        agentTool: 'codex',
+        credentialSources: { openai: 'space' },
+      });
+      const home = join(dataDir, 'credentials', 'sessions', sessionId, 'openai');
+      await mkdir(join(home, 'sessions'), { recursive: true });
+      const rollout = join(home, 'sessions', 'rollout.jsonl');
+      await writeFile(rollout, '{"turn":1}\n', 'utf8');
+      // Control: the key is on disk while the session runs.
+      expect(await readFile(join(home, 'auth.json'), 'utf8')).toContain(OAI_KEY);
+
+      await svc.handlePtyExit(sessionId, 'completed', { exitCode: 0, signal: null });
+
+      await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await stat(home)).isDirectory()).toBe(true);
+      expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
+    });
+
+    it('claude-code: a PTY exit (a kill arrives the same way) drops the approved key suffix and keeps the trust entry and transcripts', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A']));
+      spyPty();
+      const svc = service(port);
+      const { sessionId } = await svc.spawn(A, {
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        credentialSources: { anthropic: 'space' },
+      });
+      const home = join(dataDir, 'credentials', 'sessions', sessionId, 'anthropic');
+      const configPath = join(home, '.claude.json');
+      const before = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+      // Control: seeded for an unattended start (measured against claude 2.1.280).
+      expect(before.hasCompletedOnboarding).toBe(true);
+      expect(before.customApiKeyResponses).toEqual({ approved: [ANT_KEY.slice(-20)], rejected: [] });
+      expect(Object.keys(before.projects as object).length).toBeGreaterThan(0);
+      await mkdir(join(home, 'projects', 'p'), { recursive: true });
+      const transcript = join(home, 'projects', 'p', 'conversation.jsonl');
+      await writeFile(transcript, '{"turn":1}\n', 'utf8');
+
+      await svc.handlePtyExit(sessionId, 'failed', { exitCode: null, signal: 9 });
+
+      const after = await readFile(configPath, 'utf8');
+      expect(after).not.toContain(ANT_KEY.slice(-20));
+      const parsed = JSON.parse(after) as Record<string, unknown>;
+      expect(parsed).not.toHaveProperty('customApiKeyResponses');
+      expect(parsed.projects).toEqual(before.projects);
+      expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+      expect(await readFile(transcript, 'utf8')).toBe('{"turn":1}\n');
+    });
+  });
+
+  it('a space GitHub token reaches the child as GH_TOKEN/GITHUB_TOKEN with the machine helper reset (design §7)', async () => {
+    const port = new FakeSpacePort(events, new Set(['identity-A']));
+    port.githubToken = { id: GH, token: GH_TOKEN, login: 'space-bot' };
+    port.active.add(GH);
+    const { spawnIfAbsent } = spyPty();
+    await service(port).spawn(A, {
+      spaceId: SPACE_ID,
+      teamMemberId: TEAMMATE_OF_B,
+      credentialSources: { github: 'space' },
+    });
+    const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+    expect(env.GH_TOKEN).toBe(GH_TOKEN);
+    expect(env.GITHUB_TOKEN).toBe(GH_TOKEN);
+    expect(env.GIT_CONFIG_KEY_0).toBe('credential.https://github.com.helper');
+    expect(env.GIT_CONFIG_VALUE_0).toBe('');
+    expect(env.GIT_AUTHOR_NAME).toBe('space-bot');
+    expect(graph.manifests[0]!.manifest.launch.spaceCredentialIds).toMatchObject({ github: GH });
+    expect(JSON.stringify(graph.manifests)).not.toContain(GH_TOKEN);
+    expect(JSON.stringify(logs)).not.toContain(GH_TOKEN);
   });
 });

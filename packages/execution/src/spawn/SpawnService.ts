@@ -594,6 +594,10 @@ export class SpawnService {
    * The boot sweep for space API keys: scrub every per-session home whose
    * session has no live PTY and no in-flight claims here. A crash skips the
    * exit path; this is what catches it.
+   *
+   * Safe at boot ONLY because no agent survives the server: PTYs die with it
+   * (the unit's KillMode=control-group, PtyHostService.ts ~585). An
+   * agent that outlived a restart would find its key scrubbed mid-session.
    */
   async sweepSpaceSessionSecrets(): Promise<{ scrubbed: string[]; errors: string[] }> {
     const result = await sweepSpaceSessionSecrets(
