@@ -56,6 +56,19 @@ export {
 } from './agent-credentials.js';
 export { SpawnError } from './types.js';
 export {
+  materializeSpaceApiKeyHome,
+  scrubSpaceSessionSecrets,
+  spaceSessionHomeDir,
+  spaceSessionsRoot,
+  sweepSpaceSessionSecrets,
+} from './space-credential-session-home.js';
+export {
+  resolveSessionCredentials,
+  type CredentialResolutionDeps,
+  type CredentialResolutionInput,
+  type ResolvedSessionCredentials,
+} from './credential-resolution.js';
+export {
   branchNameFor,
   provisionWorktree,
   type ProvisionedWorktree,
@@ -77,6 +90,13 @@ export type {
   GraphPort,
   GitHubCredential,
   GitHubCredentialPort,
+  SpaceCredentialGrant,
+  SpaceCredentialPolicies,
+  SpaceCredentialPort,
+  SpaceCredentialProvider,
+  SpaceCredentialRead,
+  SpaceCredentialRefusalReason,
+  SpaceCredentialRepoint,
   LoadSpawnContextInput,
   ManifestSkillContext,
   PermissionMode,

@@ -247,14 +247,18 @@ describe('resolveLaunchConfig', () => {
     ).toBe('member');
   });
 
-  it('ignores an unrecognised stored credentialSource instead of launching on it', () => {
-    expect(
+  it('refuses an unrecognised stored credentialSource instead of launching on another (M8a)', () => {
+    // SC-2: this used to degrade to auto. An unknown recorded source is what a
+    // NEWER build's source (as `space` was) looks like to an older reader, and
+    // auto would then move the child or the resume onto a different
+    // credential than the one it ran on — I3 says refuse.
+    expect(() =>
       resolveLaunchConfig(base, context(), {}, {
         accessMode: null,
         permissionMode: null,
         credentialSource: 'somebody-else' as never,
-      }).credentialSource,
-    ).toBeNull();
+      }),
+    ).toThrow(/does not understand/);
   });
 
   it('resolves each provider credential source independently and keeps legacy fallback', () => {

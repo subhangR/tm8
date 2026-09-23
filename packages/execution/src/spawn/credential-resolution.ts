@@ -26,6 +26,10 @@ import {
   agentCredentialProviderFor,
   type AgentCredentialHome,
 } from './agent-credentials.js';
+import {
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  apiKeyBackendForModel,
+} from '../credentials/api-key-credentials.js';
 import { commonCredentialSource, type ResolvedLaunchConfig } from './manifest.js';
 import type {
   CredentialSource,
@@ -37,7 +41,7 @@ import type {
   SpaceCredentialProvider,
   SpaceCredentialRefusalReason,
 } from './types.js';
-import { SpawnError, isSpaceCredentialProvider, SPACE_CREDENTIAL_PROVIDERS } from './types.js';
+import { SpawnError, SPACE_CREDENTIAL_PROVIDERS } from './types.js';
 
 export interface CredentialResolutionDeps {
   /** Absent on a node with no data root: `space` is then refused by name. */
@@ -255,7 +259,24 @@ export async function resolveSessionCredentials(
 
   // ---- the tool's own provider ------------------------------------------
   let credentialHome: AgentCredentialHome | null = null;
-  if (toolProvider !== null && isSpaceCredentialProvider(toolProvider) && toolProvider !== 'github') {
+  const backend = apiKeyBackendForModel(launch.agentTool, launch.model);
+  if (backend && (toolProvider === 'anthropic' || toolProvider === 'openai')) {
+    // A model served by an API-key backend (a Kimi model on claude-code, a
+    // Groq model on codex) has exactly one route, the member's own key for
+    // that backend (#679). A space credential cannot serve it, so an explicit
+    // or inherited `space` refuses rather than being recorded and not used.
+    if (launch.credentialSources[toolProvider] === 'space') {
+      throw new SpawnError(
+        `${launch.model} runs only on your own ${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key, so ` +
+          `credentialSources.${toolProvider} 'space' cannot serve it — pick a model ` +
+          `${launch.agentTool} runs natively, or choose 'member' or 'node'`,
+        'conflict',
+        { provider: toolProvider, model: launch.model },
+      );
+    }
+    credentialHome = await deps.resolveMemberHome(null);
+    effective[toolProvider] = 'member';
+  } else if (toolProvider === 'anthropic' || toolProvider === 'openai') {
     const provider = toolProvider;
     const source = launch.credentialSources[provider] ?? null;
     const allowed = allowedBy(policies, provider);
@@ -266,7 +287,7 @@ export async function resolveSessionCredentials(
     } else if (source === 'node') {
       effective[provider] = 'node';
     } else if (source === 'space') {
-      const grant = await readSpace(provider, launch.spaceCredentialIds[provider] ?? null);
+      const grant = await readSpace(provider, launch.spaceCredentialIds?.[provider] ?? null);
       if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
       credentialHome = await spaceHome(deps, provider, grant);
       useSpace(provider, grant);
@@ -288,9 +309,12 @@ export async function resolveSessionCredentials(
         }
       }
     }
-  } else if (toolProvider !== null) {
-    // A provider the space cannot hold keeps its pre-space behaviour exactly.
-    const source = launch.credentialSources[toolProvider] ?? null;
+  } else {
+    // A provider the space cannot hold (gemini), or a tool with none
+    // (echo-agent, an operator wrapper), keeps its pre-space behaviour exactly.
+    const source = toolProvider
+      ? (launch.credentialSources as Partial<Record<string, CredentialSource>>)[toolProvider] ?? null
+      : null;
     credentialHome = source === 'node' ? null : await deps.resolveMemberHome(source === 'member' ? 'member' : null);
   }
 
@@ -310,7 +334,7 @@ export async function resolveSessionCredentials(
       // M8b: an explicit space token that cannot be used refuses here, and
       // `composeEnv` isolates `space` as strictly as `member`, so the node's
       // machine gh is unreachable either way.
-      const grant = await readSpace(provider, launch.spaceCredentialIds.github ?? null);
+      const grant = await readSpace(provider, launch.spaceCredentialIds?.github ?? null);
       if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
       gitHubCredential = spaceGitHub(grant);
       useSpace(provider, grant);
@@ -337,10 +361,10 @@ export async function resolveSessionCredentials(
   // Still resolved and recorded — fail closed, and a child on the other tool
   // inherits the exact id — but never injected.
   for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
-    if (provider === 'github' || provider === toolProvider) continue;
+    if (provider === 'github' || provider === (toolProvider as string | null)) continue;
     if (launch.credentialSources[provider] !== 'space') continue;
     gateExplicit(provider, 'space');
-    const grant = await readSpace(provider, launch.spaceCredentialIds[provider] ?? null);
+    const grant = await readSpace(provider, launch.spaceCredentialIds?.[provider] ?? null);
     if (grant) {
       sources[provider] = 'space';
       ids[provider] = grant.credentialId;

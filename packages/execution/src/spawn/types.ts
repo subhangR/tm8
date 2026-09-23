@@ -205,6 +205,10 @@ export type SpaceCredentialRefusalReason =
   | 'revoked'
   | 'unreadable';
 
+export type SpaceCredentialRepoint =
+  | { ok: true; credentials: ReadonlyArray<{ provider: SpaceCredentialProvider; spaceCredentialId: string }> }
+  | { ok: false; reason: 'inactive' };
+
 export type SpaceCredentialRead =
   | { ok: true; grant: SpaceCredentialGrant }
   | { ok: false; reason: SpaceCredentialRefusalReason };
@@ -229,8 +233,12 @@ export interface SpaceCredentialPort {
   ): Promise<SpaceCredentialRead>;
   /** The subset of `credentialIds` that is active AND visible to the caller now. */
   activeIds(auth: GraphAuth, credentialIds: readonly string[]): Promise<ReadonlySet<string>>;
-  /** Resume (C3): the resumer becomes the recorded launcher; throws if any credential is no longer active. */
-  repointSession(auth: GraphAuth, sessionId: string): Promise<void>;
+  /**
+   * Resume (C3): the resumer becomes the recorded launcher of every space
+   * credential the session holds, and the recorded rows come back. `inactive`
+   * means one of them is no longer active (206 refuses the re-point whole).
+   */
+  repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint>;
 }
 
 /**
