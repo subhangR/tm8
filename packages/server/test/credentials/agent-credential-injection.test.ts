@@ -24,7 +24,7 @@ import { describe, expect, it } from 'vitest';
 import {
   API_KEY_CREDENTIAL_PROVIDERS,
   apiKeyBackendAgentTool,
-  apiKeyBackendDisplaces,
+  apiKeyBackendNativeProvider,
   isApiKeyCredentialProvider,
 } from '@tm8/execution';
 
@@ -95,15 +95,15 @@ describe('DbAgentCredentialHome', () => {
     // ASSERTED AS IF IT WERE. `credentialProviderForAgentTool` reads execution's
     // tool-to-provider table, which names the provider a tool NATIVELY
     // authenticates with: `claude-code` answers `anthropic` there even for a
-    // member whose sessions run on Kimi. That is the property that stops a
-    // backend from displacing Anthropic for members who never connected one, so
-    // widening this loop to demand `claude-code -> kimi` would be asserting a
-    // containment hole rather than a fix.
+    // member who has Kimi connected, because only a Kimi MODEL is routed to the
+    // Kimi key (`apiKeyBackendForModel`). Widening this loop to demand
+    // `claude-code -> kimi` would be asserting a containment hole rather than a
+    // fix.
     //
     // The round trip is therefore checked for the NATIVE providers, and the
     // backends are checked against the thing they actually claim — that each one
-    // reaches exactly the tool it routes, whose native provider is the one it
-    // displaces.
+    // reaches exactly the tool it routes, whose native provider keeps serving
+    // that tool's other models.
     for (const [provider, tools] of Object.entries(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER)) {
       if (isApiKeyCredentialProvider(provider)) continue;
       for (const tool of tools) expect(credentialProviderForAgentTool(tool)).toBe(provider);
@@ -111,7 +111,7 @@ describe('DbAgentCredentialHome', () => {
     for (const backend of API_KEY_CREDENTIAL_PROVIDERS) {
       const agentTool = apiKeyBackendAgentTool(backend);
       expect(AGENT_TOOLS_BY_CREDENTIAL_PROVIDER[backend]).toEqual([agentTool]);
-      expect(credentialProviderForAgentTool(agentTool)).toBe(apiKeyBackendDisplaces(backend));
+      expect(credentialProviderForAgentTool(agentTool)).toBe(apiKeyBackendNativeProvider(backend));
     }
   });
 
@@ -119,6 +119,7 @@ describe('DbAgentCredentialHome', () => {
     const recorded: RecordedQuery[] = [];
     const home = await resolver([{ provider: 'anthropic' }], recorded).resolve(CLAIMS, {
       agentTool: 'claude-code',
+      model: 'claude-opus-5-5',
     });
 
     // Keyed on identityId, and byte-identical to what PR2's login terminal
@@ -133,19 +134,18 @@ describe('DbAgentCredentialHome', () => {
     // RLS decides whose row this is, not this layer.
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.claims).toBe(CLAIMS);
-    // ONE parameter, not one per provider: the query is
-    // `provider = any($1::text[])`, so a single round trip answers for the
-    // API-key backend and the native provider together. The ORDER inside it is
-    // the preference order and is asserted here — `kimi` first, because a
-    // connected key is the account-wide default and outranks the native login.
-    // Reordering this array silently changes which vendor every `claude-code`
-    // session of a doubly-connected member runs on.
-    expect(recorded[0]?.params).toEqual([['kimi', 'anthropic']]);
+    // Exactly ONE provider is asked for: the one the model is served by. A
+    // Claude model never looks at the Kimi row at all, so connecting Kimi
+    // cannot change which account a Claude session runs on.
+    expect(recorded[0]?.params).toEqual(['anthropic']);
     expect(recorded[0]?.sql).not.toMatch(/account_id/i);
   });
 
   it('resolves codex to the openai provider directory', async () => {
-    const home = await resolver([{ provider: 'openai' }]).resolve(CLAIMS, { agentTool: 'codex' });
+    const home = await resolver([{ provider: 'openai' }]).resolve(CLAIMS, {
+      agentTool: 'codex',
+      model: 'gpt-6-astra',
+    });
     expect(home?.provider).toBe('openai');
     expect(home?.configDir).toBe(`${DATA_DIR}/credentials/${IDENTITY}/openai`);
   });
@@ -156,22 +156,21 @@ describe('DbAgentCredentialHome', () => {
     ['cursor', 'cursor'],
   ] as const)('resolves the %s tool to its own %s provider directory', async (agentTool, provider) => {
     const recorded: RecordedQuery[] = [];
-    const home = await resolver([{ provider }], recorded).resolve(CLAIMS, { agentTool });
+    const home = await resolver([{ provider }], recorded).resolve(CLAIMS, { agentTool, model: null });
 
     expect(home).toEqual({
       provider,
       homeDir: `${DATA_DIR}/credentials/${IDENTITY}`,
       configDir: `${DATA_DIR}/credentials/${IDENTITY}/${provider}`,
     });
-    // No API-key backend routes these three tools, so the candidate array holds
-    // the native provider alone — still one array parameter, not a bare string.
-    expect(recorded[0]?.params).toEqual([[provider]]);
+    // No API-key backend routes these three tools: the native provider alone.
+    expect(recorded[0]?.params).toEqual([provider]);
   });
 
   it('returns null when the member has not connected this provider', async () => {
     // The ordinary case, and NOT an error. Injecting here would hand the member
     // an empty config directory and therefore an unauthenticated agent.
-    const home = await resolver([]).resolve(CLAIMS, { agentTool: 'claude-code' });
+    const home = await resolver([]).resolve(CLAIMS, { agentTool: 'claude-code', model: 'opus' });
     expect(home).toBeNull();
   });
 
@@ -179,6 +178,7 @@ describe('DbAgentCredentialHome', () => {
     const recorded: RecordedQuery[] = [];
     const home = await resolver([{ provider: 'anthropic' }], recorded).resolve(CLAIMS, {
       agentTool: 'echo-agent',
+      model: null,
     });
 
     expect(home).toBeNull();
@@ -189,11 +189,80 @@ describe('DbAgentCredentialHome', () => {
     const recorded: RecordedQuery[] = [];
     const home = await resolver([{ provider: 'anthropic' }], recorded).resolve(
       {} as DbClaims,
-      { agentTool: 'claude-code' },
+      { agentTool: 'claude-code', model: 'opus' },
     );
 
     expect(home).toBeNull();
     expect(recorded).toHaveLength(0);
+  });
+
+  /**
+   * EACH MODEL RUNS ON ITS OWN VENDOR'S CREDENTIAL.
+   *
+   * This replaced an account-wide override (#638), under which a connected Kimi
+   * key took over EVERY `claude-code` session, Claude models included, and the
+   * Anthropic card said "Not currently used". The stub answers with both rows
+   * whatever it is asked, so these tests see the resolver's own choice, not a
+   * WHERE clause doing the work.
+   */
+  it.each([
+    ['claude-opus-5-5', 'anthropic'],
+    ['claude-sonnet-5', 'anthropic'],
+    ['opus', 'anthropic'],
+    [null, 'anthropic'],
+    ['kimi-k2-thinking', 'kimi'],
+    ['kimi-k2-turbo-preview', 'kimi'],
+  ] as const)(
+    'with Kimi AND Anthropic connected, claude-code model %s runs on %s',
+    async (model, expected) => {
+      const recorded: RecordedQuery[] = [];
+      const home = await resolver(
+        [{ provider: 'kimi' }, { provider: 'anthropic' }],
+        recorded,
+      ).resolve(CLAIMS, { agentTool: 'claude-code', model });
+
+      expect(home?.provider).toBe(expected);
+      expect(home?.configDir).toBe(`${DATA_DIR}/credentials/${IDENTITY}/${expected}`);
+      expect(recorded[0]?.params).toEqual([expected]);
+    },
+  );
+
+  it.each([
+    ['gpt-6-astra', 'openai'],
+    ['qwen/qwen3-32b', 'groq'],
+    // Named Kimi, served by Groq: the serving vendor decides.
+    ['moonshotai/kimi-k2-instruct-0905', 'groq'],
+  ] as const)(
+    'with Groq AND OpenAI connected, codex model %s runs on %s',
+    async (model, expected) => {
+      const recorded: RecordedQuery[] = [];
+      const home = await resolver(
+        [{ provider: 'groq' }, { provider: 'openai' }],
+        recorded,
+      ).resolve(CLAIMS, { agentTool: 'codex', model });
+
+      expect(home?.provider).toBe(expected);
+      expect(recorded[0]?.params).toEqual([expected]);
+    },
+  );
+
+  it('a Kimi model does not fall back to the Anthropic login when no Kimi key is connected', async () => {
+    // Only the Anthropic row exists. Sending a Kimi model to Anthropic is a
+    // request to a server that does not serve it; spawn turns this `null` into
+    // a refusal naming the Kimi key.
+    const home = await resolver([{ provider: 'anthropic' }]).resolve(CLAIMS, {
+      agentTool: 'claude-code',
+      model: 'kimi-k2-thinking',
+    });
+    expect(home).toBeNull();
+  });
+
+  it('a Claude model does not borrow the Kimi key when no Anthropic login is connected', async () => {
+    const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
+      agentTool: 'claude-code',
+      model: 'claude-opus-5-5',
+    });
+    expect(home).toBeNull();
   });
 
   /**
@@ -235,6 +304,7 @@ describe('DbAgentCredentialHome', () => {
   it('returns a KEYLESS home, not null, when an active API key cannot be read', async () => {
     const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
       agentTool: 'claude-code',
+      model: 'kimi-k2-thinking',
     });
 
     // Not null. The member connected; the answer must say so.
@@ -253,16 +323,16 @@ describe('DbAgentCredentialHome', () => {
   });
 
   /**
-   * The preference order still decides WHICH provider the keyless home names.
-   * A doubly-connected member whose Kimi key is unreadable must not quietly
-   * fall through to their working Anthropic login: `kimi` won the resolution,
-   * and silently substituting the vendor they did not choose is the same lie in
-   * the other direction. They get Kimi, keyless, and a failure they can read.
+   * An unreadable Kimi key is still Kimi's problem. A doubly-connected member
+   * whose Kimi key is unreadable, launching a Kimi model, must not quietly be
+   * handed their working Anthropic login: that sends a Kimi model to a server
+   * that does not serve it. They get Kimi, keyless, and spawn refuses with
+   * "reconnect".
    */
-  it('does not fall through to the native provider when the winning key is unreadable', async () => {
+  it('does not fall through to the native provider when the Kimi key is unreadable', async () => {
     const home = await resolver([{ provider: 'kimi' }, { provider: 'anthropic' }]).resolve(
       CLAIMS,
-      { agentTool: 'claude-code' },
+      { agentTool: 'claude-code', model: 'kimi-k2-thinking' },
     );
 
     expect(home?.provider).toBe('kimi');
@@ -273,6 +343,7 @@ describe('DbAgentCredentialHome', () => {
     const recorded: RecordedQuery[] = [];
     await resolver([{ provider: 'anthropic' }], recorded).resolve(CLAIMS, {
       agentTool: 'claude-code',
+      model: 'opus',
     });
 
     // Asserted on the predicate rather than by feeding a 'stale' row back,

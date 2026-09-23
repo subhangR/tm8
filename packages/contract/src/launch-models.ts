@@ -34,9 +34,12 @@ export interface LaunchModelCatalogEntry {
    * The vendor that SERVES the model, which is not always the vendor whose
    * wire protocol carries it. `moonshot` is the case that makes the
    * distinction load-bearing: Kimi speaks Anthropic's protocol, so its
-   * `agentTool` is `claude-code` while its provider is Moonshot. Presentation
-   * only — nothing switches on it, and the UI's own catalog widens it to a
-   * free string so a browser-added model can name a vendor nobody here listed.
+   * `agentTool` is `claude-code` while its provider is Moonshot. Spawn routes
+   * on it: `apiKeyBackendForModel` in `@tm8/execution` sends a `moonshot` row
+   * to the member's Kimi key and a `groq` row to their Groq key, and every
+   * other row to the tool's native login. The UI's own catalog widens it to a
+   * free string so a browser-added model can name a vendor nobody here listed;
+   * such a model is not in this catalog and runs on the native login.
    */
   readonly provider: 'anthropic' | 'openai' | 'moonshot' | 'groq';
   readonly agentTool: 'claude-code' | 'codex';
@@ -183,15 +186,13 @@ export const LAUNCH_MODEL_CATALOG = [
   // is `API_KEY_BACKEND_ROUTING.kimi` in the execution package, which sets
   // ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN for the session.
   //
-  // WHAT THAT COSTS, SAID PLAINLY. That redirect is ACCOUNT-WIDE and it
-  // DISPLACES anthropic: it is not selected per model. So a Kimi row here is
-  // only launchable by a member who has connected the Kimi key on the
-  // Connections screen, and while it is connected EVERY claude-code session
-  // for that account goes to Moonshot — including the Anthropic rows above,
-  // which will then be asked of a server that has never heard of them. The
-  // catalog cannot enforce that (credential state is a per-member fact the
-  // contract does not see), so each `note` says it instead, and the picker
-  // renders the note.
+  // THE REDIRECT IS PER MODEL. `apiKeyBackendForModel` applies it only to the
+  // rows below (`provider: 'moonshot'`), so a Kimi row runs on the member's
+  // Kimi key and the Anthropic rows above keep running on their Anthropic
+  // login whether or not a Kimi key is connected. A Kimi row launched by a
+  // member with no Kimi key is refused at spawn, naming the key. The catalog
+  // cannot see credential state (a per-member fact), so each `note` says which
+  // key the row needs, and the picker renders the note.
   //
   // EFFORT IS EMPTY, not merely unspecified. Claude Code's `--effort` maps to
   // Anthropic's extended-thinking budget; Moonshot's models decide their own,
@@ -203,7 +204,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Kimi K2 Thinking',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Moonshot reasoning model on Claude Code — needs the Kimi key connected, which routes ALL claude-code sessions for the account',
+    note: 'Moonshot reasoning model on Claude Code — runs on your own Kimi key (Settings → Connections)',
     seedName: 'Kimi K2 Thinking Teammate',
     efforts: [],
   },
@@ -212,7 +213,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Kimi K2 Thinking (Turbo)',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Faster-serving variant of K2 Thinking — needs the Kimi key connected, which routes ALL claude-code sessions for the account',
+    note: 'Faster-serving variant of K2 Thinking — runs on your own Kimi key (Settings → Connections)',
     seedName: 'Kimi K2 Thinking Turbo Teammate',
     efforts: [],
   },
@@ -221,7 +222,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Kimi K2 Turbo',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Non-reasoning K2 at turbo throughput — needs the Kimi key connected, which routes ALL claude-code sessions for the account',
+    note: 'Non-reasoning K2 at turbo throughput — runs on your own Kimi key (Settings → Connections)',
     seedName: 'Kimi K2 Turbo Teammate',
     efforts: [],
   },
@@ -230,7 +231,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Kimi K2 (0905)',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Date-pinned K2 — needs the Kimi key connected, which routes ALL claude-code sessions for the account',
+    note: 'Date-pinned K2 — runs on your own Kimi key (Settings → Connections)',
     seedName: 'Kimi K2 0905 Teammate',
     efforts: [],
   },
@@ -239,11 +240,10 @@ export const LAUNCH_MODEL_CATALOG = [
   // Groq — the same cross-provider arrangement on the Codex side.
   //
   // `API_KEY_BACKEND_ROUTING.groq` points OPENAI_BASE_URL at
-  // api.groq.com/openai/v1 and displaces `openai`, so these rows run on the
-  // Codex binary: `codex --model openai/gpt-oss-120b`. Every caveat written
-  // over the Kimi block applies unchanged and in the other direction — the
-  // key is account-wide, and while it is connected the GPT rows above are
-  // being asked of a server that does not serve them.
+  // api.groq.com/openai/v1 for these rows only, so they run on the
+  // Codex binary: `codex --model openai/gpt-oss-120b`. The same per-model
+  // rule applies: only these rows use the Groq key, and the GPT rows above
+  // keep running on the member's OpenAI login.
   //
   // THE MODEL IDS CARRY THEIR VENDOR PREFIX (`openai/`, `moonshotai/`,
   // `qwen/`) because that is literally what Groq's API expects; they are not
@@ -253,7 +253,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'GPT-OSS 120B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
-    note: 'OpenAI open-weight 120B on Groq — needs the Groq key connected, which routes ALL codex sessions for the account',
+    note: 'OpenAI open-weight 120B on Groq — runs on your own Groq key (Settings → Connections)',
     seedName: 'GPT-OSS 120B Teammate',
     efforts: GROQ_GPT_OSS_EFFORTS,
   },
@@ -262,7 +262,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'GPT-OSS 20B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
-    note: 'Smallest open-weight rung, for cheap mechanical work — needs the Groq key connected, which routes ALL codex sessions for the account',
+    note: 'Smallest open-weight rung, for cheap mechanical work — runs on your own Groq key (Settings → Connections)',
     seedName: 'GPT-OSS 20B Teammate',
     efforts: GROQ_GPT_OSS_EFFORTS,
   },
@@ -280,7 +280,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Llama 3.3 70B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
-    note: 'Meta Llama 3.3 70B on Groq — needs the Groq key connected, which routes ALL codex sessions for the account',
+    note: 'Meta Llama 3.3 70B on Groq — runs on your own Groq key (Settings → Connections)',
     seedName: 'Llama 3.3 70B Teammate',
     efforts: [],
   },
@@ -289,7 +289,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'Qwen3 32B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
-    note: 'Qwen3 32B on Groq — needs the Groq key connected, which routes ALL codex sessions for the account',
+    note: 'Qwen3 32B on Groq — runs on your own Groq key (Settings → Connections)',
     seedName: 'Qwen3 32B Teammate',
     efforts: [],
   },
@@ -298,7 +298,7 @@ export const LAUNCH_MODEL_CATALOG = [
     label: 'DeepSeek R1 Distill 70B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
-    note: 'Reasoning distill on Groq — needs the Groq key connected, which routes ALL codex sessions for the account',
+    note: 'Reasoning distill on Groq — runs on your own Groq key (Settings → Connections)',
     seedName: 'DeepSeek R1 Distill 70B Teammate',
     efforts: [],
   },

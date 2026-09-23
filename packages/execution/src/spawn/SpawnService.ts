@@ -49,7 +49,11 @@ import {
   type AgentCredentialHome,
   type AgentCredentialHomePort,
 } from './agent-credentials.js';
-import { isApiKeyCredentialProvider } from '../credentials/api-key-credentials.js';
+import {
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  apiKeyBackendForModel,
+  isApiKeyCredentialProvider,
+} from '../credentials/api-key-credentials.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
@@ -403,26 +407,56 @@ export class SpawnService {
    *
    * MEMBER REFUSES ON TWO DIFFERENT FACTS, and they are worth keeping apart.
    * `null` means the member connected nothing. A KEYLESS API-key home means
-   * they connected something and its stored key could not be read — a state
-   * that only exists since `agent-credential-injection.ts` stopped answering
-   * `null` for it, because that `null` left the node's own key live in the
-   * composed environment and ran the member's session on the machine account.
-   * That fix is what makes this branch necessary: without it, the second fact
-   * would arrive here wearing the first one's clothes and the refusal would
-   * fire; with it, `!home` is false and a `member` launch that used to be
-   * refused legibly would instead proceed and fail inside the CLI, with
-   * nothing anywhere naming the unreadable key. AUTO IS DELIBERATELY NOT
-   * REFUSED: there the keyless home is the whole mechanism — it is what
-   * suppresses the node key — and it must reach `composeEnv` intact.
+   * they connected a pasted-key provider and its stored key could not be read
+   * (`agent-credential-injection.ts` answers that with a keyless home rather
+   * than `null`, because `null` would leave the node's own key live in the
+   * composed environment). AUTO IS DELIBERATELY NOT REFUSED on a keyless home:
+   * there it is what suppresses the node key, and it must reach `composeEnv`
+   * intact.
+   *
+   * A MODEL SERVED BY AN API-KEY BACKEND (a Kimi model on `claude-code`, a Groq
+   * model on `codex`) has exactly one route: the member's own key for that
+   * backend. There is no node credential for it and no native provider that
+   * serves it, so `source` does not apply, and a missing or unreadable key
+   * refuses the launch in every posture — naming the key — rather than
+   * starting a session whose first request goes to a vendor that does not
+   * serve its model.
    */
   private async resolveCredentialHome(
     auth: GraphAuth,
     agentTool: string,
+    model: string | null,
     source: CredentialSource | null = null,
   ): Promise<AgentCredentialHome | null> {
+    const backend = apiKeyBackendForModel(agentTool, model);
+    if (backend) {
+      const home = this.credentialHome
+        ? await this.credentialHome.resolve(auth, { agentTool, model })
+        : null;
+      const name = API_KEY_PROVIDER_DISPLAY_NAME[backend];
+      if (!home || home.provider !== backend) {
+        throw new SpawnError(
+          `${model} runs only on your own ${name} key, and no ${name} key is connected ` +
+            'for your account — connect it under Settings → Connections, or pick a model ' +
+            `that ${agentTool} runs natively`,
+          'conflict',
+          { agentTool, model, provider: backend },
+        );
+      }
+      if (home.apiKey === undefined) {
+        throw new SpawnError(
+          `${model} runs only on your own ${name} key, and your connected ${name} key ` +
+            'could not be read — reconnect it under Settings → Connections',
+          'conflict',
+          { agentTool, model, provider: backend },
+        );
+      }
+      return home;
+    }
+
     if (source === 'node') return null;
     const home = this.credentialHome
-      ? await this.credentialHome.resolve(auth, { agentTool })
+      ? await this.credentialHome.resolve(auth, { agentTool, model })
       : null;
     if (source === 'member' && !home && agentCredentialProviderFor(agentTool)) {
       throw new SpawnError(
@@ -440,10 +474,8 @@ export class SpawnService {
           'credential is connected, but its stored key could not be read — reconnect it ' +
           "under Settings → Connections, or launch with the node credential ('node')",
         'conflict',
-        // The ACTUAL provider, not the tool's native one: a Kimi-backed
-        // `claude-code` session resolves `agentCredentialProviderFor` to
-        // `anthropic`, and telling the member to go and fix Anthropic would
-        // point them at the one credential that is not the problem.
+        // The ACTUAL provider, not the tool's native one, so the member is
+        // pointed at the credential that is the problem.
         { agentTool, provider: home.provider },
       );
     }
@@ -1028,7 +1060,7 @@ export class SpawnService {
         ? launch.credentialSources[agentCredentialProvider]
         : null;
       const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveCredentialHome(auth, launch.agentTool, launch.model, agentCredentialSource),
         this.resolveGitHubCredential(auth, launch.credentialSources.github),
       ]);
       const manifest = composeManifest({
@@ -1766,7 +1798,7 @@ export class SpawnService {
         ? launch.credentialSources[agentCredentialProvider]
         : null;
       const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveCredentialHome(auth, launch.agentTool, launch.model, agentCredentialSource),
         this.resolveGitHubCredential(auth, launch.credentialSources.github),
       ]);
       const manifest = composeManifest({

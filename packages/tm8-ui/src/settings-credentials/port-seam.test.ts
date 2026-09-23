@@ -49,8 +49,8 @@ describe('the credentials port against a real seam', () => {
   it('carries the routing disclosure through the seam, from both ends', async () => {
     // The fixture scripts kimi CONNECTED and groq not, so one card is stating a
     // current fact and the other is describing a consequence. A seam that
-    // dropped `routing` would leave the account-wide redirection invisible —
-    // which is the one thing this field exists to prevent.
+    // dropped `routing` would leave the member guessing whether Kimi moved
+    // their Claude sessions — which is the one thing this field exists to answer.
     const status = await port().load();
     const routingOf = new Map(status.providers.map((p) => [p.provider, p.routing]));
 
@@ -60,12 +60,9 @@ describe('the credentials port against a real seam', () => {
       counterpart: 'anthropic',
       active: true,
     });
-    expect(routingOf.get('anthropic')).toEqual({
-      agentTool: 'claude-code',
-      role: 'displaced',
-      counterpart: 'kimi',
-      active: true,
-    });
+    // Routing is per model, so the native login is never displaced and its
+    // card carries no routing.
+    expect(routingOf.get('anthropic')).toBeNull();
     // Not connected, and still saying what Connect would do.
     expect(routingOf.get('groq')?.active).toBe(false);
     // A provider that redirects nothing says nothing.

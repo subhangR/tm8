@@ -116,12 +116,12 @@ const AGENT_CREDENTIAL_PROVIDER_DEFINITIONS = {
   //
   // The relation these two need is not the one that table expresses. That table
   // is "the provider this tool NATIVELY authenticates with", which is a
-  // property of the tool. Backing is per-MEMBER and conditional: it applies
-  // only where a key is connected, and it DISPLACES the native provider rather
-  // than replacing it. That lives in `API_KEY_BACKEND_ROUTING`
+  // property of the tool. Backing is per-MODEL: a Kimi key serves only the
+  // sessions launched on a Kimi model, and every other `claude-code` session
+  // keeps its native provider. That lives in `API_KEY_BACKEND_ROUTING`
   // (`credentials/api-key-credentials.ts`), consulted per spawn by the resolver
-  // that knows which member is spawning. Here they contribute rows for
-  // relocation, node-directory discovery and suppression, and no tool mapping.
+  // with the session's model. Here they contribute rows for relocation,
+  // node-directory discovery and suppression, and no tool mapping.
   kimi: {
     agentTools: [],
     // Pointed at the DISPLACED vendor's variable, which is not a mistake.
@@ -314,9 +314,14 @@ export interface AgentCredentialHome {
  * the one outcome this port exists to make impossible.
  */
 export interface AgentCredentialHomePort {
+  /**
+   * `model` is the session's resolved model, and it decides WHICH credential
+   * serves the session: a Kimi model resolves to the member's Kimi key, any
+   * other `claude-code` model to their Anthropic login (`apiKeyBackendForModel`).
+   */
   resolve(
     auth: GraphAuth,
-    input: { agentTool: string },
+    input: { agentTool: string; model: string | null },
   ): Promise<AgentCredentialHome | null>;
 }
 

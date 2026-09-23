@@ -1864,7 +1864,7 @@ const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
 // told which sentence to write rather than inferring it from `connected`.
 export const CredentialRoutingViewSchema: z.ZodType<CredentialRoutingView> = z.object({
   agentTool: z.string(),
-  role: z.enum(['backend', 'displaced']),
+  role: z.literal('backend'),
   counterpart: CredentialProviderNameSchema,
   active: z.boolean(),
 }).strict();
