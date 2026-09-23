@@ -249,6 +249,12 @@ export interface ParsedInvocation {
   /** Everything after a literal `--`, unparsed. */
   passthrough: string[];
   globals: GlobalOptions;
+  /**
+   * The argv this invocation was parsed from, verbatim. An error receipt's
+   * `next` (spec 01a0cf2e §4.3) is "the same command" plus or minus one flag,
+   * and only the caller's own tokens say what that command was.
+   */
+  argv: readonly string[];
 }
 
 export function parseFormat(raw: string): OutputFormat {
@@ -449,7 +455,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     version,
   };
 
-  return { positionals, options: new OptionBag(bag), passthrough, globals };
+  return { positionals, options: new OptionBag(bag), passthrough, globals, argv: [...argv] };
 }
 
 /**

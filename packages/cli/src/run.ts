@@ -62,6 +62,8 @@ export interface CommandContext {
   passthrough: readonly string[];
   ctx: CliContext;
   out: Output;
+  /** The invocation's argv, verbatim — see `ParsedInvocation.argv`. */
+  argv?: readonly string[];
 }
 
 export interface CommandModule {
@@ -259,6 +261,7 @@ async function dispatch(
       passthrough: invocation.passthrough,
       ctx,
       out,
+      argv: invocation.argv,
     });
   } catch (err) {
     // An expired pass must surface as a re-login prompt, never as a silent

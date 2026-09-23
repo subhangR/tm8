@@ -63,7 +63,8 @@ import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { commandDiscovery } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
-import { successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
+import { callerMutationId, successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
+import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { resolveWireSchema, schemaOption } from '../wire-schema.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
@@ -753,8 +754,9 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   const kind = requireArg(cmd, 0, '<kind>');
   const title = requireArg(cmd, 1, '<title>');
 
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
   const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    clientMutationId: mutationId,
     spaceId: requireSpace(cmd.ctx),
     kind,
     title,
@@ -768,13 +770,15 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   const connections = initialConnections(cmd);
   if (connections.length > 0) body.connections = connections;
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
-    body: withActor(cmd, body),
-  });
+  const data = await withErrorReceipt(cmd, errorInput(cmd, 'entity.create', { mutationId }), () =>
+    observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
+      body: withActor(cmd, body),
+    }));
   // After the create has landed, never before it — see linkCreatedInSession.
   const claim = await linkCreatedInSession(cmd, data, connections);
   cmd.out.mutation('entity.create', data, renderCommandResult, () =>
     successReceipt('entity.create', data, {
+      ...callerMutationId(cmd.options),
       ...(claim.ref ? { refs: [claim.ref] } : {}),
       ...(claim.warning ? { warnings: [claim.warning] } : {}),
     }));
@@ -791,10 +795,8 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     });
   }
 
-  const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-    expectedVersion,
-  };
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const body: Record<string, unknown> = { clientMutationId: mutationId, expectedVersion };
   const title = cmd.options.value('title');
   if (title !== undefined) body.title = title;
   const content = cmd.options.value('content');
@@ -806,12 +808,17 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     });
   }
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.patch', {
-    params: { id },
-    body: withActor(cmd, body),
-  });
+  const data = await withErrorReceipt(
+    cmd,
+    errorInput(cmd, 'entity.update', { id, mutationId, expectedVersion }),
+    () =>
+      observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.patch', {
+        params: { id },
+        body: withActor(cmd, body),
+      }),
+  );
   cmd.out.mutation('entity.update', data, renderCommandResult, () =>
-    successReceipt('entity.update', data, { expectedVersion }));
+    successReceipt('entity.update', data, { expectedVersion, ...callerMutationId(cmd.options) }));
   return EXIT_OK;
 }
 

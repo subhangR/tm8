@@ -30,9 +30,11 @@
  * `--full` is the permanent, universal opt-out and prints today's result,
  * byte-identical. See `resolveReceiptMode`.
  *
- * STEP 1B adds error receipts (conflict, gate failure, forbidden, transport /
- * mutationId, partial delivery). They share `SCHEMA_VERSION`, `ReceiptOp` and
- * `ReceiptMode` from here; this module deliberately stops at success.
+ * Error receipts (`ok:false`: conflict, gate failure, forbidden, ambiguous
+ * transport) live in `receipt-error.ts` and share `SCHEMA_VERSION`,
+ * `ReceiptOp` and the caps from here. Two step-1B facts ride SUCCESS receipts
+ * and so live here: a partially delivered batch's `undelivered` warning, and
+ * `mutationId` when — only when — the caller passed one (D4.5, D4.7).
  */
 import { createHash } from 'node:crypto';
 
@@ -136,6 +138,11 @@ export interface ReceiptInput {
   url?: string;
   /** `session spawn`: the worktree checkout path, when the CLI read it. */
   workdirPath?: string;
+  /**
+   * `--mutation-id`, ONLY when the caller passed one (D4.7). A generated id
+   * is noise on success; it is echoed only on an ambiguous error receipt.
+   */
+  mutationId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,8 +315,12 @@ function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
     };
   });
 
+  let undelivered = 0;
   if (Array.isArray(batch.delivery)) {
     const rows = batch.delivery.filter(isRecord);
+    // Counted over EVERY row, before the cap: the count is the fact a caller
+    // acts on, and D2.2 says warnings survive truncation.
+    undelivered = rows.filter((d) => d.status === 'undelivered').length;
     receipt.delivery = capped(rows, 'delivery', receipt).map((d) => ({
       message: d.targetMessageId,
       session: d.targetWorkSessionId,
@@ -318,6 +329,11 @@ function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
     }));
   }
   receipt.warnings = warningsOf(dto, input);
+  // A stored batch whose live copy did not land is still `ok:true` — the write
+  // succeeded — but it is never silent (§4.3 messages, D4.5).
+  if (undelivered > 0) {
+    (receipt.warnings as ReceiptWarning[]).push({ code: 'undelivered', count: undelivered });
+  }
   return receipt;
 }
 
@@ -368,6 +384,12 @@ function terminateReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Rec
 
 /** Project one server success result into its receipt. Pure. */
 export function successReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput = {}): Receipt {
+  const receipt = projectSuccess(op, dto, input);
+  if (input.mutationId !== undefined) receipt.mutationId = input.mutationId;
+  return receipt;
+}
+
+function projectSuccess(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receipt {
   switch (op) {
     case 'message.send':
     case 'message.reply':
@@ -379,6 +401,12 @@ export function successReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput 
     default:
       return entityReceipt(op, dto, input);
   }
+}
+
+/** `{mutationId}` for a success receipt: the caller's own `--mutation-id`, or nothing (D4.7). */
+export function callerMutationId(options: { value(name: string): string | undefined }): { mutationId?: string } {
+  const supplied = options.value('mutation-id');
+  return supplied === undefined ? {} : { mutationId: supplied };
 }
 
 // ---------------------------------------------------------------------------

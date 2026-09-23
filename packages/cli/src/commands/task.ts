@@ -48,7 +48,8 @@ import {
   withActor,
 } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
-import { successReceipt, type ReceiptWarning } from '../receipt.js';
+import { callerMutationId, successReceipt, type ReceiptWarning } from '../receipt.js';
+import { errorInput, withErrorReceipt } from '../receipt-error.js';
 
 /**
  * The six statuses `task transition` documents, in the frozen contract
@@ -69,15 +70,14 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
     });
   }
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.work', {
-    params: { id },
-    body: withActor(cmd, {
-      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-      status,
-    }),
-  });
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await withErrorReceipt(cmd, errorInput(cmd, 'task.transition', { id, mutationId }), () =>
+    observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.work', {
+      params: { id },
+      body: withActor(cmd, { clientMutationId: mutationId, status }),
+    }));
   cmd.out.mutation('task.transition', data, renderCommandResult, () =>
-    successReceipt('task.transition', data));
+    successReceipt('task.transition', data, callerMutationId(cmd.options)));
   return EXIT_OK;
 }
 
@@ -103,16 +103,18 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
     });
   }
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.complete', {
-    params: { id },
-    body: withActor(cmd, {
-      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-      expectedVersion,
-      completerIds,
-    }),
-  });
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await withErrorReceipt(
+    cmd,
+    errorInput(cmd, 'task.complete', { id, mutationId, expectedVersion }),
+    () =>
+      observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.complete', {
+        params: { id },
+        body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, completerIds }),
+      }),
+  );
   cmd.out.mutation('task.complete', data, renderCommandResult, () =>
-    successReceipt('task.complete', data, { expectedVersion, completerIds }));
+    successReceipt('task.complete', data, { expectedVersion, completerIds, ...callerMutationId(cmd.options) }));
   return EXIT_OK;
 }
 
@@ -192,29 +194,29 @@ function linker(
     assertKnownOptions(cmd, ['project', 'mutation-id']);
     const id = requireArg(cmd, 0, '<task-id>');
     const url = requireArg(cmd, 1, '<url>');
-    const body: Record<string, unknown> = {
-      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-      url,
-    };
+    const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+    const body: Record<string, unknown> = { clientMutationId: mutationId, url };
     const projectId = cmd.options.value('project');
     if (projectId !== undefined) body.projectId = projectId;
 
-    const data = await observedInvoke<unknown>(clientFor(cmd.ctx), operation, {
-      params: { id },
-      body: withActor(cmd, body),
-    });
+    const op = artifactKind === 'pull_request' ? 'task.link-pr' : 'task.link-commit';
+    const data = await withErrorReceipt(cmd, errorInput(cmd, op, { id, mutationId }), () =>
+      observedInvoke<unknown>(clientFor(cmd.ctx), operation, {
+        params: { id },
+        body: withActor(cmd, body),
+      }));
     // After the link has landed, never before it — see claimLinkedArtifactSession.
     // The claim reads the artifact id from the FULL result, so it works the
     // same whatever the caller asked to print (§9.9); the receipt is projected
     // only after it, at render time.
     const claim = await claimLinkedArtifactSession(cmd, data, artifactKind);
-    const op = artifactKind === 'pull_request' ? 'task.link-pr' : 'task.link-commit';
     // The claim's own edge is not a ref here, unlike `entity create`'s: the
     // spec's link-pr receipt is the artifact and its `tracks` edge (§5), and
     // nothing chains off the linker edge. A claim that failed IS reported.
     cmd.out.mutation(op, data, renderCommandResult, () =>
       successReceipt(op, data, {
         url,
+        ...callerMutationId(cmd.options),
         ...(claim.warning ? { warnings: [claim.warning] } : {}),
       }));
     return EXIT_OK;
