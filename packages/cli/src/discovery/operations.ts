@@ -1942,7 +1942,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'exactly three flags bind — --sections, --total-bytes, --section-bytes (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
-      'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children has no consumer in this grammar',
+      'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],

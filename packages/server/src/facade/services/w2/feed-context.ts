@@ -78,6 +78,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
+import { childCursor } from './entities-commands-tracking.js';
 
 // ---------------------------------------------------------------------------
 // The versioned named-scope registry — the whole M1/M3 surface
@@ -999,6 +1000,8 @@ interface ContextRowSet {
   eventSeq: number;
   /** A section had more rows than the fetch cap — the view is already partial. */
   overfetched: boolean;
+  /** The children section alone had more rows than the fetch cap. */
+  childrenOverfetched: boolean;
 }
 
 function excerptOf(row: EntityRow): { excerpt: string; source: 'entity' | 'message' | 'file' } {
@@ -1174,6 +1177,7 @@ export class W2FeedContextService {
     if (!rootSummary) throw new CollabError('not_found', `no readable entity: ${id}`);
 
     let overfetched = false;
+    let childrenOverfetched = false;
     let parents: EntitySummary[] = [];
     if (plan.parents) {
       // Read as ids and then one point read each, NOT by joining the
@@ -1203,7 +1207,8 @@ export class W2FeedContextService {
           limit ${SECTION_ROW_LIMIT + 1}`,
         [id],
       );
-      overfetched ||= childRows.length > SECTION_ROW_LIMIT;
+      childrenOverfetched = childRows.length > SECTION_ROW_LIMIT;
+      overfetched ||= childrenOverfetched;
       children = await assembleSummaries(
         cq, childRows.slice(0, SECTION_ROW_LIMIT), viewerIdentityId,
       );
@@ -1317,6 +1322,7 @@ export class W2FeedContextService {
       newestActivity,
       eventSeq: Number(seqRows[0]?.seq ?? 0),
       overfetched,
+      childrenOverfetched,
     };
   }
 }
@@ -1434,8 +1440,11 @@ function cursorsFor(
   const cursors: Record<string, Cursor | null> = {};
   if (sections.has('hierarchy')) {
     const last = lists.children.at(-1) as EntitySummary | undefined;
-    cursors['children'] = last && (loaded.overfetched || fetched.children > lists.children.length)
-      ? encodeCursor([last.position, last.id])
+    // `entities.children` consumes this, so it is that operation's token. When
+    // the byte caps dropped EVERY fetched child, the token starts at the first
+    // child: an empty list with a null cursor would claim there are none.
+    cursors['children'] = loaded.childrenOverfetched || fetched.children > lists.children.length
+      ? childCursor(id, last ? { position: last.position, id: last.id } : null)
       : null;
   }
   if (sections.has('messages') || sections.has('activity')) {

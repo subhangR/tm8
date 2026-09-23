@@ -155,10 +155,10 @@
     "eventSeq": 4211
   },
   "cursors": {
-    "children": null,
+    "children": "eyJ2IjoyLCJrIjpbImF3Nkh5MTdhT0EzQ1E3ZDVkWkFWTlYiLC0xLjc5NzY5MzEzNDg2MjMxNTdlKzMwOCwiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIl19",
     "messages": null,
     "activity": "eyJ2IjoyLCJrIjpbIjY2OWU5M2FiM2FjOTg1YjdlMDc5YWY2YzhkYmM5NGJjMmEwZmQ0ZDBiZGRkNzg2NmEyZmE1MGUxZmUyNmExNWUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
   },
-  "byteSize": 3063,
+  "byteSize": 3197,
   "truncated": true
 }
