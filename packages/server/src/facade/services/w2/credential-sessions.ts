@@ -925,9 +925,11 @@ export class W2CredentialSessionsService {
   ): Promise<number> {
     const rows = await this.db.query<OpenSessionRow>(
       principal.claims,
+      // Only the member's OWN logins: a login into a space credential (206)
+      // has its own one-live index and is not superseded by this Connect.
       `select work_session_id, provider, expires_at
          from public.credential_sessions
-        where finished_at is null`,
+        where finished_at is null and space_credential_id is null`,
     );
 
     const now = this.now();

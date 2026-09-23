@@ -586,9 +586,11 @@ export class W2CredentialCatalogService {
     try {
       rows = await this.db.query<OpenCredentialSessionRow>(
         principal.claims,
+        // A login INTO a space credential (206) is not the member's own
+        // credential: disconnecting theirs must not kill it.
         `select work_session_id
            from public.credential_sessions
-          where provider = $1 and finished_at is null`,
+          where provider = $1 and finished_at is null and space_credential_id is null`,
         [provider],
       );
     } catch (error) {

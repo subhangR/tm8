@@ -1058,7 +1058,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 183 -> 184 (2026-09-23): 202_work_session_sharing_provenance. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 184, duplicate prefixes -> 0.
     // 184 -> 185 (Jev lane K): 203_account_service_keys, on top of #661's 202. MEASURED.
-    expect(server.appliedMigrations.length).toBe(185);
+    // 185 -> 186 (space credentials SC-1): 206_space_credentials. MEASURED:
+    //   ls db/migrations/*.sql | wc -l -> 186, duplicate prefixes -> 0. 204 and
+    //   205 are held by open PRs #676/#671 and will re-bump at their merges.
+    expect(server.appliedMigrations.length).toBe(186);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
