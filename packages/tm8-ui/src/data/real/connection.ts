@@ -48,7 +48,7 @@
  * Everything time-shaped is injectable — timers, clock, jitter — so the tests
  * in this directory drive real transitions with zero waiting and zero network.
  */
-import { CollabError, type DurableWorkspaceEvent, type SpaceId } from '@tm8/contract';
+import { CollabError, type DurableWorkspaceEvent, type LivenessChangedEvent, type SpaceId } from '@tm8/contract';
 import type { ConnectionState, Unsubscribe } from '../seam';
 import type { ChatTurnFrame } from '../../chat-home/types';
 import type { DurableEventPage } from './ops';
@@ -219,6 +219,17 @@ export interface ConnectionManager {
   openSpace(spaceId: SpaceId): void;
   closeSpace(spaceId: SpaceId): void;
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
+  /**
+   * The node's PTY map moved — pushed, not polled.
+   *
+   * NOT on the `onEvent` spine, and that separation is deliberate rather than
+   * tidy: these carry a channel-local seq from a counter the durable log does
+   * not share, so one of them reaching the cursor logic would advance it past
+   * real events that would then be dropped as duplicates. The subscriber set is
+   * separate all the way down for the same reason the server keeps three
+   * fan-out functions instead of one with a flag.
+   */
+  onLiveness(cb: (e: LivenessChangedEvent) => void): Unsubscribe;
   onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
@@ -280,6 +291,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const preparing = new Map<SpaceId, { epoch: number; promise: Promise<number> }>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
+  const livenessSubs = new Set<(e: LivenessChangedEvent) => void>();
   const chatTurnSubs = new Set<(frame: ChatTurnFrame) => void>();
   const connSubs = new Set<(s: ConnectionState) => void>();
   const resyncSubs = new Set<(spaceId: SpaceId) => void>();
@@ -342,6 +354,30 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     cursors.set(event.spaceId, event.seq);
     deps.onCursor?.(event.spaceId, event.seq);
     fanout(eventSubs, event);
+  }
+
+  /**
+   * Ephemeral liveness dispatch — note what it does NOT do.
+   *
+   * No `cursors.get`, no `cursors.set`, no `onCursor`. The seq on this event
+   * belongs to a different sequence space and must never touch the durable
+   * high-water mark. There is also no `event.seq <= last` dedupe, because the
+   * dedupe would be against the wrong counter: two liveness events legitimately
+   * carry the same number after a server restart, and dropping the second would
+   * strand the client on a live set from a node process that no longer exists.
+   *
+   * It DOES count as inbound traffic. The half-open watchdog asks "has anything
+   * arrived", and a socket delivering liveness pushes is demonstrably alive;
+   * omitting this would let a busy node's socket be probed as if it were silent.
+   *
+   * The open-space guard stays: a client is delivered events only for spaces it
+   * has open, and an ephemeral event is not an exception to that.
+   */
+  function dispatchLiveness(event: LivenessChangedEvent): void {
+    if (disposed) return;
+    lastInboundAtMs = now();
+    if (!open.has(event.spaceId)) return;
+    fanout(livenessSubs, event);
   }
 
   function dispatchChatTurn(frame: ChatTurnFrame): void {
@@ -544,6 +580,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       socket = openSocket(deps.wsUrl, deps.webSocketFactory, {
         onOpen: handleOpen,
         onEvent: dispatch,
+        onLiveness: dispatchLiveness,
         onChatTurn: dispatchChatTurn,
         onRefused: handleRefused,
         onClose: handleClose,
@@ -837,6 +874,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     },
 
     onEvent(cb) { eventSubs.add(cb); return () => { eventSubs.delete(cb); }; },
+    onLiveness(cb) { livenessSubs.add(cb); return () => { livenessSubs.delete(cb); }; },
     onChatTurn(cb) { chatTurnSubs.add(cb); return () => { chatTurnSubs.delete(cb); }; },
     onConnection(cb) { connSubs.add(cb); return () => { connSubs.delete(cb); }; },
     onResync(cb) { resyncSubs.add(cb); return () => { resyncSubs.delete(cb); }; },
@@ -866,6 +904,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       socket = null;
       open.clear();
       eventSubs.clear();
+      livenessSubs.clear();
       chatTurnSubs.clear();
       connSubs.clear();
       resyncSubs.clear();

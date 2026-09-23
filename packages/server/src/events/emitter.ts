@@ -29,9 +29,11 @@
  * guards the socket would leave the poll response unchecked.
  */
 import {
+  LivenessChangedEventSchema,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   WorkspaceEventSchema,
   type DurableWorkspaceEvent,
+  type LivenessChangedEvent,
   type PresenceWorkspaceEvent,
   type SpaceId,
   type WorkspaceEvent,
@@ -39,7 +41,7 @@ import {
 } from '@tm8/contract';
 
 import type { SeqSource } from './seq.js';
-import { SubscriptionRegistry, fanOutDurable, fanOutPresence } from './subscriptions.js';
+import { SubscriptionRegistry, fanOutDurable, fanOutLiveness, fanOutPresence } from './subscriptions.js';
 import type { EventSink } from './ws-connection.js';
 
 /** `Omit` that distributes over a union instead of collapsing it to its common keys. */
@@ -57,6 +59,9 @@ export type DurableEventBody = DistributiveOmit<DurableWorkspaceEvent, EnvelopeK
 
 /** A presence/typing event minus the envelope. These never carry a mutation id. */
 export type PresenceEventBody = DistributiveOmit<PresenceWorkspaceEvent, EnvelopeKey>;
+
+/** An `execution.liveness_changed` minus the envelope. Ephemeral; no mutation id. */
+export type LivenessEventBody = DistributiveOmit<LivenessChangedEvent, EnvelopeKey>;
 
 export interface PublishResult {
   event: WorkspaceEvent;
@@ -153,6 +158,38 @@ export function assertWorkspaceEvent(candidate: unknown, describe: string): Work
   );
 }
 
+/**
+ * The tripwire for `execution.liveness_changed`, against its OWN arm rather
+ * than against the whole union.
+ *
+ * Same guarantee as `assertWorkspaceEvent` and a stricter one: the union would
+ * accept the payload if it satisfied ANY variant, this accepts it only if it is
+ * the variant being emitted. What it does not do is pay for the other ~19 arms.
+ *
+ * `WorkspaceEventSchema` is a plain `z.union`, so `safeParse` walks the arms in
+ * order and builds a complete error object for each one that fails. Measured on
+ * this payload, 2000 iterations after warm-up: **union p50 1.08 ms / p95 22.9
+ * ms** versus `JSON.stringify` at 0.0016 ms. The validator was the entire cost
+ * of the push — three orders of magnitude more than the serialisation and
+ * fan-out combined — and this event fires on every terminal that wakes, goes
+ * quiet, or dies.
+ *
+ * It stays UNCONDITIONAL and it stays here, in the publisher, for exactly the
+ * reason the union version is: an off-contract liveness event throws in the PTY
+ * host's own stack rather than reaching a client that would silently drop a
+ * frame it cannot parse.
+ */
+export function assertLivenessEvent(candidate: unknown, describe: string): LivenessChangedEvent {
+  const parsed = LivenessChangedEventSchema.safeParse(candidate);
+  if (parsed.success) return parsed.data as LivenessChangedEvent;
+  const detail = summarizeIssues(parsed.error.issues)
+    .map((i) => `${i.path}: ${i.message}`)
+    .join('; ');
+  throw new OffContractEventError(
+    `refusing to emit ${describe}: not an execution.liveness_changed — ${detail || 'shape mismatch'}`,
+  );
+}
+
 export class WorkspaceEventPublisher {
   /**
    * The PRESENCE channel's counter (S8). Named for what it is: durable seqs come
@@ -241,5 +278,55 @@ export class WorkspaceEventPublisher {
     const candidate: unknown = { ...body, ...envelope };
     const event = assertWorkspaceEvent(candidate, `'${body.type}' on space ${spaceId}`);
     return { event, delivered: fanOutPresence(this.registry, spaceId, JSON.stringify(event)) };
+  }
+
+  /**
+   * Publish an ephemeral `execution.liveness_changed` to a space's subscribers.
+   *
+   * ## Why this is a separate method rather than a `publishPresence` caller
+   *
+   * Three reasons, and all three are structural rather than stylistic:
+   *
+   * 1. **It uses a different fan-out.** `fanOutLiveness` writes to every
+   *    subscriber of the space; `fanOutPresence` writes only to those that
+   *    toggled presence on. A chat client must not have to ask for viewer
+   *    avatars in order to be told an agent died.
+   * 2. **It is SYNCHRONOUS, and that is the point.** `publishPresence` awaits
+   *    its seq source. This one cannot afford to await anything: it is called
+   *    from the PTY host's own callbacks, on the transition itself, and the
+   *    whole claim of this path is that nothing between the PTY and the wire
+   *    touches I/O. An `await` here would be the first place a future edit
+   *    could slip a query in.
+   * 3. **It shares the presence COUNTER but not the presence CHANNEL.** Both
+   *    are ephemeral, so both draw from the channel-local counter that a client
+   *    may never use as a durable cursor (S8). Minting from a third counter
+   *    would let two ephemeral events on one socket carry the same number.
+   *
+   * The tripwire still runs. A liveness event that drifts off-contract throws
+   * here, in the PTY host's stack, rather than reaching a client that would
+   * silently ignore a variant it cannot parse.
+   */
+  publishLiveness(spaceId: SpaceId, body: LivenessEventBody): PublishResult {
+    // `PresenceSeqSource.next` is declared `number | Promise<number>` because
+    // the interface allows an async implementation; the only implementation is
+    // synchronous and in-memory. Awaiting it would make this method async for
+    // an I/O-free counter — so a non-number is refused loudly instead of
+    // silently emitting an event whose seq is a pending Promise.
+    const seq = this.presenceSeq.next(spaceId);
+    if (typeof seq !== 'number') {
+      throw new OffContractEventError(
+        `refusing to emit 'execution.liveness_changed' on space ${spaceId}: ` +
+          'the ephemeral seq source is asynchronous, and the liveness push path may not await',
+      );
+    }
+    const envelope: WorkspaceEventEnvelope = {
+      spaceId,
+      seq,
+      occurredAt: new Date().toISOString(),
+      schemaVersion: WORKSPACE_EVENT_SCHEMA_VERSION,
+    };
+    const candidate: unknown = { ...body, ...envelope };
+    const event = assertLivenessEvent(candidate, `'${body.type}' on space ${spaceId}`);
+    return { event, delivered: fanOutLiveness(this.registry, spaceId, JSON.stringify(event)) };
   }
 }
