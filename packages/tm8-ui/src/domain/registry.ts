@@ -801,6 +801,22 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'subtree',
+      /* THE ATTACH PALETTE (task 01a0cfb0, decisions on 01a0008f). One chip
+         per kind, each writing the link that kind already means to a task.
+         Every pair was checked against the DB edge registry: `remembers`
+         src * (090), `equips` src task (001), `attached_to` src
+         file|doc|artifact (052) and drawing (194), `relates_to` * → *. */
+      attachPalette: [
+        { kind: 'memory', label: 'Memories', edgeType: 'remembers', direction: 'outgoing', create: 'composer' },
+        { kind: 'drawing', label: 'Drawings', edgeType: 'attached_to', direction: 'incoming', create: 'attached' },
+        { kind: 'doc', label: 'Docs', edgeType: 'attached_to', direction: 'incoming', create: 'attached' },
+        { kind: 'artifact', label: 'Artifacts', edgeType: 'attached_to', direction: 'incoming' },
+        { kind: 'skill', label: 'Skills', edgeType: 'equips', direction: 'outgoing' },
+        // Links, never assigns: an assignee is a task field, not an edge.
+        { kind: 'team_member', label: 'Teammates', edgeType: 'relates_to', direction: 'outgoing' },
+        // Context for a spawned session, by id only (never a transcript).
+        { kind: 'work_session', label: 'Sessions', edgeType: 'relates_to', direction: 'outgoing' },
+      ],
       /* The task's memory working set (085 widened `remembers.src_kinds` to
          the wildcard; P2 auto-injects a spawn task's remembered memories).
          Declared as the SAME block the teammate row uses — `SubtreeBody`

@@ -1219,7 +1219,41 @@ export interface PanelConfig {
    * session surface draws, replies inline where they landed.
    */
   threads?: boolean;
+  /**
+   * THE ATTACH PALETTE (task 01a0cfb0): the chip row under the description,
+   * one chip per row, in this order after the leading ＋ Attach. Each row
+   * names the kind its picker searches and the graph link it writes, so
+   * `files/AttachPalette.tsx` holds no kind literal and no edge-type literal
+   * (§15.2).
+   * Absent ⇒ no palette, and the strip keeps its lone ＋ tile.
+   */
+  attachPalette?: readonly AttachPaletteRow[];
   z4?: { immersive?: boolean };
+}
+
+/** One chip of the attach palette (see `PanelConfig.attachPalette`). */
+export interface AttachPaletteRow {
+  /** The one kind this chip's picker searches, and the only kind it links. */
+  kind: string;
+  /** The chip's word, plural ("Docs"). */
+  label: string;
+  /** The edge the pick writes. Must accept `kind` in the DB edge registry. */
+  edgeType: string;
+  /**
+   * Which end the ANCHOR is. `outgoing`: anchor → picked, as with `remembers`,
+   * `equips` and `relates_to`. `incoming`: picked → anchor, as with
+   * `attached_to`, whose source is the attachment.
+   */
+  direction: 'outgoing' | 'incoming';
+  /**
+   * The picker also offers "＋ New …":
+   *   · 'composer' opens the host's existing create dialog for the kind (the
+   *     memory composer, which writes its own link);
+   *   · 'attached' creates the entity with `attachTo` on this row's edge in
+   *     the same command, then opens it.
+   * Absent ⇒ pick-only.
+   */
+  create?: 'composer' | 'attached';
 }
 
 // ---------------------------------------------------------------------------

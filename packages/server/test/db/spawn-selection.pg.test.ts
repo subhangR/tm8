@@ -115,6 +115,25 @@ beforeAll(async () => {
     await c.query(`insert into public.work_sessions(entity_id) values ($1)`, [ids.session]);
     ids.session2 = await entity(c, s, 'work_session');
     await c.query(`insert into public.work_sessions(entity_id) values ($1)`, [ids.session2]);
+
+    // A task the attach palette has dressed: one of every link it writes.
+    ids.paletteTask = await entity(c, s, 'task');
+    await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Palette task')`, [ids.paletteTask]);
+    ids.sTask = await skill(c, s, 'palette-skill');
+    await edge(c, s, ids.paletteTask, ids.sTask, 'equips');
+    await edge(c, s, ids.paletteTask, ids.sEquipped, 'equips'); // the persona has it too
+    ids.mPalette = await memory(c, s, 'palette memory');
+    await edge(c, s, ids.paletteTask, ids.mPalette, 'remembers');
+    await edge(c, s, ids.paletteTask, ids.parent, 'relates_to');
+    await c.query(`update public.work_sessions set title = 'private run title' where entity_id = $1`, [ids.session2]);
+    await edge(c, s, ids.paletteTask, ids.session2, 'relates_to');
+    ids.doc = await entity(c, s, 'doc');
+    await c.query(`insert into public.documents(entity_id, title) values ($1, 'Design notes')`, [ids.doc]);
+    await edge(c, s, ids.doc, ids.paletteTask, 'attached_to');
+    ids.deletedDoc = await entity(c, s, 'doc');
+    await c.query(`insert into public.documents(entity_id, title) values ($1, 'Gone')`, [ids.deletedDoc]);
+    await edge(c, s, ids.deletedDoc, ids.paletteTask, 'attached_to');
+    await c.query(`update public.entities set deleted_at = now() where id = $1`, [ids.deletedDoc]);
   });
 }, 300_000);
 
@@ -201,5 +220,56 @@ describe('linkSession', () => {
     expect(await sessionOf()).toBe(ids.session);
     // An unknown run is a quiet false, for the caller to log.
     expect(await db.tx(claims(), (q) => linkSession(q, randomUUID(), ids.session!, ids.space!))).toBe(false);
+  });
+});
+
+describe('a task dressed by the attach palette', () => {
+  const loadPalette = (extra: Record<string, unknown> = {}) => port.loadSpawnContext(claims(), {
+    spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.paletteTask!], ...extra,
+  });
+
+  it('equips the task skill into the session, deduped against the persona, tagged with the task', async () => {
+    const context = await loadPalette();
+    expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sTask, ids.sEquipped, ids.sInherited]);
+    expect(context.skillEquips?.find((s) => s.entityId === ids.sTask)?.viaTaskId).toBe(ids.paletteTask);
+    // The persona's own row is kept for a skill both equip — no task tag, no double.
+    expect(context.skillEquips?.find((s) => s.entityId === ids.sEquipped)?.viaTaskId).toBeUndefined();
+    const manifest = manifestOf(context);
+    const effective = [...manifest.effectiveSkills!.native, ...manifest.effectiveSkills!.indexed];
+    expect(effective.find((s) => s.entityId === ids.sTask)).toMatchObject({ name: 'palette-skill', viaTaskId: ids.paletteTask });
+    expect(manifest.skills.map((s) => s.entityId)).toContain(ids.sTask);
+  });
+
+  it('a task skill left out of a selection is audited not-selected, like a persona skill', async () => {
+    const context = await loadPalette({ selection: { memoryIds: [], skillIds: [ids.sEquipped] } });
+    expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sEquipped]);
+    expect(context.skippedSkills?.map((s) => [s.entityId, s.reason]).sort()).toEqual(
+      [[ids.sTask, 'not-selected'], [ids.sInherited, 'not-selected']].sort(),
+    );
+  });
+
+  it('carries relates_to and non-file attached_to peers as references; remembers and equips stay out', async () => {
+    const context = await loadPalette();
+    const task = context.tasks[0]!;
+    expect(task.linkedTotal).toBe(3);
+    expect(task.linked).toEqual([
+      { entityId: ids.parent, kind: 'team_member', link: 'relates_to', title: 'Lead' },
+      { entityId: ids.session2, kind: 'work_session', link: 'relates_to', title: null },
+      { entityId: ids.doc, kind: 'doc', link: 'attached_to', title: 'Design notes' },
+    ]);
+    // D9 still injects the remembered memory whole.
+    expect(context.teamMember.memories).toContain('palette memory');
+  });
+
+  it('reaches the first-turn task prompt: the session by id only, never its title', async () => {
+    const manifest = manifestOf(await loadPalette());
+    const { composePrompt } = await import('@tm8/prompt');
+    const prompt = composePrompt(manifest, { sessionId: 'session', baseUrl: 'http://localhost' }).task;
+    expect(prompt).toContain('<linked count="3"');
+    expect(prompt).toContain(`<entity id="${ids.session2}" kind="work_session" link="relates_to" reference="id_only" />`);
+    expect(prompt).toContain(`<entity id="${ids.doc}" kind="doc" link="attached_to" />`);
+    expect(prompt).toContain('Design notes');
+    expect(prompt).not.toContain('private run title');
+    expect(prompt).not.toContain(ids.mPalette);
   });
 });

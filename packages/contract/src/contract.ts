@@ -1062,6 +1062,14 @@ export interface CollectionQuery {
      * and a predicate over columns nobody asked for is a feature, not a fix.
      */
     terms?: string[];
+    /**
+     * Additive (2026-09-23, task attach palette): entities whose TITLE
+     * contains this text as a case-insensitive substring. Kind-neutral — pair
+     * it with `kinds` to search one kind by title, which is what an entity
+     * picker needs and what the reserved `search.query` never delivered.
+     * Trimmed and non-empty: a blank needle matches everything.
+     */
+    titleContains?: string;
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */

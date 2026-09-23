@@ -16,6 +16,7 @@ export type {
   ActionIntent,
   ActionRef,
   AssignControl,
+  AttachPaletteRow,
   BodyArchetype,
   CardFieldRef,
   CardSpec,

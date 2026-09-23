@@ -30,6 +30,8 @@ export interface SkillIndexEntry {
   native: boolean;
   hash?: string;
   allowImplicitInvocation?: boolean;
+  /** The spawn task whose `equips` edge brought this skill; absent for persona equipment. */
+  viaTaskId?: string;
 }
 export interface SkippedSkill {
   entityId: string;

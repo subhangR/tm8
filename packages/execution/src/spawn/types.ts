@@ -276,6 +276,23 @@ export interface TaskContext {
    */
   threadRootMessageId?: string | null;
   threadChannelId?: string | null;
+  /**
+   * Other entities linked to this task, as REFERENCES only: outgoing
+   * `relates_to` (teammates, sessions) and incoming non-file `attached_to`
+   * (drawings, docs, artifacts), which is what the task attach palette writes.
+   * Oldest link first and bounded by the spawn read. `linkedTotal` is the exact
+   * count, so the prompt can declare what it left out. `title` is null for a
+   * work_session, which is referenced by id alone and never by transcript or
+   * title. `remembers` and `equips` are not here, because they reach the
+   * session whole: as injected memories and as skill-index entries.
+   */
+  linked?: Array<{
+    entityId: string;
+    kind: string;
+    link: string;
+    title: string | null;
+  }>;
+  linkedTotal?: number;
 }
 
 /**

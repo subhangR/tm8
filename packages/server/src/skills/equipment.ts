@@ -18,3 +18,29 @@ export async function loadSkillEquipment(q: Querier, spaceId: string, teamMember
       group by sk.entity_id, se.version order by depth, sk.name, sk.entity_id`, [teamMemberId, spaceId]);
   return resolveSkills(rows.map(row => ({ ...skillReferenceOf(row.reference), entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: Number(row.depth) }))).skills;
 }
+
+/**
+ * Skills equipped on the spawn's TASKS (`equips` task → skill, what the task
+ * attach palette writes). They ride the same index, byte budget and
+ * `selection` as persona equipment. Their depth is -1, nearer than the persona
+ * itself (depth 0), because a task is the more specific ask: a same-name persona
+ * skill is shadowed, not doubled. Each row carries `viaTaskId`, which is the first spawn
+ * task (in the caller's order) that equips it. Rows come back in task order,
+ * then by name. No body column, same as above.
+ */
+export async function loadTaskSkillEquipment(q: Querier, spaceId: string, taskIds: readonly string[]): Promise<ResolvedSkillRow[]> {
+  if (taskIds.length === 0) return [];
+  const rows = await q.query<{ entity_id: string; version: number; name: string; description: string; reference: Record<string, unknown>; task_id: string; task_rank: number }>(
+    `select distinct on (sk.entity_id) sk.entity_id, se.version, sk.name, sk.description,
+            ${SKILL_REFERENCE_SQL} as reference, ed.src_id as task_id,
+            array_position($1::uuid[], ed.src_id) as task_rank
+       from public.edges ed
+       join public.entities te on te.id = ed.src_id and te.kind = 'task' and te.space_id = $2 and te.deleted_at is null
+       join public.entities se on se.id = ed.dst_id and se.kind = 'skill' and se.space_id = $2 and se.deleted_at is null
+       join public.skills sk on sk.entity_id = se.id
+      where ed.type = 'equips' and ed.space_id = $2 and ed.src_id = any($1::uuid[])
+      order by sk.entity_id, array_position($1::uuid[], ed.src_id)`, [taskIds, spaceId]);
+  return rows
+    .sort((a, b) => Number(a.task_rank) - Number(b.task_rank) || a.name.localeCompare(b.name) || a.entity_id.localeCompare(b.entity_id))
+    .map(row => ({ ...skillReferenceOf(row.reference), entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: -1, viaTaskId: row.task_id }));
+}

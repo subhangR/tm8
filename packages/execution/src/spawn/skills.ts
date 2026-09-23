@@ -7,6 +7,12 @@ export interface ResolvedSkillRow extends Partial<SkillReference> {
   name: string;
   description?: string;
   depth: number;
+  /**
+   * Set when the skill is equipped on a spawn TASK (`equips` task → skill)
+   * rather than on the persona chain: the task that brought it, so the
+   * manifest can say why the skill is present.
+   */
+  viaTaskId?: string;
 }
 export interface SkillResolution {
   skills: ResolvedSkillRow[];
@@ -24,13 +30,13 @@ export function resolveSkills(rows: readonly ResolvedSkillRow[]): SkillResolutio
     const key = row.sourcePath ? `path:${row.sourcePath}` : `name:${row.name.normalize('NFC').trim().toLowerCase()}`;
     const depth = claims.get(key);
     if (depth === row.depth) {
-      throw new Error(`ambiguous skill "${row.name}": two different skills with that name are equipped at the same level of the team member hierarchy (depth ${row.depth}). Rename one, or equip only one.`);
+      throw new Error(`ambiguous skill "${row.name}": two different skills with that name are equipped ${row.depth < 0 ? 'on the spawn\'s tasks' : `at the same level of the team member hierarchy (depth ${row.depth})`}. Rename one, or equip only one.`);
     }
     if (depth !== undefined) continue;
     claims.set(key, row.depth);
     // Explicit projection prevents old callers carrying body text into manifests.
-    const { entityId, entityVersion, name, description, depth: hops, provider, level, root, sourcePath, dirName, frontmatter, loaderMetadata, contentHash, missing, lastSeenAt } = row;
-    skills.push({ entityId, entityVersion, name, description, depth: hops, provider, level, root, sourcePath, dirName, frontmatter, loaderMetadata, contentHash, missing, lastSeenAt });
+    const { entityId, entityVersion, name, description, depth: hops, provider, level, root, sourcePath, dirName, frontmatter, loaderMetadata, contentHash, missing, lastSeenAt, viaTaskId } = row;
+    skills.push({ entityId, entityVersion, name, description, depth: hops, provider, level, root, sourcePath, dirName, frontmatter, loaderMetadata, contentHash, missing, lastSeenAt, ...(viaTaskId ? { viaTaskId } : {}) });
   }
   return { skills, dropped: [] };
 }

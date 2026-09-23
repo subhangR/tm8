@@ -627,6 +627,21 @@ describe('LINKED — connection peers as chips', () => {
     fireEvent.click(within(section).getByText(taskBlocked.title));
     expect(onOpenEntity).toHaveBeenCalledWith(taskBlocked.id);
   });
+
+  it('leaves out the edges the attachment strip already draws as tiles', () => {
+    // The attach palette's links are tiles in the strip; LINKED must not draw
+    // the same edge a second time. Skipped by EDGE id, not by peer or type.
+    const detail = taskDetail();
+    const docEdge = [...detail.connections.outgoing, ...detail.connections.incoming]
+      .flatMap((group) => group.edges)
+      .find((edge) => edge.source.id === docLayoutSpec.id || edge.target.id === docLayoutSpec.id);
+    expect(docEdge, 'the fixture task links the layout spec').toBeDefined();
+    const { getByTestId } = renderBody({ stripEdgeIds: new Set([docEdge!.id]) });
+    const section = expandFold(getByTestId('linked-section'));
+    expect(section.textContent).not.toContain(docLayoutSpec.title);
+    expect(section.textContent).toContain(taskBlocked.title);
+    expect(section.textContent).toContain('3');
+  });
 });
 
 describe('the registry seam this body reads through', () => {
