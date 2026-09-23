@@ -150,6 +150,89 @@ export interface GitHubCredentialPort {
   resolve(auth: GraphAuth): Promise<GitHubCredential | null>;
 }
 
+/** Providers a SPACE can hold a credential for (206 `space_credentials.provider`). */
+export const SPACE_CREDENTIAL_PROVIDERS = ['anthropic', 'openai', 'github'] as const;
+export type SpaceCredentialProvider = (typeof SPACE_CREDENTIAL_PROVIDERS)[number];
+export function isSpaceCredentialProvider(value: unknown): value is SpaceCredentialProvider {
+  return (SPACE_CREDENTIAL_PROVIDERS as readonly unknown[]).includes(value);
+}
+
+/**
+ * D5 policy as the resolver reads it (design 01a0cfa8 §4). `space[p]` is the
+ * space admin's allowed-source list (absent = every source); `node[p] === false`
+ * is the node admin forbidding node fallback (absent = allowed).
+ *
+ * ENFORCED ONLY HERE. Neither 206's spawn reader nor its manifest writer reads
+ * a policy (advisory A5), so `SpawnService` is the single choke point, and it
+ * applies the policy to a pinned, an inherited and a resumed id alike.
+ */
+export interface SpaceCredentialPolicies {
+  space: Partial<Record<SpaceCredentialProvider, readonly CredentialSource[]>>;
+  node: Partial<Record<SpaceCredentialProvider, boolean>>;
+}
+
+/** A usable space credential, opened for exactly one spawn or resume. */
+export type SpaceCredentialGrant =
+  | {
+      kind: 'secret';
+      credentialId: string;
+      provider: SpaceCredentialProvider;
+      shape: 'api_key' | 'token';
+      label: string;
+      displayLogin: string | null;
+      /** Never logged, never put in an error, never recorded (I5). */
+      secret: string;
+    }
+  | {
+      kind: 'login';
+      credentialId: string;
+      provider: SpaceCredentialProvider;
+      label: string;
+      displayLogin: string | null;
+      /** The login home, `<dataDir>/credentials/spaces/<space>/<credential>`. */
+      homeDir: string;
+    };
+
+/**
+ * Why a space credential is not usable. Every one refuses the launch: none of
+ * them is a reason to fall back to another source (I3).
+ */
+export type SpaceCredentialRefusalReason =
+  | 'no_default'
+  | 'not_found'
+  | 'pending'
+  | 'stale'
+  | 'revoked'
+  | 'unreadable';
+
+export type SpaceCredentialRead =
+  | { ok: true; grant: SpaceCredentialGrant }
+  | { ok: false; reason: SpaceCredentialRefusalReason };
+
+/**
+ * Server-owned access to SPACE credentials (206). Execution never imports a
+ * database driver or the node key. Every call runs under the CALLER's claims —
+ * for an agent, its root human launcher's — so membership is the launcher's,
+ * never the persona owner's.
+ *
+ * A thrown error means the question could not be answered (the DB is down,
+ * 206 is absent); the spawn path refuses on it rather than guessing.
+ */
+export interface SpaceCredentialPort {
+  readPolicies(auth: GraphAuth, spaceId: string): Promise<SpaceCredentialPolicies>;
+  /** `credentialId` null reads the space default. */
+  read(
+    auth: GraphAuth,
+    spaceId: string,
+    provider: SpaceCredentialProvider,
+    credentialId: string | null,
+  ): Promise<SpaceCredentialRead>;
+  /** The subset of `credentialIds` that is active AND visible to the caller now. */
+  activeIds(auth: GraphAuth, credentialIds: readonly string[]): Promise<ReadonlySet<string>>;
+  /** Resume (C3): the resumer becomes the recorded launcher; throws if any credential is no longer active. */
+  repointSession(auth: GraphAuth, sessionId: string): Promise<void>;
+}
+
 /**
  * Server-owned credential minting. Execution carries opaque claims but never
  * imports a database driver or sees a human bearer token.
@@ -197,8 +280,11 @@ export interface LoadSpawnContextInput {
  * vendor credential, and ONLY their own; `'node'` = the node's machine
  * credential. There is deliberately no value naming another member — whose
  * credential a session may use is not a client-expressible decision.
+ * `'space'` = a credential the launch SPACE holds (design 01a0cfa8), usable by
+ * every member and re-checked against the caller's membership at spawn and at
+ * resume. A client may name a space credential's id, never an account (I1).
  */
-export type CredentialSource = 'member' | 'node';
+export type CredentialSource = 'member' | 'space' | 'node';
 /** The contract's complete provider set; an alias cannot drift during rollout. */
 export type CredentialProvider = CredentialProviderName;
 export type CredentialSources = Partial<Record<CredentialProvider, CredentialSource>>;
@@ -225,6 +311,12 @@ export interface SessionLaunchPosture {
   credentialSource?: CredentialSource | null;
   /** Provider-specific posture written by current manifests. */
   credentialSources?: StoredCredentialSources | null;
+  /**
+   * The exact space credential per provider whose source is `space`. Stored
+   * JSON, so read as `unknown` values and validated by the resolver: a `space`
+   * source with no usable id here refuses rather than re-resolving (M8a).
+   */
+  spaceCredentialIds?: Partial<Record<string, unknown>> | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -806,6 +898,17 @@ export interface Tm8Manifest {
     credentialSource: CredentialSource | null;
     /** Provider-specific choices, recorded for debug, child inheritance and resume. */
     credentialSources: ResolvedCredentialSources;
+    /**
+     * The exact space credential for every provider whose source is `space`,
+     * and for no other (206's `record_session_manifest` checks both ways and
+     * records `session_space_credentials` from it). Absent when there are none.
+     */
+    spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>>;
+    /**
+     * What each provider this launch authenticates actually ran on (D9): the
+     * auto choice resolved, so a node-key launch is visible as one.
+     */
+    effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
     /**
@@ -886,6 +989,11 @@ export interface SpawnRequest {
    * source can only resolve the CALLER'S OWN RLS-scoped credential.
    */
   credentialSources?: CredentialSources | null;
+  /**
+   * A pinned space credential per provider. Valid ONLY for a provider this
+   * same request sets to `space`; with any other source it is refused.
+   */
+  spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>> | null;
   title?: string | null;
   promptExtra?: string | null;
   /** Spawn-time memory hand-off (D3a); see `LoadSpawnContextInput.memoryIds`. */

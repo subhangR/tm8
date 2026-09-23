@@ -662,7 +662,7 @@ export function nextAccessMode(mode: LaunchAccessMode | null): LaunchAccessMode 
 // ---------------------------------------------------------------------------
 
 /** `CredentialSourceSchema` verbatim: whose credential the session injects. */
-export type LaunchCredentialSource = 'member' | 'node';
+export type LaunchCredentialSource = 'member' | 'space' | 'node';
 
 /**
  * The FILE-shaped providers an agent tool can consume. `github` is excluded

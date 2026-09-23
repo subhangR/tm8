@@ -292,7 +292,36 @@ export interface AgentCredentialHome {
    * being merely prudent the moment this field is populated.
    */
   apiKey?: string;
+  /**
+   * Set when this home belongs to a SPACE credential (design 01a0cfa8 §4), not
+   * the member. `apiKey` here is the space's API key for anthropic/openai: the
+   * home is then a per-session directory seeded for that key, and `composeEnv`
+   * sets the vendor variable AFTER deleting every node value (I4). Absent for a
+   * space LOGIN, whose home is the credential's own login directory.
+   */
+  space?: { credentialId: string; apiKey?: string };
 }
+
+/**
+ * The node's own variables a SPACE credential must displace for its provider,
+ * deleted before the space value is set (I4). Wider than the member list for
+ * anthropic: `ANTHROPIC_AUTH_TOKEN` is a bearer the CLI prefers over an API
+ * key, so a node carrying one would outrank the space's key.
+ */
+export const SPACE_CREDENTIAL_SUPPRESSED_ENV_KEYS: Readonly<
+  Partial<Record<AgentCredentialProvider, readonly string[]>>
+> = Object.freeze({
+  anthropic: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'],
+  openai: ['OPENAI_API_KEY'],
+});
+
+/** The variable a space API key is delivered in, per provider. */
+export const SPACE_CREDENTIAL_API_KEY_ENV: Readonly<
+  Partial<Record<AgentCredentialProvider, string>>
+> = Object.freeze({
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+});
 
 /**
  * How the spawn loop asks whether the spawning identity has a credential to
