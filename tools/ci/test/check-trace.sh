@@ -64,6 +64,7 @@ if [ -n "\$shard" ]; then
   n="\${TRACE_SHARD_FILES:-3}"
   if [ "\$n" = none ]; then :
   elif [ "\$n" = skipped ]; then printf ' Test Files  3 skipped (3)\n'
+  elif [ "\$n" = decoy ]; then printf ' Test Files  3 passed (3)\n Test Files  no tests\n'
   elif [ "\$n" = 0 ]; then printf ' Test Files  no tests\\n'
   else printf ' \\033[2mTest Files \\033[22m \\033[1m\\033[32m%s passed\\033[39m\\033[22m (%s)\\n' "\$n" "\$n"; fi
 fi
@@ -156,6 +157,8 @@ TRACE_SHARD_FILES=none run "$NEW_CHECK" "$WORK/o" - --only test:packages/server 
 expect 1 "a shard with no recognisable summary is red (the check is positive)" "passed no test files"
 TRACE_SHARD_FILES=skipped run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 1/4
 expect 1 "an all-skipped shard ('3 skipped (3)') is red" "passed no test files"
+TRACE_SHARD_FILES=decoy run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 1/4
+expect 1 "only the LAST 'Test Files' line counts (a passing-shaped line, then 'no tests')" "passed no test files"
 TRACE_FAIL="^bun run test --shard=2/4 @/packages/server$" run "$NEW_CHECK" "$WORK/o" - --only typecheck:packages/server --only test:packages/server --shard=2/4
 expect 1 "a failing selected stage still fails the run (repeated --only, --shard=)" "FAIL  test packages/server"
 run "$NEW_CHECK" "$WORK/o" - --only test:packages/cli,typecheck:packages/execution,typecheck:packages/cli

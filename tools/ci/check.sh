@@ -191,7 +191,8 @@ skip_or_fail() {
 # 2.1.9 with `--shard=8/8` over 6 files. A shard that tested nothing is not a
 # pass, so the output is also captured (in memory: this script never writes
 # outside the repo) and the run must end in a `Test Files ... (N)` summary with
-# N >= 1 of which at least one PASSED (an all-skipped shard, "1 skipped (1)",
+# N >= 1 of which at least one PASSED, read from the LAST `Test Files` line
+# (vitest's own final summary, whatever an earlier line looked like) (an all-skipped shard, "1 skipped (1)",
 # tested nothing either). A missing or unrecognised summary fails too: the
 # check is positive. A non-zero vitest exit is returned before any parsing.
 # Under --shard vitest's stderr is merged into stdout (same order, same log).
@@ -210,7 +211,7 @@ run_tests() {
       exit "${PIPESTATUS[0]}" )"; rc=$?; } 3>&1
   [ "$rc" -eq 0 ] || return "$rc"
   summary="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' \
-    | grep -E '^[[:space:]]*Test Files[[:space:]].*\([0-9]+\)[[:space:]]*$' | tail -n 1)"
+    | grep -E '^[[:space:]]*Test Files[[:space:]]' | tail -n 1)"
   files="$(printf '%s\n' "$summary" | sed -n 's/.*(\([0-9][0-9]*\))[[:space:]]*$/\1/p')"
   if [ -z "$files" ] || [ "$files" -eq 0 ] || ! printf '%s\n' "$summary" | grep -qE '(^|[^0-9])[1-9][0-9]* passed'; then
     printf '%s    shard %s of %s passed no test files — a shard that tests nothing is not a pass%s\n' \
