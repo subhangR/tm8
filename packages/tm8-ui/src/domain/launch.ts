@@ -702,6 +702,11 @@ export const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> =
   cursor: 'Cursor',
   kimi: 'Moonshot AI',
   groq: 'Groq',
+  // Qualified, alone in this map, because the entry above it exists. Every
+  // other label here is unambiguous on its own; 'Grok' beside 'Groq' is not,
+  // and a picker that renders both unqualified is asking the member to spot a
+  // transposition. 'xAI' is the vendor, which is what this map is for.
+  grok: 'Grok (xAI)',
 };
 
 /**

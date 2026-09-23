@@ -10,6 +10,8 @@
 import type { ComponentType, SVGProps } from 'react';
 import type { CredentialProviderName } from '@tm8/contract';
 
+import { GroqMark, KimiMark } from '../kit/ModelMark';
+
 type ProviderMark = ComponentType<SVGProps<SVGSVGElement>>;
 
 export interface CredentialProviderPresentation {
@@ -130,31 +132,41 @@ function CursorMark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-// A crescent — Kimi/Moonshot. Drawn as one path with an even-odd bite taken out
-// of it so the shape reads at 22px without a second colour.
-function KimiMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} {...markProps}>
-      <path
-        d="M15.4 3.7a8.7 8.7 0 1 0 4.9 14.6A9.6 9.6 0 0 1 15.4 3.7Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <circle cx="9.6" cy="10.3" r="1.15" fill="currentColor" />
-    </svg>
-  );
-}
+/*
+ * Kimi's crescent and Groq's bolt are NOT drawn here. They live in
+ * `kit/ModelMark.tsx`, because those two vendors are the only ones in this
+ * table that a person also meets as a MODEL — a session row spawned on
+ * `kimi-k2-thinking` wears the same crescent as the credential that pays for
+ * it, and two copies of one shape drift the moment either is retouched. The
+ * kit marks default to this file's 22px, so the cards are unchanged.
+ */
 
-// A bolt — Groq, whose one distinguishing claim is inference speed.
-function GroqMark(props: SVGProps<SVGSVGElement>) {
+// An angular X — Grok/xAI. THIS MARK'S JOB IS TO NOT BE THE BOLT ABOVE. Groq
+// and Grok sit adjacent on the Connections screen, their names differ by one
+// transposed letter, and a member scanning the list at a glance reads the icon
+// before the word. So the two shapes are chosen to be unconfusable rather than
+// merely different: a filled diagonal wedge pair against an unbroken zigzag,
+// distinguishable in silhouette at 22px and with colour removed.
+function GrokMark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} {...markProps}>
       <path
-        d="M13.6 3.2 6.4 13h4.6l-1.6 7.8L17.6 11H13l.6-7.8Z"
+        d="M5.2 4.4 18.8 19.6"
         stroke="currentColor"
         strokeWidth="1.7"
-        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path
+        d="M18.8 4.4 12.9 11"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10.6 13.6 5.2 19.6"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -197,10 +209,13 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
     icon: CursorMark,
     needsGitCredentialStore: false,
   },
-  // The two API-key providers. `binary: null` is explained on the field above.
+  // The three API-key providers. `binary: null` is explained on the field above.
   // The names carry the vendor rather than the model family — a member pastes a
   // key from platform.moonshot.ai, and "Kimi" alone would not tell them which
-  // console to open.
+  // console to open. For the last two that convention stops being a nicety and
+  // becomes the guard: "Groq" and "Grok" one under the other, unqualified, are
+  // one transposed letter apart and read as a typo, so the vendor is spelled
+  // out on the one that would otherwise be mistaken for the other.
   kimi: {
     name: 'Kimi (Moonshot AI)',
     binary: null,
@@ -211,6 +226,12 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
     name: 'Groq',
     binary: null,
     icon: GroqMark,
+    needsGitCredentialStore: false,
+  },
+  grok: {
+    name: 'Grok (xAI)',
+    binary: null,
+    icon: GrokMark,
     needsGitCredentialStore: false,
   },
 } as const satisfies Record<CredentialProviderName, CredentialProviderPresentation>;

@@ -160,6 +160,24 @@ const AGENT_CREDENTIAL_PROVIDER_DEFINITIONS = {
     // unconditionally, so a forwarded node value cannot survive either way.
     suppressedEnvKeys: ['OPENAI_API_KEY'],
   },
+  // GROK (xAI) IS BYTE-FOR-BYTE THE GROQ ROW, and that is correct rather than a
+  // copy-paste left unfinished. Everything this table holds is a property of
+  // the TOOL being redirected, not of the vendor behind it: both back `codex`,
+  // so both isolate through `CODEX_HOME`, both share the `.codex` node
+  // directory, and both must suppress the one node key that would otherwise
+  // outrank the injected one. The only field where the two vendors differ is
+  // the base URL, and that lives in `API_KEY_BACKEND_ROUTING` where the
+  // difference is visible beside its counterpart instead of buried here.
+  //
+  // `agentTools: []` for the same reason as the two rows above — see the long
+  // note on the `kimi` row. A `['codex']` here would make every member on this
+  // node resolve `codex` to whichever of these three rows was declared last.
+  grok: {
+    agentTools: [],
+    configDirVar: 'CODEX_HOME',
+    nodeConfigDir: '.codex',
+    suppressedEnvKeys: ['OPENAI_API_KEY'],
+  },
 } as const satisfies Record<AgentCredentialProvider, AgentCredentialProviderDefinition>;
 
 function mapAgentCredentialProviders<Value>(

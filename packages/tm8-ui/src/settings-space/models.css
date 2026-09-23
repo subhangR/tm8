@@ -262,3 +262,13 @@
 }
 .set-models__edit-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 200px; }
 .set-models__edit-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* The family mark in front of a catalog row's human label. This list is the
+   one place a member reads the whole catalog at once, and it is where two
+   families sitting under one serving vendor look most alike. */
+.set-models__mark {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--pn-ink-2);
+}

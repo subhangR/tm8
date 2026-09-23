@@ -25,6 +25,7 @@ export {
   apiKeyBackendAgentTool,
   apiKeyBackendDisplaces,
   apiKeyBackendEnv,
+  apiKeyBackendOutrankedBy,
   apiKeyBackendsForAgentTool,
   isApiKeyCredentialProvider,
   type ApiKeyCredentialProvider,

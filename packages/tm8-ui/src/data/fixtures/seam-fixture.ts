@@ -1153,6 +1153,18 @@ export function createFixtureSeam(): FixtureSeam {
    * displaced — a card that must say both) and groq NOT connected (so its card
    * must still describe what connecting it would do). A surface that only
    * renders routing when `connected` is true fails on the second one.
+   *
+   * WHAT IS DELIBERATELY NOT SCRIPTED HERE, AND WHY. `groq` and `grok` both
+   * back `codex`, so a member holding both keys has one of them outranked and
+   * its card carries `routing.outrankedBy`. That state cannot coexist with the
+   * one above on a single fixture: showing it requires BOTH codex backends
+   * connected, which leaves no unconnected backend to carry the "here is what
+   * Connect would do" case, and would additionally flip `openai` from the one
+   * true negative to displaced. Given a choice between deleting a guard that
+   * already catches a real regression and adding one, this fixture keeps the
+   * first; the contention is covered by a render test that builds its own
+   * connections and by the server's own routing unit test, both of which can
+   * script one state without owing the screen every other.
    */
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -1170,6 +1182,10 @@ export function createFixtureSeam(): FixtureSeam {
           role: 'displaced',
           counterpart: 'kimi',
           active: true,
+          // Null on every displaced card by construction: a displaced NATIVE
+          // provider is not a competitor in the backend precedence contest, it
+          // is what the winner of that contest replaced.
+          outrankedBy: null,
         },
       },
       // The one true negative — so "not connected" has something real to mean.
@@ -1243,6 +1259,8 @@ export function createFixtureSeam(): FixtureSeam {
           role: 'backend',
           counterpart: 'anthropic',
           active: true,
+          // `claude-code` has exactly one backend, so kimi cannot be outranked.
+          outrankedBy: null,
         },
       },
       // Not connected, and still routing-bearing: `active: false` is the
@@ -1260,6 +1278,31 @@ export function createFixtureSeam(): FixtureSeam {
           role: 'backend',
           counterpart: 'openai',
           active: false,
+          // An UNCONNECTED backend is never outranked — it has not entered the
+          // contest. Only a connected loser carries a name here.
+          outrankedBy: null,
+        },
+      },
+      // The second codex backend, and NOT connected for the reason given in the
+      // block comment above. Present at all because a provider missing from
+      // this list is a card the seam never renders — and the two names one line
+      // apart, `groq` then `grok`, are exactly what a member sees on the real
+      // screen, so the fixture should make that adjacency visible rather than
+      // hide the collision it was designed against.
+      {
+        provider: 'grok',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+        routing: {
+          agentTool: 'codex',
+          role: 'backend',
+          counterpart: 'openai',
+          active: false,
+          outrankedBy: null,
         },
       },
     ],

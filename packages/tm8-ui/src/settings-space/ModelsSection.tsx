@@ -45,6 +45,7 @@ import {
   type CatalogModel,
 } from '../domain/model-catalog';
 import { agentTool } from '../domain/launch';
+import { ModelMark } from '../kit';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import './models.css';
 
@@ -290,7 +291,10 @@ function ModelRow({
       data-hidden={hidden ? 'true' : undefined}
     >
       <div className="set-models__ident">
-        <span className="set-models__label">{entry.label}</span>
+        <span className="set-models__label">
+          <ModelMark className="set-models__mark" model={entry.model} size={13} decorative />
+          {entry.label}
+        </span>
         <span className="set-models__id">{entry.model}</span>
         {entry.note ? <span className="set-models__note">{entry.note}</span> : null}
       </div>

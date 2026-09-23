@@ -58,3 +58,20 @@ export {
   type PanelWidth,
   type ResizerSide,
 } from './PanelResizer';
+export {
+  ModelMark,
+  ModelFamilyMark,
+  MODEL_FAMILY_MARKS,
+  ClaudeMark,
+  GptMark,
+  KimiMark,
+  GroqMark,
+  LlamaMark,
+  QwenMark,
+  DeepSeekMark,
+  GrokMark,
+  GeminiMark,
+  UnknownModelMark,
+  type ModelMarkProps,
+  type VendorMark,
+} from './ModelMark';

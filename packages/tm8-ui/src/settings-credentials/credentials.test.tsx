@@ -70,7 +70,7 @@ function portWith(
   };
 }
 
-describe('six providers and four honest states', () => {
+describe('nine providers and four honest states', () => {
   it('renders every product name with currentColor inline marks, binaries, and a connected Cursor', async () => {
     render(
       <CredentialsSection
@@ -84,6 +84,7 @@ describe('six providers and four honest states', () => {
             connection({ provider: 'cursor', connected: true, status: 'active' }),
             connection({ provider: 'kimi' }),
             connection({ provider: 'groq' }),
+            connection({ provider: 'grok' }),
           ],
           gitCredentialStore: 'present',
         })}
@@ -91,7 +92,7 @@ describe('six providers and four honest states', () => {
     );
 
     await screen.findByTestId('credential-provider-grid');
-    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(8);
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(9);
     expect(Object.values(CREDENTIAL_PROVIDER_PRESENTATIONS).map(({ name, binary }) => [name, binary])).toEqual([
       ['Claude Code', 'claude'],
       ['Codex', 'codex'],
@@ -99,12 +100,19 @@ describe('six providers and four honest states', () => {
       ['Gemini', 'gemini'],
       ['Hermes', 'hermes'],
       ['Cursor', 'cursor-agent'],
-      // `null`, not 'node'. These two are reached by pasting a key, not by
+      // `null`, not 'node'. These three are reached by pasting a key, not by
       // running a vendor CLI, and the binary their probe measures is the
       // server's own `node` — printing it here would tell a member that
       // installing node is what connects Kimi.
       ['Kimi (Moonshot AI)', null],
+      // GROQ THEN GROK, ADJACENT AND DELIBERATELY NOT SPELLED ALIKE. This
+      // assertion is doing product work, not census work: the two vendors are
+      // one transposed letter apart and a member scanning this list has to be
+      // able to tell which card takes which key. The vendor qualifier on the
+      // second is what makes that possible, and deleting it as redundant is the
+      // regression this line exists to catch.
       ['Groq', null],
+      ['Grok (xAI)', null],
     ]);
 
     for (const [id, provider] of Object.entries(CREDENTIAL_PROVIDER_PRESENTATIONS)) {
@@ -125,6 +133,68 @@ describe('six providers and four honest states', () => {
     );
     expect(screen.getByTestId('credential-connect-cursor').textContent).toBe('Reconnect');
     expect(screen.getByTestId('credential-disconnect-cursor')).toBeTruthy();
+  });
+
+  it('tells a connected-but-outranked backend that it is not the one being used', async () => {
+    // THE STATE A MEMBER CANNOT DIAGNOSE ALONE. Two keys, both valid, both
+    // connected, both backing `codex`, and only one reached. Without this line
+    // the grok card would say "every codex session you start uses this key" —
+    // a confirmation of the exact thing that is not happening.
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'groq',
+              connected: true,
+              status: 'active',
+              routing: {
+                agentTool: 'codex',
+                role: 'backend',
+                counterpart: 'openai',
+                active: true,
+                outrankedBy: null,
+              },
+            }),
+            connection({
+              provider: 'grok',
+              connected: true,
+              status: 'active',
+              routing: {
+                agentTool: 'codex',
+                role: 'backend',
+                counterpart: 'openai',
+                active: true,
+                outrankedBy: 'groq',
+              },
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    await screen.findByTestId('credential-provider-grid');
+
+    // The winner says the ordinary thing.
+    const winner = screen.getByTestId('credential-card-groq');
+    expect(within(winner).getByTestId('credential-routing-backend').textContent).toContain(
+      'Every codex session you start uses this key',
+    );
+
+    // The loser gets its OWN test id, so a screen cannot render the two states
+    // through one branch and pass.
+    const loser = screen.getByTestId('credential-card-grok');
+    const line = within(loser).getByTestId('credential-routing-outranked');
+    expect(line.getAttribute('data-routing-outranked-by')).toBe('groq');
+    // It NAMES the winner — "another provider takes priority" would leave the
+    // member to work out which of their cards to disconnect.
+    expect(line.textContent).toContain('Groq');
+    expect(line.textContent).toContain('Disconnect it and this key takes over');
+    // And it never claims the sessions are reaching this key.
+    expect(line.textContent).not.toContain('Every codex session you start uses this key');
+    // The card itself is still CONNECTED. Nothing was revoked; it is idle.
+    expect(loser.getAttribute('data-credential-state')).toBe('connected');
   });
 
   it('renders an unavailable Cursor differently from disconnected and never offers a doomed Connect', async () => {

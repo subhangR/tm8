@@ -2001,17 +2001,25 @@ export type CredentialProviderName =
   | 'hermes'
   | 'cursor'
   | 'kimi'
-  | 'groq';
+  | 'groq'
+  | 'grok';
 
 /**
  * What a connected credential CHANGES about the agent sessions a member runs.
  *
- * This type exists because two of the eight providers are not additional tools
+ * This type exists because three of the nine providers are not additional tools
  * — they are alternative BACKENDS for a tool that already exists. Connecting
  * Kimi does not give a member a "kimi" agent to choose; it makes every
  * `claude-code` session they start talk to Moonshot's Anthropic-wire endpoint
  * instead of Anthropic's, account-wide, with no per-session opt-in. Groq does
- * the same to `codex`.
+ * the same to `codex`, and Grok — xAI, a different company whose name differs
+ * from Groq's by one transposed letter — does the same to `codex` as well.
+ *
+ * TWO BACKENDS ON ONE TOOL IS NOW REACHABLE, and that is what `outrankedBy`
+ * below is for. A member holding both a Groq key and a Grok key has one `codex`
+ * and two claimants for it; exactly one wins, deterministically, and the other
+ * card has to be able to say so rather than silently reporting itself as the
+ * backend while nothing routes through it.
  *
  * That behaviour was chosen deliberately, and it is the reason this field is on
  * the wire at all. A routing decision that is invisible is a routing decision
@@ -2047,6 +2055,28 @@ export interface CredentialRoutingView {
    * Anthropic user about until a backend actually displaces them.
    */
   active: boolean;
+  /**
+   * The OTHER backend that wins `agentTool` ahead of this one, when there is
+   * one, and null in every other case.
+   *
+   * Present because two backends can now serve a single tool: `groq` and `grok`
+   * both redirect `codex`. When a member has connected both, precedence — the
+   * order of `API_KEY_CREDENTIAL_PROVIDERS` in `api-key-credentials.ts` — picks
+   * one, and the loser's card carries the winner's name here. It answers the
+   * only question that member actually has: "I pasted a Grok key, so why do my
+   * codex sessions still reach Groq?"
+   *
+   * Null is the ordinary case and means three different things that need no
+   * distinguishing on a card: this provider wins, this provider is not
+   * connected, or nothing else serves its tool. A `role: 'displaced'` entry is
+   * always null — a displaced NATIVE provider is not in the precedence contest,
+   * it is the thing being replaced by whoever won it.
+   *
+   * The UI must not infer this by comparing two cards. Precedence lives in one
+   * ordered list in `execution`, and re-deriving it in the client is how the two
+   * drift apart after a deploy that changed only one of them.
+   */
+  outrankedBy: CredentialProviderName | null;
 }
 
 /** One provider's card on the Connections screen. */

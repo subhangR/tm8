@@ -2,6 +2,8 @@ import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
 import { Avatar } from '../../kit/Avatar';
+import { ModelMark } from '../../kit/ModelMark';
+import { modelMarkLabel } from '../../domain/model-family';
 import { copyToClipboard } from '../../terminal/domUtils';
 
 /**
@@ -149,7 +151,18 @@ export function MaestroSessionTile({
           <span className="pn-st__titleText">{title}</span>
         </span>
 
-        {model ? <span className="pn-st__model" title={model}>{model}</span> : null}
+        {/* THE FAMILY MARK LEADS THE MODEL, because the text alone cannot do
+            this job here: `pn-st__model` is capped at 88px of 9px mono and
+            ellipsises, so `moonshotai/kimi-k2-instruct-0905` and
+            `kimi-k2-thinking-turbo` both arrive as a grey stub. The mark
+            survives the truncation; the title attribute still carries the
+            exact id, and now says whose model it is too. */}
+        {model ? (
+          <span className="pn-st__model" title={`${model} — ${modelMarkLabel(model)}`}>
+            <ModelMark className="pn-st__modelmark" model={model} size={11} decorative />
+            {model}
+          </span>
+        ) : null}
 
         {archived ? <span className="pn-st__tag">archived</span> : null}
         {attention && !archived ? <span className="pn-st__tag pn-st__tag--attention">needs attention</span> : null}

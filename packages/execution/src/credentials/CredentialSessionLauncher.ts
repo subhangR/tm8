@@ -107,9 +107,9 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    stored credential plus its sessions; invoking a vendor logout is a
  *    separate decision and is deliberately not wired here.
  *
- *  kimi, groq — TM8'S OWN HARNESS, not a vendor binary, and the only two
- *    entries in this table that are not somebody else's program. Neither vendor
- *    ships a login CLI; both issue an API key from a web console. The
+ *  kimi, groq, grok — TM8'S OWN HARNESS, not a vendor binary, and the only
+ *    entries in this table that are not somebody else's program. No vendor here
+ *    ships a login CLI; each issues an API key from a web console. The
  *    measurement behind that claim — including the two npm packages whose names
  *    suggest otherwise and are unrelated software — is recorded in
  *    `api-key-credentials.ts` rather than repeated here.
@@ -121,6 +121,11 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    being authenticated against, so an installability check for kimi or groq
  *    says nothing about the vendor — which is correct, because there is nothing
  *    vendor-supplied to install.
+ *
+ *    GROK IS xAI AND GROQ IS GROQ, INC. — different companies whose names
+ *    differ by a transposed letter and whose APIs are both OpenAI-compatible.
+ *    They are two rows here, two cards in the product, and two separate keys;
+ *    nothing in tm8 treats one as an alias or a misspelling of the other.
  */
 /**
  * Absolute path to tm8's own credential paste harness.

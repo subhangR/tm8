@@ -1886,3 +1886,7 @@
 }
 .cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); }
 .cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+
+/* The launch sheet's roster subtitle leads with the teammate's model, so the
+   mark leads the subtitle: this row IS the spawn choice. */
+.cv2-root .ls__rowmark { display: inline-block; vertical-align: -1px; margin-right: 4px; color: var(--pn-ink-3); }

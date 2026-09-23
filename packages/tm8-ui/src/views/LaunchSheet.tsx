@@ -62,7 +62,7 @@ import type { SkillPreviewResult } from '@tm8/contract';
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { CredentialProviderName, CredentialsStatusView, EntityId } from '@tm8/contract';
-import { Avatar } from '../kit';
+import { Avatar, ModelMark } from '../kit';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import './launch-sheet-mobile.css';
 import {
@@ -504,6 +504,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
                     {/* Model is the row's SUBTITLE, not a fourth section — D51's
                         five items are concerns, not sections (ruled). */}
                     <span className="ls__rowsub">
+                      {/* The subtitle's first fact is the model, and this row is
+                          a SPAWN choice — the mark is what tells one teammate's
+                          Kimi from another's Claude before the ids are read. */}
+                      <ModelMark className="ls__rowmark" model={t.model} size={11} decorative />
                       {t.model} · {t.agentTool} · owned by {t.owner}
                     </span>
                   </span>

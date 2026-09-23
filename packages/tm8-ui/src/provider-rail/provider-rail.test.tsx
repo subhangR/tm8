@@ -42,10 +42,37 @@ const status: CredentialsStatusView = {
     connection('kimi', {
       connected: true,
       status: 'active',
-      routing: { agentTool: 'claude-code', role: 'backend', counterpart: 'anthropic', active: true },
+      routing: {
+        agentTool: 'claude-code',
+        role: 'backend',
+        counterpart: 'anthropic',
+        active: true,
+        outrankedBy: null,
+      },
     }),
     connection('groq', {
-      routing: { agentTool: 'codex', role: 'backend', counterpart: 'openai', active: false },
+      routing: {
+        agentTool: 'codex',
+        role: 'backend',
+        counterpart: 'openai',
+        active: false,
+        outrankedBy: null,
+      },
+    }),
+    // Connected, and OUTRANKED by the groq card above it. The rail's chip is
+    // deliberately unaffected: a chip answers "is this connected", and grok is.
+    // Which of two connected backends `codex` actually reaches is a sentence,
+    // and sentences live on the card, not in twelve pixels.
+    connection('grok', {
+      connected: true,
+      status: 'active',
+      routing: {
+        agentTool: 'codex',
+        role: 'backend',
+        counterpart: 'openai',
+        active: true,
+        outrankedBy: 'groq',
+      },
     }),
   ],
   gitCredentialStore: 'present',
@@ -89,7 +116,7 @@ describe('compact provider rail', () => {
     );
 
     await findByLabelText('Claude Code — connected');
-    expect(getAllByTestId(/^provider-rail-chip-/)).toHaveLength(8);
+    expect(getAllByTestId(/^provider-rail-chip-/)).toHaveLength(9);
 
     const expected = {
       anthropic: ['connected', '✓'],
@@ -101,6 +128,7 @@ describe('compact provider rail', () => {
       // something a twelve-pixel chip can carry.
       kimi: ['connected', '✓'],
       groq: ['disconnected', '○'],
+      grok: ['connected', '✓'],
     } as const;
     for (const [provider, [stateName, mark]] of Object.entries(expected)) {
       const chip = getByTestId(`provider-rail-chip-${provider}`);
