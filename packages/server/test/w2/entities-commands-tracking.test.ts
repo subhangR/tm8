@@ -199,4 +199,34 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
     }))).rejects.toMatchObject({ code: 'forbidden' });
     expect(db.calls).toEqual([]);
   });
+
+  // `{"kind":"task","body":…}` used to exit 0: the task arm reads `description`,
+  // never `body`, so the member fell on the floor and the patch "succeeded".
+  it('refuses a content member the kind\'s arm does not forward, by name, before any RPC', async () => {
+    const db = new FakeDb();
+    const registry = registered(db);
+    db.queryImpl = async <R>(sql: string): Promise<R[]> => {
+      if (sql.includes('select kind from public.entities')) return [{ kind: 'task' }] as R[];
+      return [];
+    };
+    const patch = (content: Record<string, unknown>) => handler(registry, 'entities.patch')(request('entities.patch', {
+      params: { id: '00000000-0000-7000-8000-000000000206' },
+      body: { clientMutationId: 'ignored-member', expectedVersion: 2, content },
+    }));
+
+    const refused = patch({ kind: 'task', body: 'lost' });
+    await expect(refused).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(refused).rejects.toThrow(/task patch does not accept content field body; accepted: description,/);
+    await expect(patch({ kind: 'doc', description: 'x' })).rejects.toThrow(
+      /content\.kind 'doc' does not match this entity's kind 'task'/,
+    );
+    await expect(patch({ kind: 'task' })).rejects.toThrow(/task patch changes nothing/);
+    expect(db.calls).toEqual([]);
+
+    // The discriminator naming the stored kind is admitted, and a forwarded
+    // member still reaches the RPC.
+    await patch({ kind: 'task', description: 'kept' });
+    expect(db.calls.map((c) => c.fn)).toEqual(['update_task_content']);
+    expect(db.calls[0]?.args[4]).toBe('kept');
+  });
 });

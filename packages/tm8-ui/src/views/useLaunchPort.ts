@@ -133,14 +133,26 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     async (entityId: string, edits: { title?: string; description?: string }) => {
       const commands = data.seam.commands;
       if (!commands) throw new Error('This node cannot edit entities, so the edits were not saved.');
-      const version = data.detailOf(entityId)?.version
-        ?? (await data.seam.entity(entityId as never).catch(() => undefined))?.version;
+      const detail = data.detailOf(entityId)
+        ?? (await data.seam.entity(entityId as never).catch(() => undefined));
+      const version = detail?.version;
       if (version == null) {
         throw new Error('The task could not be read back, so the edits were not saved.');
       }
+      /* Every kind has a Run verb, but only some kinds HAVE a description
+         (task, collection, spell, skill). The node refuses a content member
+         the subject's kind does not take, so a description is sent only when
+         the subject's content carries one — read structurally, no kind
+         literal. A detail without content is not evidence either way, and
+         keeps today's behaviour. */
+      const content = (detail as { content?: unknown }).content;
+      const takesDescription = typeof content !== 'object' || content === null || 'description' in content;
+      if (edits.title === undefined && !takesDescription) return;
       await commands.patchEntity(entityId as EntityId, entityPatchInput({
         ...(edits.title !== undefined ? { title: edits.title } : {}),
-        ...(edits.description !== undefined ? { content: { description: edits.description } } : {}),
+        ...(edits.description !== undefined && takesDescription
+          ? { content: { description: edits.description } }
+          : {}),
       }, version));
       /* The row's summary re-reads through the normal detail path, so the list
          shows the new name without waiting for the next event. */

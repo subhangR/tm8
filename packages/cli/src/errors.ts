@@ -92,6 +92,25 @@ function reasonOf(details: unknown): string | undefined {
   return typeof reason === 'string' ? reason : undefined;
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The EntityDetail a `version_conflict` carries under `details.current` (the
+ * Server re-reads the row so a stale writer learns what it lost the race to),
+ * cut to the work fields a retry decides on. A full detail is ~15k characters;
+ * `tm8 entity context` is one call away for the rest.
+ */
+function compactCurrent(current: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(current) || typeof current['version'] !== 'number') return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of ['id', 'kind', 'title', 'version', 'state'] as const) {
+    if (current[key] !== undefined) out[key] = current[key];
+  }
+  return out;
+}
+
 /** A typed refusal carrying the Server's own taxonomy code. */
 export class ApiError extends Error {
   /**
@@ -123,6 +142,35 @@ export class ApiError extends Error {
   get exitCode(): ExitCode {
     return EXIT_BY_COMMAND_ERROR[this.code];
   }
+
+  /**
+   * The version the write lost to. The re-read `details.current` wins over the
+   * RPC's `details.currentVersion` when both are present: it is the later
+   * read, so it is the version a retry has to name.
+   */
+  get currentVersion(): number | undefined {
+    const current = this.current;
+    if (current) return current['version'] as number;
+    const v = isRecord(this.details) ? this.details['currentVersion'] : undefined;
+    return typeof v === 'number' ? v : undefined;
+  }
+
+  /** `details.current`, compacted (see `compactCurrent`). */
+  get current(): Record<string, unknown> | undefined {
+    return compactCurrent(isRecord(this.details) ? this.details['current'] : undefined);
+  }
+}
+
+/** `current: task "Title" · status: working` — one line, never the whole row. */
+function currentLine(current: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const kind = typeof current['kind'] === 'string' ? current['kind'] : 'entity';
+  const title = typeof current['title'] === 'string' ? current['title'] : '';
+  const shown = title.length > 80 ? `${title.slice(0, 79)}…` : title;
+  parts.push(`current: ${kind} ${JSON.stringify(shown)}`);
+  const state = current['state'];
+  if (isRecord(state) && typeof state['status'] === 'string') parts.push(`status: ${state['status']}`);
+  return `  ${parts.join(' · ')}`;
 }
 
 /** No HTTP answer at all: DNS, ECONNREFUSED, abort, timeout. Always retryable. */
@@ -229,7 +277,11 @@ export function exitCodeFor(err: unknown): ExitCode {
  *
  * Shape: `tm8: <code>: <message>` plus, when present, the Server's own
  * `reason`, its `requestId`, and retry advice. Every one of those is a fact
- * the Server sent; none is invented here.
+ * the Server sent; none is invented here. A conflict that names the version
+ * it lost to says so — `currentVersion` and a one-line current state — so the
+ * caller is not sent off to re-read what the Server already told it. This is
+ * the same human text under every `--format`: structured error output belongs
+ * to the receipts contract, not to stderr.
  */
 export function errorLines(err: unknown): string[] {
   if (err instanceof ApiError) {
@@ -238,6 +290,10 @@ export function errorLines(err: unknown): string[] {
     if (reason) parts.push(`reason: ${reason}`);
     if (err.requestId) parts.push(`requestId: ${err.requestId}`);
     const lines = [parts.join(' · ')];
+    const currentVersion = err.currentVersion;
+    if (currentVersion !== undefined) lines.push(`  currentVersion: ${currentVersion}`);
+    const current = err.current;
+    if (current) lines.push(currentLine(current));
     if (err.retryable) {
       lines.push('  retryable: retry with the SAME --mutation-id; a new id is a new mutation');
     }

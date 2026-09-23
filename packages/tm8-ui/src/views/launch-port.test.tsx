@@ -77,6 +77,45 @@ describe('useLaunchPort', () => {
     const wired = renderHook(() => useLaunchPort(gateDataStub(), { onSpawn: spawn }));
     expect(wired.result.current.onSpawn).toBe(spawn);
   });
+
+  /* The node refuses a content member the subject's kind does not take, and
+     every kind has a Run verb. Sending the popup's description to a doc used
+     to be dropped silently by the node; now it would refuse the save and with
+     it the launch. The port sends `description` only where the subject has one. */
+  describe('onUpdateEntity sends description only to a subject that carries one', () => {
+    const withDetail = (content: Record<string, unknown>) => {
+      const patchEntity = vi.fn(async () => ({ patches: [] }));
+      const data = {
+        ...gateDataStub(),
+        seam: { commands: { patchEntity } },
+        detailOf: () => ({ id: 'ent-1', version: 4, content }),
+        refetchDetail: vi.fn(),
+      } as unknown as GateData;
+      const { result } = renderHook(() => useLaunchPort(data));
+      return { patchEntity, update: result.current.onUpdateEntity };
+    };
+
+    it('a task keeps its description edit', async () => {
+      const { patchEntity, update } = withDetail({ kind: 'task', description: 'old' });
+      await update('ent-1', { title: 'T', description: 'new' });
+      expect(patchEntity).toHaveBeenCalledWith('ent-1', expect.objectContaining({
+        title: 'T', content: { description: 'new' }, expectedVersion: 4,
+      }));
+    });
+
+    it('a doc gets the title but not a description it has no member for', async () => {
+      const { patchEntity, update } = withDetail({ kind: 'doc', body: 'b', format: 'markdown' });
+      await update('ent-1', { title: 'T', description: 'typed' });
+      expect(patchEntity).toHaveBeenCalledTimes(1);
+      expect(patchEntity.mock.calls[0]?.[1]).not.toHaveProperty('content');
+    });
+
+    it('sends nothing at all when the description was the only edit and the doc cannot take it', async () => {
+      const { patchEntity, update } = withDetail({ kind: 'doc', body: 'b' });
+      await update('ent-1', { description: 'typed' });
+      expect(patchEntity).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('the quick config renders real options from the port', () => {
