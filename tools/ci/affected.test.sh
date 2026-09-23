@@ -206,6 +206,8 @@ expect "unknown among docs -> ALL" ALL
 for p in ./packages/tm8-ui/src/x.tsx packages/tm8-ui/../server/src/x.ts packages/tm8-ui/.. .. ../x packages/tm8-ui/./src/x.tsx; do
   paths "$FIX" packages/tm8-ui/src/x.tsx "$p"; expect "unnormalised path $p -> ALL" ALL
 done
+paths "$FIX" packages/tm8-ui/src/x.tsx packages/tm8-ui/src/.; expect "unnormalised path trailing /. -> ALL" ALL
+paths "$FIX" docs/../packages/server/src/x.ts; expect "docs/.. alone escapes the docs rule -> ALL, not typecheck-only" ALL
 
 # ---- rule 3: errors ---------------------------------------------------------------------
 paths "$FIX"

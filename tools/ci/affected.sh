@@ -36,7 +36,7 @@
 #      tools/ci/**
 #   2. a path no rule recognises -> ALL; so does one with a `.` or `..` segment
 #   3. any error -> ALL (git failure, empty diff, bad package.json, missing jq, ...)
-#   4. docs/**, root *.md -> typecheck only. WIDER than §3: packages/*/**/*.md is NOT docs,
+#   4. docs/**, root *.md -> typecheck only, per §3 (amended, doc v6): packages/*/**/*.md is NOT docs,
 #      it seeds its owning package like any other file there, because tests read package
 #      .md files (tm8-ui: src/data/real/liveness.test.ts reads src/data/LLD.md,
 #      src/mobile/shell-contract.test.ts reads CONTRACT.md).
