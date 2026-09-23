@@ -69,6 +69,7 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
       loadPointer: native ? `${input.agentTool === 'codex' ? '$' : '/'}${qualifier}${invoke}` : path ?? `tm8 entity get ${row.entityId}`,
       ...(row.contentHash ? { hash: row.contentHash } : {}),
       allowImplicitInvocation: implicit,
+      ...(row.viaTaskId ? { viaTaskId: row.viaTaskId } : {}),
     };
     if (native) nativeRows.push({ row, entry }); else result.indexed.push(entry);
   }

@@ -338,6 +338,7 @@ export const SkillIndexEntrySchema = z.object({
   level: z.enum(['system', 'admin', 'user', 'project', 'nested', 'plugin', 'synced', 'session', 'space']),
   sourcePath: z.string().optional(), loadPointer: z.string(), native: z.boolean(), hash: z.string().optional(),
   allowImplicitInvocation: z.boolean().optional(),
+  viaTaskId: z.string().optional(),
 }).strict();
 export const EffectiveSkillsSchema = z.object({
   native: z.array(SkillIndexEntrySchema), indexed: z.array(SkillIndexEntrySchema),
@@ -1074,6 +1075,9 @@ const CollectionFiltersSchema = z.object({
   // confident-EVERYTHING twin of the confident-zero the refinements below
   // refuse. An empty array is refused for the same reason.
   terms: z.array(z.string().trim().min(1)).min(1).optional(),
+  // Title substring (collections.ts). Trimmed and non-empty for the same
+  // reason `terms` is: a blank needle is a substring of every title.
+  titleContains: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -1867,7 +1871,7 @@ const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
 // told which sentence to write rather than inferring it from `connected`.
 export const CredentialRoutingViewSchema: z.ZodType<CredentialRoutingView> = z.object({
   agentTool: z.string(),
-  role: z.enum(['backend', 'displaced']),
+  role: z.literal('backend'),
   counterpart: CredentialProviderNameSchema,
   active: z.boolean(),
 }).strict();

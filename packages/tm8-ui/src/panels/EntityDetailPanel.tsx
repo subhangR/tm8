@@ -77,6 +77,8 @@ import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
+import { AttachPalette } from '../files/AttachPalette';
+import { paletteLinks, stripLinks } from '../files/palette';
 import type { TriggerOption } from '../rich-input';
 import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
 import { TransferControl } from '../transfer';
@@ -1277,6 +1279,55 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               structural boolean, beside the three exclusions above.
             */}
             {(() => {
+              /* THE ATTACH PALETTE (task 01a0cfb0): registry rows, so only a
+                 kind that declares `panel.attachPalette` gets one. Its links
+                 are read off this anchor's own edges, drawn as tiles in the
+                 strip (minus the edge types a block owns, e.g. `remembers`),
+                 and kept out of LINKED/RUNS by edge id. */
+              const paletteRows = config.panel.attachPalette ?? [];
+              const port = props.attachments;
+              const allLinks = paletteRows.length > 0 ? paletteLinks(detail, paletteRows) : [];
+              const tiles = stripLinks(allLinks, config.panel.blocks);
+              const stripEdgeIds = new Set(tiles.map((link) => link.edgeId));
+              const paletteOn = paletteRows.length > 0 && Boolean(port?.search && port?.link)
+                && detail.capabilities.canLink;
+              const renderPalette = paletteOn
+                ? (attachChip: ReactNode) => (
+                    <AttachPalette
+                      anchorId={detail.id}
+                      rows={paletteRows}
+                      linkedIds={new Set(allLinks.map((link) => link.peer.id))}
+                      links={allLinks}
+                      search={(kind, text) => port!.search!(kind, text)}
+                      link={(row, peer) => port!.link!(
+                        row.direction === 'outgoing'
+                          ? { srcId: detail.id, dstId: peer.id, type: row.edgeType }
+                          : { srcId: peer.id, dstId: detail.id, type: row.edgeType },
+                      )}
+                      createFor={(row) => {
+                        if (row.create === 'composer') {
+                          const authoring = props.memoryAuthoring;
+                          return authoring && !authoring.refusal ? () => authoring.onAdd() : undefined;
+                        }
+                        if (row.create === 'attached' && port?.createAttached && row.direction === 'incoming') {
+                          return async (title: string) => {
+                            const id = await port.createAttached!(
+                              row.kind,
+                              detail.id,
+                              title || `Untitled ${getKind(row.kind).label.toLowerCase()}`,
+                              row.edgeType,
+                            );
+                            props.onAttachmentUploaded?.();
+                            props.onOpenEntity?.(id);
+                          };
+                        }
+                        return undefined;
+                      }}
+                      onLinked={props.onAttachmentUploaded}
+                      attachChip={attachChip}
+                    />
+                  )
+                : undefined;
               const attachmentSlot =
                 tab === 'content' && !isTombstone && !bodyOwnsBottom ? (
                   <AttachmentStrip
@@ -1303,6 +1354,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                        refetch, and a host cannot wire adding without also
                        wiring removing. */
                     onDetached={props.onAttachmentUploaded}
+                    linked={tiles}
+                    onOpenEntity={props.onOpenEntity}
+                    palette={renderPalette}
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
@@ -1324,6 +1378,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     surfaceSlot={surfaceSlot}
                     barSlot={barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
+                    stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -1427,6 +1482,8 @@ function PanelBody(
     /** The attachment tiles, built by the panel; the subtree body places them
         inside its description block. Null for every other archetype. */
     attachmentSlot?: ReactNode;
+    /** Edges the strip draws as entity tiles; the subtree body skips them. */
+    stripEdgeIds?: ReadonlySet<string>;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -1620,6 +1677,7 @@ function PanelBody(
         attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
         onAttached={props.onAttachmentUploaded}
         attachmentSlot={props.attachmentSlot}
+        stripEdgeIds={props.stripEdgeIds}
       />
     );
   }

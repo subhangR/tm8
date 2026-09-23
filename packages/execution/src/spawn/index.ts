@@ -31,6 +31,8 @@ export {
 } from './codex-network-preflight.js';
 export {
   resolveSkills,
+  skillIdentityKey,
+  splitTaskSkillCollisions,
   type ResolvedSkillRow,
   type SkillResolution,
 } from './skills.js';

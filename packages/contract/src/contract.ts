@@ -1062,6 +1062,14 @@ export interface CollectionQuery {
      * and a predicate over columns nobody asked for is a feature, not a fix.
      */
     terms?: string[];
+    /**
+     * Additive (2026-09-23, task attach palette): entities whose TITLE
+     * contains this text as a case-insensitive substring. Kind-neutral — pair
+     * it with `kinds` to search one kind by title, which is what an entity
+     * picker needs and what the reserved `search.query` never delivered.
+     * Trimmed and non-empty: a blank needle matches everything.
+     */
+    titleContains?: string;
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -2008,43 +2016,37 @@ export type CredentialProviderName =
  *
  * This type exists because two of the eight providers are not additional tools
  * — they are alternative BACKENDS for a tool that already exists. Connecting
- * Kimi does not give a member a "kimi" agent to choose; it makes every
- * `claude-code` session they start talk to Moonshot's Anthropic-wire endpoint
- * instead of Anthropic's, account-wide, with no per-session opt-in. Groq does
- * the same to `codex`.
+ * Kimi does not give a member a "kimi" agent to choose; it lets the Kimi models
+ * in the launch catalog run on `claude-code` against Moonshot's Anthropic-wire
+ * endpoint. Every other `claude-code` model keeps using the member's Anthropic
+ * login. Groq does the same for its models on `codex`.
  *
- * That behaviour was chosen deliberately, and it is the reason this field is on
- * the wire at all. A routing decision that is invisible is a routing decision
- * nobody can audit: the member who connected Kimi in March and debugs an odd
- * model response in June has no way, from the product, to discover that their
- * sessions stopped reaching Anthropic. The card must be able to SAY it. So the
- * server computes the routing rather than leaving the UI to hardcode a pair of
- * provider names it would then have to keep in step with
- * `api-key-credentials.ts`.
+ * Routing is decided per model at spawn (`apiKeyBackendForModel` in
+ * `@tm8/execution`). The server computes this view from the same table rather
+ * than leaving the UI to hardcode a pair of provider names it would then have
+ * to keep in step with `api-key-credentials.ts`.
  */
 export interface CredentialRoutingView {
-  /** The agent tool whose backend this provider is, e.g. `claude-code`. */
+  /** The agent tool this provider's models run on, e.g. `claude-code`. */
   agentTool: string;
   /**
-   * `backend`  — THIS provider serves `agentTool` when it is connected.
-   * `displaced` — this provider is the one being REPLACED, because the
-   *               counterpart below is connected and wins the resolution.
+   * Always `backend`: THIS provider serves its own models on `agentTool`.
    *
-   * Both halves of a displacement are described so that the member reads the
-   * same fact from whichever card they happen to be looking at.
+   * There was a second role, `displaced`, for the native provider's card while
+   * a backend outranked it account-wide. Routing is per model now, so a native
+   * provider is never displaced and its card carries no routing.
    */
-  role: 'backend' | 'displaced';
-  /** The provider at the other end of that relationship. */
+  role: 'backend';
+  /**
+   * The native provider that keeps serving every other model on `agentTool`,
+   * e.g. `anthropic` for Kimi.
+   */
   counterpart: CredentialProviderName;
   /**
-   * Whether the routing is IN EFFECT right now, as opposed to what would happen
-   * if this provider were connected.
-   *
-   * A `kimi` card that nobody has connected still carries routing with
-   * `active: false`, because the standing consequence of connecting it is
-   * exactly what a member needs to know BEFORE they press Connect. A `displaced`
-   * entry is only ever emitted with `active: true` — there is nothing to warn an
-   * Anthropic user about until a backend actually displaces them.
+   * Whether this provider is connected right now, as opposed to what would
+   * happen if it were. A `kimi` card that nobody has connected still carries
+   * routing with `active: false`, because what connecting it does is exactly
+   * what a member needs to know BEFORE they press Connect.
    */
   active: boolean;
 }
@@ -2085,8 +2087,8 @@ export interface CredentialConnectionView {
   connectedAt: string | null;
   lastVerifiedAt: string | null;
   /**
-   * How this provider redirects agent sessions, or `null` for the six providers
-   * that redirect nothing.
+   * Which models this provider serves on which tool, or `null` for the six
+   * providers that are not a backend for another tool.
    *
    * Nullable rather than optional for the same reason `login` is: "this
    * provider has no routing" is a permanent fact about anthropic, openai,

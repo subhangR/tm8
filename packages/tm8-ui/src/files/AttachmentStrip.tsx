@@ -25,13 +25,15 @@
  * byte stream, so the UI must not make one either — in the tile face NOR in
  * the lightbox. SVG gets the glyph face and file info.
  */
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { formatSizeChip, glyphFor, previewKindOf, type FileRow } from './model';
 import { safeUploadReason, type FileUploadTask } from './upload';
 import type { DownloadHref } from './FilesScreen';
 import type { ProjectFolderPort } from './port';
 import { ProjectFolderPicker } from './ProjectFolderPicker';
+import type { PaletteLink } from './palette';
+import { KindIcon } from '../domain';
 import './attachment-strip.css';
 
 export interface AttachmentStripProps {
@@ -78,6 +80,21 @@ export interface AttachmentStripProps {
   onDetach?: (edgeId: string) => Promise<void>;
   /** A detach landed. Same contract as `onUploaded`: the host refetches. */
   onDetached?: () => void;
+  /**
+   * Entities the attach palette linked (task 01a0cfb0), drawn as tiles in the
+   * same mixed strip as the files, each with its kind icon. A tile opens its
+   * entity; its × cuts the one edge through `onDetach`, which takes any edge
+   * id, not only an `attached_to` one.
+   */
+  linked?: readonly PaletteLink[];
+  /** Opens a linked entity's own panel. Absent ⇒ the tile is a label only. */
+  onOpenEntity?: (id: string) => void;
+  /**
+   * The attach palette's chip row. Given ⇒ the ＋ control moves out of the
+   * tile row and into the palette as its first chip, "＋ Attach", with the
+   * same menu; the tiles follow underneath. Absent ⇒ the strip is unchanged.
+   */
+  palette?: (attachChip: ReactNode) => ReactNode;
 }
 
 interface PendingUpload {
@@ -135,6 +152,9 @@ export function AttachmentStrip({
   onUploaded,
   onDetach,
   onDetached,
+  linked = [],
+  onOpenEntity,
+  palette,
 }: AttachmentStripProps) {
   const [pending, setPending] = useState<readonly PendingUpload[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -335,8 +355,11 @@ export function AttachmentStrip({
    * `rootRef.current.closest(...)`, so a strip that returned null here would
    * take drop down with it.
    */
-  if (files.length === 0 && pending.length === 0 && !startUpload && !projectFolder) return null;
-  const idle = files.length === 0 && pending.length === 0;
+  if (
+    files.length === 0 && pending.length === 0 && linked.length === 0
+    && !startUpload && !projectFolder && !palette
+  ) return null;
+  const idle = files.length === 0 && pending.length === 0 && linked.length === 0;
 
   const openUpload = () => {
     setMenuOpen(false);
@@ -367,12 +390,95 @@ export function AttachmentStrip({
         ? () => { void createDrawing(); }
         : openFolder;
 
+  const plusControl: ReactNode = (
+    startUpload || projectFolder ? (
+      <span className="fn-plus" ref={menuRef} onBlur={(event) => {
+        const wrap = menuRef.current;
+        if (wrap && event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;
+        setMenuOpen(false);
+      }}>
+        <button
+          type="button"
+          className={palette ? 'fn-chip fn-chip--attach' : idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
+          data-testid="attachment-add"
+          ref={plusRef}
+          /* THE ACCESSIBLE NAME IS EXPLICIT because the idle form has no
+             visible text — a paperclip glyph is decorative, and a button
+             named "📎" is a button screen readers cannot describe. */
+          aria-label="Attach a file"
+          aria-haspopup={hasMenu ? 'menu' : undefined}
+          aria-expanded={hasMenu ? menuOpen : undefined}
+          title="Attach a file to this entity — or drop or paste a file to insert it here"
+          onClick={plusAct}
+        >
+          <span
+            className={palette ? 'fn-chip__icon' : idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
+            aria-hidden
+          >
+            {idle && !palette ? '📎' : '＋'}
+          </span>
+          {/* IT CARRIES ITS WORD NOW. The idle form was a BARE 📎 and nothing
+              else: 70×31px, no border, no label — an accessible name only a
+              screen reader could hear, and a hit area under the touch floor.
+              A control whose whole job is to say "a file can go here" said it
+              to nobody looking. Both states now render glyph AND word, and
+              the long sentence that sat above the strip as its own paragraph
+              rides the `title` instead. */}
+          <span className={palette ? 'fn-chip__label' : 'fn-tile__name'}>Attach</span>
+        </button>
+        {/* The trailing note the ProseField paragraph used to carry, beside
+            the button rather than above the strip. Drawn only where drop and
+            paste actually land bytes — `startUpload` is that capability — so
+            it never promises a path this mount does not have. */}
+        {idle && startUpload && !palette ? <span className="fn-plus__note">or drop / paste</span> : null}
+        {menuOpen && hasMenu ? (
+          <div className="fn-menu" role="menu" aria-label="Attach a file">
+            {startUpload ? (
+            <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
+              <span className="fn-menu__label">＋ Upload from this device</span>
+              <span className="fn-menu__hint">or drop files on the description</span>
+            </button>
+            ) : null}
+            {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same
+                thing. The input sends bytes from this machine; this names a
+                file already sitting in a project folder on the node, which
+                the input cannot reach because it never learns an absolute
+                path. */}
+            {projectFolder ? (
+            <button type="button" className="fn-menu__item" role="menuitem" onClick={openFolder}>
+              <span className="fn-menu__label">▱ From a project folder</span>
+              <span className="fn-menu__hint">read on the node, not uploaded</span>
+            </button>
+            ) : null}
+            {/* A THIRD SOURCE, and the only one that CREATES rather than
+                links: the drawing does not exist until this is clicked. It
+                is here because "attach a drawing to this task" is an
+                attachment, and this is where an anchor's attachments are
+                made. */}
+            {createDrawing ? (
+            <button
+              type="button"
+              className="fn-menu__item"
+              role="menuitem"
+              data-testid="attachment-new-drawing"
+              onClick={() => { setMenuOpen(false); void createDrawing(); }}
+            >
+              <span className="fn-menu__label">✎ New drawing</span>
+              <span className="fn-menu__hint">a blank canvas, attached here</span>
+            </button>
+            ) : null}
+          </div>
+        ) : null}
+      </span>
+    ) : null
+  );
+
   return (
     <div
-      className={idle ? 'fn-tiles fn-tiles--idle' : 'fn-tiles'}
+      className={palette ? 'fn-tiles fn-tiles--palette' : idle ? 'fn-tiles fn-tiles--idle' : 'fn-tiles'}
       data-testid="attachment-strip"
       data-idle={idle ? 'true' : undefined}
-      data-count={files.length}
+      data-count={files.length + linked.length}
       ref={rootRef}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && menuOpen) {
@@ -382,6 +488,8 @@ export function AttachmentStrip({
         }
       }}
     >
+      {palette ? palette(plusControl) : null}
+
       {files.map((file) => (
         <AttachmentTile
           key={file.fileEntityId}
@@ -391,6 +499,17 @@ export function AttachmentStrip({
             restoreRef.current = tile;
             setActiveId(file.fileEntityId);
           }}
+        />
+      ))}
+
+      {linked.map((link) => (
+        <EntityTile
+          key={link.edgeId}
+          link={link}
+          onOpen={onOpenEntity ? () => onOpenEntity(link.peer.id) : undefined}
+          onRemove={onDetach ? () => detach(link.edgeId) : undefined}
+          removing={detaching.includes(link.edgeId)}
+          removeWhy={detachErrors[link.edgeId] ?? null}
         />
       ))}
 
@@ -431,86 +550,7 @@ export function AttachmentStrip({
           stylesheets, so a button hidden by CSS is a button every test still
           finds and clicks — a green suite asserting an affordance no browser
           renders. */}
-      {startUpload || projectFolder ? (
-        <span className="fn-plus" ref={menuRef} onBlur={(event) => {
-          const wrap = menuRef.current;
-          if (wrap && event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;
-          setMenuOpen(false);
-        }}>
-          <button
-            type="button"
-            className={idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
-            data-testid="attachment-add"
-            ref={plusRef}
-            /* THE ACCESSIBLE NAME IS EXPLICIT because the idle form has no
-               visible text — a paperclip glyph is decorative, and a button
-               named "📎" is a button screen readers cannot describe. */
-            aria-label="Attach a file"
-            aria-haspopup={hasMenu ? 'menu' : undefined}
-            aria-expanded={hasMenu ? menuOpen : undefined}
-            title="Attach a file to this entity — or drop or paste a file to insert it here"
-            onClick={plusAct}
-          >
-            <span
-              className={idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
-              aria-hidden
-            >
-              {idle ? '📎' : '＋'}
-            </span>
-            {/* IT CARRIES ITS WORD NOW. The idle form was a BARE 📎 and nothing
-                else: 70×31px, no border, no label — an accessible name only a
-                screen reader could hear, and a hit area under the touch floor.
-                A control whose whole job is to say "a file can go here" said it
-                to nobody looking. Both states now render glyph AND word, and
-                the long sentence that sat above the strip as its own paragraph
-                rides the `title` instead. */}
-            <span className="fn-tile__name">Attach</span>
-          </button>
-          {/* The trailing note the ProseField paragraph used to carry, beside
-              the button rather than above the strip. Drawn only where drop and
-              paste actually land bytes — `startUpload` is that capability — so
-              it never promises a path this mount does not have. */}
-          {idle && startUpload ? <span className="fn-plus__note">or drop / paste</span> : null}
-          {menuOpen && hasMenu ? (
-            <div className="fn-menu" role="menu" aria-label="Attach a file">
-              {startUpload ? (
-              <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
-                <span className="fn-menu__label">＋ Upload from this device</span>
-                <span className="fn-menu__hint">or drop files on the description</span>
-              </button>
-              ) : null}
-              {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same
-                  thing. The input sends bytes from this machine; this names a
-                  file already sitting in a project folder on the node, which
-                  the input cannot reach because it never learns an absolute
-                  path. */}
-              {projectFolder ? (
-              <button type="button" className="fn-menu__item" role="menuitem" onClick={openFolder}>
-                <span className="fn-menu__label">▱ From a project folder</span>
-                <span className="fn-menu__hint">read on the node, not uploaded</span>
-              </button>
-              ) : null}
-              {/* A THIRD SOURCE, and the only one that CREATES rather than
-                  links: the drawing does not exist until this is clicked. It
-                  is here because "attach a drawing to this task" is an
-                  attachment, and this is where an anchor's attachments are
-                  made. */}
-              {createDrawing ? (
-              <button
-                type="button"
-                className="fn-menu__item"
-                role="menuitem"
-                data-testid="attachment-new-drawing"
-                onClick={() => { setMenuOpen(false); void createDrawing(); }}
-              >
-                <span className="fn-menu__label">✎ New drawing</span>
-                <span className="fn-menu__hint">a blank canvas, attached here</span>
-              </button>
-              ) : null}
-            </div>
-          ) : null}
-        </span>
-      ) : null}
+      {palette ? null : plusControl}
 
       {startUpload ? (
         <input
@@ -551,6 +591,64 @@ export function AttachmentStrip({
           onClose={closeLightbox}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One linked entity in the mixed strip: its kind icon and title, the kind's
+ * label under it. Unlike a file there is nothing to preview, so a click opens
+ * the entity itself, and the Remove that a file keeps in its lightbox sits on
+ * the tile as a small ×. It cuts the link and nothing else; the entity stays.
+ */
+function EntityTile({
+  link,
+  onOpen,
+  onRemove,
+  removing,
+  removeWhy,
+}: {
+  link: PaletteLink;
+  onOpen?: () => void;
+  onRemove?: () => void;
+  removing: boolean;
+  removeWhy: string | null;
+}) {
+  const title = link.peer.title || link.row.label;
+  return (
+    <div
+      className={removeWhy ? 'fn-tile fn-tile--entity fn-tile--failed' : 'fn-tile fn-tile--entity'}
+      data-testid="attachment-entity"
+      data-kind={link.peer.kind}
+      data-edge-id={link.edgeId}
+    >
+      <button
+        type="button"
+        className="fn-tile__open"
+        disabled={!onOpen}
+        aria-label={`Open ${title}`}
+        title={title}
+        onClick={onOpen}
+      >
+        <span className="fn-tile__face fn-tile__face--entity" aria-hidden>
+          <KindIcon kind={link.peer.kind} />
+        </span>
+        <span className="fn-tile__name">{title}</span>
+      </button>
+      {onRemove ? (
+        <button
+          type="button"
+          className="fn-tile__remove"
+          data-testid="attachment-entity-remove"
+          aria-label={`Unlink ${title}`}
+          title="Unlink. The item itself stays."
+          disabled={removing}
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      ) : null}
+      {removeWhy ? <span className="fn-tile__why" role="alert">{removeWhy}</span> : null}
     </div>
   );
 }

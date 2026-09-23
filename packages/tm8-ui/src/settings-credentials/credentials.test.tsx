@@ -552,11 +552,11 @@ describe('the routing sentence names the vendor whose account is billed', () => 
 
     const line = await screen.findByTestId('credential-routing-backend');
     expect(line.textContent).toBe(
-      'Every claude-code session you start uses this key instead of Anthropic.',
+      'Used only for models served by Moonshot AI on claude-code. Every other claude-code session keeps using Anthropic.',
     );
   });
 
-  it('names Anthropic on an UNCONNECTED kimi card, where the sentence is a warning', async () => {
+  it('names Anthropic on an UNCONNECTED kimi card, as the login Connect leaves alone', async () => {
     render(
       <CredentialsSection
         port={portWith({
@@ -573,20 +573,25 @@ describe('the routing sentence names the vendor whose account is billed', () => 
 
     const line = await screen.findByTestId('credential-routing-backend');
     expect(line.textContent).toBe(
-      'Connecting this will route every claude-code session you start here instead of Anthropic.',
+      'Connect this to run models served by Moonshot AI on claude-code. Other claude-code sessions keep using Anthropic.',
     );
   });
 
-  it('names Moonshot AI on the DISPLACED anthropic card — the other half of the same fact', async () => {
+  it('says nothing about Kimi on a connected anthropic card — nothing is displaced', async () => {
+    // Routing is per model: connecting Kimi does not take Claude models off the
+    // Anthropic login, so the Anthropic card must not claim it is unused. (It
+    // used to read "Not currently used for claude-code sessions — Moonshot AI
+    // is connected and takes over".)
     render(
       <CredentialsSection
         port={portWith({
           providers: [
+            connection({ provider: 'anthropic', connected: true, status: 'active', routing: null }),
             connection({
-              provider: 'anthropic',
+              provider: 'kimi',
               connected: true,
               status: 'active',
-              routing: routed({ counterpart: 'kimi', role: 'displaced', active: true }),
+              routing: routed({ counterpart: 'anthropic', active: true }),
             }),
           ],
           gitCredentialStore: 'present',
@@ -594,15 +599,14 @@ describe('the routing sentence names the vendor whose account is billed', () => 
       />,
     );
 
-    const line = await screen.findByTestId('credential-routing-displaced');
-    expect(line.textContent).toBe(
-      'Not currently used for claude-code sessions — Moonshot AI is connected and takes over.',
-    );
+    const card = await screen.findByTestId('credential-card-anthropic');
+    expect(within(card).queryByTestId(/^credential-routing-/)).toBeNull();
+    expect(card.textContent).not.toMatch(/Moonshot|takes over|Not currently used/);
   });
 
   /*
    * THE GROQ/OPENAI PAIR, because a fix that special-cased `anthropic` would
-   * pass all three tests above and still render "instead of Codex" here.
+   * pass the tests above and still render "keeps using Codex" here.
    */
   it('names OpenAI, and never the product "Codex", on an active groq backend', async () => {
     render(
@@ -623,7 +627,7 @@ describe('the routing sentence names the vendor whose account is billed', () => 
 
     const line = await screen.findByTestId('credential-routing-backend');
     expect(line.textContent).toBe(
-      'Every codex session you start uses this key instead of OpenAI.',
+      'Used only for models served by Groq on codex. Every other codex session keeps using OpenAI.',
     );
   });
 });

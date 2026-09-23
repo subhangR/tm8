@@ -1056,21 +1056,44 @@ export class PtyHostService {
       }
     }
 
+    // An UNFRAMED multi-line body is not a composer entry: every embedded newline
+    // is an Enter, so a line-oriented agent (echo-agent, an operator wrapper that
+    // reads stdin by line — exactly who still takes the first turn over the PTY)
+    // submits and consumes each line as it arrives, and its own output then moves
+    // the cursor off whatever is left. Two consequences:
+    //   - the cursor band is the wrong place to look. Arrival is instead the
+    //     terminal having RENDERED our text since the write (echo), which a body
+    //     written into a terminal that discarded it never produces. The HEAD
+    //     counts as well as the tail: a body past the tty's input queue is echoed
+    //     in pieces as the agent drains it, so the agent's own replies can land
+    //     inside the tail's echo — but nothing can precede the head's;
+    //   - a rewrite is NOT safe here — its lines were already submitted, so a
+    //     second write would duplicate them. One write, then report honestly.
+    const unframedMultiline =
+      confirmArrival && body.includes('\n') && !entry.state.bracketedPaste;
+    const writeAttempts = unframedMultiline ? 1 : PROMPT_BODY_WRITE_ATTEMPTS;
+    const headToken = this.computeTailToken(body, Infinity).slice(0, PROMPT_TAIL_TOKEN_MAX);
+
     // 2) Content framing and the write. Wrap in bracketed paste iff the agent
     //    turned it on. When arrival must be confirmed, rewrite a body that never
     //    showed up — no Enter has been pressed, so nothing can be duplicated.
     let arrived = !confirmArrival;
-    for (let attempt = 1; attempt <= PROMPT_BODY_WRITE_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= writeAttempts; attempt += 1) {
+      const writtenFrom = entry.output.totalBytes;
       const framed = this.frameBody(entry, body);
       if (framed) this.writeChunked(entry, framed);
       if (!confirmArrival) break;
 
-      arrived = await this.waitForBodyAtCursor(entry, tailToken);
+      arrived = await this.waitForBodyAtCursor(
+        entry,
+        tailToken,
+        unframedMultiline ? { from: writtenFrom, tokens: [headToken, tailToken] } : undefined,
+      );
       if (this.sessions.get(sessionId) !== entry || entry.exited) {
         return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
       }
       if (arrived) break;
-      if (attempt === PROMPT_BODY_WRITE_ATTEMPTS) break;
+      if (attempt === writeAttempts) break;
 
       this.logger.warn('PtyHostService: first prompt body never reached the composer, rewriting', {
         sessionId,
@@ -1098,7 +1121,7 @@ export class PtyHostService {
       this.logger.error(
         'PtyHostService: first prompt never reached the composer',
         new Error('prompt_delivery_failed'),
-        { sessionId, reason: 'body_never_reached_composer', attempts: PROMPT_BODY_WRITE_ATTEMPTS },
+        { sessionId, reason: 'body_never_reached_composer', attempts: writeAttempts },
       );
       return { outcome: 'unknown', reason: 'body_never_reached_composer' };
     }
@@ -1119,12 +1142,22 @@ export class PtyHostService {
    * "still parked" are the same observation asked at two different moments —
    * which is exactly what lets `delivered` mean something: the verifier's "our
    * text is gone" only implies submission once we have seen it present.
+   *
+   * With `echoed` (an output offset taken just before the write), any of its
+   * tokens rendered anywhere in the output produced since then also counts — the
+   * evidence available for an unframed multi-line body, which a line-oriented
+   * agent consumes rather than leaving at the cursor.
    */
-  private async waitForBodyAtCursor(entry: PtyEntry, tailToken: string): Promise<boolean> {
+  private async waitForBodyAtCursor(
+    entry: PtyEntry,
+    tailToken: string,
+    echoed?: { from: number; tokens: readonly string[] },
+  ): Promise<boolean> {
     const deadline = Date.now() + PROMPT_BODY_VISIBLE_TIMEOUT_MS;
     for (;;) {
       if (entry.exited) return false;
       if (await this.promptStillAtCursor(entry, tailToken)) return true;
+      if (echoed && this.outputSinceContainsAny(entry, echoed.from, echoed.tokens)) return true;
       if (Date.now() >= deadline) return false;
       await new Promise((resolve) => setTimeout(resolve, PROMPT_BODY_POLL_MS));
     }
@@ -1284,7 +1317,7 @@ export class PtyHostService {
   /** Last up-to-{@link PROMPT_TAIL_TOKEN_MAX} visible chars of the body, with ANSI
    *  escapes removed, other control chars flattened to spaces, and whitespace
    *  collapsed. '' when nothing printable remains. */
-  private computeTailToken(body: string): string {
+  private computeTailToken(body: string, max: number = PROMPT_TAIL_TOKEN_MAX): string {
     const cleaned = body
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '') // strip CSI escape sequences
@@ -1292,7 +1325,7 @@ export class PtyHostService {
       .replace(/[\x00-\x1f\x7f]/g, ' ') // flatten remaining control chars
       .replace(/\s+/g, ' ')
       .trim();
-    return cleaned ? cleaned.slice(-PROMPT_TAIL_TOKEN_MAX) : '';
+    return cleaned ? cleaned.slice(-max) : '';
   }
 
   /**
@@ -1315,6 +1348,16 @@ export class PtyHostService {
     const token = tailToken.replace(/\s+/g, ' ').trim();
     if (!token) return false;
     return normalized.includes(token);
+  }
+
+  /** Whether the output produced since absolute offset `from` renders any of
+   *  `tokens`, normalized exactly as {@link computeTailToken} normalizes the body
+   *  so the two compare like for like. */
+  private outputSinceContainsAny(entry: PtyEntry, from: number, tokens: readonly string[]): boolean {
+    const { data } = entry.output.replayFrom(from);
+    if (data.length === 0) return false;
+    const rendered = this.computeTailToken(data.toString('utf8'), Infinity);
+    return tokens.some((token) => token !== '' && rendered.includes(token));
   }
 
   /** Resize the PTY. */

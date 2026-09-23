@@ -1,7 +1,7 @@
-import { loadSkillEquipment } from '../skills/equipment.js';
+import { loadSkillEquipment, loadTaskSkillEquipment } from '../skills/equipment.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
-import { computeEffectiveSkills, type ResolvedSkillRow } from '@tm8/execution';
+import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
@@ -164,7 +164,17 @@ interface TaskRow {
    * envelope's <source>/<thread> elements. */
   thread_root_message_id: string | null;
   thread_channel_id: string | null;
+  /** First LINKED_ROW_CAP linked peers, oldest link first (see the `tl` join). */
+  linked: unknown;
+  linked_total: number;
 }
+
+/**
+ * How many linked peers the spawn read carries per task. The prompt renders
+ * fewer still (its own cap, `LINKED_MANIFEST_CAP`) and declares the rest by
+ * count, so this only bounds the row width. `linked_total` stays exact.
+ */
+const LINKED_ROW_CAP = 32;
 
 
 interface MemoryRow {
@@ -471,7 +481,18 @@ export class DbGraphPort implements GraphPort {
       // acyclic: 001_core_graph.sql's trigger does enforce acyclicity, but a
       // recursive CTE that meets a cycle anyway spins until it exhausts memory,
       // and this query runs on the spawn path.
-      const equipped = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      // Plus what the spawn's TASKS equip (`equips` task → skill, which the task
+      // attach palette writes). Deduped by id against the persona's rows, which
+      // keep theirs. The union rides everything below unchanged: `selection`
+      // narrows it, `not-selected` audits it, and the manifest's byte budget
+      // drops and declares it, so a task skill is equipped, not merely listed.
+      const personaEquipped = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      const personaIds = new Set(personaEquipped.map((row) => row.entityId));
+      const equipped = [
+        ...(await loadTaskSkillEquipment(q, input.spaceId, input.taskIds ?? []))
+          .filter((row) => !personaIds.has(row.entityId)),
+        ...personaEquipped,
+      ];
       // `selection`: exactly the selected skills, in the selected order. An
       // equipped skill keeps its equipment row (and depth); an unequipped one
       // is read by id for this session only. Equipped skills left out are
@@ -497,6 +518,23 @@ export class DbGraphPort implements GraphPort {
           reason: 'not-selected',
         }));
       }
+      // Two task skills with one name never fail the spawn: the first in task
+      // order (then name, as the loader sorts) wins and the rest are declared.
+      // Applied AFTER `selection`, so a selection naming both still spawns.
+      const collisions = splitTaskSkillCollisions(skillEquips);
+      if (collisions.collided.length > 0) {
+        skillEquips = collisions.kept;
+        skippedSkills = [
+          ...(skippedSkills ?? []),
+          ...collisions.collided.map((row) => ({
+            entityId: row.entityId,
+            name: row.name,
+            ...(row.contentHash ? { hash: row.contentHash } : {}),
+            ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
+            reason: 'task-name-collision',
+          })),
+        ];
+      }
       // Candidates stay untruncated; native scope is resolved with the actual launch later.
       const candidates = computeEffectiveSkills({ agentTool: '', workdir: '/', projectRoot: null, equips: skillEquips });
 
@@ -515,7 +553,9 @@ export class DbGraphPort implements GraphPort {
                       t.acceptance_criteria,
                       coalesce(ta.attachments, '[]'::jsonb) as attachments,
                       dm.root_id as thread_root_message_id,
-                      dm.anchor_id as thread_channel_id
+                      dm.anchor_id as thread_channel_id,
+                      coalesce(tl.items, '[]'::jsonb) as linked,
+                      coalesce(tl.total, 0) as linked_total
                  from public.tasks t
                  join public.entities e on e.id = t.entity_id
                  left join lateral (
@@ -542,6 +582,48 @@ export class DbGraphPort implements GraphPort {
                     where a.type = 'attached_to'
                       and a.dst_id = t.entity_id
                  ) ta on true
+                 -- Everything else the task attach palette links, as
+                 -- REFERENCES: outgoing relates_to (teammates, sessions) and
+                 -- incoming attached_to from anything that is not a file
+                 -- (drawings, docs, artifacts; files ride ta above). NOT
+                 -- remembers (D9 injects those memories whole) and NOT
+                 -- equips (task skills join the skill index). Live, same-space
+                 -- peers only. A work_session's title is never read: a session
+                 -- is referenced by id alone.
+                 left join lateral (
+                   select jsonb_agg(
+                            jsonb_build_object(
+                              'entityId', x.peer_id, 'kind', x.kind,
+                              'link', x.link, 'title', x.title
+                            ) order by x.rn
+                          ) filter (where x.rn <= ${LINKED_ROW_CAP}) as items,
+                          count(*)::int as total
+                     from (
+                       select l.peer_id, pe.kind, l.link,
+                              case when pe.kind = 'work_session' then null
+                                   else coalesce(ld.title, ldr.title, lar.name, ltm.name, ltt.title)
+                              end as title,
+                              row_number() over (order by l.created_at, l.edge_id) as rn
+                         from (
+                           select r.dst_id as peer_id, 'relates_to'::text as link, r.created_at, r.id as edge_id
+                             from public.edges r
+                            where r.src_id = t.entity_id and r.type = 'relates_to'
+                           union all
+                           select a.src_id, 'attached_to', a.created_at, a.id
+                             from public.edges a
+                            where a.dst_id = t.entity_id and a.type = 'attached_to'
+                         ) l
+                         join public.entities pe
+                           on pe.id = l.peer_id and pe.space_id = e.space_id
+                          and pe.deleted_at is null
+                          and not (l.link = 'attached_to' and pe.kind = 'file')
+                         left join public.documents ld on ld.entity_id = pe.id
+                         left join public.drawings ldr on ldr.entity_id = pe.id
+                         left join public.artifacts lar on lar.entity_id = pe.id
+                         left join public.team_members ltm on ltm.entity_id = pe.id
+                         left join public.tasks ltt on ltt.entity_id = pe.id
+                     ) x
+                 ) tl on true
                 where t.entity_id = any($1::uuid[])
                   and e.space_id = $2 and e.deleted_at is null`,
               [taskIds, input.spaceId],
@@ -599,6 +681,23 @@ export class DbGraphPort implements GraphPort {
               : [],
             threadRootMessageId: t.thread_root_message_id ?? null,
             threadChannelId: t.thread_channel_id ?? null,
+            linked: Array.isArray(t.linked)
+              ? t.linked.flatMap((value) => {
+                  if (!value || typeof value !== 'object') return [];
+                  const item = value as Record<string, unknown>;
+                  return typeof item.entityId === 'string' &&
+                    typeof item.kind === 'string' &&
+                    typeof item.link === 'string'
+                    ? [{
+                        entityId: item.entityId,
+                        kind: item.kind,
+                        link: item.link,
+                        title: typeof item.title === 'string' ? item.title : null,
+                      }]
+                    : [];
+                })
+              : [],
+            linkedTotal: Number(t.linked_total ?? 0),
           })),
         skills: candidates.indexed,
         skillEquips,

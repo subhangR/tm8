@@ -50,7 +50,7 @@ import {
   API_KEY_FILENAME,
   agentCredentialProviderFor,
   apiKeyBackendAgentTool,
-  apiKeyBackendsForAgentTool,
+  apiKeyBackendForModel,
   isApiKeyCredentialProvider,
   type AgentCredentialProvider,
   type AgentCredentialHome,
@@ -97,9 +97,9 @@ export interface DbAgentCredentialHomeOptions {
  * so they must be added here explicitly, and forgetting to would have been a
  * containment hole rather than a cosmetic gap. That table maps a tool to the
  * provider it NATIVELY authenticates with, and Kimi holds `agentTools: []`
- * there precisely so it cannot displace Anthropic for members who never
- * connected it. But a Kimi key IS live in every `claude-code` process of a
- * member who did connect it — so if this reverse projection reported no tools
+ * there precisely so it is never mistaken for Anthropic. But a Kimi key IS
+ * live in every `claude-code` process launched on a Kimi model — so if this
+ * reverse projection reported no tools
  * for `kimi`, Disconnect would revoke the row, leave those processes running
  * with the key still in their environment, and report success. The second loop
  * below reads the routing table for that reason: the projection must describe
@@ -157,61 +157,49 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
 
   async resolve(
     auth: unknown,
-    input: { agentTool: string },
+    input: { agentTool: string; model: string | null },
   ): Promise<AgentCredentialHome | null> {
-    const nativeProvider = credentialProviderForAgentTool(input.agentTool);
-    // An API-key backend can exist for a tool with no native provider in
-    // principle, so both are computed before deciding there is nothing to do.
-    const backends = apiKeyBackendsForAgentTool(input.agentTool);
+    // THE MODEL CHOOSES THE CREDENTIAL, and exactly one is looked up.
+    //
+    // A Kimi model (`provider: 'moonshot'` in the launch catalog) is served by
+    // the member's Kimi key and by nothing else; every other `claude-code`
+    // model is served by their Anthropic login and never by the Kimi key. Groq
+    // and `codex`/OpenAI are the same. There is no fallback from one to the
+    // other in either direction: a Claude model sent to Moonshot, or a Kimi
+    // model sent to Anthropic, is a request to a server that does not serve it.
+    //
+    // This used to be an account-wide preference list, `[kimi, anthropic]`,
+    // under which a connected Kimi key outranked the Anthropic login for every
+    // `claude-code` session regardless of model (#638).
+    //
+    // Connecting or disconnecting one provider never alters the other's row.
+    const provider: AgentCredentialProvider | null =
+      apiKeyBackendForModel(input.agentTool, input.model)
+      ?? credentialProviderForAgentTool(input.agentTool);
 
     // `echo-agent`, an operator wrapper, or any tool that authenticates against
     // no admitted vendor. Nothing to inject and nothing to look up.
-    if (!nativeProvider && backends.length === 0) return null;
+    if (!provider) return null;
 
     const claims = auth as DbClaims;
     // No identity means no RLS-visible row anyway; asking would be a pointless
     // round trip whose only possible answer is "none".
     if (!claims?.identityId) return null;
 
-    // THE PREFERENCE ORDER, AND THE PRODUCT DECISION IT ENCODES.
-    //
-    // API-key backends first, native provider last. A member who has connected
-    // Kimi gets Kimi for EVERY `claude-code` session, not just ones that opted
-    // in, and it outranks a connected Anthropic login rather than losing to it.
-    // That is the account-wide default this feature was asked for, and it is
-    // the reason the order is stated here as data rather than left to whichever
-    // row the database happened to return first.
-    //
-    // It is also the surprising half, so it is made VISIBLE rather than
-    // silent: `credentials.status` reports the displacement in words and the
-    // connection card says which tool now routes where. Disconnecting the key
-    // restores the native provider with no other action — nothing about the
-    // Anthropic credential is altered or revoked by connecting Kimi, it is
-    // simply outranked while the key is live.
-    const candidates: AgentCredentialProvider[] = [
-      ...backends,
-      ...(nativeProvider ? [nativeProvider] : []),
-    ];
-
     const rows = await this.db.query<CredentialIndexRow>(
       claims,
       `select provider
          from public.account_agent_credentials
-        where provider = any($1::text[])
+        where provider = $1
           and status = 'active'`,
-      [candidates],
+      [provider],
     );
     // 'stale' and 'revoked' deliberately do NOT inject. A stale credential must
     // fail visibly and attributably to the member ("reconnect your account"),
     // never silently fall back to the node's identity — which is the lie this
     // whole build exists to stop telling, produced at the exact moment the
     // member is least able to notice it.
-    if (rows.length === 0) return null;
-
-    const active = new Set(rows.map((row) => row.provider));
-    // Ordered by OUR preference list, never by the row order the query returned.
-    const provider = candidates.find((candidate) => active.has(candidate));
-    if (!provider) return null;
+    if (!rows.some((row) => row.provider === provider)) return null;
 
     const homeDir = credentialHomeDir(this.dataDir, claims.identityId);
     const configDir = credentialConfigDir(this.dataDir, claims.identityId, provider);
@@ -254,10 +242,11 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
       // provider would silently run the member on Anthropic's billing after
       // they deliberately connected Kimi — a quiet substitution of one vendor
       // for another, which is the precise class of lie this subsystem exists to
-      // prevent. Throwing would fail the spawn outright over a credential
-      // problem, turning a degraded session into no session. The inconsistency
-      // is logged by `readApiKey` rather than swallowed, because nothing else in
-      // the system will notice it.
+      // prevent. Throwing here would take the decision away from the spawn
+      // layer, which is the one that knows the posture — and which, for a model
+      // only this key serves, refuses the launch naming the unreadable key.
+      // The inconsistency is logged by `readApiKey` rather than swallowed,
+      // because nothing else in the system will notice it.
       if (apiKey === null) return { provider, homeDir, configDir };
       return { provider, homeDir, configDir, apiKey };
     }

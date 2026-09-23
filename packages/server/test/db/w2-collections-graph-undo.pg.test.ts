@@ -232,6 +232,24 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect((await search(['Root'])).page.items).toEqual([]);
   });
 
+  it('filters any kind by a case-insensitive title substring (titleContains)', async () => {
+    const search = (titleContains: string, kinds?: string[]) => asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, ...(kinds ? { kinds: kinds as never } : {}), filters: { titleContains } },
+      fixture.identityId,
+    ));
+    // Fixture titles: Root, Child, Sibling (live) and Deleted (soft-deleted).
+    const hit = await search('HIL', ['task']);
+    expect(hit.page.items.map((item) => item.id)).toEqual([fixture.childId]);
+    expect(hit.page.total).toBe(1);
+    // A kind the title does not live on narrows to nothing.
+    expect((await search('child', ['doc'])).page.items).toEqual([]);
+    // The default soft-delete posture still applies.
+    expect((await search('Deleted', ['task'])).page.items).toEqual([]);
+    // A LIKE wildcard is a literal character, not a pattern.
+    expect((await search('%', ['task'])).page.items).toEqual([]);
+  });
+
   it('filters and groups tasks by priority (Board tab wave)', async () => {
     // Fixture priorities: Root=medium, Child=high, Sibling=low, Deleted=urgent (soft-deleted).
     const high = await asApp(database, fixture.identityId, (q) => queryCollection(

@@ -214,10 +214,9 @@ function ProviderCard({
       </div>
 
       {/* The routing disclosure. It sits directly under the verdict because it
-          is part of the same answer: "connected" and "and therefore your
-          claude-code sessions now reach Moonshot" are one fact told in two
-          sentences, and separating them is how the second one gets missed. */}
-      {entry.routing ? <RoutingLine routing={entry.routing} /> : null}
+          is part of the same answer: "connected" and "used for these models
+          on claude-code" are one fact told in two sentences. */}
+      {entry.routing ? <RoutingLine provider={entry.provider} routing={entry.routing} /> : null}
 
       {/* A connected-null result is a complete probe answer, not an account
           name that is still loading. Only a real name earns an Account row. */}
@@ -282,51 +281,32 @@ function ProviderCard({
 }
 
 /**
- * Say, on the card, which sessions this credential redirects.
+ * Say, on the card, which sessions this credential serves.
  *
- * WHY THIS EXISTS AT ALL. Kimi and Groq route ACCOUNT-WIDE and with no
- * per-session opt-in: connect Kimi and every `claude-code` session this member
- * starts — including ones they started long before — reaches Moonshot instead
- * of Anthropic. That is a deliberate product decision, and the whole reason it
- * is acceptable is that the member can see it. An invisible redirection of
- * which model answers your questions is the kind of surprise that costs someone
- * a day of debugging and their trust in the tool.
+ * Kimi and Groq are backends for a tool that already exists, so a member can
+ * reasonably wonder whether connecting one moves their Claude Code or Codex
+ * sessions off Anthropic or OpenAI. It does not: routing is per model, and
+ * this line says so — the key serves its own models on the tool, and every
+ * other session on that tool keeps its native login. Only a backend card
+ * carries routing; a native provider's card needs no warning.
  *
- * FOUR SENTENCES, ONE PER STATE. They are spelled out rather than composed from
- * fragments because each says something different about TIME — two describe what
- * is happening now, one describes what pressing Connect would do, and mixing
- * those tenses in a template is exactly how a warning comes to say the opposite
- * of the truth.
+ * `agentTool` and the counterpart come from the server, which computes them
+ * from the same table spawn resolves against. Nothing here is hardcoded to
+ * "kimi" or "anthropic".
  *
- * `agentTool` and the counterpart's name come from the server, which computes
- * them from the same table spawn resolves against. Nothing here is hardcoded to
- * "kimi" or "anthropic": a card that names a pair the resolver does not agree
- * with would be worse than no card at all.
- *
- * THE COUNTERPART IS NAMED FROM THE VENDOR TABLE, NOT THE PRESENTATION TABLE,
- * and the two disagree in exactly the place this sentence is about:
- *
- *   provider    presentationOf().name    CREDENTIAL_PROVIDER_LABEL
- *   anthropic   'Claude Code'            'Anthropic'
- *   openai      'Codex'                  'OpenAI'
- *   kimi        'Kimi (Moonshot AI)'     'Moonshot AI'
- *
- * `presentationOf` names the PRODUCT — right for the card heading, which sits
- * above the `binary` you type, and right for the icon beside it. This sentence
- * is not about the product: "uses this key instead of X" is a claim about WHOSE
- * SERVICE answers and whose account is billed, and the tool is the one thing
- * that does not change. Rendered from the presentation table it said "every
- * `claude-code` session you start uses this key instead of Claude Code", which
- * reads as though connecting Kimi stops Claude Code running — the opposite of
- * the truth, and the exact surprise the paragraph above exists to prevent.
- *
- * `CREDENTIAL_PROVIDER_LABEL` is the table whose docstring already states this
- * rule in the other direction ("Vendor names, not product names ... The home
- * and settings tiles name the product instead"), and which this feature
- * extended with Moonshot AI and Groq. Using it here is not a new convention;
- * it is the existing one, applied to the one line that had escaped it.
+ * BOTH NAMES COME FROM THE VENDOR TABLE, NOT THE PRESENTATION TABLE. This line
+ * is about whose service answers and whose account is billed, so it says
+ * "Moonshot AI" and "Anthropic"; `presentationOf` would say "Claude Code",
+ * which is the tool — the one thing that does not change.
  */
-function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
+function RoutingLine({
+  provider,
+  routing,
+}: {
+  provider: CredentialProviderName;
+  routing: CredentialRoutingView;
+}) {
+  const vendor = CREDENTIAL_PROVIDER_LABEL[provider];
   const counterpart = CREDENTIAL_PROVIDER_LABEL[routing.counterpart];
   const tool = <code>{routing.agentTool}</code>;
 
@@ -336,14 +316,10 @@ function RoutingLine({ routing }: { routing: CredentialRoutingView }) {
       data-testid={`credential-routing-${routing.role}`}
       data-routing-active={routing.active ? 'true' : 'false'}
     >
-      {routing.role === 'backend' ? (
-        routing.active ? (
-          <>Every {tool} session you start uses this key instead of {counterpart}.</>
-        ) : (
-          <>Connecting this will route every {tool} session you start here instead of {counterpart}.</>
-        )
+      {routing.active ? (
+        <>Used only for models served by {vendor} on {tool}. Every other {tool} session keeps using {counterpart}.</>
       ) : (
-        <>Not currently used for {tool} sessions — {counterpart} is connected and takes over.</>
+        <>Connect this to run models served by {vendor} on {tool}. Other {tool} sessions keep using {counterpart}.</>
       )}
     </p>
   );

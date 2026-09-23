@@ -147,6 +147,13 @@ export interface SubtreeBodyProps {
    * Never a fold, never part of the empty set.
    */
   attachmentSlot?: ReactNode;
+  /**
+   * Edges the attachment strip already draws as entity tiles (the attach
+   * palette's links). They are kept out of LINKED and RUNS so one link is
+   * drawn once: a session the palette related to this task is a reference,
+   * not one of its runs.
+   */
+  stripEdgeIds?: ReadonlySet<string>;
 }
 
 export function SubtreeBody({
@@ -168,11 +175,13 @@ export function SubtreeBody({
   attach,
   onAttached,
   attachmentSlot,
+  stripEdgeIds,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
-  const runs = dedupe([...children.filter(isRunKind), ...peersOf(detail).filter(isRunKind)]);
-  const linked = dedupe(peersOf(detail).filter((p) => !isRunKind(p)));
+  const peers = peersOf(detail, stripEdgeIds);
+  const runs = dedupe([...children.filter(isRunKind), ...peers.filter(isRunKind)]);
+  const linked = dedupe(peers.filter((p) => !isRunKind(p)));
   const notices = (blocks ?? []).filter((b) => b.block === 'notice');
   /*
    * The memory working set, when the registry row declares it (085: a task
@@ -1163,11 +1172,12 @@ function isRunKind(summary: EntitySummary): boolean {
  */
 const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by', 'contains']);
 
-function peersOf(detail: EntityDetail): EntitySummary[] {
+function peersOf(detail: EntityDetail, skipEdges?: ReadonlySet<string>): EntitySummary[] {
   const out: EntitySummary[] = [];
   for (const group of [...detail.connections.outgoing, ...detail.connections.incoming]) {
     if (OWN_SECTION_EDGES.has(group.type)) continue;
     for (const edge of group.edges) {
+      if (skipEdges?.has(edge.id)) continue;
       out.push(edge.source.id === detail.id ? edge.target : edge.source);
     }
   }

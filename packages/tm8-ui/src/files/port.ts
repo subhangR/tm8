@@ -30,6 +30,7 @@
  */
 import type {
   EntityId,
+  EntitySummary,
   MessageView,
   ProjectFileListing,
   ProjectId,
@@ -211,7 +212,27 @@ export interface AttachmentsPort {
    * than no control.
    */
   createDrawing?(anchorId: EntityId, title: string): Promise<EntityId>;
+  /**
+   * THE ATTACH PALETTE'S THREE VERBS (task 01a0cfb0). Each is optional, for the
+   * reason every verb above is: absent means the control is not drawn.
+   *
+   * `search` is the SERVER's title search (`filters.titleContains` on
+   * `collections.query`), narrowed to one kind. It is not one recent page
+   * filtered in the browser, so an old entity is still findable. Empty text
+   * means the most recent items of that kind.
+   */
+  search?(kind: string, text: string): Promise<EntitySummary[]>;
+  /** Writes ONE edge between two existing entities. The server's `validate_edge` is the final check. */
+  link?(input: { srcId: EntityId; dstId: EntityId; type: string }): Promise<void>;
+  /**
+   * `createDrawing` generalized to any kind whose link to the anchor is an
+   * `attachTo` edge (`attached_to` today): created and linked in ONE command.
+   */
+  createAttached?(kind: string, anchorId: EntityId, title: string, edgeType: string): Promise<EntityId>;
 }
+
+/** How many candidates one palette search asks for. */
+export const PALETTE_SEARCH_LIMIT = 20;
 
 /**
  * Browsing an already-connected project folder and attaching out of it.
@@ -262,6 +283,31 @@ export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): 
       });
       const id = result.entity?.id;
       if (!id) throw new Error('the drawing was created but the server returned no id');
+      return id;
+    },
+    search: async (kind, text) => {
+      const needle = text.trim();
+      const result = await seam.query({
+        spaceId: spaceId as SpaceId,
+        kinds: [kind as never],
+        ...(needle ? { filters: { titleContains: needle } } : {}),
+        limit: PALETTE_SEARCH_LIMIT,
+      });
+      return result.page.items;
+    },
+    link: async ({ srcId, dstId, type }) => {
+      await seam.commands.createEdge({ clientMutationId: newMutationId(), srcId, dstId, type });
+    },
+    createAttached: async (kind, anchorId, title, edgeType) => {
+      const result = await seam.commands.createEntity({
+        clientMutationId: newMutationId(),
+        spaceId: spaceId as SpaceId,
+        kind: kind as never,
+        title,
+        attachTo: { entityId: anchorId, edgeType: edgeType as never },
+      });
+      const id = result.entity?.id;
+      if (!id) throw new Error('the entity was created but the server returned no id');
       return id;
     },
     ...(projectFiles
