@@ -960,6 +960,8 @@ export interface CollectionQuery {
     assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     skillProvider?: string; skillLevel?: string; skillRoot?: string; skillMissing?: boolean;
+    /** Skills (or spells) that some actor currently equips: an incoming `equips` edge from anyone. */
+    skillEquipped?: boolean;
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
      * Additive (board/people wave): entities this actor WORKED, resolved

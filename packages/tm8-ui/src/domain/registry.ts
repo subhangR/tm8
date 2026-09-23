@@ -542,6 +542,18 @@ const CATEGORY_TABS: readonly StatusCategoryTab[] = [
 ];
 
 /**
+ * The skill kind's own tab row, in place of the ruled four; see the skill
+ * entry. Each tab keeps `deleted: 'exclude'` so the Archived chip composes
+ * with it exactly as it does with a category tab.
+ */
+const SKILL_TABS: readonly StatusCategoryTab[] = [
+  { id: 'all', label: 'All', filter: { deleted: 'exclude' } },
+  { id: 'equipped', label: 'Equipped', filter: { skillEquipped: true, deleted: 'exclude' } },
+  { id: 'not_equipped', label: 'Not equipped', filter: { skillEquipped: false, deleted: 'exclude' } },
+  { id: 'missing', label: 'Missing files', filter: { skillMissing: true, deleted: 'exclude' } },
+];
+
+/**
  * ARCHIVED, AS A FILTER CHIP — the other half of retiring the archive tab.
  *
  * `deleted` is a SCALAR clause, so `narrow()`'s later-wins rule lets this
@@ -1499,10 +1511,18 @@ const ROWS: readonly KindConfig[] = [
       filters: [
         { id: 'provider', label: 'Provider', options: ['agents', 'claude', 'codex', 'hermes', 'tm8'].map(value => ({ id: value, label: value, filter: { skillProvider: value } })) },
         { id: 'level', label: 'Level', options: ['project', 'user', 'nested', 'system', 'admin', 'plugin', 'synced', 'session', 'space'].map(value => ({ id: value, label: value, filter: { skillLevel: value } })) },
-        { id: 'missing', label: 'Missing', options: [{ id: 'missing', label: 'Missing files', filter: { skillMissing: true } }] },
         { id: 'equipped', label: 'Equipped', options: [{ id: 'mine', label: 'Equipped by me', filter: { edge: { type: 'equips', direction: 'incoming', entityId: VIEWER_ACTOR } } }] },
       ],
       inlineEdit: { title: false },
+      // NOT THE RULED FOUR. A skill is a file on disk, seeded `done` as a
+      // resolution predicate (like the fact kinds above), so To Do / In
+      // Progress / Cancelled were permanently empty and every skill sat under
+      // Done (user ruling, task 01a0ccd9). It tabs by what a skill does have:
+      // whether anyone equips it and whether its files are still on disk. The
+      // bands overlap (a missing skill can still be equipped), so `All`
+      // carries the total. The old `Missing` filter chip is now a tab.
+      categories: SKILL_TABS,
+      tabTotal: 'all',
     }),
     panel: {
       archetype: 'equipment',

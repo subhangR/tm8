@@ -8,6 +8,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 import { ENTITY_COLUMNS, ENTITY_FROM, loadEntitySummariesByIds, type EntityRow } from '../../src/facade/entity-read.js';
 import { buildUniversalDetail, loadUniversalSummaries } from '../../src/facade/services/w2/entities-commands-tracking.js';
 import { buildDetail } from '../../src/facade/handlers/entities.js';
+import { queryCollection } from '../../src/facade/handlers/collections.js';
 import { PgEntityProjector } from '../../src/events/projector.js';
 import { WorkspaceEventMapper, type WorkspaceEventRow } from '../../src/events/mapper.js';
 import type { Querier } from '../../src/db/types.js';
@@ -123,5 +124,19 @@ describe('filesystem skill references', () => {
       expect((await loadEntitySummariesByIds(q,[legacy],identity))[0]?.state).toMatchObject({equipped});
       expect((await buildUniversalDetail(q,teammate,identity)).content).toMatchObject({equipped:equipped?[{id:legacy}]:[]});
     }
+  });
+  it('filters the skill list by equipped, the same predicate the equipped badge reads', async () => {
+    // The Skills panel's Equipped / Not equipped tabs (task 01a0ccd9).
+    const id = await entity('skill');
+    await db.query("insert into public.skills(entity_id,name) values($1,'Tab probe')",[id]);
+    const band = async (skillEquipped: boolean) =>
+      (await queryCollection(q,{spaceId:space,kinds:['skill'],filters:{skillEquipped},sort:'position',limit:100},identity)).page.items.map((item)=>item.id);
+    expect(await band(false)).toContain(id);
+    expect(await band(true)).not.toContain(id);
+    await db.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'equips',$4)",[space,teammate,id,member]);
+    expect(await band(true)).toContain(id);
+    expect(await band(false)).not.toContain(id);
+    for (const item of (await queryCollection(q,{spaceId:space,kinds:['skill'],filters:{skillEquipped:true},sort:'position',limit:100},identity)).page.items)
+      expect(item.state).toMatchObject({equipped:true});
   });
 });

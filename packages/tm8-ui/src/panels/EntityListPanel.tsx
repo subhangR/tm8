@@ -77,7 +77,7 @@ import {
   type ControlHost,
 } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { CategoryGlyph } from './list/CategoryGlyph';
+import { CategoryGlyph, hasCategoryGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
@@ -682,6 +682,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
   const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
+  /* Tabs that OVERLAP (`list.tabTotal`, skills) cannot be summed: `All` is
+     already every row, so the total is that one tab's own count, `+` and all. */
+  const totalTab = list.tabTotal ? tabCounts.find((c) => c.tab.id === list.tabTotal) : undefined;
+  const kindTotal = totalTab
+    ? totalTab.label
+    : list.categories
+      ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
+      : undefined;
 
   return (
     <section
@@ -697,11 +705,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
       {props.selectorSlot === 'host' ? null : (
         <KindSelector
           config={config}
-          total={
-            list.categories
-              ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
-              : undefined
-          }
+          total={kindTotal}
           liveCount={liveCountFor(props, config, activeTab)}
           onKindChange={props.onKindChange}
         />
@@ -873,7 +877,9 @@ export function EntityListPanel(props: EntityListPanelProps) {
           contract's `StatusCategory` literals, so printing them would put
           `to_do` and `in_progress` in front of a user; the label is the word
           the tab above already shows them. */}
-      {tabCounts.length > 0 ? (
+      {/* Not for overlapping tabs (`tabTotal`): "12 all · 3 equipped · 9 not
+          equipped" reads as a breakdown that adds up, and it does not. */}
+      {tabCounts.length > 0 && !list.tabTotal ? (
         <div className="lp__foot" data-testid="list-footer">
           {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
         </div>
@@ -1483,7 +1489,11 @@ function CategoryTabs({
   if (!tabs || tabs.length === 0) return null;
   return (
     <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
-      {tabs.map((tab) => (
+      {tabs.map((tab) => {
+        // A kind's own tabs (skills) have no category mark, so on one surface
+        // they keep their word rather than render an empty glyph.
+        const glyph = oneSurface && hasCategoryGlyph(tab.id) ? tab.id : null;
+        return (
         <button
           key={tab.id}
           type="button"
@@ -1491,10 +1501,10 @@ function CategoryTabs({
           aria-selected={tab.id === activeTabId}
           className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
           onClick={() => onTab(tab.id)}
-          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
+          {...(glyph ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {oneSurface ? (
-            <CategoryGlyph category={tab.id} />
+          {glyph ? (
+            <CategoryGlyph category={glyph} />
           ) : (
             <>
               {/* THE COUNT IS A SECOND VOICE, NOT THE SAME ONE. At the label's
@@ -1509,7 +1519,8 @@ function CategoryTabs({
             </>
           )}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

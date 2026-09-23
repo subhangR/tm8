@@ -68,6 +68,11 @@ const MARKS: Readonly<Record<StatusCategory, ReactElement>> = {
   ),
 };
 
+/** True for the ruled four only. A kind's own tabs (skills) have no mark and render their word instead. */
+export function hasCategoryGlyph(id: string): id is StatusCategory {
+  return Object.prototype.hasOwnProperty.call(MARKS, id);
+}
+
 export function CategoryGlyph({ category }: { category: StatusCategory }) {
   return (
     <svg className="lp__tab-glyph" viewBox="0 0 16 16" aria-hidden focusable="false">
