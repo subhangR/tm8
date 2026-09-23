@@ -103,6 +103,19 @@ export class SpaceCredentialCatalogService {
     spaceId: string,
     input: { provider: SpaceCredentialProviderName; shape: 'api_key' | 'token'; label: string; secret: string },
   ): Promise<SpaceCredentialView> {
+    // Refuse before the probe, not after it: the probe sends the key to the
+    // vendor from this node, so a caller the RPC would refuse must not reach
+    // it (an agent, or a non-member testing keys from the node's address).
+    requireHumanClaims(claims);
+    const [space] = await this.db.query<{ is_member: boolean }>(
+      claims,
+      'select internal.is_space_member($1::uuid) as is_member',
+      [spaceId],
+    );
+    // The same answer create_space_credential's require_space_member gives.
+    if (space?.is_member !== true) {
+      throw new CollabError('forbidden', 'not a member of this space');
+    }
     const displayLogin = await this.probeOrRefuse(input.provider, input.secret);
     try {
       return viewOf(await this.store.create(claims, {
@@ -124,16 +137,38 @@ export class SpaceCredentialCatalogService {
    * D7: the next spawn reads the new sealed bytes; live sessions keep theirs.
    */
   async rekey(claims: DbClaims, credentialId: string, secret: string): Promise<SpaceCredentialView> {
-    // provider and shape never change, so reading them before the locked RPC
-    // cannot probe against a stale value. RLS answers a non-member nothing.
-    const [current] = await this.db.query<{ provider: SpaceCredentialProviderName; shape: string }>(
+    // Every refusal the RPC would make is made HERE first, before the probe:
+    // otherwise any member could use this node to test arbitrary keys against
+    // a vendor. `can_manage` is internal.can_manage_space_credential's body
+    // (206, D11) — that function is granted to nobody, its three predicates
+    // are granted to tm8_app. provider and shape never change, so reading them
+    // before the locked RPC cannot probe against a stale value; the RPC
+    // re-checks rights and status under its lock. RLS answers a non-member nothing.
+    requireHumanClaims(claims);
+    const [current] = await this.db.query<{
+      provider: SpaceCredentialProviderName;
+      shape: string;
+      status: string;
+      can_manage: boolean;
+    }>(
       claims,
-      'select provider, shape from public.space_credentials where id = $1',
+      `select provider, shape, status,
+              internal.is_space_member(space_id)
+                and (internal.is_space_admin(space_id)
+                     or (created_by_account_id is not null
+                         and created_by_account_id = internal.current_account_id())) as can_manage
+         from public.space_credentials where id = $1`,
       [credentialId],
     );
     if (!current) throw notFound();
+    if (current.can_manage !== true) {
+      throw new CollabError('forbidden', 'only the credential\'s creator or a space admin can change it');
+    }
     if (current.shape === 'login') {
       throw new CollabError('invalid_input', 'a login credential is renewed by logging in again, not by pasting a key');
+    }
+    if (current.status !== 'active' && current.status !== 'stale') {
+      throw new CollabError('invariant_violation', `space credential is ${current.status}`);
     }
     const displayLogin = await this.probeOrRefuse(current.provider, secret);
     try {
@@ -173,7 +208,8 @@ export class SpaceCredentialCatalogService {
     try {
       live = await this.store.liveSessions(claims, credentialId);
     } catch (error) {
-      failures.push({ step: 'agentSession', reason: reasonOf(error) });
+      // No session was read, so none was killed: a retried delete finishes it.
+      failures.push({ step: 'agentSession', reason: `lookup_failed: ${reasonOf(error)}` });
     }
 
     // 3. Kill every PTY first — login terminals and agent sessions alike.
@@ -324,6 +360,20 @@ function viewOf(row: SpaceCredential): SpaceCredentialView {
 
 function nodeEntries(node: Partial<Record<SpaceCredentialProviderName, boolean>>): NodeCredentialPolicyEntry[] {
   return SPACE_CREDENTIAL_PROVIDERS.map((provider) => ({ provider, allowNode: node[provider] ?? null }));
+}
+
+/**
+ * The auth kinds `internal.require_human_auth_kind()` accepts, checked here
+ * only so that a caller the RPC will refuse never reaches the vendor probe.
+ * Fail closed: an absent or unrecognised kind refuses. The facade's
+ * `requireHumanSession` is layer 1; the RPC is layer 2; this is not a layer.
+ */
+const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
+
+function requireHumanClaims(claims: DbClaims): void {
+  if (claims.authKind === undefined || !HUMAN_AUTH_KINDS.includes(claims.authKind)) {
+    throw new CollabError('forbidden', 'credentials are human-only');
+  }
 }
 
 function notFound(): CollabError {

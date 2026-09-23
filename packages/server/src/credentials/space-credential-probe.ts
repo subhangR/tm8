@@ -27,7 +27,12 @@ export type SpaceCredentialProbe = (input: {
 }) => Promise<SpaceCredentialProbeResult>;
 
 type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; signal: AbortSignal }) =>
-  Promise<{ status: number; ok: boolean; json(): Promise<unknown> }>;
+  Promise<{
+    status: number;
+    ok: boolean;
+    headers?: { get(name: string): string | null };
+    json(): Promise<unknown>;
+  }>;
 
 export interface VendorProbeOptions {
   fetch?: FetchLike;
@@ -74,6 +79,11 @@ export function createVendorProbe(options: VendorProbeOptions = {}): SpaceCreden
     } catch (error) {
       // The error NAME only: a driver message may quote the request.
       return { ok: false, reason: 'unreachable', detail: error instanceof Error ? error.name : 'unknown' };
+    }
+    // GitHub answers a VALID token that has run out of rate limit with 403 and
+    // x-ratelimit-remaining: 0. That is no verdict on the key: unreachable.
+    if (response.status === 403 && response.headers?.get('x-ratelimit-remaining') === '0') {
+      return { ok: false, reason: 'unreachable', detail: 'HTTP 403 rate limited' };
     }
     if (response.status === 401 || response.status === 403) {
       return { ok: false, reason: 'rejected', detail: `HTTP ${response.status}` };

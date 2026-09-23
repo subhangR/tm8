@@ -139,15 +139,21 @@ function service(options: {
   removeLoginHome?: () => Promise<void>;
   env?: Record<string, string | undefined>;
   dbRows?: unknown[];
+  /** What the create pre-check's is_space_member answers. */
+  member?: boolean;
 }) {
   const store = options.store ?? fakeStore({ calls: options.calls });
   return {
     store,
     svc: new SpaceCredentialCatalogService({
       db: {
-        query: async <R>() => {
+        query: async <R>(_c: DbClaims, sql: string) => {
+          if (sql.includes('is_space_member($1::uuid)')) {
+            options.calls.push('query:space_member');
+            return [{ is_member: options.member ?? true }] as R[];
+          }
           options.calls.push('query:space_credentials');
-          return (options.dbRows ?? [{ provider: 'anthropic', shape: 'api_key' }]) as R[];
+          return (options.dbRows ?? [{ provider: 'anthropic', shape: 'api_key', status: 'active', can_manage: true }]) as R[];
         },
       },
       store: store as never,
@@ -179,10 +185,15 @@ function surfaceOf(error: unknown): string {
 
 describe('t3-3: the vendor probe', () => {
   type Seen = { url: string; headers: Record<string, string> };
-  function fetchAnswering(status: number, body: unknown = {}, seen: Seen[] = []) {
+  function fetchAnswering(status: number, body: unknown = {}, seen: Seen[] = [], headers: Record<string, string> = {}) {
     return async (url: string, init: { headers: Record<string, string> }) => {
       seen.push({ url, headers: init.headers });
-      return { status, ok: status >= 200 && status < 300, json: async () => body };
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        headers: { get: (name: string) => headers[name] ?? null },
+        json: async () => body,
+      };
     };
   }
 
@@ -207,6 +218,11 @@ describe('t3-3: the vendor probe', () => {
     expect(await createVendorProbe({ fetch: fetchAnswering(401) })({ provider: 'anthropic', secret: SECRET }))
       .toEqual({ ok: false, reason: 'rejected', detail: 'HTTP 401' });
     expect(await createVendorProbe({ fetch: fetchAnswering(403) })({ provider: 'openai', secret: SECRET }))
+      .toEqual({ ok: false, reason: 'rejected', detail: 'HTTP 403' });
+    // A VALID GitHub token that ran out of rate limit is 403 too: no verdict.
+    expect(await createVendorProbe({ fetch: fetchAnswering(403, {}, [], { 'x-ratelimit-remaining': '0' }) })({ provider: 'github', secret: SECRET }))
+      .toEqual({ ok: false, reason: 'unreachable', detail: 'HTTP 403 rate limited' });
+    expect(await createVendorProbe({ fetch: fetchAnswering(403, {}, [], { 'x-ratelimit-remaining': '12' }) })({ provider: 'github', secret: SECRET }))
       .toEqual({ ok: false, reason: 'rejected', detail: 'HTTP 403' });
     expect(await createVendorProbe({ fetch: fetchAnswering(503) })({ provider: 'anthropic', secret: SECRET }))
       .toEqual({ ok: false, reason: 'unreachable', detail: 'HTTP 503' });
@@ -238,7 +254,7 @@ describe('t3-3: a key the vendor refuses is never stored; status comes from the 
     expect(error.code).toBe('invalid_input');
     expect(error.details?.['reason']).toBe('credential_rejected');
     expect(store.stored).toEqual([]);
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['query:space_member']);
   });
 
   it('unreachable → upstream_unavailable, and still nothing stored (never an unmeasured key)', async () => {
@@ -285,11 +301,70 @@ describe('t3-3: a key the vendor refuses is never stored; status comes from the 
   });
 
   it('rekey refuses a login credential (renewed by logging in) and answers not_found for an unseen id', async () => {
-    const login = service({ calls: [], dbRows: [{ provider: 'anthropic', shape: 'login' }] });
+    const login = service({ calls: [], dbRows: [{ provider: 'anthropic', shape: 'login', status: 'active', can_manage: true }] });
     expect((await caught(login.svc.rekey(HUMAN, CRED, SECRET))).code).toBe('invalid_input');
     expect(login.store.stored).toEqual([]);
     const missing = service({ calls: [], dbRows: [] });
     expect((await caught(missing.svc.rekey(HUMAN, CRED, SECRET))).code).toBe('not_found');
+  });
+});
+
+describe('t3-7: every refusal the RPC would make is made BEFORE the vendor probe', () => {
+  /** A probe that counts: the node must not test a key for a caller the RPC refuses. */
+  function countingProbe() {
+    const probed: string[] = [];
+    const probe: SpaceCredentialProbe = async ({ secret }) => { probed.push(secret); return { ok: true, displayLogin: null }; };
+    return { probe, probed };
+  }
+  const AGENT: DbClaims = { ...HUMAN, authKind: 'agent' } as DbClaims;
+  const NO_KIND: DbClaims = { identityId: 'identity-human', nodeAdmin: false, requestId: 'r' } as DbClaims;
+
+  it('a member who is neither creator nor admin: rekey is forbidden with 0 probe calls', async () => {
+    const { probe, probed } = countingProbe();
+    const { svc, store } = service({
+      calls: [], probe, dbRows: [{ provider: 'openai', shape: 'api_key', status: 'active', can_manage: false }],
+    });
+    const error = await caught(svc.rekey(HUMAN, CRED, SECRET));
+    expect(error.code).toBe('forbidden');
+    expect(probed).toEqual([]);
+    expect(store.stored).toEqual([]);
+  });
+
+  it('a revoked credential: rekey is refused with 0 probe calls', async () => {
+    const { probe, probed } = countingProbe();
+    const { svc } = service({ calls: [], probe, dbRows: [{ provider: 'openai', shape: 'api_key', status: 'revoked', can_manage: true }] });
+    expect((await caught(svc.rekey(HUMAN, CRED, SECRET))).code).toBe('invariant_violation');
+    expect(probed).toEqual([]);
+  });
+
+  it('a non-member: create is forbidden with 0 probe calls', async () => {
+    const { probe, probed } = countingProbe();
+    const { svc, store } = service({ calls: [], probe, member: false });
+    const error = await caught(svc.create(HUMAN, SPACE, { provider: 'anthropic', shape: 'api_key', label: 'k', secret: SECRET }));
+    expect(error.code).toBe('forbidden');
+    expect(probed).toEqual([]);
+    expect(store.stored).toEqual([]);
+  });
+
+  it('an agent bearer and a claim with no auth kind: create and rekey refused with 0 probe calls and 0 queries', async () => {
+    for (const who of [AGENT, NO_KIND]) {
+      const { probe, probed } = countingProbe();
+      const calls: string[] = [];
+      const { svc } = service({ calls, probe });
+      expect((await caught(svc.create(who, SPACE, { provider: 'anthropic', shape: 'api_key', label: 'k', secret: SECRET }))).message)
+        .toMatch(/human-only/);
+      expect((await caught(svc.rekey(who, CRED, SECRET))).message).toMatch(/human-only/);
+      expect(probed).toEqual([]);
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('CONTROL: a manager\'s rekey and a member\'s create DO reach the probe', async () => {
+    const { probe, probed } = countingProbe();
+    const { svc } = service({ calls: [], probe });
+    await svc.rekey(HUMAN, CRED, SECRET);
+    await svc.create(HUMAN, SPACE, { provider: 'anthropic', shape: 'api_key', label: 'k', secret: SECRET });
+    expect(probed).toEqual([SECRET, SECRET]);
   });
 });
 
@@ -385,7 +460,7 @@ describe('t3-4/t3-8: delete revokes, reads, kills every launcher\'s sessions, th
     expect(first.failures).toEqual([{ step: 'loginSession', sessionId: LOGIN_A, reason: 'no space login terminal of yours' }]);
 
     const unread = await service({ calls: [], store: fakeStore({ calls: [], live: new Error('pool exhausted') }) }).svc.delete(HUMAN, CRED);
-    expect(unread.failures).toEqual([{ step: 'agentSession', reason: 'pool exhausted' }]);
+    expect(unread.failures).toEqual([{ step: 'agentSession', reason: 'lookup_failed: pool exhausted' }]);
   });
 
   it('a file-home failure is named last, after every kill and stamp', async () => {
@@ -445,9 +520,10 @@ function handlerHarness(probe: SpaceCredentialProbe) {
     }),
     query: async (_c: DbClaims, sql: string, params: readonly unknown[] = []) => {
       queries.push({ sql, params });
-      // rekey pre-reads provider/shape; answer it so the probe is reached.
-      return sql.includes('select provider, shape from public.space_credentials')
-        ? [{ provider: 'anthropic', shape: 'api_key' }]
+      // Answer the create and rekey pre-checks as a manager, so the probe is reached.
+      if (sql.includes('is_space_member($1::uuid)')) return [{ is_member: true }];
+      return sql.includes('select provider, shape, status,')
+        ? [{ provider: 'anthropic', shape: 'api_key', status: 'active', can_manage: true }]
         : [];
     },
     rpc: async (_c: DbClaims, fn: string) => { rpcs.push(fn); return {}; },
@@ -494,8 +570,9 @@ function ctx(
 async function run(registry: HandlerRegistry, opName: OperationName, context: RequestContext) {
   const handler = registry.get(opName);
   if (!handler) throw new Error(`${opName} not mounted`);
-  return handler(context).then(
-    (value) => ({ ok: true as const, value }),
+  // OperationHandler may answer synchronously; normalise to one promise.
+  return Promise.resolve(handler(context)).then(
+    (value: unknown) => ({ ok: true as const, value }),
     (error: unknown) => ({ ok: false as const, error }),
   );
 }

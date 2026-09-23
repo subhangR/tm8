@@ -44,6 +44,8 @@ const OWN = 'sc3-owner';
 const ADM = 'sc3-admin';
 const A = 'sc3-a';
 const B = 'sc3-b';
+/** Has an account on the node; is NOT a member of S. */
+const OUT = 'sc3-outsider';
 
 /** Every I5 assertion greps for a string built from THIS stem; it appears nowhere else. */
 const CANARY = 'SC3pgCanary7d41e9b2';
@@ -163,7 +165,7 @@ beforeAll(async () => {
     env: {},
   });
   await asOwner(async (c) => {
-    for (const identity of [OWN, ADM, A, B]) {
+    for (const identity of [OWN, ADM, A, B, OUT]) {
       await c.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $1)`, [identity]);
       const { rows } = await c.query<{ id: string }>(
         `insert into public.accounts(identity_id, username, display_name, is_node_admin, is_owner)
@@ -341,6 +343,32 @@ describe('t3-7: rekey — creator and admins only; the next spawn reads the new 
     const byAdmin = secretFor('adm-rekey');
     await service.rekey(claims(ADM), view.id, byAdmin);
     expect(await pinned(agent(A))).toMatchObject({ secret: byAdmin });
+  });
+
+  it('refusals come BEFORE the vendor probe: non-manager rekey, non-member create, agent bearer — 0 probe calls', async () => {
+    const { view, secret: original } = await create(A, 'openai');
+    probed.length = 0;
+    // B is a member of S, but neither the creator nor an admin.
+    await expect(service.rekey(claims(B), view.id, secretFor('b-oracle')))
+      .rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/creator or a space admin/) });
+    // OUT is not in S at all: the RLS select answers nothing.
+    await expect(service.rekey(claims(OUT), view.id, secretFor('out-oracle'))).rejects.toMatchObject({ code: 'not_found' });
+    await expect(service.create(claims(OUT), ids.S!, {
+      provider: 'anthropic', shape: 'api_key', label: label('outsider'), secret: secretFor('out-create'),
+    })).rejects.toMatchObject({ code: 'forbidden' });
+    // An agent bearer carrying the CREATOR's identity.
+    await expect(service.rekey(agent(A), view.id, secretFor('agent-oracle'))).rejects.toThrow(/human-only/);
+    await expect(service.create(agent(A), ids.S!, {
+      provider: 'anthropic', shape: 'api_key', label: label('agent'), secret: secretFor('agent-create'),
+    })).rejects.toThrow(/human-only/);
+    expect(probed).toEqual([]);
+    expect(await store.readForSpawn(agent(A), ids.S!, 'openai', view.id)).toMatchObject({ secret: original });
+
+    // CONTROL: the admin's rekey and a member's create DO reach the probe.
+    const byAdmin = secretFor('adm-control');
+    await service.rekey(claims(ADM), view.id, byAdmin);
+    const { secret: byMember } = await create(B, 'openai');
+    expect(probed).toEqual([byAdmin, byMember]);
   });
 
   it('a key the vendor refuses leaves the old one in place, and is never probed-then-stored', async () => {
