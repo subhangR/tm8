@@ -93,6 +93,12 @@ echo "   sample (args='--fast' gate=advisory fail=cli test), branch output:"
 TM8_CONFORMANCE_GATE=advisory TRACE_FAIL="^bun run test @/packages/cli$" run "$NEW_CHECK" "$WORK/s" - --fast
 sed -n '/==> summary/,$p' "$WORK/s" | sed 's/^/     /'
 
+# The usage/refusal path for an unknown option must stay byte-identical too.
+run "$WORK/check.base.sh" "$WORK/base.out" - --bogus
+run "$NEW_CHECK" "$WORK/new.out" - --bogus
+if diff -u "$WORK/base.out" "$WORK/new.out" > "$WORK/d"; then echo "   unknown option: identical ($(tail -1 "$WORK/new.out"))"
+else bad "unknown option differs:"; cat "$WORK/d"; fi
+
 echo "   --help (the one EXPECTED difference: the header documents the new flags):"
 run "$WORK/check.base.sh" "$WORK/hb" - --help
 run "$NEW_CHECK" "$WORK/hn" - --help

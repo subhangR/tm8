@@ -11,6 +11,11 @@
 # every postgres job still carries its own postgres block (trust auth, with the
 # comment that explains why) — see ci.yml.
 #
+# NOT FOR THE MIGRATIONS JOB with postgres: "true". Its service uses password
+# auth, and worse, pre-created roles would turn 001/015's CREATE ROLE paths into
+# no-ops, so the clean-apply gate would stop proving the migrations create their
+# own roles. That job keeps postgres at its default "false" (or skips this action).
+#
 # INSTALL OWNERSHIP: this action owns `bun install` for every job that uses it.
 # Such a job calls `tools/ci/check.sh --only <stages>` and must NOT select the
 # `install` stage too, or it installs twice. The no-flag paths (pre-push hook,
