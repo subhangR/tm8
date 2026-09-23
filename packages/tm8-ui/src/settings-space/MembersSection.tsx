@@ -209,7 +209,7 @@ export function longAge(iso: string, now = Date.now()): string {
  * role from them keeps the locks consistent with what the reader can see.
  * Falls back to `memberships` when the viewer has no row here at all.
  */
-function viewerRoleIn(members: EntitySummary[], identity: IdentityView | null): string | null {
+export function viewerRoleIn(members: EntitySummary[], identity: IdentityView | null): string | null {
   const selfIds = new Set((identity?.memberships ?? []).map((m) => m.memberId));
   const own = members.find((m) => selfIds.has(m.id));
   if (own) return roleOf(own);

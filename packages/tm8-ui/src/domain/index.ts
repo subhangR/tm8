@@ -90,6 +90,8 @@ export {
   processControlFor,
   resolveAction,
   sharingControlFor,
+  sessionSharingOf,
+  type SessionSharing,
 } from './actions';
 
 export {

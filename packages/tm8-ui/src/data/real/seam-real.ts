@@ -431,6 +431,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
+      updateSpace: (spaceId, input) => ops.updateSpace(spaceId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
       // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
       // revoke body binds `RequiredCommandContextSchema`, so a missing body is

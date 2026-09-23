@@ -258,6 +258,7 @@ interface SummaryRow {
   ws_share_mode: string | null;
   /** 187. Optional so pre-187 row fixtures stay source-compatible. */
   ws_drive_mode?: string | null;
+  ws_sharing_set_at?: Date | string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
@@ -408,6 +409,7 @@ select
   ws.model           as ws_model,
   ws.share_mode      as ws_share_mode,
   ws.drive_mode      as ws_drive_mode,
+  ws.sharing_set_at  as ws_sharing_set_at,
   ws.started_at      as ws_started_at,
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
@@ -1231,6 +1233,12 @@ export class PgEntityProjector implements EntityProjector {
           ...(r.ws_drive_mode === 'owner' || r.ws_drive_mode === 'space'
             ? { driveMode: r.ws_drive_mode }
             : {}),
+          // 202 — MIRRORS entity-read.ts stateOf. null is a fact ("nobody
+          // has set the dials"), so it is carried; only a row that never
+          // selected the column says nothing.
+          ...(r.ws_sharing_set_at === undefined
+            ? {}
+            : { sharingSetAt: iso(r.ws_sharing_set_at) }),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an

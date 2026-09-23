@@ -54,6 +54,7 @@ import type {
   TaskAxisInput,
   TaskWorkflow,
   TaskWorkflowInput,
+  UpdateSpaceInput,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
 import { allKinds } from '../domain';
@@ -219,6 +220,15 @@ export interface SettingsPort {
    */
   setMemberRole(memberId: EntityId, role: SpaceMemberRole): Promise<CommandResult>;
 
+  /**
+   * Set THIS space's session-sharing defaults (187) through `spaces.update`.
+   * Only the keys passed are sent — the PATCH leaves an absent key alone — and
+   * the result is the space as the server now reports it.
+   */
+  updateSharingDefaults(
+    patch: Pick<UpdateSpaceInput, 'sessionShareDefault' | 'sessionDriveDefault'>,
+  ): Promise<SpaceSummary>;
+
   /** Mint a join code. `role` is what redemption confers; never `owner`. */
   createInvite(input: Omit<CreateInviteInput, 'clientMutationId' | 'actorId'>): Promise<SpaceInviteView>;
 
@@ -329,6 +339,14 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
     async loadInvites() {
       const settings = await seam.spaceSettings(spaceId);
       return settings.invites;
+    },
+
+    updateSharingDefaults(patch) {
+      return seam.commands.updateSpace(spaceId, {
+        ...(patch.sessionShareDefault === undefined ? {} : { sessionShareDefault: patch.sessionShareDefault }),
+        ...(patch.sessionDriveDefault === undefined ? {} : { sessionDriveDefault: patch.sessionDriveDefault }),
+        clientMutationId: newMutationId('sharing'),
+      });
     },
 
     setMemberRole(memberId, role) {

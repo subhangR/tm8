@@ -76,6 +76,7 @@ import {
   RowMembershipControl,
   RowStateControl,
   type ControlHost,
+  type SessionSharingPatch,
 } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { CategoryGlyph, hasCategoryGlyph } from './list/CategoryGlyph';
@@ -333,7 +334,7 @@ export interface EntityListPanelProps {
   /** The other half of that row's tail slot — see `ControlHost.onResume`. */
   onResume?: (entityId: string) => void;
   /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
-  onShareSession?: (entityId: string, next: 'none' | 'space') => void;
+  onShareSession?: (entityId: string, patch: SessionSharingPatch) => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;

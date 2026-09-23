@@ -25,7 +25,8 @@
 // ruled that any active member may act as any teammate in their space. So an
 // agent-launched terminal reaches C through `can_act_as` — that is pre-existing
 // behaviour, not something 187 introduces, and these tests pin it so a later
-// edit to the gate cannot drop it silently.
+// edit to the gate cannot drop it silently — for a session nobody has
+// configured. Once a human sets its dials (202's `sharing_set_at`), they hold.
 // =============================================================================
 
 import test from 'node:test';
@@ -339,27 +340,127 @@ test("'explicit' is refused by the RPC, though the column still admits it", () =
 });
 
 // -----------------------------------------------------------------------------
-// 3. The teammate path, which 187 must PRESERVE rather than replace.
+// 3. The teammate path — 075's arm is DEFAULT visibility, and 202 keeps it only
+//    while nobody has configured the session.
+//
+// Until 202 this section was one test named `KNOWN LIMIT: on a teammate-created
+// session BOTH dials are inert, because 075 outranks them`. It pinned the hole:
+// the owner asked for the most private posture both dials express and member C
+// still got view AND drive, because both gates opened on `may_act_as_creator`.
+// `work_sessions.sharing_set_at` is what separates "never configured" (keep
+// 075's arm) from "deliberately narrowed" (enforce the dial), and the tests
+// below pin both halves — the second is the one the old test asserted against.
 // -----------------------------------------------------------------------------
-test('KNOWN LIMIT: on a teammate-created session BOTH dials are inert, because 075 outranks them', () => {
-  const s = spawn('agent-launched', { actorId: w.personaA });
-  ok(shareSql(s, { share: 'none', drive: 'owner' }, 'agent-private'), { claims: w.claimsA });
+const setAtOf = (sessionId) =>
+  scalar(
+    `select coalesce(sharing_set_at::text, 'null') from public.work_sessions
+      where entity_id = ${uuid(sessionId)}`,
+    { claims: w.claimsA },
+  );
 
-  // Read this as the gap it is, not as a feature. The owner has just asked for
-  // the most private posture both dials can express, and member C — who has no
-  // grant, no admin right and no relationship to this session — still gets BOTH
-  // view and drive. Both gates open on the `may_act_as_creator` arm, 075 makes
-  // `can_act_as` true for every active member whenever `created_by` is a
-  // team_member entity, and 464 of the 997 sessions on the live node are.
-  //
-  // It is 087's model, not 187's, and 187 deliberately does not change it: this
-  // arm is how a human watches an agent's terminal today, so closing it is a
-  // product decision with its own blast radius rather than a tidy-up. What 187
-  // owes it is that no surface claim it away — hence "watch: not shared" and
-  // the note in `renderShared`, and hence this test being named after the hole
-  // rather than after the mechanism that makes it.
-  assert.equal(attaches(s, 'view', claimsC, 'c-view-agent').mode, 'view');
-  assert.equal(attaches(s, 'drive', claimsC, 'c-drive-agent').mode, 'drive');
+test('a pre-187-shaped teammate row (never configured, share none) still attaches for another member', () => {
+  // THE NO-REGRESSION CASE: how a human watches an agent's terminal today. The
+  // row is put in exactly the shape 986 live rows were in before 187 — 'none'
+  // because nothing had ever written the column — without going through the
+  // one writer, so `sharing_set_at` stays null. The UPDATE names only the two
+  // dials, so the single-writer guard on `sharing_set_at` does not fire.
+  const s = spawn('legacy-agent', { actorId: w.personaA });
+  ok(
+    `update public.work_sessions set share_mode = 'none', drive_mode = 'owner'
+      where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL },
+  );
+  assert.equal(modesOf(s), 'none/owner');
+  assert.equal(setAtOf(s), 'null', 'control: this row has never been configured');
+
+  assert.equal(attaches(s, 'view', claimsC, 'legacy-c-view').mode, 'view');
+  assert.equal(attaches(s, 'drive', claimsC, 'legacy-c-drive').mode, 'drive');
+});
+
+test('a deliberate narrowing NARROWS on a teammate-created session', () => {
+  const s = spawn('agent-narrowed', { actorId: w.personaA });
+  assert.equal(setAtOf(s), 'null', 'a spawn does not stamp provenance; only the one writer does');
+  attaches(s, 'view', claimsC, 'narrowed-c-view-before');
+
+  ok(shareSql(s, { share: 'none', drive: 'owner' }, 'agent-narrow'), { claims: w.claimsA });
+  assert.notEqual(setAtOf(s), 'null', 'the writer stamped it');
+
+  // The old KNOWN LIMIT test asserted the opposite of these two lines.
+  refused('grant_stream_attach: C watching a teammate session narrowed to none',
+    s, 'view', claimsC, 'narrowed-c-view');
+  refused('grant_stream_attach: C driving a teammate session narrowed to none',
+    s, 'drive', claimsC, 'narrowed-c-drive');
+
+  // WHAT "OWNER" MEANS WHEN THE OWNER IS A PERSONA. `created_by` is the
+  // teammate, and no column records which human pressed launch — so the member
+  // who narrowed it is outside too. Pinned so nobody reads 'none' on an agent
+  // session as "only me" and is surprised.
+  refused('grant_stream_attach: A, who launched and narrowed it, watching it',
+    s, 'view', w.claimsA, 'narrowed-a-view');
+});
+
+test('re-opening a narrowed teammate session restores watching AND typing', () => {
+  // The trap the first-write rule exists for. Post-187 agent sessions are
+  // stamped space/owner, and under 075 'owner' means every member. If the first
+  // write only stamped provenance, "Make private" then "Share with space" would
+  // leave drive_mode at 'owner', now enforced — and nobody could type into the
+  // agent's terminal again. Instead the first write materialises the dial it
+  // does not name at the value that was already in force.
+  const s = spawn('agent-reopen', { actorId: w.personaA });
+  assert.equal(modesOf(s), 'space/owner', 'control: the space default');
+
+  ok(shareSql(s, { share: 'none' }, 'agent-reopen-close'), { claims: w.claimsA });
+  assert.equal(modesOf(s), 'none/space', 'drive was everyone before; the first write says so');
+  refused('grant_stream_attach: C driving while it is closed — drive needs the view gate',
+    s, 'drive', claimsC, 'reopen-c-drive-closed');
+
+  ok(shareSql(s, { share: 'space' }, 'agent-reopen-open'), { claims: w.claimsA });
+  assert.equal(modesOf(s), 'space/space');
+  assert.equal(attaches(s, 'view', claimsC, 'reopen-c-view').mode, 'view');
+  assert.equal(attaches(s, 'drive', claimsC, 'reopen-c-drive').mode, 'drive');
+});
+
+test('narrowing only DRIVE on a teammate session keeps watching open', () => {
+  // The mirror of the case above: naming drive alone must not close watching,
+  // though the stored share_mode on a legacy row is 'none'.
+  const s = spawn('agent-drive-only', { actorId: w.personaA });
+  ok(
+    `update public.work_sessions set share_mode = 'none' where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL },
+  );
+  ok(shareSql(s, { drive: 'owner' }, 'agent-drive-only'), { claims: w.claimsA });
+  assert.equal(modesOf(s), 'space/owner', 'watching was everyone before; the first write says so');
+  assert.equal(attaches(s, 'view', claimsC, 'drive-only-c-view').mode, 'view');
+  refused('grant_stream_attach: C driving after drive alone was narrowed',
+    s, 'drive', claimsC, 'drive-only-c-drive');
+});
+
+test('the first-write rule is a member-created session no-op', () => {
+  // 075's arm never reached C on A's own session, so there is nothing in force
+  // to write down: naming one dial leaves the other exactly as stored.
+  const s = spawn('member-first-write');
+  ok(
+    `update public.work_sessions set share_mode = 'none' where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL },
+  );
+  ok(shareSql(s, { drive: 'space' }, 'member-first-write'), { claims: w.claimsA });
+  assert.equal(modesOf(s), 'none/space');
+});
+
+test('sharing_set_at has a single writer', () => {
+  const s = spawn('single-writer');
+  denied(
+    'a direct UPDATE of sharing_set_at, even as the table owner',
+    `update public.work_sessions set sharing_set_at = now() where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL, expect: '23514' },
+  );
+  ok(shareSql(s, { share: 'space' }, 'single-writer-set'), { claims: w.claimsA });
+  denied(
+    'a direct UPDATE that NULLS it — the one that would silently re-open a narrowed session',
+    `update public.work_sessions set sharing_set_at = null where entity_id = ${uuid(s)}`,
+    { url: OWNER_URL, expect: '23514' },
+  );
+  assert.notEqual(setAtOf(s), 'null');
 });
 
 // -----------------------------------------------------------------------------

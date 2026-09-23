@@ -15,7 +15,7 @@ import type { SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind, newLaunchMutationId, resolveAction } from '../domain';
+import { getKind, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
 import { LaunchComposerPopup } from '../new-session';
@@ -58,7 +58,7 @@ import {
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import {
-  BinIcon, EntityControlStrip, RestoreIcon, RowAction, stripHasLiveControl,
+  BinIcon, EntityControlStrip, RestoreIcon, RowAction, RowSharingControl, stripHasLiveControl,
   type ControlHost, type ControlSubject,
 } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
@@ -215,6 +215,9 @@ function subjectOf(detail: EntityDetail): ControlSubject {
        pass an `EntitySummary` straight through — this hand-built subject is
        the one place that has to say it. */
     category: detail.category,
+    /* The sharing picker's teammate note reads who launched the session; the
+       list gets it off the summary, this hand-built subject has to carry it. */
+    createdBy: detail.createdBy,
   };
 }
 
@@ -1046,6 +1049,21 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 className="pn-panelbar__surface"
                 ref={setSurfaceSlot}
                 data-testid="panel-surface-slot"
+              />
+            ) : null}
+            {/* THE SESSION'S SHARING SLOT — the row cluster's picker, mounted
+                again rather than copied, so a session opened from its row keeps
+                the control it had there. Declared by the kind's `rowActions`
+                (registry data, never a kind literal) and drawn only where the
+                host can perform it: a panel whose host wired no sharing gets no
+                refused icon in a bar that has no room for one. Desktop arm only;
+                the phone arm is `oneSurface`, where anchored popovers are ruled
+                out (CONTRACT.md §4). */}
+            {config.list.rowActions?.includes(SHARING_CONTROL.private) && controlHost.onShareSession ? (
+              <RowSharingControl
+                ref_={sharingControlFor(SHARING_CONTROL.private, sessionSharingOf(detail.state, detail.createdBy)?.watch)}
+                row={subjectOf(detail)}
+                props={controlHost}
               />
             ) : null}
             <ActionBar

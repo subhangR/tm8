@@ -19,6 +19,7 @@ import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
 import { type ActionContext, type ActionRef } from '../domain';
 import type { SessionLiveness } from '../data/seam';
 import { EntityListPanel } from './index';
+import type { SessionSharingPatch } from './controls/EntityControls';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
@@ -50,9 +51,13 @@ function mount(
     onComplete?: (entityId: string) => void;
     onTerminate?: (entityId: string) => void;
     onResume?: (entityId: string) => void;
-    onShareSession?: (entityId: string, next: 'none' | 'space') => void;
+    onShareSession?: (entityId: string, patch: SessionSharingPatch) => void;
     /** Overwrite every session row's watch dial — see the sharing describe. */
     shareMode?: string;
+    /** Overwrite every session row's drive dial, provenance and creator. */
+    driveMode?: string;
+    sharingSetAt?: string | null;
+    createdByKind?: string;
     /** The two seam answers the process control turns on — see its describe. */
     liveness?: SessionLiveness;
     category?: StatusCategory;
@@ -64,7 +69,18 @@ function mount(
       handlers.shareMode === undefined
         ? row
         : { ...row, state: { ...row.state, shareMode: handlers.shareMode } as typeof row.state },
-    );
+    )
+    .map((row) => ({
+      ...row,
+      state: {
+        ...row.state,
+        ...(handlers.driveMode === undefined ? {} : { driveMode: handlers.driveMode }),
+        ...(handlers.sharingSetAt === undefined ? {} : { sharingSetAt: handlers.sharingSetAt }),
+      } as typeof row.state,
+      ...(handlers.createdByKind === undefined
+        ? {}
+        : { createdBy: { ...row.createdBy, kind: handlers.createdByKind } as typeof row.createdBy }),
+    }));
   return render(
     <EntityListPanel
       kind={kind}
@@ -580,21 +596,92 @@ describe('the sharing slot reads the ROW, not the registry', () => {
   });
 
   /**
-   * AND IT CARRIES THE DIRECTION. One executor behind both halves, so the verb
-   * the user pressed has to be what says which way the dial turns — a click
-   * that sent the wrong mode would silently do the opposite of the label.
+   * THE SLOT IS A PICKER NOW, and each radio sends ONLY its own dial. The
+   * failure this pins is the one the RPC's coalesce exists to prevent: a
+   * click on "who can type" that also sent the watch dial would reset it to
+   * whatever this row last read — `tm8 session share --drive` without
+   * `--share` must not touch sharing, and neither may this.
+   */
+  function openPicker(container: HTMLElement): HTMLElement {
+    const trigger = firstCluster(container).querySelector('[data-testid="row-sharing-trigger"]');
+    if (!trigger) throw new Error('no sharing trigger in the cluster');
+    fireEvent.click(trigger);
+    const menu = document.body.querySelector('[data-testid="row-sharing-menu"]');
+    if (!menu) throw new Error('the sharing picker did not open');
+    return menu as HTMLElement;
+  }
+
+  it.each([
+    ['watch', 'none', 'space', { shareMode: 'space' }],
+    ['watch', 'space', 'none', { shareMode: 'none' }],
+    ['type', 'none', 'space', { driveMode: 'space' }],
+    ['type', 'space', 'owner', { driveMode: 'owner' }],
+  ] as const)('the %s dial on a %s session sends exactly %s', (dial, shareMode, value, sent) => {
+    const onShareSession = vi.fn();
+    const driveMode = value === 'owner' ? 'space' : 'owner';
+    const { container, unmount } = mount('work_session', SESSION, { shareMode, driveMode, onShareSession });
+    const menu = openPicker(container);
+    const group = within(menu).getByTestId(`row-sharing-${dial}`);
+    fireEvent.click(group.querySelector(`[data-value="${value}"]`)!);
+    expect(onShareSession).toHaveBeenCalledTimes(1);
+    expect(onShareSession.mock.calls[0]?.[1]).toEqual(sent);
+    unmount();
+  });
+
+  it('checks the row’s current dials, with an absent driveMode read as owner', () => {
+    const { container, unmount } = mount('work_session', SESSION, { shareMode: 'space' });
+    const menu = openPicker(container);
+    const checked = [...menu.querySelectorAll('[role="radio"][aria-checked="true"]')].map((el) =>
+      el.getAttribute('data-value'),
+    );
+    expect(checked).toEqual(['space', 'owner']);
+    unmount();
+  });
+
+  it('re-clicking the checked option sends nothing', () => {
+    const onShareSession = vi.fn();
+    const { container, unmount } = mount('work_session', SESSION, { shareMode: 'space', onShareSession });
+    const menu = openPicker(container);
+    fireEvent.click(within(menu).getByTestId('row-sharing-watch').querySelector('[data-value="space"]')!);
+    expect(onShareSession).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  /**
+   * 202 — the teammate case is SAID. Before its sharing is set, a teammate-
+   * launched session is reachable by every member who may act as that
+   * teammate, whatever the dials read; once set, the dials bind everyone.
+   * A member-launched session gets neither note: its owner is exempt.
    */
   it.each([
-    ['none' as const, 'share-session', 'space' as const],
-    ['space' as const, 'unshare-session', 'none' as const],
-  ])('a %s session draws %s and dispatches it as %s', (shareMode, verb, sent) => {
-    const onShareSession = vi.fn();
-    const { container } = mount('work_session', SESSION, { shareMode, onShareSession });
-    const cluster = firstCluster(container);
-    const target = cluster.querySelector(`[data-action="${verb}"]`);
-    if (!target) throw new Error(`no ${verb} in the cluster`);
-    fireEvent.click(target);
-    expect(onShareSession).toHaveBeenCalledTimes(1);
-    expect(onShareSession.mock.calls[0]?.[1]).toBe(sent);
+    ['team_member', null, /until someone sets its sharing/],
+    ['team_member', '2026-09-01T00:00:00.000Z', /apply to every member/],
+    ['member', null, null],
+  ] as const)('a %s-launched session with sharingSetAt %s says so', (createdByKind, sharingSetAt, words) => {
+    const { container, unmount } = mount('work_session', SESSION, {
+      shareMode: 'none',
+      createdByKind,
+      sharingSetAt,
+    });
+    const note = within(openPicker(container)).queryByTestId('row-sharing-teammate');
+    if (words === null) expect(note).toBeNull();
+    else expect(note?.textContent).toMatch(words);
+    unmount();
+  });
+
+  it('refuses as not wired when the host passes no handler', () => {
+    const rows = rowsOfKind('work_session');
+    const { container } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={() => rows}
+        ctx={ctx}
+        capabilitiesOf={() => SESSION}
+        livenessOf={() => 'live'}
+        onAction={vi.fn()}
+        onTerminate={vi.fn()}
+      />,
+    );
+    expect(firstCluster(container).querySelector('[data-testid="row-sharing-trigger"]')).toBeNull();
   });
 });

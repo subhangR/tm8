@@ -25,7 +25,10 @@
  * host passes them through `sections`. Neither lane imports the other.
  */
 import { useEffect, useState } from 'react';
-import { MembersSection } from './MembersSection';
+import type { SpaceSummary } from '@tm8/contract';
+import { MembersSection, viewerRoleIn } from './MembersSection';
+import { SharingSection } from './SharingSection';
+import { ownerRoleRef } from './port';
 import { ModelsSection } from './ModelsSection';
 import { InvitesPanel } from './InviteFrames';
 import { IdentityProfileSection } from './IdentityProfileSection';
@@ -134,6 +137,15 @@ export function SettingsShell({
     );
   }
 
+  /**
+   * After a sharing-default write, adopt the space the server RETURNED — the
+   * write's own answer, not a local patch — so the radios show what
+   * `w2_update_space` stored rather than what was clicked.
+   */
+  function spaceWritten(space: SpaceSummary) {
+    setData((d) => ({ ...d, space }));
+  }
+
   function refreshInvites() {
     void port.loadInvites().then(
       (invites) => setData((d) => ({ ...d, invites })),
@@ -217,6 +229,7 @@ export function SettingsShell({
             onProfileSaved={refreshIdentity}
             onMembersChanged={refreshMembers}
             onInvitesChanged={refreshInvites}
+            onSpaceWritten={spaceWritten}
             onAxesChanged={refreshAxes}
             onWorkflowsChanged={refreshWorkflows}
             nodeKey={nodeKey}
@@ -236,6 +249,7 @@ function SectionBody({
   onProfileSaved,
   onMembersChanged,
   onInvitesChanged,
+  onSpaceWritten,
   onAxesChanged,
   onWorkflowsChanged,
   nodeKey,
@@ -248,6 +262,7 @@ function SectionBody({
   onProfileSaved: () => void;
   onMembersChanged: () => void;
   onInvitesChanged: () => void;
+  onSpaceWritten: (space: SpaceSummary) => void;
   onAxesChanged: () => void;
   onWorkflowsChanged: () => void;
   nodeKey: string;
@@ -288,6 +303,23 @@ function SectionBody({
           }}
         />
       );
+    case 'sharing': {
+      const viewerRole = viewerRoleIn(data.members, data.identity);
+      const viewerIsAdmin = viewerRole !== null
+        && (viewerRole === ownerRoleRef() || viewerRole === 'admin');
+      return (
+        <SharingSection
+          space={data.space}
+          viewerIsAdmin={viewerIsAdmin}
+          heading={def.heading}
+          onChange={async (patch) => {
+            // Not caught here, for the reason `onRoleChange` gives above: the
+            // section renders the server's refusal beside its own dial.
+            onSpaceWritten(await port.updateSharingDefaults(patch));
+          }}
+        />
+      );
+    }
     case 'menu':
       /* `measure={false}`: the editor draws a two-column author/preview pair
          and capping it at the reading measure would stack them into a single

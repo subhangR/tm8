@@ -36,6 +36,7 @@ import {
   type RedeemInviteInput,
   type SpaceInviteView,
   type UpdateMemberRoleInput,
+  type UpdateSpaceInput,
   bindPath,
   type ActivityItem,
   type ArtifactPreviewSession,
@@ -298,6 +299,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { spaceId, memberId },
         body: input,
       });
+    },
+
+    updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {
+      return http.call<SpaceSummary>('spaces.update', { params: { spaceId }, body: input });
     },
 
     createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView> {

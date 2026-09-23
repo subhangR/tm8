@@ -30,6 +30,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { CommandResult, EntityId } from '@tm8/contract';
 import type { ActionRef } from '../domain';
+import type { SessionSharingPatch } from '../panels/controls/EntityControls';
 import type { Seam } from '../data/seam';
 
 /**
@@ -110,7 +111,8 @@ export interface PanelPrimaries {
    */
   resumingId: string | null;
   /**
-   * THE WATCH DIAL (187), unwrapped for the row cluster's sharing slot.
+   * THE TWO SHARING DIALS (187), unwrapped for the row cluster's sharing slot.
+   * `patch` names only the dial the user clicked — see `SessionSharingPatch`.
    *
    * NOT in `PANEL_PRIMARY_ACTIONS` and not reachable through `forEntity`,
    * deliberately: that constant's whole contract is "exactly what the switch
@@ -118,7 +120,7 @@ export interface PanelPrimaries {
    * `panel.primaries`. Listing it there would claim a dispatch path that does
    * not exist — the enabled-inert shape the constant exists to prevent.
    */
-  shareSession: (entityId: string, next: 'none' | 'space') => void;
+  shareSession: (entityId: string, patch: SessionSharingPatch) => void;
 }
 
 export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
@@ -210,7 +212,7 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
    * same control, so neither is the irreversible direction.
    */
   const shareSession = useCallback(
-    (entityId: string, next: 'none' | 'space') => {
+    (entityId: string, patch: SessionSharingPatch) => {
       /* Same posture as terminate and resume above. */
       if (!commands) {
         throw new Error(
@@ -220,12 +222,14 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
       }
       void commands
         .shareSession(entityId as EntityId, {
-          shareMode: next,
+          /* Spread, never defaulted: an absent dial must stay absent on the
+             wire, or the RPC's coalesce is bypassed and it gets reset. */
+          ...patch,
           clientMutationId: `share:${entityId}:${String(Date.now())}`,
         })
         .then((result) => reconcileCommand?.(result))
         .catch((error: unknown) =>
-          onError?.(next === 'none' ? 'unshare-session' : 'share-session', entityId, error),
+          onError?.(patch.shareMode === 'none' ? 'unshare-session' : 'share-session', entityId, error),
         );
     },
     [commands, reconcileCommand, onError],

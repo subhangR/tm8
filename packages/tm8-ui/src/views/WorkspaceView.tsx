@@ -477,7 +477,13 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           host={host}
           reasons={reasons}
           ctx={{ ...ctx, entityId: id }}
-          controls={{ ...controlHostBase, kind: detail?.kind ?? '', ctx: { ...ctx, entityId: id } }}
+          controls={{
+            ...controlHostBase,
+            kind: detail?.kind ?? '',
+            ctx: { ...ctx, entityId: id },
+            /* The same executor the side lists' rows use for the sharing slot. */
+            onShareSession: primaries.shareSession,
+          }}
           /* The panel primaries, finally executable: Terminate commits here,
              Run expands the same launch config the list rows open, and edit /
              add-child come from `EntityVerbs` — see `composePanelActions`. */

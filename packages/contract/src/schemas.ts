@@ -515,6 +515,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // event stream stops. The TS type gaining a field is only half of adding
     // one.
     driveMode: WorkSessionDriveModeSchema.optional(),
+    // 202: when a human last set the dials (null = never). Named here for the
+    // reason driveMode is above — this arm is `.strict()`, so a field the
+    // reader spreads and this schema does not name stops the event stream.
+    sharingSetAt: z.string().nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),

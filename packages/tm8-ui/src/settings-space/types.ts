@@ -19,6 +19,7 @@ export type SettingsSectionId =
   | 'account'
   | 'members'
   | 'invites'
+  | 'sharing'
   | 'axes'
   | 'workflows'
   | 'models'
@@ -52,6 +53,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'account', label: 'Your profile', heading: 'Your profile' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
+  /* 187's two space defaults. Beside members and invites because it answers
+     the same question — who in this space gets at what — for terminals. */
+  { id: 'sharing', label: 'Session sharing', heading: 'Session sharing' },
   { id: 'axes', label: 'Task axes', heading: 'Task axes' },
   /* W4 — DIRECTLY AFTER axes, by ruling: workflows are authored beside the
      axis whose values they key on, and reading them apart would hide that a

@@ -464,8 +464,10 @@ export function EntityView(props: EntityViewProps) {
       /* The live projection, not `detail.connections`: the ✓ marks must move
          with the write the menu just made. */
       connectionsOf: data.connectionsOf,
+      /* The row's sharing slot, and the detail panel's copy of it. */
+      onShareSession: primaries.shareSession,
     }),
-    [config.kind, ctx, data, rowLifecycle],
+    [config.kind, ctx, data, rowLifecycle, primaries.shareSession],
   );
 
   /* Authoring mount 7a, EntityView host: +New in the list head creates for

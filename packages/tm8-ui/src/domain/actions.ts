@@ -338,6 +338,46 @@ export function sharingControlFor(ref: ActionRef, shareMode: string | undefined)
   return shareMode === 'space' || shareMode === 'explicit' ? SHARING_CONTROL.shared : ref;
 }
 
+/**
+ * One session's sharing, read off its row for the sharing popover (187, 202).
+ *
+ * `watch` is the stored `shareMode` verbatim — `explicit` included, which is
+ * readable but not writable from here. `type` defaults an ABSENT `driveMode`
+ * to `owner`, because that is what the server's attach gate does with a row
+ * that predates the column.
+ *
+ * `launchedByTeammate` is decided HERE, in `domain/`, because it names a kind
+ * (`team_member`) and components may not. It matters because such a session
+ * has no human owner to exempt: until someone sets its sharing, every member
+ * who may act as that teammate reaches it as its owner (`setAt` null), and
+ * once set, the setting binds every member, including whoever launched it.
+ * `setAt` is `undefined` when the node does not report the column (pre-202).
+ *
+ * Returns `null` for a row with no watch dial at all — a kind without sharing.
+ */
+export interface SessionSharing {
+  watch: string;
+  type: 'owner' | 'space';
+  launchedByTeammate: boolean;
+  setAt: string | null | undefined;
+}
+
+export function sessionSharingOf(
+  state: unknown,
+  createdBy: { kind: string } | undefined,
+): SessionSharing | null {
+  const fields = state as Record<string, unknown> | null | undefined;
+  const watch = fields?.shareMode;
+  if (typeof watch !== 'string') return null;
+  const setAt = fields?.sharingSetAt;
+  return {
+    watch,
+    type: fields?.driveMode === 'space' ? 'space' : 'owner',
+    launchedByTeammate: createdBy?.kind === 'team_member',
+    setAt: typeof setAt === 'string' || setAt === null ? setAt : undefined,
+  };
+}
+
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
 function livenessGate(ctx: ActionContext): ActionAvailability | null {
   if (!ctx.entityId) return disabled(REASONS.noEntity);

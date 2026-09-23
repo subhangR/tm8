@@ -297,3 +297,27 @@ describe('the workflow registry round-trips through the port', () => {
     await seam.commands.work(other.id, { status: 'blocked' as never });
   });
 });
+
+describe('187 — the sharing defaults go through spaces.update', () => {
+  it('writes only the key it is given and the space reads back moved', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const port = settingsPortFromSeam(seam, spaceId);
+    expect((await port.loadSpace())?.sessionDriveDefault).toBe('owner');
+
+    const returned = await port.updateSharingDefaults({ sessionDriveDefault: 'space' });
+    expect(returned.sessionDriveDefault).toBe('space');
+    // The other dial was not named, so it was not touched.
+    expect(returned.sessionShareDefault).toBe('space');
+    const reread = await port.loadSpace();
+    expect([reread?.sessionShareDefault, reread?.sessionDriveDefault]).toEqual(['space', 'space']);
+  });
+
+  it('the fixture refuses a value outside the vocabulary, as w2_update_space does', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    await expect(
+      settingsPortFromSeam(seam, spaceId).updateSharingDefaults({ sessionShareDefault: 'explicit' as never }),
+    ).rejects.toThrow(/sessionShareDefault/);
+  });
+});

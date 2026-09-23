@@ -387,7 +387,7 @@ export type ActionRef =
   // so a launch config would open a card asking for things already decided.
   | 'resume'
   | 'prompt-session'
-  // THE SHARING CONTROL (187) — `execution.sessions.share`, the WATCH dial.
+  // THE SHARING CONTROL (187) — `execution.sessions.share`; the WATCH dial picks the half.
   //
   // Two refs for one slot, on the `terminate`/`resume` model next door: the
   // verb a row offers depends on the row's OWN `shareMode`, and
@@ -396,10 +396,11 @@ export type ActionRef =
   // between them, and the component that holds the row calls it — the same
   // derivation, for the same reason, as the process control.
   //
-  // WATCH only. The drive dial (`driveMode`) is deliberately not a row verb:
-  // handing someone your keyboard is a decision that wants a sentence, not a
-  // one-click icon, and it stays on `tm8 session share --drive` until there
-  // is a surface that can ask the question properly.
+  // BOTH DIALS, since 187's follow-through: the slot no longer fires on
+  // click. It opens `RowSharingControl`, a popover with the watch dial and the
+  // drive dial as labelled radiogroups — the "surface that can ask the
+  // question properly" the drive dial was waiting for. The ref still names
+  // the slot and gates it; it no longer says which way a click goes.
   | 'share-session'
   | 'unshare-session'
   // §8 share-into-session (seam-deferred, §10.7)

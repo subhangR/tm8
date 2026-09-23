@@ -82,6 +82,8 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
       unreadTotal: 0,
       githubRepo: null,
       createdAt: '2026-01-04T09:00:00.000Z',
+      sessionShareDefault: 'space',
+      sessionDriveDefault: 'owner',
     }),
     loadMembers: async () => specimenMembers(NOW),
     loadIdentity: async () => IDENTITY,
@@ -92,6 +94,11 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
     // it as a failed settings read, and the default here is what proves it.
     loadInvites: async () => Promise.reject(new Error('space admin required')),
     setMemberRole: async () => ({ patches: [] }) as never,
+    updateSharingDefaults: async (patch) => ({
+      id: 'specimen-space' as never, name: 'atelier', description: 'the workshop space',
+      memberCount: 3, unreadTotal: 0, githubRepo: null, createdAt: '2026-01-04T09:00:00.000Z',
+      sessionShareDefault: 'space', sessionDriveDefault: 'owner', ...patch,
+    }),
     createInvite: async () => ({
       id: 'inv-fake', code: 'inv_fake', role: 'member', maxUses: 1, uses: 0,
       expiresAt: null, revoked: false,
@@ -144,6 +151,9 @@ const LIVE_VERBS = [
   /^Profile$/,
   /^Members & roles$/,
   /^Invites$/,
+  // 187's two space defaults — real `spaces.update` writes, one key each.
+  /^Session sharing$/,
+  /^(Everyone in the space|Only its owner|Everyone who can watch)$/,
   /^Task axes$/,
   /^Linked projects$/,
   /^Menu$/,
@@ -812,5 +822,84 @@ describe('T2-3 — the menu editor', () => {
   it('the preview footer says WHERE the menu came from when nothing is unsaved', () => {
     render(<MenuEditor menu={MENU} />);
     expect(document.body.textContent).toMatch(/no saved menu — showing the shipped default/);
+  });
+});
+
+describe('187 — session sharing defaults', () => {
+  async function openSharing(port: SettingsPort, identity?: IdentityView) {
+    const view = render(
+      <SettingsShell
+        port={identity ? { ...port, loadIdentity: async () => identity } : port}
+      />,
+    );
+    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    fireEvent.click(screen.getByRole('button', { name: 'Session sharing' }));
+    await screen.findByText('Session sharing', { selector: '.set-section__title' });
+    return view;
+  }
+  const radio = (group: string, name: string) =>
+    within(screen.getByRole('radiogroup', { name: group })).getByRole('radio', { name });
+
+  it('says, before either control, that these are defaults for NEW sessions only', async () => {
+    await openSharing(fakePort());
+    const scope = screen.getByTestId('sharing-scope').textContent ?? '';
+    expect(scope).toMatch(/Defaults for new sessions/);
+    expect(scope).toMatch(/does not touch any session that already exists/);
+    // …and it precedes the dials in document order, so it is read first.
+    const dial = screen.getByTestId('sharing-dial-watch');
+    expect(
+      screen.getByTestId('sharing-scope').compareDocumentPosition(dial) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows the space’s current pair — the shipped space/owner', async () => {
+    await openSharing(fakePort());
+    expect(radio('Who can watch a new session', 'Everyone in the space').getAttribute('aria-checked')).toBe('true');
+    expect(radio('Who can type into it', 'Only its owner').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('writes ONE key per click, and shows what the server returned', async () => {
+    const update = vi.fn(async (patch: Parameters<SettingsPort['updateSharingDefaults']>[0]) => ({
+      id: 'specimen-space' as never, name: 'atelier', description: 'the workshop space',
+      memberCount: 3, unreadTotal: 0, githubRepo: null, createdAt: '2026-01-04T09:00:00.000Z',
+      sessionShareDefault: 'space' as const, sessionDriveDefault: 'owner' as const, ...patch,
+    }));
+    await openSharing(fakePort({ updateSharingDefaults: update }));
+
+    fireEvent.click(radio('Who can type into it', 'Everyone who can watch'));
+    await vi.waitFor(() =>
+      expect(radio('Who can type into it', 'Everyone who can watch').getAttribute('aria-checked')).toBe('true'),
+    );
+    // The PATCH names only the dial that moved; the other is left to coalesce.
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0]).toEqual({ sessionDriveDefault: 'space' });
+    expect(radio('Who can watch a new session', 'Everyone in the space').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('a plain member sees the pair, locked, with the reason stated', async () => {
+    const plain: IdentityView = {
+      ...IDENTITY,
+      memberships: [{ spaceId: 'specimen-space', memberId: 'm-not-in-rows', role: 'member' }],
+    };
+    const update = vi.fn();
+    await openSharing(fakePort({ updateSharingDefaults: update as never }), plain);
+    for (const [group, name] of [
+      ['Who can watch a new session', 'Only its owner'],
+      ['Who can type into it', 'Everyone who can watch'],
+    ] as const) {
+      expect((radio(group, name) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(screen.getByTestId('sharing-lock').textContent).toMatch(/can’t change these defaults/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('a refusal comes back in the server’s words beside the dial that asked', async () => {
+    await openSharing(fakePort({
+      updateSharingDefaults: async () => Promise.reject(new Error('space admin required')),
+    }));
+    fireEvent.click(radio('Who can watch a new session', 'Only its owner'));
+    expect((await screen.findByTestId('sharing-watch-failure')).textContent).toBe('space admin required');
+    // Nothing moved: the radios show the stored value, not the click.
+    expect(radio('Who can watch a new session', 'Everyone in the space').getAttribute('aria-checked')).toBe('true');
   });
 });

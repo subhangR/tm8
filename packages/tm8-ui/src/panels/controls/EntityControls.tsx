@@ -48,6 +48,7 @@ import type {
   EntityCapabilities,
   EntityKind,
   EntitySummary,
+  ExecutionSessionsShareInput,
   StatusCategory,
   TaskAxis,
   TaskWorkflow,
@@ -75,6 +76,7 @@ import {
   processControlFor,
   resolveAction,
   sharingControlFor,
+  sessionSharingOf,
   workflowRefusalText,
   workflowTypeOf,
   workflowVocabularyOf,
@@ -121,7 +123,19 @@ export interface ControlSubject {
    * builds a subject by hand, had to start passing it.
    */
   category?: StatusCategory;
+  /**
+   * Who created the row — read by the sharing popover alone, to say that a
+   * teammate-launched session has no human owner to exempt. Optional and
+   * structural like `category`: every `EntitySummary` carries it.
+   */
+  createdBy?: { kind: string };
 }
+
+/**
+ * ONE DIAL OR BOTH, exactly the RPC's coalescing shape: a key left out is left
+ * alone server-side, so the popover sends only the dial that was clicked.
+ */
+export type SessionSharingPatch = Pick<ExecutionSessionsShareInput, 'shareMode' | 'driveMode'>;
 
 /**
  * The members these controls need from a host. Optional handlers are
@@ -198,21 +212,20 @@ export interface ControlHost {
    */
   onComplete?: (entityId: string) => void;
   /**
-   * THE WATCH DIAL (187) — `execution.sessions.share`.
+   * THE TWO SHARING DIALS (187) — `execution.sessions.share`.
    *
    * A dedicated prop for the same reason the three above are: `onAction` is
    * the session-START dispatcher, whose switch has never known this verb, so
    * a share routed through it would draw live and be swallowed.
    *
-   * ONE prop for both halves, taking the mode. The verb the user pressed
-   * already says which way the dial is going, and splitting it into
-   * `onShare`/`onUnshare` would give the two directions two places to forget
-   * the version guard.
+   * ONE prop for both dials, taking a PATCH that names only the dial the user
+   * clicked — the equivalent of `tm8 session share` with one flag. Sending
+   * both would reset the dial nobody touched to whatever this row last read.
    *
    * Absent ⇒ the control renders its honest not-wired refusal rather than a
-   * live button, which is `RowAction`'s fallback and not a special case here.
+   * live button, which is `RowSharingControl`'s fallback, same as `RowAction`'s.
    */
-  onShareSession?: (entityId: string, next: 'none' | 'space') => void;
+  onShareSession?: (entityId: string, patch: SessionSharingPatch) => void;
   /**
    * `label` rides along beside `source` because a failure notice is USER copy:
    * `source` is the wire field name, and titling a notice with it produced
@@ -506,7 +519,8 @@ export function RowActionCluster({
   /**
    * The dedicated executor for a verb the general `onAction` cannot perform.
    *
-   * FOUR verbs are in this position and all four for one reason: the list's
+   * THREE verbs are in this position, all for one reason (the sharing slot
+   * was a fourth until it became a popover — see `verb` below): the list's
    * `onAction` is the session-START dispatcher (see the hosts:
    * `onAction={sessionStart.onAction}`), a switch whose `default:` returns. A
    * verb routed through it draws live — it passed its capability gate — and
@@ -522,19 +536,17 @@ export function RowActionCluster({
     if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
     if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
     if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
-    /* 187. Both halves of the sharing slot reach ONE executor with the mode
-       they mean, rather than two props that could drift apart: the verb the
-       user pressed is the whole of the intent. */
-    if (ref === SHARING_CONTROL.private && props.onShareSession) {
-      return (_ref, id) => props.onShareSession?.(id, 'space');
-    }
-    if (ref === SHARING_CONTROL.shared && props.onShareSession) {
-      return (_ref, id) => props.onShareSession?.(id, 'none');
-    }
     return undefined;
   };
 
-  const verb = (ref: ActionRef) => (
+  /* The sharing slot is a PICKER, not a one-click verb: it holds two dials and
+     the typing one is a decision that wants its words beside it. Both halves
+     of the slot open the same popover; the half still decides the trigger's
+     mark, so a private and a shared session remain distinguishable at rest. */
+  const verb = (ref: ActionRef) =>
+    ref === SHARING_CONTROL.private || ref === SHARING_CONTROL.shared ? (
+      <RowSharingControl key={ref} ref_={ref} row={row} props={props} />
+    ) : (
     <RowAction
       key={ref}
       ref_={ref}
@@ -2034,6 +2046,182 @@ export function RowStateControl({
   );
 }
 
+
+/**
+ * THE SESSION'S SHARING, as a picker (187, 202) — the row's equivalent of
+ * `tm8 session share --share none|space --drive owner|space`.
+ *
+ * TWO DIALS, ONE WRITE PER CLICK. Each radio sends only its own key, so
+ * choosing who may type never resets who may watch; the RPC coalesces the
+ * absent one, and this control never sends it.
+ *
+ * GATED EXACTLY AS `RowAction` gates the verb it replaced — not wired →
+ * checking → the def's own availability — so the slot's refusal vocabulary
+ * did not change when it grew a popover.
+ *
+ * THE TEAMMATE CASE IS SAID, NOT HIDDEN. A session a teammate launched has no
+ * human owner. Until someone sets its sharing, every member who may act as
+ * that teammate reaches it as its owner, whatever the dials say; the first
+ * write ends that, and from then on the dials bind everyone — the person who
+ * launched it included. The note is the popover's last line either way.
+ */
+const SHARE_WATCH: readonly { value: 'none' | 'space'; word: string }[] = [
+  { value: 'none', word: 'Only its owner' },
+  { value: 'space', word: 'Everyone in the space' },
+];
+const SHARE_TYPE: readonly { value: 'owner' | 'space'; word: string }[] = [
+  { value: 'owner', word: 'Only its owner' },
+  { value: 'space', word: 'Everyone who can watch' },
+];
+
+function sharingWords(watch: string, type: 'owner' | 'space'): string {
+  const w = SHARE_WATCH.find((o) => o.value === watch)?.word ?? 'Named members';
+  const t = SHARE_TYPE.find((o) => o.value === type)?.word ?? type;
+  return `watch: ${w.toLowerCase()} · type: ${t.toLowerCase()}`;
+}
+
+export function RowSharingControl({
+  ref_,
+  row,
+  props,
+}: {
+  ref_: ActionRef;
+  row: ControlSubject;
+  props: ControlHost;
+}) {
+  const def = resolveAction(ref_);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissable(open, [boxRef, menuRef], close);
+  const anchor = useMenuAnchor(open, boxRef, menuRef, close);
+  const headId = useId();
+
+  const refuse = (reason: UnavailableReason) => (
+    <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
+  );
+  if (!props.onShareSession) return refuse(NOT_WIRED_REASON);
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={def.label} glyph={def.icon} />;
+  }
+  const availability = def.availability({
+    ...props.ctx,
+    entityId: row.id,
+    kind: row.kind,
+    capabilities: props.capabilitiesOf?.(row.id) ?? null,
+    liveness: props.livenessOf?.(row.id),
+    ...(row.category ? { category: row.category } : {}),
+  });
+  if (availability.kind === 'disabled') return refuse(toReason(availability.reason));
+
+  const sharing = sessionSharingOf(row.state, row.createdBy);
+  const watch = sharing?.watch ?? '';
+  const type = sharing?.type ?? 'owner';
+  const words = sharing ? sharingWords(watch, type) : 'sharing not reported';
+  const send = (patch: SessionSharingPatch) => props.onShareSession?.(row.id, patch);
+
+  const dial = <V extends string>(
+    name: 'watch' | 'type',
+    legend: string,
+    options: readonly { value: V; word: string }[],
+    current: string,
+    key: keyof SessionSharingPatch,
+  ) => (
+    <span className="lp__sharedial" role="radiogroup" aria-label={legend} data-testid={`row-sharing-${name}`}>
+      <span className="lp__sharelegend" aria-hidden>
+        {legend}
+      </span>
+      {options.map((o) => {
+        const on = o.value === current;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            className={on ? 'lp__assignopt lp__assignopt--on' : 'lp__assignopt'}
+            data-value={o.value}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!on) send({ [key]: o.value } as SessionSharingPatch);
+            }}
+          >
+            <span className="lp__assignopt-name">{o.word}</span>
+            <span className="lp__assignopt-mark" aria-hidden>
+              {on ? '✓' : ''}
+            </span>
+          </button>
+        );
+      })}
+    </span>
+  );
+
+  const teammateNote =
+    sharing?.launchedByTeammate !== true
+      ? null
+      : sharing.setAt === null
+        ? 'A teammate launched this session, so it has no owner to hold it: every member can watch and type until someone sets its sharing here. Once set, it applies to everyone — you included.'
+        : sharing.setAt === undefined
+          ? null
+          : 'A teammate launched this session, so these settings apply to every member — including whoever launched it.';
+
+  return (
+    /* `data-action` on the WRAPPER: it is the cluster's direct child, which is
+       what the cluster's order is read off, and it names the slot once. */
+    <span className="lp__assignwrap" ref={boxRef} data-action={ref_}>
+      <button
+        type="button"
+        className="lp__rowaction"
+        data-testid="row-sharing-trigger"
+        title={`Sharing — ${words}`}
+        aria-label={`Sharing for ${row.title}, ${words}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        <span aria-hidden>{def.icon}</span>
+      </button>
+      {open && anchor
+        ? createPortal(
+            <span
+              ref={menuRef}
+              className="lp__assignmenu lp__sharemenu"
+              style={anchor.style}
+              role="group"
+              aria-labelledby={headId}
+              data-testid="row-sharing-menu"
+            >
+              <span className="lp__sharehead" id={headId}>
+                Sharing for {row.title}
+              </span>
+              {dial('watch', 'Who can watch', SHARE_WATCH, watch, 'shareMode')}
+              {watch === 'explicit' ? (
+                <span className="lp__sharenote" role="note" data-testid="row-sharing-explicit">
+                  Shared with named members, which is set from the CLI. Choosing an option here switches it to that option instead.
+                </span>
+              ) : null}
+              {dial('type', 'Who can type', SHARE_TYPE, type, 'driveMode')}
+              {watch === 'none' && type === 'space' ? (
+                <span className="lp__sharenote" role="note">
+                  Nobody else can watch, so nobody else can type either.
+                </span>
+              ) : null}
+              {teammateNote ? (
+                <span className="lp__sharenote" role="note" data-testid="row-sharing-teammate">
+                  {teammateNote}
+                </span>
+              ) : null}
+            </span>,
+            anchor.host,
+          )
+        : null}
+    </span>
+  );
+}
 
 /**
  * Row quick-actions are the SAME ActionRefs as the panel primaries, ⌘Enter and
