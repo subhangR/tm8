@@ -68,6 +68,11 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.delete',
   'credentials.loginSessions.start',
   'credentials.loginSessions.finish',
+  // Jev lane K: the service-key ops mount inside the same registration, so
+  // they share the seam's condition rather than joining the denominator.
+  'credentials.serviceKeys.status',
+  'credentials.serviceKeys.put',
+  'credentials.serviceKeys.delete',
 ]);
 
 class StubDb implements Db {

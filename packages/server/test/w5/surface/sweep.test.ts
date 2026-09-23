@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(205); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(SURFACE).toHaveLength(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(205); // +1 launch.suggest (Jev lane F). MEASURED.
+    expect(rows).toHaveLength(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(205); // +1 launch.suggest (Jev lane F). MEASURED.
+    expect(new Set(rows.map((r) => r.op)).size).toBe(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
   });
 
   /**
@@ -1057,7 +1057,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // left this pin at 181 — main read 182 here) and 201_jev_runs. MEASURED.
     // 183 -> 184 (2026-09-23): 202_work_session_sharing_provenance. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 184, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(184);
+    // 184 -> 185 (Jev lane K): 203_account_service_keys, on top of #661's 202. MEASURED.
+    expect(server.appliedMigrations.length).toBe(185);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1341,6 +1342,11 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // `authKind` is `browser`, so the R2 guard ADMITS it and they answer
   // normally rather than 400.
   'credentials.delete',
+  // Jev lane K: the service-key put/delete read `:provider` off the PATH and
+  // refuse the sweep's synthetic value against the one-member set — handler-
+  // reached, like credentials.delete above.
+  'credentials.serviceKeys.delete',
+  'credentials.serviceKeys.put',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',
