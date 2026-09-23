@@ -20,7 +20,7 @@ import {
   type OperationName,
   type PaletteAction,
 } from '@tm8/contract';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { EntityRow } from '../../src/facade/entity-read.js';
@@ -1443,4 +1443,81 @@ describe('W2.G13 entities.context on a chat (176)', () => {
 
     expect(chatRootSql).toBe(taskRootSql);
   });
+});
+
+// ---------------------------------------------------------------------------
+// entities.context select-before-load (M2/S2; c904 §2.6 and §5 test 8, c761 §7)
+// ---------------------------------------------------------------------------
+
+const TEN_CHILD_IDS = Array.from({ length: 10 }, (_, index) =>
+  `00000000-0000-7000-8000-0000000014${index.toString(16).padStart(2, '0')}`,
+);
+
+/** c761 §10's "a task with 10 children of ~4 KB and a message". */
+const TEN_CHILDREN_STUB: Stub = {
+  ...CONTEXT_STUB,
+  children: TEN_CHILD_IDS.map((id) => longRow(id, 4000)),
+  entities: [
+    taskRow(IDS.task),
+    ...TEN_CHILD_IDS.map((id) => longRow(id, 4000)),
+    messageRow(IDS.rootMessage),
+  ],
+};
+
+/** A session with no pinned interaction profile, which `sessionRow` leaves undefined. */
+const PINLESS_SESSION: EntityRow = {
+  ...sessionRow(IDS.session),
+  ws_pin_revision: null,
+  ws_pin_template_key: null,
+  ws_pin_template_version: null,
+  ws_pin_resolved_snapshot: null,
+};
+
+const SESSION_STUB: Stub = {
+  root: [PINLESS_SESSION],
+  children: [],
+  edges: [],
+  messages: [
+    { entity_id: IDS.rootMessage, cursor_created_at: '2026-07-26T09:20:00.123456Z' },
+  ],
+  activity: [activityRow(IDS.activity, { entity_id: IDS.session })],
+  entities: [
+    PINLESS_SESSION,
+    messageRow(IDS.rootMessage, { anchorId: IDS.session, body: 'coordinator: go' }),
+  ],
+  eventSeq: 6120,
+};
+
+/**
+ * v1 is a public read contract, and S2 changes only WHAT is loaded. So every
+ * v1 read below is pinned byte-for-byte against a golden recorded from the
+ * pre-S2 service. The clock is frozen because `provenance.fetchedAt` is a wall
+ * clock, and freezing it is what makes "byte-identical" literal rather than
+ * "identical apart from one field".
+ */
+describe('W2.G13 entities.context v1 output is byte-identical (M2/S2 goldens)', () => {
+  const cases: Array<{ name: string; stub: Stub; query: string; params?: Record<string, string> }> = [
+    { name: 'task-default', stub: CONTEXT_STUB, query: '' },
+    { name: 'task-ten-children-default', stub: TEN_CHILDREN_STUB, query: '' },
+    { name: 'session-default', stub: SESSION_STUB, query: '', params: { id: IDS.session } },
+    { name: 'task-summary', stub: CONTEXT_STUB, query: 'sections=summary' },
+    { name: 'task-hierarchy', stub: TEN_CHILDREN_STUB, query: 'sections=hierarchy&sectionBytes=8192' },
+    { name: 'task-messages-activity', stub: CONTEXT_STUB, query: 'sections=messages,activity' },
+    { name: 'task-tight-budget', stub: TEN_CHILDREN_STUB, query: 'totalBytes=2048' },
+  ];
+
+  for (const { name, stub, query, params } of cases) {
+    it(`${name} matches its pre-S2 golden`, async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-07-26T12:00:00.000Z'));
+      try {
+        const view = await contextOn(stub).run(query, params);
+        await expect(`${JSON.stringify(view, null, 2)}\n`).toMatchFileSnapshot(
+          `./__goldens__/entity-context-v1/${name}.json`,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  }
 });
