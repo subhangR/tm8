@@ -36,6 +36,7 @@ import {
   type Workflow,
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
+  type UpdateSpaceInput,
   bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
@@ -2113,6 +2114,9 @@ export function createFixtureSeam(): FixtureSeam {
     unreadTotal: 12,
     githubRepo: 'subhang/tm8',
     createdAt: '2026-07-20T09:00:00.000Z',
+    // 187's shipped defaults: watch shared, typing owner-only.
+    sessionShareDefault: 'space',
+    sessionDriveDefault: 'owner',
   };
 
   // -- the seam --------------------------------------------------------------
@@ -3447,6 +3451,35 @@ export function createFixtureSeam(): FixtureSeam {
        * it will meet on a node, or the refusal states are drawn from
        * imagination and are wrong in exactly the places that matter.
        */
+      /**
+       * `spaces.update` mirror — `w2_update_space`'s rules: a space admin, a
+       * closed vocabulary per sharing key (22023 on the node), and absent keys
+       * left alone. Only the space summary moves; no session is touched,
+       * because a default applies at spawn and never reaches backwards.
+       */
+      async updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {
+        if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        const viewerRole = viewer ? roleOfSummary(viewer) : null;
+        if (viewerRole !== 'owner' && viewerRole !== 'admin') {
+          throw new CollabError('forbidden', 'space admin required');
+        }
+        if (input.sessionShareDefault !== undefined
+          && input.sessionShareDefault !== 'none' && input.sessionShareDefault !== 'space') {
+          throw new CollabError('invalid_input', 'sessionShareDefault must be none or space');
+        }
+        if (input.sessionDriveDefault !== undefined
+          && input.sessionDriveDefault !== 'owner' && input.sessionDriveDefault !== 'space') {
+          throw new CollabError('invalid_input', 'sessionDriveDefault must be owner or space');
+        }
+        if (input.name !== undefined) spaceSummary.name = input.name;
+        if (input.description !== undefined) spaceSummary.description = input.description;
+        if (input.githubRepo !== undefined) spaceSummary.githubRepo = input.githubRepo;
+        if (input.sessionShareDefault !== undefined) spaceSummary.sessionShareDefault = input.sessionShareDefault;
+        if (input.sessionDriveDefault !== undefined) spaceSummary.sessionDriveDefault = input.sessionDriveDefault;
+        return clone(spaceSummary);
+      },
       async setMemberRole(
         spaceId: SpaceId,
         memberId: EntityId,
@@ -4370,6 +4403,10 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.expectedVersion !== undefined) requireVersion(s, input.expectedVersion);
         if (input.shareMode !== undefined) s.state.shareMode = input.shareMode;
         if (input.driveMode !== undefined) s.state.driveMode = input.driveMode;
+        /* 202: every write through the sharing RPC stamps provenance — the
+           one writer of the column, mirrored so the row's teammate note moves
+           from "open until set" to "applies to everyone" as it does live. */
+        s.state.sharingSetAt = new Date().toISOString();
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);

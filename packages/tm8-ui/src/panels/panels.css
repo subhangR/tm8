@@ -4212,6 +4212,43 @@
   color: var(--pn-brand);
 }
 
+/* The session sharing picker (187) — the assign menu's box and rows, grown to
+   two labelled radiogroups and a note. No max-height: it is two dials, never a
+   list that grows, and a scroller would hide the note that explains them. */
+.cv2-root .lp__sharemenu {
+  width: 250px;
+  max-height: none;
+  gap: 2px;
+}
+.cv2-root .lp__sharehead {
+  padding: 2px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .lp__sharedial {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .lp__sharelegend {
+  padding: 0 6px 2px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .lp__sharenote {
+  padding: 4px 6px 2px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--pn-ink-soft, var(--pn-ink));
+}
+
 /* -- Board (A2, doc 06 §1) — geometry only; card anatomy stays the tile's -- */
 .cv2-root .lp__board {
   display: flex;

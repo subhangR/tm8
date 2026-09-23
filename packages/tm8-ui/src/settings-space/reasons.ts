@@ -214,8 +214,14 @@ export const INVITE_REDEEM_NOT_HERE = reason(
 // ---------------------------------------------------------------------------
 
 export const SPACE_EDIT_UNAVAILABLE = reason(
-  'Editing space details has no executor in this build',
-  'seam.commands has no space-mutation verb; spaces() is a read.',
+  'Editing space details has no form in this build',
+  'seam.commands.updateSpace exists (Session sharing writes through it); the name/description form has not been built.',
+);
+
+/** The sharing defaults are `w2_update_space`'s, which requires a space admin. */
+export const SHARING_DEFAULTS_NOT_ADMIN = reason(
+  'you can’t change these defaults',
+  'the space’s sharing defaults need admin or owner here; ask someone who has it.',
 );
 
 /* AXES_UNREADABLE stood here until 2026-08-16 and was measured FALSE on both
@@ -257,6 +263,7 @@ export const ALL_SETTINGS_REASONS: readonly UnavailableReason[] = [
   INVITE_REDEEM_NOT_HERE,
   INVITE_REDEEM_LANDING_UNWIRED,
   SPACE_EDIT_UNAVAILABLE,
+  SHARING_DEFAULTS_NOT_ADMIN,
   DANGER_ZONE_UNAVAILABLE,
   SECTION_NOT_MOUNTED,
 ];

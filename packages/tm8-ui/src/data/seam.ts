@@ -105,6 +105,7 @@ import type {
   RedeemInviteInput,
   SpaceInviteView,
   UpdateMemberRoleInput,
+  UpdateSpaceInput,
   ActivityItem,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -899,6 +900,13 @@ export interface Seam {
       memberId: EntityId,
       input: UpdateMemberRoleInput,
     ): Promise<CommandResult>;
+    /**
+     * `spaces.update` (PATCH /v2/spaces/:spaceId). Absent keys are left alone
+     * — the server forwards only the keys the body names — so a caller that
+     * changes one sharing default cannot reset the other. The admin rule and
+     * the vocabulary live in `w2_update_space`; this seam checks neither.
+     */
+    updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary>;
     /**
      * Mint a join code. `role` is what redemption confers and may be `admin` or
      * `member` — never `owner`: a code travels out of band, and a bearer

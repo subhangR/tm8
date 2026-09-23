@@ -1,0 +1,98 @@
+/* ===========================================================================
+   SESSION SHARING — the two space defaults (187), owned by this lane alone and
+   imported from `SharingSection.tsx`. Every class is `.set-sharing*`.
+
+   Tokens only; `src/hex-ban.test.ts` walks this file. Like the space profile,
+   the stack owns NO padding: the frame's gutter is the only one.
+   =========================================================================== */
+
+.set-sharing {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.set-sharing__lead strong,
+.set-sharing__agents strong {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.set-sharing__dial {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* Two options side by side; they stack on a phone rather than squeeze. */
+.set-sharing__opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 520px) {
+  .set-sharing__opts { grid-template-columns: 1fr; }
+}
+
+.set-sharing__opt {
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+.set-sharing__opt:hover:not(:disabled) { border-color: rgba(var(--pn-brand-rgb), 0.45); }
+.set-sharing__opt:focus-visible { outline: 2px solid rgba(var(--pn-brand-rgb), 0.55); outline-offset: 1px; }
+
+.set-sharing__opt--on {
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
+}
+
+/* A locked option must not look live — but the CHOSEN one must stay legible,
+   because a member reading the space's current default is the point. */
+.set-sharing__opt:disabled { cursor: not-allowed; }
+.set-sharing__opt:disabled:not(.set-sharing__opt--on) { opacity: 0.6; }
+
+.set-sharing__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+.set-sharing__opt--on .set-sharing__label { color: var(--pn-brand-2); }
+
+.set-sharing__hint {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  line-height: 1.45;
+}
+
+.set-sharing__foot { margin: 0; line-height: 1.5; }
+.set-sharing__lock { margin: 0; line-height: 1.5; }
+
+.set-sharing__fail {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--pn-block);
+  text-wrap: pretty;
+}
+
+.set-sharing__agents {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--pn-line);
+}
+.set-sharing__lead { margin: 0; }

@@ -526,6 +526,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 4 (2026-08-01): updateProfile — identity display (067).
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',
+      // 187 follow-through: `updateSpace` — `spaces.update`, a PATCH. The
+      // Session sharing settings section writes the two space-wide defaults
+      // through it, one key per click; absent keys are left alone.
+      'updateSpace',
       'upsertReadMark', 'work',
     ].sort());
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
