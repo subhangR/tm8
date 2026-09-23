@@ -36,6 +36,7 @@ import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
+import { jevAdvisorFromEnv } from './jev/jev-adapter.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -344,6 +345,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       ...(credentials ? { credentials } : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
+      // launch.suggest's Jev client, built ONCE here. No TYPESAFE_API_KEY → null,
+      // and Ask Jev answers every group `no_key` (design 01a0cb80 §8).
+      jevAdvisor: jevAdvisorFromEnv(process.env),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
         const claimed = commandEnvelope(ctx).workSessionId ?? null;
         const pinned = ctx.identity.kind === 'bearer'
