@@ -59,10 +59,36 @@
   isolation: isolate;
 }
 
-.drw__stage :is(canvas, .excalidraw) {
-  /* The library fills its host; nothing here should shrink-wrap it. */
+/*
+ * THE LIBRARY'S ROOT, NEVER ITS CANVASES. Excalidraw sizes its own stacked
+ * canvases from the box it measures, at devicePixelRatio; this sheet only
+ * says the root fills the stage. (It used to name `canvas` as well — a no-op
+ * in practice, since the library's inline sizes outrank it, and a rule that
+ * would decouple bitmap from box the day they did not.)
+ *
+ * THE ZOOM RECIPROCAL IS THE CURSOR FIX. `app.css` puts `zoom: 1.1` on
+ * `.cv2-root`. Excalidraw reads its root with `getBoundingClientRect` — which
+ * already includes that zoom — and writes the result back as each canvas's
+ * CSS width and height, where the zoom applies a SECOND time. Measured in a
+ * 440px panel: root 390 CSS px, canvases 429 CSS px, drawn 472px wide; ink
+ * landed 1.1x as far from the stage's top-left as the pointer did — 4px off
+ * near that corner, 36px right and 38px down at the far one, identically at
+ * DPR 1, 1.1 and 2. Counter-zooming the root puts the library at a true 1.0,
+ * where its measurements and its CSS pixels agree.
+ *
+ * Same lever, same literal and same mobile half as `terminal.css`'s
+ * `.term-host`: the mobile shell declines the 1.1 (`mobile-chrome.css`), so
+ * there the reciprocal would shrink the canvas to 0.909 instead. If
+ * `app.css`'s 1.1 ever moves, these move with it.
+ */
+.drw__stage > .excalidraw {
   height: 100%;
   width: 100%;
+  zoom: calc(1 / 1.1);
+}
+
+.cv2-root[data-shell='mobile'] .drw__stage > .excalidraw {
+  zoom: 1;
 }
 
 .drw__loading {

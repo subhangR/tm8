@@ -196,4 +196,31 @@ describe('DrawingBlock', () => {
     const stage = css.slice(css.indexOf('.drw__stage'));
     expect(stage).toMatch(/min-height:\s*\d+px/);
   });
+
+  /*
+   * THE CURSOR FIX, pinned where jsdom can see it — the SOURCE. `app.css`
+   * zooms `.cv2-root` by 1.1; Excalidraw measures its root with that zoom
+   * included and writes the result back as canvas CSS size, where it applies
+   * again, so ink drifted 10% of its distance from the stage's top-left
+   * (measured: 36px right, 38px down at the far corner). The reciprocal on the
+   * library's root is the whole fix, and it is only right while it divides by
+   * the SAME literal `app.css` multiplies by.
+   */
+  it('counter-zooms the library root by exactly app.css’s own scale', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(join(here, 'drawing-block.css'), 'utf8');
+    const app = readFileSync(join(here, '../../styles/app.css'), 'utf8');
+    const scale = /\.cv2-root\s*\{\s*zoom:\s*([\d.]+);/.exec(app)?.[1];
+    expect(scale).toBeDefined();
+    const root = /\.drw__stage > \.excalidraw \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(root).toMatch(new RegExp(`zoom:\\s*calc\\(1 / ${scale!.replace('.', '\\.')}\\)`));
+    // The mobile shell declines the 1.1, so it must decline the reciprocal too.
+    expect(css).toMatch(/\.cv2-root\[data-shell='mobile'\] \.drw__stage > \.excalidraw \{\s*zoom:\s*1;/);
+  });
+
+  it('never sizes a canvas — Excalidraw sizes its own', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'drawing-block.css'), 'utf8');
+    const selectors = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]+(?=\{)/g) ?? [];
+    expect(selectors.filter((sel) => /\bcanvas\b/.test(sel))).toEqual([]);
+  });
 });
