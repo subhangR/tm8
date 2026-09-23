@@ -475,3 +475,65 @@ describe('the strip does not duplicate what it replaced', () => {
     expect(queryByTestId('panel-tombstone')).not.toBeNull();
   });
 });
+
+describe('the session sharing slot rides the detail panel too', () => {
+  /**
+   * The row cluster's two-dial picker, mounted in the panel header. A session
+   * opened from its row must keep the control it had there — the panel is
+   * where a user lands after clicking the row, so a slot that vanished on open
+   * was the gap reported against 187's UI.
+   */
+  const SESSION = (() => {
+    const found = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!found) throw new Error('the fixtures must carry a work_session');
+    return found;
+  })();
+  const sessionAt = (state: Record<string, unknown>, createdBy?: ActorSummary): EntityDetail => ({
+    ...SESSION,
+    state: { ...SESSION.state, ...state } as EntityDetail['state'],
+    ...(createdBy ? { createdBy } : {}),
+  });
+  const sessionHost = (onShareSession?: ControlHost['onShareSession']) =>
+    host({
+      kind: 'work_session',
+      capabilitiesOf: () => SESSION.capabilities,
+      ...(onShareSession ? { onShareSession } : {}),
+    });
+
+  it('opens the same picker from the panel, and one click sends exactly its own dial', () => {
+    const onShareSession = vi.fn();
+    const detail = sessionAt({ shareMode: 'space', driveMode: 'owner' });
+    const { getByTestId } = panel(detail, sessionHost(onShareSession));
+
+    const trigger = getByTestId('row-sharing-trigger');
+    /* Beside the primaries, in the bar the panel's verbs live in. */
+    expect(getByTestId('panel-action-bar').parentElement?.contains(trigger)).toBe(true);
+    fireEvent.click(trigger);
+    const menu = getByTestId('row-sharing-menu');
+    const typeSpace = within(menu).getByTestId('row-sharing-type').querySelector('[data-value="space"]');
+    if (!typeSpace) throw new Error('the typing dial must offer "space"');
+    fireEvent.click(typeSpace);
+
+    expect(onShareSession).toHaveBeenCalledTimes(1);
+    expect(onShareSession).toHaveBeenCalledWith(detail.id, { driveMode: 'space' });
+  });
+
+  it("carries the launcher, so a teammate's session shows the teammate note", () => {
+    const teammate: ActorSummary = { ...ADA, id: 'tm-1' as EntityId, kind: 'team_member', isAgent: true };
+    const detail = sessionAt({ shareMode: 'space', driveMode: 'owner', sharingSetAt: null }, teammate);
+    const { getByTestId } = panel(detail, sessionHost(vi.fn()));
+
+    fireEvent.click(getByTestId('row-sharing-trigger'));
+    expect(getByTestId('row-sharing-teammate').textContent).toMatch(/until someone sets its sharing/);
+  });
+
+  it('draws no sharing slot where the host wired no sharing', () => {
+    const { queryByTestId } = panel(sessionAt({ shareMode: 'none' }), sessionHost());
+    expect(queryByTestId('row-sharing-trigger')).toBeNull();
+  });
+
+  it('draws no sharing slot on a kind that does not declare one', () => {
+    const { queryByTestId } = panel(TASK, host({ onShareSession: vi.fn() }));
+    expect(queryByTestId('row-sharing-trigger')).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
 // The 187 follow-through, in a real browser: the Session sharing settings
 // section (fixture seam, /settings-dev.html) and the per-session sharing
-// picker changing state (/e2e/sharing-harness.html).
+// picker changing state, from its row (/e2e/sharing-harness.html) and from
+// its detail panel (/e2e/sharing-detail-harness.html).
 //
 //   npx vite --port 4637          # in this package
 //   OUT=<dir> PORT=4637 node e2e/capture-sharing.mjs
@@ -47,6 +48,18 @@ await page.getByTestId('row-sharing-type').locator('[aria-checked="true"][data-v
 await shot('04-row-picker-after-drive-click');
 console.log('row log:', await page.getByTestId('harness-log').textContent());
 console.log('row note:', await page.getByTestId('row-sharing-teammate').textContent());
+
+// 3 — the same picker from the session's DETAIL PANEL, before and after.
+await page.goto(`http://127.0.0.1:${PORT}/e2e/sharing-detail-harness.html`, { waitUntil: 'networkidle' });
+await page.getByTestId('row-sharing-trigger').click();
+await page.getByTestId('row-sharing-menu').waitFor();
+await shot('05-detail-picker-teammate-unset');
+await page.getByTestId('row-sharing-watch').locator('[data-value="none"]').click();
+await page.getByTestId('row-sharing-watch').locator('[aria-checked="true"][data-value="none"]').waitFor();
+await shot('06-detail-picker-after-watch-click');
+console.log('detail log:', await page.getByTestId('harness-log').textContent());
+console.log('detail trigger:', await page.getByTestId('row-sharing-trigger').getAttribute('aria-label'));
+console.log('detail note:', await page.getByTestId('row-sharing-teammate').textContent());
 
 console.log('page errors:', JSON.stringify(errors));
 await browser.close();
