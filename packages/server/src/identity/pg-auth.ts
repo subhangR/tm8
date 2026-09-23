@@ -62,7 +62,9 @@ export interface ResolvedAuthSession {
   actingAsTeamMemberId: string | null;
   workSessionId: string | null;
   runtimeMemberId: string | null;
+  /** Pre-176 credentials only; a chat is an entity now and binds through runtimeChatId. */
   runtimeThreadRootId: string | null;
+  runtimeChatId: string | null;
   expiresAt: string;
   label: string | null;
 }
@@ -89,6 +91,7 @@ interface SessionRowJson {
   work_session_id?: string | null;
   runtime_member_id?: string | null;
   runtime_thread_root_id?: string | null;
+  runtime_chat_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -143,7 +146,7 @@ export interface IssuedAgentRuntimeSession {
   token: string;
   sessionId: string;
   runtimeMemberId: string;
-  runtimeThreadRootId: string;
+  runtimeChatId: string;
   actingAsTeamMemberId: string;
   expiresAt: string;
 }
@@ -199,37 +202,37 @@ export async function revokeAgentSession(
 export async function issueAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
-  input: { threadRootId: string; teamMemberId: string; label?: string | null },
+  input: { chatId: string; teamMemberId: string; label?: string | null },
 ): Promise<IssuedAgentRuntimeSession> {
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent_runtime).toISOString();
   const session = await db.rpc<SessionRowJson>(claims, 'issue_agent_runtime_session', [
-    input.threadRootId,
+    input.chatId,
     input.teamMemberId,
     hashToken(secret),
     expiresAt,
-    input.label ?? `chat:${input.threadRootId}`,
+    input.label ?? `chat:${input.chatId}`,
   ]);
-  if (!session.runtime_member_id || !session.runtime_thread_root_id) {
+  if (!session.runtime_member_id || !session.runtime_chat_id) {
     throw new CollabError('upstream_unavailable', 'agent runtime session returned no attribution');
   }
   return {
     token: formatToken(session.id, secret),
     sessionId: session.id,
     runtimeMemberId: session.runtime_member_id,
-    runtimeThreadRootId: session.runtime_thread_root_id,
+    runtimeChatId: session.runtime_chat_id,
     actingAsTeamMemberId: input.teamMemberId,
     expiresAt: session.expires_at,
   };
 }
 
-/** Idempotently revoke every live runtime credential owned by a thread root. */
+/** Idempotently revoke every live runtime credential owned by a chat. */
 export async function revokeAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
-  threadRootId: string,
+  chatId: string,
 ): Promise<void> {
-  await db.rpc(claims, 'revoke_agent_runtime_session', [threadRootId]);
+  await db.rpc(claims, 'revoke_agent_runtime_session', [chatId]);
 }
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */

@@ -305,9 +305,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 193 (177): the 24 container HTTP rows. MEASURED.
+    // 193 -> 194 (187): execution.sessions.share, one POST command. MEASURED.
+    // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
+    expect(SURFACE).toHaveLength(204);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
+    expect(rows).toHaveLength(204);
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
+    expect(new Set(rows.map((r) => r.op)).size).toBe(204);
   });
 
   /**
@@ -880,7 +889,171 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // case, and it does so structurally. If this line goes red a fifth time on
     // arrears, the honest repair is to assert the count against the tree rather
     // than against a literal.
-    expect(server.appliedMigrations.length).toBe(160);
+    //
+    // 160 -> 162 on 2026-09-03. TWO, and only one of them is this branch's:
+    // the literal said 160 while main at 388f90c4 already applies 161, so this
+    // line was ALREADY RED ON MAIN — the exact "every branch open across a
+    // landing inherits the failure" cost the note above predicts, paid here by
+    // a branch that did not cause it. The other is `176_chat_entity.sql`.
+    //
+    // 162 -> 163 in the SAME branch: the spawn door moved into its own file
+    // (`178_spawn_parent_may_be_a_chat.sql`) after this literal had already been
+    // reasoned about, so the bump was made for one file and the split made it
+    // two. The literal is the one line a clean rebase — or a clean refactor —
+    // is worth nothing on.
+    //
+    // 163 -> 164 on the SAME DAY, by #574, and this is the third bump in one
+    // afternoon: `177_container_kind.sql`. It CONFLICTED here rather than
+    // auto-resolving, which is the good outcome and not the usual one — the
+    // #441/#453 family is two branches making the IDENTICAL edit, which git
+    // merges silently and one short. This branch carried 162 and main carried
+    // 163, so the values differed and git had to ask.
+    //
+    // 164 -> 165, by `179_chat_tool_audit_provenance.sql` (Wave 2, L2-runtime),
+    // and 165 -> 166 by `180_menu_chats_tab.sql` (Wave 2, L2-ui). That is the
+    // fifth bump in two days and the third this line has CAUGHT rather than
+    // inherited — the whole argument for the exact literal and against every
+    // clever alternative.
+    //
+    // MEASURED on the tree actually being merged, never carried over from the
+    // value that was here, and never from either side of the conflict:
+    //   git ls-tree -r --name-only HEAD db/migrations | grep -c '\.sql$'  -> 166
+    // cross-checked against origin/main after rebasing:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c   -> 165
+    // (main 165, which now includes 177 from #574 and 179 from #578, plus this
+    // branch's one file). `git ls-tree` rather than `ls`, so an untracked stray
+    // .sql in the working directory cannot inflate the number.
+    //
+    // RE-MEASURE ON EVERY REBASE. Wave 2 ran four lanes on main at once and
+    // three of them added a migration, so this literal is a merge conflict by
+    // construction — which is the point. A conflict is the GOOD outcome: the
+    // failure it exists to catch is the one that does NOT conflict, two
+    // branches making the IDENTICAL edit, which git merges silently and one
+    // short (#441/#453, three times in one afternoon).
+    //
+    // A NEW EXACT LITERAL, not `migrationFiles().length`: the note forbids the
+    // live-computed form for a reason that still holds — it would pass on any
+    // chain length and could no longer notice a chain that silently shrank,
+    // which is the one thing this assertion exists to catch.
+    //
+    // 166 -> 171 (2026-09-04): THREE files, all from this one branch, and the
+    // number was MEASURED on the merged tree rather than added to either side —
+    // which is the whole instruction of every row above, and the row directly
+    // above is the one that says a Wave-2 style landing makes this line a
+    // conflict BY CONSTRUCTION and that the conflict is the good outcome.
+    // This is that conflict, and this is the re-measurement:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '.sql$' -> 168
+    //   git ls-files db/migrations | grep -c '.sql$'                           -> 171
+    //   duplicate prefixes                                                     -> 0
+    // The branch side of this conflict said 116 and main's said 166; NEITHER is
+    // the answer, exactly as this block has now recorded six times.
+    //
+    // The three files are 181_gemini_hermes_credentials.sql,
+    // 182_cursor_credentials.sql and 183_credential_provider_rpc_guards.sql.
+    // They were AUTHORED as 123/124/125 against a stale local base and
+    // renumbered to 181-183 at this merge, because 123-180 are all taken on
+    // main. Renumbering was free, which is the property the block above says
+    // it is worth preserving: nothing is derived from a migration's number.
+    //
+    // 171 -> 172 (2026-09-05): ONE file, 184_menu_chats_tab_leaves.sql, and the
+    // number is MEASURED on the merged tree exactly as every row above
+    // instructs — not incremented from the branch's own side:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 171
+    //   git ls-files db/migrations | grep -c '\.sql$'                           -> 172
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // That last line is why the two measurements differ by exactly this
+    // branch's one file: main had not moved under it. A migration landing on
+    // main before this branch does makes this line a conflict BY CONSTRUCTION,
+    // which the row above says is the good outcome — RE-MEASURE, do not add.
+    //
+    // AND THIS PIN IS WHY THE BRANCH WAS RED. The lane grepped this file for
+    // '181_'/'182_'/'183_' looking for a chain enumeration and found only the
+    // prose above, so it read the file as unaffected. The pin is a bare
+    // integer: it names no migration and no version, so it is invisible to
+    // every search phrased in terms of the thing being added. Any branch that
+    // adds a migration file touches this line, and the only reliable way to
+    // find that out before CI does is to know it is here.
+    //
+    // 172 -> 173 (2026-09-15): ONE file, 185_work_session_usage.sql (the
+    // exit-time usage instrument on work_sessions), MEASURED on the merged
+    // tree as every row above instructs:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 172
+    //   ls db/migrations/*.sql | wc -l                                          -> 173
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main had not moved under this branch, so the two differ by exactly its
+    // one file. A migration landing on main first makes this a conflict BY
+    // CONSTRUCTION — RE-MEASURE, do not add.
+    //
+    // 173 -> 174 (2026-09-15): ONE file, 186_menu_codebrain_tab_removed.sql
+    // (the CodeBrain tab and its ref leave the menu), MEASURED the same way on
+    // the merged tree rather than incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 173
+    //   ls db/migrations/*.sql | wc -l                                          -> 174
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main had not moved under this branch either, so the two again differ by
+    // exactly its one file. The prose above is right that this pin is a bare
+    // integer invisible to any grep phrased as the thing being added — it was
+    // found here by running the suite, which is the other way it says to find
+    // it. RE-MEASURE, do not add.
+    //
+    // 174 -> 175 (187): ONE file, 187_work_session_sharing.sql (the two space
+    // sharing defaults, work_sessions.drive_mode, the inheriting trigger, and
+    // the re-defined grant_stream_attach). MEASURED the same way, not
+    // incremented:
+    //   git ls-tree -r --name-only origin/main db/migrations | grep -c '\.sql$' -> 174
+    //   ls db/migrations/*.sql | wc -l                                          -> 175
+    //   duplicate prefixes                                                      -> 0
+    //   git rev-list --count HEAD..origin/main                                  -> 0
+    // Main has not moved under this branch, so the two differ by exactly its
+    // one file.
+    //
+    // 175 -> 178 (196): THREE files, and none of the three arithmetic is this
+    // branch's alone. The pin is a statement about the tree that exists AFTER
+    // this branch merges, and this branch is the THIRD of three to touch it in
+    // one afternoon, so the number cannot be derived from what is on disk here.
+    // Written out, because a bare integer is exactly what nobody can reconstruct
+    // later:
+    //
+    //   base main fa9a9aed                                              176 files, pin 175
+    //   #636  repairs the inherited red, adds no migration              176 files, pin 176
+    //   #635  adds 195_*.sql                                            177 files, pin 177
+    //   THIS  adds 196_kimi_groq_credentials.sql                        178 files, pin 178
+    //
+    // The 176/175 gap at the base is NOT this branch's to explain away:
+    // 194_drawing_kind.sql landed on main in 5e1f9e1e ("Drawing as an entity,
+    // with Excalidraw", #627) WITHOUT updating this number, so main has been red
+    // on this assertion since it merged. That is precisely the failure every
+    // paragraph above predicts — a bare integer no grep phrased as "drawing"
+    // could ever reach. It is recorded here rather than quietly absorbed,
+    // because a branch that silently fixes an inherited red teaches the next
+    // author that the pin drifts harmlessly. #636 owns that repair.
+    //
+    // THIS BRANCH'S FILE WAS RENUMBERED 195 -> 196, and that is the load-bearing
+    // half. #635 also adds a `195_*.sql`. Two files sharing a numeric prefix
+    // survive every pre-merge check on both branches — git does not conflict on
+    // two ADDED files with different names, `migrations-check.sh:70` sees one
+    // tree at a time, and `db/migrate.mjs:146` only refuses the duplicate at
+    // DEPLOY time, by which point it is on main. The duplicate-prefix assertion
+    // below is the check that would have caught it, and it can only catch it
+    // after the merge that creates it. So the collision is resolved BEFORE the
+    // merge instead: #635 keeps 195_, this branch takes 196_.
+    //
+    // MEASURED on this branch's tree, not incremented:
+    //   git ls-tree -r --name-only fa9a9aed db/migrations | grep -c '\.sql$' -> 176
+    //   ls db/migrations/*.sql | wc -l                                       -> 177
+    //   duplicate prefixes                                                   -> 0
+    //
+    // 177 on disk, 178 pinned: the one file of the difference is #635's 195_,
+    // which is not in this worktree and cannot be. THIS ASSERTION IS THEREFORE
+    // RED ON THIS BRANCH ALONE AND GREEN ONLY ONCE #635 HAS MERGED — deliberately,
+    // and stated here so the next reader does not "fix" it back down to 177 and
+    // hand main a silently-short count. If this branch ends up landing BEFORE
+    // #635, this number is wrong and the correct edit is 177, not a re-guess.
+    // 178 -> 181 (2026-09-23): 197, 198 and 199, the filesystem-skills migrations. MEASURED.
+    expect(server.appliedMigrations.length).toBe(181);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1087,10 +1260,45 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
  * range and never to a live-computed value.
  */
 const EXPECTED_HANDLER_501: readonly string[] = [
+  // SORTED, because the assertion compares against a sorted observation.
+  // 177: the container rows this node registers and does not yet
+  // implement, plus the ten P0 rows when the gate is off — every one a refusal
+  // AUTHORED BY THE HANDLER on configuration grounds, exactly like
+  // `voice.token.create` above, and not a stub.
+  //
+  // Being on this list is what makes them honest rather than invisible: the
+  // alternative to registering them is 404, which tells a caller the operation
+  // does not exist when it is in the contract and this node simply cannot
+  // serve it (DEV-13). This is where that trade is written down, by name.
+  'containers.attach',
+  'containers.attention',
+  'containers.browser.endpoint',
+  'containers.computer',
+  'containers.create',
+  'containers.destroy',
+  'containers.expose',
+  'containers.files.get',
+  'containers.files.put',
+  'containers.fork',
+  'containers.logs',
+  'containers.pause',
+  'containers.policy.set',
+  'containers.pools.set',
+  'containers.providers.list',
+  'containers.proxy',
+  'containers.resume',
+  'containers.run',
+  'containers.snapshot',
+  'containers.start',
+  'containers.stop',
+  'containers.terminal.start',
+  'containers.unexpose',
+  'containers.update',
   // 2026-07-31: voice.token.create is MOUNTED and REACHED, and on a node with
   // no TM8_LIVEKIT_* configured its handler answers an honest not_implemented
   // naming the env vars to set (services/voice.ts). A refusal authored by the
-  // handler on real configuration grounds, not a stub.
+  // handler on real configuration grounds, not a stub — the same class as the
+  // container rows above.
   'voice.token.create',
 ];
 
@@ -1115,7 +1323,7 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'auth.logout',
   // Chat is registered even without a provider runtime; the handler validates
   // the requested model/identity before returning its degraded-mode refusal.
-  'chat.threads.start',
+  'chat.start',
   // 2026-08-12: collections.addItem validates its body in-handler — the sweep's
   // synthetic path params name no real collection, a handler-reached 400.
   'collections.addItem',

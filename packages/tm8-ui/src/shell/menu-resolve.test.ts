@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-20 menu-backed tabs', () => {
+  it('encodes the shipped group spine — the revision-23 menu-backed tabs', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
       // Channels groups retired and the conversation tab is renamed HOME.
@@ -28,6 +28,12 @@ describe('the shipped default menu', () => {
       // the redesigned Collab surface (a later feature). The group id under
       // the Home label is still `chats` — ids are wire-stable, labels move.
       'Home',
+      // NO 'Chats' HERE. Revision 22 (2026-09-03, migration 180) seated one
+      // after Home and revision 23 (2026-09-05, migration 184) removed it: the
+      // chat entity list's door is Home's ICON RAIL, which leads with `chat`
+      // since `domain/home-rail.ts` placed it there, and the tab duplicated
+      // that row. With it gone this spine names no kind ref and draws no menu
+      // rail — see the railless assertion below, which has no exception again.
       // Revision 19 (2026-08-16, migration 140 — task 01a00b46): WORK returns
       // second in the row, and it is the three-panel workspace itself. 17
       // retired a Work group that was a RAIL OF ROWS duplicating Home's
@@ -39,23 +45,31 @@ describe('the shipped default menu', () => {
       // studio joins between Board and Graph, railless like both.
       'Craft',
       'Graph',
-      // CodeBrain (2026-09-01, migration 173) — the first spine widening this
-      // snapshot took after it was frozen. It is here because the shipped
-      // default is pinned to the contract's DEFAULT_MENU_GROUP_SPINE, which
-      // the server seeder answers to as well; a client default that omitted
-      // the group would disagree with every seeded space.
-      'CodeBrain',
+      // CodeBrain sat here from 2026-09-01 (migration 173) to 2026-09-15
+      // (migration 186). It was pinned here by the contract's
+      // DEFAULT_MENU_GROUP_SPINE while a screen for it existed in the 2.0 UI
+      // package; #610 deleted that package, and 186 removed the ref rather
+      // than keep shipping a tab that could only report its own absence.
       'Settings',
       'Help',
     ]);
   });
 
   it('draws NO rail on ANY shipped tab — every group is a railless single view', () => {
-    // Home's surface draws its own icon rail inside the screen; the other
-    // four are whole-centre views. A menu rail on any of them would be a
-    // column holding one row repeating the tab's own name — what made
-    // revision 13 retire the tab, solved by the shape rule instead.
-    for (const group of SHIPPED_DEFAULT_MENU.groups) {
+    // Home's surface draws its own icon rail inside the screen; the others are
+    // whole-centre views. A menu rail on any of them would be a column holding
+    // one row repeating the tab's own name — what made revision 13 retire the
+    // tab, solved by the shape rule instead.
+    //
+    // REVISION 22 HAD ONE EXCEPTION and revision 23 does not: the Chats tab's
+    // lone item was a KIND, so `isRaillessGroup` answered false and it drew a
+    // rail. 184 removed that tab — the chat list is addressed from Home's icon
+    // rail now — so the partition is empty on the railed side again. Asserted
+    // as an exact PARTITION rather than a loop of `toBe(true)`, so a railed tab
+    // arriving by accident still reds this.
+    const railed = SHIPPED_DEFAULT_MENU.groups.filter((g) => !isRaillessGroup(g));
+    expect(railed.map((g) => g.id)).toEqual([]);
+    for (const group of SHIPPED_DEFAULT_MENU.groups.filter((g) => isRaillessGroup(g))) {
       expect(isRaillessGroup(group), group.id).toBe(true);
     }
     // The rule still answers false for a group with real rows — a
@@ -148,12 +162,13 @@ describe('the shipped default menu', () => {
     // (the task kanban tab), same posture; `craft` the same day (the
     // blueprint studio, Craft P1), same posture again. `help` joined
     // 2026-08-19 and entered the shipped spine in revision 20. `codebrain`
-    // joined 2026-09-01 (migration 173) — the first widening this snapshot took
-    // AFTER it was frozen as the 1.0 UI, and the one that proves the point of
-    // gating it again: the union widened, four exhaustive tables here stopped
-    // compiling, and nothing said so for three days because nothing looked.
+    // joined 2026-09-01 (migration 173) and LEFT 2026-09-15 (migration 186) —
+    // the one ref this union has ever NARROWED by. It is the mirror of the
+    // widening lesson: #610 deleted the package holding its screen, the ref
+    // outlived it by five days as a tab that could only say "unbuilt", and the
+    // exhaustive tables here are what made removing it a mechanical edit.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['board', 'channels', 'codebrain', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

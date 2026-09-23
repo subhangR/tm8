@@ -32,12 +32,24 @@
   background: var(--pn-surface);
   border-bottom: 1px solid var(--pn-line);
 }
+/* R21 item 5, "adjust tm8 logo properly bit largr would be great": 11.5 -> 16.
+   ONE NUMBER DOES IT. `BrandMark` draws the letters "tm" and a `RibbonMark`
+   standing in for the 8, and both inherit font, size and colour from the line
+   that hosts them — so there is no asset to swap and no second size to keep in
+   step. */
 .cv2-root .shell-tabbar__mark {
   font-family: var(--pn-mono);
   font-size: 11.5px;
   font-weight: 600;
   color: var(--pn-brand);
   white-space: nowrap;
+}
+/* R21 item 5 — bigger, and ONLY on the new bar, so a rollback returns the mark
+   that was there. One number moves both the letters and the ribbon, because
+   `BrandMark` inherits its size from this line. */
+.cv2-root .shell-tabbar--r21 .shell-tabbar__mark {
+  flex: none;
+  font-size: 16px;
 }
 /* The mark as the door back to conversations (revision 13). It reads as the
    mark, not as a tab — no active state, because there is no destination to
@@ -140,11 +152,93 @@
 .cv2-root .shell-tabbar__spacer {
   flex: 1;
 }
-/* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
-   The tabs are the menu's groups — a segmented control, active tab raised. */
+/* ═══ R21 (task 01a07a56, 2026-09-07) — THE ROW IS A GRID ══════════════════
+   
+   R1/R2 (2026-08-15) put the identity block and the tabs in the top row and
+   used `flex` with a `flex: 1` spacer. That shape had two defects a browser
+   could see and no test in this repo could:
+   
+     · A SPACER CANNOT CENTRE. The tabs were pushed right by whatever the left
+       side happened to measure — x=310..807 in a 1745px bar.
+     · NOTHING COULD SHRINK, so the bar's minimum intrinsic width was a fixed
+       1167 CSS px and every overflow was absorbed by the LAST child, which is
+       the account menu. The one control you least want to lose was the first
+       to go.
+   
+   Three columns: `minmax(0, 1fr) auto minmax(0, 1fr)`. The centre track is the
+   tab group and it is centred on the BAR, because it sits between two equal
+   fractions. The `minmax(0, ...)` on the side tracks is the load-bearing part —
+   without the `0` minimum a grid track refuses to go below its content's
+   min-content width, which is the same trap the flex row was in.
+   
+   `container-type: inline-size` makes this element the query container for the
+   ladder at the bottom of this section. It is declared HERE, on the bar itself,
+   and nowhere else: every rung styles a DESCENDANT of this element, which is
+   what a container query requires. The bar carries an explicit height, so the
+   block-axis containment `inline-size` implies costs nothing.
+   
+   HEIGHT 36 -> 40. The mark grows to 16px and the switcher pill to 26px (item
+   5, "adjust tm8 logo properly bit largr"); 40 is the smallest height those sit
+   in without crowding. At `zoom: 1.1` that is ~4.5 device px off every screen,
+   and it was taken deliberately rather than compromising at 38. */
+/* R1/R2 (2026-08-15) — RESTORED, and it is NOT dead code. `SpaceTabBarLegacy`
+   still renders this shape, and an in-app rollback is worthless if "go back"
+   returns the old markup wearing the new layout. Measured before this split
+   existed: the legacy bar came back as a 40px GRID with a 16px mark and
+   overflowed by 224px, because every rule below was keyed on `.shell-tabbar`
+   alone. A rollback has to restore the APPEARANCE, not merely the elements —
+   which is the same class of defect this whole revision is about, and it was
+   caught by a screenshot rather than by any of the 16 passing tests. */
 .cv2-root .shell-tabbar {
   height: 36px;
   gap: 8px;
+}
+.cv2-root .shell-tabbar--r21 {
+  height: 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  container-type: inline-size;
+  container-name: tabbar;
+  /* NO `overflow: hidden` HERE, AND THIS IS LOAD-BEARING.
+  
+     The first cut of this rule carried one as a "backstop". It clipped the
+     ACCOUNT MENU POPOVER — which is `position: absolute` inside this row — so
+     the card measured 320px wide with all six rows and was invisible on screen.
+     A jsdom test would have passed: the element is in the DOM, has layout, and
+     answers every query about it correctly. Only a screenshot showed nothing
+     there.
+  
+     A toolbar that hosts popovers cannot clip its own overflow. Shrinking is
+     handled where it belongs instead — `min-width: 0` on the tracks and the
+     zones, `text-overflow: ellipsis` on the labels — and the one control that
+     genuinely needed clamping (the UI-2.0 refusal's prose) is clamped on its
+     own slot, which has no popover to lose. */
+}
+.cv2-root .shell-tabbar--r21 .shell-tabbar__zone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* `min-width: 0` and nothing else — see the note above. This lets the flex
+     items inside shrink below their content width, which is what makes the
+     grid track's own `minmax(0, 1fr)` reachable. It does NOT clip, because the
+     switcher popover and the account card both escape this box by design. */
+  min-width: 0;
+}
+.cv2-root .shell-tabbar--r21 .shell-tabbar__zone--centre {
+  justify-content: center;
+  /* The tab row is the one thing that must never be half-drawn: a tab reading
+     "Code…" is a worse control than a tighter one, so the centre track keeps
+     its content's width and the ladder tightens padding instead. */
+  /* The centre track is `auto`: it takes its content's width and the two
+     fractions divide what is left, which is what puts it in the middle. It must
+     not shrink its own contents — a half-ellipsised tab row is worse than a
+     folded one. */
+}
+.cv2-root .shell-tabbar--r21 .shell-tabbar__zone--trail {
+  justify-content: flex-end;
 }
 .cv2-root .shell-tabbar__tabs {
   display: flex;
@@ -178,14 +272,41 @@
   background: var(--pn-active);
   border-radius: var(--pn-r-pill);
 }
+/* R21 item 5, "utho prod icon and its drop down can also be much cleaner".
+   THE TRIGGER PRINTED THE SERVER NAME THAT ITS OWN POPOVER ALREADY PRINTS as
+   a section header — the same fact twice, for 254 CSS px. It now shows the
+   SPACE only; the server survives on the monogram's status dot, in the
+   popover, and in the trigger's `aria-label`, which already named both. */
 .cv2-root .shell-tabbar .shell-switcher__names {
   flex: none;
   flex-direction: row;
   align-items: baseline;
   gap: 6px;
 }
+.cv2-root .shell-tabbar--r21 .shell-switcher__names {
+  min-width: 0;
+  flex: 0 1 auto;
+}
 .cv2-root .shell-tabbar .shell-switcher__space { font-size: 11.5px; }
+.cv2-root .shell-tabbar--r21 .shell-switcher__space {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Not `display: none`: the line still carries the reachability dot, which is
+   the one piece of server state that has to stay on screen. The NAME beside it
+   is what goes. */
 .cv2-root .shell-tabbar .shell-switcher__server-line { font-size: 9.5px; }
+.cv2-root .shell-tabbar--r21 .shell-switcher__server-line {
+  font-size: 0;
+  gap: 0;
+}
+.cv2-root .shell-tabbar--r21 .shell-switcher__server-line .shell-rail__server-status {
+  margin: 0;
+}
 .cv2-root .shell-tabbar .shell-switcher__monogram {
   width: 16px;
   height: 16px;
@@ -197,6 +318,8 @@
   left: 0;
 }
 .cv2-root .shell-tabbar__palette {
+  flex: none;
+  white-space: nowrap;
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-3);
@@ -232,6 +355,70 @@
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
+
+/* ══ THE LADDER ════════════════════════════════════════════════════════════
+   
+   CONTAINER queries on the bar's own inline size, NOT viewport media queries,
+   and the choice is the point. `styles/app.css` scales the app with
+   `zoom: 1.1`, so a viewport breakpoint would have to be written as the real
+   number divided by 1.1 — arithmetic that is invisible in the stylesheet, wrong
+   the day someone reads it literally, and silently wrong everywhere if the zoom
+   experiment is ever retuned or dropped. A container query measures this bar
+   INSIDE the zoom scope, so the numbers below are the bar's actual width and
+   mean what they say.
+   
+   THE SACRIFICE ORDER IS THE POINT OF THE FILE, and it is the reverse of what
+   DOM order used to impose. Before this, overflow was absorbed entirely by the
+   last child and the account menu went first. Now decoration goes first,
+   identity goes last, and nothing is ever clipped or made unreachable — every
+   rung either shortens a label whose meaning survives, or folds a group into a
+   control that opens the same list.
+   
+   Measured minimum intrinsic width: 1167 CSS px before this change, 915 after
+   the three utilities moved to the account menu — and lower again once the
+   UI-2.0 door was deleted outright (owner, 2026-09-07). The rungs carry it
+   below that in four steps. */
+
+/* 1 — the palette hint drops its prose and keeps the shortcut. Pure
+       decoration: `⌘K` is the fact, "/ palette ·" is the label for it. */
+@container tabbar (max-width: 1240px) {
+  .cv2-root .shell-tabbar--r21 .shell-tabbar__palette-full {
+    display: none;
+  }
+}
+
+/* 2 — the profile keeps its face and loses its name. The face is the
+       recognisable part, and the name is the first line inside the card the
+       button opens, so nothing becomes unknowable. */
+@container tabbar (max-width: 1080px) {
+  .cv2-root .shell-tabbar--r21 .auth-accountmenu__name {
+    display: none;
+  }
+}
+
+/* 3 — padding before labels. No destination's name is ever truncated: a tab
+       that reads "Code…" is a worse control than a tighter one. */
+@container tabbar (max-width: 900px) {
+  .cv2-root .shell-tabbar--r21 {
+    gap: 7px;
+  }
+  .cv2-root .shell-tabbar--r21 .shell-tabbar__tabs .shell-tabbar__tab {
+    padding: 2px 7px;
+  }
+}
+
+/* 4 — the switcher shows its monogram alone. The space name is one line down
+       in the popover the monogram opens, and the trigger's `aria-label`
+       already carries "Server and space: <server> · <space>" in full. */
+@container tabbar (max-width: 820px) {
+  .cv2-root .shell-tabbar--r21 .shell-switcher__space {
+    display: none;
+  }
+  .cv2-root .shell-tabbar--r21 .shell-switcher__caret {
+    display: none;
+  }
+}
+
 
 /* --- Menu rail (T1-1 grammar, T0-1 footers) ------------------------------ */
 

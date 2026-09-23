@@ -135,3 +135,175 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
     expect(container.textContent).toContain('Nothing linked yet');
   });
 });
+
+/**
+ * WHEN — the half this tab discarded. `EdgeView` has carried `createdAt` and
+ * `updatedAt` since it was written and the tab dropped both, so a page of links
+ * could not be read as a history: a PR linked a minute ago sat below one linked
+ * in March, and nothing on the row said which was which. The order is now
+ * chronological and the row carries its instant, which is the same order and
+ * the same treatment the Activity tab gives the very events that made them.
+ */
+function timedGroup(
+  type: string,
+  label: string,
+  direction: 'outgoing' | 'incoming',
+  edges: { id: string; peer: EntitySummary; createdAt: string; updatedAt?: string }[],
+) {
+  return {
+    type,
+    label,
+    direction,
+    edges: edges.map((e) => ({
+      id: e.id,
+      type,
+      props: {},
+      createdBy: self.createdBy,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt ?? e.createdAt,
+      ...(direction === 'outgoing'
+        ? { source: self as unknown as EntitySummary, target: e.peer }
+        : { source: e.peer, target: self as unknown as EntitySummary }),
+    })),
+  } as unknown as EntityDetail['connections']['outgoing'][number];
+}
+
+const gamma = peer('peer-gamma', 'Gamma');
+
+describe('ConnectionsTab — read as a timeline', () => {
+  it('orders peers newest-linked first, not in the order the seam grouped them', () => {
+    const detail = detailWith(
+      [
+        // The seam's grouping puts the OLDEST first here — the tab must not.
+        timedGroup('relates_to', 'relates to', 'outgoing', [
+          { id: 'e1', peer: alpha, createdAt: '2026-03-01T09:00:00.000Z' },
+          { id: 'e2', peer: gamma, createdAt: '2026-08-14T23:12:09.790Z' },
+        ]),
+        timedGroup('tracks', 'tracks', 'outgoing', [
+          { id: 'e3', peer: beta, createdAt: '2026-08-14T21:31:40.854Z' },
+        ]),
+      ],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    const titles = [...container.querySelectorAll('.pn-peers__row')]
+      .map((r) => r.querySelector('.kit-chip')?.textContent);
+    expect(titles).toEqual(['Gamma', 'Beta', 'Alpha']);
+  });
+
+  it('stamps each row with its newest edge, machine-readable and exact on inspect', () => {
+    const detail = detailWith(
+      [timedGroup('tracks', 'tracks', 'outgoing', [
+        { id: 'e1', peer: alpha, createdAt: '2026-08-14T21:31:40.854Z' },
+      ])],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    const stamp = container.querySelector('time.pn-peers__when')!;
+    expect(stamp.getAttribute('datetime')).toBe('2026-08-14T21:31:40.854Z');
+    expect(stamp.getAttribute('title')).toContain('linked');
+    // The CLOCK is the visible label — the day is on the divider above it.
+    expect(stamp.textContent).toMatch(/^\d{2}:\d{2}$/);
+    // The full local date AND time, never the date alone, on inspect.
+    expect(stamp.getAttribute('title')).toMatch(/\d{1,2}:\d{2}/);
+    expect(stamp.getAttribute('aria-label')).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it('says the DAY once over the run it covers, and gives each row its clock', () => {
+    // The defect this closes: past the 7-day relative window every row printed
+    // the same bare date, so four links made minutes apart read as one moment.
+    const detail = detailWith(
+      [timedGroup('tracks', 'tracks', 'outgoing', [
+        { id: 'e1', peer: alpha, createdAt: '2026-08-14T21:31:40.000Z' },
+        { id: 'e2', peer: beta, createdAt: '2026-08-14T23:12:09.000Z' },
+        { id: 'e3', peer: gamma, createdAt: '2026-08-15T01:48:25.000Z' },
+      ])],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    // Two days across three rows ⇒ two dividers, not three and not one.
+    const days = [...container.querySelectorAll('[data-testid="pn-peers-day"]')];
+    expect(days).toHaveLength(2);
+    // Every row still carries its own minute.
+    const clocks = [...container.querySelectorAll('time.pn-peers__when')].map((n) => n.textContent);
+    expect(new Set(clocks).size).toBe(3);
+  });
+
+  it('gives an UNDATED peer no divider and no stamp, and does not let it break the run', () => {
+    const detail = detailWith(
+      [
+        timedGroup('tracks', 'tracks', 'outgoing', [
+          { id: 'e1', peer: alpha, createdAt: '2026-08-14T21:31:40.000Z' },
+          { id: 'e2', peer: beta, createdAt: '2026-08-14T23:12:09.000Z' },
+        ]),
+        // No createdAt at all — `group()`, not `timedGroup()`.
+        group('relates_to', 'relates to', 'outgoing', [{ id: 'e3', peer: gamma }]),
+      ],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    // ONE divider for the one day present: the undated row neither opens a run
+    // nor closes one, because it is not evidence that the day changed.
+    expect(container.querySelectorAll('[data-testid="pn-peers-day"]')).toHaveLength(1);
+    expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(3);
+    expect(container.querySelectorAll('time.pn-peers__when')).toHaveLength(2);
+    // ...and it sorts LAST rather than to the top: absent evidence is never "now".
+    const rows = [...container.querySelectorAll('.pn-peers__row')];
+    expect(rows.at(-1)!.textContent).toContain('Gamma');
+  });
+
+  it('says "linked, then updated" only when the edge was actually re-written', () => {
+    const detail = detailWith(
+      [timedGroup('tracks', 'tracks', 'outgoing', [
+        { id: 'e1', peer: alpha, createdAt: '2026-08-14T21:31:40.854Z', updatedAt: '2026-08-15T07:52:31.507Z' },
+      ])],
+      [timedGroup('relates_to', 'relates to', 'incoming', [
+        { id: 'e2', peer: beta, createdAt: '2026-08-14T21:31:40.854Z' },
+      ])],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    const rows = [...container.querySelectorAll('.pn-peers__row')];
+    const alphaRow = rows.find((r) => r.textContent?.includes('Alpha'))!;
+    const betaRow = rows.find((r) => r.textContent?.includes('Beta'))!;
+    expect(alphaRow.querySelector('time')!.getAttribute('title')).toContain('linked, then updated');
+    // Two identical instants are ONE fact — reporting an update would invent
+    // a second event that never happened.
+    expect(betaRow.querySelector('time')!.getAttribute('title')).not.toContain('then updated');
+    // The re-written edge is also the newer one, so it sorts first.
+    expect(rows[0]).toBe(alphaRow);
+  });
+
+  it('renders NO stamp for an edge the seam gave no usable instant', () => {
+    // `group()` (above) builds edges with no createdAt at all — the shape a
+    // narrow host or an older cache can still produce. An undated edge must
+    // render undated, never as "now".
+    const detail = detailWith(
+      [group('relates_to', 'relates to', 'outgoing', [{ id: 'e1', peer: alpha }])],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
+    expect(container.querySelector('.pn-peers__when')).toBeNull();
+  });
+
+  it('dates a repeated relation from when it FIRST existed, and stamps its latest change', () => {
+    const detail = detailWith(
+      [timedGroup('relates_to', 'relates to', 'outgoing', [
+        { id: 'e1', peer: alpha, createdAt: '2026-03-01T09:00:00.000Z' },
+        { id: 'e2', peer: alpha, createdAt: '2026-08-14T23:12:09.790Z' },
+      ])],
+      [],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    // One peer, one relation counted twice — the existing inversion is intact.
+    expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
+    expect(container.querySelector('.pn-peers__rel')!.textContent).toContain('· 2');
+    // The row's stamp is the NEWEST of the two, so the sort key and the label
+    // are the same instant.
+    expect(container.querySelector('time.pn-peers__when')!.getAttribute('datetime'))
+      .toBe('2026-08-14T23:12:09.790Z');
+    // ...and the relation's hover reports both halves.
+    expect(container.querySelector('.pn-peers__rel')!.getAttribute('title'))
+      .toContain('linked, then updated');
+  });
+});

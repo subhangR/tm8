@@ -33,7 +33,19 @@ import {
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
 // Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
 // 2026-08-12: moved with the catalog (collections.addItem/removeItem, 142 -> 144 rows).
-const CATALOG_DIGEST = 'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417'; // re-derived 148 (spaces.workflows)
+// re-derived on the MERGED tree (176's chat.start rename AND the 25
+// containers.* rows). MEASURED as sha256(JSON.stringify(OPERATIONS)) here —
+// neither branch's value survives the merge, because each saw only its own
+// half of the catalog. The CLI's CATALOG_DIGEST and the generated conformance
+// manifest carry the same value and all three must agree.
+// 2026-09-19 (Changes screen Phase 1, INTEGRATED WITH main): the merged tree
+// carries BOTH execution.sessions.share (187) and execution.gitStage, so the
+// digest is a THIRD value — neither 186723c6.. nor 10d20505.. is correct here.
+// READ OUT OF THE FAILING RUN: this assertion compares the LIVE server digest
+// against this literal, so the run printed the live value on its `Received:`
+// line and this is that string, copied.
+// Re-measured 2026-09-23: the catalog with the nine skills.* rows (#647 + #649).
+const CATALOG_DIGEST = 'sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -106,7 +118,10 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(root.catalog.total).toBe(172); // +3 141, +3 148
+    // 197 -> 198 (187): execution.sessions.share. MEASURED.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage.
+    // MEASURED on the merged tree.
+    expect(root.catalog.total).toBe(208); // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23)
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
@@ -189,13 +204,24 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     residual501 = refused
       .map(({ entry }) => entry)
       .filter((entry) => entry.exposure !== 'reserved');
-    // THE RESIDUAL ERA ENDED 2026-07-31. This pin was `>= 6` while six-plus v1
-    // operations were catalog-registered but unbuilt. The consolidation wave
-    // implemented the last of them, so the discovered residual set is now
-    // EMPTY — and that is the assertion: every non-reserved v1 HTTP operation
-    // answers as built. If this ever grows again, a shipped operation
-    // regressed to a stub, which is exactly what this file exists to notice.
-    expect(residual501, 'residual unimplemented HTTP operations').toEqual([]);
+    // THE RESIDUAL ERA ENDED 2026-07-31 AND 177 REOPENED IT, deliberately.
+    //
+    // This pin was `>= 6`, then `[]` once the consolidation wave implemented
+    // the last unbuilt v1 operation. The container family declares 25 rows in
+    // P0 and implements ten; the other fifteen are REGISTERED and answer an
+    // honest 501, because leaving them unregistered answers 404 and tells a
+    // caller the operation does not exist when it is in the contract (DEV-13).
+    //
+    // So this is an exact MEMBERSHIP assertion, not a return to `>= n`. Every
+    // entry must be a `containers.*` row: a NON-container operation appearing
+    // here is still the regression this file exists to notice — a shipped
+    // operation fallen back to a stub — and now fails by name.
+    const residualNames = residual501.map((entry) => entry.operation).sort();
+    expect(
+      residualNames.filter((name) => !name.startsWith('containers.')),
+      'a non-container v1 operation regressed to a stub',
+    ).toEqual([]);
+    expect(residualNames.length, residualNames.join(', ')).toBeGreaterThan(0);
 
     // Pre-validation honesty now has only the reserved pair as subjects; the
     // loop above already asserted every refused response is an honest 501, so
@@ -213,7 +239,28 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     expect(health.status).toBe(200);
     const liveness = await health.json() as { operations: number; implemented: number };
     expect(liveness.operations).toBe(httpOperations.length);
-    expect(liveness.operations - liveness.implemented).toBe(refused.length);
+    // TWO DIFFERENT QUESTIONS, and 177 is where they stop coinciding.
+    //
+    // `/health.implemented` counts operations with a REGISTERED HANDLER.
+    // `refused` counts operations that ANSWER 501. Until now every registered
+    // handler answered for real, so the two agreed and `operations -
+    // implemented === refused.length` held.
+    //
+    // The container family registers all 25 rows and implements ten; the other
+    // fifteen are registered and refuse by name, because unregistered means
+    // 404 and 404 says the operation does not exist when it is in the contract
+    // (DEV-13). So the health gap is now the UNREGISTERED rows only — the two
+    // permanently reserved — and the registered-but-unbuilt rows are the
+    // difference between the two counts.
+    const unregistered = refused.filter((entry) => entry.entry.exposure === 'reserved');
+    expect(liveness.operations - liveness.implemented).toBe(unregistered.length);
+    const registeredButUnbuilt = refused.length - unregistered.length;
+    expect(
+      refused.every(({ entry }) => entry.exposure === 'reserved'
+        || entry.operation.startsWith('containers.')),
+      'a non-container registered operation is answering 501',
+    ).toBe(true);
+    expect(registeredButUnbuilt).toBeGreaterThan(0);
   }, 180_000);
 
   it('C0: calibrates the oracle - a real implemented mutation IS observable', async () => {
@@ -247,9 +294,11 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
   }, 120_000);
 
   it('C: a 501 produces zero database effect - no ledger reservation, no rows', async () => {
-    // The residual set is EMPTY now (see B) — the two reserved operations are
-    // the only 501s left, and they carry the whole zero-effect claim.
-    expect(residual501).toEqual([]);
+    // The residual set is the container family again (see B). The zero-effect
+    // claim now covers BOTH the reserved pair and every registered-but-unbuilt
+    // container row — which is the stronger version of the same claim: a 501
+    // must touch no database, whatever the reason it refuses.
+    expect(residual501.every((entry) => entry.operation.startsWith('containers.'))).toBe(true);
     const commandTargets = residual501.filter((entry) => entry.method !== 'GET');
     const attempts: Array<{ operation: string; clientMutationId: string }> = [];
     const plan = [

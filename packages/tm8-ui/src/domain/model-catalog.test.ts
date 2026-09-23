@@ -51,6 +51,7 @@ describe('defaults', () => {
   it('groups by agent tool the way the picker asks for them', () => {
     const codex = catalogModelsFor(NODE, 'codex').map((m) => m.model);
     expect(codex).toContain('gpt-5.6-sol');
+    expect(codex).toContain('gpt-6-astra');
     expect(codex).not.toContain('claude-opus-5');
     expect(catalogModelsFor(NODE, null)).toEqual([]);
   });

@@ -92,8 +92,26 @@ describe('W1 adopted catalog target', () => {
     // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
     // (POST command) + .delete (DELETE command) — the real workflow tables.
     // MEASURED per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(172);
-    expect(V1_OPERATIONS).toHaveLength(170);
+    // 172 -> 197 (2026-09-03, TM8-CONTAINERS-DESIGN §4.1): the 25 `containers.*`
+    // rows, all v1, so 170 -> 195. MEASURED on this tree per PIN RULE v3,
+    // never carried: `OPERATIONS.length` = 197, `V1_OPERATIONS.length` = 195.
+    // The Design's PROSE says 27 rows and is wrong; §4.1's list is 25 and the
+    // coordinator ruled on it.
+    // 197 -> 198 (187, terminal sharing): execution.sessions.share, v1, so
+    // 195 -> 196 too. MEASURED on this tree per PIN RULE v3, never carried.
+    // 197 -> 198 (2026-09-19, Changes surface phase 1): execution.gitStage,
+    // the index verb (stage|unstage) the review screen commits through. v1,
+    // so 195 -> 196. MEASURED on this tree per PIN RULE v3, never carried.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    // 199 -> 203 (2026-09-23, filesystem skills INTEGRATED WITH main): skills.scan,
+    // skills.list, skills.show and skills.preview, all v1, so 197 -> 201. The
+    // stack pinned against its own older base and never saw main's 199.
+    // MEASURED on the merged tree from this assertion's own failing run.
+    // 203 -> 208 (2026-09-23): skills.roots/create/edit/equip/unequip (F4, #648), all v1. MEASURED on the merged tree.
+    expect(OPERATIONS).toHaveLength(208);
+    expect(V1_OPERATIONS).toHaveLength(206);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -119,7 +137,24 @@ describe('W1 adopted catalog target', () => {
     // auth.claim.reissue, all POST commands. MEASURED.
     // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
     // (.delete). MEASURED from the failing run.
-    }).toEqual({ GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
+    // Containers (§4.1): GET 61->65 (files.get, logs, proxy, providers.list),
+    // POST 80->98 (18 command rows), PATCH 11->12 (update), PUT 7->8
+    // (files.put), WS 1->2 (containers.stream). MEASURED on this tree.
+    //
+    // WS IS 2 AND MOUNTS ARE STILL 1. `containers.stream` re-declares
+    // `events.subscribe`'s `WS /v2/ws` so the family's socket is discoverable
+    // under its own name; it carries `aliasOf` and is excluded from
+    // MOUNTED_OPERATIONS, so nothing mounts a second socket. Counting rows and
+    // counting mounts are different questions and this pin asks the first.
+    // 187: POST 98->99 — execution.sessions.share, a POST command on the
+    // entity-command shape. Nothing else moves. MEASURED from the failing run.
+    // 2026-09-19 (Changes surface phase 1): POST 98->99 — execution.gitStage,
+    // a command row on the session's git path. MEASURED on this tree.
+    // POST 99 -> 100 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows are POST commands. MEASURED on the merged tree from this assertion's own failing run.
+    // 2026-09-23 (filesystem skills INTEGRATED WITH main): GET 65->68 (skills.list,
+    // skills.show, skills.preview), POST 100->101 (skills.scan). MEASURED on the merged tree.
+    // 2026-09-23 F4: GET 68->69 (roots), POST 101->104 (create/equip/unequip), PATCH 12->13 (edit). MEASURED.
+    }).toEqual({ GET: 69, POST: 104, PATCH: 13, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -127,7 +162,16 @@ describe('W1 adopted catalog target', () => {
     // W4/132: read +1, command +2. MEASURED.
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
-    }).toEqual({ read: 65, command: 106, stream: 1 });
+    // Containers: read 65->69, command 106->126, stream 1->2. MEASURED.
+    // 187: command 126->127. MEASURED.
+    // Changes surface phase 1: command 126->127 (execution.gitStage). MEASURED.
+    // command 127 -> 128 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main):
+    // execution.sessions.share and execution.gitStage are both kind: command.
+    // MEASURED from this assertion's own failing run (Received: command 128).
+    // 2026-09-23 (filesystem skills INTEGRATED WITH main): read 69->72, command 128->129.
+    // MEASURED on the merged tree.
+    // 2026-09-23 F4: read 72->73, command 129->133. MEASURED.
+    }).toEqual({ read: 73, command: 133, stream: 2 });
   });
 });
 
@@ -178,6 +222,16 @@ describe('W1 frozen-row schema amendments', () => {
       'loop',
       // 2026-08-16: `graph` — the blueprint/diagram kind (Craft P1, R1-R3).
       'graph',
+      // 2026-09-03: `chat` — a conversation with a teammate, as an entity
+      // (migration 176). Excluded from `CreatableEntityKind`: `chat.start` is
+      // its only door, the way `execution.spawn` is `work_session`'s.
+      'chat',
+      // 2026-09-03: `container` — the machine kind (177, CONTAINERS §3.1).
+      'container',
+      // 2026-09-17: `drawing` — an Excalidraw canvas as an entity (194).
+      // Creatable through the ordinary envelope, unlike `chat`/`container`:
+      // nothing runtime stands behind a drawing, only its detail row.
+      'drawing',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

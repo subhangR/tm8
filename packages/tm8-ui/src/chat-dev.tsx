@@ -61,7 +61,19 @@ import './session-graph/session-graph.css';
  * 844px phone, so every scroll defect is invisible at the default length.
  */
 const MODELS: ChatModelOption[] = [
-  { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
+  { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code', efforts: ['low', 'medium', 'high', 'max'] },
+  { model: 'claude-opus-5', label: 'Claude Opus 5', provider: 'Anthropic', agentTool: 'claude-code', efforts: ['low', 'medium', 'high', 'max'] },
+  { model: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'Anthropic', agentTool: 'claude-code', efforts: ['low', 'medium', 'high', 'max'] },
+  { model: 'gpt-5.6-sol', label: 'OpenAI GPT 5.6', provider: 'OpenAI', agentTool: 'codex', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+];
+/* The composer redesign's roster: roles and standing permissions, so the
+   orchestrate filter, the crew panel and the derived ceiling all have
+   something to show (`?composer=1` also lists a project). */
+const COMPOSER_TEAMMATES = [
+  { id: '019f0000-0000-7000-8000-00000000a001' as EntityId, label: 'Builder', avatar: null, mode: 'worker' as const, permissionMode: null },
+  { id: '019f0000-0000-7000-8000-00000000a002' as EntityId, label: 'Conductor', avatar: null, mode: 'coordinator' as const, permissionMode: 'acceptEdits' },
+  { id: '019f0000-0000-7000-8000-00000000a003' as EntityId, label: 'Fast Fixer', avatar: null, mode: 'worker' as const, permissionMode: 'plan' },
+  { id: '019f0000-0000-7000-8000-00000000a004' as EntityId, label: 'Codex Worker', avatar: null, mode: 'worker' as const, permissionMode: null },
 ];
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 
@@ -89,14 +101,28 @@ function Harness() {
   const empty = params.get('empty') === '1';
   const mobile = params.get('shell') === 'mobile';
   const turns = Number.parseInt(params.get('turns') ?? '', 10);
+  const composer = params.get('composer') === '1';
   const { port } = useMemo(
-    () =>
-      empty
+    () => {
+      const base = empty
         ? createChatHomeFixturePort([])
         : Number.isFinite(turns) && turns > 0
           ? createChatHomeFixturePort([lengthen(turns)])
-          : createChatHomeFixturePort(),
-    [empty, turns],
+          : createChatHomeFixturePort();
+      if (!composer) return base;
+      return {
+        ...base,
+        port: {
+          ...base.port,
+          listTeammates: async () => COMPOSER_TEAMMATES,
+          listProjects: async () => [
+            { id: '019f0000-0000-7000-8000-00000000b001' as EntityId, name: 'tm8-web' },
+            { id: '019f0000-0000-7000-8000-00000000b002' as EntityId, name: 'tm8' },
+          ],
+        },
+      };
+    },
+    [empty, turns, composer],
   );
   const [ready, setReady] = useState(false);
   const [host, setHost] = useState<HTMLElement | null>(null);

@@ -1,7 +1,44 @@
 /**
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
- * the top-level TABS, palette hint, the inbox bell, copy-link
- * slot, account avatar.
+ * the top-level TABS, the UI-2.0 door, palette hint, and the account menu.
+ *
+ * REVISION 21 (task 01a07a56, owner-ordered 2026-09-07). THE ROW IS A GRID.
+ *
+ * WHAT WAS WRONG, MEASURED RATHER THAN ASSERTED. `shell.css` carried ZERO
+ * `@media` and zero `@container` rules for this bar, so nothing in it could
+ * shrink, ellipsise or fold: its MINIMUM INTRINSIC WIDTH was 1167 CSS px at
+ * every viewport. `styles/app.css` scales the whole app by `zoom: 1.1`, so the
+ * real budget is `viewport ÷ 1.1` and the bar began overflowing at a viewport
+ * of 1284 — between a 1366 px Windows laptop (fine) and a 1280 px MacBook
+ * (broken), which is exactly the report. With nothing shrinkable, all overflow
+ * was absorbed by whatever came LAST in the DOM, so the first control to leave
+ * the screen was the account menu.
+ *
+ * FOUR CHANGES, IN THE ORDER THEY MATTER:
+ *
+ *  1. THREE ZONES ON A GRID — `minmax(0, 1fr) auto minmax(0, 1fr)`. The centre
+ *     column is the tab group, centred on the BAR rather than on whatever the
+ *     left side measures. A `flex: 1` spacer cannot centre, which is why the
+ *     tabs sat at x=310–807 in a 1745 px bar. The `minmax(0, …)` side tracks
+ *     are what permit their contents to ellipsise instead of push.
+ *  2. A LADDER, in `shell.css`, driven by CONTAINER queries on this bar's own
+ *     inline size rather than viewport media queries — so no breakpoint has to
+ *     be divided by 1.1, and none of them move if the `zoom` experiment is ever
+ *     retuned. The sacrifice order is written down there and is the REVERSE of
+ *     what DOM order used to impose.
+ *  3. THREE UTILITIES MOVED into the account menu (Inbox, prompts, Copy link),
+ *     taking the bar's minimum intrinsic width from 1167 to 915 CSS px. See
+ *     `hostsUtilities` below for the state where they stay.
+ *  4. THE UI-2.0 DOOR IS GONE, control and all (owner, 2026-09-07: "delete the
+ *     Swutch to UI 2.0 in the Bar"). It was the widest object in the row —
+ *     `DisabledAction` renders its reason as inline prose, 618 CSS px at 1920
+ *     and 168 px TALL inside a 36 px bar, spilling down over the page at every
+ *     width. An intermediate revision kept it and clamped the prose; the owner
+ *     saw that and still wanted it out. The alternate package kept its own
+ *     `UiVersionReturn` ("Back to UI 1.0") so anyone who reached `/ui-2.0/` by
+ *     typing the URL could still click their way back — the forward door was
+ *     removed, never the way out. Both are moot since 2026-09-15: that package
+ *     is deleted and `/ui-2.0/` is an ordinary 404.
  *
  * REVISION 20 (Help/top-tab ruling, 2026-08-20): the shipped row is exactly
  * Home | Work | Board | Craft | Graph | Settings | Help. Board is the client-
@@ -114,119 +151,135 @@ export interface SpaceTabBarProps {
    * keep working.
    */
   shareSlot?: ReactNode;
-  /**
-   * THE WAY BACK TO THE PRODUCT UI, when this bundle is being served as the
-   * alternate 1.0 UI under `/ui-1.0/`.
-   *
-   * A slot and not a rendered control, for the same reason as `shareSlot`: the
-   * bar has no business knowing this package has a sibling. Left undefined the
-   * bar is unchanged, which is every existing shell test and this bundle
-   * rendered anywhere the switch is not in play.
-   *
-   * It sits FIRST in the right-hand cluster, before the palette hint: an exit
-   * a viewer is looking for should not be the control they find last.
-   */
-  uiSwitchSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
+  /* R21 — WHERE THE THREE UTILITIES RENDER, and why it is a condition rather
+     than a deletion.
+
+     Inbox, the prompt catalog and Copy link moved into the account menu. But
+     `AccountMenu` renders NOTHING without a gate (deliberately: a menu with no
+     account and no sign-out verb is the enabled-inert defect this package tore
+     out once already), and the host passes `accountSlot` only when there IS an
+     account. In that state the bar falls back to `shell-tabbar__avatar`, which
+     is a THEME TOGGLE and not a menu — so a plain move would have made all
+     three verbs unreachable from chrome for a viewer with no account, in the
+     name of "no loss of functionality".
+
+     So the bar keeps them exactly when there is no menu to hold them. One
+     control, one home, always reachable — and no state where a verb is drawn
+     twice. */
+  const hostsUtilities = !props.accountSlot;
+
   return (
-    <header className="shell-tabbar" data-testid="space-tab-bar">
-      {props.onGoHome ? (
-        <button
-          type="button"
-          className="shell-tabbar__mark shell-tabbar__mark--door"
-          data-testid="go-home"
-          aria-label="tm8 — back to conversations"
-          title="Back to conversations"
-          onClick={props.onGoHome}
-        >
-          <BrandMark />
+    <header className="shell-tabbar shell-tabbar--r21" data-testid="space-tab-bar">
+      {/* LEFT ZONE. `minmax(0, 1fr)` in the grid, so its contents ellipsise
+          rather than push the tabs off centre. */}
+      <div className="shell-tabbar__zone shell-tabbar__zone--lead">
+        {props.onGoHome ? (
+          <button
+            type="button"
+            className="shell-tabbar__mark shell-tabbar__mark--door"
+            data-testid="go-home"
+            aria-label="tm8 — back to conversations"
+            title="Back to conversations"
+            onClick={props.onGoHome}
+          >
+            <BrandMark />
+          </button>
+        ) : (
+          <div className="shell-tabbar__mark" aria-label="tm8">
+            <BrandMark />
+          </div>
+        )}
+
+        {props.switcherSlot ?? null}
+      </div>
+
+      {/* CENTRE ZONE — the `auto` column between two equal `1fr` tracks, which
+          is what makes the tabs centred ON THE BAR rather than on whatever the
+          left side happens to measure. A flex spacer cannot do this; that is
+          the whole reason the row became a grid. */}
+      <div className="shell-tabbar__zone shell-tabbar__zone--centre">
+        {props.tabs && props.tabs.length > 0 ? (
+          <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
+            {props.tabs.map((tab) => {
+              const active = tab.id === props.activeTabId;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
+                  onClick={() => props.onSelectTab?.(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        ) : null}
+      </div>
+
+      {/* RIGHT ZONE. */}
+      <div className="shell-tabbar__zone shell-tabbar__zone--trail">
+        {/* THE PALETTE HINT STAYS IN THE BAR while the utilities leave, and
+            deliberately: it is the one control whose job is to reach the
+            others. Folding three verbs into a menu is only safe while there is
+            a visible, always-present way to reach every verb by name. */}
+        <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
+          <span className="shell-tabbar__palette-full">/ palette · </span>⌘K
         </button>
-      ) : (
-        <div className="shell-tabbar__mark" aria-label="tm8">
-          <BrandMark />
-        </div>
-      )}
 
-      {props.switcherSlot ?? null}
+        {hostsUtilities && props.onOpenPrompts ? (
+          <button
+            type="button"
+            className="shell-tabbar__prompts"
+            onClick={props.onOpenPrompts}
+            data-testid="open-prompts"
+            title="System prompts — everything tm8 says to an agent"
+          >
+            prompts
+          </button>
+        ) : null}
 
-      {props.tabs && props.tabs.length > 0 ? (
-        <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
-          {props.tabs.map((tab) => {
-            const active = tab.id === props.activeTabId;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
-                onClick={() => props.onSelectTab?.(tab.id)}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      ) : null}
+        {/* The bell keeps the D28 posture when no host wired it: focusable,
+            aria-disabled, with the reason on it — never hidden. */}
+        {hostsUtilities ? (
+          <button
+            type="button"
+            className="shell-tabbar__bell"
+            data-testid="open-inbox"
+            aria-disabled={props.onOpenInbox ? undefined : 'true'}
+            aria-label="Inbox"
+            title={
+              props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'
+            }
+            onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
+          >
+            <span aria-hidden="true">◹</span>
+          </button>
+        ) : null}
 
-      <div className="shell-tabbar__spacer" />
+        {hostsUtilities ? (props.shareSlot ?? null) : null}
 
-      {/* The exit to the product UI, ahead of everything else on the right. */}
-      {props.uiSwitchSlot ?? null}
-
-      {props.onOpenPrompts ? (
-        <button
-          type="button"
-          className="shell-tabbar__prompts"
-          onClick={props.onOpenPrompts}
-          data-testid="open-prompts"
-          title="System prompts — everything tm8 says to an agent"
-        >
-          prompts
-        </button>
-      ) : null}
-
-      <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
-        / palette · ⌘K
-      </button>
-
-      {/* RETIRED 2026-08-20: Help now owns the final tab in the shipped menu.
-          Keep no duplicate `?` door in chrome. The view, route and palette
-          eligibility remain; only this dedicated control is gone. */}
-
-      {/* The bell keeps the D28 posture when no host wired it: focusable,
-          aria-disabled, with the reason on it — never hidden. */}
-      <button
-        type="button"
-        className="shell-tabbar__bell"
-        data-testid="open-inbox"
-        aria-disabled={props.onOpenInbox ? undefined : 'true'}
-        aria-label="Inbox"
-        title={props.onOpenInbox ? 'Inbox — what wants you' : 'Inbox is unavailable without a host'}
-        onClick={props.onOpenInbox ?? ((event) => event.preventDefault())}
-      >
-        <span aria-hidden="true">◹</span>
-      </button>
-
-      {props.shareSlot ?? null}
-
-      {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
-          EXISTS and arrives through `accountSlot` — the fallback below is only
-          for a bar rendered WITHOUT one, and while that is the case the label
-          keeps saying the true thing: this button toggles the theme. */}
-      {props.accountSlot ?? (
-        <button
-          type="button"
-          className="shell-tabbar__avatar"
-          onClick={props.onOpenAccount}
-          aria-label="Toggle theme"
-          title="Toggle theme"
-        >
-          {props.accountInitial ?? '·'}
-        </button>
-      )}
+        {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
+            EXISTS and arrives through `accountSlot` — the fallback below is only
+            for a bar rendered WITHOUT one, and while that is the case the label
+            keeps saying the true thing: this button toggles the theme. */}
+        {props.accountSlot ?? (
+          <button
+            type="button"
+            className="shell-tabbar__avatar"
+            onClick={props.onOpenAccount}
+            aria-label="Toggle theme"
+            title="Toggle theme"
+          >
+            {props.accountInitial ?? '·'}
+          </button>
+        )}
+      </div>
     </header>
   );
 }

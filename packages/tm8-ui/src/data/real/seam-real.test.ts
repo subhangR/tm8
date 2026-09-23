@@ -409,6 +409,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,
       // gitCherryPick, gitStash join the rail's verbs.
       'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
+      // Changes surface (Phase 1): `gitStage` — `execution.gitStage`, the
+      // INDEX verb the review surface needs. It is the stage/unstage pair
+      // behind one method, because both are one route and one DTO; two
+      // methods would be two places for the same pathspec list to drift.
+      // Inserted at its sorted position between gitRollback and gitStash
+      // rather than appended — one insertion, so the silent-duplicate
+      // risk the appended groups below guard against does not arise.
+      'gitStage',
       'gitStash',
       'markRead',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
@@ -458,10 +466,12 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
       // verb for the same reason as axes: workflows ride `spaceSettings()`.
       'upsertTaskWorkflow', 'deleteTaskWorkflow',
-      // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
-      // write half of the chat-home bridge. Sorts between spawn and
-      // startTerminal.
-      'startChatThread',
+      // 176: `chat.start` — the write half of the chat-home bridge, and now the
+      // ONLY door a chat is born from. It replaces `startChatThread`, which
+      // configured an already-posted root message; this one creates the chat
+      // entity and posts its opening turn together. Sorts between spawn and
+      // startTerminal, exactly where its predecessor did.
+      'startChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.
@@ -472,6 +482,38 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // A seam method taking `ExecutionSpawnInput` with those omitted would be
       // one optional-field edit away from a terminal that spawns an agent.
       'startTerminal',
+      /*
+       * CONTAINERS P0 (migration 177). Five methods, appended here rather than
+       * inserted at their five sorted positions — the `.sort()`-at-the-end
+       * posture the membership four and the task-axis three already take, and
+       * for the reason recorded there: five insertions at five different points
+       * is how a list like this acquires a silent duplicate.
+       *
+       * THIS LOCK IS WHY THEY ARE LISTED AT ALL. The seam cannot gain a command
+       * without someone writing the line, and these five would otherwise have
+       * arrived as a green `Array(53)` where the guard expected 48 — which is
+       * exactly how it surfaced.
+       *
+       * `containerLifecycle` is ONE method for start/stop/pause/resume because
+       * the four share one contract DTO and one route shape; four methods would
+       * be four places for the same mandatory `expectedVersion` to drift.
+       * `startContainerTerminal` answers IDS, not a `CommandResult` — it mints
+       * a work_session inside the container, so there is nothing to reconcile
+       * and a caller must not journal it optimistically.
+       */
+      'createContainer', 'containerLifecycle', 'destroyContainer',
+      'startContainerTerminal', 'containerProviders',
+      // 187: `shareSession` — `execution.sessions.share`, the WATCH and DRIVE
+      // dials on a work session. Appended rather than inserted at its sorted
+      // position, the same posture as the five above and for the same reason.
+      //
+      // ONE method for two dials, because the RPC MERGES: an omitted key is
+      // left alone, never defaulted. Two methods would be two places for a
+      // caller to clobber the dial it was not thinking about.
+      'shareSession',
+      // F4 (#648): `skills` — the skill port (roots, create, edit, equip,
+      // unequip, preview), one namespaced member. Appended like the rows above.
+      'skills',
       'terminate',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and

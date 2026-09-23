@@ -613,10 +613,10 @@ const AUTHORED_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'authored',
     title: 'Skills',
     summary:
-      'Named instruction bodies attached to a session, each rendered as an escaped <skill> block.',
+      'Equipped skill metadata and load pointers, each rendered as an escaped index entry.',
     status: 'reference',
     statusNote:
-      'The composer renders whatever the manifest carries, but the live spawn path emits an empty skills array — so no skill text reaches an agent today.',
+      'Equipped skills reach the prompt as escaped metadata and load pointers, never bodies. Missing or disabled entries are skipped. Serialized index byte drops and relevance cuts remain observable in manifest.droppedSkills; the effective set is recorded in work_session.state.skills.',
     rendering: 'pointer',
     source: 'packages/prompt/src/index.ts · composed at packages/execution/src/spawn/manifest.ts',
     injectedWhen: 'Inside <skills> on a v1 envelope, when the manifest carries any.',

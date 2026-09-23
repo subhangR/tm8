@@ -47,8 +47,16 @@ export interface McpToolDefinition {
   };
 }
 
+/**
+ * An MCP content block. Text is the ordinary case; `image` exists for the one
+ * thing text cannot carry — a screenshot a model is meant to LOOK at.
+ */
+export type McpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
 export interface McpToolResult {
-  content: Array<{ type: 'text'; text: string }>;
+  content: McpContentBlock[];
   structuredContent: Record<string, unknown>;
   isError?: boolean;
 }
@@ -165,14 +173,95 @@ const ACT_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/**
+ * Containers (TM8-CONTAINERS-DESIGN §14.1). Guide rows, not direct tools,
+ * because these are called once per decision rather than in a loop — a
+ * template is the right shape for "start this machine", and a typed result is
+ * the right shape only for the three the agent calls repeatedly.
+ *
+ * `containers.run` appears BOTH here and as the direct tool `container_run`,
+ * and §14.1 asks for both deliberately: the guide is how a model discovers the
+ * operation exists at all, the direct tool is how it calls it in a loop and
+ * gets `exitCode` as a number rather than a blob to re-parse. The summary here
+ * says so, rather than leaving a model to find out by trying both.
+ *
+ * Fifteen of the twenty-five containers.* operations answer an honest 501 in
+ * P0. That is deliberately NOT narrated in these summaries: what a node can
+ * actually serve is measured at call time and reported by the error, and a
+ * summary that said "not yet" would be a roadmap that rots.
+ */
+const CONTAINER_GUIDES = [
+  guide('containers.create', 'Create a machine an agent can run in or drive, and start it. The birth verb — entities.create refuses the container kind.', {
+    body: { spaceId: '<space-id>', profile: 'shell', title: '<title>', clientMutationId: '<optional-id>' },
+  }),
+  guide('containers.start', 'Start a stopped machine, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('containers.stop', 'Stop a running or paused machine, keeping its record.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('containers.destroy', 'Destroy a machine and its runtime object, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, force: false },
+  }),
+  guide('containers.run', 'Run one command inside a machine. Prefer the container_run tool when looping: it returns a typed exitCode, stdout and stderr.', {
+    params: { containerId: '<container-id>' }, body: { argv: ['<command>', '<arg>'], cwd: '<optional-path>' },
+  }),
+  guide('containers.policy.set', 'Set a machine\'s egress preset and allowlist, under a version guard.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, network: { preset: 'locked', allow: ['<hostname>'] } },
+  }),
+  guide('containers.expose', 'Publish a machine\'s port through the node\'s reverse proxy.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, port: 8080, share: 'space' },
+  }),
+  guide('containers.snapshot', 'Capture a machine\'s disk as a reusable image.', {
+    params: { containerId: '<container-id>' }, body: { expectedVersion: 1, name: '<name>' },
+  }),
+  guide('containers.fork', 'Create a new machine from this one\'s snapshot. No version guard — a fork reads the source.', {
+    params: { containerId: '<container-id>' }, body: { title: '<title>' },
+  }),
+  guide('containers.attention', 'Ask a human to take over the machine — a login, a captcha, a payment. Use this instead of automating past the moment.', {
+    params: { containerId: '<container-id>' }, body: { reason: 'login', detail: '<what is needed>', points: 50 },
+  }),
+] as const satisfies readonly OperationGuide[];
+
+/* `mode: 'coordinated-worker'` is the TEMPLATE value, and that is the whole
+   point of this guide (176/Wave 2).
+
+   A worker spawned `mode: 'worker'` has no coordinator and no return address:
+   it does its work and exits, and whatever it learned dies with its transcript.
+   `coordinated-worker` is what makes `resolveCoordinatorSessionId` resolve a
+   coordinator at all (`execution/src/spawn/manifest.ts`) — with any other mode
+   it returns null and the launched prompt carries no `<coordination>` block.
+
+   The coordinator it resolves is `parentSessionId`, which THIS caller does not
+   have to supply and should not: `execution.spawn` defaults it to the calling
+   chat's own id, read off the bearer's session row rather than from this body.
+   So the two halves — a chat that can be a parent (178) and a mode that makes
+   the parent a return address — are what turn a dispatched worker's completion
+   report into a turn in this chat instead of an inert stored message.
+
+   A guide that showed `mode: 'worker'` therefore advertised the one value that
+   silently discards the result. */
 const DELEGATE_GUIDES = [
   guide('execution.dispatch', 'Route an entity to the resident dispatcher; it chooses the teammate.', {
     body: { spaceId: '<space-id>', subjectId: '<entity-id>', note: '<optional-steer>' },
   }),
-  guide('execution.spawn', 'Start a durable worker session with an explicitly chosen teammate.', {
-    body: { spaceId: '<space-id>', teamMemberId: '<team-member-id>', taskIds: ['<task-id>'], mode: 'worker' },
-  }),
-  guide('execution.terminate', 'End a worker session.', {
+  guide(
+    'execution.spawn',
+    'Start a durable worker session with an explicitly chosen teammate. '
+      + "Use mode 'coordinated-worker' so the worker is told a coordinator is waiting and reports back "
+      + 'when it finishes or blocks. Leave parentSessionId out: it defaults to THIS chat, so the worker '
+      + "is parented on the chat and its report arrives here as a turn. Any other mode ('worker') gives "
+      + 'the worker no return address and its result is lost when it exits.',
+    {
+      body: {
+        spaceId: '<space-id>',
+        teamMemberId: '<team-member-id>',
+        taskIds: ['<task-id>'],
+        mode: 'coordinated-worker',
+      },
+    },
+  ),
+  guide('execution.terminate', 'End a worker session. Chats are not terminated this way.', {
     params: { id: '<work-session-id>' }, body: { force: false },
   }),
   guide('execution.resume', 'Resume an exited worker with its provider-native conversation.', {
@@ -180,21 +269,39 @@ const DELEGATE_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/* AN AGENT'S ADDRESS IS ITS OWN ENTITY ID, and until 176 only half of that
+   sentence was true. A work session has always been reachable by anchoring a
+   message on its id; a chat was a message thread with no id to anchor on, so
+   nothing could address one. Now a chat is an entity and the two are symmetric,
+   which is worth saying in the guide rather than leaving a model to discover it
+   — `<anchor-id>` alone reads as "some entity", and a model that reads it that
+   way posts its report onto the task and nobody wakes. */
 const MESSAGE_GUIDES = [
-  guide('messages.list', 'Page thread roots or replies anchored to an entity.', {
-    params: { anchorId: '<anchor-id>' }, query: { limit: '50' },
+  guide('messages.list', 'Page thread roots or replies anchored to an entity — a task, a work session, or a chat.', {
+    params: { anchorId: '<anchor-id: entity, work-session or chat id>' }, query: { limit: '50' },
   }),
-  guide('messages.post', 'Post a durable message or direct threaded reply as the selected teammate.', {
-    body: { anchorIds: ['<anchor-id>'], body: '<message>', parentMessageId: '<optional-parent-message-id>' },
-  }),
-  guide('messages.delivery.get', 'Read storage/delivery settlement for a posted message.', {
+  guide(
+    'messages.post',
+    'Post a durable message or direct threaded reply as the selected teammate. '
+      + "An agent's address IS its entity id: anchor on a work session's id to reach that session, "
+      + "and on a chat's id to reach that chat — a chat you are answering, or the chat that spawned you. "
+      + 'Either one wakes its recipient; anchoring on a task or a document only stores the message.',
+    {
+      body: {
+        anchorIds: ['<anchor-id: entity, work-session or chat id>'],
+        body: '<message>',
+        parentMessageId: '<optional-parent-message-id>',
+      },
+    },
+  ),
+  guide('messages.delivery.get', 'Read storage/delivery settlement for a posted message, including any chat turn it queued.', {
     params: { messageId: '<message-id>' },
   }),
 ] as const satisfies readonly OperationGuide[];
 
 const GROUPS = {
   tm8_read: READ_GUIDES,
-  tm8_act: ACT_GUIDES,
+  tm8_act: [...ACT_GUIDES, ...CONTAINER_GUIDES],
   tm8_delegate: DELEGATE_GUIDES,
   tm8_messages: MESSAGE_GUIDES,
 } as const;
@@ -202,6 +309,7 @@ const GROUPS = {
 export const MCP_MAPPED_OPERATIONS: readonly OperationName[] = [
   ...READ_GUIDES.map((item) => item.operation),
   ...ACT_GUIDES.map((item) => item.operation),
+  ...CONTAINER_GUIDES.map((item) => item.operation),
   ...DELEGATE_GUIDES.map((item) => item.operation),
   ...MESSAGE_GUIDES.map((item) => item.operation),
 ];
@@ -284,6 +392,17 @@ export interface Tm8ToolRouterOptions {
   mode?: ChatMode;
   projectRoot?: string;
   spaceId?: string;
+  /**
+   * The chat this MCP server runs inside (`TM8_CHAT_ID`, written into the
+   * per-chat config by the server's launch-config resolver).
+   *
+   * It is NOT used to authorize anything — the server re-reads the same fact off
+   * the bearer's own session row, which is the only copy that cannot be edited
+   * by whoever can read this config file. It is here so the tool surface can
+   * TELL the model its own address instead of leaving it to infer one from the
+   * cwd or the config filename, both of which have been wrong before.
+   */
+  chatId?: string;
   fetchImpl?: typeof fetch;
   /** Provider-native equivalents omitted from MCP registration and calls. */
   hiddenTools?: readonly string[];
@@ -293,10 +412,12 @@ export class Tm8ToolRouter {
   private readonly mode: ChatMode;
   private readonly directContext: DirectToolContext;
   private readonly hiddenTools: ReadonlySet<string>;
+  private readonly chatId: string | null;
 
   constructor(private readonly transport: CatalogTransport, options: Tm8ToolRouterOptions = {}) {
     this.mode = options.mode ?? parseChatMode(undefined);
     this.hiddenTools = new Set(options.hiddenTools ?? []);
+    this.chatId = options.chatId?.trim() || null;
     this.directContext = {
       transport,
       ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
@@ -326,7 +447,7 @@ export class Tm8ToolRouter {
       }
       if (name === 'tm8_overview') {
         enforcePermission(this.mode, name);
-        return success(overview(rawArguments, this.mode, this.hiddenTools));
+        return success(overview(rawArguments, this.mode, this.hiddenTools, this.chatId));
       }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       const args = objectOf(rawArguments, 'tool arguments');
@@ -389,14 +510,27 @@ function directoryResult(name: keyof typeof GROUPS, directory: readonly Operatio
   };
 }
 
-function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>): Record<string, unknown> {
+function overview(
+  raw: unknown,
+  mode: ChatMode,
+  hiddenTools: ReadonlySet<string>,
+  chatId: string | null,
+): Record<string, unknown> {
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
     { tool: 'tm8_read', purpose: 'context, search, graph traversal, inbox and action discovery' },
     { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations' },
-    { tool: 'tm8_delegate', purpose: 'dispatching and lifecycle of durable worker sessions' },
-    { tool: 'tm8_messages', purpose: 'durable anchored messages and threaded replies' },
+    {
+      tool: 'tm8_delegate',
+      purpose: "dispatching and lifecycle of durable worker sessions; spawn mode 'coordinated-worker'"
+        + ' parents the worker on this chat and gives it this chat as its return address',
+    },
+    {
+      tool: 'tm8_messages',
+      purpose: 'durable anchored messages and threaded replies; a work session or a chat is reached'
+        + ' by anchoring on ITS own entity id',
+    },
   ].filter((group) => toolPermission(mode, group.tool) === 'allow');
   const operations = Object.entries(GROUPS).flatMap(([tool, guides]) =>
     guides
@@ -410,9 +544,28 @@ function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>
       provenance: 'selected teammate actor',
       filesystem: toolPermission(mode, 'repo_read_file') === 'allow',
       credentialOperations: false,
+      /* B10. The credential is bound to ONE chat server-side; naming that chat
+         here is a statement about the token, not a grant. Saying so is the
+         honest half of the guard the server enforces. */
+      ...(chatId ? { boundChatId: chatId } : {}),
     },
     groups,
     mode,
+    /* The chat's own id and what it means, so `messages.post` needs no
+       inference: this is the address other sessions and chats post on to reach
+       this chat, and the parent a coordinated worker reports back to. Absent
+       only when the runtime did not set TM8_CHAT_ID — an older config file. */
+    ...(chatId
+      ? {
+        chat: {
+          id: chatId,
+          address: 'other sessions and chats reach this chat by anchoring a message on this id;'
+            + ' reach one of them with messages.post anchored on ITS id',
+          delegation: "a worker spawned mode:'coordinated-worker' is parented on this id and reports"
+            + ' back to it',
+        },
+      }
+      : {}),
     directTools: DIRECT_TOOLS
       .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(mode, tool.name) !== 'deny')
       .map((tool) => ({ tool: tool.name, purpose: tool.description })),
@@ -458,6 +611,18 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'execution.spawn',
   'execution.dispatch',
   'execution.resume',
+  // Containers: every one of these is a ledgered command, and a replayed
+  // create must return the FIRST machine rather than provision a second.
+  'containers.create',
+  'containers.start',
+  'containers.stop',
+  'containers.destroy',
+  'containers.run',
+  'containers.policy.set',
+  'containers.expose',
+  'containers.snapshot',
+  'containers.fork',
+  'containers.attention',
 ]);
 
 function invokeOptions(args: Record<string, unknown>, operation: OperationName): CatalogInvokeOptions {
@@ -517,10 +682,32 @@ function queryRecord(raw: unknown): Record<string, QueryValue> | undefined {
   return result;
 }
 
+/**
+ * A direct tool may return an `imageContent` envelope. `success` lifts it into
+ * a real MCP image block and REMOVES it from `structuredContent`.
+ *
+ * The removal is the point, not tidiness: a screenshot is on the order of a
+ * megabyte of base64, and leaving it in the structured half would ship it
+ * TWICE to a model that can read it in neither place as text. The dimensions
+ * and the scale stay behind in `screenshot`, because those are what the model
+ * needs to convert its next click's coordinates — the image block alone does
+ * not carry them.
+ */
 function success(value: Record<string, unknown>): McpToolResult {
+  const { imageContent, ...rest } = value as { imageContent?: unknown } & Record<string, unknown>;
+  const image = imageContent as { mimeType?: unknown; data?: unknown } | undefined;
+  if (image && typeof image.data === 'string' && typeof image.mimeType === 'string') {
+    return {
+      content: [
+        { type: 'text', text: JSON.stringify(rest) },
+        { type: 'image', data: image.data, mimeType: image.mimeType },
+      ],
+      structuredContent: rest,
+    };
+  }
   return {
-    content: [{ type: 'text', text: JSON.stringify(value) }],
-    structuredContent: value,
+    content: [{ type: 'text', text: JSON.stringify(rest) }],
+    structuredContent: rest,
   };
 }
 

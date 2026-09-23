@@ -91,15 +91,15 @@ fi
 # --- 2. typecheck: per-package scoped tsc -b, SEQUENTIAL --------------------
 # Order matters: contract first (everything references it), then dependents.
 #
-# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8_ui_2.0) are
-# mirrored by the root `bun run typecheck` shorthand, in this same order, as
-# typecheck:core -> typecheck:ui -> typecheck:tm8-ui-2.0. Keep them in step. The
-# shorthand used to cover TSC_PROJECTS only, and a green there read as "my
-# types are fine" while both UIs went unchecked until push time — that gap
-# cost two lanes a day in 2026-08 and produced a whole follow-up task built on
-# the belief that the GATE had the hole. It did not; the shorthand did.
+# The two groups below (TSC_PROJECTS, then packages/tm8-ui) are mirrored by the
+# root `bun run typecheck` shorthand, in this same order, as typecheck:core ->
+# typecheck:ui. Keep them in step. The shorthand used to cover TSC_PROJECTS
+# only, and a green there read as "my types are fine" while the UI went
+# unchecked until push time — that gap cost two lanes a day in 2026-08 and
+# produced a whole follow-up task built on the belief that the GATE had the
+# hole. It did not; the shorthand did.
 #
-# The order is also load-bearing, not cosmetic: packages/tm8_ui_2.0 resolves
+# The order is also load-bearing, not cosmetic: packages/tm8-ui resolves
 # @tm8/contract through its BUILT dist/*.d.ts, so it must run after the
 # contract is built or it reports errors for fields that exist in source.
 TSC_PROJECTS=(
@@ -121,59 +121,25 @@ for project in "${TSC_PROJECTS[@]}"; do
   run_stage "typecheck $project" ./node_modules/.bin/tsc -b "$project"
 done
 
-# packages/ui is intentionally absent above: it arrives at W3/M2 and is verified
-# with its own scoped `tsc -b` + a SINGLE vite build, never fanned out here.
-if [ -f packages/ui/tsconfig.json ]; then
-  run_stage "typecheck packages/ui" ./node_modules/.bin/tsc -b packages/ui
-else
-  skip "typecheck packages/ui" "UI arrives at W3/M2"
-fi
-
-# The production UI owns the launch builder. Keep it in the merge gate after
-# the contract build so additions such as execution.spawn credential provenance
-# cannot land on one side of the seam without the other.
+# THE UI — the only UI package in this repo since 2026-09-15, when the Astryx
+# redesign fork (packages/tm8_ui_2.0, the alternate at /ui-2.0/) and the legacy
+# collab-v2 oracle (packages/ui) were deleted. It is typechecked here and its
+# suite runs in TEST_PACKAGES below.
 #
-# packages/tm8_ui_2.0 (the Astryx redesign) is the product UI; packages/tm8-ui
-# is the 1.0 snapshot, now served beside it as the ALTERNATE UI at /ui-1.0/.
+# The UI owns the launch builder. Keep it in the merge gate after the contract
+# build so additions such as execution.spawn credential provenance cannot land
+# on one side of the seam without the other.
 #
-# THE 1.0 SNAPSHOT IS GATED AGAIN (2026-09-02). The note that used to sit here
-# said gating would fail because the snapshot declares React 18 against a
-# workspace pinned to 19. THAT NOTE WAS CORRECT — an earlier cut of this change
-# claimed otherwise, on the strength of a dev box whose install hoisted a single
-# `@types/react`. Under this job's frozen lockfile the snapshot pulls @types 18
-# beside the hoisted 19 and fails on the spot, exactly as the note predicted.
-#
-# It is gateable now because the condition was FIXED, not re-read: the package
-# declares React 19 to match the runtime the root `overrides` already forced on
-# it, and the six `RefObject<T>` props React 19 widened to `RefObject<T | null>`
-# are corrected.
-#
-# What ungating it cost in the meantime was real, and is the argument for this
-# stage: while nothing checked it, the contract gained a `codebrain` MenuViewRef
-# and four of the snapshot's exhaustive `Record<MenuViewRef, …>` tables silently
-# stopped compiling. Nothing reported it, because nothing looked. A UI a viewer
-# can switch to has to be a UI something checks.
-if [ -f packages/tm8_ui_2.0/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8_ui_2.0" ./node_modules/.bin/tsc -p packages/tm8_ui_2.0/tsconfig.json --noEmit
-else
-  skip "typecheck packages/tm8_ui_2.0" "production UI is absent"
-fi
-
-# TYPECHECK ONLY, and the omission of its test suite is deliberate rather than
-# an oversight. MEASURED 2026-09-02 on clean origin/main, before any of this
-# lane's edits: 9 failures across 5 files (board, craft, files-explorer,
-# transcript, router-mount) — React-19 act/flush timing in a suite written
-# against React 18, unrelated to anything the version switch touches. Gating
-# them today would make this stage red on arrival, and a stage that is red on
-# arrival is a stage people learn to ignore.
-#
-# The typecheck has no such baseline: it is clean, and it is the check that
-# would have caught the `codebrain` widening on the day it landed. Adding the
-# test suite is its own task, and it starts by fixing those 9.
+# What ungating a served UI costs is not hypothetical, and is the argument for
+# this stage: while nothing checked the then-frozen 1.0 snapshot, the contract
+# gained a `codebrain` MenuViewRef and four of its exhaustive
+# `Record<MenuViewRef, …>` tables silently stopped compiling. Nothing reported
+# it, because nothing looked. A UI a viewer can reach has to be a UI something
+# checks — and every viewer lands on this one.
 if [ -f packages/tm8-ui/tsconfig.json ]; then
-  run_stage "typecheck packages/tm8-ui (1.0)" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+  run_stage "typecheck packages/tm8-ui" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
 else
-  skip "typecheck packages/tm8-ui (1.0)" "the 1.0 snapshot is absent"
+  skip "typecheck packages/tm8-ui" "the UI package is absent"
 fi
 
 # --- 3. tests ---------------------------------------------------------------
@@ -203,12 +169,17 @@ fi
 # while packages are still being authored.
 TEST_PACKAGES=(
   packages/contract
+  # packages/jev is the decisioning layer. It is TYPECHECKED transitively (the
+  # execution project references it), so its absence here would not have shown
+  # up as a red build — only as a package whose whole suite never ran, which is
+  # the exact shape of the packages/tm8-ui gap documented below.
+  packages/jev
   packages/server
   packages/execution
   packages/cli
   # packages/tm8-ui was ABSENT here until 2026-08-18, and had been since the
   # package was created. The gate typechecked it (above) and never ran a line
-  # of its ~3,800 tests across 281 files — so every UI test in this repo was,
+  # of its ~4,960 tests across 363 files — so every UI test in this repo was,
   # in effect, a local-only test.
   #
   # What that cost, concretely: `gate.test.tsx` sat red on main for the whole
@@ -223,9 +194,16 @@ TEST_PACKAGES=(
   # every test with a timeout loses that race eventually.
   #
   # 2026-08-29: the entry moved from packages/tm8-ui to packages/tm8_ui_2.0
-  # when the product UI moved. tm8-ui is now the frozen 1.0 snapshot (React 18,
-  # pre-Astryx) and is excluded for the same reason packages/ui is.
-  packages/tm8_ui_2.0
+  # when the product UI moved. 2026-09-03: the product UI moved BACK and this
+  # entry did NOT follow it, so for twelve days the suite that ran was the
+  # ALTERNATE bundle's — a real check, on a real bundle, but not the one
+  # viewers landed on. That gap was held open by 8 pre-existing React-19
+  # act/flush failures in this package's suite.
+  #
+  # 2026-09-15: the alternate package is deleted, those 8 are FIXED, and the
+  # entry is back where it belongs. There is no longer a second suite to hide
+  # behind — if this one is red, the gate is red.
+  packages/tm8-ui
   tools/conformance
 )
 for pkg in "${TEST_PACKAGES[@]}"; do

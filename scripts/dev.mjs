@@ -167,8 +167,8 @@ if (withUi) {
   } else {
     uiLog.warn(`UI dev server not started — ${ui.reason}.`);
     uiLog.dim(
-      `The product UI is packages/tm8_ui_2.0 (NOT packages/tm8-ui, the frozen 1.0 snapshot, nor packages/ui, the legacy ` +
-        `collab-v2 oracle). Fix the reason above and re-run; port ${env.TM8_UI_PORT} stays reserved.`,
+      `The UI is packages/tm8-ui — the only UI package in this repo. ` +
+        `Fix the reason above and re-run; port ${env.TM8_UI_PORT} stays reserved.`,
     );
   }
 }

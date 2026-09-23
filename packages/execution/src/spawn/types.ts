@@ -14,6 +14,13 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
+import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName } from '@tm8/contract';
+import type { ContextActivation, RoutingActivation } from '@tm8/jev';
+import type { CoordinatorKind } from '@tm8/prompt';
+import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
+
+export type { CoordinatorKind };
+
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
   | 'worker'
@@ -56,7 +63,7 @@ export type WorkSessionEndedKind =
  * nothing) and it is tm8's DEFAULT — see `DEFAULT_PERMISSION_MODE`.
  */
 export type PermissionMode = 'auto' | 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
-export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type AccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
 /**
@@ -164,6 +171,12 @@ export interface LoadSpawnContextInput {
   projectId?: string | null;
   taskIds?: string[];
   /**
+   * The spawning parent, when there is one, so the loader can resolve its KIND
+   * for the manifest's coordinator block (176). Absent ⇒ a root spawn, and the
+   * loader reads nothing extra.
+   */
+  parentSessionId?: string | null;
+  /**
    * Memory entities explicitly named by the spawn request (D3a). The graph
    * validates them (same space, kind `memory`, live) and folds them into the
    * teammate's injected memory set for this session only.
@@ -178,7 +191,8 @@ export interface LoadSpawnContextInput {
  * credential a session may use is not a client-expressible decision.
  */
 export type CredentialSource = 'member' | 'node';
-export type CredentialProvider = 'anthropic' | 'openai' | 'github';
+/** The contract's complete provider set; an alias cannot drift during rollout. */
+export type CredentialProvider = CredentialProviderName;
 export type CredentialSources = Partial<Record<CredentialProvider, CredentialSource>>;
 export type ResolvedCredentialSources = Record<CredentialProvider, CredentialSource | null>;
 export type StoredCredentialSources = Partial<Record<CredentialProvider, CredentialSource | null>>;
@@ -271,23 +285,37 @@ export interface SpawnContext {
   teamMember: TeamMemberContext;
   tasks: TaskContext[];
   /**
+   * What `SpawnRequest.parentSessionId` actually points at (176).
+   *
+   * Since a chat became an entity it may parent a work session, so a
+   * coordinated worker's return address is no longer always a work_session.
+   * The kind is READ FROM THE GRAPH beside the persona rather than asserted by
+   * the caller — a spawn's parent is graph state, and a client-supplied kind
+   * would be a claim about someone else's row.
+   *
+   * `null` means "no parent, or a parent this reader could not resolve", and
+   * every consumer folds that to `work_session`: the pre-176 meaning, and what
+   * a manifest written by an older node says by omission.
+   */
+  parentKind?: CoordinatorKind | null;
+  /**
    * Skills resolved across the team member's ancestor chain, nearest-first, and
    * already de-duplicated — see `resolveSkills` in ./skills.ts. Optional only so
    * that existing SpawnContext producers (the fake graph in tests, and any
    * caller predating row #11) stay valid; absent is read as "none".
    */
   skills?: ManifestSkillContext[];
+  skillEquips?: import('./skills.js').ResolvedSkillRow[];
+  skillsScannedAt?: string | null;
+  skippedSkills?: import('@tm8/contract').SkippedSkill[];
   /**
-   * Skills the resolver dropped to stay inside its cap. Carried through to the
+   * Skills omitted by context selection or serialized index budgeting. Carried through to the
    * manifest so a truncated persona is visible rather than merely smaller.
    */
   droppedSkills?: string[];
 }
 
-export interface ManifestSkillContext {
-  name: string;
-  body: string;
-}
+export type ManifestSkillContext = SkillIndexEntry;
 
 export interface CreateWorkSessionInput {
   spaceId: string;
@@ -565,6 +593,23 @@ export interface GraphPort {
     input: { sessionId: string; clientMutationId: string | null; nodeId: string | null },
   ): Promise<ResumeWorkSessionResult>;
   /**
+   * `public.record_work_session_usage` (185) — the whole-conversation provider
+   * usage read from the agent's own transcript once its process is gone.
+   *
+   * NOT a transition and never on the transition path: it is written AFTER
+   * the ending is recorded, best-effort, by a caller that swallows its own
+   * failure. A session whose transcript was already deleted, or lives on
+   * another node, simply keeps `usage = NULL` — which the column comment says
+   * must render as "never measured", not as zero. Resolves whether a row was
+   * written (false = the session row was gone).
+   */
+  recordWorkSessionUsage(
+    auth: GraphAuth,
+    sessionId: string,
+    usage: WorkSessionUsage,
+    source: WorkSessionUsageSource,
+  ): Promise<boolean>;
+  /**
    * `public.execution_record_native_session` — write-once native-id capture.
    * Resolves `false` when the row already held a DIFFERENT id, which is a
    * capture bug upstream and must be surfaced, never swallowed.
@@ -771,6 +816,38 @@ export interface Tm8Manifest {
     sandboxDegraded?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
+    /**
+     * WHY this launch runs the model it runs, when a router decided it.
+     *
+     * Same argument as `sandboxDegraded` above, applied to the model: `model`
+     * records what will RUN, and on a routed launch that is not what the
+     * persona or the caller said. Reading the two together is the only way to
+     * tell a deliberate Opus from a routed one — and without this block a
+     * routing decision is invisible, which for a system whose own dispatcher
+     * rule is "work nobody can see has not happened" makes it not have
+     * happened.
+     *
+     * Carries the counterfactual too: `savings` prices what the baseline model
+     * WOULD have cost against what the chosen one will, so the bill has a
+     * reason attached rather than a number. Absent (null) on every unrouted
+     * launch, which is all of them until a node wires an advisor.
+     */
+    routing?: RoutingActivation | null;
+    /**
+     * What Jev chose to PUT IN FRONT of the agent, beside `routing`'s record
+     * of what will run it.
+     *
+     * Same argument as `sandboxDegraded`: the manifest is where a launch says
+     * what actually happened versus what was asked for, and "this persona was
+     * offered 41 memories and given 9" is exactly that kind of fact. Without
+     * it a thinner prompt is indistinguishable from a teammate who never had
+     * the memory, which is the failure `droppedSkills` was added to prevent
+     * one layer down.
+     *
+     * Absent or null means nothing selected — every candidate was injected,
+     * which is what every launch before this did.
+     */
+    contextEngineering?: ContextActivation | null;
   };
 
   session: {
@@ -787,13 +864,18 @@ export interface Tm8Manifest {
 
   tasks: TaskContext[];
 
-  /** Skills the agent should load. G1A composes none — the graph-side skill
-   *  resolution is post-loop work. Emitted as an empty array rather than
-   *  omitted so the CLI's shape stays stable. */
-  skills: Array<{ name: string; body: string }>;
+  /** Equipped skill metadata and explicit load pointers, never bodies. */
+  skills: ManifestSkillContext[];
+  effectiveSkills?: EffectiveSkills;
+  /** Names omitted by relevance selection or the serialized index byte budget. */
+  droppedSkills?: string[];
 
-  /** Present for coordinated modes — the concrete work-session return path. */
-  coordinator: { sessionId: string; displayName?: string } | null;
+  /**
+   * Present for coordinated modes — the concrete return path, and since 176
+   * WHAT it is. `kind` is always written (never inferred from presence), so a
+   * reader can tell "a work session" from "a manifest that predates the field".
+   */
+  coordinator: { sessionId: string; kind: CoordinatorKind; displayName?: string } | null;
 
   /** Coordinator directive delivery is post-G1A; always null in this wave. */
   directive: { subject: string; message: string; fromSessionId: string } | null;

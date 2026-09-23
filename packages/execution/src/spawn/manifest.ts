@@ -1,3 +1,5 @@
+import { computeEffectiveSkills } from './effective-skills.js';
+import { composePrompt, BYTE_BUDGETS, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -16,6 +18,14 @@
 // ranking. Power ranking in particular belongs in model-profile DATA, not in a
 // branch table that drifts every time a model ships.
 
+import type {
+  ContextActivation,
+  ContextIntent,
+  ContextPlan,
+  LaunchIntent,
+  RoutingActivation,
+  TaskFacts,
+} from '@tm8/jev';
 import { fileURLToPath } from 'node:url';
 import { existsSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,12 +33,14 @@ import type {
   AccessMode,
   AgentMode,
   CommandNetworkPolicy,
+  CoordinatorKind,
   CredentialSource,
   GitHubCredential,
   PermissionMode,
   ReasoningEffort,
   ResolvedCredentialSources,
   SessionLaunchPosture,
+  ManifestSkillContext,
   SpawnContext,
   SpawnRequest,
   Tm8Manifest,
@@ -36,10 +48,19 @@ import type {
 } from './types.js';
 import { SpawnError } from './types.js';
 import {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
   agentCredentialEnv,
   type AgentCredentialHome,
+  type AgentCredentialProvider,
 } from './agent-credentials.js';
+// Type-only in the other direction: `api-key-credentials.ts` imports nothing
+// from this module at runtime, so this does not close the cycle the header of
+// `agent-credentials.ts` warns about between `manifest.ts` and `credential-env.ts`.
+import {
+  apiKeyBackendEnv,
+  isApiKeyCredentialProvider,
+} from '../credentials/api-key-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
 
 /** Fallback when neither the request nor the persona names a model. */
@@ -85,6 +106,21 @@ export function resolveCoordinatorSessionId(
     );
   }
   return coordinatorSessionId;
+}
+
+/**
+ * What the coordinator id NAMES, resolved from the parent the graph read back.
+ *
+ * Deliberately separate from {@link resolveCoordinatorSessionId}, which the
+ * spec pins as returning a string: the id and its kind are two facts, and
+ * folding them into one return would change a signature three call sites and a
+ * guard already depend on. `null`/unknown folds to `work_session` — the pre-176
+ * meaning, and the only safe reading of a parent this node could not resolve.
+ */
+export function resolveCoordinatorKind(
+  parentKind: CoordinatorKind | null | undefined,
+): CoordinatorKind {
+  return parentKind === 'chat' ? 'chat' : 'work_session';
 }
 
 /** Exact hosts tm8 grants to sandboxed Codex commands. */
@@ -169,6 +205,22 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
 }
 
 /** The resolved launch posture — one persona, one request, three links. */
+/**
+ * A routing verdict that has already cleared policy, reduced to the three
+ * launch facts this file consumes.
+ *
+ * Structural, not imported: execution names the shape it needs rather than
+ * taking a dependency on `@tm8/jev`, so a node that never wires an advisor does
+ * not carry one, and a different advisor implementation fits without a change
+ * here. Every field is optional because an advisor may have an opinion about
+ * the model and none about the tool.
+ */
+export interface LaunchAdvice {
+  model?: string | null;
+  agentTool?: string | null;
+  effort?: string | null;
+}
+
 export interface ResolvedLaunchConfig {
   mode: AgentMode;
   model: string | null;
@@ -235,7 +287,7 @@ export function resolveCommandNetworkPolicy(
 
 function asReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
   if (!value) return null;
-  return ['low', 'medium', 'high', 'xhigh', 'max'].includes(value)
+  return ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value)
     ? (value as ReasoningEffort)
     : null;
 }
@@ -286,21 +338,190 @@ function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
  * caller may spawn at all remains the space/persona question the server answers
  * upstream of here.
  */
+/**
+ * The task facts a router judges, projected out of the spawn context.
+ *
+ * `SpawnContext.tasks` has carried these since the seam was written and no
+ * launch decision has ever read them — the model was chosen from the persona
+ * and the request alone, which is to say from who is working rather than from
+ * what the work is. This function is the whole of that change: it does not
+ * decide anything, it just hands the decider the facts that were already here.
+ *
+ * FIRST task only, deliberately. A multi-task session is routed by its lead
+ * assignment; averaging several tasks into one judgement would route the batch
+ * by its mean rather than by its hardest member, which is the wrong way to be
+ * wrong when the cost of under-powering is a failed session.
+ */
+export function taskFactsFor(context: SpawnContext): TaskFacts | null {
+  const task = context.tasks?.[0];
+  if (!task) return null;
+  const title = task.title?.trim() ?? '';
+  const description = task.description?.trim() ?? '';
+  if (!title && !description) return null;
+  return {
+    id: task.id,
+    title,
+    description,
+    priority: task.priority,
+    status: task.status,
+    acceptanceCriteriaCount: task.acceptanceCriteria?.length ?? 0,
+  };
+}
+
+/**
+ * What the launch was about to do, before a router saw it — the counterfactual
+ * baseline, and the record of whether a human named a model.
+ *
+ * `requestedModel` is the load-bearing field: an explicit human choice is what
+ * the `advise` policy refuses to overrule. It must therefore read from the
+ * REQUEST only. Folding the persona's default in here would make every spawn
+ * look like a deliberate choice and silently disable routing everywhere.
+ */
+export function routingIntentFor(request: SpawnRequest, context: SpawnContext): LaunchIntent {
+  return {
+    requestedModel: request.model?.trim() || null,
+    memberModel: context.teamMember.model?.trim() || null,
+    requestedAgentTool: request.agentTool?.trim() || null,
+  };
+}
+
+/**
+ * What a spawn is ABOUT to inject, as candidates a ranker can judge.
+ *
+ * IDS ARE POSITIONAL (`m0`, `s3`) because neither side has a stable one to
+ * offer in the original advisor seam: memories have no per-row identity.
+ * Skills now carry entity IDs; the existing advisor protocol remains positional. A position is enough
+ * because a plan is computed and applied inside ONE spawn — it is never
+ * stored, compared across spawns, or sent anywhere that outlives this call.
+ *
+ * Non-string memories are skipped rather than stringified. `composePrompt`
+ * already filters the same column to non-empty strings, so a row this cannot
+ * read was never going to reach the agent anyway.
+ */
+export function contextIntentFor(context: SpawnContext): ContextIntent {
+  const memories: { id: string; text: string }[] = [];
+  (context.teamMember.memories ?? []).forEach((m, i) => {
+    if (typeof m === 'string' && m.trim()) memories.push({ id: `m${i}`, text: m });
+  });
+  const skills = (context.skills ?? []).map((skill, i) => ({
+    id: `s${i}`, text: skill.description, name: skill.name,
+  }));
+  // The GRAPH group: the bodies of the other tasks in a multi-task assignment.
+  //
+  // Task 0 is excluded on purpose rather than ranked and kept — it is the task
+  // `taskFactsFor` built the relevance question FROM, so asking how relevant it
+  // is to itself is a question with one answer and a real price. Its body is
+  // always injected whole.
+  //
+  // Attachments are deliberately NOT ranked. They are one metadata line each,
+  // so the saving is noise, and unlike a task body a dropped attachment leaves
+  // no pointer behind — the agent would simply never learn the file exists.
+  const graph = context.tasks.slice(1).flatMap((task, i) => {
+    const text = (task.description ?? '').trim();
+    return text ? [{ id: `t${i + 1}`, text, name: task.title }] : [];
+  });
+  return {
+    memories,
+    skills,
+    ...(graph.length ? { graph, graphSubject: 'other task assigned to the same agent' } : {}),
+  };
+}
+
+/**
+ * Apply a context plan to a spawn context, returning a NEW one.
+ *
+ * Pure, and pure on purpose: this is the step that decides what a persona
+ * knows when it wakes up, which makes it the step most worth being able to
+ * test exhaustively without a network. A null plan, or a null group inside a
+ * plan, returns the candidates untouched — the unwired path is byte-identical
+ * to today, and that is asserted by comparing two real spawns.
+ *
+ * It only ever REMOVES. Order is the caller's: `resolveSkills` emits
+ * nearest-first and documents that a manifest is byte-identical across two
+ * spawns of an unchanged graph, so a ranker is not allowed to shuffle the
+ * survivors even though it chose them.
+ */
+export function applyContextPlan(context: SpawnContext, plan: ContextPlan | null): SpawnContext {
+  if (!plan) return context;
+  const next: SpawnContext = { ...context };
+
+  if (plan.keepMemoryIds) {
+    const keep = new Set(plan.keepMemoryIds);
+    const kept: unknown[] = [];
+    (context.teamMember.memories ?? []).forEach((m, i) => {
+      // A non-string row was never a candidate, so it was never judged and is
+      // never dropped — it passes through exactly as an unrouted spawn leaves it.
+      if (typeof m !== 'string' || !m.trim() || keep.has(`m${i}`)) kept.push(m);
+    });
+    next.teamMember = { ...context.teamMember, memories: kept };
+  }
+
+  if (plan.keepGraphIds) {
+    // A DEGRADE, not a drop. The agent was assigned every one of these tasks,
+    // so the row, its id, its title and its status always survive; only the
+    // body is replaced, and it is replaced with the command that fetches it
+    // back. Nothing here is recoverable only by a person.
+    const keep = new Set(plan.keepGraphIds);
+    next.tasks = context.tasks.map((task, i) =>
+      i === 0 || keep.has(`t${i}`) || !(task.description ?? '').trim()
+        ? task
+        : {
+            ...task,
+            description: `[Body trimmed at spawn to protect the injection budget — this task ranked below the ones above it for the work in hand. Read it in full with: tm8 entity context ${task.id}]`,
+          },
+    );
+  }
+  if (plan.keepSkillIds && context.skills) {
+    const keep = new Set(plan.keepSkillIds);
+    const kept = context.skills.filter((_, i) => keep.has(`s${i}`));
+    const dropped = context.skills.filter((_, i) => !keep.has(`s${i}`)).map((sk) => sk.name);
+    next.skills = kept;
+    next.skippedSkills = [...(context.skippedSkills ?? []), ...context.skills.filter((_, i) => !keep.has(`s${i}`)).map(skill => ({ entityId: skill.entityId, name: skill.name, hash: skill.hash, sourcePath: skill.sourcePath, reason: 'relevance' }))];
+    if (context.skillEquips) {
+      const ids = new Set(kept.map(skill => skill.entityId));
+      next.skillEquips = context.skillEquips.filter(row => row.missing || ids.has(row.entityId));
+    }
+    // Appended, not replaced: a skill the HIERARCHY cap already dropped is
+    // still dropped, and a reader of this field wants both losses in one list.
+    if (dropped.length) next.droppedSkills = [...(context.droppedSkills ?? []), ...dropped];
+  }
+
+  return next;
+}
+
 export function resolveLaunchConfig(
   request: SpawnRequest,
   context: SpawnContext,
   env: NodeJS.ProcessEnv = process.env,
   inherited?: SessionLaunchPosture | null,
+  advice?: LaunchAdvice | null,
 ): ResolvedLaunchConfig {
   const member = context.teamMember;
 
   const mode: AgentMode = asAgentMode(request.mode) ?? asAgentMode(member.mode) ?? 'worker';
 
-  const model = request.model?.trim() || member.model?.trim() || DEFAULT_MODEL;
+  // WHERE THE ROUTING DECISION LANDS, and why it is a PARAMETER rather than a
+  // call. This function is pure by contract — no I/O, no graph, no PTY — which
+  // is what makes every precedence rule in it directly unit-testable. Asking a
+  // network service here would make it async and untestable without a fake, so
+  // the advisor runs upstream in SpawnService and its verdict arrives as one
+  // more link, exactly like `inherited`.
+  //
+  // It sits BELOW the request and ABOVE the persona for a reason. A human who
+  // typed a model gets it: the `advise` policy resolves that upstream by
+  // returning no model at all, so a verdict that reaches here has already been
+  // cleared to apply. The persona's model is a static default, and a default is
+  // what a decision made about THIS task is entitled to replace.
+  const model =
+    request.model?.trim() || advice?.model?.trim() || member.model?.trim() || DEFAULT_MODEL;
 
   // Model wins over the persona's declared tool — see agentToolForModel.
   const agentTool =
-    request.agentTool?.trim() || agentToolForModel(model) || member.agentTool?.trim() || DEFAULT_AGENT_TOOL;
+    request.agentTool?.trim()
+    || agentToolForModel(model)
+    || advice?.agentTool?.trim()
+    || member.agentTool?.trim()
+    || DEFAULT_AGENT_TOOL;
 
   // The env override is last and highest, mirroring old maestro's
   // MAESTRO_PERMISSION_MODE (manifest-generator.ts:814-817). It is how an
@@ -336,17 +557,14 @@ export function resolveLaunchConfig(
   const accessMode = dispatcher
     ? 'fullAccess'
     : requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
-  const reasoningEffort = asReasoningEffort(request.reasoningEffort);
+  const reasoningEffort =
+    asReasoningEffort(request.reasoningEffort) ?? asReasoningEffort(advice?.effort);
 
   // Each provider resolves independently. New provider keys outrank the
   // deprecated global carrier; inherited provider keys then outrank an older
   // manifest's global value. Every read is narrowed because inherited posture
   // comes from stored JSON written by arbitrary older builds.
-  const credentialSources: ResolvedCredentialSources = {
-    anthropic: resolveCredentialSource('anthropic', request, inherited),
-    openai: resolveCredentialSource('openai', request, inherited),
-    github: resolveCredentialSource('github', request, inherited),
-  };
+  const credentialSources = resolveCredentialSources(request, inherited);
   const commonSources = new Set(Object.values(credentialSources));
   const credentialSource = commonSources.size === 1
     ? ([...commonSources][0] ?? null)
@@ -362,6 +580,26 @@ export function resolveLaunchConfig(
     credentialSource,
     credentialSources,
   };
+}
+
+function resolveCredentialSources(
+  request: SpawnRequest,
+  inherited: SessionLaunchPosture | null | undefined,
+): ResolvedCredentialSources {
+  // The exhaustive FILE-provider table is the runtime provider source here;
+  // GitHub is the one string-shaped exception. This avoids another hand-kept
+  // list at the manifest seam: a seventh file provider added to the table is
+  // automatically recorded, inherited and included in common-source collapse.
+  const agentProviders = Object.keys(
+    AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  ) as AgentCredentialProvider[];
+  return Object.fromEntries([
+    ...agentProviders.map((provider) => [
+      provider,
+      resolveCredentialSource(provider, request, inherited),
+    ] as const),
+    ['github', resolveCredentialSource('github', request, inherited)] as const,
+  ]) as ResolvedCredentialSources;
 }
 
 function resolveCredentialSource(
@@ -1061,6 +1299,30 @@ export function composeEnv(
     for (const key of AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider]) {
       delete env[key];
     }
+
+    // API-KEY BACKEND ROUTING — LAST, AND THE ORDER IS THE CORRECTNESS.
+    //
+    // A member who has connected Kimi runs `claude` against Moonshot, and one
+    // who has connected Groq runs `codex` against Groq. Both are expressed the
+    // same way: point the tool's vendor SDK at a different base URL and give it
+    // the member's key. Nothing about the launch changes — same binary, same
+    // manifest, same session row — which is why this is four lines rather than
+    // a second spawn path.
+    //
+    // It must come after the suppression loop above, and for Groq that is not a
+    // stylistic preference: `OPENAI_API_KEY` is BOTH the node key we delete and
+    // the variable we set. Inject first and the delete silently removes the
+    // member's key, leaving a session pointed at Groq's base URL with no
+    // credential — a 401 far from here, with nothing in the environment to
+    // suggest why. Suppress first, then route, and the node's value is gone and
+    // the member's is the only one present.
+    //
+    // `apiKey` is absent for every file-shaped provider, so this branch is
+    // inert for them rather than conditional on a provider list that would need
+    // maintaining in a third place.
+    if (isApiKeyCredentialProvider(credentialHome.provider) && credentialHome.apiKey) {
+      Object.assign(env, apiKeyBackendEnv(credentialHome.provider, credentialHome.apiKey));
+    }
   }
 
   // GitHub is universal rather than agent-tool-specific. Apply after the env
@@ -1256,7 +1518,12 @@ export interface ComposeManifestInput {
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
+  /** The routing decision that produced `launch.model`, when one did. */
+  routing?: RoutingActivation | null;
+  contextEngineering?: ContextActivation | null;
   now?: Date;
+  agentConfigDir?: string;
+  homeDir?: string;
 }
 
 /** Assemble the manifest. Pure — every input is already resolved.
@@ -1286,7 +1553,13 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   };
   const member = context.teamMember;
 
-  return redactSecretsDeep({
+  const effectiveSkills = computeEffectiveSkills({
+    agentTool: launch.agentTool, workdir: workdir.path, projectRoot: context.project?.workingDir ?? null,
+    equips: context.skillEquips ?? (context.skills ?? []).map(skill => ({ ...skill, depth: 0 })),
+    scannedAt: context.skillsScannedAt, agentConfigDir: input.agentConfigDir, homeDir: input.homeDir,
+  });
+  effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
+  const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
     sessionId,
     spaceId: context.spaceId,
@@ -1316,6 +1589,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       credentialSources: launch.credentialSources,
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
+      routing: input.routing ?? null,
+      contextEngineering: input.contextEngineering ?? null,
       command,
     },
     session: {
@@ -1337,11 +1612,40 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // and already de-duplicated nearest-first. Still defaults to [] — a spawn
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
-    skills: context.skills ?? [],
-    coordinator: coordinatorSessionId ? { sessionId: coordinatorSessionId } : null,
+    skills: [...effectiveSkills.native, ...effectiveSkills.indexed].sort((a, b) => {
+      const rows = context.skillEquips ?? context.skills ?? [];
+      return rows.findIndex(row => row.entityId === a.entityId) - rows.findIndex(row => row.entityId === b.entityId);
+    }),
+    effectiveSkills,
+    ...(context.droppedSkills?.length ? { droppedSkills: context.droppedSkills } : {}),
+    coordinator: coordinatorSessionId
+      ? { sessionId: coordinatorSessionId, kind: resolveCoordinatorKind(context.parentKind) }
+      : null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });
+  // Measure the real non-skill prompt once, then account for the exact escaped
+  // serializer. This stays linear even when a deep equipment chain has no count cap.
+  const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
+  const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
+  let indexBytes = manifest.skills.length ? utf8Bytes(serializeSkillIndex(manifest.skills)) + 1 : 0;
+  const dropped: ManifestSkillContext[] = [];
+  while (baseBytes + indexBytes > BYTE_BUDGETS.combinedInitialInjection && manifest.skills.length) {
+    const removed = manifest.skills.pop()!;
+    dropped.push(removed);
+    indexBytes = manifest.skills.length ? indexBytes - utf8Bytes(serializeSkillIndexEntry(removed)) - 1 : 0;
+  }
+  if (dropped.length) {
+    dropped.reverse();
+    manifest.droppedSkills = [...(manifest.droppedSkills ?? []), ...dropped.map(skill => skill.name)];
+    const kept = new Set(manifest.skills.map(skill => skill.entityId));
+    const audit = manifest.effectiveSkills!;
+    audit.native = audit.native.filter(skill => kept.has(skill.entityId));
+    audit.indexed = audit.indexed.filter(skill => kept.has(skill.entityId));
+    audit.skipped.push(...dropped.map(skill => ({ entityId: skill.entityId, name: skill.name, hash: skill.hash, sourcePath: skill.sourcePath, reason: 'byte-budget' })));
+  }
+  composePrompt(manifest, { sessionId, baseUrl });
+  return manifest;
 }
 
 /**

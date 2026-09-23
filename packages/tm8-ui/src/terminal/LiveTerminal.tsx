@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -12,8 +12,11 @@ import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
+import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
+import { attachTouchScroll } from './touchScroll.js';
+import { scrollTerminalLines } from './scrollTerminal';
 import {
   clientFittedSessions,
   measureSpawnTerminalSize,
@@ -140,6 +143,8 @@ export interface LiveTerminalHandle {
    * converted to its control byte and the arm is spent. See `ctrlByte`.
    */
   armCtrl(armed: boolean): void;
+  armAlt(armed: boolean): void;
+  scroll(direction: -1 | 1): void;
   /**
    * Is DECCKM on? Decides whether an arrow is `ESC [ A` or `ESC O A`, which is
    * the difference between the arrow working and the letters `OA` appearing in
@@ -184,6 +189,7 @@ export interface LiveTerminalProps {
    * value is that you can see whether it is on.
    */
   onCtrlSpent?: () => void;
+  onAltSpent?: () => void;
 }
 
 /**
@@ -198,10 +204,20 @@ export interface LiveTerminalProps {
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent },
+  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent, onAltSpent },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * THE REFUSAL, RENDERED.
+   *
+   * Until this existed the component returned `<TerminalHost/>`
+   * unconditionally, so a viewer denied the stream got a black rectangle and
+   * no words — indistinguishable from a terminal that is merely quiet. The
+   * sharing controls (187) are only meaningful if the closed state can be
+   * seen: a permission you cannot observe being applied is not a feature.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const resizeRafRef = useRef<number | null>(null);
@@ -242,6 +258,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
    * nothing to the bytes, which is the worst of both outcomes.
    */
   const pendingCtrlRef = useRef(false);
+  const pendingAltRef = useRef(false);
+  const onAltSpentRef = useRef(onAltSpent);
+  onAltSpentRef.current = onAltSpent;
   /** Assigned by the mount effect so the font-size effect can force a refit.
       The effect owns the retry/backoff machinery; nothing outside it may
       re-implement that, so it publishes the entry point instead. */
@@ -256,17 +275,40 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   onExitRef.current = onExit;
   onCtrlSpentRef.current = onCtrlSpent;
 
+  // Both soft-keyboard input and toolbar keys consume the same sticky modifiers.
+  const sendInput = (data: string) => {
+    if (readOnlyRef.current) return;
+    // SGR mouse reports are navigation, not a keystroke for sticky modifiers.
+    if (data.startsWith('\x1b[<')) { ptyTransport.write(sessionId, data); return; }
+    const ctrl = pendingCtrlRef.current;
+    const alt = pendingAltRef.current;
+    if (ctrl) { pendingCtrlRef.current = false; onCtrlSpentRef.current?.(); }
+    if (alt) { pendingAltRef.current = false; onAltSpentRef.current?.(); }
+    const arrow = /^\x1b(?:\[|O)([ABCD])$/.exec(data);
+    if (arrow && (ctrl || alt)) {
+      data = `\x1b[1;${1 + (ctrl ? 4 : 0) + (alt ? 2 : 0)}${arrow[1]}`;
+    } else {
+      if (ctrl) data = ctrlByte(data) ?? data;
+      if (alt) data = `\x1b${data}`;
+    }
+    ptyTransport.write(sessionId, data);
+  };
+
   useImperativeHandle(ref, () => ({
     blur: () => termRef.current?.blur(),
     focus: () => {
       if (!readOnlyRef.current) termRef.current?.focus();
     },
-    send: (data: string) => {
-      if (readOnlyRef.current) return;
-      ptyTransport.write(sessionId, data);
-    },
+    send: sendInput,
     armCtrl: (armed: boolean) => {
       pendingCtrlRef.current = armed;
+    },
+    armAlt: (armed: boolean) => {
+      pendingAltRef.current = armed;
+    },
+    scroll: (direction: -1 | 1) => {
+      const term = termRef.current;
+      if (term) scrollTerminalLines(term, direction * Math.max(1, Math.floor(term.rows / 2)));
     },
     applicationCursorKeys: () => {
       /* `modes` is public API in xterm 5+, but it is read defensively because a
@@ -292,6 +334,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     if (!container || termRef.current) return;
     // The ref outlives a sessionId change; a new terminal is owed its own nudge.
     repaintForcedRef.current = false;
+    // …and so does the state: a refusal belongs to the session that earned
+    // it, never to the next one this component is pointed at.
+    setRefusal(null);
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -559,31 +604,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       return true;
     });
 
-    const onData = term.onData((data) => {
-      if (readOnlyRef.current) return;
-      /*
-       * THE STICKY CTRL IS SPENT HERE, at the one place every keystroke passes
-       * through, rather than in the bar.
-       *
-       * The bar cannot do it itself: the character it is modifying comes from
-       * the SYSTEM keyboard, which the bar neither renders nor receives events
-       * from. This is the only seam that sees both.
-       *
-       * `ctrlByte` returning null means the modifier does not apply to what was
-       * typed — a digit, an emoji, a paste. The arm is spent ANYWAY and the
-       * input is forwarded unchanged. Keeping it armed would silently apply
-       * Ctrl to whatever the user typed NEXT, which is how a stray Ctrl+C ends
-       * up killing an agent mid-run; and swallowing the character would make
-       * the bar eat keystrokes. Spend it and pass the byte through.
-       */
-      if (pendingCtrlRef.current) {
-        pendingCtrlRef.current = false;
-        onCtrlSpentRef.current?.();
-        const control = ctrlByte(data);
-        ptyTransport.write(sessionId, control ?? data);
-        return;
-      }
-      ptyTransport.write(sessionId, data);
+    const onData = term.onData(sendInput);
+    const onBinary = term.onBinary((data) => {
+      if (!readOnlyRef.current) ptyTransport.writeBinary(sessionId, data);
     });
 
     /**
@@ -658,6 +681,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         event.stopPropagation();
       }
     };
+    // Touch gestures follow desktop history scrolling and application wheel input.
+    const detachTouchScroll = attachTouchScroll(container, term);
     container.addEventListener('paste', handlePaste, true);
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
@@ -685,6 +710,22 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(container);
 
+    // The mint's answer, when the answer is no. Subscribed BEFORE openSession
+    // so a refusal that resolves immediately is not missed.
+    const offRefused = ptyTransport.onAttachRefused((id, refused) => {
+      if (id !== sessionId) return;
+      setRefusal(describePtyAttachRefusal(refused));
+    });
+    // …and the same channel in reverse. Sign-in drops the `unauthorized` latch
+    // and re-dials, but this state is reset in exactly one other place — the
+    // terminal-creation effect above — and nothing remounts on sign-in. Without
+    // this the user follows the instruction, the socket comes back, and the
+    // placeholder telling them to sign in is still sitting on top of it.
+    const offRefusalCleared = ptyTransport.onAttachRefusalCleared((id) => {
+      if (id !== sessionId) return;
+      setRefusal(null);
+    });
+
     // Mint a fresh one-shot capability for every connect/reconnect. The HTTP
     // mint may use the active pass while older browser sessions transition to
     // the Secure cookie; the WebSocket itself receives only the scoped grant.
@@ -700,6 +741,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     return () => {
       for (const timer of fontReflowTimers) window.clearTimeout(timer);
       resizeObserver.disconnect();
+      detachTouchScroll();
       container.removeEventListener('paste', handlePaste, true);
       container.removeEventListener('dragover', handleDragOver);
       container.removeEventListener('drop', handleDrop);
@@ -707,7 +749,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (resizeTimeoutRef.current !== null) window.clearTimeout(resizeTimeoutRef.current);
       offSize();
       offExit();
+      offRefused();
+      offRefusalCleared();
       onData.dispose();
+      onBinary.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
       // its sockets/decoders/offsets/epochs/suspend/replay maps; unregister
@@ -728,6 +773,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
          typed into the NEXT session — the bar would be dark and the byte would
          still be modified. */
       pendingCtrlRef.current = false;
+      pendingAltRef.current = false;
     };
   }, [sessionId, serverBaseUrl, autoFocus]);
 
@@ -768,6 +814,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     <TerminalHost
       hostRef={hostRef}
       ariaLabel="Live terminal"
+      // The host's existing ghost slot. Nothing was ever written into the
+      // canvas on a refused attach, so this is the only content there is.
+      {...(refusal === null ? {} : { placeholder: refusal })}
       onPointerDown={() => {
         // Reclaim the textarea even when a surrounding scroll/settings layer
         // was the browser's previous focus target.

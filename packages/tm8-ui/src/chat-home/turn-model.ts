@@ -81,7 +81,7 @@ export function mergeChatTurnFrame(
   detail: ChatThreadDetail,
   frame: ChatTurnFrame,
 ): ChatThreadDetail {
-  if (frame.threadRootId !== detail.summary.rootId) return detail;
+  if (frame.chatId !== detail.summary.rootId) return detail;
   const turns = [...detail.turns];
   let index = turns.findIndex((turn) => turn.messageId === frame.messageId);
 

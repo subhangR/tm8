@@ -343,6 +343,18 @@ export function SubtreeBody({
  */
 const COMPOSED_KEYS = new Set([
   'kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'startDate', 'axes',
+  /*
+   * `completionGate` LEAVES THIS GRID for the header's chip row, and only when
+   * it is not `none` (see `gateChipFor` in EntityDetailPanel).
+   *
+   * It rendered here for a reason worth writing down rather than repeating:
+   * the generic scalar loop below prints any state key it is not told to skip,
+   * and it prints on `renderScalar(value) != null` — a test for a NON-EMPTY
+   * STRING. `'none'` is four characters long, so the cell dutifully announced,
+   * on nearly every task ever created, that no gate applies. An absence is not
+   * news.
+   */
+  'completionGate',
 ]);
 
 function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity?: (id: string) => void }) {
@@ -452,7 +464,31 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     cells.push({ key: 'dueDate', label: 'Due', value: <span className="sb-grid__mono">{state.dueDate}</span> });
   }
 
-  cells.push({ key: 'id', label: 'ID', value: <span className="sb-grid__mono">{detail.id}</span> });
+  /*
+   * THE ID CELL IS GONE — owner decision, 2026-09-07.
+   *
+   * It spent a measured 41.8px of every task on a 36-character token that means
+   * nothing to a reader, next to a `Completion Gate` cell reading `none` on the
+   * overwhelming majority of tasks. Together: one unreadable identifier and one
+   * statement that nothing applies, across the full width of the panel, above
+   * the description.
+   *
+   * IT IS NOT DELETED, IT MOVED. `Copy ID` sits in the panel's `⋯` overflow
+   * beside `Copy link`, which is where an id is actually useful — the clipboard
+   * — and is one click from anywhere in the panel. The developer who needs it
+   * keeps it; everyone else stops paying vertical space for it.
+   *
+   * The grid survives for the scalars it still composes and already returns
+   * null when no cells remain, so a task with nothing else to say loses the row
+   * entirely — which is the 41.8px.
+   *
+   * THIS IS AN OPEN ARGUMENT IN THIS CODEBASE, not a settled rule, and the
+   * decision was taken knowing it: `attention/AttentionInbox` and
+   * `chat-home/EntityChip` both treat a visible raw id as the honest thing to
+   * show before a title resolves and have tests pinning it, while
+   * `views/HomeTrail.tsx` argues the exact opposite. Neither doctrine is being
+   * overturned here — this is one surface, chosen by its owner.
+   */
 
   if (isRecord(state.axes)) {
     for (const [axis, value] of Object.entries(state.axes)) {
@@ -1071,6 +1107,8 @@ function LinkedSection({
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
   status: 'status',
   sessionStatus: 'status',
+  // A container's nine-value lifecycle also lands on `EntityState.status`.
+  containerStatus: 'status',
   prState: 'state',
   profileStatus: 'status',
   memberRole: 'role',

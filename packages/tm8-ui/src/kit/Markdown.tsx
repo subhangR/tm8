@@ -101,6 +101,7 @@ function fileRefIn(src: string): string | null {
  * survives.
  */
 function urlTransform(url: string, key: string, node: { tagName?: string }): string | null {
+  if (key === 'href' && /^tm8:\/\/skill\/[^/?#]+$/.test(url.trim())) return url;
   if (key === 'src' && node.tagName === 'img' && /^(tm8|data):/i.test(url.trim())) return url;
   return defaultUrlTransform(url);
 }
@@ -144,6 +145,14 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
      * `files/reasons.ts` — constructing a transport URL is `src/data/**` work,
      * and same-origin luck is not a substitute for a seam. With no resolver
      * passed the reference states itself instead of guessing at a path.
+     *
+     * BOTH REFUSALS ARE ABOUT THE LIVE VIEW, and both chips carry the source
+     * they declined to load on `data-img-src` so that a different consumer can
+     * reach its own conclusion. Exactly one does: `doc-edit/printDoc.ts`, which
+     * inlines them when a reader presses Download. That is a deliberate,
+     * reader-initiated crossing of the beacon boundary argued above — see the
+     * note there, which states what it costs. Nothing in THIS file issues a
+     * request, and opening a doc still sends nothing.
      */
     img({ src, alt, title }) {
       const raw = typeof src === 'string' ? src : '';
@@ -167,7 +176,12 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
       }
       if (/^data:/i.test(raw.trim())) {
         return (
-          <span className="md-img-chip" data-testid="markdown-image-rejected">
+          <span
+            className="md-img-chip"
+            data-testid="markdown-image-rejected"
+            data-img-src={raw}
+            data-img-alt={label}
+          >
             {label} — inline image data is not rendered
           </span>
         );
@@ -181,6 +195,8 @@ function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Comp
           rel="noreferrer noopener"
           className="md-link md-img-chip"
           data-testid="markdown-image-link"
+          data-img-src={raw}
+          data-img-alt={label}
         >
           {label} — remote image, not loaded
         </a>
@@ -303,6 +319,7 @@ const COMPONENTS: Components = {
 };
 
 export interface MarkdownProps {
+  onOpenEntity?: (id: string) => void;
   /** The markdown source. Empty renders nothing, not an empty paragraph. */
   source: string;
   /** Extra class on the root, for a surface that needs its own measure. */
@@ -327,13 +344,19 @@ export interface MarkdownProps {
 /** `react-markdown`'s component table, re-exported so hosts need not import it. */
 export type MarkdownComponents = Components;
 
-export function Markdown({ source, className, testId = 'markdown', fileHref, components }: MarkdownProps) {
+export function Markdown({ source, className, testId = 'markdown', fileHref, components, onOpenEntity }: MarkdownProps) {
   if (source.trim() === '') return null;
   return (
     <div className={className ? `md-root ${className}` : 'md-root'} data-testid={testId}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={componentsFor(source, fileHref, components)}
+        components={componentsFor(source, fileHref, { ...components, a: (props) => {
+          const match = /^tm8:\/\/skill\/([^/?#]+)$/.exec(props.href ?? '');
+          const id = match ? decodeRef(match[1]) : null;
+          if (id) return <button type="button" onClick={() => onOpenEntity?.(id)}>{props.children}</button>;
+          const Link = (components?.a ?? COMPONENTS.a) as ComponentType<ComponentPropsWithoutRef<'a'> & ExtraProps>;
+          return Link ? <Link {...props} /> : <a {...props} />;
+        } })}
         urlTransform={urlTransform}
       >
         {source}

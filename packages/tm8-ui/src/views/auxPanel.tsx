@@ -40,6 +40,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 
@@ -107,6 +108,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, entityId)}
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
+      changesSurface={changesSurfaceFor(data.seam, entityId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, entityId, data.livenessOf, (id) =>
         onOpenEntity(id as EntityId),
@@ -126,6 +128,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => onOpenEntity(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
@@ -138,6 +142,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: host.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => onOpenEntity(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));

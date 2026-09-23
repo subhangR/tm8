@@ -89,7 +89,38 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // but keep their refs, routes and menu-editor eligibility. Board v2 occupies
 // the visible Board seat client-side because it is a route-only screen rather
 // than a MenuViewRef.
-export const SHIPPED_DEFAULT_MENU_REVISION = 20;
+// 20 → 21 (2026-09-01, CodeBrain / migration 173): the CodeBrain group joins
+// after Graph. The constant below was edited and this number was not, which is
+// the drift this comment block exists to prevent; it is corrected here.
+// 21 → 22 (2026-09-03, chat as an entity / migration 180): a CHATS group joins
+// after Home —
+//   Home | Chats | Work | Craft | Graph | CodeBrain | Settings | Help
+// (plus GateApp's route-only Board v2 seat after Work). Migration 176 gave a
+// chat the core kind `chat`; this is the tab that lists it, and its single
+// item is a KIND ref rather than a view, so the group draws a RAIL — see the
+// group comment below.
+// 22 → 23 (2026-09-05, migration 184): and it LEAVES again, one day later —
+//   Home | Work | Craft | Graph | CodeBrain | Settings | Help
+// 22 was right that the chat entity LIST is a second arrangement worth a door
+// of its own, and wrong about where that door goes. Home's icon rail is where
+// a collection kind's list is addressed, and `chat` has been eligible for it
+// since 176; the rail now leads with it (`domain/home-rail.ts`) and the tab is
+// the duplicate. So this is not a reversal of 22's reasoning, it is 22's
+// reasoning applied to the right surface — and the no-kind-rows law of 17
+// holds again, with the group cap back down to seven of eight.
+// 23 → 24 (2026-09-15, CodeBrain removed / migration 186): the CodeBrain
+// group leaves, and this time the ref goes with it —
+//   Home | Work | Craft | Graph | Settings | Help
+// (plus GateApp's route-only Board v2 seat after Work), which is migration
+// 164's spine again, exactly.
+// 21 seated the tab while the screen lived in the 2.0 UI package. #610 then
+// deleted that package, and the ref was left behind pointing at nothing:
+// `view-ref-screens.ts` has carried `codebrain: 'unbuilt'` ever since, so the
+// shipped row has held a tab that can only tell a viewer the build has no
+// screen for it. A tab with no screen in ANY build is not a tab, so the ref
+// leaves the contract union, the registry and this default together — unlike
+// 20's Files and Board, which kept their refs BECAUSE their screens survived.
+export const SHIPPED_DEFAULT_MENU_REVISION = 24;
 
 /**
  * The menu half of the revision-20 tab shell. These GROUPS become top-row
@@ -148,6 +179,24 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // group railless — add a second row here and the surface grows a third
     // pane, which is the arrangement this revision exists to prevent.
     { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+    // CHATS IS RETIRED FROM THE TAB ROW (revision 23, 2026-09-05, migration
+    // 184). Revision 22 seated `{ id: 'conversations', label: 'Chats', items:
+    // [{ type: 'kind', ref: 'chat' }] }` here, one day earlier, and its
+    // reasoning was sound about the ARRANGEMENT and wrong about the ADDRESS:
+    // the chat entity list — tiles with the turn state, the lifecycle tabs,
+    // sort, in-panel search, the row-action cluster — really is a different
+    // door from Home's two-pane conversation surface, and it really did earn
+    // one. But the place Home puts a collection kind's list is its ICON RAIL,
+    // and `chat` has been eligible for that rail since migration 176 made it a
+    // collection kind. So the door moves rather than closing: `domain/
+    // home-rail.ts` now leads the Work group with `chat`, and the tab that
+    // duplicated it leaves. That restores the no-kind-rows law revision 17
+    // wrote (`menuKindRefs` is empty again) and it frees the eighth of the
+    // eight group seats `w2_normalize_menu_payload` allows.
+    //
+    // Nothing is deleted: `chat` is menu-eligible, so the frozen DTO still
+    // accepts a space putting this group back through the menu editor. A rail
+    // edit, not a feature removal — the 125/126/127 posture again.
     // WORK returns (revision 19), and it is the THREE-PANEL WORKSPACE — one
     // childless `workspace` view item, so the group is railless by the same
     // shape rule as Home and Board and the surface is exactly the split
@@ -166,18 +215,6 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // childless view item — the chat and the canvas are the navigation.
     { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
-    // CodeBrain (2026-09-01, migration 173): the delivery pipeline's own tab.
-    // Present here because this default is PINNED to the contract's
-    // DEFAULT_MENU_GROUP_SPINE — the one truth the client default and the
-    // server seeder (migration 140) both answer to — and the spine gained the
-    // group. A default that quietly omitted it would disagree with the menu
-    // every real space is seeded with, which is the class of drift the spine
-    // exists to prevent.
-    //
-    // This snapshot has no CodeBrain SCREEN. That is stated once, in
-    // `view-ref-screens.ts`, and the tab says so honestly rather than being
-    // omitted here and disagreeing with the server.
-    { id: 'codebrain', label: 'CodeBrain', items: [{ type: 'view', ref: 'codebrain' }] },
     // RETIRED FROM THE SHIPPED TAB SPINE (revision 20). The Files explorer,
     // route, palette row and menu-editor eligibility remain intact.
     // { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },

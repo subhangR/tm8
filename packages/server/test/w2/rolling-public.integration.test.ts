@@ -278,6 +278,46 @@ const WORKFLOW_NET_NEW_OPERATIONS = [
 ] as const;
 
 /**
+ * Containers (177). All twenty-four HTTP rows of the family, registered
+ * UNCONDITIONALLY and net-new — none replaces anything.
+ *
+ * They register even though most are not built yet, and that is the honesty
+ * rule rather than an oversight: a `status: 'v1'` row with no handler falls
+ * through the registry to 404, which tells a caller the operation does not
+ * exist when it is in the contract and this node simply cannot serve it yet.
+ * Registered-and-501 is the correct answer; unregistered-and-404 is not.
+ *
+ * `containers.stream` is absent because it is the WS alias of
+ * `events.subscribe` — served by the upgrade handler, never by this registry.
+ */
+const CONTAINER_NET_NEW_OPERATIONS = [
+  'containers.attach',
+  'containers.attention',
+  'containers.browser.endpoint',
+  'containers.computer',
+  'containers.create',
+  'containers.destroy',
+  'containers.expose',
+  'containers.files.get',
+  'containers.files.put',
+  'containers.fork',
+  'containers.logs',
+  'containers.pause',
+  'containers.policy.set',
+  'containers.pools.set',
+  'containers.providers.list',
+  'containers.proxy',
+  'containers.resume',
+  'containers.run',
+  'containers.snapshot',
+  'containers.start',
+  'containers.stop',
+  'containers.terminal.start',
+  'containers.unexpose',
+  'containers.update',
+] as const;
+
+/**
  * Node-local project folders.
  *
  * `projects.directories.list` landed on 2026-08-02 WITHOUT joining this list,
@@ -316,6 +356,11 @@ const GIT_NET_NEW_OPERATIONS = [
   'execution.gitCheckpoint',
   'execution.gitRollback',
   'execution.gitCommit',
+  // 2026-09-19 (Changes screen Phase 1): the index verb the Changes surface
+  // stages with. The enclosing literal is `.sort()`ed before comparison, so
+  // this sits with its family rather than at the alphabetical seam. MEASURED
+  // from this assertion's own failing run, which named the missing row.
+  'execution.gitStage',
   'execution.gitMerge',
   // 2026-08-12 (Tier 2 completion): cherry-pick, branch ops, stash.
   'execution.gitCherryPick',
@@ -339,7 +384,23 @@ const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
 
 /** TM8 Chat's one budgeted catalog command, mounted in degraded mode too. */
 const CHAT_NET_NEW_OPERATIONS = [
-  'chat.threads.start',
+  'chat.start',
+] as const;
+
+/**
+ * Filesystem skills (2026-09-23, #647 + #649): scan/list/show/preview, then
+ * F4's roots/create/edit/equip/unequip. Net-new — no replacements.
+ */
+const SKILLS_NET_NEW_OPERATIONS = [
+  'skills.scan',
+  'skills.list',
+  'skills.show',
+  'skills.preview',
+  'skills.roots',
+  'skills.create',
+  'skills.edit',
+  'skills.equip',
+  'skills.unequip',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -354,6 +415,8 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...MEMBER_ROLES_NET_NEW_OPERATIONS,
   ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
   ...WORKFLOW_NET_NEW_OPERATIONS,
+  ...CONTAINER_NET_NEW_OPERATIONS,
+  ...SKILLS_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -489,7 +552,13 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(152); // +3 (148): the spaces.workflows handlers
+    // 152 -> 176 (177): the 24 HTTP rows of the containers family. MEASURED.
+    // 176 -> 177 (2026-09-19, Changes screen Phase 1): execution.gitStage joins
+    // the facade tranche. The derived assertion immediately below re-checks the
+    // same number from the component lists, so this literal cannot drift alone.
+    // MEASURED from this assertion's own failing run.
+    // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
+    expect(registry.size).toBe(186);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -502,7 +571,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CHAT_NET_NEW_OPERATIONS.length
         + MEMBER_ROLES_NET_NEW_OPERATIONS.length
         + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
-        + WORKFLOW_NET_NEW_OPERATIONS.length,
+        + WORKFLOW_NET_NEW_OPERATIONS.length
+        + CONTAINER_NET_NEW_OPERATIONS.length
+        + SKILLS_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -661,7 +732,16 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // their bodies (auth.claim.reissue takes no body, so it binds nothing).
     // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
     // RequiredCommandContextSchema; .list is a READ and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(99);
+    // 99 -> 118 (177): nineteen container command bodies bind. The family has
+    // twenty commands; `containers.files.put` carries a tar stream, not JSON,
+    // and is enumerated in UNBOUND_COMMAND_OPERATIONS instead. MEASURED.
+    // +1 (187): `execution.sessions.share` binds ExecutionSessionsShareInput.
+    // 118 -> 119 (2026-09-19, Changes screen Phase 1): execution.gitStage is a
+    // POST that carries a JSON body (the paths to stage), so it binds an input
+    // schema like the other four git commands. MEASURED.
+    // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
+    // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(125);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -679,7 +759,11 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // derived check above has something true to compare against.
     // 141: +1 — auth.claim.reissue is genuinely body-less (no input, auth.* so
     // no CommandContext), enumerated as such rather than left to hide.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(10);
+    // 177: +1 — `containers.files.put` carries a tar stream, not JSON, so it
+    // is genuinely body-less in the zod sense and enumerated as such. Every
+    // other container command IS bound, including the ones whose runtime does
+    // not exist yet.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(11);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -819,8 +903,23 @@ describe.sequential('W2.I02 real production public surface', () => {
     // all mounted and all registered.
     // +3 (148): the three spaces.workflows routes, all mounted and all
     // registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 171, implemented: 169 });
-    expect(harness.production.server.registry.size).toBe(169);
+    // +24 (177): the containers family, all registered, all mounted. The
+    // catalog grew by 25 and the router by 24 — the 25th is the WS alias,
+    // which adds a discoverable NAME for the existing socket, not a route.
+    // MEASURED off /health.
+    // +1 (187): `execution.sessions.share`, registered and mounted. MEASURED
+    // off /health, not incremented.
+    // 2026-09-19 (Changes screen Phase 1): execution.gitStage — one public v1
+    // POST, mounted with a real facade handler — moves both counts together:
+    // routes 195 -> 196, registered handlers 193 -> 194. MEASURED off a live
+    // /health in test/w3/public-harness.test.ts and test/w3/g15-public.test.ts,
+    // which both report the new pair; not hand-derived.
+    // 196/194 -> 197/195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
+    expect(health).toMatchObject({ ok: true, operations: 206, implemented: 204 });
+    expect(harness.production.server.registry.size).toBe(204);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -840,7 +939,14 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(169); // +3 (148): the spaces.workflows handlers
+    // 169 -> 193 (177): the 24 HTTP container rows. MEASURED.
+    // 193 -> 194 (187): execution.sessions.share. MEASURED.
+    // 193 -> 194 (2026-09-19): execution.gitStage. It is REGISTERED, not
+    // residual, so the whole +1 lands in `registered.size` and the empty
+    // residual asserted above stays empty. MEASURED.
+    // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
+    // 195 -> 204 (2026-09-23): nine skills.* rows. MEASURED.
+    expect(registered.size + residual.length).toBe(204);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

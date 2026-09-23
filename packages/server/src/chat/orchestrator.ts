@@ -24,7 +24,7 @@ interface ChatTurnAttachment {
 
 interface ClaimedTurn {
   readonly turnId: string;
-  readonly rootMessageId: string;
+  readonly chatId: string;
   readonly userMessageId: string;
   readonly agentMessageId: string | null;
   readonly spaceId: string;
@@ -35,7 +35,6 @@ interface ClaimedTurn {
    * migration that added this field — never read on the way to the teammate.
    */
   readonly attachments?: readonly ChatTurnAttachment[] | null;
-  readonly anchorId: string;
   readonly requesterIdentityId: string;
   /** R9: server-resolved auth kind recorded at the human-gated thread start; null on pre-106 rows. */
   readonly requesterAuthKind?: string | null;
@@ -49,6 +48,17 @@ interface ClaimedTurn {
   readonly requestedByIdentityId?: string | null;
   readonly requestedByAuthKind?: string | null;
   readonly requestedByDisplayName?: string | null;
+  /**
+   * 176 — who asked, when the asker is not a human member. R-A lets a work
+   * session or another chat queue a turn, and R-C runs it on the chat's
+   * configured human authority anyway; these three are the record of whose
+   * message spent that authority, so the speaker line and the tool audit can
+   * say so. Provenance, never claims.
+   */
+  readonly requestedByActorId?: string | null;
+  readonly requestedByActorKind?: 'member' | 'team_member' | null;
+  readonly requestedBySessionId?: string | null;
+  readonly requestedByChatId?: string | null;
   readonly teammateId: string;
   readonly model: string;
   readonly provider: string;
@@ -167,32 +177,64 @@ function attachmentLines(turn: ClaimedTurn): string[] {
   ];
 }
 
+/**
+ * The server-written attribution line.
+ *
+ * THREE SHAPES NOW, NOT ONE (176). A turn used to be queued only by a human
+ * member, so "who is talking" was always a member id and a display name. R-A
+ * lets a work session or another chat queue one, and an unlabelled agent turn
+ * would read to the model as the configuring human — which is exactly the
+ * confusion the line exists to prevent. So the source is named in the shape it
+ * actually has:
+ *
+ *   [from "Subhang" · member <id>]        a human member spoke
+ *   [from session <id> · team_member <id>] a worker session reported back
+ *   [from chat <id> · team_member <id>]    another chat spoke
+ *
+ * Every id here is emitted from a server row; only the display name is
+ * user-controlled, and it is sanitized before it is quoted.
+ */
+function attributionLine(turn: ClaimedTurn): string | null {
+  const actorId = turn.requestedByActorId ?? null;
+  if (turn.requestedBySessionId) {
+    return `[from session ${turn.requestedBySessionId}${actorId ? ` · team_member ${actorId}` : ''}]`;
+  }
+  if (turn.requestedByChatId) {
+    return `[from chat ${turn.requestedByChatId}${actorId ? ` · team_member ${actorId}` : ''}]`;
+  }
+  const speaker = turn.requestedByDisplayName ? sanitizeSpeakerName(turn.requestedByDisplayName) : '';
+  const memberId = turn.requestedByMemberId;
+  if (!speaker && !memberId) return null;
+  return `[from ${speaker ? `"${speaker}"` : 'unnamed member'}${memberId ? ` · member ${memberId}` : ''}]`;
+}
+
 function promptFor(turn: ClaimedTurn): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
-  // (the turn's own override, else the thread default; resolved in SQL).
+  // (the turn's own override, else the chat default; resolved in SQL).
   const mode = chatModeLine(turn.chatMode);
-  const speaker = turn.requestedByDisplayName ? sanitizeSpeakerName(turn.requestedByDisplayName) : '';
-  const memberId = turn.requestedByMemberId;
   const files = attachmentLines(turn);
-  const from = (speaker || memberId)
-    ? [`[from ${speaker ? `"${speaker}"` : 'unnamed member'}${memberId ? ` · member ${memberId}` : ''}]`]
-    : [];
+  const attribution = attributionLine(turn);
+  const from = attribution ? [attribution] : [];
   return [mode, ...from, ...files, turn.body].join('\n');
 }
 
 /**
- * Durable ordered drain for one configured message root.
+ * Durable ordered drain for one chat.
  *
  * Every delta follows a successful append_chat_message_part transaction. The
  * in-memory map is only a same-process coalescer; ordering authority remains
  * chat_turns `(queued_at,user_message_id)` plus the row lease in Postgres.
+ *
+ * Every map here is keyed by CHAT ID since 176. It used to be the chat's root
+ * message id — the same string in a different role, which is precisely what
+ * made a chat unaddressable to everything else in the graph.
  */
 export class ChatOrchestrator {
   private readonly drains = new Map<string, Promise<void>>();
-  /** Wakes that arrived while a drain for the same root was exiting. */
+  /** Wakes that arrived while a drain for the same chat was exiting. */
   private readonly pendingWakes = new Map<string, string>();
-  private readonly liveThreads = new Map<string, {
+  private readonly liveChats = new Map<string, {
     readonly threadId: string;
     readonly authorizationIdentityId: string;
     readonly authorizationAuthKind: string | null;
@@ -218,106 +260,109 @@ export class ChatOrchestrator {
     if (!sweep) return;
     try {
       const stale = await this.options.db.query<{
-        root_message_id: string;
+        entity_id: string;
         configured_by_identity_id: string;
       }>(
         sweep,
-        `select root_message_id, configured_by_identity_id
-           from public.chat_threads where runtime_state = 'live'`,
+        `select entity_id, configured_by_identity_id
+           from public.chats where runtime_state = 'live'`,
         [],
       );
       for (const row of stale) {
         await this.options.db.rpc(
           claims(row.configured_by_identity_id),
           'mark_chat_runtime_state',
-          [row.root_message_id, 'stopped'],
+          [row.entity_id, 'stopped'],
         );
       }
       const queued = await this.options.db.query<{
-        root_message_id: string;
+        entity_id: string;
         configured_by_identity_id: string;
       }>(
         sweep,
-        `select distinct t.root_message_id, t.configured_by_identity_id
+        `select distinct c.entity_id, c.configured_by_identity_id
            from public.chat_turns q
-           join public.chat_threads t using (root_message_id)
+           join public.chats c on c.entity_id = q.chat_id
           where q.state = 'queued'
              or (q.state = 'running' and q.lease_expires_at < now())`,
         [],
       );
       for (const row of queued) {
-        void this.wake(row.root_message_id, row.configured_by_identity_id);
+        void this.wake(row.entity_id, row.configured_by_identity_id);
       }
     } catch (error) {
       this.options.onError?.(error);
     }
   }
 
-  wake(rootMessageId: string, requesterIdentityId: string): Promise<void> {
-    const running = this.drains.get(rootMessageId);
+  wake(chatId: string, requesterIdentityId: string): Promise<void> {
+    const running = this.drains.get(chatId);
     if (running) {
       // A wake can land after the running drain's final null claim but before
       // its finally removes it from the map. Coalescing onto that dying
       // promise would strand the just-queued turn until the next unrelated
       // message or a restart sweep — so remember the wake and re-drain once
       // the current drain settles.
-      this.pendingWakes.set(rootMessageId, requesterIdentityId);
+      this.pendingWakes.set(chatId, requesterIdentityId);
       return running;
     }
-    const drain = this.drain(rootMessageId, requesterIdentityId)
+    const drain = this.drain(chatId, requesterIdentityId)
       .catch((error) => this.options.onError?.(error))
       .finally(() => {
-        this.drains.delete(rootMessageId);
-        const requeued = this.pendingWakes.get(rootMessageId);
+        this.drains.delete(chatId);
+        const requeued = this.pendingWakes.get(chatId);
         if (requeued !== undefined) {
-          this.pendingWakes.delete(rootMessageId);
-          void this.wake(rootMessageId, requeued);
+          this.pendingWakes.delete(chatId);
+          void this.wake(chatId, requeued);
         }
       });
-    this.drains.set(rootMessageId, drain);
+    this.drains.set(chatId, drain);
     return drain;
   }
 
   /**
-   * 112: any human member who can post in a chat thread queues a turn, so the
-   * poster is no longer necessarily the configuring human. Two consequences,
-   * both load-bearing:
+   * 112: any member who can post in a chat queues a turn, so the poster is no
+   * longer necessarily the configuring human. Two consequences, both
+   * load-bearing:
    *
-   *   * the lookup no longer filters on `configured_by_identity_id`. RLS on
-   *     `chat_threads` is what keeps this honest — the row is visible only if
-   *     THIS poster can read the thread root and its anchor.
-   *   * the drain is woken under the thread's CONFIGURING identity, not the
+   *   * the lookup does not filter on `configured_by_identity_id`. RLS on
+   *     `chats` is what keeps this honest — the row is visible only if THIS
+   *     poster can read the chat.
+   *   * the drain is woken under the chat's CONFIGURING identity, not the
    *     poster's. `claim_next_chat_turn` refuses every other caller, so waking
-   *     as the poster would raise `chat thread not found for this identity`
-   *     and the turn would sit queued until the configurer next spoke — which
-   *     is the silence this fix removes.
+   *     as the poster would raise `chat not found for this identity` and the
+   *     turn would sit queued until the configurer next spoke — which is the
+   *     silence this fix removes.
+   *
+   * 176 CHANGES WHAT IS LOOKED UP, and it is the whole feature. A chat's
+   * messages are ANCHORED on it and carry no thread root, so the anchor ids are
+   * what identify a chat here. Reading `state.rootMessageId`, as this did, now
+   * finds nothing at all — which is the same silence from the other side.
    */
   async wakeForMessages(requesterIdentityId: string, messages: readonly MessageView[]): Promise<void> {
-    const roots = [...new Set(messages
-      .map((message) => message.state.rootMessageId)
-      .filter((root): root is string => root !== null))];
-    if (roots.length === 0) return;
+    const anchors = [...new Set(messages.map((message) => message.state.anchorId))];
+    if (anchors.length === 0) return;
     const configured = await this.options.db.query<{
-      root_message_id: string;
+      entity_id: string;
       configured_by_identity_id: string;
     }>(
       claims(requesterIdentityId),
-      `select root_message_id, configured_by_identity_id
-         from public.chat_threads
-        where root_message_id = any($1::uuid[])`,
-      [roots],
+      `select entity_id, configured_by_identity_id
+         from public.chats
+        where entity_id = any($1::uuid[])`,
+      [anchors],
     );
     await Promise.all(configured.map((row) => (
-      this.wake(row.root_message_id, row.configured_by_identity_id)
+      this.wake(row.entity_id, row.configured_by_identity_id)
     )));
   }
 
-  private async drain(rootMessageId: string, requesterIdentityId: string): Promise<void> {
+  private async drain(chatId: string, requesterIdentityId: string): Promise<void> {
     for (;;) {
       const turn = await this.options.db.rpc<ClaimedTurn | null>(
         claims(requesterIdentityId),
         'claim_next_chat_turn',
-        [rootMessageId],
+        [chatId],
       );
       if (!turn) return;
       await this.runTurn(turn);
@@ -342,7 +387,7 @@ export class ChatOrchestrator {
       const part = MessagePartSchema.parse(stored);
       this.options.publisher.publish(turn.spaceId, {
         type: 'chat.turn.delta',
-        threadRootId: turn.rootMessageId,
+        chatId: turn.chatId,
         messageId: agentMessageId,
         seq,
         part,
@@ -394,11 +439,11 @@ export class ChatOrchestrator {
     );
 
     if (terminal.reason === 'interrupted') {
-      this.liveThreads.delete(turn.rootMessageId);
+      this.liveChats.delete(turn.chatId);
       await this.options.db.rpc(
         claims(turn.requesterIdentityId),
         'mark_chat_runtime_state',
-        [turn.rootMessageId, 'stopped'],
+        [turn.chatId, 'stopped'],
       );
     } else if (terminal.reason === 'error') {
       // F2 (PR188 review): a dead or wedged runtime must not stay claimed. If
@@ -407,21 +452,21 @@ export class ChatOrchestrator {
       // throwing "not running" forever. A turn that failed before any spawn
       // (e.g. a refused mint) deletes nothing and the state stays 'cold', so
       // a plain retry keeps taking the fresh-start path.
-      const currentLive = this.liveThreads.get(turn.rootMessageId);
-      this.liveThreads.delete(turn.rootMessageId);
+      const currentLive = this.liveChats.get(turn.chatId);
+      this.liveChats.delete(turn.chatId);
       if (currentLive) {
         await this.options.runtime.close(currentLive.threadId).catch(() => undefined);
         await this.options.db.rpc(
           claims(turn.requesterIdentityId),
           'mark_chat_runtime_state',
-          [turn.rootMessageId, 'stopped'],
+          [turn.chatId, 'stopped'],
         );
       }
     }
 
     this.options.publisher.publish(turn.spaceId, {
       type: 'chat.turn.done',
-      threadRootId: turn.rootMessageId,
+      chatId: turn.chatId,
       messageId: agentMessageId,
       usage: finalUsage,
     });
@@ -429,15 +474,30 @@ export class ChatOrchestrator {
 
   private async createAgentMessage(turn: ClaimedTurn): Promise<string> {
     const result = await this.options.db.tx(claims(turn.requesterIdentityId), async (q: Querier) => {
+      // FLAT, AND SOURCED FROM ITSELF. Two deliberate arguments here:
+      //
+      //   * `parentMessageId` is null — the agent's reply is a ROOT message on
+      //     the chat, not a thread child of the human's. The pairing lives in
+      //     `chat_turns(user_message_id, agent_message_id)`, which is where it
+      //     always actually lived; threading was only ever how a chat found its
+      //     own messages back when it had no anchor of its own.
+      //   * `p_source_chat_id` is the chat itself. That is what makes the SQL
+      //     self-guard fire and skip queueing — the batch RPC now queues a turn
+      //     for every message landing on a chat, so this placeholder would wake
+      //     the chat with its own output and loop forever without it. This is
+      //     the ONE guard R-A keeps, and this call is why it is keyed on the
+      //     source rather than on the author.
       const posted = await q.rpc<BatchRpcResult>('w2_post_message_batch', [
-        [turn.anchorId],
+        [turn.chatId],
         'Agent turn in progress.',
-        turn.userMessageId,
+        null,
         [],
         [],
         null,
         turn.teammateId,
         `chat-turn:${turn.turnId}`,
+        null,
+        turn.chatId,
       ]);
       const messageId = posted.messageIds[0];
       if (!messageId) throw new Error('agent message RPC returned no message id');
@@ -451,7 +511,7 @@ export class ChatOrchestrator {
     const authorizationIdentityId = turn.requestedByIdentityId ?? turn.requesterIdentityId;
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
-    const live = this.liveThreads.get(turn.rootMessageId);
+    const live = this.liveChats.get(turn.chatId);
     if (
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
@@ -459,17 +519,17 @@ export class ChatOrchestrator {
     let authorizationChanged = false;
     if (live) {
       await this.options.runtime.close(live.threadId);
-      this.liveThreads.delete(turn.rootMessageId);
+      this.liveChats.delete(turn.chatId);
       await this.options.db.rpc(
         claims(turn.requesterIdentityId),
         'mark_chat_runtime_state',
-        [turn.rootMessageId, 'stopped'],
+        [turn.chatId, 'stopped'],
       );
       authorizationChanged = true;
     }
     const mode = authorizationChanged || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
     const launch = await this.options.resolveLaunchConfig({
-      rootMessageId: turn.rootMessageId,
+      chatId: turn.chatId,
       requesterIdentityId: authorizationIdentityId,
       requesterAuthKind: authorizationAuthKind,
       teammateId: turn.teammateId,
@@ -483,7 +543,7 @@ export class ChatOrchestrator {
     });
     const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
-      threadId: turn.rootMessageId,
+      threadId: turn.chatId,
       nativeSessionId: turn.nativeSessionId,
       model: turn.model,
       cwd: runtimeCwd,
@@ -497,7 +557,7 @@ export class ChatOrchestrator {
         : {}),
     };
     const started = await this.options.runtime.startThread(input);
-    this.liveThreads.set(turn.rootMessageId, {
+    this.liveChats.set(turn.chatId, {
       threadId: started.threadId,
       authorizationIdentityId,
       authorizationAuthKind,
@@ -505,7 +565,7 @@ export class ChatOrchestrator {
     await this.options.db.rpc(
       claims(turn.requesterIdentityId),
       'mark_chat_runtime_state',
-      [turn.rootMessageId, 'live'],
+      [turn.chatId, 'live'],
     );
     return started.threadId;
   }

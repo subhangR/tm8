@@ -28,12 +28,37 @@
  * names no kind and takes no registry row; §15.2's ban on kind literals is not
  * a constraint it has to work around. The host decides WHERE it mounts, which
  * is the one thing that does vary — see `views/attentionSurface.tsx`.
+ *
+ * IT IS A DOCK NOW, NOT A SECTION (user ruling 2026-09-07: "taking up too much
+ * space at the bottom"). Four cards of settled history were spending the whole
+ * foot of the panel on a record nobody had asked to read. So the record folds
+ * behind ONE pinned line, and the four rulings that shape it are these:
+ *
+ *   1. THE BAR IS PANEL CHROME, not content. It sits outside the scroller,
+ *      between the body and the footer, so it is on screen at any scroll
+ *      offset and on every tab. That placement is what let the SECOND mount
+ *      die: terminal and chat bodies used to be exiled to the Connections tab
+ *      because the full section was too tall for a body that owns its own
+ *      height, and a one-line bar is not. One home, every kind.
+ *   2. THE DATA DECIDES THE DEFAULT, and nothing is persisted. A settled-only
+ *      history — the common case, and the one in the report — opens collapsed.
+ *      A row still pending opens the sheet, because it is the only part anyone
+ *      can still act on. `autoOpened` makes that a one-way latch: settling the
+ *      last pending row must not yank the list shut under the hand that just
+ *      acted on it.
+ *   3. THE BAR CARRIES A FACT, not just a number: the loudest pending reason,
+ *      truncated to the line. A bar that only counts makes you open it to
+ *      learn anything, which is the cost the collapse was meant to remove.
+ *   4. THE EYEBROW IS GONE. The bar states the same counts, and repeating them
+ *      one line lower inside the sheet is exactly the kind of spend this
+ *      change exists to stop.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { AttentionRequest, AttentionRequestStatus, EntityId } from '@tm8/contract';
-import { Eyebrow } from '../kit/Eyebrow';
 import {
   isPending,
+  leadPending,
   orderHistory,
   settlementLine,
   STATUS_LABEL,
@@ -77,6 +102,25 @@ export function AttentionRequests(props: AttentionRequestsProps) {
    * moving to the error phase would do.
    */
   const [writeError, setWriteError] = useState<string | null>(null);
+  /**
+   * THE SHEET'S DISCLOSURE STATE, seeded closed and opened by the data once.
+   *
+   * `autoOpened` is a ONE-WAY LATCH and that is the whole subtlety here. The
+   * rule is "open when something is pending", but a naive effect that mirrors
+   * `pendingCount > 0` would slam the sheet shut the instant you resolved the
+   * last row — pulling the history out from under the click that settled it,
+   * and hiding the write error if that click had failed. So the effect may only
+   * ever set `true`, and the only thing that can close the sheet is the person
+   * pressing the bar.
+   *
+   * The latch is per-MOUNT, and the component is keyed on the entity
+   * (`attentionSurface.tsx`), so switching entities re-arms it. A refresh that
+   * brings back a NEW pending row re-opens too, which is right: the latch tracks
+   * "has this instance ever had something to act on", not "has it rendered".
+   */
+  const [open, setOpen] = useState(false);
+  const autoOpened = useRef(false);
+  const sheetId = useId();
   const live = useRef(true);
 
   /**
@@ -126,6 +170,14 @@ export function AttentionRequests(props: AttentionRequestsProps) {
     load('initial');
     return () => { live.current = false; };
   }, [load]);
+
+  useEffect(() => {
+    if (autoOpened.current) return;
+    if (state.phase !== 'ready') return;
+    if (!state.rows.some(isPending)) return;
+    autoOpened.current = true;
+    setOpen(true);
+  }, [state]);
 
   const settle = useCallback(
     (row: AttentionRequest, status: AttentionRequestStatus, note: string) => {
@@ -183,11 +235,17 @@ export function AttentionRequests(props: AttentionRequestsProps) {
 
   if (state.phase === 'error') {
     return (
-      <section className="pn-section att-req" data-testid="attention-requests">
-        <Eyebrow faint>Attention requests</Eyebrow>
+      <AttentionDock
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        sheetId={sheetId}
+        tone="error"
+        counts="Attention history unavailable"
+        lead={null}
+      >
         <p className="att-req__error">Attention history could not be loaded.</p>
         <p className="att-req__error-detail">{state.message}</p>
-      </section>
+      </AttentionDock>
     );
   }
 
@@ -195,15 +253,24 @@ export function AttentionRequests(props: AttentionRequestsProps) {
 
   const ordered = orderHistory(state.rows);
   const summary = summarizeHistory(state.rows);
+  const lead = leadPending(state.rows);
 
   return (
-    <section className="pn-section att-req" data-testid="attention-requests">
-      <Eyebrow faint>
-        {summary.pendingCount > 0
-          ? `Attention requests · ${summary.pendingCount} waiting · ${summary.pendingPoints} points`
-          : `Attention requests · ${summary.total} settled`}
-      </Eyebrow>
-
+    <AttentionDock
+      open={open}
+      onToggle={() => setOpen((v) => !v)}
+      sheetId={sheetId}
+      tone={summary.pendingCount > 0 ? 'wait' : 'quiet'}
+      counts={
+        summary.pendingCount > 0
+          ? `${summary.pendingCount} waiting · ${summary.pendingPoints} pts`
+          : `${summary.total} settled`
+      }
+      /* Only a PENDING row gets quoted. Leading a collapsed bar with the text
+         of a closed request would read as live, which is the one thing this
+         surface has to be careful about — see the footnote below. */
+      lead={lead ? lead.reason : null}
+    >
       {writeError ? (
         <p className="att-req__notice" role="status" data-testid="attention-write-error">
           {writeError}
@@ -243,7 +310,80 @@ export function AttentionRequests(props: AttentionRequestsProps) {
           settled here by the act of reading them.
         </p>
       ) : null}
-    </section>
+    </AttentionDock>
+  );
+}
+
+/**
+ * THE DOCK — a pinned bar and the sheet it discloses, with no knowledge of what
+ * is inside either.
+ *
+ * Split out from `AttentionRequests` so the READY and ERROR phases share one
+ * shape. They used to be two different boxes, which was survivable while both
+ * were inline sections and is not now: this thing is panel chrome, and chrome
+ * that changes height and silhouette depending on whether a fetch failed is
+ * chrome that makes the panel twitch.
+ *
+ * WHY THE SHEET IS ABSOLUTE, NOT A FLEX SIBLING. In flow, expanding would
+ * shorten the scroll host and reflow the entire body under it — the reader's
+ * place in the content moves because they asked to see something at the bottom.
+ * `bottom: 100%` against the dock lifts the sheet OVER the body instead, so
+ * the content behind it is untouched and closing puts everything back exactly.
+ * The panel's own `overflow: hidden` (panels.css) is the clip that keeps it
+ * inside the panel; the sheet's `max-height` is what keeps it from needing to
+ * be clipped in the first place.
+ *
+ * DOM ORDER IS BAR-THEN-SHEET even though the sheet paints above it, because
+ * that is the reading order a disclosure wants: the control, then the region it
+ * names through `aria-controls`. Absolute positioning makes the two orders
+ * independent, which is the other half of why the sheet is not in flow.
+ */
+function AttentionDock(props: {
+  open: boolean;
+  onToggle(): void;
+  sheetId: string;
+  /** Drives the glyph's colour only — `wait` when something is still pending. */
+  tone: 'wait' | 'quiet' | 'error';
+  counts: string;
+  /** The loudest pending reason, or null when there is no live row to quote. */
+  lead: string | null;
+  children: ReactNode;
+}) {
+  const { open, sheetId, tone, counts, lead } = props;
+  return (
+    <div className="att-dock" data-testid="attention-requests" data-open={open ? 'true' : 'false'}>
+      <button
+        type="button"
+        className="att-dock__bar"
+        data-testid="attention-bar"
+        data-tone={tone}
+        aria-expanded={open}
+        aria-controls={sheetId}
+        onClick={props.onToggle}
+      >
+        {/* The glyph is a WARNING only while something is waiting. Settled
+            history keeps the same silhouette — so the bar does not jump when
+            the last row closes — but goes ink-quiet, because a standing alarm
+            over a finished record is the lie this whole surface footnotes. */}
+        <span className="att-dock__glyph" aria-hidden="true">
+          ⚠
+        </span>
+        <span className="att-dock__counts">{counts}</span>
+        {lead ? <span className="att-dock__lead">{lead}</span> : null}
+        <span className="att-dock__chevron" aria-hidden="true">
+          {open ? '▾' : '▴'}
+        </span>
+        {/* The chevron is decorative; `aria-expanded` is the real state, and
+            this is the word that names the action for a screen reader. */}
+        <span className="att-dock__sr">{open ? 'Hide attention history' : 'Show attention history'}</span>
+      </button>
+
+      {open ? (
+        <div className="att-dock__sheet" id={sheetId} data-testid="attention-sheet" role="group">
+          <div className="att-dock__sheet-inner">{props.children}</div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

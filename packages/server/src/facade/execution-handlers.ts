@@ -1,3 +1,6 @@
+import { loadSkillEquipment } from '../skills/equipment.js';
+import { computeEffectiveSkills } from '@tm8/execution';
+import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
  *
@@ -19,12 +22,13 @@
  */
 
 import {
+  DEFAULT_MODEL,
+  CREDENTIAL_PROVIDERS,
   NODE_BOOT_ID,
   SpawnError,
   SpawnService,
   PtyHostService,
   PromptSettlementWaiter,
-  resolveSkills,
   readSessionTranscript,
   knownAgentConfigDirs,
   type CreateWorkSessionInput,
@@ -50,12 +54,15 @@ import {
   type WorkdirMode,
   type WorkSessionResumeInfo,
   type WorkSessionStatus,
+  type WorkSessionUsage,
+  type WorkSessionUsageSource,
   WorktreeManager,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
   type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
+import { contextAdvisorFromEnv, routingAdvisorFromEnv } from '@tm8/jev';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
@@ -67,6 +74,7 @@ import type {
   ExecutionLiveness,
   ExecutionPromptInput,
   ExecutionResumeInput,
+  ExecutionSessionsShareInput,
   ExecutionSpawnInput,
   ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
@@ -93,6 +101,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import { resolveSpawnParentId } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -155,21 +164,6 @@ interface TaskRow {
   thread_channel_id: string | null;
 }
 
-interface SkillRow {
-  entity_id: string;
-  name: string;
-  content: string;
-  /** pg returns `min(...)` over an int as a string via node-postgres. */
-  depth: string | number;
-}
-
-/**
- * How far the skill resolver will walk up a team member hierarchy. These are
- * org charts, not trees, so this is a runaway guard rather than a real product
- * limit — but it is also what stops a recursive CTE spinning if the hierarchy's
- * acyclicity trigger is ever bypassed (a restore, a direct write).
- */
-const MAX_HIERARCHY_DEPTH = 16;
 
 interface MemoryRow {
   entity_id: string;
@@ -265,6 +259,17 @@ export class DbGraphPort implements GraphPort {
    * have been authorised.
    */
   async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
+    // The scan REFRESHES cached skill metadata; it is not an authorization
+    // step. A scan that cannot run (a caller the scan's membership check does
+    // not recognise, an unreadable root) leaves the last cached references in
+    // place and the spawn proceeds — RLS on the transaction below is what
+    // decides whether this spawn is allowed at all.
+    let skillsScannedAt: string | null = null;
+    try {
+      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true })).scannedAt;
+    } catch (error) {
+      console.warn(`[tm8:skills] pre-spawn scan skipped for space ${input.spaceId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return this.db.tx(this.claims(auth), async (q) => {
       const members = await q.query<TeamMemberRow>(
         `select tm.entity_id, tm.name, tm.role, tm.identity, tm.memories, tm.model,
@@ -330,6 +335,31 @@ export class DbGraphPort implements GraphPort {
       }
       const injectedMemories = renderMemories(memoryRows, requestedIds);
 
+      // 176 — WHAT THE PARENT IS, not merely that there is one.
+      //
+      // A chat may parent a work session since 176, so `parentSessionId` no
+      // longer implies a work_session and the manifest's `coordinator.kind`
+      // cannot be inferred from its presence. The kind is read HERE, in the
+      // same transaction as the persona, for the reason this transaction
+      // exists: the manifest must describe one instant.
+      //
+      // Read from `public.entities` under the caller's RLS and never from the
+      // request. An unreadable or deleted parent yields `null`, which every
+      // consumer folds to `work_session` — a launch is not refused over a
+      // return-address LABEL, only over a missing return address, and that
+      // guard is `resolveCoordinatorSessionId`'s.
+      let parentKind: SpawnContext['parentKind'] = null;
+      if (input.parentSessionId) {
+        const parentRows = await q.query<{ kind: string }>(
+          `select e.kind
+             from public.entities e
+            where e.id = $1 and e.space_id = $2 and e.deleted_at is null`,
+          [input.parentSessionId, input.spaceId],
+        );
+        const kind = parentRows[0]?.kind;
+        parentKind = kind === 'chat' ? 'chat' : kind === 'work_session' ? 'work_session' : null;
+      }
+
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
         const rows = await q.query<ProjectRow>(
@@ -361,43 +391,13 @@ export class DbGraphPort implements GraphPort {
       // produce a manifest describing capability the persona no longer has.
       //
       // `depth` is hops from the invoked member (0 = itself). The recursion is
-      // bounded by MAX_HIERARCHY_DEPTH rather than trusting the hierarchy to be
+      // bounded to 16 ancestor hops rather than trusting the hierarchy to be
       // acyclic: 001_core_graph.sql's trigger does enforce acyclicity, but a
       // recursive CTE that meets a cycle anyway spins until it exhausts memory,
       // and this query runs on the spawn path.
-      const skillRows = await q.query<SkillRow>(
-        `with recursive chain as (
-             select e.id, e.parent_id, 0 as depth
-               from public.entities e
-              where e.id = $1 and e.space_id = $2
-                and e.kind = 'team_member' and e.deleted_at is null
-             union all
-             select p.id, p.parent_id, c.depth + 1
-               from chain c
-               join public.entities p on p.id = c.parent_id
-              where p.space_id = $2 and p.kind = 'team_member'
-                and p.deleted_at is null and c.depth < $3
-           )
-         select s.entity_id, s.name, s.content, min(chain.depth) as depth
-           from chain
-           join public.edges ed
-             on ed.src_id = chain.id and ed.type = 'equips' and ed.space_id = $2
-           join public.entities se
-             on se.id = ed.dst_id and se.kind = 'skill' and se.deleted_at is null
-           join public.skills s on s.entity_id = se.id
-          group by s.entity_id, s.name, s.content
-          order by depth, s.name`,
-        [input.teamMemberId, input.spaceId, MAX_HIERARCHY_DEPTH],
-      );
-
-      const resolution = resolveSkills(
-        skillRows.map((r) => ({
-          entityId: r.entity_id,
-          name: r.name,
-          body: r.content,
-          depth: Number(r.depth),
-        })),
-      );
+      const skillEquips = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      // Candidates stay untruncated; native scope is resolved with the actual launch later.
+      const candidates = computeEffectiveSkills({ agentTool: '', workdir: '/', projectRoot: null, equips: skillEquips });
 
       const taskIds = input.taskIds ?? [];
       const tasks =
@@ -448,6 +448,7 @@ export class DbGraphPort implements GraphPort {
 
       return {
         spaceId: input.spaceId,
+        parentKind,
         project,
         teamMember: {
           id: member.entity_id,
@@ -498,8 +499,10 @@ export class DbGraphPort implements GraphPort {
             threadRootMessageId: t.thread_root_message_id ?? null,
             threadChannelId: t.thread_channel_id ?? null,
           })),
-        skills: resolution.skills,
-        droppedSkills: resolution.dropped,
+        skills: candidates.indexed,
+        skillEquips,
+        skillsScannedAt,
+        droppedSkills: [],
       };
     });
   }
@@ -810,23 +813,25 @@ export class DbGraphPort implements GraphPort {
       access_mode: string | null;
       permission_mode: string | null;
       credential_source: string | null;
-      anthropic_credential_source: string | null;
-      openai_credential_source: string | null;
-      github_credential_source: string | null;
+      credential_sources: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
-              sm.manifest #>> '{launch,credentialSources,anthropic}' as anthropic_credential_source,
-              sm.manifest #>> '{launch,credentialSources,openai}'    as openai_credential_source,
-              sm.manifest #>> '{launch,credentialSources,github}'    as github_credential_source
+              sm.manifest #>  '{launch,credentialSources}' as credential_sources
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
     );
     const row = rows[0];
     if (!row) return null;
+    const storedCredentialSources =
+      typeof row.credential_sources === 'object' &&
+      row.credential_sources !== null &&
+      !Array.isArray(row.credential_sources)
+        ? (row.credential_sources as Record<string, unknown>)
+        : {};
     // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
     // manifest is a stored JSON document and an unrecognised posture in one must
     // fall through to the ordinary precedence chain, not launch on a value
@@ -835,11 +840,14 @@ export class DbGraphPort implements GraphPort {
       accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
       permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
       credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
-      credentialSources: {
-        anthropic: row.anthropic_credential_source,
-        openai: row.openai_credential_source,
-        github: row.github_credential_source,
-      } as SessionLaunchPosture['credentialSources'],
+      // The login-terminal table's canonical provider order is the runtime key
+      // set too; reading the JSON object once avoids another SQL-side list.
+      credentialSources: Object.fromEntries(
+        CREDENTIAL_PROVIDERS.map((provider) => [
+          provider,
+          storedCredentialSources[provider] ?? null,
+        ]),
+      ) as SessionLaunchPosture['credentialSources'],
     };
   }
 
@@ -884,6 +892,30 @@ export class DbGraphPort implements GraphPort {
         nativeSessionId,
         null, // p_actor_id — derived from claims
       ],
+    );
+    return stored === true;
+  }
+
+  /**
+   * The usage instrument (185). A SEPARATE RPC from `work_session_transition`
+   * on purpose: that function is R29's single writer of status, and 171/177
+   * show what a signature change there costs (DROP + CREATE, five positional
+   * callers, a re-armed PUBLIC grant). This writes only the three usage
+   * columns, which 001's status guard does not cover, and bumps
+   * `entities.version` so the fact reaches clients the way 107's does. The
+   * document goes over as text: `rpc` binds it as a parameter and Postgres
+   * casts it to the function's jsonb argument, exactly as `record_session_manifest`.
+   */
+  async recordWorkSessionUsage(
+    auth: GraphAuth,
+    sessionId: string,
+    usage: WorkSessionUsage,
+    source: WorkSessionUsageSource,
+  ): Promise<boolean> {
+    const stored = await this.db.rpc<boolean>(
+      this.claims(auth),
+      'public.record_work_session_usage',
+      [sessionId, JSON.stringify(usage), source],
     );
     return stored === true;
   }
@@ -1131,6 +1163,28 @@ export class DbGraphPort implements GraphPort {
       null,
     ]);
   }
+
+  /** execution.sessions.share — turns the two dials `grantStreamAttach`
+   *  reads (187). Kept next to it deliberately: this is the only write that
+   *  can change whether the call above succeeds for anyone but the owner. */
+  async setWorkSessionSharing(
+    auth: GraphAuth,
+    sessionId: string,
+    input: { shareMode?: string; driveMode?: string; expectedVersion?: number },
+    clientMutationId: string | null,
+  ): Promise<unknown> {
+    return this.db.rpc(this.claims(auth), 'public.set_work_session_sharing', [
+      sessionId,
+      input.expectedVersion ?? null,
+      // `null` MERGES in the RPC, so an omitted dial is left alone rather
+      // than reset — a client that only wants to stop drive must not
+      // silently re-close the session to viewers as a side effect.
+      input.shareMode ?? null,
+      input.driveMode ?? null,
+      null, // p_actor_id — derived from claims
+      clientMutationId,
+    ]);
+  }
 }
 
 // --- runtime -----------------------------------------------------------------
@@ -1317,6 +1371,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // built without a data root simply does not advertise it (§7.4), rather than
   // quietly handing back the shared project directory.
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
 
   spawnService = new SpawnService({
     graph,
@@ -1341,6 +1402,11 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
 
@@ -1477,6 +1543,13 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const routingAdvisor = routingAdvisorFromEnv({
+    defaultModel: DEFAULT_MODEL,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+  const contextAdvisor = contextAdvisorFromEnv({
+    ...(deps.logger ? { logger: deps.logger } : {}),
+  });
   const spawnService = new SpawnService({
     graph,
     pty: deps.pty,
@@ -1498,6 +1571,11 @@ export function registerExecutionHandlers(
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
+    // Model routing. `undefined` unless this node has BOTH a policy and a key,
+    // and undefined spreads to nothing — so a fleet that sets neither resolves
+    // every model exactly as it did before this existed.
+    ...(routingAdvisor ? { routingAdvisor } : {}),
+    ...(contextAdvisor ? { contextAdvisor } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
@@ -2535,10 +2613,32 @@ function registerHandlers(
         )
       : undefined;
 
+    // 176 — A CHAT IS THE PARENT OF WHAT IT SPAWNS.
+    //
+    // `tm8_delegate` reaches here on an `agent_runtime` bearer and has never
+    // been able to name a parent: a chat had no entity id to name, so every
+    // worker a chat dispatched was born an orphan and its `<reply_address>`
+    // pointed at nothing. The bearer's own `runtime_chat_id` is that id, and it
+    // is a server fact off the session row, so it is safe to use as provenance.
+    //
+    // An EXPLICIT `parentSessionId` still wins. A human driving `execution.spawn`
+    // through a chat's credential may legitimately parent the worker elsewhere,
+    // and silently overriding a stated parent with an ambient one would make the
+    // argument a lie.
+    /**
+     * B10 — and the paragraph above is still exactly true for a HUMAN
+     * credential. `resolveSpawnParentId` is where the whole decision now lives,
+     * including its one new rule: a chat runtime may only parent what it spawns
+     * on ITSELF. That file carries the reasoning and the enumeration of what
+     * else the credential can reach; this is deliberately one call, because a
+     * default expression here plus a guard beside it is two statements about
+     * one question that can disagree.
+     */
+    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId);
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
-      parentSessionId: input.parentSessionId ?? null,
+      parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
@@ -2782,6 +2882,38 @@ function registerHandlers(
       }),
     );
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
+  });
+
+  /**
+   * execution.sessions.share — the write side of the attach gate (187).
+   *
+   * Thin on purpose: every rule that matters (who may turn the dials, which
+   * words are legal, and the revocation of live grants when the posture
+   * narrows) lives in `public.set_work_session_sharing`, because the same
+   * rules have to hold for the CLI and for any future caller that never
+   * passes through this process. The RPC returns an `internal.command_result`,
+   * so it assembles exactly like terminate above.
+   */
+  registry.register('execution.sessions.share', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    const input = ctx.body as ExecutionSessionsShareInput;
+    const raw = await rethrowing(() =>
+      graph.setWorkSessionSharing(
+        claims,
+        requireUuidParam(ctx, 'id'),
+        {
+          ...(input.shareMode === undefined ? {} : { shareMode: input.shareMode }),
+          ...(input.driveMode === undefined ? {} : { driveMode: input.driveMode }),
+          ...(input.expectedVersion === undefined
+            ? {}
+            : { expectedVersion: input.expectedVersion }),
+        },
+        envelope.clientMutationId ?? null,
+      ),
+    );
+    return json(await assembleCommandResult(db, claims, raw, owner.identityId));
   });
 
   registry.register('execution.streams.attach', async (ctx) => {

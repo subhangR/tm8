@@ -30,7 +30,7 @@
  * The composer FAILS CLOSED on every one of these. A launch that refuses is
  * attributable; a manifest that quietly carries a token is not.
  */
-import { assertWithinBudget, utf8Bytes } from '@tm8/prompt';
+import { assertWithinBudget, COORDINATOR_KINDS, utf8Bytes, type CoordinatorKind } from '@tm8/prompt';
 
 export const MANIFEST_VERSION = '2';
 export const GRAMMAR_VERSION = '2';
@@ -124,6 +124,13 @@ export interface BootstrapSession {
   trust: TrustLevel;
   /** Present only when a server-authoritative relationship exists. */
   coordinatorSessionId?: string;
+  /**
+   * What `coordinatorSessionId` NAMES (176): `work_session` or `chat`. Written
+   * whenever the coordinator is, and never alone — a kind without an id would
+   * describe a return address that does not exist. Absent on a manifest from a
+   * node that predates 176, which every reader folds to `work_session`.
+   */
+  coordinatorKind?: CoordinatorKind;
 }
 
 export interface BootstrapInteractionProfile {
@@ -169,8 +176,9 @@ export interface BootstrapManifestV2 {
 export interface BootstrapManifestInput {
   server: Omit<BootstrapServer, 'grammarVersion'>;
   identity: BootstrapIdentity;
-  session: Omit<BootstrapSession, 'coordinatorSessionId'> & {
+  session: Omit<BootstrapSession, 'coordinatorSessionId' | 'coordinatorKind'> & {
     coordinatorSessionId?: string | null;
+    coordinatorKind?: string | null;
   };
   interactionProfile: BootstrapInteractionProfile;
   assignment: { primaryTaskId?: string | null; taskIds?: readonly string[] };
@@ -260,6 +268,16 @@ export function composeBootstrapManifest(input: BootstrapManifestInput): Bootstr
       ? undefined
       : str('session.coordinatorSessionId', session.coordinatorSessionId);
 
+  // Only meaningful beside an id, so it is dropped without an id rather than
+  // rejected: a caller that names a kind and no coordinator has described no
+  // return path at all, and the honest rendering of that is no coordinator.
+  const coordinatorKind =
+    coordinatorSessionId === undefined
+      || session.coordinatorKind === null
+      || session.coordinatorKind === undefined
+      ? undefined
+      : oneOf('session.coordinatorKind', session.coordinatorKind, COORDINATOR_KINDS);
+
   const primaryTaskId =
     assignment.primaryTaskId === null || assignment.primaryTaskId === undefined
       ? undefined
@@ -300,6 +318,7 @@ export function composeBootstrapManifest(input: BootstrapManifestInput): Bootstr
       // null coordinator reads as "there is definitively no coordinator" when
       // the truth is "no server-authoritative relationship exists".
       ...(coordinatorSessionId === undefined ? {} : { coordinatorSessionId }),
+      ...(coordinatorKind === undefined ? {} : { coordinatorKind }),
     },
     interactionProfile: {
       entityId: str('interactionProfile.entityId', profile.entityId),

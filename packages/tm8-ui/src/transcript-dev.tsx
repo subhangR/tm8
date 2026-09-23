@@ -97,7 +97,7 @@ const seam = {
       }, 250);
     });
   },
-  commands: { prompt: () => Promise.resolve({ ok: true }) },
+  commands: { postMessage: () => Promise.resolve({ messageBatchId: 'dev', messages: [] }) },
 } as never;
 
 const params = new URLSearchParams(location.search);

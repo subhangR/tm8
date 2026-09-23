@@ -109,6 +109,34 @@ const PR_STATE_TONE: Record<string, PillTone> = {
   closed: 'idle',
 };
 
+/**
+ * The chat queue's two working words. `idle` is deliberately absent: it is
+ * filtered before the lookup (see the case), so a tone for it would be dead.
+ */
+const CHAT_TURN_TONE: Record<string, PillTone> = {
+  queued: 'wait',
+  running: 'run',
+};
+
+/**
+ * The container's nine statuses (§11.1). THE SAME MAP the registry row's chip
+ * and status pill declare — `registry.test.ts` asserts the three agree rather
+ * than trusting three hand-kept copies, because a missing arm renders the
+ * neutral tone SILENTLY and no vitest can see a colour (jsdom loads no
+ * stylesheets).
+ */
+const CONTAINER_STATUS_TONE: Record<string, PillTone> = {
+  requested: 'wait',
+  provisioning: 'wait',
+  running: 'run',
+  paused: 'info',
+  stopping: 'wait',
+  stopped: 'idle',
+  destroying: 'wait',
+  destroyed: 'idle',
+  failed: 'block',
+};
+
 const PRIORITY_TONE: Record<string, PillTone> = {
   urgent: 'block',
   high: 'block',
@@ -179,6 +207,28 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
         word: v,
         tone: v === 'active' ? 'run' : v === 'draft' ? 'wait' : 'idle',
         dot: v === 'active' ? 'solid' : 'hollow',
+      };
+    }
+    /*
+     * CONTAINER (migration 177). The dot is SOLID only while the machine is
+     * actually up: `running` and `paused` are the two statuses with a live
+     * runtime behind them. Every other status — including `provisioning`,
+     * which is on its way up but is not up — draws hollow, so the tile never
+     * claims a machine exists before the node says it does.
+     *
+     * THIS IS NOT LIVENESS AND MUST NOT BE READ AS IT (R-UI-5). This dot is a
+     * fold of the ENTITY'S recorded status; the LIVE dot comes from
+     * `seam.liveness.statusOf`. A row is `running` in the graph for as long as
+     * nobody has told the graph otherwise, which is exactly the ghost case.
+     */
+    case 'containerStatus': {
+      const v = str(field(row, 'status'));
+      if (!v) return null;
+      return {
+        slot: 'status',
+        word: v,
+        tone: CONTAINER_STATUS_TONE[v] ?? 'idle',
+        dot: v === 'running' || v === 'paused' ? 'solid' : 'hollow',
       };
     }
 
@@ -266,9 +316,46 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'agentTool')));
     case 'model':
       return meta(str(field(row, 'model')));
+    /*
+     * CHAT (migration 176). Three facts no other kind has; `model` above
+     * already answers for a chat, because that source reads `state.model`
+     * structurally and a chat state carries one.
+     *
+     * `turnState` is the QUEUE and it is drawn as a STATUS PILL rather than a
+     * meta word, because it is the one fact on the row that changes while you
+     * are looking at it. `idle` renders NOTHING: a chat that is not working is
+     * the resting state of every row in the list, and a pill on all of them
+     * would be a pill that says nothing. That is the same rule `shareMode`
+     * follows two cases down for `none`.
+     */
+    case 'chatMode':
+      return meta(str(field(row, 'mode')));
+    case 'chatTurnState': {
+      const v = str(field(row, 'turnState'));
+      if (!v || v === 'idle') return null;
+      return { slot: 'status', word: v, tone: CHAT_TURN_TONE[v] ?? 'info', dot: 'solid' };
+    }
+    case 'chatLastTurnAt': {
+      /* The ISO instant, verbatim — this module formats no dates (`dueDate`
+         above prints the stored string too). The tile's own chrome renders
+         relative time from `activityAt`; this is the chat's OWN clock, which
+         is a different fact: a renamed chat moves `activityAt` and not this. */
+      const v = str(field(row, 'lastTurnAt'));
+      return meta(v && `last turn ${v}`);
+    }
     case 'shareMode': {
       const v = str(field(row, 'shareMode'));
       return v && v !== 'none' ? meta(`shared: ${v}`) : null;
+    }
+    case 'driveMode': {
+      /* SILENT ON THE DEFAULT, exactly as `shareMode` is silent on 'none'.
+         `owner` is where every session starts and where 986 of them still
+         are, so badging it would put a word on every tile in the space to
+         say nothing happened. Absence is also the honest reading of a server
+         too old to project the column — it says nothing rather than claiming
+         the default it never read. */
+      const v = str(field(row, 'driveMode'));
+      return v === 'space' ? meta('drive: space') : null;
     }
     case 'channelTopic':
       return meta(str(field(row, 'topic')));
@@ -308,6 +395,9 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const n = num(field(row, 'sizeBytes'));
       return n ? meta(humanBytes(n)) : null;
     }
+    case 'level': return meta(str(field(row, 'level')));
+    case 'missing': return field(row, 'missing') === true ? meta('missing') : null;
+    case 'skillRoot': { const root = field(row, 'root') as { ref?: string } | undefined; return meta(root?.ref ?? null); }
     case 'equipped':
       return meta(field(row, 'equipped') === true ? 'equipped' : 'library');
     case 'collectionType':
@@ -324,6 +414,14 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const active = num(field(row, 'activeVersion'));
       return active ? meta(`v${active}`) : null;
     }
+    /* The three spec facts a reader tells containers apart by, as mono meta on
+       line 2 — what it runs, who runs it, and how hard the walls are. */
+    case 'profile':
+      return meta(str(field(row, 'profile')));
+    case 'provider':
+      return meta(str(field(row, 'provider')));
+    case 'isolation':
+      return meta(str(field(row, 'isolation')));
     case 'customFields': {
       const f = field(row, 'fields');
       const n = f && typeof f === 'object' ? Object.keys(f as object).length : 0;
@@ -344,9 +442,13 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'priority', 'axes', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',
-  'messages', 'points', 'agentTool', 'model', 'shareMode',
+  'messages', 'points', 'agentTool', 'model', 'shareMode', 'driveMode',
   'channelTopic', 'unread', 'workingAgents', 'docFormat', 'childCount',
   'memberRole', 'score', 'taskDoneCount', 'repository', 'sha',
-  'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
+  'level', 'missing', 'skillRoot', 'mimeType', 'sizeBytes', 'equipped', 'collectionType', 'itemCount',
   'projectVersion', 'profileVersions', 'customFields',
+  'chatMode', 'chatTurnState', 'chatLastTurnAt',
+  // container (migration 177) — a source listed here and nowhere else would
+  // still be dead data; each of these four has a `renderBadge` arm above.
+  'containerStatus', 'profile', 'provider', 'isolation',
 ]);

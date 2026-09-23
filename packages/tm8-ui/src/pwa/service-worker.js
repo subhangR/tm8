@@ -190,6 +190,10 @@ self.addEventListener('fetch', (event) => {
   if (isApiRequest(url)) return;
   // -----------------------------------------------------------------------
 
+  // The 2.0 UI is a separate bundle under this worker's scope. It leaves
+  // untouched for the same reason the API does: this worker cannot speak for
+  // something it did not build.
+
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request));
     return;

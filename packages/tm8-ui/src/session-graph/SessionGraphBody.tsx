@@ -24,12 +24,14 @@
  *   · a truncated canvas says how many cells it dropped;
  *   · switching a relation off is a viewer filter and is stated as one.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary } from '@tm8/contract';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { DurableWorkspaceEvent, EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind } from '../domain';
 import { Eyebrow, Pill, type PillTone } from '../kit';
 import { renderBadge } from '../panels/list/tile-badges';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
+import { routePulsePath, type SessionPulse, type SessionPulseKind } from '../panels/list/message-pulse';
+import { useMessagePulses } from '../panels/list/useMessagePulses';
 import type { Seam } from '../data/seam';
 import { loadSessionGraph, type LoadResult } from './load';
 import {
@@ -41,13 +43,131 @@ import {
   type Cell,
   type SessionGraph,
 } from './model';
-import { cellSize, layoutSessionGraph } from './layout';
+import {
+  cellSize,
+  layoutSessionGraph,
+  type PlacedLink,
+  type Placement,
+} from './layout';
 import './session-graph.css';
 
 const POLL_MS = 20_000;
 const HOP_CHOICES: readonly number[] = [1, 2, 3];
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2.2;
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+interface GraphPulseEndpoint {
+  role: 'from' | 'to';
+  kind: SessionPulseKind;
+  outcome?: 'exited' | 'failed';
+}
+
+interface GraphPulseLeg {
+  key: string;
+  placed: PlacedLink;
+  travel: 'forward' | 'reverse';
+  order: number;
+  pulse: SessionPulse;
+}
+
+interface GraphPulsePresentation {
+  legs: readonly GraphPulseLeg[];
+  endpoints: ReadonlyMap<string, GraphPulseEndpoint>;
+}
+
+const NO_GRAPH_PULSES: GraphPulsePresentation = {
+  legs: [],
+  endpoints: new Map(),
+};
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(REDUCED_MOTION_QUERY).matches
+      : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia(REDUCED_MOTION_QUERY);
+    const update = () => setReduced(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return reduced;
+}
+
+function knownEntitiesOf(focus: EntitySummary | null, state: State): EntitySummary[] {
+  const byId = new Map<string, EntitySummary>();
+  if (focus) byId.set(focus.id, focus);
+  if (state.phase === 'ready') {
+    for (const edges of state.result.edgesByNode.values()) {
+      for (const edge of edges) {
+        byId.set(edge.source.id, edge.source);
+        byId.set(edge.target.id, edge.target);
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
+function completionOutcome(pulse: SessionPulse): 'exited' | 'failed' | undefined {
+  return pulse.kind === 'completion' ? pulse.outcome : undefined;
+}
+
+/** Resolve typed pulses over the graph's deterministic BFS tree. */
+function resolveGraphPulses(
+  graph: SessionGraph,
+  placement: Placement,
+  pulses: readonly SessionPulse[],
+): GraphPulsePresentation {
+  if (pulses.length === 0) return NO_GRAPH_PULSES;
+  const cells = new Set(graph.cells.map((cell) => cell.id));
+  const parents = new Map<string, string | null>();
+  for (const cell of graph.cells) parents.set(cell.id, cell.parentId);
+  const index = {
+    parentOf: (id: string) => parents.get(id),
+    isVisible: (id: string) => cells.has(id),
+  };
+  const linksByPair = new Map<string, PlacedLink>();
+  for (const placed of placement.links) {
+    linksByPair.set(`${placed.link.fromId}\u0000${placed.link.toId}`, placed);
+    linksByPair.set(`${placed.link.toId}\u0000${placed.link.fromId}`, placed);
+  }
+
+  const legs: GraphPulseLeg[] = [];
+  const endpoints = new Map<string, GraphPulseEndpoint>();
+  for (const pulse of pulses) {
+    const route = routePulsePath(pulse.fromId, pulse.toId, index);
+    route.steps.forEach((step, order) => {
+      const placed = linksByPair.get(`${step.fromId}\u0000${step.toId}`);
+      if (!placed) return;
+      legs.push({
+        key: `${pulse.key}:${placed.link.id}:${order}`,
+        placed,
+        travel: placed.link.fromId === step.fromId ? 'forward' : 'reverse',
+        order,
+        pulse,
+      });
+    });
+    const shared = {
+      kind: pulse.kind,
+      ...(completionOutcome(pulse) ? { outcome: completionOutcome(pulse) } : {}),
+    };
+    if (route.fromRowId !== null && !endpoints.has(route.fromRowId)) {
+      endpoints.set(route.fromRowId, { role: 'from', ...shared });
+    }
+    if (route.toRowId !== null) endpoints.set(route.toRowId, { role: 'to', ...shared });
+  }
+  return { legs, endpoints };
+}
+
+function pulseMarkerId(prefix: string, kind: SessionPulseKind): string {
+  return `${prefix}-pulse-${kind}`;
+}
 
 export interface SessionGraphBodyProps {
   seam: Seam;
@@ -86,11 +206,25 @@ export function SessionGraphBody({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [reading, setReading] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  const markerPrefix = `sg-${useId().replace(/:/g, '')}`;
   // Kept across polls so a refresh never throws a drawn canvas back to a spinner.
   const hasLoaded = useRef(false);
+  const mounted = useRef(true);
+  const loadRequest = useRef(0);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      loadRequest.current += 1;
+    };
+  }, []);
+
   const load = useCallback(async () => {
+    const request = ++loadRequest.current;
+    if (!mounted.current) return;
     setReading(true);
     try {
       const result = await loadSessionGraph({
@@ -98,10 +232,13 @@ export function SessionGraphBody({
         focusId,
         hops,
         openFolds,
+        cancelled: () => !mounted.current || request !== loadRequest.current,
       });
+      if (!mounted.current || request !== loadRequest.current) return;
       hasLoaded.current = true;
       setState({ phase: 'ready', result });
     } catch (err) {
+      if (!mounted.current || request !== loadRequest.current) return;
       if (!hasLoaded.current) {
         setState({
           phase: 'error',
@@ -109,9 +246,33 @@ export function SessionGraphBody({
         });
       }
     } finally {
-      setReading(false);
+      if (mounted.current && request === loadRequest.current) setReading(false);
     }
   }, [seam, focusId, hops, openFolds]);
+
+  const knownEntities = useMemo(() => knownEntitiesOf(focus, state), [focus, state]);
+  const knownIds = useRef<ReadonlySet<string>>(new Set([focusId]));
+  knownIds.current = new Set([focusId, ...knownEntities.map((entity) => entity.id)]);
+
+  const onPulseEvent = useCallback(
+    (event: DurableWorkspaceEvent, pulse: SessionPulse | null) => {
+      const known = knownIds.current;
+      const pulseTouchesGraph =
+        pulse !== null &&
+        (known.has(pulse.fromId) || known.has(pulse.toId));
+      const corroboratingEdgeTouchesGraph =
+        event.type === 'edge.upsert' &&
+        (event.edge.type === 'dispatched_by' || event.edge.type === 'messaged') &&
+        (known.has(event.edge.source.id) || known.has(event.edge.target.id));
+      if (pulseTouchesGraph || corroboratingEdgeTouchesGraph) void load();
+    },
+    [load],
+  );
+
+  // The hook is the same bounded event-stream consumer as the session tree.
+  // Its callback turns the stream into the liveness path; polling below stays
+  // the correctness backstop.
+  const pulses = useMessagePulses(seam, { knownEntities, onEvent: onPulseEvent });
 
   useEffect(() => {
     void load();
@@ -157,6 +318,14 @@ export function SessionGraphBody({
 
   const placement = useMemo(() => (graph ? layoutSessionGraph(graph) : null), [graph]);
   const summary = useMemo(() => (graph ? summarize(graph) : null), [graph]);
+  const graphPulses = useMemo(() => {
+    if (!graph || !placement) return NO_GRAPH_PULSES;
+    const visible = new Set(graph.cells.map((cell) => cell.id));
+    const relevant = pulses.filter(
+      (pulse) => visible.has(pulse.fromId) || visible.has(pulse.toId),
+    );
+    return resolveGraphPulses(graph, placement, relevant);
+  }, [graph, placement, pulses]);
 
   const toggleFold = (id: string) => {
     setOpenFolds((prev) => {
@@ -358,6 +527,52 @@ export function SessionGraphBody({
           role="img"
           aria-label={`Graph of ${graph.cells.length} entities around this session`}
         >
+          <defs>
+            <marker
+              id={`${markerPrefix}-arrow`}
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" className="sg-arrowhead" />
+            </marker>
+            <marker
+              id={pulseMarkerId(markerPrefix, 'message')}
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" className="sg-pulse-arrow sg-pulse-arrow--message" />
+            </marker>
+            <marker
+              id={pulseMarkerId(markerPrefix, 'delegation')}
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="8"
+              markerHeight="8"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 8 4 L 0 8" className="sg-pulse-arrow sg-pulse-arrow--delegation" />
+            </marker>
+            <marker
+              id={pulseMarkerId(markerPrefix, 'completion')}
+              viewBox="0 0 9 8"
+              refX="8"
+              refY="4"
+              markerWidth="9"
+              markerHeight="8"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 7 4 L 0 8 M 8 0 L 8 8" className="sg-pulse-arrow sg-pulse-arrow--completion" />
+            </marker>
+          </defs>
           <g
             transform={`translate(${pan.x} ${pan.y}) translate(${placement.centre.x} ${placement.centre.y}) scale(${zoom}) translate(${-placement.centre.x} ${-placement.centre.y})`}
           >
@@ -372,14 +587,40 @@ export function SessionGraphBody({
               />
             ))}
 
-            {placement.links.map((placed) => (
-              <path
-                key={placed.link.id}
-                className="sg-link"
-                data-relation={placed.link.type}
-                d={`M ${placed.x1} ${placed.y1} Q ${placed.cx} ${placed.cy} ${placed.x2} ${placed.y2}`}
-              />
-            ))}
+            {placement.links.map((placed) => {
+              const marker = `url(#${markerPrefix}-arrow)`;
+              return (
+                <path
+                  key={placed.link.id}
+                  className="sg-link"
+                  data-relation={placed.link.type}
+                  data-direction={placed.link.direction}
+                  markerStart={placed.link.direction === 'in' ? marker : undefined}
+                  markerEnd={placed.link.direction === 'out' ? marker : undefined}
+                  d={`M ${placed.x1} ${placed.y1} Q ${placed.cx} ${placed.cy} ${placed.x2} ${placed.y2}`}
+                />
+              );
+            })}
+
+            {graphPulses.legs.map((leg) => {
+              const marker = `url(#${pulseMarkerId(markerPrefix, leg.pulse.kind)})`;
+              return (
+                <path
+                  key={leg.key}
+                  className="sg-link sg-link--pulse"
+                  data-pulse-kind={leg.pulse.kind}
+                  data-pulse-outcome={completionOutcome(leg.pulse)}
+                  data-travel={leg.travel}
+                  data-pulse-motion={reducedMotion ? 'static' : 'travel'}
+                  markerStart={leg.travel === 'reverse' ? marker : undefined}
+                  markerEnd={leg.travel === 'forward' ? marker : undefined}
+                  style={{
+                    '--sg-pulse-delay': `calc(var(--pn-dur-fast) * ${leg.order})`,
+                  } as React.CSSProperties}
+                  d={`M ${leg.placed.x1} ${leg.placed.y1} Q ${leg.placed.cx} ${leg.placed.cy} ${leg.placed.x2} ${leg.placed.y2}`}
+                />
+              );
+            })}
 
             {placement.cells.map((placed) => (
               <CellNode
@@ -388,6 +629,7 @@ export function SessionGraphBody({
                 x={placed.x}
                 y={placed.y}
                 selected={placed.cell.id === selectedId}
+                pulse={graphPulses.endpoints.get(placed.cell.id)}
                 onSelect={() => {
                   if (placed.cell.sort === 'fold') toggleFold(placed.cell.id);
                   else setSelectedId(placed.cell.id);
@@ -461,12 +703,14 @@ function CellNode({
   x,
   y,
   selected,
+  pulse,
   onSelect,
 }: {
   cell: Cell;
   x: number;
   y: number;
   selected: boolean;
+  pulse?: GraphPulseEndpoint;
   onSelect: () => void;
 }) {
   const { w, h } = cellSize(cell.hop);
@@ -482,6 +726,9 @@ function CellNode({
         role="button"
         tabIndex={0}
         aria-label={`${cell.label} — ${cell.count} folded: ${detail}. Activate to expand.`}
+        data-pulse-role={pulse?.role}
+        data-pulse-kind={pulse?.kind}
+        data-pulse-outcome={pulse?.outcome}
         onClick={onSelect}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -521,6 +768,9 @@ function CellNode({
       role="button"
       tabIndex={0}
       aria-label={`${config.label}: ${entity.title}${cell.hub ? ` — hub, ${cell.degree ?? 0} connections` : ''}`}
+      data-pulse-role={pulse?.role}
+      data-pulse-kind={pulse?.kind}
+      data-pulse-outcome={pulse?.outcome}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

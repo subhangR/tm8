@@ -227,7 +227,8 @@
 /* --- the icon rail (task 01a00932 R4) ------------------------------------ */
 /* Entities only, collapsed by default at 72px with the word UNDER the mark
    (the #269 law: collapsed keeps the word). Expanded, rows widen to
-   icon-beside-word with group eyebrows. Leftmost in the row, before A. */
+   icon-beside-word. Group eyebrows draw at BOTH widths (task 01a0ada5).
+   Leftmost in the row, before A. */
 /* The 72/172 literals moved to `HomeView`'s `RAIL_COLLAPSED`/`RAIL_EXPANDED`
    and arrive as `--hp-rail` (task 01a00ac2). The solver has to subtract this
    rail before it can tell whether A + B still fit beside C, and a floor that
@@ -261,6 +262,17 @@
   font: 8.5px var(--pn-mono);
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
+}
+/* Collapsed the eyebrow still draws (HomeRail docblock): it sets tighter and
+   centred so the longest spine label fits the 72px rail without ellipsis. */
+.cv2-root .hr-rail--collapsed .hr-rail__eyebrow {
+  padding: 2px 1px 3px;
+  font-size: 7.5px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cv2-root .hr-rail__row {
   display: flex;

@@ -150,7 +150,13 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
     // 156 -> 159 (148): space workflow list|set|delete over the three
     // spaces.workflows rows.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // MEASURED on the merged tree (176's `chat` noun AND the container noun).
+    // Neither branch's number survives: main counts chat's five and not the
+    // container paths, my branch the reverse. Summing them would be arithmetic
+    // over two partial views.
+    // 188 -> 189 (187): `session share` over execution.sessions.share — one
+    // new catalog row, one new command path, no alias. MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(196); // +7 tm8 skill scan|list|show|create|edit|equip|unequip (2026-09-23). MEASURED.
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

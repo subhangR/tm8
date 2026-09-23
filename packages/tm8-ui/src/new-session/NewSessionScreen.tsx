@@ -5,20 +5,18 @@ import {
   buildSpawnInput,
   canLaunch,
   type LaunchCapacity,
-  type LaunchConfig,
   type LaunchProject,
-  type LaunchProjectOption,
   type LaunchTeammate,
-  type WorkdirMode,
 } from '../domain/launch';
 import { createdIdOf, newEntityInput } from '../authoring';
 import { AlwaysDark, LiveTerminal, TerminalHost } from '../terminal';
 import type {
-  CommandResult, CreateEntityInput, EntityId, ExecutionSpawnInput, ProjectId, SpaceId,
+  CommandResult, CreateEntityInput, EntityId, ExecutionSpawnInput, SpaceId,
 } from '@tm8/contract';
 import type { TriggerOption } from '../rich-input';
 import type { FileUploadTask } from '../files/upload';
 import { NewSessionComposer } from './NewSessionComposer';
+import { useLaunchComposerState } from './useLaunchComposerState';
 import { canDeriveTitle, deriveTitle, promptBody } from './prompt-title';
 import './new-session.css';
 
@@ -121,49 +119,23 @@ export function NewSessionScreen({
   const [sessionId, setSessionId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
-  const [workdirMode, setWorkdirMode] = useState<WorkdirMode>('worktree');
   const inFlight = useRef(false);
 
-  const teammate = launch.teammates[0] ?? null;
-  /* The ONE conversion between the two project vocabularies — see the props
-     docblock. Done here so `canLaunch` and the target are built from the same
-     rows, and neither can be fed the wrong shape. */
-  const projectOptions = useMemo<readonly LaunchProjectOption[]>(
-    () => launch.projects
-      .filter((candidate) => !candidate.scratch)
-      .map((candidate) => ({
-        projectId: candidate.id as ProjectId,
-        name: candidate.name,
-        trusted: candidate.trusted,
-        ...(candidate.reason ? { untrustedReason: candidate.reason } : {}),
-      })),
-    [launch.projects],
-  );
-  const project = projectOptions.find((candidate) => candidate.trusted) ?? null;
+  const [customTitle, setCustomTitle] = useState('');
 
   /*
-   * The config the spawn will use. Rendered under the composer at all times —
-   * that visibility is what buys the single keystroke, per the ruling on
-   * `LaunchQuickConfig`'s "two clicks to launch, never one".
-   *
-   * `fullAccess` is the OWNER'S RULING, made against a recommendation of
-   * `acceptEdits`, and is recorded as a deliberate choice rather than a
-   * default nobody examined.
+   * THE COMPOSER'S CONFIG lives in `useLaunchComposerState`, shared verbatim
+   * with the Run popup (`LaunchComposerPopup`) so the two hosts of this card
+   * cannot drift into different spawn semantics. Seeds and their reasons are
+   * documented there; the one worth restating here: `accessMode: 'auto'`
+   * SUPERSEDES the earlier invisible-`fullAccess` ruling, because the posture
+   * is now a visible one-click control on the card — the viewer sees and owns
+   * the escalation instead of inheriting it.
    */
-  const config: LaunchConfig = useMemo(() => ({
-    teamMemberId: (teammate?.id ?? null) as EntityId | null,
-    agentToolId: teammate?.agentTool ?? null,
-    model: teammate?.model ?? null,
-    reasoningEffort: null,
-    accessMode: 'fullAccess',
-    mode: 'worker',
-    target: project ? { kind: 'project', projectId: project.projectId } : { kind: 'scratch' },
-    workdirMode,
-  }), [teammate, project, workdirMode]);
-
-  /* A scratch target has no checkout to branch from, so the workdir choice is
-     not a choice there — offered as disabled rather than silently ignored. */
-  const workdirChoosable = config.target.kind === 'project';
+  const { config, projectOptions, bind } = useLaunchComposerState({
+    teammates: launch.teammates,
+    projects: launch.projects,
+  });
 
   const refusal = useMemo(() => {
     if (commands === null) return 'This node cannot create tasks, so a session cannot be started here.';
@@ -173,7 +145,11 @@ export function NewSessionScreen({
     return null;
   }, [commands, config, projectOptions, launch.capacity, draft]);
 
-  const title = deriveTitle(draft);
+  /* The typed title wins; the derived one fills in. Both are visible in the
+     title field at all times (value vs placeholder), so the name a launch
+     commits is never a surprise. */
+  const derived = deriveTitle(draft);
+  const title = customTitle.trim() !== '' ? customTitle.trim() : derived;
   const ready = canDeriveTitle(draft) && refusal === null && commands !== null;
 
   /* The slow notice is time-based BECAUSE it is a statement about elapsed
@@ -262,18 +238,15 @@ export function NewSessionScreen({
           </p>
         </div>
         <NewSessionComposer
+          {...bind}
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={() => { void start(); }}
           busy={transitioning}
           refusal={error ?? refusal}
-          derivedTitle={title}
-          teammateLabel={teammate?.name ?? 'no teammate'}
-          modelLabel={teammate?.model ?? 'no model'}
-          accessModeLabel={config.accessMode ?? 'default access'}
-          workdirMode={workdirMode}
-          onWorkdirModeChange={setWorkdirMode}
-          workdirChoosable={workdirChoosable}
+          derivedTitle={derived}
+          title={customTitle}
+          onTitleChange={setCustomTitle}
           skillOptions={skillOptions}
           attach={attach}
           autoFocus

@@ -325,7 +325,7 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
   },
 
   /**
-   * `StartChatThreadInputSchema` refines the PAIRING of `workdirMode` and
+   * `StartChatInputSchema` refines the PAIRING of `workdirMode` and
    * `projectId`: `project` requires an id, `scratch` refuses one. `projectId`
    * is optional in the underlying shape, so the minimal walk omits it while
    * taking the first enum member (`project`) for the required mode — which is
@@ -336,10 +336,12 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
    * would be refused by the RPC's space-link check for a reason that has
    * nothing to do with the surface being swept.
    */
-  'chat.threads.start': {
+  'chat.start': {
     clientMutationId: 'w5-surface-sweep-cmid',
-    rootMessageId: ABSENT_ID,
+    spaceId: ABSENT_ID,
     teammateId: ABSENT_ID,
+    // 176: the opening turn rides the same command, so a body is required.
+    body: 'w5surface',
     // DELIBERATELY NOT A LAUNCHABLE MODEL. `model` is only `z.string().min(1)`
     // in the schema, so any string satisfies the gate — but the handler's FIRST
     // check is `launchModel(input.model)`, and `HANDLER_AUTHORED_400` in
@@ -398,6 +400,24 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
       }],
     },
   },
+  /**
+   * `ExecutionSessionsShareInputSchema` (187) refines the PAIR: both dials are
+   * optional in the shape, and the refinement rejects a body that names
+   * NEITHER — an omitted dial means "leave it alone", so `{}` is a no-op the
+   * command declines to accept rather than a valid request. The minimal walk
+   * omits every optional field and therefore produces exactly that body.
+   *
+   * `shareMode` is the dial named here, and `'none'` the value, because the
+   * sweep is measuring HANDLER REACH and nothing else: the operation is being
+   * called against ABSENT_ID, so whichever dial it names the RPC refuses at its
+   * first lookup. Naming the WATCH dial rather than the drive dial keeps the
+   * body the same shape as the one the UI sends.
+   */
+  'execution.sessions.share': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    shareMode: 'none',
+  },
+
   'artifacts.publish': {
     clientMutationId: 'w5-surface-sweep-cmid',
     expectedVersion: 1,

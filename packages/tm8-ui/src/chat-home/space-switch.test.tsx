@@ -46,7 +46,9 @@ const AGENT: ActorSummary = {
 function summary(rootId: string, title: string): ChatThreadSummary {
   return {
     rootId: rootId as EntityId,
-    anchorId: rootId as EntityId,
+    /* Wave 2 renamed `anchorId` and made it nullable: a chat with no subject
+       says so, instead of folding to its own id. These fixtures name none. */
+    aboutId: null,
     title,
     preview: title,
     updatedAt: '2026-08-21T09:00:00.000Z',
@@ -170,7 +172,7 @@ function rowTitles(container: HTMLElement): string[] {
 function deltaFor(rootId: string): ChatTurnFrame {
   return {
     type: 'chat.turn.delta',
-    threadRootId: rootId as EntityId,
+    chatId: rootId as EntityId,
     messageId: '019f0000-0000-7000-8000-0000000000f1' as EntityId,
     seq: 0,
     part: { kind: 'text', text: 'working' },

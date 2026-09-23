@@ -1,3 +1,4 @@
+import type { EffectiveSkills } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -27,10 +28,13 @@
  * because the leak happens AFTER the policy that filtered the event rows ran.
  * The projector never opens its own transaction and never holds a `Db`.
  */
+import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import {
   EntityKindSchema,
   plainExcerpt,
   type ActorSummary,
+  type ChatMode,
+  type ChatWorkdirMode,
   type CustomEntityKind,
   type EntityCounters,
   type EntityAttentionSummary,
@@ -139,9 +143,17 @@ const PRIORITIES =['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
+const TEAM_MEMBER_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 const IP_STATUSES = ['draft', 'active', 'retired'] as const;
 const WT_STATUSES = ['active', 'merged', 'abandoned', 'deleted'] as const;
+// containers (177). MIRRORS entity-read.ts — see the note on the join below.
+const CTR_STATUSES = ['requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed'] as const;
+const CTR_PROFILES = ['shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom'] as const;
+const CTR_ISOLATION = ['process', 'container', 'gvisor', 'microvm', 'vm'] as const;
+const CTR_SURFACES = ['terminal', 'screen', 'browser', 'adb', 'docker', 'http'] as const;
+const CTR_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 
 /**
  * Hydrates the entity-shaped payloads an event projection needs.
@@ -176,6 +188,8 @@ export interface EntityProjector {
 
 /** Row shape of the wide hydration join. Every kind-specific column is nullable. */
 interface SummaryRow {
+  skill_reference?: Record<string, unknown> | null;
+  equipped?: boolean;
   id: string;
   space_id: string;
   kind: string;
@@ -233,6 +247,8 @@ interface SummaryRow {
   tm_owner_member_id: string | null;
   tm_model: string | null;
   tm_agent_tool: string | null;
+  tm_mode: string | null;
+  tm_permission_mode: string | null;
   tm_default_profile_id: string | null;
   tm_avatar: string | null;
   ws_title: string | null;
@@ -240,11 +256,14 @@ interface SummaryRow {
   ws_agent_tool: string | null;
   ws_model: string | null;
   ws_share_mode: string | null;
+  /** 187. Optional so pre-187 row fixtures stay source-compatible. */
+  ws_drive_mode?: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
   ws_checkout_branch: string | null;
   ws_workdir_mode: string | null;
   ws_ended_kind: string | null;
+  ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
   file_name: string | null;
   file_mime_type: string | null;
@@ -286,10 +305,25 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  chat_title: string | null;
+  chat_teammate_id: string | null;
+  chat_model: string | null;
+  chat_provider: string | null;
+  chat_agent_tool: string | null;
+  chat_mode: string | null;
+  chat_workdir_mode: string | null;
+  chat_project_id: string | null;
+  chat_runtime_state: 'cold' | 'live' | 'stopped' | null;
+  chat_turn_state: 'idle' | 'queued' | 'running' | null;
+  chat_turn_count: number | null;
+  chat_last_turn_at: Date | string | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
   graph_edge_count: number | null;
+  drawing_title: string | null;
+  drawing_format: string | null;
+  drawing_element_count: number | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -300,6 +334,17 @@ interface SummaryRow {
   wt_base_ref: string | null;
   wt_base_commit_oid: string | null;
   wt_status: string | null;
+  ctr_title: string | null;
+  ctr_status: string | null;
+  ctr_profile: string | null;
+  ctr_provider: string | null;
+  ctr_isolation: string | null;
+  ctr_node_id: string | null;
+  ctr_surfaces: unknown;
+  ctr_lifecycle: Record<string, unknown> | null;
+  ctr_share_mode: string | null;
+  ctr_started_at: Date | string | null;
+  ctr_expires_at: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -353,6 +398,8 @@ select
   tm.owner_member_id as tm_owner_member_id,
   tm.model           as tm_model,
   tm.agent_tool      as tm_agent_tool,
+  tm.mode            as tm_mode,
+  tm.permission_mode as tm_permission_mode,
   dtp.dst_id         as tm_default_profile_id,
   tm.avatar          as tm_avatar,
   ws.title           as ws_title,
@@ -360,12 +407,14 @@ select
   ws.agent_tool      as ws_agent_tool,
   ws.model           as ws_model,
   ws.share_mode      as ws_share_mode,
+  ws.drive_mode      as ws_drive_mode,
   ws.started_at      as ws_started_at,
   ws.exited_at       as ws_exited_at,
   ws.checkout_branch as ws_checkout_branch,
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -384,6 +433,8 @@ select
   cm.committed_at    as commit_committed_at,
   sp.name            as spell_name,
   sp.description     as spell_description,
+  ${SKILL_REFERENCE_SQL} as skill_reference,
+  exists (select 1 from public.edges eq where eq.dst_id = e.id and eq.type = 'equips') as equipped,
   sk.name            as skill_name,
   sk.description     as skill_description,
   col.name           as collection_name,
@@ -411,15 +462,43 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  cht.title          as chat_title,
+  cht.teammate_id    as chat_teammate_id,
+  cht.model          as chat_model,
+  cht.provider       as chat_provider,
+  cht.agent_tool     as chat_agent_tool,
+  cht.chat_mode      as chat_mode,
+  cht.workdir_mode   as chat_workdir_mode,
+  cht.project_id     as chat_project_id,
+  cht.runtime_state  as chat_runtime_state,
+  chq.turn_state     as chat_turn_state,
+  chq.turn_count     as chat_turn_count,
+  chq.last_turn_at   as chat_last_turn_at,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
   coalesce(jsonb_array_length(gr.edges), 0) as graph_edge_count,
+  drw.title          as drawing_title,
+  drw.format         as drawing_format,
+  -- The element COUNT only: a scene is the largest payload any kind carries
+  -- and the event path must never move it. The elements are content.
+  coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
   wt.base_commit_oid as wt_base_commit_oid,
   wt.status          as wt_status,
+  ctr.title          as ctr_title,
+  ctr.status         as ctr_status,
+  ctr.profile        as ctr_profile,
+  ctr.provider       as ctr_provider,
+  ctr.isolation      as ctr_isolation,
+  ctr.node_id        as ctr_node_id,
+  ctr.surfaces       as ctr_surfaces,
+  ctr.lifecycle      as ctr_lifecycle,
+  ctr.share_mode     as ctr_share_mode,
+  ctr.started_at     as ctr_started_at,
+  ctr.expires_at     as ctr_expires_at,
   art.name           as artifact_name,
   art.description    as artifact_description,
   arev.revision_number as artifact_revision_number,
@@ -459,7 +538,28 @@ left join public.interaction_profile_versions profile_version
 left join public.memories memo       on memo.entity_id = e.id
 left join public.worktrees wt        on wt.entity_id = e.id
 left join public.loops lp            on lp.entity_id = e.id
+left join public.chats cht           on cht.entity_id = e.id
+left join lateral (
+  select
+    case
+      when count(*) filter (where t.state = 'running') > 0 then 'running'
+      when count(*) filter (where t.state = 'queued') > 0 then 'queued'
+      else 'idle'
+    end as turn_state,
+    count(*)::int as turn_count,
+    max(t.queued_at) as last_turn_at
+    from public.chat_turns t
+   where t.chat_id = cht.entity_id
+) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
+left join public.drawings drw         on drw.entity_id = e.id
+left join public.containers ctr      on ctr.entity_id = e.id
+-- No container_runtime_state join, and no runtime_ref / host_spec columns.
+-- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
+-- event at all (§15) -- joining the side table here would put a value on the
+-- event path that nothing ever refreshes it for. runtime_ref and host_spec
+-- stay server-side under R5, exactly as in entity-read.ts.
+-- (No backticks in here: this whole query is a JS template literal.)
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
@@ -935,6 +1035,16 @@ export class PgEntityProjector implements EntityProjector {
       case 'graph':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.graph_title ?? 'Graph';
+      case 'drawing':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.drawing_title ?? 'Drawing';
+      case 'chat':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
+        // the empty-string fallback (the column defaults to '').
+        return r.chat_title && r.chat_title.length > 0 ? r.chat_title : 'Chat';
+      case 'container':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.ctr_title ?? 'Container';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -971,6 +1081,8 @@ export class PgEntityProjector implements EntityProjector {
     if (r.kind === 'message' && r.msg_redacted_at !== null) return null;
     const source =
       r.kind === 'task' ? r.task_description
+      : r.kind === 'skill' ? r.skill_description
+      : r.kind === 'spell' ? r.spell_description
       : r.kind === 'doc' ? r.doc_body
       : r.kind === 'message' ? r.msg_body
       : r.kind === 'channel' ? r.channel_topic
@@ -978,6 +1090,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'artifact' ? r.artifact_description
       : r.kind === 'loop' ? r.loop_schedule
       : r.kind === 'graph' ? r.graph_type
+      : r.kind === 'drawing' ? r.drawing_format
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1099,14 +1212,25 @@ export class PgEntityProjector implements EntityProjector {
           // `null`, never omitted — same contract as the facade assembler:
           // absence MEANS "no default of its own", so it must be stated.
           defaultProfileId: r.tm_default_profile_id,
+          mode: (TEAM_MEMBER_MODES as readonly string[]).includes(r.tm_mode ?? '')
+            ? (r.tm_mode as (typeof TEAM_MEMBER_MODES)[number])
+            : null,
+          permissionMode: r.tm_permission_mode,
         };
       case 'work_session':
         return {
           kind: 'work_session',
+          ...(r.ws_skills ? { skills: r.ws_skills } : {}),
           status: oneOf(r.ws_status, WS_STATUSES, 'spawning'),
           agentTool: r.ws_agent_tool,
           model: r.ws_model,
           shareMode: oneOf(r.ws_share_mode, WS_SHARE_MODES, 'none'),
+          // 187 — MIRRORS entity-read.ts stateOf: spread, not defaulted,
+          // because absence means "too old to know" and the DTO reads
+          // that as `owner`. `oneOf` would substitute a claim here.
+          ...(r.ws_drive_mode === 'owner' || r.ws_drive_mode === 'space'
+            ? { driveMode: r.ws_drive_mode }
+            : {}),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
@@ -1156,15 +1280,9 @@ export class PgEntityProjector implements EntityProjector {
           committedAt: iso(r.commit_committed_at),
         };
       case 'spell':
-      case 'skill': {
-        const description = r.kind === 'spell' ? r.spell_description : r.skill_description;
-        // `equipped` is relative to a context (a task/persona equips a spell via
-        // an `equips` edge); an event has no such context. False is the honest
-        // default for "not equipped in any context I was told about".
-        return description === null
-          ? { kind: r.kind, equipped: false }
-          : { kind: r.kind, description, equipped: false };
-      }
+        return { kind: 'spell', description: r.spell_description ?? undefined, equipped: r.equipped === true };
+      case 'skill':
+        return { kind: 'skill', description: r.skill_description ?? undefined, equipped: r.equipped === true, ...skillReferenceOf(r.skill_reference), changedOnDisk: false };
       case 'collection':
         return {
           kind: 'collection',
@@ -1238,6 +1356,58 @@ export class PgEntityProjector implements EntityProjector {
           nodeCount: r.graph_node_count ?? 0,
           edgeCount: r.graph_edge_count ?? 0,
         };
+      case 'drawing':
+        // MIRRORS entity-read.ts stateOf: which canvas format and how big —
+        // the elements themselves are content, never summary state.
+        return {
+          kind: 'drawing',
+          format: r.drawing_format ?? 'excalidraw',
+          elementCount: r.drawing_element_count ?? 0,
+        };
+      case 'chat':
+        // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
+        // a chat tile hydrated from the event feed and one fetched over
+        // entities.get must carry the same facts under the same names, or the
+        // tile changes shape depending on which door answered.
+        return {
+          kind: 'chat',
+          teammateId: r.chat_teammate_id ?? '',
+          model: r.chat_model ?? '',
+          provider: r.chat_provider ?? '',
+          agentTool: r.chat_agent_tool ?? '',
+          mode: (r.chat_mode ?? 'ask') as ChatMode,
+          workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
+          projectId: r.chat_project_id,
+          runtimeState: r.chat_runtime_state ?? 'cold',
+          turnState: r.chat_turn_state ?? 'idle',
+          turnCount: Number(r.chat_turn_count ?? 0),
+          lastTurnAt: iso(r.chat_last_turn_at),
+        };
+      case 'container': {
+        // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field
+        // that differs between the boot read and the event is drift a client
+        // sees as a value that changes for no reason on the next poll.
+        const surfaces = Array.isArray(r.ctr_surfaces)
+          ? r.ctr_surfaces.filter((k): k is typeof CTR_SURFACES[number] =>
+            (CTR_SURFACES as readonly string[]).includes(k as string))
+          : [];
+        const lifecycle = r.ctr_lifecycle ?? {};
+        return {
+          kind: 'container',
+          status: oneOf(r.ctr_status, CTR_STATUSES, 'failed'),
+          profile: oneOf(r.ctr_profile, CTR_PROFILES, 'custom'),
+          provider: r.ctr_provider ?? '',
+          // `process` is the WEAKEST class: an unknown value must degrade to
+          // claiming the LEAST isolation, never the most.
+          isolation: oneOf(r.ctr_isolation, CTR_ISOLATION, 'process'),
+          nodeId: r.ctr_node_id ?? '',
+          surfaces,
+          ephemeral: lifecycle.ephemeral !== false,
+          shareMode: oneOf(r.ctr_share_mode, CTR_SHARE_MODES, 'none'),
+          startedAt: iso(r.ctr_started_at),
+          expiresAt: iso(r.ctr_expires_at),
+        };
+      }
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately
         // not on the event path either. MIRRORS entity-read.ts stateOf.

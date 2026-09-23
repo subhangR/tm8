@@ -226,18 +226,23 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. All five surfaces are unconditional now: the last
+    // it its behaviour. All six surfaces are unconditional now: the last
     // gated one was Chat, and the gate retired with the name.
     //
     // READ AS ACCESSIBLE NAMES, NOT AS TEXT, because in the bar these chips are
     // MARKS: the labels were what made `.pn-panelbar__end` wide enough to scroll
     // the panel's own tabs off their edge. The name is the point of the
-    // assertion either way — a mark that dropped the word would be five
+    // assertion either way — a mark that dropped the word would be six
     // anonymous glyphs, which is the trade this change explicitly did not make.
     const tabEls = [...surfaceSwitch.querySelectorAll('[role="tab"]')];
     expect(tabEls.map((t) => t.getAttribute('aria-label'))).toEqual([
       'Terminal',
       'Transcript',
+      // Changes (Phase 1): the review surface. It sits between Transcript
+      // and Git because that is its slot in WorkSessionContent's surface
+      // list, not an alphabetical accident — the order here is RENDER
+      // order. PHONE_SURFACES is untouched, so the phone still shows two.
+      'Changes',
       'Git',
       'Debug',
       'Graph',
@@ -245,7 +250,7 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     // And they really are marks — otherwise this test would keep passing on the
     // labelled arrangement that caused the crowding.
     expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
-    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '']);
+    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -991,7 +996,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Nothing selected: exactly the trigger + the sort chip.
     expect(chips).toHaveLength(2);
     expect(chips.length).toBeLessThan(optionCount);
-    expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
+    /* Sentence case, and the caret is its own muted glyph rather than an
+       ASCII character inside the label. The BOUND is what this test holds:
+       one trigger, never one chip per option. */
+    expect(getByTestId('filter-trigger').textContent).toBe('Filter▾');
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {
@@ -1691,7 +1699,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(
       within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
     );
-    expect(view.getByTestId('launch-quick-config').textContent).toContain(task.title);
+    // The subject's name is the title field's VALUE now (not chrome text).
+    expect((view.getByTestId('nsx-title') as HTMLInputElement).value).toBe(task.title);
 
     // The SAME instance, a different entity — exactly what a Back press does.
     view.rerender(
@@ -1762,13 +1771,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    expect(view.getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+    expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Coordinate configuration');
 
     // Switch verbs WITHOUT closing the card — two clicks, no navigation.
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
-    expect(view.getByTestId('launch-heading').textContent).toBe('Run configuration');
+    expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Run configuration');
 
-    fireEvent.click(view.getByTestId('launch-commit'));
+    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     // The payload must agree with the button that was actually pressed.
     expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
@@ -1788,7 +1797,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    fireEvent.click(view.getByTestId('launch-commit'));
+    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });
@@ -2372,119 +2381,126 @@ describe('file-preview renders the real image', () => {
 });
 
 /**
- * THE ATTENTION SECTION LANDS IN EXACTLY ONE PLACE PER KIND.
+ * THE ATTENTION DOCK LANDS IN EXACTLY ONE PLACE — THE SAME ONE, FOR EVERYTHING.
  *
- * The mount rule has two halves and they are complements of each other: the
- * Content body for every archetype that can host an inline section, and the
- * Connections tab for the two that cannot — terminal (a live PTY owning its
- * full height) and `composition: 'chat'` (a body that ends at its composer).
- * Those are the same two exclusions the attachment strip carries, but the strip
- * simply DROPS them; this section relocates them, because work sessions are
- * among the most-escalated entities in a space and CLI-only history for them
- * was not acceptable (user ruling 2026-08-16).
+ * This used to assert a two-halved rule: the Content body for every archetype
+ * that could host an inline section, and the Connections tab for the two that
+ * could not — terminal (a live PTY owning its full height) and a declared
+ * `composition` (a body that ends at its composer, or an artifact frame that
+ * fills the panel). The relocation existed because work sessions are among the
+ * most-escalated entities in a space and CLI-only history for them was not
+ * acceptable (user ruling 2026-08-16).
  *
- * THE OVERFLOW HALF MOVED from the Activity tab to Connections when Activity
- * was removed (user ruling 2026-08-19). These assertions are what proved the
- * removal did not quietly take session attention history with it.
+ * THE COLLAPSE REMOVED THE CONSTRAINT (user ruling 2026-09-07). A four-card
+ * section is what a body owning its own height could not spare; a one-line dock
+ * is not, so the section became panel chrome below the scroll host and the
+ * second home was deleted. What is asserted now is stronger and simpler: ONE
+ * mount, for EVERY kind, on EVERY tab.
  *
- * Both halves are asserted here, in both directions, because the failure mode
- * of a two-place rule is a kind that renders it TWICE — which no single
- * assertion about presence can catch.
+ * THE "NEVER TWICE" ASSERTION IS KEPT even though there is only one mount left,
+ * because it is not testing the old split — it is testing that reintroducing a
+ * body-level mount alongside this one fails the build. That is the exact defect
+ * the two-place rule shipped with the risk of, and it costs one render to keep
+ * a guard against it.
  */
-describe('EntityDetailPanel — the attention section has exactly one home per kind', () => {
+describe('EntityDetailPanel — the attention dock has one home for every kind', () => {
   const SECTION = <div data-testid="attention-section-probe" />;
 
-  /** Every kind with a live fixture, split by which half of the rule it takes. */
-  function kindsBy(relocated: boolean) {
+  /** Every kind with a live, undeleted fixture. */
+  function livingKinds() {
     return allKinds()
       .map((config) => ({
         config,
         detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
       }))
-      .filter((r) => r.detail != null)
-      .filter((r) => {
-        /* The EXACT predicate the panel uses, and it reads `composition` by
-           PRESENCE for the same reason the panel does: a body that declares one
-           owns its own bottom edge, whichever way it owns it. Today that is
-           'chat' (ends at its composer) and 'frame' (an artifact viewport). */
-        const overflow =
-          r.config.panel.archetype === 'terminal' || r.config.panel.composition != null;
-        return overflow === relocated;
-      });
+      .filter((r) => r.detail != null);
   }
 
-  it('mounts in the CONTENT body for every kind that can host it inline', () => {
-    const covered = kindsBy(false);
-    // Guards against a vacuous pass if the registry or the fixture set moves.
-    expect(covered.length).toBeGreaterThan(8);
+  /** The two that used to be exiled to Connections, named by the panel's own predicate. */
+  function ownsItsBottom(config: ReturnType<typeof allKinds>[number]) {
+    return config.panel.archetype === 'terminal' || config.panel.composition != null;
+  }
 
-    for (const { config, detail } of covered) {
-      const { getByTestId, unmount } = render(
-        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
-      );
-      const panel = getByTestId('entity-detail-panel');
-      expect(
-        within(panel).queryAllByTestId('attention-section-probe'),
-        `${config.kind} did not mount the attention section on its content body exactly once`,
-      ).toHaveLength(1);
-      unmount();
-    }
-  });
+  it.each(['content', 'connections', 'discussion'] as const)(
+    'mounts the dock exactly once for every kind on the %s tab',
+    (tab) => {
+      const covered = livingKinds();
+      // Guards against a vacuous pass if the registry or the fixture set moves.
+      expect(covered.length).toBeGreaterThan(8);
 
-  it('mounts on the CONNECTIONS tab — and NOT in the content body — for every body that owns its bottom edge', () => {
-    const relocated = kindsBy(true);
+      for (const { config, detail } of covered) {
+        const { getByTestId, unmount } = render(
+          <EntityDetailPanel
+            detail={detail!}
+            reasons={REASONS}
+            ctx={ctx}
+            attentionSection={SECTION}
+            activeTab={tab}
+          />,
+        );
+        expect(
+          within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+          `${config.kind} does not mount the attention dock exactly once on the ${tab} tab`,
+        ).toHaveLength(1);
+        unmount();
+      }
+    },
+  );
+
+  it('gives the dock to the bodies that own their own bottom edge — the exile is over', () => {
+    const relocated = livingKinds().filter((r) => ownsItsBottom(r.config));
     // work_session (terminal), channel/voice_channel (chat), artifact (frame).
     expect(relocated.length).toBeGreaterThan(0);
 
     for (const { config, detail } of relocated) {
-      const content = render(
+      const { getByTestId, unmount } = render(
         <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
       );
       expect(
-        within(content.getByTestId('entity-detail-panel')).queryByTestId('attention-section-probe'),
-        `${config.kind} put the attention section inline, under a body that owns its own height`,
-      ).toBeNull();
-      content.unmount();
-
-      const connections = render(
-        <EntityDetailPanel
-          detail={detail!}
-          reasons={REASONS}
-          ctx={ctx}
-          attentionSection={SECTION}
-          activeTab="connections"
-        />,
-      );
-      expect(
-        within(connections.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-        `${config.kind} lost its attention history entirely — it is in neither place`,
-      ).toHaveLength(1);
-      connections.unmount();
-    }
-  });
-
-  it('never renders TWICE: a kind that takes the inline mount does not also get the overflow one', () => {
-    for (const { config, detail } of kindsBy(false)) {
-      const { getByTestId, unmount } = render(
-        <EntityDetailPanel
-          detail={detail!}
-          reasons={REASONS}
-          ctx={ctx}
-          attentionSection={SECTION}
-          activeTab="connections"
-        />,
-      );
-      expect(
         within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-        `${config.kind} renders the attention section on BOTH the content body and the connections tab`,
-      ).toHaveLength(0);
+        `${config.kind} lost its attention history — it used to have a Connections-tab home ` +
+          `and the dock was supposed to replace it in place`,
+      ).toHaveLength(1);
       unmount();
     }
   });
 
-  it('an unwired host renders nothing at all — no empty box on every entity in the product', () => {
+  it('never renders TWICE — a body-level mount must not come back alongside the chrome one', () => {
+    for (const { config, detail } of livingKinds()) {
+      for (const tab of ['content', 'connections'] as const) {
+        const { getByTestId, unmount } = render(
+          <EntityDetailPanel
+            detail={detail!}
+            reasons={REASONS}
+            ctx={ctx}
+            attentionSection={SECTION}
+            activeTab={tab}
+          />,
+        );
+        expect(
+          within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+          `${config.kind} renders the attention dock more than once on the ${tab} tab`,
+        ).toHaveLength(1);
+        unmount();
+      }
+    }
+  });
+
+  it('a TOMBSTONE gets no dock — there is nothing left to escalate about a deleted entity', () => {
+    // SYNTHESISED, because the fixture set carries no deleted entity — the
+    // panel reads `detail.deletedAt` and nothing else, so stamping a living
+    // fixture is the same input it would get from a real tombstone.
+    const dead = { ...livingKinds()[0]!.detail!, deletedAt: '2026-09-01T00:00:00.000Z' };
     const { getByTestId, queryByTestId } = render(
-      <EntityDetailPanel detail={kindsBy(false)[0]!.detail!} reasons={REASONS} ctx={ctx} />,
+      <EntityDetailPanel detail={dead} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attention-section-probe')).toBeNull();
+  });
+
+  it('an unwired host renders nothing at all — no empty strip on every entity in the product', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={livingKinds()[0]!.detail!} reasons={REASONS} ctx={ctx} />,
     );
     expect(getByTestId('entity-detail-panel')).toBeTruthy();
     expect(queryByTestId('attention-section-probe')).toBeNull();

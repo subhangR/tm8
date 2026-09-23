@@ -71,10 +71,18 @@
   flex: 1;
 }
 
+/* ONE BADGE SHAPE ACROSS SUBTREE, GIT AND LINKED. A bare right-aligned digit
+   against an otherwise empty row read as a rendering fault rather than a fact;
+   a pill reads as a count. (A literal `0` is not drawn at all — see the
+   `count` prop's note.) */
 .cv2-root .pn-fold__count {
   flex: none;
   color: var(--pn-ink-3);
   font-weight: 500;
+  background: var(--pn-hover);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* No box around content — the fold body is plain flow, air supplied by gap. */

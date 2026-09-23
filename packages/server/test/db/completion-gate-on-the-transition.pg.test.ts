@@ -188,7 +188,7 @@ async function createTask(
 ): Promise<string> {
   const rows = await asApp((q) =>
     q(
-      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium',$4::jsonb,null,null,null,'attached_to',$5) result`,
+      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium',$4::jsonb,null,null,null,null,'attached_to',$5) result`,
       [
         fixture.spaceId,
         title,

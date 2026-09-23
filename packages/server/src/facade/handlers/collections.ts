@@ -329,6 +329,23 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
 
+  // Memory text (the MCP `memory_search` tool): rows whose statement,
+  // mechanism, subject scope or does-not-establish text contains ANY of the
+  // terms, case-insensitively. Kind-narrowing like `status` — the four
+  // columns live on the memory arm — said explicitly as `memo.entity_id is
+  // not null` so the planner discards every other kind before it lowercases
+  // anything. `position`, not LIKE: raw substring semantics with nothing to
+  // escape, the same `includes` the tool used to run over a 200-char
+  // title/excerpt prefix, moved to the columns that prefix could not reach.
+  if (f.terms && f.terms.length > 0) {
+    where.push('memo.entity_id is not null');
+    where.push(`exists (
+      select 1 from unnest(${p.add(f.terms)}::text[]) term
+       where position(lower(term) in lower(concat_ws(' ',
+               memo.statement, memo.mechanism, memo.subject_scope, memo.does_not_establish))) > 0
+    )`);
+  }
+
   // A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, architect Ruling 16) and the
   // rule belongs HERE, not only in the client.
   //
@@ -395,6 +412,9 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`e.activity_at >= ${p.add(f.activeSince)}::timestamptz`);
   }
 
+  for (const [key, column] of [['skillProvider', 'provider'], ['skillLevel', 'level'], ['skillRoot', 'root_ref'], ['skillMissing', 'missing']] as const) {
+    if (f[key] !== undefined) where.push(`exists(select 1 from public.skills sf where sf.entity_id = e.id and sf.${column} = ${p.add(f[key])})`);
+  }
   if (f.readyToPull) {
     // Phase 5 (152): the category, not the two literals it used to enumerate.
     // `open` and `pulled` were exactly the `to_do` literals, so this is the same

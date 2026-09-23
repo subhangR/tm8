@@ -12,6 +12,10 @@ import { defineConfig } from 'vite';
  * Used by deploy/prod/run-ui.sh. It lives in the repo (not only inside the
  * deployed directory) so a snapshot of the tree actually carries it — the UI
  * supervisor crash-loops on "Could not resolve vite.preview.config.ts" without it.
+ *
+ * It moved here from the Astryx redesign package on 2026-09-03, when this
+ * package became the product UI again; that package was deleted on 2026-09-15
+ * and this is now the only bundle prod serves.
  */
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:7778';
 const port = Number(process.env.TM8_UI_PORT ?? 7777);

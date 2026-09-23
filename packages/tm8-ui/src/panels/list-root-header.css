@@ -61,6 +61,46 @@
 }
 .tch-rootcell__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tch-rootcell--kind .tch-rootcell__label { flex: 1; }
+/* THE CREATE ACTION IS THE ONE THING A USER COMES TO THIS BAR TO DO, and it
+   was the only control on it with no label and no weight: a bare ＋ beside a
+   17×25.8px caret — 438px², under a quarter of the 44px touch floor — with no
+   divider between them. A mis-tap on the caret therefore CREATED AN ENTITY
+   when it meant to open a list, which is the worst possible failure for this
+   pair.
+
+   The two halves now read as one control with two parts: filled, carrying its
+   word, with the divider INSIDE the button. The caret keeps the same
+   accessible name (`home-roots.test.tsx` and `gate.test.tsx` navigate by it)
+   and gains `aria-haspopup` and a title, which it never had. */
+.tch-rootcell--active .tch-rootcell__plus,
+.tch-rootcell--active .tch-rootcell__caret {
+  background: var(--pn-brand);
+  color: var(--pn-card);
+}
+.tch-rootcell--active .tch-rootcell__plus {
+  border-radius: var(--pn-r-xs) 0 0 var(--pn-r-xs);
+  padding: 4px 9px 4px 10px;
+  font-weight: 600;
+  gap: 4px;
+}
+.tch-rootcell--active .tch-rootcell__caret {
+  border-radius: 0 var(--pn-r-xs) var(--pn-r-xs) 0;
+  padding: 4px 8px;
+  /* The divider lives inside the button, so the pair reads as one control
+     rather than two loose glyphs — and the caret finally has a real target. */
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
+}
+.tch-rootcell--active .tch-rootcell__plus:hover,
+.tch-rootcell--active .tch-rootcell__caret:hover {
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+}
+/* The word only rides the ACTIVE cell: an inactive root is a destination, not
+   a place you create into, and labelling both would put two `New` buttons in a
+   210px bar. */
+.tch-rootcell__plusword { display: none; }
+.tch-rootcell--active .tch-rootcell__plusword { display: inline; }
+
 .tch-rootcell__plus,
 .tch-rootcell__caret {
   flex: none;
@@ -69,6 +109,10 @@
 .tch-rootcell__plus[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.tch-rootcell--active .tch-rootcell__plus[aria-disabled='true'] {
+  background: var(--pn-line-2);
+  color: var(--pn-ink-4);
 }
 .tch-rootcell__label:hover,
 .tch-rootcell__plus:hover,

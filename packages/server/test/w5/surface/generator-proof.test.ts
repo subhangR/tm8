@@ -146,6 +146,9 @@ describe('W5.C generator proof', () => {
       'execution.terminate',
       'files.uploadAbort',
       'projects.update',
+      // 2026-09-23: skills.scan — every field optional; a bare {} scans the
+      // Space's authorized roots.
+      'skills.scan',
       'spaces.update',
       'tracking.refresh',
       // 2026-07-31: voice.token.create's whole input is the optional command
@@ -193,6 +196,26 @@ describe('W5.C generator proof', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
     // RequiredCommandContextSchema binds .delete; .list is a READ and binds
     // nothing, so three new ops move this by two.
-    expect(ENTRIES).toHaveLength(99);
+    // +19 (177): the container family has twenty commands and nineteen bind.
+    // `containers.files.put` carries a TAR STREAM, not JSON, so a strict object
+    // schema would refuse every legitimate upload — it is enumerated in
+    // UNBOUND_COMMAND_OPERATIONS instead. The family's five reads bind nothing,
+    // as reads do. MEASURED.
+    // +1 (187): ExecutionSessionsShareInputSchema binds
+    // execution.sessions.share. It is a COMMAND with a JSON body, so it binds
+    // like every other command and is NOT in UNBOUND_COMMAND_OPERATIONS —
+    // the refinement that rejects an empty body is a constraint inside the
+    // schema, not a reason to have none. MEASURED.
+    // +1 (2026-09-19, Changes screen Phase 1): `execution.gitStage` binds its
+    // command body. A path-scoped stage takes a real input DTO — the worktree
+    // and the pathspecs — so it binds the way every other execution.git*
+    // command does, and lands in ENTRIES rather than in
+    // UNBOUND_COMMAND_OPERATIONS. MEASURED from this assertion's own failing
+    // run (`expected ... length of 118 but got 119`), never hand-derived.
+    // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
+    expect(ENTRIES).toHaveLength(125);
   });
 });

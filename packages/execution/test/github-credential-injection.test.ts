@@ -181,7 +181,12 @@ describe('member GitHub credential injection', () => {
     expect(result.manifest.launch.credentialSources).toEqual({
       anthropic: 'node',
       openai: null,
+      gemini: null,
+      hermes: null,
+      cursor: null,
       github: 'member',
+      kimi: null,
+      groq: null,
     });
   });
 

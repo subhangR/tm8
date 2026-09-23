@@ -23,6 +23,7 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import {
+  type ContainerProfile,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -72,6 +73,7 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
+  type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
   type FeedItem,
   type FileUploadGrant,
@@ -106,15 +108,19 @@ import {
   type ExecutionGitMergeInput,
   type ExecutionGitCherryPickInput,
   type ExecutionGitBranchInput,
+  type ExecutionGitStageInput,
   type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
   type SessionGitDiff,
+  type SessionGitDiffHunk,
+  type SessionGitDiffScope,
   type SessionGitFile,
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
   type SessionGitBranchResult,
+  type SessionGitStageResult,
   type SessionGitStashResult,
   type SessionGitStashEntry,
   type SessionGitRollbackResult,
@@ -178,6 +184,10 @@ const FIXTURE_FILE_CHANGES = {
         { tool: 'edit' as const, linesAdded: 5, linesRemoved: 1, oldText: 'const RETRY = 1;', newText: 'const RETRY = 3; // measured' },
       ],
       hunksTruncated: false,
+      // The agent's most recent turn touched the source but not the test —
+      // the fixture carries BOTH values so a surface that ignores the flag
+      // renders identically to one that reads it, and only a test can tell.
+      lastTurn: true,
     },
     {
       path: 'packages/execution/test/spawn-loop.test.ts',
@@ -188,12 +198,14 @@ const FIXTURE_FILE_CHANGES = {
         { tool: 'write' as const, linesAdded: 22, linesRemoved: 0, oldText: null, newText: null },
       ],
       hunksTruncated: true,
+      lastTurn: false,
     },
   ],
   totalAdded: 36,
   totalRemoved: 3,
   filesTruncated: false,
   source: 'transcript' as const,
+  turns: 4,
 };
 
 /**
@@ -664,11 +676,97 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'graph', graphType: state.graphType,
         nodes: [], edges: [], layout: {}, source: null,
       };
+    case 'container':
+      /*
+       * CLOSED like loop's and graph's — produce a whole one.
+       *
+       * `surfaceDetail` is a `Partial<Record<…>>` and every key may be absent;
+       * the fixture leaves the non-terminal ones out deliberately, so a body
+       * that reads `surfaceDetail.screen` without guarding fails HERE, in a
+       * jsdom test, rather than on a real container that simply has no screen.
+       *
+       * NO `runtimeRef`, AND THERE IS NOWHERE TO PUT ONE. Design ruling R5:
+       * `internal.command_entity` embeds `entity_content` in the command
+       * result a client receives, so a native runtime id in this arm would
+       * reach every client. `ContainerSpec.mounts` is the READ flavour for the
+       * same reason — `{ guest, ro }`, no host path. A mount cannot be
+       * round-tripped, so no fixture may pretend one can.
+       */
+      return {
+        kind: 'container',
+        image: FIXTURE_CONTAINER_IMAGE[state.profile],
+        spec: {
+          profile: state.profile,
+          image: FIXTURE_CONTAINER_IMAGE[state.profile],
+          cpus: 2,
+          memMiB: 4096,
+          diskMiB: 20480,
+          mounts: [{ guest: '/workspace', ro: false }],
+          env: { TM8_SPACE: 'fixture' },
+          ports: [],
+          network: { preset: 'balanced', allow: ['github.com'] },
+          surfaces: { terminal: { enabled: true } },
+          // Always carries tm8.container and tm8.space (§4.1's ContainerSpec).
+          labels: { 'tm8.container': 'ctr-fixture', 'tm8.space': 'space-fixture' },
+        },
+        lifecycle: {
+          ephemeral: state.ephemeral,
+          ttlSeconds: null,
+          idleHibernateSeconds: null,
+          graceSeconds: 600,
+          snapshotOnStop: false,
+        },
+        surfaceDetail: { terminal: { live: state.status === 'running' } },
+        error: state.status === 'failed' ? 'the provider refused: no image for profile' : null,
+        usage: state.status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
+        exposed: [],
+      };
+    case 'drawing':
+      // A small, real scene: two rectangles and nothing else. The fixture
+      // carries actual Excalidraw members rather than `[]` so a panel that
+      // mounts the canvas has something to draw, and so a fixture-backed test
+      // exercises the same shape the server returns.
+      return {
+        kind: 'drawing',
+        format: 'excalidraw',
+        elements: [
+          {
+            id: 'fixture-rect-a', type: 'rectangle', x: 40, y: 40, width: 160, height: 90,
+            angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+            fillStyle: 'solid', strokeWidth: 2, roughness: 1, opacity: 100,
+            seed: 1, version: 1, versionNonce: 1, isDeleted: false,
+          },
+          {
+            id: 'fixture-rect-b', type: 'rectangle', x: 260, y: 40, width: 160, height: 90,
+            angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent',
+            fillStyle: 'solid', strokeWidth: 2, roughness: 1, opacity: 100,
+            seed: 2, version: 1, versionNonce: 2, isDeleted: false,
+          },
+        ],
+        appState: { viewBackgroundColor: '#ffffff' },
+        // Always empty in phase 1: the doors refuse a non-empty files map.
+        files: {},
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
   }
 }
+
+/**
+ * The default image per profile (§9). Total over `ContainerProfile`, so a
+ * profile added to the contract without a fixture image fails the build here
+ * rather than rendering `undefined` in the panel's spec summary.
+ */
+const FIXTURE_CONTAINER_IMAGE: Readonly<Record<ContainerProfile, string>> = {
+  shell: 'ghcr.io/tm8/shell:1',
+  desktop: 'ghcr.io/tm8/desktop:1',
+  browser: 'ghcr.io/tm8/browser:1',
+  android: 'ghcr.io/tm8/android:1',
+  ios: 'ghcr.io/tm8/ios:1',
+  dind: 'ghcr.io/tm8/dind:1',
+  custom: 'ghcr.io/tm8/shell:1',
+};
 
 /** Minimal HTML escaping for fixture titles landing inside the demo page. */
 function escapeHtml(text: string): string {
@@ -1044,9 +1142,15 @@ export function createFixtureSeam(): FixtureSeam {
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
 
   /**
-   * The three providers, drawn so that ALL THREE honest-degradation states are
-   * on screen at once and a screen cannot pass by collapsing two of them.
-   * Mutable, because `disconnect` writes to it.
+   * Every declared provider, drawn so that each honest-degradation state is on
+   * screen and a surface cannot pass by collapsing two of them. Mutable,
+   * because `disconnect` writes to it.
+   *
+   * The routing pair is scripted too, and in the shape that is hardest to get
+   * right: kimi CONNECTED (so anthropic is simultaneously connected and
+   * displaced — a card that must say both) and groq NOT connected (so its card
+   * must still describe what connecting it would do). A surface that only
+   * renders routing when `connected` is true fails on the second one.
    */
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -1059,6 +1163,12 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'active',
         connectedAt: FIXTURE_NOW,
         lastVerifiedAt: FIXTURE_NOW,
+        routing: {
+          agentTool: 'claude-code',
+          role: 'displaced',
+          counterpart: 'kimi',
+          active: true,
+        },
       },
       // The one true negative — so "not connected" has something real to mean.
       {
@@ -1069,6 +1179,7 @@ export function createFixtureSeam(): FixtureSeam {
         status: null,
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
       },
       // `connected: false` here is UNKNOWN, not measured — see gitCredentialStore.
       {
@@ -1079,6 +1190,75 @@ export function createFixtureSeam(): FixtureSeam {
         status: null,
         connectedAt: null,
         lastVerifiedAt: null,
+        routing: null,
+      },
+      // Binary present, but no connection result could be established.
+      {
+        provider: 'gemini',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: 'stale',
+        connectedAt: null,
+        lastVerifiedAt: null,
+        routing: null,
+      },
+      // A successful node-level measurement: this binary is absent.
+      {
+        provider: 'hermes',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: 'unavailable',
+        connectedAt: null,
+        lastVerifiedAt: null,
+        routing: null,
+      },
+      // Cursor has a real status verb: this is a positive probe, not a guess
+      // from the presence of files or the login terminal's exit code.
+      {
+        provider: 'cursor',
+        connected: true,
+        login: null,
+        authMethod: null,
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
+        routing: null,
+      },
+      // An API-key backend that IS in effect. Its `login` is null like every
+      // other file-shaped provider: a pasted key carries no account name.
+      {
+        provider: 'kimi',
+        connected: true,
+        login: null,
+        authMethod: 'api_key',
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
+        routing: {
+          agentTool: 'claude-code',
+          role: 'backend',
+          counterpart: 'anthropic',
+          active: true,
+        },
+      },
+      // Not connected, and still routing-bearing: `active: false` is the
+      // "here is what Connect would do" case.
+      {
+        provider: 'groq',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+        routing: {
+          agentTool: 'codex',
+          role: 'backend',
+          counterpart: 'openai',
+          active: false,
+        },
       },
     ],
     // 'absent' is the fixture's default deliberately: it is the state of the
@@ -1166,8 +1346,97 @@ export function createFixtureSeam(): FixtureSeam {
           filesTruncated: false,
           diff: '',
           diffTruncated: false,
+          scope: 'session' as const,
+          path: null,
+          hunks: null,
+          hunkDigest: null,
+          untracked: false,
         };
   };
+  /**
+   * The fixture's model of the INDEX, and the only thing that makes stage and
+   * unstage provable without a git process: the XY status IS the state, so
+   * moving a file between staged and unstaged is a character swap. `??` ⇄ `A `
+   * because staging an untracked file is what makes git start tracking it.
+   */
+  const fxStagePath = (status: string): string =>
+    status === '??' ? 'A ' : `${status[1] === ' ' ? (status[0] ?? 'M') : (status[1] ?? 'M')} `;
+  const fxUnstagePath = (status: string): string =>
+    status[0] === 'A' ? '??' : ` ${status[0] === ' ' ? (status[1] ?? 'M') : (status[0] ?? 'M')}`;
+  const fxIsStaged = (f: SessionGitFile): boolean =>
+    f.status !== '??' && f.status[0] !== ' ' && f.status[0] !== '?';
+  // Untracked is NOT unstaged: `git diff` (the unstaged comparison) does not
+  // see a file git has never been told about. The counts and the scope filter
+  // both have to agree with git or the surface teaches the wrong model.
+  const fxIsUnstaged = (f: SessionGitFile): boolean =>
+    f.status !== '??' && f.status[1] !== ' ' && f.status[1] !== '?';
+  /** SAMPLE_DIFF sliced to ONE file, the way a path-scoped server diff answers. */
+  const fxFileDiff = (path: string): string => {
+    const blocks = SAMPLE_DIFF.split(/^diff --git /m).filter((b) => b.trim() !== '');
+    const hit = blocks.find((b) => b.split('\n')[0]?.endsWith(`b/${path}`));
+    if (hit !== undefined) return `diff --git ${hit}`;
+    // Untracked: no recorded state to compare against, so the whole file reads
+    // as an addition — exactly what `git diff --no-index -- /dev/null <path>`
+    // emits, and what the server answers for this case.
+    return [
+      `diff --git a/${path} b/${path}`,
+      'new file mode 100644',
+      'index 0000000..1111111',
+      '--- /dev/null',
+      `+++ b/${path}`,
+      '@@ -0,0 +1,2 @@',
+      '+scratch notes',
+      '+not yet tracked',
+      '',
+    ].join('\n');
+  };
+  /**
+   * The fixture's hunk listing, obeying the SAME four refusals the server
+   * does — no `path`, the `session` scope, a truncated diff, and an untracked
+   * file all answer null.
+   *
+   * Mirroring the refusals is the point, not the parsing. A fixture that
+   * cheerfully offered hunks for the session scope would let the Changes
+   * surface wire a selection the real server rejects, and every test would
+   * pass on the way to a feature that fails the first time it runs.
+   *
+   * The digest is a cheap deterministic hash, not sha256: the fixture never
+   * has to AGREE with the server's digest, only to change when the hunks do.
+   */
+  const fxHunks = (
+    diff: string,
+    scope: SessionGitDiffScope,
+    wantPath: string | null,
+    truncated: boolean,
+    untracked: boolean,
+  ): { hunks: SessionGitDiffHunk[] | null; hunkDigest: string | null } => {
+    if (wantPath === null || truncated || untracked) return { hunks: null, hunkDigest: null };
+    if (scope !== 'staged' && scope !== 'unstaged') return { hunks: null, hunkDigest: null };
+    const lines = diff.split('\n');
+    const hunks: SessionGitDiffHunk[] = [];
+    for (const line of lines) {
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
+      if (m !== null) {
+        hunks.push({
+          index: hunks.length + 1,
+          heading: (m[3] ?? '').trim(),
+          oldStart: Number(m[1]),
+          newStart: Number(m[2]),
+          text: line,
+        });
+      } else if (hunks.length > 0) {
+        const last = hunks[hunks.length - 1]!;
+        last.text = `${last.text}\n${line}`;
+      }
+    }
+    if (hunks.length === 0) return { hunks: null, hunkDigest: null };
+    let h = 0;
+    for (const hunk of hunks) {
+      for (const ch of hunk.text) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+    }
+    return { hunks, hunkDigest: `sha256:fixture-${(h >>> 0).toString(16)}` };
+  };
+
   const requireGitLane = (sessionId: EntityId): void => {
     requireSummary(sessionId);
     if (sessionId !== sessionLive.id) {
@@ -1332,6 +1601,44 @@ export function createFixtureSeam(): FixtureSeam {
     const s = summaries.get(id);
     if (!s) throw new CollabError('not_found', `entity ${id} not found`);
     return s;
+  }
+
+  /*
+   * CONTAINER FIXTURE HELPERS (migration 177).
+   *
+   * `containerSeq` gives a created container a stable, ascending id so a test
+   * can assert WHICH container a create produced. Module-scope counters would
+   * leak between tests; this rides the closure the rest of the fixture uses.
+   */
+  let containerSeq = 0;
+
+  /** ISO instant for the provider probe — fixed, so a snapshot cannot drift. */
+  const T_FIXTURE_PROBE = '2026-07-28T09:00:00.000Z';
+
+  function containerSummaryFor(id: EntityId, title: string, profile: ContainerProfile): EntitySummary {
+    const seed = requireSummary('ent-ctr-requested');
+    return {
+      ...clone(seed),
+      id,
+      title,
+      version: 1,
+      state: { ...(clone(seed.state) as Record<string, unknown>), profile } as EntitySummary['state'],
+    };
+  }
+
+  /**
+   * Move a container to `next`, bumping the version the way a real command
+   * does — so a second call with the ORIGINAL `expectedVersion` is a
+   * `version_conflict`, which is what makes a double-submit test meaningful.
+   */
+  function advanceContainer(row: EntitySummary, next: string): EntitySummary {
+    const moved: EntitySummary = {
+      ...clone(row),
+      version: row.version + 1,
+      state: { ...(clone(row.state) as Record<string, unknown>), status: next } as EntitySummary['state'],
+    };
+    summaries.set(row.id, moved);
+    return moved;
   }
 
   function requireVersion(s: EntitySummary, expectedVersion: number): void {
@@ -1689,6 +1996,14 @@ export function createFixtureSeam(): FixtureSeam {
         return { kind: 'voice_channel', participantCount: 0 };
       case 'doc':
         return { kind: 'doc', format: (c.format as 'markdown') ?? 'markdown', childCount: 0 };
+      // A new drawing is genuinely blank, so the count is 0 rather than a
+      // read of the input — "New drawing" creates an empty canvas.
+      case 'drawing':
+        return {
+          kind: 'drawing',
+          format: (c.format as string) ?? 'excalidraw',
+          elementCount: Array.isArray(c.elements) ? (c.elements as unknown[]).length : 0,
+        };
       case 'team_member':
         // `defaultProfileId: null` — a freshly created teammate has no
         // `defaults_to_profile` edge yet, and the field's contract is that
@@ -1705,8 +2020,10 @@ export function createFixtureSeam(): FixtureSeam {
           sizeBytes: (c.sizeBytes as number) ?? 0,
         };
       case 'spell':
-      case 'skill':
         return { kind, description: c.description as string | undefined, equipped: false };
+      case 'skill':
+        return { kind, description: c.description as string | undefined, equipped: false,
+          provider: 'tm8', level: 'space', frontmatter: {}, missing: false, changedOnDisk: false };
       case 'pull_request':
         return {
           kind: 'pull_request', repository: (c.repository as string) ?? '',
@@ -1941,16 +2258,36 @@ export function createFixtureSeam(): FixtureSeam {
       return [globalDefault, ...migrated];
     },
     /**
-     * Amendment 11 mirror. Answers WITHOUT consulting the viewer, exactly like
-     * the node's claim-free RPC, and reproduces its disclosure rule rather
-     * than a friendlier one: an unresolvable code returns `{status:'unknown'}`
-     * and nothing else, and a dead code names the space but never the inviter.
-     * A fixture that leaked more than the node would let a join screen look
+     * Amendment 11 mirror. Reproduces the node's disclosure rule rather than a
+     * friendlier one: an unresolvable code returns `{status:'unknown'}` and
+     * nothing else, and a dead code names the space but never the inviter. A
+     * fixture that leaked more than the node would let a join screen look
      * correct here and refuse to render against a real server.
+     *
+     * IT CONSULTS THE VIEWER NOW (195), because the RPC does. `preview_invite`
+     * used to answer without knowing who was asking, which is how it came to
+     * tell somebody their own spent code was "used up" while `redeem_invite`
+     * — which CAN see them — answered `joined: false` for the same code in the
+     * same second. The membership rung sits ABOVE every dead one here for the
+     * same reason it does there: a membership outlives the link that granted
+     * it, so a spent, revoked or expired code is not news to somebody already
+     * inside.
+     *
+     * The predicate is a real lookup in this world's own state, not a constant,
+     * and in this world it is always true — the fixture viewer owns the one
+     * fixture space, which is the same fact `redeemInvite` leans on when it
+     * always answers `joined: false`. A fixture cannot mint a second human to
+     * be a stranger with. The rungs below are therefore written for the reader
+     * and for the day this world gains a second viewer; the statuses they
+     * return are exercised against the screen in `join/join.test.tsx`, which
+     * supplies the preview directly.
      */
     async previewInvite(code: string): Promise<InvitePreview> {
       const invite = invites.find((i) => i.code === code);
       if (!invite) return { status: 'unknown' };
+      if (identityView.memberships.some((m) => m.spaceId === FIXTURE_SPACE_ID)) {
+        return { status: 'member', spaceId: FIXTURE_SPACE_ID, spaceName: spaceSummary.name };
+      }
       if (invite.revoked) return { status: 'revoked', spaceName: spaceSummary.name };
       if (invite.expiresAt !== null && invite.expiresAt < tick()) {
         return { status: 'expired', spaceName: spaceSummary.name };
@@ -2350,7 +2687,6 @@ export function createFixtureSeam(): FixtureSeam {
         inFlight: empty(),
         needsMe: empty(),
         activity: { items: [], nextCursor: null },
-        chatThreads: [],
       };
     },
 
@@ -2632,8 +2968,28 @@ export function createFixtureSeam(): FixtureSeam {
       if (workSessionId !== sessionLive.id) {
         return clone(gitUnavailable(workSessionId, 'diff') as SessionGitDiff);
       }
+      const scope = opts?.scope ?? 'session';
+      const wantPath = opts?.path ?? null;
       const hasWork = gitLane.dirty.length > 0 || gitLane.history.length > 1;
-      let diff = hasWork ? SAMPLE_DIFF : '';
+
+      // SCOPE IS A REAL FILTER HERE TOO. A fixture that answered the same
+      // bytes for `staged` and `unstaged` would let a caller wire the wrong
+      // scope and still pass — the projectBranches rule, applied to the
+      // narrowing params.
+      const inScope = gitLane.dirty.filter((f) =>
+        scope === 'staged' ? fxIsStaged(f) : scope === 'unstaged' ? fxIsUnstaged(f) : true,
+      );
+      const rows = (wantPath === null ? inScope : inScope.filter((f) => f.path === wantPath)).map((f) => ({
+        path: f.path,
+        additions: f.path.endsWith('.md') ? 2 : 7,
+        deletions: f.path.endsWith('.md') ? 0 : 2,
+      }));
+      const untracked = wantPath !== null && gitLane.dirty.some((f) => f.path === wantPath && f.status === '??');
+
+      let diff = '';
+      if (hasWork && rows.length > 0) {
+        diff = wantPath === null ? SAMPLE_DIFF : fxFileDiff(wantPath);
+      }
       let diffTruncated = false;
       if (opts?.maxBytes !== undefined && diff.length > opts.maxBytes) {
         diff = diff.slice(0, opts.maxBytes);
@@ -2649,17 +3005,20 @@ export function createFixtureSeam(): FixtureSeam {
         mergeBaseOid: gitLane.baseOid,
         headOid: gitHead(),
         stat: hasWork
-          ? { filesChanged: 2, additions: 9, deletions: 2 }
+          ? {
+              filesChanged: rows.length,
+              additions: rows.reduce((t, r) => t + r.additions, 0),
+              deletions: rows.reduce((t, r) => t + r.deletions, 0),
+            }
           : { filesChanged: 0, additions: 0, deletions: 0 },
-        files: hasWork
-          ? [
-              { path: 'packages/server/src/facade/handlers/projects.ts', additions: 7, deletions: 2 },
-              { path: 'notes/scratch.md', additions: 2, deletions: 0 },
-            ]
-          : [],
+        files: hasWork ? rows : [],
         filesTruncated: false,
+        ...fxHunks(diff, scope, wantPath, diffTruncated, untracked),
         diff,
         diffTruncated,
+        scope,
+        path: wantPath,
+        untracked,
         checkedAt: FIXTURE_NOW,
       });
     },
@@ -2846,6 +3205,25 @@ export function createFixtureSeam(): FixtureSeam {
               edges: Array.isArray(c.edges) ? (c.edges as never[]) : [],
               layout: (c.layout as Record<string, { x: number; y: number }>) ?? {},
               source: (c.source as string | null) ?? null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+        }
+        if (input.kind === 'drawing') {
+          /* Same reason as `graph`: the row IS the scene, so a created
+             drawing must carry a real content arm or the panel would mount
+             the canvas over `undefined` and look empty for the wrong reason.
+             A new drawing is genuinely blank — that is what "New drawing"
+             makes — so the arm is empty, not absent. */
+          const c = (input.content ?? {}) as Record<string, unknown>;
+          extras.set(s.id, {
+            content: {
+              kind: 'drawing',
+              format: (c.format as string) ?? 'excalidraw',
+              elements: Array.isArray(c.elements) ? (c.elements as never[]) : [],
+              appState: (c.appState as Record<string, unknown>) ?? {},
+              files: (c.files as Record<string, unknown>) ?? {},
             },
             connections: clone(NO_CONNECTIONS),
             capabilities: { ...CAPS_FULL },
@@ -3604,25 +3982,45 @@ export function createFixtureSeam(): FixtureSeam {
         emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, ctx);
         return commandResult(collection, { patches: [clone(collection), clone(member)] });
       },
-      /** Amendment 10: fixture echo of `chat.threads.start` (never turn-running). */
-      async startChatThread(input) {
-        const root = requireSummary(input.rootMessageId);
-        return {
-          thread: {
-            rootMessageId: input.rootMessageId,
-            anchorId: root.parentId ?? input.rootMessageId,
+      /** 176: fixture echo of `chat.start` (never turn-running). */
+      async startChat(input) {
+        const chat = insertSummary({
+          id: nextId('chat'),
+          kind: 'chat',
+          title: (input.title ?? input.body).slice(0, 240),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'chat',
             teammateId: input.teammateId,
             model: input.model,
+            provider: 'fixture',
+            agentTool: 'claude-code',
             mode: input.mode,
-            createdAt: new Date().toISOString(),
-            lastReplyAt: null,
+            workdirMode: input.workdirMode,
             // Echoed rather than invented: the real RPC refuses a projectId
             // that does not pair with the mode, so a fixture that normalised
             // the pair here would be the one place the rule does not hold.
             projectId: input.projectId ?? null,
-            workdirMode: input.workdirMode,
+            runtimeState: 'cold',
+            turnState: 'queued',
+            turnCount: 1,
+            lastTurnAt: new Date().toISOString(),
           },
-        };
+        });
+        const message = insertSummary({
+          id: nextId('msg'),
+          kind: 'message',
+          title: input.body.slice(0, 80),
+          spaceId: input.spaceId,
+          state: {
+            kind: 'message',
+            anchorId: chat.id,
+            rootMessageId: null,
+            author: viewerActor,
+            messageBatchId: null,
+          },
+        });
+        return { chat: clone(chat), messageId: message.id };
       },
 
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
@@ -3946,6 +4344,31 @@ export function createFixtureSeam(): FixtureSeam {
         return commandResult(s);
       },
       /**
+       * THE TWO SHARING DIALS (187).
+       *
+       * MERGE, NEVER REPLACE — the same rule `set_work_session_sharing`
+       * follows. A patch naming only `shareMode` must leave `driveMode`
+       * exactly where it was; a fixture that defaulted the absent dial would
+       * let a test pass against a merge the server does not perform.
+       *
+       * It does NOT model the grant revocation that narrowing a dial
+       * performs server-side, and that absence is deliberate: the fixture
+       * holds no stream grants to revoke, and inventing a revocation here
+       * would be asserting an effect this layer cannot observe.
+       */
+      async shareSession(id, input: ExecutionSessionsShareInput) {
+        const s = requireSummary(id);
+        if (s.state.kind !== 'work_session') {
+          throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        }
+        if (input.expectedVersion !== undefined) requireVersion(s, input.expectedVersion);
+        if (input.shareMode !== undefined) s.state.shareMode = input.shareMode;
+        if (input.driveMode !== undefined) s.state.driveMode = input.driveMode;
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return commandResult(s);
+      },
+      /**
        * The inverse of terminate, and it refuses on the same terms: only a
        * TERMINAL session can be resumed. The server refuses a live one with
        * `conflict`, so the fixture must too — a fixture that cheerfully
@@ -4020,14 +4443,91 @@ export function createFixtureSeam(): FixtureSeam {
           oid: gitHead(), branch: gitLane.branch, previousOid, deletedUntracked: untracked,
         });
       },
+      /**
+       * STAGE / UNSTAGE — the index moves, the working tree does not. The
+       * fixture proves the second half by never touching anything but
+       * `status`: the path stays in `dirty` with the same name, which is
+       * exactly what a mixed reset leaves behind.
+       */
+      async gitStage(id, input: ExecutionGitStageInput): Promise<SessionGitStageResult> {
+        requireGitLane(id);
+        const paths = input.paths ?? [];
+        if (input.all !== true && paths.length === 0) {
+          throw new CollabError('invalid_input', `${input.action} needs pathspecs or all: true`, {
+            details: { reason: input.action === 'stage' ? 'nothing_to_stage' : 'nothing_to_unstage' },
+          });
+        }
+        const touched = (f: SessionGitFile): boolean => input.all === true || paths.includes(f.path);
+        gitLane.dirty = gitLane.dirty.map((f) =>
+          touched(f)
+            ? { ...f, status: input.action === 'stage' ? fxStagePath(f.status) : fxUnstagePath(f.status) }
+            : f,
+        );
+        const staged = gitLane.dirty.filter(fxIsStaged);
+        return clone({
+          sessionId: id,
+          worktreeId: 'fx-worktree-1' as EntityId,
+          action: input.action,
+          branch: gitLane.branch,
+          // EMPTY FOR `all: true`, because `paths` reports ARGV and `git add
+          // -A` / `git reset HEAD` are handed no pathspecs at all. The server
+          // does exactly this (`execution-git.ts`, pinned by
+          // `execution-git-changes.test.ts`), and a fixture that echoed the
+          // request here would let a caller assert on `paths` for an `all`
+          // stage, pass against the fixture, and fail against the server —
+          // the failure mode the projectBranches rule above exists to stop.
+          //
+          // The other place the two differ, said out loud rather than left to
+          // be discovered: the server EXPANDS a staged rename on unstage, so
+          // `paths` can come back LONGER than the request. This fixture never
+          // does, which is honest only for as long as its dataset holds no
+          // rename — it holds none today.
+          paths: input.all === true ? [] : [...paths],
+          all: input.all === true,
+          staged,
+          files: [...gitLane.dirty],
+          filesTruncated: false,
+          dirty: {
+            staged: staged.length,
+            unstaged: gitLane.dirty.filter((f) => f.status !== '??' && f.status[1] !== ' ').length,
+            untracked: gitLane.dirty.filter((f) => f.status === '??').length,
+            total: gitLane.dirty.length,
+          },
+          checkedAt: FIXTURE_NOW,
+        });
+      },
       async gitCommit(id, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
         requireGitLane(id);
+        // THE SAME REFUSAL THE SERVER MAKES: a path-scoped commit that would
+        // also sweep up an already-staged file it was not asked about is
+        // refused by name, not silently widened. Mirrored here because the UI
+        // has to render that refusal, and it can only be tested if the double
+        // can produce it.
+        if (input.all !== true && (input.paths?.length ?? 0) > 0) {
+          const outside = gitLane.dirty
+            .filter((f) => fxIsStaged(f) && input.paths?.includes(f.path) !== true)
+            .map((f) => f.path);
+          if (outside.length > 0) {
+            throw new CollabError(
+              'conflict',
+              `commit refused: ${outside.length} staged path(s) are outside the selection`,
+              {
+                details: {
+                  reason: 'staged_outside_selection',
+                  outsidePaths: outside,
+                  outsideCount: outside.length,
+                  hint: 'unstage them, or include them in paths',
+                },
+              },
+            );
+          }
+        }
         const staging = input.all === true
           ? [...gitLane.dirty]
-          : gitLane.dirty.filter((f) => input.paths?.includes(f.path));
+          : gitLane.dirty.filter((f) => input.paths?.includes(f.path) === true || fxIsStaged(f));
         if (staging.length === 0) {
           throw new CollabError('conflict', 'nothing is staged', {
-            details: { hint: 'stage changes first' },
+            details: { reason: 'nothing_staged', hint: 'stage changes first' },
           });
         }
         gitLane.serial += 1;
@@ -4281,6 +4781,103 @@ export function createFixtureSeam(): FixtureSeam {
           mergeSha: `${(input.headSha ?? fxOid(0xc3)).slice(0, 8)}${fxOid(0xd4).slice(8)}`,
         });
       },
+
+      /*
+       * CONTAINERS (migration 177).
+       *
+       * THE FIXTURE ENFORCES THE STATUS MACHINE, it does not just echo. §11.1
+       * is a guard trigger server-side (`23514` on a bad edge), so a fixture
+       * that accepted every verb in every state would let the panel ship a
+       * button the node refuses — and jsdom would call it green. Each verb
+       * below refuses from the SAME rule the capability booleans are derived
+       * from, so a UI bug shows up here as a thrown `CollabError` rather than
+       * as a silent success.
+       */
+      async createContainer(input) {
+        /*
+         * The birth door mints `requested`, never `running` — §11.1's first
+         * edge. A fixture that returned a running machine would let a panel
+         * that cannot render `requested`/`provisioning` look complete.
+         */
+        const id = `ent-ctr-new-${String(containerSeq += 1)}`;
+        const row = containerSummaryFor(id, input.title ?? 'new container', input.profile);
+        summaries.set(id, row);
+        return clone({ patches: [row] });
+      },
+
+      async containerLifecycle(id, verb, input) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        const permitted =
+          verb === 'start' ? status === 'stopped'
+          : verb === 'stop' ? status === 'running' || status === 'paused'
+          : verb === 'pause' ? status === 'running'
+          : /* resume */ status === 'paused';
+        if (!permitted) {
+          // `invariant_violation` is the taxonomy for `23514`, the guard
+          // trigger's own error — freeze part 2/4's `state` row.
+          throw new CollabError('invariant_violation', `a ${status} container cannot ${verb}`);
+        }
+        requireVersion(row, input.expectedVersion);
+        const next = verb === 'start' ? 'running'
+          : verb === 'stop' ? 'stopping'
+          : verb === 'pause' ? 'paused'
+          : 'running';
+        return clone({ patches: [advanceContainer(row, next)] });
+      },
+
+      async destroyContainer(id, input) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        if (status === 'destroying' || status === 'destroyed') {
+          throw new CollabError('invariant_violation', `this container is already ${status}`);
+        }
+        requireVersion(row, input.expectedVersion);
+        /*
+         * `destroying`, NOT `destroyed`. Lane A measured it on the shipped
+         * migration: §11.1's ASCII sketch draws `stopped ──▶ destroyed`, but
+         * the transition TABLE routes teardown through `destroying` and that
+         * is what 177 implements — a direct edge raises `23514`. The fixture
+         * follows the table, so a panel that assumed the sketch fails here.
+         */
+        return clone({ patches: [advanceContainer(row, 'destroying')] });
+      },
+
+      async startContainerTerminal(id) {
+        const row = requireSummary(id);
+        const status = (row.state as unknown as { status: string }).status;
+        // `canExec` is `status === 'running'`, and the door agrees.
+        if (status !== 'running') {
+          throw new CollabError('invariant_violation', `a ${status} container has no shell to exec into`);
+        }
+        /* NOT a `CommandResult` — the door answers ids, so there is nothing to
+           reconcile. Mirrored here so a caller that treats it like a spawn
+           fails in jsdom rather than in the app. */
+        return clone({ workSessionId: `ws-exec-${id}`, containerId: id });
+      },
+
+      async containerProviders() {
+        /*
+         * P0's node runs `TM8_CONTAINER_PROVIDERS=fake`, and `probe.ok` is
+         * produced by ACTUALLY creating and destroying a container — not by a
+         * PATH check (§5). The fixture says `true` with a detail that names
+         * the measurement, because a probe with no detail is a claim.
+         */
+        return clone({
+          nodeId: 'node-launch',
+          providers: [{
+            id: 'fake',
+            isolation: 'container' as const,
+            profiles: ['shell' as const],
+            surfaces: ['terminal' as const],
+            features: { pause: true, snapshot: false, fork: false, expose: false, nested: false, gpu: false },
+            limits: { maxContainers: 8, maxCpus: 16, maxMemMiB: 65536 },
+            probe: { ok: true, detail: 'created and destroyed a probe container in 12ms', measuredAt: T_FIXTURE_PROBE },
+          }],
+          images: [{ profile: 'shell' as const, ref: 'ghcr.io/tm8/shell:1', digest: null, cached: true }],
+          caps: { containers: 8, live: 1 },
+        });
+      },
     },
 
     /**
@@ -4292,12 +4889,15 @@ export function createFixtureSeam(): FixtureSeam {
      *    line and is reachable from no local git object, so the github entry's
      *    `connected` is UNKNOWN here, not measured false. A fixture reporting
      *    'present' would let a screen that renders "Not connected" look right.
-     *  - anthropic is connected with `login: null` — the shape of a row minted
-     *    under the original R4 verb (`claude setup-token`, no `user:profile`).
-     *    Post-amendment logins carry an email, but the null-login shape stays
-     *    legal and a screen must keep rendering it without "Connected as null".
-     *  - openai is genuinely not connected: the one true negative, so a screen
-     *    that draws all three the same way has something to be wrong about.
+     *  - anthropic is connected with `login: null` forever by migration 083's
+     *    design. A screen must render the granted inference access, never
+     *    invent a missing account name or print "Connected as null".
+     *  - openai is genuinely not connected: the one true negative.
+     *  - gemini could not establish a connection answer (`stale` -> unknown).
+     *  - hermes is measured unavailable, because its binary is absent. It must
+     *    never acquire a Connect button that can only fail.
+     *  - cursor's real status verb positively reports a connection. Its probe
+     *    supplies no account name, so the connected-null shape remains honest.
      */
     credentials: {
       async status() {
@@ -4306,7 +4906,9 @@ export function createFixtureSeam(): FixtureSeam {
 
       async disconnect(provider) {
         const entry = credentialsState.providers.find((p) => p.provider === provider);
-        if (entry) {
+        // Revoking stored material cannot install a missing CLI. Preserve the
+        // node-level measurement just as the real catalog re-applies it.
+        if (entry && (entry.status as string | null) !== 'unavailable') {
           entry.connected = false;
           entry.login = null;
           entry.authMethod = null;
@@ -4331,6 +4933,10 @@ export function createFixtureSeam(): FixtureSeam {
       },
 
       async startLogin(spaceId, provider) {
+        const entry = credentialsState.providers.find((candidate) => candidate.provider === provider);
+        if (entry?.status === 'unavailable') {
+          throw new Error(`${provider} is not installed on this node; install ${provider} to connect`);
+        }
         return {
           workSessionId: sessionCredentialLogin.id,
           spaceId,

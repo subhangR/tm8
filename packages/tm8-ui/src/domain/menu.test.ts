@@ -46,13 +46,32 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     );
   });
 
-  it('names NO kind rows — every kind is a Home root now (task 01a00932 R3)', () => {
+  it('names NO kind rows at all — the law of revision 17, restored by 184', () => {
     // Revision 17: the Work and Channels groups retired, and with them every
     // kind row the menu carried. The kinds did not lose their door — Home's
     // root column and icon rail (domain/home-rail.ts) list every collection
     // kind the registry offers, which is strictly MORE than the menu's frozen
     // caps could ever name. A kind row reappearing here would be a second
     // door beside a complete one.
+    /*
+     * REVISION 22 AMENDED THAT RULE FOR ONE DAY, AND 23 RESTORES IT.
+     *
+     * 22 admitted `chat` on the argument that the door it opens is not the one
+     * Home owns: Home's chats root is the two-pane CONVERSATION surface, while
+     * the chat entity LIST is tiles with the turn state, the lifecycle tabs,
+     * sort, in-panel search and the row-action cluster — a different
+     * arrangement over the same rows, and the R9 two-doors posture the Board
+     * tab sets against `task`.
+     *
+     * That argument is intact. What was wrong was the ADDRESS: the place this
+     * product addresses a collection kind's list is Home's ICON RAIL, `chat`
+     * has been eligible for it since migration 176, and `domain/home-rail.ts`
+     * now LEADS the Work group with it. So the tab was a duplicate of a rail
+     * row, and removing it puts 17's law back exactly as written.
+     *
+     * Exact equality on the EMPTY array, not a subset check: any kind ref
+     * landing here is the defect 17 named.
+     */
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
     // Revision 19 (migration 140): a WORK group returns, and the assertion
     // above is exactly why it can. What 17 retired was a rail of ROWS — the
@@ -176,7 +195,14 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(20);
+    // 24 since 2026-09-15 (migration 186): the CodeBrain group left the spine
+    // and the ref left the contract union with it — #610 had already deleted
+    // the only package carrying a CodeBrain screen. A revision that did not
+    // move with the groups is the drift `SHIPPED_DEFAULT_MENU_REVISION` exists
+    // to catch. The server's seeder parity test pins the GROUP LIST against the
+    // contract spine rather than this number, so the two move together only if
+    // this line is edited deliberately — which is why it is pinned at all.
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(24);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

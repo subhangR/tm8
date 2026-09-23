@@ -142,6 +142,20 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
           where child->>'type' = 'kind'
        ) t`,
     );
+    /*
+     * ZERO KIND REFS AGAIN (184, 2026-09-05). 180 admitted exactly one —
+     * `chat` — on the argument that the chat entity LIST is a second
+     * ARRANGEMENT over the rows Home's chats root shows as a conversation,
+     * and so earns a door of its own the way Board does beside `task`. That
+     * argument survives; only its ADDRESS was wrong. The place this product
+     * addresses a collection kind's list is Home's ICON RAIL, `chat` has been
+     * eligible for that rail since 176, and tm8-ui `domain/home-rail.ts` now
+     * LEADS with it — so the tab was a duplicate of the rail row, and 134's
+     * rule reads exactly as it did before 180.
+     *
+     * ANY ref appearing here is the defect 134 named, which is why this is
+     * `toEqual` on the empty array and not a subset check.
+     */
     expect(kinds[0]?.refs).toEqual([]);
   });
 
@@ -174,7 +188,39 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups')
               with ordinality as t(g, ord)`,
     );
-    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    /*
+     * EVERY GROUP THAT JOINED SINCE THIS LITERAL WAS WRITTEN HAS SINCE LEFT,
+     * so it reads today exactly as it did before 180:
+     *
+     *   · `codebrain` — 2026-09-01, migration 173; REMOVED 2026-09-15 by
+     *     migration 186. #610 deleted the 2.0 UI package that held its only
+     *     screen, leaving a registered ref whose every render was the notice
+     *     that the build has no screen for it. The ref left the contract
+     *     union, the registry and the seeder together.
+     *   · `conversations` — 2026-09-03, migration 180: the Chats tab. IT HAS
+     *     SINCE LEFT AGAIN (184, 2026-09-05): the chat list's door moved into
+     *     Home's icon rail, where a collection kind's list is addressed, and
+     *     the tab was the duplicate.
+     *
+     * The first test in this block pins the same list against
+     * `DEFAULT_MENU_GROUP_SPINE`, so it moves on its own. This literal is
+     * hand-written ON PURPOSE — it is the second, INDEPENDENT witness that the
+     * spine and the seeder agree, and a witness that derives itself from the
+     * first is not a second witness. (The upgrade block further down keeps its
+     * own 164-era literal: that test applies the chain only as far as 164, so
+     * its list is a different claim about a different position.)
+     */
+    expect(rows[0]?.ids).toEqual([
+      'chats', 'work', 'craft', 'graph', 'settings', 'help',
+    ]);
+    // Named explicitly rather than left to the equality above: 180's group is
+    // the one this file is about, and a seeder that quietly kept it should red
+    // on a line that says its name.
+    expect(rows[0]?.ids).not.toContain('conversations');
+    // Named explicitly for the same reason 180's group is: 186 is the removal
+    // this literal most recently moved for, and a seeder that quietly kept the
+    // tab should red on a line carrying its name.
+    expect(rows[0]?.ids).not.toContain('codebrain');
     expect(rows[0]?.ids).not.toContain('board');
     expect(rows[0]?.ids).not.toContain('files');
   });
@@ -979,5 +1025,312 @@ describeDb('102 backfill — upgrades the verbatim default, never a customized m
     );
     expect(rows[0]?.revision).toBe(5);
     expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+describeDb('184 upgrade — the Chats tab leaves untouched defaults; customized menus do not move', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000184';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000185';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-chats-tab-leaves');
+    const files = migrationFiles();
+    const migration = files.find((file) => file === '184_menu_chats_tab_leaves.sql');
+    if (!migration) throw new Error('184_menu_chats_tab_leaves.sql is missing from the chain');
+    const index = files.indexOf(migration);
+    // POSITION-PINNED: the chain stops one file short, so the seeder in play
+    // while these rows are written is 180's — the payload this migration is
+    // the removal of. Applying the whole chain first would seed 184's own
+    // output and the upgrade below would move nothing while still passing.
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('chats-tab-leaves-default', 'Chats tab default'),
+                ('chats-tab-leaves-custom', 'Chats tab custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Untouched chats-tab default', 'chats-tab-leaves-default'),
+                ($2, 'Customized chats-tab menu', 'chats-tab-leaves-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      // The customized row keeps the Chats tab AND renames a label. That is
+      // the case the byte guard exists for: a space that deliberately kept the
+      // tab is a space whose menu this migration must not touch.
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 22, internal.w1_default_menu_payload()),
+                ($2, 1, 91,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,1,label}', '"Conversations"'))`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+    });
+
+    // The seeded rows must actually CARRY the group, or the removal below
+    // would be asserted over a set that never held it — a comparison over an
+    // empty set reports success.
+    const before = await db.query<{ has_tab: boolean }>(
+      `select bool_and(payload @> '{"groups":[{"id":"conversations"}]}') as has_tab
+         from public.space_menu_configs where space_id = any($1)`,
+      [[DEFAULT_SPACE, CUSTOM_SPACE]],
+    );
+    expect(before[0]?.has_tab).toBe(true);
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row loses the Chats tab and exactly one revision', async () => {
+    const rows = await db.query<{ revision: number; ids: string[]; payload: unknown }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(23);
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'codebrain', 'settings', 'help']);
+    expect(rows[0]?.ids).not.toContain('conversations');
+    // And it is the CURRENT seeder output, not merely something without that
+    // group — the two claims are different and only this one catches a
+    // migration that dropped the tab while diverging elsewhere.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the customized row keeps its Chats tab — payload byte-identical, revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(91);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+    const kept = await db.query<{ has_tab: boolean }>(
+      `select payload @> '{"groups":[{"id":"conversations"}]}' as has_tab
+         from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(kept[0]?.has_tab).toBe(true);
+  });
+});
+
+describeDb('186 upgrade — CodeBrain leaves every menu that seats it, and the ref is de-registered', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000186';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000187';
+  const UNRELATED_SPACE = '00000000-0000-4000-8000-000000000188';
+  const MIXED_SPACE = '00000000-0000-4000-8000-000000000189';
+  let unrelatedPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-codebrain-tab-removed');
+    const files = migrationFiles();
+    const migration = files.find((file) => file === '186_menu_codebrain_tab_removed.sql');
+    if (!migration) throw new Error('186_menu_codebrain_tab_removed.sql is missing from the chain');
+    const index = files.indexOf(migration);
+    // POSITION-PINNED for the same reason 184's block is: the chain stops one
+    // file short so the seeder writing these rows is 184's — the payload this
+    // migration removes from.
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('codebrain-removed-default', 'CodeBrain default'),
+                ('codebrain-removed-custom', 'CodeBrain custom'),
+                ('codebrain-removed-unrelated', 'CodeBrain unrelated'),
+                ('codebrain-removed-mixed', 'CodeBrain mixed')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Untouched codebrain default', 'codebrain-removed-default'),
+                ($2, 'Customized menu seating codebrain', 'codebrain-removed-custom'),
+                ($3, 'Customized menu without codebrain', 'codebrain-removed-unrelated'),
+                ($4, 'Customized menu with a shared group', 'codebrain-removed-mixed')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE, UNRELATED_SPACE, MIXED_SPACE],
+      );
+      /*
+       * THE CUSTOM ROW IS THE CASE THIS MIGRATION BENDS THE RULE FOR. It
+       * renames a label (so the byte guard will not match it) AND seats
+       * codebrain. 173/180/184 would all have left it alone; 186 must not,
+       * because de-registering the ref under a payload that still names it
+       * freezes that space's menu at the next save (22023, 071:101-112).
+       *
+       * The UNRELATED row is the control: also customized, also byte-unequal
+       * to the default, but with no codebrain seat. It must not move at all —
+       * that is what proves ARM 3 is scoped to the ref and is not a blanket
+       * rewrite of customized menus.
+       */
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 23, internal.w1_default_menu_payload()),
+                ($2, 1, 77,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,1,label}', '"Delivery"')),
+                ($3, 1, 44,
+                 jsonb_set(
+                   internal.w1_default_menu_payload() #- '{groups,4}',
+                   '{groups,1,label}', '"Delivery"')),
+                ($4, 1, 12,
+                 jsonb_set(
+                   internal.w1_default_menu_payload() #- '{groups,4}',
+                   '{groups,3,items}',
+                   '[{"type":"view","ref":"graph"},{"type":"view","ref":"codebrain"}]'))`,
+        [DEFAULT_SPACE, CUSTOM_SPACE, UNRELATED_SPACE, MIXED_SPACE],
+      );
+    });
+
+    // The seeded rows must actually CARRY the group, or the removal below
+    // would be asserted over a set that never held it.
+    const before = await db.query<{ has_tab: boolean }>(
+      `select bool_and(payload @> '{"groups":[{"id":"codebrain"}]}') as has_tab
+         from public.space_menu_configs where space_id = any($1)`,
+      [[DEFAULT_SPACE, CUSTOM_SPACE]],
+    );
+    expect(before[0]?.has_tab).toBe(true);
+
+    unrelatedPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [UNRELATED_SPACE],
+    ))[0]?.payload;
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row loses the CodeBrain tab and exactly one revision', async () => {
+    const rows = await db.query<{ revision: number; ids: string[]; payload: unknown }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(24);
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    expect(rows[0]?.ids).not.toContain('codebrain');
+    // And it is the CURRENT seeder output, not merely something without that
+    // group — only this claim catches a migration that dropped the tab while
+    // diverging elsewhere.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the CUSTOMIZED row loses the seat and keeps every other edit', async () => {
+    const rows = await db.query<{ revision: number; ids: string[]; labels: string[] }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              (select array_agg(g->>'label' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as labels
+         from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.ids).not.toContain('codebrain');
+    // The renamed label survives: the seat went, the CHOICE did not.
+    expect(rows[0]?.labels).toContain('Delivery');
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'craft', 'graph', 'settings', 'help']);
+    expect(rows[0]?.revision).toBe(78);
+  });
+
+  it('a customized menu that never seated CodeBrain does not move at all', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [UNRELATED_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(44);
+    expect(rows[0]?.payload).toEqual(unrelatedPayloadBefore);
+  });
+
+  it('a group that held CodeBrain BESIDE another row keeps the group and the row', async () => {
+    // The other half of ARM 3: a group is dropped only when the codebrain item
+    // was its whole content. Here `graph` shares the group, so the seat goes
+    // and the group stays — losing it would delete a row the operator chose.
+    const rows = await db.query<{ revision: number; ids: string[]; refs: string[] }>(
+      `select revision,
+              (select array_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              (select array_agg(i->>'ref' order by ord)
+                 from jsonb_array_elements(payload->'groups') g2,
+                      jsonb_array_elements(g2->'items') with ordinality t2(i, ord)
+                where g2->>'id' = 'graph') as refs
+         from public.space_menu_configs where space_id = $1`,
+      [MIXED_SPACE],
+    );
+    expect(rows[0]?.ids).toContain('graph');
+    expect(rows[0]?.refs).toEqual(['graph']);
+    expect(rows[0]?.revision).toBe(13);
+  });
+
+  it('stripping can never empty a menu — the guard requires the settings view', async () => {
+    // Why ARM 3's fallback to the seeder default is a fail-safe and not a live
+    // path: 071:181 refuses a payload without `settings`, so every stored menu
+    // keeps a group this rewrite does not touch. Asserted rather than assumed,
+    // because the fallback's correctness rests entirely on it.
+    await expect(
+      db.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `select internal.w2_normalize_menu_payload(
+             null::uuid,
+             '{"groups":[{"id":"graph","label":"Graph",
+               "items":[{"type":"view","ref":"graph"}]}]}'::jsonb)`,
+        );
+      }),
+    ).rejects.toThrow(/requires the settings view/);
+
+    const rows = await db.query<{ n: string }>(
+      `select count(*)::text as n
+         from public.space_menu_configs
+        where jsonb_array_length(payload->'groups') = 0`,
+    );
+    expect(rows[0]?.n).toBe('0');
+  });
+
+  it('the ref is de-registered, so the menu editor can no longer offer it', async () => {
+    const rows = await db.query<{ n: string }>(
+      `select count(*)::text as n from public.menu_view_registry where ref = 'codebrain'`,
+    );
+    expect(rows[0]?.n).toBe('0');
+  });
+
+  it('no saved payload is left seating the ref — the frozen-menu case this migration exists to avoid', async () => {
+    const rows = await db.query<{ n: string }>(
+      `select count(*)::text as n
+         from public.space_menu_configs
+        where payload @? '$.groups[*].items[*] ? (@.type == "view" && @.ref == "codebrain")'`,
+    );
+    expect(rows[0]?.n).toBe('0');
+    // The rewritten payloads must still pass the guard every WRITE runs them
+    // through; a payload the guard refuses is a menu its space cannot save.
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `select internal.w2_normalize_menu_payload(space_id, payload)
+           from public.space_menu_configs`,
+      );
+    });
   });
 });

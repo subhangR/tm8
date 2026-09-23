@@ -38,6 +38,7 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   EmptyBody,
+  NewContainerSheet,
   countConnections,
   panelActionContext,
   panelMenuItems,
@@ -75,7 +76,9 @@ import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
@@ -86,6 +89,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { AuxEntityPanel } from './auxPanel';
@@ -98,6 +102,14 @@ export interface EntityViewProps {
   reasons: DetailReasons;
   viewerMemberId?: string | null;
   onNotice(notice: Notice): void;
+  /**
+   * "Chat about this" — the row cluster's and the list header's verb, which is
+   * a NAVIGATION to Home's composer with the subject bound. Supplied by the
+   * shell (`chatAboutTarget`), because this screen takes navigation as a port
+   * and must not reach the global store. Absent ⇒ the verb renders refused
+   * with a reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   /** The rail row is the source of truth for WHICH kind; the in-panel kind
       switcher re-routes through it so the rail highlight never lies. */
   onKindChange?(kind: string): void;
@@ -404,6 +416,8 @@ export function EntityView(props: EntityViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifyTerminateFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor
@@ -576,6 +590,47 @@ export function EntityView(props: EntityViewProps) {
       ttlMs: 8_000,
     }),
   });
+
+  /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb.
+   *
+   * `wiredActions` is the union, so `HeaderActions` and `RowActionCluster`
+   * draw exactly the verbs something behind them can perform; a verb in
+   * neither list keeps its honest refusal rather than lighting up inert.
+   */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  /**
+   * THE CONTAINER BIRTH SHEET (Design §13.3). Same space-scoped shape as
+   * `sessionStart` above, and a MODAL besides — see `useNewContainerSheet` for
+   * the two obligations it honours and for why the orphan rule takes a
+   * space-shaped form here rather than an entity-shaped one.
+   *
+   * `selectFromList` as `onOpen`, exactly as the terminal above: a container
+   * the member just created should land the way a row they clicked does.
+   */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onOpen: selectFromList,
+    onError: (_verb, error) => props.onNotice({
+      id: 'container-create-failed',
+      tone: 'error',
+      title: 'Container could not be created',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 6_000,
+    }),
+  });
+
+  /* ONE `onAction` reaches the list panel, and two hooks perform verbs for it.
+     Passing either alone would drop the other's verb back to
+     disabled-with-reason — the defect both hooks were extracted to fix. */
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+    { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+  ]);
 
   /**
    * Titles for the attention list. Attention spans every kind, so the left
@@ -762,6 +817,8 @@ export function EntityView(props: EntityViewProps) {
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setAux({ sort: 'entity', id }),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -774,6 +831,8 @@ export function EntityView(props: EntityViewProps) {
         livenessOf: data.livenessOf,
         channelFeedPort,
         viewerMemberId: props.viewerMemberId,
+        nodeKey: data.nodeKey,
+        skillOptions: data.skillOptions,
         onOpenEntity: (id) => setAux({ sort: 'entity', id }),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
@@ -783,6 +842,7 @@ export function EntityView(props: EntityViewProps) {
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       graphSurface={
         detail
@@ -898,12 +958,55 @@ export function EntityView(props: EntityViewProps) {
           projects={data.launch.projects}
           profiles={data.launch.profiles}
           memories={data.launch.memories}
+          loadSkillPreview={data.launch.loadSkillPreview}
           capacity={data.launch.capacity}
           loadCredentialStatus={data.seam.credentials.status}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
         />
+      )}
+      {/*
+        THE CONTAINER BIRTH SHEET, in the same overlay slot the launch sheet
+        uses and for the same reason: fixed over a scrim, so it belongs at the
+        VIEW ROOT and not inside the panel's overflow context.
+
+        Mounted only while open, so the form's draft state is discarded on
+        dismiss rather than persisting invisibly into the next open — a sheet
+        that reopens holding a profile someone chose ten minutes ago is
+        offering a configuration nobody is looking at.
+      */}
+      {newContainer.isOpen && (
+        <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+          <div
+            className="pn-ncs-host"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New container"
+            /* The scrim dismisses; the sheet must not. Without this a click on
+               any control inside bubbles to the scrim and closes the form
+               under the viewer's own cursor. */
+            onClick={(event) => event.stopPropagation()}
+          >
+            <NewContainerSheet
+              spaceId={data.spaceId}
+              /* `name`, not `title` — `LaunchProject` is the launch vocabulary
+                 and the scratch entry has no entity behind it. Filtered to
+                 real projects: a container mounts a working directory, and the
+                 scratch row names a server-owned temp dir there is nothing to
+                 mount. */
+              projects={data.launch.projects
+                .filter((project) => !project.scratch)
+                .map((project) => ({
+                  id: project.id as EntityId,
+                  title: project.name,
+                  trusted: project.trusted,
+                }))}
+              onCreate={newContainer.create}
+              onCancel={newContainer.close}
+            />
+          </div>
+        </div>
       )}
       {/* Same reason as the dialog above: fixed over a scrim, so it belongs at
           the view root and not inside the panel's overflow context. */}
@@ -990,6 +1093,7 @@ export function EntityView(props: EntityViewProps) {
              WorkspaceView passed one. A verb with a dedicated prop is dead on
              every host that forgets it, so all three pass it now. */
           onTerminate={primaries.terminate}
+          onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
           onSetAxis={rowLifecycle.setAxis}
@@ -1006,8 +1110,8 @@ export function EntityView(props: EntityViewProps) {
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
           /* The header verbs (101) — see the same pair in `WorkspaceView`. */
-          onAction={sessionStart.onAction}
-          wiredActions={sessionStart.wiredActions}
+          onAction={listActions.onAction}
+          wiredActions={listActions.wiredActions}
         />
       </section>
       )}
@@ -1374,6 +1478,8 @@ export function EntityView(props: EntityViewProps) {
                 livenessOf: data.livenessOf,
                 channelFeedPort,
                 viewerMemberId: props.viewerMemberId,
+                nodeKey: data.nodeKey,
+                skillOptions: data.skillOptions,
                 onOpenEntity: (id) => setAux({ sort: 'entity', id }),
                 onSwitchToTerminal: () => {
                   setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));

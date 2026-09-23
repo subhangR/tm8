@@ -285,6 +285,10 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           IDS.author,
           'batch-1',
           null,
+          // 176: `p_source_chat_id`. NULL here, and that is the assertion —
+          // this caller is session-sourced, and a message has exactly ONE
+          // source (the RPC raises 22023 if both are named).
+          null,
         ]);
         return {
           messageBatchId: 'batch-1',
@@ -1051,6 +1055,8 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
         expect(args).toEqual([
           [IDS.anchor], 'routed answer', IDS.message, [], [],
           IDS.sourceSession, null, 'reply-batch-1', null,
+          // 176: `p_source_chat_id`, null for a session-sourced reply.
+          null,
         ]);
         return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
       }

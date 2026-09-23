@@ -11,14 +11,16 @@
  * looking entirely correct, so each gets its own test rather than riding along
  * inside a happy-path render.
  */
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   CredentialsDeleteResult,
   CredentialsStatusView,
   CredentialProviderName,
+  CredentialRoutingView,
 } from '@tm8/contract';
 import { CredentialsSection } from './CredentialsSection';
+import { CREDENTIAL_PROVIDER_PRESENTATIONS } from './provider-presentation';
 import { disconnectVerdictOf, verdictOf, type CredentialsPort } from './port';
 
 function connection(over: Partial<CredentialsStatusView['providers'][number]> & { provider: CredentialProviderName }) {
@@ -29,6 +31,7 @@ function connection(over: Partial<CredentialsStatusView['providers'][number]> & 
     status: null,
     connectedAt: null,
     lastVerifiedAt: null,
+    routing: null,
     ...over,
   };
 }
@@ -67,7 +70,91 @@ function portWith(
   };
 }
 
-describe('honest degradation — three states that must NOT render the same', () => {
+describe('six providers and four honest states', () => {
+  it('renders every product name with currentColor inline marks, binaries, and a connected Cursor', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({ provider: 'anthropic', connected: true, status: 'active' }),
+            connection({ provider: 'openai' }),
+            connection({ provider: 'github', connected: true, login: 'ada', status: 'active' }),
+            connection({ provider: 'gemini', status: 'stale' }),
+            connection({ provider: 'hermes', status: 'unavailable' }),
+            connection({ provider: 'cursor', connected: true, status: 'active' }),
+            connection({ provider: 'kimi' }),
+            connection({ provider: 'groq' }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    await screen.findByTestId('credential-provider-grid');
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(8);
+    expect(Object.values(CREDENTIAL_PROVIDER_PRESENTATIONS).map(({ name, binary }) => [name, binary])).toEqual([
+      ['Claude Code', 'claude'],
+      ['Codex', 'codex'],
+      ['GitHub', 'gh'],
+      ['Gemini', 'gemini'],
+      ['Hermes', 'hermes'],
+      ['Cursor', 'cursor-agent'],
+      // `null`, not 'node'. These two are reached by pasting a key, not by
+      // running a vendor CLI, and the binary their probe measures is the
+      // server's own `node` — printing it here would tell a member that
+      // installing node is what connects Kimi.
+      ['Kimi (Moonshot AI)', null],
+      ['Groq', null],
+    ]);
+
+    for (const [id, provider] of Object.entries(CREDENTIAL_PROVIDER_PRESENTATIONS)) {
+      const card = screen.getByTestId(`credential-card-${id}`);
+      expect(within(card).getByText(provider.name)).toBeTruthy();
+      expect(card.querySelector('.cred-card__binary')?.textContent).toBe(
+        provider.binary ?? 'API key',
+      );
+      const mark = card.querySelector('svg');
+      expect(mark?.getAttribute('aria-hidden')).toBe('true');
+      expect(mark?.innerHTML).toContain('currentColor');
+    }
+
+    const cursor = screen.getByTestId('credential-card-cursor');
+    expect(cursor.getAttribute('data-credential-state')).toBe('connected');
+    expect(screen.getByTestId('credential-verdict-cursor').textContent).toBe(
+      'Connected — inference access',
+    );
+    expect(screen.getByTestId('credential-connect-cursor').textContent).toBe('Reconnect');
+    expect(screen.getByTestId('credential-disconnect-cursor')).toBeTruthy();
+  });
+
+  it('renders an unavailable Cursor differently from disconnected and never offers a doomed Connect', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({ provider: 'openai', status: null }),
+            connection({ provider: 'cursor', status: 'unavailable' }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const unavailable = await screen.findByTestId('credential-card-cursor');
+    const disconnected = screen.getByTestId('credential-card-openai');
+    expect(unavailable.getAttribute('data-credential-state')).toBe('unavailable');
+    expect(disconnected.getAttribute('data-credential-state')).toBe('disconnected');
+    expect(screen.getByTestId('credential-verdict-cursor').textContent).toContain(
+      'cursor-agent is not installed on this node',
+    );
+    expect(screen.getByTestId('credential-install-cursor').textContent).toContain(
+      'Install cursor-agent',
+    );
+    expect(screen.queryByTestId('credential-connect-cursor')).toBeNull();
+    expect(within(unavailable).queryByRole('button')).toBeNull();
+    expect(screen.getByTestId('credential-connect-openai').textContent).toBe('Connect');
+  });
+
   /**
    * STATE 1. `gitCredentialStore: 'absent'` does not mean "not connected". It
    * means the github entry's `connected` is UNKNOWN, never measured — 079
@@ -87,11 +174,11 @@ describe('honest degradation — three states that must NOT render the same', ()
     );
 
     const verdict = await screen.findByTestId('credential-verdict-github');
-    expect(verdict.textContent).toContain('Unknown');
+    expect(verdict.textContent).toContain('Could not be measured');
     // THE ASSERTION THAT MATTERS: the confident negative is absent.
     expect(verdict.textContent).not.toContain('Not connected');
     // And it says WHY it cannot tell, so "unknown" is not itself a shrug.
-    expect(screen.getByTestId('credential-unknown-why').textContent).toContain('does not exist on this node');
+    expect(screen.getByTestId('credential-unknown-why').textContent).toContain('may already be signed in');
   });
 
   /**
@@ -112,7 +199,7 @@ describe('honest degradation — three states that must NOT render the same', ()
 
     const verdict = await screen.findByTestId('credential-verdict-github');
     expect(verdict.textContent).toContain('Not connected');
-    expect(verdict.textContent).not.toContain('Unknown');
+    expect(verdict.textContent).not.toContain('Could not be measured');
   });
 
   /**
@@ -132,12 +219,13 @@ describe('honest degradation — three states that must NOT render the same', ()
     );
 
     const verdict = await screen.findByTestId('credential-verdict-anthropic');
-    expect(verdict.textContent).toContain('Connected');
+    expect(verdict.textContent).toBe('Connected — inference access');
     // The row simply does not exist — not present-and-empty, not a placeholder.
     expect(screen.queryByTestId('credential-login-anthropic')).toBeNull();
     // And none of the words that would imply a name is still coming.
     expect(verdict.textContent).not.toContain('unknown user');
     expect(verdict.textContent).not.toMatch(/null|pending|loading|…/i);
+    expect(document.body.textContent).not.toMatch(/connected as null/i);
   });
 
   /** The control for state 2: a provider that HAS a name still shows it. */
@@ -285,7 +373,7 @@ describe('disconnect — a partial success is neither a green tick nor a red err
   });
 });
 
-describe('the verdict function — the three states are three values, not two', () => {
+describe('the verdict function — four meanings are four values', () => {
   it('separates unknown from disconnected on the store, not on `connected`', () => {
     const github = { provider: 'github' as const, connected: false, login: null };
     expect(verdictOf(github, 'absent')).toBe('unknown');
@@ -296,6 +384,16 @@ describe('the verdict function — the three states are three values, not two', 
     // A `connected: true` can only have come from somewhere real; inventing a
     // doubt about it would be its own dishonesty.
     expect(verdictOf({ provider: 'github', connected: true, login: 'ada' }, 'absent')).toBe('connected-named');
+  });
+
+  it('maps every real Cursor probe outcome without a provider-specific UI branch', () => {
+    const base = { provider: 'cursor' as const, connected: false, login: null };
+    expect(verdictOf({ ...base, connected: true, status: 'active' }, 'present')).toBe(
+      'connected-unnamed',
+    );
+    expect(verdictOf({ ...base, status: 'unavailable' }, 'present')).toBe('unavailable');
+    expect(verdictOf({ ...base, status: 'stale' }, 'present')).toBe('unknown');
+    expect(verdictOf({ ...base, status: null }, 'present')).toBe('disconnected');
   });
 
   it('separates a permanently-null login from a named one', () => {
@@ -355,5 +453,177 @@ describe('the section is honest about what it could not read', () => {
     await waitFor(() => expect(screen.getByTestId('terminal-host')).toBeTruthy());
     expect(screen.getByTestId('terminal-host-placeholder').textContent).toContain('disabled in this build');
     expect(panel).toBeTruthy();
+  });
+});
+
+/**
+ * ONE DERIVATION, TWO READERS (review finding, 2026-09-05).
+ *
+ * The account menu carries a setup nudge computed from the same status this
+ * section reads. It was refreshed only by the setup DIALOG, so connecting a
+ * provider HERE left the menu asserting the opposite until a reload — and
+ * `GateApp` is keyed on the server id, so nothing else cleared it.
+ */
+describe('Settings tells the other reader when the status changed', () => {
+  // CONNECTED on purpose: the block hides Disconnect on a measured
+  // disconnection, so a disconnected fixture has no write to trigger.
+  const status = {
+    providers: [connection({ provider: 'github', connected: true, login: 'octocat' })],
+    gitCredentialStore: 'present' as const,
+  };
+
+  it('reports every read, including the one after a write', async () => {
+    const onStatusRead = vi.fn();
+    render(<CredentialsSection port={portWith(status)} onStatusRead={onStatusRead} />);
+
+    // The initial read.
+    await waitFor(() => expect(onStatusRead).toHaveBeenCalledTimes(1));
+    /* IT HANDS OVER THE VALUE. `credentials.status` shells out on the node
+       once per provider, so a callback that only signalled "changed" would
+       make the other reader pay for a second one on every write. */
+    expect(onStatusRead.mock.calls[0]![0]).toEqual(status);
+
+    // A disconnect reloads, and that reload must be reported too — every
+    // write in this section is followed by one, which is why the hook sits on
+    // the read rather than on three separate write wrappers.
+    fireEvent.click(await screen.findByTestId('credential-disconnect-github'));
+    await waitFor(() => expect(onStatusRead).toHaveBeenCalledTimes(2));
+  });
+
+  it('is optional — a host that passes none still renders', async () => {
+    render(<CredentialsSection port={portWith(status)} />);
+    expect(await screen.findByTestId('credential-card-github')).toBeTruthy();
+  });
+});
+
+/**
+ * THE ROUTING SENTENCE NAMES A VENDOR, NOT A PRODUCT.
+ *
+ * This block exists because the sentence had NO coverage at all. The
+ * `settings-credentials` and `provider-rail` suites were green on 102/102 while
+ * the paragraph rendered "instead of Claude Code" — every `counterpart` in
+ * those fixtures was feeding a different assertion, and `routing` itself was
+ * `null` in the only connection factory. A suite that is green on a sentence it
+ * never reads proves nothing about the sentence.
+ *
+ * WHY THE DISTINCTION IS NOT PEDANTRY. `presentationOf(p).name` and
+ * `CREDENTIAL_PROVIDER_LABEL[p]` are two DIFFERENT tables that disagree for
+ * exactly the providers this feature is about:
+ *
+ *   provider    presentationOf().name    CREDENTIAL_PROVIDER_LABEL
+ *   anthropic   'Claude Code'            'Anthropic'
+ *   openai      'Codex'                  'OpenAI'
+ *
+ * The first is the PRODUCT — the thing you run, correct on a card heading and
+ * in the `binary` beside it. The second is the VENDOR — whose account is billed
+ * and whose model answers. This sentence is about the second: "uses this key
+ * instead of X" is a claim about WHOSE SERVICE the tokens come from. Rendering
+ * the product there says "every claude-code session uses this key instead of
+ * Claude Code", which reads as though the tool stops running — the opposite of
+ * the truth, since the tool is precisely what keeps running.
+ *
+ * Asserted on the FULL TEXT of the paragraph rather than on a substring, so
+ * that the product name reappearing anywhere in it fails. `toContain('Anthropic')`
+ * alone would pass on "instead of Claude Code (Anthropic)".
+ */
+describe('the routing sentence names the vendor whose account is billed', () => {
+  function routed(
+    over: Partial<CredentialRoutingView> & { counterpart: CredentialProviderName },
+  ): CredentialRoutingView {
+    return { agentTool: 'claude-code', role: 'backend', active: false, ...over };
+  }
+
+  it('names Anthropic, and never the product "Claude Code", on an ACTIVE kimi backend', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'kimi',
+              connected: true,
+              status: 'active',
+              routing: routed({ counterpart: 'anthropic', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Every claude-code session you start uses this key instead of Anthropic.',
+    );
+  });
+
+  it('names Anthropic on an UNCONNECTED kimi card, where the sentence is a warning', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'kimi',
+              routing: routed({ counterpart: 'anthropic', active: false }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Connecting this will route every claude-code session you start here instead of Anthropic.',
+    );
+  });
+
+  it('names Moonshot AI on the DISPLACED anthropic card — the other half of the same fact', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'anthropic',
+              connected: true,
+              status: 'active',
+              routing: routed({ counterpart: 'kimi', role: 'displaced', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-displaced');
+    expect(line.textContent).toBe(
+      'Not currently used for claude-code sessions — Moonshot AI is connected and takes over.',
+    );
+  });
+
+  /*
+   * THE GROQ/OPENAI PAIR, because a fix that special-cased `anthropic` would
+   * pass all three tests above and still render "instead of Codex" here.
+   */
+  it('names OpenAI, and never the product "Codex", on an active groq backend', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({
+              provider: 'groq',
+              connected: true,
+              status: 'active',
+              routing: routed({ agentTool: 'codex', counterpart: 'openai', active: true }),
+            }),
+          ],
+          gitCredentialStore: 'present',
+        })}
+      />,
+    );
+
+    const line = await screen.findByTestId('credential-routing-backend');
+    expect(line.textContent).toBe(
+      'Every codex session you start uses this key instead of OpenAI.',
+    );
   });
 });

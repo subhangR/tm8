@@ -10,6 +10,13 @@ export {
 } from './compose.js';
 export { ChatTurnPublisher } from './publisher.js';
 export { registerChatHandlers, type ChatHandlerDeps } from './handlers.js';
+export {
+  CHAT_OPERATIONS_CLOSED_TO_RUNTIME,
+  isChatRuntimeBearer,
+  refuseChatRuntimeBearer,
+  requireOwnChat,
+  runtimeChatIdOf,
+} from './scope.js';
 export type {
   AgentRuntime,
   AgentThread,

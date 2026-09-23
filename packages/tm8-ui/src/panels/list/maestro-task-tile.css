@@ -12,7 +12,13 @@
 .cv2-root .pn-stat--block { color: var(--pn-block); }
 .cv2-root .pn-stat--info { color: var(--pn-info); }
 .cv2-root .pn-stat--brand { color: var(--pn-brand); }
-.cv2-root .pn-stat--idle { color: var(--pn-idle); }
+/* --pn-ink-3, NOT --pn-idle. `--pn-idle` is a WASH — it is the right colour
+   behind an idle pill (`--pn-idle-soft`) and the wrong one for a 1.5px stroke
+   on paper: 2.62:1 light / 3.76:1 dark, which misses the 3:1 bar a non-text
+   mark is held to in the theme most people read in. ink-3 is 3.34 / 4.77 and
+   is the same warm grey a step darker, so the mark reads as quiet rather than
+   as absent. The other tones are semantic and are left alone. */
+.cv2-root .pn-stat--idle { color: var(--pn-ink-3); }
 
 /* THE DOT. Solid = in motion or settled (a running task is a green dot);
    hollow = declared but not started. No ring around either — the ring was the
@@ -24,10 +30,20 @@
   background: currentColor;
   box-sizing: border-box;
 }
+/* NO `opacity` — it was 0.6, and that was the loudest half of the reason the
+   to-do ring is nearly invisible. Composited, --pn-idle at .6 over
+   --pn-surface paints rgb(198,194,184): 1.70:1 light, 2.17:1 dark, against a
+   3:1 bar for a non-text mark. The stroke sampled from the reported screenshot
+   is rgb(197,194,183) — stylesheet and pixels agree, so this is the element.
+
+   The alpha alone was not the bug: even at full opacity --pn-idle is 2.62:1,
+   which still misses. The colour is fixed where the tone is declared
+   (`.pn-stat--idle` above); dropping the dimming is what makes that promotion
+   visible. `currentColor` is kept so a hollow BLOCKED or WAITING mark still
+   draws in its own semantic tone rather than being flattened to ink. */
 .cv2-root .pn-stat--hollow .pn-stat__dot {
   background: transparent;
   border: 1.5px solid currentColor;
-  opacity: 0.6;
 }
 /* Streaming keeps the dot steady and pings a halo off it, so "alive" is
    legible without the mark itself blinking out of the row. */
@@ -147,13 +163,19 @@
 .cv2-root .pn-tt--attention {
   background: var(--pn-wait-soft);
 }
-.cv2-root .pn-tt--completed .pn-tt__title {
-  color: var(--pn-ink-4);
-  text-decoration: line-through;
-}
-/* ARCHIVED IS NOT COMPLETED (C2). Filing a row away dims it; it does not
-   strike it through, which is the mark this tile reserves for work that
-   finished. Same 0.62 the session tile has always used for the same fact. */
+/* NO `--completed` RULE, AND NO `--completed` CLASS. It used to strike the
+   title through from `category === 'done'` — but `done` is the server's
+   RESOLUTION predicate, and `152_universal_status.sql` deliberately seeds the
+   fact kinds (commit, message, file, memory, artifact) into it so a fact about
+   the past cannot block a `depends_on`. Every artifact row on the list wore a
+   completion mark because of it. The treatment is gone for every kind, tasks
+   included: the status glyph and the Done tab already carry the fact. See
+   `.lp__title--archived` in panels.css for the long form.
+
+   ARCHIVED IS NOT COMPLETED (C2), and that separation is exactly why this rule
+   stays behind alone: filing a row away dims it, and `--archived` is fed by
+   `deletedAt` — never by a category. Same 0.62 the session tile has always
+   used for the same fact. */
 .cv2-root .pn-tt--archived {
   opacity: 0.62;
 }

@@ -152,6 +152,20 @@
   display: flex;
   flex-direction: column;
 }
+/* THE CONVERSATION ARCHETYPE'S BODY (chat as an entity).
+
+   The same three declarations `.pn-terminal-body` and `.pn-hub-feed` carry,
+   and for the same reason: the chat screen's own root asks for the full height
+   of a flex column and has never had a sized parent to fill inside a panel.
+   Without `min-height: 0` the transcript refuses to scroll and grows the panel
+   instead — the flex-item default is `min-height: auto`, which is the one
+   value that makes an overflowing child push its parent open. */
+.cv2-root .pn-conversation-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 /* THE SESSION-DETAILS DRAWER AND ITS FLOATING CONTROLS ARE GONE (user ruling
    2026-08-19). `.pn-terminal-drawer*`, `.pn-terminal-overlay*` and
    `.pn-ctxhead*` — roughly 160 lines — are deleted with the markup they
@@ -357,6 +371,13 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* THE PANEL IS A QUERY CONTAINER. Rules inside it that need "how wide is
+     this panel" — the metadata grid's one-column fallback, chiefly — used to
+     ask the VIEWPORT, which is the wrong question: a narrow panel on a wide
+     monitor is exactly the case those rules exist for, and it never matched.
+     `inline-size` only, so height still comes from the flex column above. */
+  container-type: inline-size;
+  container-name: panel;
   /* The 320px floor is LAW (L4): panels shrink to it and then stop. No
      minmax(0,…) and no unfloored overflow:hidden anywhere in this file. */
   min-width: 320px;
@@ -959,6 +980,43 @@
   color: var(--pn-block);
   border-color: var(--pn-block);
 }
+/* WHEN the link was made, pushed to the row's trailing edge so the stamps form
+   a column and the list can be read down as the descending sequence it is
+   sorted into. `margin-left:auto` inside a wrapping row keeps it last on the
+   line it lands on rather than forcing the relations to wrap around it. */
+.cv2-root .pn-peers__when {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+/* The day a run of links belongs to, said ONCE over that run — the same
+   divider grammar the channel feed uses, at this surface's smaller scale. It is
+   a list item so the `<ul>` stays valid, and it is not a row: no marker, no
+   hairline, just the label in the quietest ink the ramp has. */
+.cv2-root .pn-peers__day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 1px;
+}
+.cv2-root .pn-peers__day:first-child { padding-top: 0; }
+.cv2-root .pn-peers__day-label {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+/* The rule that carries the eye across to the stamps under it. */
+.cv2-root .pn-peers__day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-x-hairline-soft);
+}
 
 .cv2-root .pn-foot {
   flex: none;
@@ -1541,17 +1599,112 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 8px;
+  gap: 8px;
+  padding: 5px 10px;
   border-radius: 5px;
   font: inherit;
-  font-size: 11.5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
+  /* `min-width: 0` is load-bearing, not tidying: these are flex items at the
+     default `min-width: auto`, so a long option name forced the menu wider
+     than its own box and gave it a horizontal scrollbar. */
+  min-width: 0;
+}
+.cv2-root .lp__optlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A DRAWN BOX, VISIBLE WHILE THE OPTION IS STILL OFF. These options combine,
+   and a `✓` that only appears after the click cannot say so beforehand. */
+.cv2-root .lp__optbox {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--pn-line-2);
+  border-radius: 4px;
+  background: var(--pn-card);
+  position: relative;
+}
+.cv2-root .lp__optbox[data-on='yes'] {
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+}
+.cv2-root .lp__optbox[data-on='yes']::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--pn-card);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
 }
 .cv2-root .lp__kindopt:hover { background: var(--pn-hover); }
 .cv2-root .lp__kindopt--current { background: var(--pn-hover); font-weight: 600; color: var(--pn-ink); }
+/* OFFERED AND REFUSED must LOOK refused. These three render identically to the
+   working options today, so three options that cannot be clicked look exactly
+   like three that can. */
+.cv2-root .lp__kindopt:disabled { color: var(--pn-ink-4); cursor: not-allowed; }
+.cv2-root .lp__kindopt:disabled:hover { background: none; }
+.cv2-root .lp__kindopt:disabled .lp__optbox { opacity: 0.5; }
+/* One verb to clear, on the surface that set them, and an obvious way out. */
+/* NOT STICKY. `position: sticky; bottom: 0` inside the scroller pinned this to
+   the visible bottom edge while its in-flow position stayed further down, so it
+   rendered ON TOP of options the user had not scrolled to yet — a footer
+   halfway up a list with a half-drawn checkbox beneath it. The menu now holds
+   the footer OUTSIDE the scrolling region instead. */
+.cv2-root .lp__filterfoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+/* THE OPTIONS SCROLL, THE FOOTER DOES NOT. Only the filters menu carries a
+   footer, so only it becomes a column with an inner scroller; the sort and
+   sets menus keep scrolling as a whole. */
+.cv2-root .lp__filtermenu--withfoot {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.cv2-root .lp__filteropts {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+}
+.cv2-root .lp__filterclear {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  padding: 3px 5px;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .lp__filterclear:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink-2); }
+.cv2-root .lp__filterclear:disabled { color: var(--pn-ink-4); cursor: default; }
+.cv2-root .lp__filterdone {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-card);
+  background: var(--pn-brand);
+  padding: 4px 13px;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .lp__filterdone:hover { background: var(--pn-brand-2); }
 
 .cv2-root .lp__actions {
   flex: none;
@@ -1606,7 +1759,10 @@
  */
 .cv2-root .lp__filters {
   flex: none;
-  height: 32px;
+  /* 28px control + 3px of air above and below. It was 32 around a 26px chip;
+     the chip is the thing that grew, and the row grew with it so the controls
+     do not touch its edges. */
+  height: 34px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1614,20 +1770,63 @@
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
-.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
+/* Compact tightens the GAP and nothing else. It used to also drop the row to
+   28px and the gutter to 8px — a second row height and a fourth left edge,
+   both introduced by a flag Home set at every width. */
+.cv2-root .lp--compact .lp__filters { gap: 4px; }
+/* ONE CHIP LANGUAGE FOR ALL FOUR. They were lowercase monospace with an ASCII
+   caret inside the text, 20.4px tall — under half the 44px touch floor — and
+   the sort control was a different shape again, so the row read as terminal
+   output rather than as controls. Sentence case at the UI face, 26px tall, and
+   the caret becomes its own muted glyph instead of a character in the label. */
 .cv2-root .lp__chip {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 8px;
+  /* A ROUNDED RECTANGLE, NOT A PILL — and this is what un-rounds the sort
+     control. Nothing in the source ever asked for a circle: the sort trigger
+     is THIS rule with a one-character label, and a 999px radius on a box whose
+     width has collapsed to its height IS a disc. Squaring the radius fixes the
+     circle at its cause instead of special-casing the one chip, and it draws
+     the line the rest of the panel keeps — rounded rects are controls, pills
+     are counts and statuses (`.lp__chip-count` below stays a pill). */
+  border-radius: var(--pn-r-sm);
+  /* One control height across the header: search row, lifecycle rail, chips. */
+  height: 28px;
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+/* --pn-ink-3, not --pn-ink-4. The caret is aria-hidden decoration, so its bar
+   is 3:1 rather than 4.5:1 — and at ink-4 it made neither: 2.12 light / 2.59
+   dark. ink-3 clears it in both (3.49 / 4.47). */
+.cv2-root .lp__chip-caret { flex: none; color: var(--pn-ink-3); font-size: var(--pn-fs-tick); }
+/* A COUNT, NOT A CHIP PER SELECTION. Every active option used to spawn its own
+   dismissable chip, which is what let this row grow past its container and made
+   "clear" a hunt across four moving targets. */
+.cv2-root .lp__chip-count {
+  flex: none;
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  border-radius: var(--pn-r-pill);
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  font-size: var(--pn-fs-tick);
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .lp__chip-word { overflow: hidden; text-overflow: ellipsis; }
 .cv2-root .lp__chip--person {
   display: inline-flex;
   align-items: center;
@@ -1647,48 +1846,100 @@
 /* Category tabs are a segmented control, not chips: they are SHELVES a row
    moves between by living, not filters a viewer toggles.
 
-   PHASE 7 MADE THIS ROW OVERFLOW, AND A SCREENSHOT IS WHAT FOUND IT. Three
-   tabs became four and the two new words are the longest in the set, so at the
-   280px side-panel floor each tab shrank and its LABEL WRAPPED INSIDE ITSELF —
-   "In / Progress 2", "To Do / 2" — while the row stayed one line tall and
-   every numeric check passed. jsdom loads no stylesheets, so no assertion in
-   this package could see it, and the row-level wrap detector could not either:
-   the tabs still shared a top edge.
+   `nowrap` makes a tab's words indivisible, and the row SHRINKS the word
+   rather than clipping when four of them cannot fit. The words are ruled
+   (To Do · In Progress · Done · Cancelled) and abbreviating them here would be
+   this file overruling the design.
 
-   `nowrap` makes a tab's words indivisible, and the row SCROLLS rather than
-   clipping when four of them cannot fit. Scrolling is the honest failure: the
-   words are ruled (To Do · In Progress · Done · Cancelled) and abbreviating
-   them here would be this file overruling the design. */
-.cv2-root .lp__tabs {
-  flex: none;
-  display: inline-flex;
-  max-width: 100%;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  background: var(--pn-card);
-}
-.cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
+   THE `.lp__tabs` RULE THAT STOOD HERE IS GONE. #603 rebuilt this row as
+   `.lp__tierrow` and left the old container rule behind; grepping lp__tabs
+   across the tsx sources returned zero, so it had been styling a class nothing
+   rendered ever since — including the `overflow-x: auto` its own comment claimed was
+   the fix for the row overflowing. The live container is `.lp__tierrow`, far
+   below. Deleted here rather than left as a comment because a dead rule that
+   LOOKS load-bearing is what sent this audit to the wrong element twice. */
 .cv2-root .lp__tab {
   appearance: none;
   border: 0;
   background: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-3);
-  /* 7px, not 9px: four tabs at the 280px floor, and the padding is the only
-     part of the row that is not a ruled word. */
-  padding: 3px 5px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  /* --pn-ink-3 on the rail is 3.04:1 light / 4.30:1 dark — this is a LABEL, so
+     the bar is 4.5 and it made neither. ink-2 clears both (6.35 / 7.84). */
+  color: var(--pn-ink-2);
+  /* Vertical padding is gone: the segment now stretches to the rail's inner
+     height (`align-items: stretch` above), so padding here would fight it. */
+  padding: 0 7px;
   cursor: pointer;
-  border-left: 1px solid var(--pn-line);
   white-space: nowrap;
-  flex: none;
+  border-radius: var(--pn-r-xs);
+  /* SHRINKABLE, and this is the whole fix: at the default `min-width: auto` a
+     flex item refuses to go below its content, which is what pushed the fourth
+     tab off the edge. */
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
-.cv2-root .lp__tab:first-child { border-left: 0; }
-.cv2-root .lp__tab:hover { background: var(--pn-hover); }
-.cv2-root .lp__tab--active { font-weight: 600; color: var(--pn-ink); background: var(--pn-active); }
+/* The word yields; the number does not. */
+.cv2-root .lp__tab-word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  /* THE HIERARCHY MOVED FROM INK TO SIZE AND WEIGHT, and it had to. #603 made
+     the count quieter than its label by drawing it four steps down the ink
+     ramp, but the count is the thing a reader scans for and --pn-ink-4 on the
+     rail is 1.84:1 — the palest ink in the system carrying the most-read
+     number. Once the count is promoted to ink-2 to clear AA it is the SAME
+     ink as the word, so "name then quantity" has to be said another way:
+     11px/600 for the word against 10px/400 for the number. That reading
+     survives a theme change and a contrast-boost setting, which the ink
+     version never did. */
+  font-weight: 600;
+}
+.cv2-root .lp__tab-count {
+  flex: none;
+  font-size: var(--pn-fs-fine);
+  /* 1.84:1 light / 2.49:1 dark at ink-4, against a 4.5 bar. ink-2 is 6.35 /
+     7.84. See `.lp__tab-word` for what carries the hierarchy now. */
+  color: var(--pn-ink-2);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .lp__tab:hover { background: var(--pn-card); color: var(--pn-ink-2); }
+/* RAISED, not tinted — AND EDGED, because raised alone did not carry.
+
+   Measured, the white face separates from the rail it sits on by 1.15:1 in
+   light and 1.04:1 in dark, and the only thing drawing that boundary was a
+   5%-alpha shadow. Against a 3:1 bar for a state you have to be able to FIND,
+   that is not a near miss, it is no signal at all — which is why the selected
+   lifecycle tab reads as unfindable in a screenshot.
+
+   No fill in this palette can fix it: white on --pn-hover is 1.15, on
+   --pn-active 1.22, on --pn-line-2 1.49. The paper palette is deliberately
+   low-contrast and this is not the change that should re-tune it. So the state
+   gets a SECOND CHANNEL instead — the fill keeps saying "in front", and a 1px
+   brass edge says "this one", at 3.67:1 light and 7.34:1 dark.
+
+   `inset` box-shadow rather than a border: it costs no layout, so the segment
+   does not resize when it becomes the selected one and the rail does not
+   reflow on every tab click.
+
+   THE COST, STATED: an active filter chip already carries brass, so a brass
+   edge here puts the accent in two adjacent rows. The alternative — a 2px
+   brass underline — reads as a tab-bar rather than as the segmented control
+   this is, and the segmented reading is the one #603 chose deliberately. */
+.cv2-root .lp__tab--active {
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  box-shadow: inset 0 0 0 1px var(--pn-brand), var(--pn-sh-sm);
+}
+/* 3.49:1 light / 4.47:1 dark at ink-3, against the same 4.5 bar the inactive
+   count is held to. The selected tab's count is not a different kind of text. */
+.cv2-root .lp__tab--active .lp__tab-count { color: var(--pn-ink-2); }
 
 .cv2-root .lp__body {
   flex: 1 1 auto;
@@ -1696,7 +1947,9 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 12px;
+  /* 10px sides — the stack's one gutter, so a tile's edge lines up with the
+     search box, the lifecycle rail, the filter chips and the footer. */
+  padding: 6px 10px 12px;
   scrollbar-width: thin;
   scrollbar-color: var(--pn-line-2) transparent;
 }
@@ -1738,6 +1991,11 @@
    rules, a little air between targets, and rounded interaction states. The
    resting surface stays quiet; hover and selection provide the shape. */
 .cv2-root .lp__tree {
+  /* The containing block for `.lp__flights`. Safe to add: every tile anatomy
+     that parks something absolutely (`pn-st__actions`, `lp__rowactions`,
+     `lp__assignmenu`) sits inside a tile that is ALREADY `position: relative`,
+     so nothing was resolving against an ancestor above this one. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1769,7 +2027,7 @@
   animation: lp-children-in var(--pn-dur-base) var(--pn-ease-out);
 }
 
-/* --- message pulse — a message travelling between two sessions -------------
+/* --- session pulse — delegation, completion, or message in flight ----------
    AMBIENT, NOT ANNOUNCING. The tree already carries one hairline per nesting
    level; a pulse is that same hairline briefly brightening as the message
    passes, drawn as an overlay so the wire underneath keeps its exact colour
@@ -1780,7 +2038,20 @@
    -friendly property on an element that already exists, rather than an
    inserted node per frame. `--lp-pulse-delay` is set per segment by the panel,
    which is what makes the light travel ALONG the route instead of every level
-   flashing at once. */
+   flashing at once.
+
+   FORM DOES REAL WORK: message is a one-pixel soft sweep, delegation is a
+   three-pixel solid baton, completion is a four-pixel broken return trace.
+   Colour backs that distinction up; it never carries the distinction alone. */
+.cv2-root .lp__children[data-pulse-kind='message'],
+.cv2-root .lp__branch[data-pulse-kind='message'] { --lp-pulse-color: var(--pn-brand); }
+.cv2-root .lp__children[data-pulse-kind='delegation'],
+.cv2-root .lp__branch[data-pulse-kind='delegation'] { --lp-pulse-color: var(--pn-run); }
+.cv2-root .lp__children[data-pulse-kind='completion'],
+.cv2-root .lp__branch[data-pulse-kind='completion'] { --lp-pulse-color: var(--pn-wait); }
+.cv2-root .lp__children[data-pulse-outcome='failed'],
+.cv2-root .lp__branch[data-pulse-outcome='failed'] { --lp-pulse-color: var(--pn-block); }
+
 .cv2-root .lp__children[data-pulse] { position: relative; }
 .cv2-root .lp__children[data-pulse]::after {
   content: '';
@@ -1793,15 +2064,63 @@
   background-image: linear-gradient(
     to bottom,
     transparent 0%,
-    var(--pn-brand) 45%,
-    var(--pn-brand) 55%,
+    var(--lp-pulse-color) 45%,
+    var(--lp-pulse-color) 55%,
     transparent 100%
   );
   background-repeat: no-repeat;
   background-size: 100% 55%;
-  animation: lp-pulse-down 620ms var(--pn-ease-standard) var(--lp-pulse-delay, 0ms) both;
+  animation: lp-pulse-down var(--pn-dur-slow) var(--pn-ease-standard) var(--lp-pulse-delay, 0ms) both;
+}
+.cv2-root .lp__children[data-pulse-kind='delegation']::after {
+  left: -2px;
+  width: 3px;
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--lp-pulse-color) 34%,
+    var(--lp-pulse-color) 66%,
+    transparent 100%
+  );
+  background-size: 100% 42%;
+}
+.cv2-root .lp__children[data-pulse-kind='completion']::after {
+  left: -2px;
+  width: 4px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    var(--lp-pulse-color) 3px 5px,
+    transparent 5px 8px
+  );
+  background-size: 100% 48%;
 }
 .cv2-root .lp__children[data-pulse='up']::after { animation-name: lp-pulse-up; }
+
+/* The arrival arrow makes direction explicit even in a single frozen frame. */
+.cv2-root .lp__children[data-pulse]::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: -4px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  animation: lp-pulse-arrow var(--pn-dur-slow) var(--pn-ease-out) var(--lp-pulse-delay, 0ms) both;
+}
+.cv2-root .lp__children[data-pulse='down']::before {
+  bottom: -1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--lp-pulse-color);
+}
+.cv2-root .lp__children[data-pulse='up']::before {
+  top: -1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 6px solid var(--lp-pulse-color);
+}
 
 /* Travel plus fade at both ends: a sweep that stayed at full strength would
    read as a scrollbar, and the fade is what makes it read as motion. */
@@ -1817,6 +2136,11 @@
   80%  { opacity: 1; }
   100% { background-position: 0 -60%; opacity: 0; }
 }
+@keyframes lp-pulse-arrow {
+  0%, 55% { opacity: 0; }
+  70%, 90% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* The endpoints. A row that sent, and a row that received — including a
    collapsed ancestor standing in for a descendant, which is the ONLY signal
@@ -1824,16 +2148,143 @@
    glow on the tile's own surface; neither resizes it. */
 .cv2-root .lp__branch[data-pulse-row] > .pn-st,
 .cv2-root .lp__branch[data-pulse-row] > .lp__tile {
-  animation: lp-pulse-row 900ms var(--pn-ease-out) both;
+  animation: lp-pulse-row-message var(--pn-dur-slow) var(--pn-ease-out) both;
 }
-.cv2-root .lp__branch[data-pulse-row='from'] > .pn-st,
-.cv2-root .lp__branch[data-pulse-row='from'] > .lp__tile {
-  animation-duration: 620ms;
+.cv2-root .lp__branch[data-pulse-kind='delegation'] > .pn-st,
+.cv2-root .lp__branch[data-pulse-kind='delegation'] > .lp__tile {
+  animation-name: lp-pulse-row-delegation;
 }
-@keyframes lp-pulse-row {
-  0%   { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0); }
-  35%  { box-shadow: 0 0 0 2px rgba(var(--pn-brand-rgb), 0.28); }
-  100% { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0); }
+.cv2-root .lp__branch[data-pulse-kind='completion'] > .pn-st,
+.cv2-root .lp__branch[data-pulse-kind='completion'] > .lp__tile {
+  animation-name: lp-pulse-row-completion;
+}
+@keyframes lp-pulse-row-message {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lp-pulse-color) 0%, transparent); }
+  40%  { box-shadow: 0 0 0 2px color-mix(in srgb, var(--lp-pulse-color) 32%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lp-pulse-color) 0%, transparent); }
+}
+@keyframes lp-pulse-row-delegation {
+  0%, 100% { box-shadow: inset 0 0 0 0 color-mix(in srgb, var(--lp-pulse-color) 0%, transparent); }
+  40%, 72% { box-shadow: inset 3px 0 0 var(--lp-pulse-color); }
+}
+@keyframes lp-pulse-row-completion {
+  0%, 100% { outline: 1px dashed transparent; outline-offset: -2px; }
+  40%, 72% { outline: 1px dashed var(--lp-pulse-color); outline-offset: -2px; }
+}
+
+/* --- the flight ------------------------------------------------------------
+   A DISCRETE OBJECT CROSSING THE TILES. The sweep above is honest and nearly
+   invisible: a 1px overlay on a 1px hairline, in a column of 29px rows. So the
+   arrival also sends something that MOVES — a small glyph that leaves the
+   sender's tile, arcs over the rows between, and lands on the recipient's.
+
+   OUT OF FLOW, ALWAYS. The layer is `inset: 0` over the tree and takes no
+   pointer events, so a message arriving in a background subtree cannot move,
+   resize or block a single row of the list the viewer is reading.
+
+   TWO TRACKS, TWO ELEMENTS. The outer span carries POSITION and nothing else,
+   stepping through the seven stops `tile-flight.ts` sampled — `linear`, on
+   purpose, because the ease is already baked into where those stops sit and a
+   timing function on top would stutter at each joint. The inner span carries
+   ENTRANCE — fade, scale, and the glow that trails it — on its own curve. One
+   property per element is what MAKES compositing possible; `will-change` below
+   is a hint and not a promise, and no engine owes us the fast path.
+
+   COLOUR IS NEVER ALONE. The three kinds carry the same hues as the wire
+   beneath them, and also three different glyphs (bubble, chevron, barred
+   return arrow) drawn by `TileFlightLayer`. */
+.cv2-root .lp__flights {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.cv2-root .lp__flight {
+  --lp-flight-color: var(--pn-brand);
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Half the 18px carrier, so the sampled point is the glyph's CENTRE rather
+     than its top-left corner — otherwise every flight lands low and right. */
+  margin: -9px 0 0 -9px;
+  display: block;
+  width: 18px;
+  height: 18px;
+  will-change: transform;
+  animation: lp-flight-travel var(--lp-flight-duration, 900ms) linear both;
+}
+
+.cv2-root .lp__flight[data-flight-kind='message'] { --lp-flight-color: var(--pn-brand); }
+.cv2-root .lp__flight[data-flight-kind='delegation'] { --lp-flight-color: var(--pn-run); }
+.cv2-root .lp__flight[data-flight-kind='completion'] { --lp-flight-color: var(--pn-wait); }
+.cv2-root .lp__flight[data-flight-outcome='failed'] { --lp-flight-color: var(--pn-block); }
+
+.cv2-root .lp__flight__glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lp-flight-color);
+  border-radius: 999px;
+  /* Its own backing. The glyph crosses tiles of every state — selected, live,
+     hovered — and a bare mark would sink into the one it happens to be over. */
+  background: var(--pn-card);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--lp-flight-color) 55%, transparent),
+    0 0 10px 2px color-mix(in srgb, var(--lp-flight-color) 30%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.22);
+  animation: lp-flight-glyph var(--lp-flight-duration, 900ms) var(--pn-ease-out) both;
+}
+
+.cv2-root .lp__flight__glyph .kit-vicon { display: block; }
+
+/* The wake. A soft disc left a beat behind the glyph, which is what reads as
+   speed — the mark alone reads as a badge being dragged.
+   BEHIND, and `z-index` is what puts it there: a positioned pseudo-element
+   paints ABOVE its host's non-positioned content by default, which laid the
+   halo over the mark and tinted the glyph its own glow colour. */
+.cv2-root .lp__flight__glyph::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -3px;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--lp-flight-color) 34%, transparent) 0%,
+    transparent 70%
+  );
+  animation: lp-flight-wake var(--lp-flight-duration, 900ms) var(--pn-ease-out) both;
+}
+
+@keyframes lp-flight-travel {
+  0%      { transform: translate3d(var(--lp-flight-0x, 0px), var(--lp-flight-0y, 0px), 0); }
+  16.667% { transform: translate3d(var(--lp-flight-1x, 0px), var(--lp-flight-1y, 0px), 0); }
+  33.333% { transform: translate3d(var(--lp-flight-2x, 0px), var(--lp-flight-2y, 0px), 0); }
+  50%     { transform: translate3d(var(--lp-flight-3x, 0px), var(--lp-flight-3y, 0px), 0); }
+  66.667% { transform: translate3d(var(--lp-flight-4x, 0px), var(--lp-flight-4y, 0px), 0); }
+  83.333% { transform: translate3d(var(--lp-flight-5x, 0px), var(--lp-flight-5y, 0px), 0); }
+  100%    { transform: translate3d(var(--lp-flight-6x, 0px), var(--lp-flight-6y, 0px), 0); }
+}
+
+/* Launch, cruise, land. The overshoot at 14% is the takeoff; the settle at the
+   end is the glyph being absorbed by the row, which is already glowing to
+   receive it (`lp-pulse-row-message`). */
+@keyframes lp-flight-glyph {
+  0%   { opacity: 0; transform: scale(0.4); }
+  14%  { opacity: 1; transform: scale(1.12); }
+  26%  { opacity: 1; transform: scale(1); }
+  82%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.52); }
+}
+
+@keyframes lp-flight-wake {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  22%      { opacity: 1; transform: scale(1.9); }
+  78%      { opacity: 0.85; transform: scale(1.7); }
 }
 
 /* Maestro SessionListItem anatomy. The live-dot markup and ping animation are
@@ -1986,7 +2437,27 @@
   /* Separates the pill from the face it sits on, in either theme. */
   box-shadow: 0 0 0 1.5px var(--pn-card);
 }
-.cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
+/* `.cv2-root .pn-stat` IS DECLARED TWICE — here, and in
+   `list/maestro-task-tile.css`, which sets the 16px box and no colour while
+   this one sets the colour and no box. Equal specificity, so which wins is
+   decided by bundle order rather than by intent, and that is why the hollow
+   ring's colour was not where it looked like it lived. Both are kept (the
+   other file owns the geometry, this one the default ink) but they now agree
+   on --pn-ink-3, so the order no longer changes the pixels. See
+   `.pn-stat--idle` there for why the idle mark is ink and not --pn-idle.
+
+   THE DEFAULT IS REACHABLE, and it is worth knowing by whom. The task tile's
+   glyph takes a `PillTone` — run/wait/block/info/idle/brand — and all six carry
+   their own colour, so it never lands here. `MaestroSessionTile` is the one
+   that does: it builds `pn-stat--${kind}` from a SESSION STATUS, and of those,
+   `completed` and `archived` have no colour rule anywhere and fall through to
+   this line. Both are solid shapes (a filled rect, a filled circle with a
+   check) on --pn-surface, so the move off --pn-idle takes them from 2.62:1 to
+   3.34:1 light and 3.76 to 4.77 dark — through the 3:1 bar for a non-text mark
+   rather than past it. That is the intended direction; it is named here so the
+   next reader does not assume, as two reviews of this change did, that the
+   base rule is dead. */
+.cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-ink-3); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
 .cv2-root .pn-stat--failed, .cv2-root .pn-stat--blocked { color: var(--pn-block); }
@@ -2286,12 +2757,26 @@
 }
 /* No compact step-down: a session title is 12.5px at every density, so shrinking
    only this one reopened the mismatch wherever `lp--compact` is applied. */
-/* C2 — `--done` was ONE class fed by `deletedAt`, so archiving a row struck it
-   through exactly as completing it would have. Two facts, two treatments: a
-   COMPLETED row is struck through (it finished), an ARCHIVED one is only dimmed
-   (it was filed away, whatever its status). A row can be both, and then it
-   reads as both. Matches `.pn-st--archived`, which already dims sessions. */
-.cv2-root .lp__title--completed { color: var(--pn-ink-3); text-decoration: line-through; }
+/* THERE IS NO COMPLETED TREATMENT ON A LIST TITLE, and the reason is a
+   COLLISION IN `done`, not a change of taste.
+
+   `status_category = 'done'` is a RESOLUTION predicate on the server, not a
+   lifecycle position: `db/migrations/152_universal_status.sql` seeds the FACT
+   KINDS — commit, message, file, memory, artifact — into `done` so that a fact
+   about the past cannot block a `depends_on` forever. A list row that painted a
+   completion mark from that flag therefore struck through EVERY artifact, EVERY
+   memory, EVERY file, message and commit — twelve of twelve titles on the
+   Artifacts list. `registry.ts` already documents the same collision for the
+   category tab. This was the last place still reading the resolution flag as
+   "this finished", and the mark is gone rather than kind-gated: completion is
+   said by the status chip, the status dot and the Done tab, which say it
+   without claiming an artifact was completed.
+
+   C2 SURVIVES, and it is the reason `--archived` is still here alone. Archived
+   and completed are two orthogonal facts; `--archived` is `deletedAt`, it dims,
+   and it must never be fed by a category. Matches `.pn-st--archived`, which
+   already dims sessions. `.pn-head__title--struck` (the detail header) is also
+   `deletedAt` and is correct as it stands. */
 .cv2-root .lp__title--archived { color: var(--pn-ink-3); opacity: 0.62; }
 .cv2-root .lp__title:focus-visible {
   outline: 2px solid var(--pn-brand);
@@ -2450,18 +2935,46 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .lp__children { animation: none; }
-  /* The TRAVELLING sweep is the vestibular part, so it goes. The endpoint glow
-     stays: it is an opacity change on a stationary element, and dropping it too
-     would leave a reduced-motion user with no signal at all that a message
-     arrived — silence is not an accessibility win. */
-  .cv2-root .lp__children[data-pulse]::after { animation: none; opacity: 0; }
+  /* The sweep goes; a stationary patterned trace, arrival arrow, and endpoint
+     form remain. Reduced motion must reduce movement, not erase delegation. */
+  .cv2-root .lp__children[data-pulse]::after {
+    animation: none;
+    opacity: 0.72;
+    background-position: 0 50%;
+  }
+  .cv2-root .lp__children[data-pulse]::before { animation: none; opacity: 1; }
+  /* The ONLY treatment removed outright rather than frozen. A flight is motion
+     with nothing left once the motion is gone — a glyph parked mid-list would
+     read as a control. The wire above and the endpoint glow below both keep
+     their static forms, so the arrival is still fully reported. */
+  .cv2-root .lp__flights { display: none; }
+  .cv2-root .lp__branch[data-pulse-row] > .pn-st,
+  .cv2-root .lp__branch[data-pulse-row] > .lp__tile {
+    animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--lp-pulse-color) 55%, transparent);
+  }
+  .cv2-root .lp__branch[data-pulse-kind='delegation'] > .pn-st,
+  .cv2-root .lp__branch[data-pulse-kind='delegation'] > .lp__tile {
+    box-shadow: inset 3px 0 0 var(--lp-pulse-color);
+  }
+  .cv2-root .lp__branch[data-pulse-kind='completion'] > .pn-st,
+  .cv2-root .lp__branch[data-pulse-kind='completion'] > .lp__tile {
+    box-shadow: none;
+    outline: 1px dashed var(--lp-pulse-color);
+    outline-offset: -2px;
+  }
   .cv2-root .lp__tile { transition: none; }
   .cv2-root .lp__tile:hover { transform: none; }
 }
 
 /* Filter picker — the UNBOUNDED set lives here, where it can scroll, so the
    row above it stays bounded by construction: active chips + one trigger. */
+/* THE ROW MUST NOT EAT ITS LAST CHILD. `overflow: hidden` here silently
+   swallowed the sort control — the rightmost element — once a few filters were
+   active, so the control did not move or shrink, it simply stopped existing.
+   Wrapping is the honest failure: the bar gets taller, nothing disappears. */
 .cv2-root .lp__filterbar {
+  flex-wrap: wrap;
   flex: none;
   position: relative;
 }
@@ -2470,7 +2983,9 @@
   top: 100%;
   left: 8px;
   z-index: 20;
-  width: 176px;
+  /* IT FOLLOWS THE BAR. A fixed 176px never responded to the panel, so a long
+     option name overran it and the empty state above overran it by 54px. */
+  width: min(280px, 100%);
   max-height: 240px;
   overflow: auto;
   padding: 4px;
@@ -2534,11 +3049,12 @@
 /* The sets menu's designed empty — a sentence, not a bare popover. */
 .cv2-root .lp__filterempty {
   margin: 0;
-  padding: 4px 8px 7px;
-  font-size: 10.5px;
-  line-height: 1.5;
+  padding: var(--pn-space-1) var(--pn-space-3) var(--pn-space-2);
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
   color: var(--pn-ink-3);
-  max-width: 230px;
+  /* `max-width: 230px` inside what was a 176px box guaranteed a horizontal
+     overrun every time this empty state rendered. It wraps to the menu now. */
 }
 
 /* --- in-panel search — T0-1's own bordered row (D36: focused by `f`) ------ */
@@ -2551,7 +3067,10 @@
   align-items: center;
   gap: 5px;
   height: 28px;
-  margin: 5px 8px;
+  /* ONE GUTTER (10px) FOR EVERY ROW IN THE STACK — see `.lp__tierrow`. This
+     was 8, which put the search box two pixels inside the filter chips below
+     it and two outside the list body. */
+  margin: 5px 10px;
   padding: 0 8px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
@@ -2627,12 +3146,56 @@
 
 /* Lifecycle tier tabs — their OWN row (D41). Tabs are the lifecycle band;
    the filter chips below narrow within it. T0-1 draws both. */
+/* ONE SEGMENTED CONTROL, NOT FOUR RULED WORDS.
+   Measured at the owner's real counts (227 / 166 / 130 / 28) the old row
+   needed 305px inside a 277px box: `Cancelled` was cut off with no scrollbar
+   and no ellipsis to reach it, because the row carried no overflow rule and
+   sat inside a clipping parent. (The `.lp__tabs` rule whose comment claimed to
+   solve this styles a class NOTHING renders — zero hits in the source.)
+
+   Segments are `flex: 0 1 auto` with `min-width: 0`, so at a narrow column all
+   four still fit and the WORD shortens instead of a whole tab vanishing past
+   an edge. The count never shrinks: a truncated number is a wrong number. */
 .cv2-root .lp__tierrow {
+  /* `flex: none`, NOT `1 1 auto`: this row is a child of a COLUMN flex
+     container, so a grow factor stretches it DOWN into the list body rather
+     than across. Horizontal fill comes from `align-self` below; the segments
+     inside do the shrinking. Caught by a browser screenshot — jsdom has no
+     layout engine and every test passed while this filled the panel. */
   flex: none;
+  align-self: stretch;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 10px 6px;
+  /* `stretch`, so the four segments FILL the rail's inner height instead of
+     centring at their own. That is what makes the rail one 28px control
+     rather than a 22px control inside a taller box. */
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+
+  /* THE GUTTER. This row alone had none: `align-self: stretch` ran it edge to
+     edge, so the lifecycle rail touched the panel border while the search box
+     above it sat at 8px and the filter chips below at 10px. Five stacked rows
+     on four different left edges is the single biggest reason the stack read
+     as unaligned, and this was the row that broke the line hardest. */
+  margin: 0 10px;
+  /* ONE CONTROL HEIGHT (28px) — the search row's, and now the chips'. The
+     border is inside the box so the rail measures 28px on the outside, which
+     is the number the other two rows are keeping.
+
+     `min-height`, NOT `height`, and that is load-bearing rather than taste.
+     The phone puts a 44px touch floor on the SEGMENTS (`.lp__tab`'s
+     `min-block-size` in `mobile-screens.css`) and nothing on this rail, so a
+     fixed height here would pin the container at 28 while its own children
+     demanded 44 and overflowed it. As a minimum, the desktop rail still
+     measures exactly 28 (its content is shorter) and the phone's rail grows to
+     the ~50px its own budget comment already allots it. The other two rows do
+     not need this because the phone overrides each of them directly. */
+  min-height: 28px;
+  box-sizing: border-box;
 }
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)
@@ -3202,6 +3765,32 @@
   background: none;
   color: inherit;
   cursor: pointer;
+  /* Positioning context for the hit area below. The menu this button opens is
+     portalled (`EntityControls.tsx`), so nothing was relying on it being
+     static. */
+  position: relative;
+}
+/* WCAG 2.2 SC 2.5.8 — A POINTER TARGET IS 24x24, AND THIS ONE IS 16.
+
+   The mark inside is `aria-hidden` decoration, which is what makes this easy
+   to file as "just a status dot" — it is not. `MaestroStatusGlyph` renders
+   inside a real `<button>` that opens the state menu, so the criterion applies
+   to the BUTTON's box, and 16x16 misses it by a third in each axis.
+
+   Grown with a pseudo-element rather than padding or a width, deliberately:
+   the docblock above is right that this row's height is pinned by its tallest
+   child, so anything that takes layout space here grows EVERY task row in
+   every list. An absolutely positioned `::before` takes none — the same reason
+   the hover affordance is a `box-shadow` rather than a ring with a size.
+
+   It is also not caught by `.lp__statedot > *` below: a pseudo-element is not
+   a child element, so it keeps the pointer events it needs and DEF-006's fix
+   (the decorative glyph must not eat its own button's clicks) still stands. */
+.cv2-root .lp__statedot::before {
+  content: '';
+  position: absolute;
+  /* 16 + 4 + 4 = 24 in both axes. */
+  inset: -4px;
 }
 .cv2-root .lp__statedot:hover { box-shadow: 0 0 0 3px var(--pn-hover); }
 .cv2-root .lp__statedot:focus-visible {
@@ -3432,13 +4021,46 @@
    Pinned here, on the strip, rather than in any one vocabulary: the band is a
    property of putting them in a row, and each control keeps its own metric
    everywhere else it is used. */
+/* THE NEW CONTROLS JOIN THE BAND. `＋ Add dates`, the gate chip and the chip
+   menu's trigger are chips in this same row, so they belong to the group for
+   the reason the comment above gives — the band is a property of putting them
+   in a row. Adding them anywhere else would let the height band and the visual
+   band drift apart. */
 .cv2-root .lp__rowdetail--chips .lp__statesel,
 .cv2-root .lp__rowdetail--chips .pn-badge,
+.cv2-root .lp__rowdetail--chips .lp__dateadd,
+.cv2-root .lp__rowdetail--chips .pn-gate,
 .cv2-root .lp__rowdetail--chips .lp__rowaction {
   height: 24px;
   min-height: 24px;
   /* this file has no border-box reset, and each of these carries padding */
   box-sizing: border-box;
+}
+/* THE FACES WERE HEIGHT-MATCHED AND NEVER GIVEN A TREATMENT. The group above is
+   the ONLY rule reaching `.pn-badge` here, and it sets height and nothing else —
+   no border, radius, padding or background — so beside two styled pills the
+   assignee and collection faces read as bare text.
+
+   WHY THIS IS A SEPARATE RULE AND NOT MORE PROPERTIES ON THE GROUP ABOVE: the
+   height band is genuinely common to all five members, but this treatment is
+   not. `lp__statesel`, `lp__rowaction`, `lp__dateadd` and `pn-gate` each carry
+   their own border, radius and background already — putting a pill border in
+   the shared group would style five things to fix one, and the state select
+   would grow a second border.
+   THE HAZARD IS A *GLOBAL* `.pn-badge` BASE, not a second panel-scoped block:
+   a global rule also lands on the tiles, on top of the full block at
+   maestro-task-tile.css:49. This is panel-scoped, so it cannot. */
+.cv2-root .lp__rowdetail--chips .pn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
 }
 
 /* DEF-024 — THE STATE / PRIORITY / TYPE SELECTS: 24px tall AT 10.5px TYPE.
@@ -3835,4 +4457,136 @@
   padding: 2px 0 4px;
   font-size: 11px;
   color: var(--pn-ink-4);
+}
+
+
+/* --- the panel's overflow, the chip menu, and the two new chips ----------- */
+
+/* WHY `⋯` EXISTS HERE: see `PanelOverflow` in detail/chrome.tsx. Archive was
+   the widest item in the control strip, so flex-wrap ejected it onto a second
+   line directly beneath `✕` Close — the one destructive verb on the panel, a
+   few pixels from the control you press when you are finished. */
+.cv2-root .pn-overflow { position: relative; flex: none; display: flex; align-items: center; }
+.cv2-root .pn-overflow__trigger {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .pn-overflow__trigger:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .pn-overflow__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .pn-overflow__item {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  padding: 6px 9px;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .pn-overflow__item:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .pn-overflow__rule { height: 1px; background: var(--pn-line); margin: 4px 2px; }
+/* The archive verb arrives as a `RowAction`, which is sized for a row; in a
+   menu it spans the column like every other item. */
+.cv2-root .pn-overflow__menu .lp__rowaction { width: 100%; justify-content: flex-start; }
+
+/* THE VALUE, WITH ITS EDITOR ONE CLICK AWAY — see `ChipMenu`. */
+.cv2-root .lp__chipmenu { position: relative; display: inline-flex; }
+.cv2-root .lp__statesel--chip {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid transparent;
+}
+.cv2-root .lp__statesel--chip:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+.cv2-root .lp__chipmenu__caret { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+.cv2-root .lp__chipmenu__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 150px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .lp__chipmenu__item {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  padding: 5px 9px;
+  border-radius: var(--pn-r-xs);
+  white-space: nowrap;
+}
+.cv2-root .lp__chipmenu__item:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+/* W4 — an option outside the row's type vocabulary is DISABLED with its reason
+   in its own label, never hidden. */
+.cv2-root .lp__chipmenu__item:disabled { color: var(--pn-ink-4); cursor: not-allowed; }
+
+/* AN ABSENCE AS ONE QUIET VERB, not two shouting `mm/dd/yyyy` placeholders. */
+.cv2-root .lp__dateadd {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: none;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cv2-root .lp__dateadd:hover { border-color: var(--pn-ink-4); color: var(--pn-ink-2); background: var(--pn-hover); }
+
+/* THE GATE, ONLY WHEN IT SAYS SOMETHING — see `gateChipFor`. */
+.cv2-root .pn-gate {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand-2);
 }

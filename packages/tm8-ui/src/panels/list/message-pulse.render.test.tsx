@@ -41,6 +41,10 @@ function renderTree(messagePulses: readonly MessagePulse[]) {
   return view;
 }
 
+function message(key: string, fromId: string, toId: string): MessagePulse {
+  return { key, kind: 'message', fromId, toId };
+}
+
 /** The wire for a level is the `.lp__children` wrapper of the node that owns it. */
 function litWires(container: HTMLElement): { direction: string | null; delay: string }[] {
   return [...container.querySelectorAll('.lp__children[data-pulse]')].map((el) => ({
@@ -64,7 +68,7 @@ describe('session tree message pulse — rendered', () => {
   it('lights the wires between sender and target, staggered along the route', () => {
     // leaf -> aunt: up through mid's wire and root's wire, then down root's —
     // root is shared, so it is lit once, at its earliest position.
-    const { container } = renderTree([{ key: 'm1', fromId: leaf.id, toId: aunt.id }]);
+    const { container } = renderTree([message('m1', leaf.id, aunt.id)]);
     const wires = litWires(container);
     expect(wires.length).toBeGreaterThan(0);
     expect(wires.map((w) => w.direction)).toContain('up');
@@ -77,9 +81,38 @@ describe('session tree message pulse — rendered', () => {
   });
 
   it('marks both endpoints, distinguishing the sender from the arrival', () => {
-    const { container } = renderTree([{ key: 'm1', fromId: leaf.id, toId: aunt.id }]);
+    const { container } = renderTree([message('m1', leaf.id, aunt.id)]);
     expect(container.querySelector('[data-pulse-row="from"]')).toBeTruthy();
     expect(container.querySelector('[data-pulse-row="to"]')).toBeTruthy();
+  });
+
+  it('carries a form selector for each pulse kind, not colour alone', () => {
+    const { container, rerender } = renderTree([
+      { key: 'd1', kind: 'delegation', fromId: root.id, toId: mid.id, evidence: 'entity' },
+    ]);
+    expect(container.querySelector('[data-pulse-kind="delegation"][data-pulse]')).toBeTruthy();
+
+    rerender(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor}
+        ctx={ctx}
+        messagePulses={[
+          { key: 'c1', kind: 'completion', fromId: mid.id, toId: root.id, outcome: 'exited' },
+        ]}
+      />,
+    );
+    expect(container.querySelector('[data-pulse-kind="completion"][data-pulse]')).toBeTruthy();
+
+    rerender(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor}
+        ctx={ctx}
+        messagePulses={[message('m2', mid.id, root.id)]}
+      />,
+    );
+    expect(container.querySelector('[data-pulse-kind="message"][data-pulse]')).toBeTruthy();
   });
 
   it('absorbs into the collapsed ancestor, and does not expand the tree to chase it', () => {
@@ -100,7 +133,7 @@ describe('session tree message pulse — rendered', () => {
         kind="work_session"
         rowsFor={rowsFor}
         ctx={ctx}
-        messagePulses={[{ key: 'm1', fromId: aunt.id, toId: leaf.id }]}
+        messagePulses={[message('m1', aunt.id, leaf.id)]}
       />,
     );
 
@@ -113,7 +146,7 @@ describe('session tree message pulse — rendered', () => {
   });
 
   it('ignores a pulse whose endpoints are not in this list', () => {
-    const { container } = renderTree([{ key: 'm1', fromId: 'not-here', toId: 'also-not-here' }]);
+    const { container } = renderTree([message('m1', 'not-here', 'also-not-here')]);
     expect(litWires(container)).toEqual([]);
     expect(container.querySelector('[data-pulse-row]')).toBeNull();
   });

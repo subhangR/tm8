@@ -301,7 +301,15 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows.length).toBe(172); // +3 148 (spaces.workflows)
+    // 172 -> 197 (2026-09-03, containers): the 25 containers.* rows. MEASURED.
+    // 197 -> 198 (187): execution.sessions.share. Its only flags are the two
+    // dials and `--expect-version`, all of which the projection publishes and
+    // the kernel receives — which is exactly what this sweep is for. MEASURED.
+    // 197 -> 198 (Changes screen Phase 1): execution.gitStage, the index verb
+    // behind the Changes surface — public, v1, deliberately commandless like the
+    // rest of the session git rail. MEASURED from this file's own failing run.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
+    expect(rows.length).toBe(208); // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -411,6 +419,13 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // element: `--state Draft:to_do:initial`, `--state Building:in_progress:default`.
   isInitial: '`--state <name>:<category>:initial`, a per-element suffix — a top-level --is-initial could not name which state it meant (2026-08-18)',
   isDefault: '`--state <name>:<category>:default`, the same per-element suffix (2026-08-18)',
+  // Containers (§14). Three booleans whose CLI spelling is deliberately not the
+  // kebab of the field, each for a reason that would be a defect to "simplify".
+  start: '--no-start, the NEGATIVE spelling — `containers.create` defaults start:true, so the flag a caller needs is the one that turns it off (2026-09-03)',
+  screenshot: '--no-screenshot, the same negative spelling — `containers.computer` returns an image by default (2026-09-03)',
+  // `ro` is not a top-level flag and must not become one: it belongs to ONE
+  // mount, and a bare `--ro` could not say WHICH. Same shape as isInitial above.
+  ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {

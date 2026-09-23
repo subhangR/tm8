@@ -11,6 +11,7 @@ import {
   type HandoffRecordStatus,
   type HandoffView,
   type MessageDeliveryRecord,
+  type MessageChatTurnRecord,
   type MessageDeliveryStatus,
   type MessageDeliveryView,
   type MessageView,
@@ -55,6 +56,22 @@ export interface MessageDeliveryIntent {
   readonly content: string;
   readonly mode: 'send' | 'paste';
 }
+
+/**
+ * A chat turn the batch RPC queued (176). It is NOT a `MessageDeliveryIntent`:
+ * a chat's ledger is `chat_turns`, whose delivery is the orchestrator draining
+ * a queue rather than a write to a PTY, and `session_message_deliveries` could
+ * not hold it anyway — its target column FKs `work_sessions`. Discriminated on
+ * `kind` because both arrive in the same `deliveryIntents` array.
+ */
+export interface ChatTurnIntent {
+  readonly kind: 'chat_turn';
+  readonly messageId: string;
+  readonly chatId: string;
+  readonly turnId: string;
+}
+
+export type PostedIntent = MessageDeliveryIntent | ChatTurnIntent;
 
 export interface MessageDeliveryReservationIntent extends MessageDeliveryIntent {
   readonly requestId: string;
@@ -106,6 +123,14 @@ export interface W2MessagesHandoffsServiceOptions {
    * resulting session against the resolved actor before writing authored_from.
    */
   readonly resolveAuthoredFromWorkSessionId?: (ctx: RequestContext) => Promise<string | null>;
+  /**
+   * The CHAT half of the same provenance (176), and deliberately a separate
+   * seam: a message has exactly one source, so the two resolvers must not be
+   * one function that picks. This one has no envelope arm at all — a chat id is
+   * never accepted from request input, only from the bearer's own
+   * `runtime_chat_id`, which is the fact the SQL door authorizes against.
+   */
+  readonly resolveAuthoredFromChatId?: (ctx: RequestContext) => Promise<string | null>;
   /** Server-owned first-attempt PTY epoch; never accepted from request input. */
   readonly resolveTargetWorkSessionEpoch?: (
     targetWorkSessionId: string,
@@ -134,7 +159,7 @@ export interface W2MessagesHandoffsServiceOptions {
 interface BatchRpcResult {
   readonly messageBatchId: string;
   readonly messageIds: string[];
-  readonly deliveryIntents?: MessageDeliveryIntent[];
+  readonly deliveryIntents?: PostedIntent[];
 }
 
 interface SessionReplyRoute {
@@ -406,6 +431,9 @@ export class W2MessagesHandoffsService {
     const sourceWorkSessionId = this.options.resolveAuthoredFromWorkSessionId
       ? await this.options.resolveAuthoredFromWorkSessionId(ctx)
       : null;
+    const sourceChatId = this.options.resolveAuthoredFromChatId
+      ? await this.options.resolveAuthoredFromChatId(ctx)
+      : null;
     const requestedAnchorIds = uniqueIds(input.anchorIds, 'anchorIds');
     const mentionIds = uniqueIds(input.mentionIds ?? [], 'mentionIds');
     const attachmentIds = uniqueIds(input.attachmentIds ?? [], 'attachmentIds');
@@ -446,9 +474,13 @@ export class W2MessagesHandoffsService {
         input.actorId ?? null,
         input.clientMutationId,
         // Per-turn chat mode (154): rides as an explicit RPC argument, written
-        // to messages.requested_chat_mode; only meaningful for a chat-thread
-        // anchor, ignored otherwise.
+        // to messages.requested_chat_mode; only meaningful for a chat anchor,
+        // ignored otherwise.
         input.mode ?? null,
+        // 176: the chat this message was authored FROM, off the bearer's own
+        // session row. It writes `authored_from(message -> chat)` and — because
+        // the self-guard is keyed on it — is what stops a chat waking itself.
+        sourceChatId,
       ]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
@@ -638,7 +670,35 @@ export class W2MessagesHandoffsService {
           order by reserved_at asc,delivery_id asc limit ${limit}`,
         params,
       );
-      return { message, deliveries: rows.map(deliveryRecord) } satisfies MessageDeliveryView;
+      // 176 — THE CHAT ARM. A chat's delivery ledger is `chat_turns`, so
+      // without this a message that woke a chat reports zero deliveries and
+      // `message send --wait settled` reports nothing happened. It is a
+      // separate query rather than a union because the two ledgers answer
+      // different questions and share no columns worth reconciling.
+      //
+      // RLS does the authorization: `chat_turns_select` admits a row only when
+      // its chat is readable by this viewer, so a turn on a chat the caller
+      // cannot see is simply absent — never an error, and never a leak.
+      const turnRows = await q.query<{ chat_id: string; turn_id: string; state: string }>(
+        `select chat_id, turn_id, state
+           from public.chat_turns
+          where user_message_id = $1
+          order by queued_at asc, turn_id asc`,
+        [messageId],
+      );
+      return {
+        message,
+        deliveries: rows.map(deliveryRecord),
+        ...(turnRows.length > 0
+          ? {
+            chatTurns: turnRows.map((row) => ({
+              chatId: row.chat_id,
+              turnId: row.turn_id,
+              state: row.state as MessageChatTurnRecord['state'],
+            })),
+          }
+          : {}),
+      } satisfies MessageDeliveryView;
     });
   };
 

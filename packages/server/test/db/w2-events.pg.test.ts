@@ -204,7 +204,7 @@ describe.sequential('W2.G10 durable per-Space event sequence (real Postgres)', (
   async function createTask(space: string, member: string, title: string, who?: string): Promise<string> {
     const result = await node.db.rpc<CommandResult>(claims(who), 'public.create_task', [
       space, title, member, '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
     return result.entity.id;
@@ -476,7 +476,7 @@ describe.sequential('W2.G10 PgDurableSeqSource under the role the server actuall
 
     await node.db.rpc<CommandResult>(claims(), 'public.create_task', [
       spaceId, 'seq source anchor', memberId, '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to', `cmid_${randomUUID()}`,
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to', `cmid_${randomUUID()}`,
     ]);
   }, 180_000);
 

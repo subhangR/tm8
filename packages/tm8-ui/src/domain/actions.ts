@@ -78,6 +78,18 @@ export const REASONS = {
   searchResultsDeferred: 'A full search results view isn’t available yet — the palette is the search surface.',
   activityScreenDeferred: 'The activity screen isn’t available yet.',
   addServerDeferred: 'Remote servers arrive in Phase 2 — this node is the only one wired.',
+  /*
+   * CONTAINER LIFECYCLE (Design §13.1's `capabilityReasons`, stated once).
+   *
+   * `registry.ts` imports `CONTAINER_CAPABILITY_REASONS` below and uses these
+   * SAME strings for `panel.capabilityReasons`, so the sentence a verb refuses
+   * with and the sentence the body prints cannot drift into two wordings of
+   * one rule.
+   */
+  containerCapabilitiesUnknown:
+    'Waiting for this container to load — the node has not said what may be done to it yet.',
+  containerScreenDeferred:
+    'The screen surface isn’t built yet. The container is real and running; what is missing is the viewer, so this verb is refused rather than hidden.',
   // T0-4 kind primaries (Surface Audit): drawn, ledgered, not yet executable.
   equipDeferred: 'Equipping isn’t wired yet — the verb exists; its executor does not.',
   refreshDeferred: 'Refreshing from the source isn’t wired yet.',
@@ -103,6 +115,69 @@ function capabilityGate(
   if (!ctx.entityId) return disabled(REASONS.noEntity);
   if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
   return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/**
+ * THE CONTAINER CAPABILITY SENTENCES — one copy, two consumers.
+ *
+ * Exported because `domain/registry.ts` seats them in the container row's
+ * `panel.capabilityReasons`. Two hand-kept copies of a refusal is how one
+ * surface ends up explaining a rule the other contradicts.
+ */
+export const CONTAINER_CAPABILITY_REASONS = {
+  canStart: 'only a stopped container can start',
+  canStop: 'only a running or paused container can be stopped',
+  canDestroy: 'this container is already being destroyed',
+  canAttach: 'the screen is live only while the container runs',
+  canExec: 'a terminal needs a running container',
+} as const;
+
+/**
+ * THE CONTAINER CAPABILITY GATE — and it exists because these six booleans are
+ * OPTIONAL, which `capabilityGate` above cannot express.
+ *
+ * `EntityCapabilities` is a FLAT interface: eight required booleans that every
+ * kind carries, plus `allowedTransitions?` and — since migration 177 — six
+ * optional container ones. They had to be optional; making them required would
+ * have stopped every literal in this repo that constructs an
+ * `EntityCapabilities` from compiling, `isAlwaysDisabled` below included.
+ *
+ * THREE STATES, AND THE THIRD IS THE ONE THAT MATTERS:
+ *
+ *   true       → the node permits it.
+ *   false      → the node refuses it; say WHICH rule, from the table above.
+ *   undefined  → NOT PERMITTED. Never `true`.
+ *
+ * DO NOT REACH FOR `allowedTransitions?` AS THE PRECEDENT FOR THE THIRD LINE.
+ * It is the same shape in the same interface with the OPPOSITE default: absent
+ * there means "no matrix — fall back to the registry vocabulary", i.e. MORE
+ * permissive, because it NARROWS a permission that already exists. These GRANT
+ * one that otherwise does not. A reader who carries the semantics across with
+ * the shape turns every unanswered capability into a live button.
+ *
+ * So this must not be "simplified" to `ctx.capabilities?.[flag] ?? true`, and
+ * the `undefined` arm must not be deleted as dead code because the server we
+ * have today always populates it: absence is legal in the contract, and an
+ * older node is a legal peer.
+ */
+function containerCapabilityGate(
+  ctx: ActionContext,
+  flag: 'canStart' | 'canStop' | 'canDestroy' | 'canAttach' | 'canControl' | 'canExec',
+  reason: string,
+): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
+  /* Through `unknown`: `EntityCapabilities` has no index signature, and a
+     direct cast is refused. Reading by a typed key would lose the third state
+     — `undefined` — which is the whole point of this gate. */
+  const permitted = (ctx.capabilities as unknown as Record<string, unknown>)[flag];
+  if (permitted === true) return null;
+  // ABSENT is not REFUSED, and the two get different words: a container whose
+  // node has not answered is not the same as one whose status forbids the
+  // verb, and telling a viewer "only a stopped container can start" about a
+  // container we have no capability read for would be inventing a cause.
+  if (permitted === undefined) return disabled(REASONS.containerCapabilitiesUnknown);
+  return disabled(reason);
 }
 
 /**
@@ -229,6 +304,38 @@ export function processControlFor(
   ctx: Pick<ActionContext, 'category' | 'liveness'>,
 ): ActionRef {
   return ref === PROCESS_CONTROL.running && hasEnded(ctx) ? PROCESS_CONTROL.ended : ref;
+}
+
+/**
+ * THE SHARING CONTROL (187) — the watch dial's two halves, one slot.
+ *
+ * Same shape as `PROCESS_CONTROL` above and for the same structural reason:
+ * `rowActions` is STATIC per-kind data, so the registry can only declare ONE
+ * of these, and which one a given row should offer is a fact about that row.
+ */
+export const SHARING_CONTROL = {
+  /** While the session is private to its owner. */
+  private: 'share-session',
+  /** Once the space can watch it. */
+  shared: 'unshare-session',
+} as const satisfies { private: ActionRef; shared: ActionRef };
+
+/**
+ * Resolve the sharing control's slot for one row from that row's OWN
+ * `shareMode`. Any other verb passes through untouched, so a surface can map
+ * its whole declared list through this the way it already maps through
+ * `processControlFor`.
+ *
+ * `undefined` — a server too old to project the column, or a summary that
+ * never carried it — resolves to the DECLARED ref, which is
+ * `share-session`. That is the honest fallback in both directions: offering
+ * "Share" on an already-shared session is a no-op the server absorbs
+ * idempotently, while offering "Make private" on a session we have no
+ * evidence is shared would claim a state we never read.
+ */
+export function sharingControlFor(ref: ActionRef, shareMode: string | undefined): ActionRef {
+  if (ref !== SHARING_CONTROL.private) return ref;
+  return shareMode === 'space' || shareMode === 'explicit' ? SHARING_CONTROL.shared : ref;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
@@ -514,6 +621,39 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     (ctx) => opGate(ctx, 'execution.prompt') ?? livenessGate(ctx) ?? AVAILABLE,
   ),
 
+  /**
+   * OPEN THIS SESSION TO THE SPACE (187) — `execution.sessions.share`, with
+   * `shareMode: 'space'`.
+   *
+   * Gated on the OPERATION and nothing else, deliberately. The RPC refuses a
+   * non-owner with 42501, and there is no capability flag that carries
+   * ownership: `canEdit` on a work_session means "the row is live" (it is the
+   * rename door, entity-read.ts), so gating on it would tell every viewer of
+   * a shared session that they may re-close it. `terminate` sits in exactly
+   * this position — owner-restricted at the RPC, offered on every row, and
+   * the server's refusal is what the user sees. Inventing a second, weaker
+   * answer here would be the lie, not the honesty.
+   *
+   * NOT liveness-gated. Sharing is a property of the RECORD, not of the
+   * process: an owner can open an idle session so a teammate can resume it,
+   * and refusing that because nothing is currently answering would refuse the
+   * case the dial exists for.
+   */
+  'share-session': define(
+    'share-session',
+    'Share with space',
+    '◌',
+    (ctx) => opGate(ctx, 'execution.sessions.share') ?? AVAILABLE,
+  ),
+
+  /** The other half of the sharing slot — `shareMode: 'none'`. */
+  'unshare-session': define(
+    'unshare-session',
+    'Make private',
+    '●',
+    (ctx) => opGate(ctx, 'execution.sessions.share') ?? AVAILABLE,
+  ),
+
   // §10.7 register — the seam does not carry these commands yet.
   'share-into-session': deferred(
     'share-into-session',
@@ -580,6 +720,138 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'set-as-default': deferred('set-as-default', 'Set as default', '◎', REASONS.setAsDefaultDeferred),
   'mark-read': deferred('mark-read', 'Mark read', '✓', REASONS.markReadDeferred),
   quote: deferred('quote', 'Quote', '❝', REASONS.quoteDeferred),
+
+  /**
+   * OPEN A CHAT ABOUT THIS (chat as an entity, 2026-09-03).
+   *
+   * Gated on `chat.start` — the operation the composer it opens will commit —
+   * and on nothing else. Two things it deliberately does NOT gate on:
+   *
+   *   · A CAPABILITY OF THE SUBJECT. `about` is an edge FROM the new chat, and
+   *     `entities.connections`' write side gates on the chat, which does not
+   *     exist yet. Requiring `canEdit` on the subject would refuse the verb on
+   *     every row a viewer can read and not write — which is most of a space,
+   *     and none of it is a reason you cannot talk about the thing.
+   *   · A SUBJECT AT ALL, beyond one being selected. Every kind is a legal
+   *     `about` target (`edge_types`, 056: `dst_kinds = array['*']`), so there
+   *     is no per-kind refusal to write here and inventing one would be this
+   *     package asserting a rule the graph does not have.
+   *
+   * It is NOT `launching()`: that flow marker opens the SPAWN config, whose
+   * five sections are about an execution — project, worktree, posture. A chat
+   * is configured in its own composer, which is where this verb lands.
+   */
+  'chat-about': define(
+    'chat-about',
+    'Chat about this',
+    '❝',
+    /*
+     * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
+     * because it acts ON the row; this one opens a composer, and a composer
+     * with no subject bound is bare Home's new conversation — the honest
+     * reading of pressing it from the Chats list HEADER, which has no row.
+     * So the only gate is the operation the composer will commit.
+     */
+    (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
+  ),
+
+  /*
+   * CONTAINER LIFECYCLE (Design §13.1). Each gates on its OWN catalog
+   * operation and its OWN capability boolean — never on a shared one.
+   *
+   * WHY EACH VERB NAMES ITS OWN OP. `TM8_CONTAINERS=off` answers 501
+   * `not_implemented` for every runtime op, and the shell caches that verdict
+   * per operation in `ctx.opUnavailable`. Gating all five on, say,
+   * `containers.start` would light four buttons a node has refused, and hide
+   * one it has not.
+   */
+  'container-start': define(
+    'container-start',
+    'Start',
+    '▶',
+    (ctx) =>
+      opGate(ctx, 'containers.start')
+      ?? containerCapabilityGate(ctx, 'canStart', CONTAINER_CAPABILITY_REASONS.canStart)
+      ?? AVAILABLE,
+  ),
+
+  'container-stop': define(
+    'container-stop',
+    'Stop',
+    '⏸',
+    (ctx) =>
+      opGate(ctx, 'containers.stop')
+      ?? containerCapabilityGate(ctx, 'canStop', CONTAINER_CAPABILITY_REASONS.canStop)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * DESTROY IS THE IRREVERSIBLE DIRECTION, unlike `terminate` next door — a
+   * terminated session resumes, a destroyed container does not: the runtime is
+   * gone and the row is soft-deleted for history (§11.1, `destroyed` is
+   * terminal). The confirm is the DISPATCHER's, not this verb's: `ActionDef`
+   * offers `flow` for a configuration or a confirmation surface, and a destroy
+   * needs neither a config nor facts this context does not carry — it needs a
+   * yes. `usePanelPrimaries` asks for it.
+   */
+  'container-destroy': define(
+    'container-destroy',
+    'Destroy',
+    '⏻',
+    (ctx) =>
+      opGate(ctx, 'containers.destroy')
+      ?? containerCapabilityGate(ctx, 'canDestroy', CONTAINER_CAPABILITY_REASONS.canDestroy)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * Opens an exec PTY IN the container — `containers.terminal.start`, which is
+   * live in P0 and mints a `work_session(session_kind='container_exec')`. The
+   * session it returns is an ordinary work_session with the terminal panel the
+   * app already has, so this verb builds no terminal of its own; it creates
+   * the session and the host opens it.
+   *
+   * Gated on `canExec` (status `running`), NOT on `canAttach`: attaching is
+   * about a non-terminal SURFACE, and the two are separate booleans precisely
+   * because a container can exec without having a screen.
+   */
+  'container-terminal': define(
+    'container-terminal',
+    'Terminal',
+    '▮',
+    (ctx) =>
+      opGate(ctx, 'containers.terminal.start')
+      ?? containerCapabilityGate(ctx, 'canExec', CONTAINER_CAPABILITY_REASONS.canExec)
+      ?? AVAILABLE,
+  ),
+
+  /*
+   * THE SCREEN SURFACE IS NOT BUILT IN P0, and this says so out loud rather
+   * than by being missing (R7, and the DEF-003 lesson: "a surface removed
+   * without a word is a surface nobody can report missing").
+   *
+   * `deferred`, so it refuses in EVERY context — which is also what keeps
+   * `panel-primaries-wired.test.tsx`'s `refusedByNarrowing` empty without a
+   * dispatcher entry: a verb with no executor is safe only when its own
+   * availability refuses, never when it relies on `wiredActions` narrowing.
+   * The day the viewer lands, this becomes a `define(...)` gated on
+   * `containers.attach` + `canAttach`, and no consumer changes.
+   */
+  'container-screen': deferred('container-screen', 'Screen', '▭', REASONS.containerScreenDeferred),
+
+  /*
+   * THE BIRTH VERB. It opens `NewContainerSheet` and commits
+   * `containers.create` — NEVER `entities.create`, which the node refuses for
+   * this kind ("owned by the container lifecycle") exactly as it does for
+   * work_session.
+   *
+   * Gated on `containers.create` and nothing else: a create has no entity to
+   * hold capabilities, so `capabilityGate` has no subject. The sheet owns the
+   * refusals that depend on facts this context does not carry (no provider
+   * satisfies the profile, the node is at its cap) — the same division
+   * `merge-pr` draws between its verb and its confirm.
+   */
+  'new-container': define('new-container', 'New container', '＋', (ctx) => opGate(ctx, 'containers.create') ?? AVAILABLE),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

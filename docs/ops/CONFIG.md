@@ -76,6 +76,29 @@ Two tooling-only variables:
 | `TM8_MIGRATION_DATABASE_URL` | — | Where `tools/ci/migrations-check.sh` applies the sequence. Falls back to `DATABASE_URL`, then to the sidecar on `TM8_PG_PORT`. |
 | `NO_COLOR` | — | Set to anything to strip ANSI colour from the launchers and CI. |
 
+### Containers (TM8-CONTAINERS-DESIGN §10.1)
+
+Machines an agent runs in or drives. **The feature is OFF by default** and a node
+that has never been configured for containers must not start accepting them after
+an upgrade — which is why the gate is a literal `on`/`off` rather than a
+boolean-ish `0`/`1`: it is the value an operator reads in a runbook, and anything
+that is neither is refused at boot rather than silently treated as off.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TM8_CONTAINERS` | `off` | `on` \| `off`. The feature gate. With it off, **every container runtime operation answers `501 not_implemented`** — never `404`, never a silent success. **The birth verb is NOT hidden:** `containers.create` is still advertised with the gate off and answers 501 when called. (An earlier version of this row claimed it was hidden. Nothing implements that — the gate has one reader, the 501 site.) Graph-only reads keep working: a container that already exists is still an entity, and a node that has stopped serving runtimes has not stopped being able to describe what it has. |
+| `TM8_CONTAINER_PROVIDERS` | `docker,gvisor,android-emulator` | Comma list of providers to enable, **in preference order** — the first that can serve a profile at an acceptable isolation class wins. `fake` is the in-memory test provider. |
+| `TM8_CONTAINER_CAP` | `4` | Live containers per node. Enforced **inside** the create door, not by the service: two server processes on one node would otherwise both read a free slot and both create. |
+| `TM8_CONTAINER_EXEC_CAP` | `8` | Exec terminals per node. Disjoint from the agent-session cap — an exec terminal never burns an agent slot. |
+| `TM8_CONTAINER_DATA_DIR` | `<dataDir>/containers` | Per-container private directories. Derived from `TM8_DATA_DIR` so two nodes on one box cannot collide. |
+| `TM8_CONTAINER_IMAGE_REGISTRY` | `ghcr.io/subhangr/tm8` | Where profile images come from. |
+| `TM8_CONTAINER_KEEP_FAILED` | `0` | `1` keeps the runtime of a **failed** container instead of destroying it during compensation. Debugging only: it leaks runtimes by design, so a node left with it on accumulates them until reconciliation or a human clears them. |
+
+A misspelled `TM8_CONTAINERS` value fails at boot with a named error rather than
+defaulting — the one place in this table where being wrong is louder than being
+absent, because "off" and "unparseable" would otherwise look identical while
+meaning very different things about operator intent.
+
 **Adding a variable:** it goes in `scripts/lib/env.mjs` (so the launchers pass it through),
 in `.env.example` with a comment, and in the table above. Any `TM8_*` key present in a
 `.env` file is forwarded to the server even if the launchers do not know it — so the server

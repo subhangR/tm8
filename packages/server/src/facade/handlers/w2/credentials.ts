@@ -56,7 +56,7 @@
  * one is the readable one and that one is the one that cannot be bypassed by a
  * future caller who reaches the RPCs another way.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, CredentialProviderNameSchema } from '@tm8/contract';
 import type {
   CredentialProviderName,
   CredentialsLoginSessionStartInput,
@@ -137,13 +137,24 @@ async function principalFor(
   return { claims, identityId };
 }
 
-/** Read `:provider` off the path and check it before it names a directory. */
+/**
+ * Read `:provider` off the path and check it before it names a directory.
+ *
+ * Validated against the CONTRACT SCHEMA rather than a literal list. This
+ * function held its own restatement of the provider set, and when the set grew
+ * to five that restatement silently kept rejecting the two new ones — a 400 on
+ * a provider the credentials screen was already offering a card for. The schema
+ * is the one place the set is stated, so it is the one place it can grow.
+ */
 function providerParam(ctx: RequestContext): CredentialProviderName {
-  const raw = ctx.params.provider;
-  if (raw !== 'anthropic' && raw !== 'openai' && raw !== 'github') {
-    throw new CollabError('invalid_input', `unsupported credential provider: ${String(raw)}`);
+  const parsed = CredentialProviderNameSchema.safeParse(ctx.params.provider);
+  if (!parsed.success) {
+    throw new CollabError(
+      'invalid_input',
+      `unsupported credential provider: ${String(ctx.params.provider)}`,
+    );
   }
-  return raw;
+  return parsed.data;
 }
 
 export interface CredentialHandlerDeps {

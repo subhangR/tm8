@@ -29,6 +29,7 @@ export type CapabilityProfile =
   | 'interaction-profile-lifecycle'
   | 'worktree-lifecycle'
   | 'artifact-lifecycle'
+  | 'container-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -52,6 +53,9 @@ export type MigrationStrategy =
   | 'artifact-detail'
   | 'loop-detail'
   | 'graph-detail'
+  | 'chat-detail'
+  | 'container-detail'
+  | 'drawing-detail'
   | 'custom-registry'
   | 'none';
 
@@ -230,6 +234,46 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'artifacts.restore',
         ],
       };
+    case 'container-lifecycle':
+      // NOTHING generic, mirroring `work-session-execution` rather than
+      // `worktree-lifecycle`, and the difference between those two precedents
+      // is the whole decision. A worktree keeps a generic patch door because
+      // its one semantic write IS an ordinary forward-only status transition.
+      // A container has no such write: `status` has a SINGLE writer
+      // (`public.set_container_status`, guarded by a trigger that enforces the
+      // edges), and every other mutable field — title, lifecycle, share mode,
+      // labels — is claimed by the named `containers.update` door. A generic
+      // patch would be a second way to move a record whose transitions the
+      // guard exists to police.
+      //
+      // `genericCreate: false` is the same fact from the other side: `container`
+      // is excluded from `CreatableEntityKind`, so `tm8 entity create container`
+      // is refused and `containers.create` is the birth verb — the record and
+      // the runtime object are born together by a saga the graph door cannot run.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'containers.create',
+          'containers.start',
+          'containers.stop',
+          'containers.pause',
+          'containers.resume',
+          'containers.destroy',
+          'containers.update',
+          'containers.policy.set',
+          'containers.terminal.start',
+          'containers.attach',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -378,6 +422,37 @@ export const CORE_KIND_DISPOSITIONS = {
   graph: core('graph', 'graphs', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'graph-detail' },
+  }),
+  // Drawings (migration 194). `graph`'s disposition exactly, and for the same
+  // reasons: an ordinary collection-routed entity whose detail row is the only
+  // special thing about it, created through `entities.create` rather than a
+  // door of its own. `registered-not-default` because the kind registers
+  // without rearranging anybody's default menu.
+  drawing: core('drawing', 'drawings', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'drawing-detail' },
+  }),
+  // Chat as an Entity (migration 176). Its lifecycle is `work_session`'s, not
+  // `graph`'s: born from its own door (`chat.start`), never from
+  // entities.create, and so NOT in `CreatableEntityKind`. Menu strategy is
+  // `registered-not-default` because Wave 1 deliberately leaves the default
+  // menu alone — the Chats tab lands with the surface it points at.
+  chat: core('chat', 'chats', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'chat-detail' },
+  }),
+  // Containers (TM8-CONTAINERS-DESIGN, migration 177). A machine an agent runs
+  // IN or drives. Not client-creatable and not menu-addressable: like a
+  // worktree and a work_session, the entity is born only from a server-side
+  // provisioning saga — here `containers.create`, which reserves the record
+  // inside a ledgered door and then provisions the runtime object outside the
+  // transaction. Operational truth (heartbeats, usage samples, probe results)
+  // lives in `container_runtime_state` and is NOT an entity, so it has no
+  // disposition here — the same line `worktree_allocations` draws.
+  container: core('container', 'containers', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'container-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'container-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

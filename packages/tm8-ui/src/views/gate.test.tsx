@@ -93,14 +93,20 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const { container, getByRole } = renderGate();
     const tabs = await waitFor(() => getByRole('tablist', { name: 'Screens' }));
 
-    // Six groups from the shipped default plus route-only Board v2 in the
-    // single Board seat. Files and legacy Board are absent; Help is last.
+    // The shipped default's groups plus route-only Board v2 in the single
+    // Board seat. Files and legacy Board are absent; Help is last.
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    // 'CodeBrain' joined the spine 2026-09-01 (migration 173) — see
-    // domain/menu.ts. The tab row is derived from the shipped default, so it
-    // moves with the spine rather than being asserted independently of it.
+    // 'CodeBrain' joined the spine 2026-09-01 (migration 173) and LEFT
+    // 2026-09-15 (migration 186): #610 deleted the 2.0 UI package that held its
+    // only screen, so the tab could render nothing but its own absence, and the
+    // ref left the contract union and the registry with it. 'Chats' joined
+    // 2026-09-03 (migration 180) and LEFT AGAIN 2026-09-05 (migration 184):
+    // the chat entity list's door is Home's icon rail, which leads with `chat`
+    // now, and the tab duplicated that row. See domain/menu.ts. The tab row is
+    // derived from the shipped default, so it moves with the spine rather than
+    // being asserted independently of it.
     expect(labels).toEqual([
-      'Home', 'Work', 'Board', 'Craft', 'Graph', 'CodeBrain', 'Settings', 'Help',
+      'Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help',
     ]);
 
     // The rail is absent as a matter of design, so none of its furniture is

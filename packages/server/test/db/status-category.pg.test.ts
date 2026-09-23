@@ -49,6 +49,28 @@ const MIGRATION = '147_entity_status_category.sql';
  * not the whole remainder of the chain.
  */
 const ENDED_REASON_MIGRATION = '171_session_ended_reason.sql';
+/**
+ * 176, for EXACTLY the reason 171 is applied below: production's shared summary
+ * SELECT (`entity-read.ts`) now LEFT JOINs `public.chats`, so current code
+ * refuses to run against a 147-era schema with `relation "public.chats" does
+ * not exist`. The fourth instance of one recurring shape, not a new judgement
+ * call.
+ *
+ * 176 is the first of the four that cannot be applied ALONE: it drops
+ * signatures 153/154/167 created, so those three come with it. (133 is not
+ * listed — it is already inside this fixture's own tranche, and re-applying it
+ * raises "policy chat_turns_select already exists".)
+ *
+ * `178_spawn_parent_may_be_a_chat.sql` is DELIBERATELY ABSENT: it is the half
+ * of 176 that re-creates `execution_spawn`, which this fixture does not need
+ * and which drags 149/150 in behind it.
+ */
+const CHAT_ENTITY_MIGRATIONS = [
+  '153_chat_per_turn_mode.sql',
+  '154_chat_turn_mode_passthrough.sql',
+  '167_chat_thread_project_binding.sql',
+  '176_chat_entity.sql',
+];
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const IDENTITY = '00000000-0000-4000-8000-00000000000f';
 /** A task that exists only to satisfy `entities.created_by`, which is an entity FK. */
@@ -203,6 +225,75 @@ describe.sequential('147 — entities.status_category', () => {
     // where a 129-era fixture applies `135_graph_kind.sql` and
     // `147_entity_status_category.sql` by name for the same reason.
     database.apply([ENDED_REASON_MIGRATION]);
+    database.apply(['172_task_start_date.sql']);
+    database.apply(CHAT_ENTITY_MIGRATIONS);
+    // 177 is needed here for the same reason 176 is: `entity-read.ts`'s shared
+    // summary SELECT — which this fixture exercises through production code —
+    // gained `left join public.containers`, and a tranche that stops before 177
+    // has no such table. It is STATIC TypeScript SQL, so nothing defers the
+    // resolution the way a plpgsql body would.
+    //
+    // ONLY THIS SUITE TAKES THE LINE. `doors-resolve-categories.pg.test.ts`
+    // calls `database.apply(migrationFiles())` — the whole directory sorted —
+    // so it already has 177, and adding it there is a SECOND apply of the same
+    // file: 177 has three bare `create table` statements and no
+    // `if not exists`, deliberately, so it fails with
+    // `relation "containers" already exists`. The check before adding an
+    // à-la-carte line anywhere is one grep: `apply(migrationFiles())` versus
+    // `apply([…])`, because both read as "this suite applies migrations".
+    database.apply(['177_container_kind.sql']);
+    // 187, the FIFTH instance of the one recurring shape this block is made of.
+    // `entity-read.ts` now selects `ws.drive_mode`, so current code refuses to
+    // run against a 147-era schema with `column ws.drive_mode does not exist` —
+    // the identical failure 171, 176 and 177 each produced with a different
+    // name, and an out-of-date fixture rather than a defect in 147.
+    //
+    // Safe to apply alone here, checked the way the four above were: it adds two
+    // columns to `public.spaces` and one to `public.work_sessions`, a BEFORE
+    // INSERT trigger on `work_sessions`, and `create or replace`s three
+    // functions — `grant_stream_attach`, `w2_update_space` and the new
+    // `set_work_session_sharing`. All three keep their existing parameter NAMES
+    // and return types, which is what `create or replace` actually constrains,
+    // and every table this fixture asserts on (tasks, docs, entities,
+    // status_category) is untouched. This suite calls none of the three
+    // functions, so restating `w2_update_space` at its 161 body here changes
+    // nothing it can observe.
+    database.apply(['187_work_session_sharing.sql']);
+    // 194, the SIXTH instance of the one recurring shape this block is made of,
+    // and the same shape as 176/177/187 above: `entity-read.ts`'s shared summary
+    // SELECT — which this fixture exercises through PRODUCTION code — gained
+    //     left join public.drawings drw on drw.entity_id = e.id
+    // at facade/entity-read.ts:346, so current code refuses to run against a
+    // 147-era tranche with `relation "public.drawings" does not exist`. It is
+    // STATIC TypeScript SQL, so nothing defers the resolution.
+    //
+    // INHERITED, NOT INTRODUCED BY THIS LANE. main's 5e1f9e1e ("Drawing as an
+    // entity, with Excalidraw", #627) added both the join and 194, and did not
+    // extend this fixture, so main carries this red on its own; merging main in
+    // only surfaces it. This branch has zero commits touching this file or
+    // entity-read.ts. NO PRODUCTION CODE CHANGES HERE.
+    //
+    // MEASURED, not computed — from the authoritative gate's own failing run:
+    //   test/db/status-category.pg.test.ts (30 tests | 12 failed)
+    //   -> relation "public.drawings" does not exist
+    //
+    // LAST AND HIGHEST, and it needs nothing in between: there are NO migrations
+    // numbered 188-193, the chain goes 187 -> 194. Every table 194's recreated
+    // `internal.entity_content` reads is present by this point — `containers`
+    // from 177 above, `chats` from 176, `work_sessions` from 187, `drawings`
+    // from 194 itself, and the other ~21 from the pre-147 base slice.
+    //
+    // Per the note on 177: this suite applies a-la-carte (`apply([...])`), NOT
+    // `apply(migrationFiles())`, so this is a first apply of 194, not a second.
+    database.apply(['194_drawing_kind.sql']);
+    // Current session projection includes the F3 effective-skill audit column.
+    // 197, the SEVENTH instance: `entity-read.ts` and the projector select
+    // `sk.provider` and the other file-reference columns, so current code
+    // refuses a 147-era schema with `column sk.provider does not exist`. 197
+    // only adds columns to `public.skills` and replaces
+    // `internal.kind_seeds_done`, which no assertion here reads.
+    database.apply(['197_skill_filesystem_references.sql']);
+    database.apply(['199_session_skill_audit.sql']);
   }, 180_000);
 
   afterAll(async () => {

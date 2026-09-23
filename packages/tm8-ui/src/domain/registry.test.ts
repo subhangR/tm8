@@ -45,16 +45,19 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 20 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 23 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
     // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
-    // then `graph` joined with migration 135 (Craft P1) → 21.
+    // then `graph` joined with migration 135 (Craft P1) → 21;
+    // then `chat` joined with migration 176 (Chat as an Entity) → 22.
+    // then `container` joined with migration 177 (Containers P0) → 23.
+    // then `drawing` joined with migration 194 (the Excalidraw canvas) → 24.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(21);
+    expect(CORE_KINDS.length).toBe(24);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -122,6 +125,7 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     // the Entity List Panel. The slug is PLURAL because `channel` is a WLT
     // §2.1 reserved word — see the registry row.
     channel: 'channels',
+    chat: 'chats',
     message: null,
   };
 
@@ -229,7 +233,20 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // Note this sits directly under `inlineEdit` refusing `status: true` and
     // does NOT contradict it: the tick writes the ENVELOPE's category, never
     // `work_sessions.status`, which remains the PTY's to report.
-    expect(session.rowActions).toEqual(['complete', 'terminate']);
+    // `chat-about` is APPENDED by derivation (`applyChatAbout`), on every kind
+    // that can be an `about` target — which is every kind, because the edge is
+    // registered `dst_kinds = array['*']` (migration 056). It lands last: the
+    // cluster's `RULED_ORDER` ranks `complete` and `run`, an unranked verb
+    // keeps its declared position, and `terminate` is pulled to the tail by
+    // `TAIL_ORDER` regardless of where it sits here.
+    //
+    // `share-session` (187) is declared in its PRIVATE half, exactly as
+    // `terminate` is declared rather than `resume`. `rowActions` is STATIC
+    // per-kind data; the shared half (`unshare-session`) is substituted per ROW
+    // by `sharingControlFor` inside `RowActionCluster`, which is the only place
+    // that sees the row's `shareMode`. So the ref in this array is not always
+    // the ref the list draws — see `row-action-cluster.test.tsx`.
+    expect(session.rowActions).toEqual(['complete', 'share-session', 'terminate', 'chat-about']);
   });
 
   it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
@@ -244,7 +261,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // running session off In Progress without killing it, which is exactly the
     // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
+    expect(session.list.rowActions).toEqual([
+      'complete', 'share-session', 'terminate', 'chat-about',
+    ]);
+    // The PANEL's budget is untouched by the row's third verb: `chat-about` is
+    // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
+    // because Run is a verb about the entity; this one opens a conversation
+    // ELSEWHERE, and the panel's one-primary budget is for acting on what you
+    // are looking at.
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
@@ -298,8 +322,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
     // applyLaunch is additive, not a rebuild: a row that already names `run`
-    // keeps the order it authored.
-    expect(getKind('task').list.rowActions).toEqual(['run', 'complete']);
+    // keeps the order it authored. `applyChatAbout` is additive at the other
+    // end — it appends, so the kind's own ordering survives both derivations.
+    expect(getKind('task').list.rowActions).toEqual(['run', 'complete', 'chat-about']);
   });
 
   /**
@@ -388,7 +413,25 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // fifth bucket and a space that names its own statuses is filed correctly
     // without touching the registry.
     const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
+    /*
+     * THE FIVE FACT KINDS ARE EXEMPT, and the exemption is the ruling, not a
+     * hole in it. `152_universal_status.sql` seeds commit, message, file,
+     * memory and artifact to `done` so a fact about the past cannot block a
+     * `depends_on` forever. That `done` is a RESOLUTION PREDICATE, not a
+     * lifecycle position — a memory is a recorded observation, never an
+     * intention, and it was never `to_do`. Handing them the four-stage row
+     * asked a question the kind has no answer to, and because the row opens on
+     * `tabs[0]` it also made every one of them invisible on arrival.
+     *
+     * Listed literally rather than derived so that ADDING a kind here is a
+     * deliberate edit someone must justify against migration 152's seed table.
+     */
+    const FACT_KINDS = ['commit', 'message', 'file', 'memory', 'artifact'];
     for (const row of allKinds()) {
+      if (FACT_KINDS.includes(row.kind)) {
+        expect(row.list.categories, `${row.kind} is a fact kind: no lifecycle row`).toBeUndefined();
+        continue;
+      }
       expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
       expect(row.list.categories?.map((t) => t.label)).toEqual([
         'To Do',
@@ -396,6 +439,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         'Done',
         'Cancelled',
       ]);
+    }
+    // The exemption must not silently swallow a kind that never opted out.
+    for (const kind of FACT_KINDS) {
+      expect(getKind(kind).list.categories, `${kind} must declare categories: null`).toBeUndefined();
     }
     expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
     expect(collectionKinds().length).toBeGreaterThan(0);
@@ -423,7 +470,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // in-progress row unreachable from any tab. As a chip it narrows whichever
     // category tab is open, which is a question the tab row could not ask.
     for (const row of allKinds()) {
-      expect(row.list.categories?.some((t) => (t.id as string) === 'archived')).toBe(false);
+      // `?? []` on purpose: a fact kind has no tab row at all, which satisfies
+      // "archived is not a tab" more completely than any assertion could.
+      expect((row.list.categories ?? []).some((t) => (t.id as string) === 'archived')).toBe(false);
       // Every tab EXCLUDES archived rows, so the chip is the only control
       // naming `deleted` and cannot contradict a tab.
       for (const tab of row.list.categories ?? []) expect(tab.filter.deleted).toBe('exclude');
@@ -440,9 +489,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('PHASE 7 — cancelled has its OWN tab; it no longer hides inside Done', () => {
     // RULED (sub-doc 7 §3.4). Done used to carry `['done','cancelled']`, which
     // told a user that abandoned work and finished work are one outcome.
-    for (const row of allKinds()) {
+    // Only kinds that HAVE a lifecycle row: the five fact kinds carry none,
+    // and that exemption is asserted by the four-tabs test above rather than
+    // being re-derived (or silently tolerated by `?.`) here.
+    const tabbed = allKinds().filter((row) => row.list.categories !== undefined);
+    expect(tabbed.length, 'no kind has tabs — this test would pass vacuously').toBeGreaterThan(0);
+    for (const row of tabbed) {
       const done = row.list.categories?.find((t) => t.id === 'done');
-      expect(done?.filter.category).toEqual(['done']);
+      expect(done?.filter.category, `${row.kind}`).toEqual(['done']);
       const cancelled = row.list.categories?.find((t) => t.id === 'cancelled');
       expect(cancelled?.label).toBe('Cancelled');
       expect(cancelled?.filter.category).toEqual(['cancelled']);
@@ -922,7 +976,7 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     message: 'generic',
     file: 'generic',
     spell: 'generic',
-    skill: 'generic',
+    skill: 'equipment',
     pull_request: 'generic',
     commit: 'generic',
     collection: 'generic',
@@ -965,6 +1019,15 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       channel: 'chat',
       work_session: 'chat',
       artifact: 'frame',
+      // A chat entity's panel body IS its transcript, ending at the composer
+      // (migration 176 + the `conversation` archetype). Same declaration and
+      // the same reason as the two above; work_session reaches the exclusion
+      // through the terminal arm as well, this one only through here.
+      chat: 'chat',
+      // The MACHINE body is a viewport onto a container, so it owns its bottom
+      // edge for the artifact's reason: a strip and a footer stapled under a
+      // frame are chrome the panel exists to get out of the way of.
+      container: 'frame',
     };
     for (const row of allKinds()) {
       expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);

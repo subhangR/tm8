@@ -11,8 +11,10 @@ test-results/
 playwright-report/
 dist-base/
 dist-mine/
-# The alternate 1.0 UI bundle. `dist/` above does not cover it: that bundle is
-# built to `dist-1.0` on purpose, because emitting a real `dist/` under
-# packages/tm8-ui would replace the symlink production currently serves through
-# (packages/tm8-ui/vite.config.ts says why at length).
+# The alternate UI bundle's outDirs. Nothing builds these any more — the
+# alternate package was deleted on 2026-09-15 — and they stay listed because a
+# checkout or a deployed box that predates the deletion still has one on disk,
+# and an untracked `dist-2.0/` full of stale assets is noise the next reader
+# does not need. Delete these two lines once no live checkout carries one.
 dist-1.0/
+dist-2.0/

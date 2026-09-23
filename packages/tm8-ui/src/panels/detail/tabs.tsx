@@ -5,9 +5,14 @@
    nothing in this package fails on a dead import: there is no lint step, and
    `tsc` is configured without `noUnusedLocals`. They only get removed if
    whoever deletes the code deletes them too. */
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import type { Connections, EdgeGroup, EntityDetail } from '@tm8/contract';
 import { Chip, Eyebrow } from '../../kit';
+/* THE ONE FORMATTER, called directly — the same three helpers `channel-screen`
+   uses to draw its feed, because this section is now the same shape: a day
+   divider over rows stamped with a clock time. `kit/time`'s rule is that no
+   surface formats a date FOR ITSELF, not that no surface may ask it to. */
+import { absTime, clockTime, dayLabel, dayStart } from '../../kit/time';
 import { KindIcon, getKind } from '../../domain';
 import { EmptyBody } from './PanelStates';
 
@@ -42,10 +47,26 @@ import { EmptyBody } from './PanelStates';
 /** One peer entity and every edge type this entity shares with it. */
 interface PeerGroup {
   peer: EdgeGroup['edges'][number]['source'];
-  /** Edge types, first-appearance order, deduped by direction+type. */
-  relations: { key: string; label: string; direction: 'outgoing' | 'incoming'; count: number; unresolvedHard: boolean }[];
+  /** Edge types, deduped by direction+type. */
+  relations: {
+    key: string;
+    label: string;
+    direction: 'outgoing' | 'incoming';
+    count: number;
+    unresolvedHard: boolean;
+    /**
+     * When this relation came to exist — the OLDEST edge under the key, so a
+     * relation counted twice is dated from when it FIRST existed rather than
+     * from whichever edge the seam happened to return last.
+     */
+    since: string | null;
+    /** When it last changed. Equal to `since` unless an edge was re-written. */
+    changed: string | null;
+  }[];
   /** Any unresolved HARD dependency anywhere in this peer's relations. */
   unresolvedHard: boolean;
+  /** Newest instant anywhere in this peer's edges — the row's sort key. */
+  latest: number;
 }
 
 /**
@@ -71,28 +92,153 @@ interface PeerGroup {
  */
 function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] {
   const byPeer = new Map<string, PeerGroup>();
+  const seenAt = new Map<string, number>();
   for (const group of groups) {
     for (const edge of group.edges) {
       // The far end of the edge relative to THIS entity.
       const peer = edge.source.id === selfId ? edge.target : edge.source;
       let entry = byPeer.get(peer.id);
       if (!entry) {
-        entry = { peer, relations: [], unresolvedHard: false };
+        entry = { peer, relations: [], unresolvedHard: false, latest: Number.NEGATIVE_INFINITY };
         byPeer.set(peer.id, entry);
+        seenAt.set(peer.id, seenAt.size);
       }
       const key = `${group.direction}:${group.type}`;
       const hard = edge.hard === true && edge.resolved === false;
+      const created = instantOf(edge.createdAt);
+      const changed = edge.updatedAt ?? edge.createdAt;
+      if (instantOf(changed) !== null) entry.latest = Math.max(entry.latest, instantOf(changed)!);
       const existing = entry.relations.find((r) => r.key === key);
       if (existing) {
         existing.count += 1;
         existing.unresolvedHard ||= hard;
+        existing.since = olderOf(existing.since, edge.createdAt);
+        existing.changed = newerOf(existing.changed, changed);
       } else {
-        entry.relations.push({ key, label: group.label, direction: group.direction, count: 1, unresolvedHard: hard });
+        entry.relations.push({
+          key,
+          label: group.label,
+          direction: group.direction,
+          count: 1,
+          unresolvedHard: hard,
+          since: created === null ? null : edge.createdAt,
+          changed: instantOf(changed) === null ? null : changed,
+        });
       }
       entry.unresolvedHard ||= hard;
     }
   }
-  return [...byPeer.values()];
+  /* NEWEST FIRST — see `TIME IS THE ORDER` above `ConnectionsTab`. Ties keep
+     first-appearance order, so edges written in one transaction (which share
+     an instant to the microsecond) do not reshuffle between renders. */
+  return [...byPeer.values()].sort(
+    (a, b) => b.latest - a.latest || (seenAt.get(a.peer.id) ?? 0) - (seenAt.get(b.peer.id) ?? 0),
+  );
+}
+
+/**
+ * WHEN, DERIVED ONLY FROM WHAT THE EDGE ACTUALLY CARRIES.
+ *
+ * Every one of these returns `null` rather than a substitute for an instant it
+ * cannot parse, and every caller renders NOTHING for a `null`. An undated edge
+ * is drawn undated; it is never dated "now", and it never sorts to the top of a
+ * list whose whole claim is that the top is the most recent thing that happened.
+ */
+function instantOf(value: string | undefined | null): number | null {
+  if (typeof value !== 'string') return null;
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? t : null;
+}
+
+function olderOf(current: string | null, candidate: string | undefined | null): string | null {
+  const a = instantOf(current);
+  const b = instantOf(candidate);
+  if (b === null) return current;
+  if (a === null) return candidate ?? null;
+  return b < a ? (candidate ?? null) : current;
+}
+
+function newerOf(current: string | null, candidate: string | undefined | null): string | null {
+  const a = instantOf(current);
+  const b = instantOf(candidate);
+  if (b === null) return current;
+  if (a === null) return candidate ?? null;
+  return b > a ? (candidate ?? null) : current;
+}
+
+/**
+ * The instant a peer row is stamped with, and the same value it is sorted on —
+ * the newest change across its relations. One derivation, so the column reads
+ * top-to-bottom as the descending sequence the order promises.
+ */
+function newestRelationInstant(entry: PeerGroup): string | null {
+  let newest: string | null = null;
+  for (const rel of entry.relations) newest = newerOf(newest, rel.changed ?? rel.since);
+  return newest;
+}
+
+/**
+ * The clause a hover ends with. "linked, then updated" appears ONLY when the
+ * edge was genuinely re-written after it was made: two identical instants are
+ * one fact, and reporting an update would invent a second event that never
+ * happened. Empty when there is no instant at all.
+ */
+function whenClause(since: string | null, changed: string | null): string {
+  if (!since && !changed) return '';
+  if (since && changed && since !== changed) return ' · linked, then updated';
+  return ' · linked';
+}
+
+/** The same clause for a whole peer row, across every relation it holds. */
+function peerWhenClause(entry: PeerGroup): string {
+  const since = entry.relations.reduce<string | null>((acc, rel) => olderOf(acc, rel.since), null);
+  return whenClause(since, newestRelationInstant(entry));
+}
+
+/**
+ * Mark the first row of each DAY run with that day's label.
+ *
+ * The list is already newest-first, so a run is contiguous by construction and
+ * one pass finds every boundary. An UNDATED peer opens no run and closes none:
+ * it carries no label, and it does not reset the previous day either, because
+ * it is not evidence that the day changed.
+ */
+function withDayDividers(peers: PeerGroup[]): (PeerGroup & { dayLabel: string | null })[] {
+  let previousDay: number | null = null;
+  return peers.map((entry) => {
+    const at = newestRelationInstant(entry);
+    const day = dayStart(at);
+    if (day === null) return { ...entry, dayLabel: null };
+    if (day === previousDay) return { ...entry, dayLabel: null };
+    previousDay = day;
+    return { ...entry, dayLabel: dayLabel(at) };
+  });
+}
+
+/**
+ * The row's clock, as a real `<time>` — the machine-readable instant travels
+ * with the label and the full local date and time is on inspect, the same
+ * contract `kit/Timestamp` gives every other surface. It is spelt out here
+ * rather than reusing that component because this stamp deliberately shows the
+ * CLOCK and not a relative label: under a day divider, "3d ago" would be the
+ * one thing on the row that did not say when.
+ *
+ * Renders nothing at all for an edge the seam gave no usable instant.
+ */
+function PeerWhen({ entry }: { entry: PeerGroup }) {
+  const at = newestRelationInstant(entry);
+  if (at === null) return null;
+  const absolute = absTime(at);
+  return (
+    <time
+      className="pn-peers__when"
+      dateTime={at}
+      title={`${peerTitle(entry.peer.kind, entry.peer.title)}${peerWhenClause(entry)} · ${absolute}`}
+      aria-label={absolute}
+    >
+      {clockTime(at)}
+    </time>
+  );
 }
 
 /**
@@ -137,6 +283,30 @@ function ConnectionsViewSwitch({
  * "two axes: vertical = where it lives · horizontal = what it connects to."
  * Parent/children come from the hierarchy; LINKED rows are one per connected
  * entity, each showing the edge types it holds with this one.
+ */
+/**
+ * TIME IS THE ORDER, AND IT IS ON THE ROW.
+ *
+ * `EdgeView` has carried `createdAt` and `updatedAt` on every edge since it was
+ * written, and this tab discarded both. Rows came out in the order the seam
+ * happened to group edge TYPES in — stable, but arbitrary — so a PR linked a
+ * minute ago sat below one linked in March, and no row said which was which.
+ * The tab could be read as an inventory and not as a history, which is what it
+ * was being asked for: connections "should show properly in timeline", and
+ * tracked PRs should sit "exactly when those got created, updated".
+ *
+ * THIS IS THE ONLY TIMELINE THE PANEL HAS. The fourth tab that used to answer
+ * "what happened to this entity" was removed on 2026-08-19 (see the tombstone
+ * further down this file) because no host ever fed it. Nothing replaced it, so
+ * the question landed here — on the surface that holds the edges and already
+ * knew when each one was made.
+ *
+ * WHAT IT WILL NOT DO. Every instant drawn here is the EDGE's — when the link
+ * was made, and when it was last re-written. The forge's own facts about a
+ * tracked pull request (merged-at, CI, `fetchedAt`) are NOT dates on this row:
+ * `fetchedAt` is when tm8 last looked, not when the PR changed, and drawing it
+ * as "updated" would be a fabrication with a timestamp on it. What is shown is
+ * what the edge can prove.
  */
 /**
  * THE GRAPH IS A VIEW OF CONNECTIONS, NOT A FEATURE OF SESSIONS.
@@ -225,43 +395,65 @@ export function ConnectionsTab({
         <section className="pn-section">
           <Eyebrow faint>{`LINKED · ${peers.length}`}</Eyebrow>
           <ul className="pn-peers">
-            {peers.map((entry) => (
-              <li className="pn-peers__row" key={entry.peer.id}>
-                <Chip
-                  glyph={<KindIcon kind={entry.peer.kind} />}
-                  onClick={() => onOpenEntity?.(entry.peer.id)}
-                  /* An unresolved HARD dependency is why something is blocked —
-                     the chip says so rather than looking like any other link. */
-                  title={
-                    entry.unresolvedHard
-                      ? 'unresolved hard dependency'
-                      : peerTitle(entry.peer.kind, entry.peer.title)
-                  }
-                >
-                  {entry.peer.title}
-                </Chip>
-                <div className="pn-peers__rels">
-                  {entry.relations.map((rel) => (
-                    <span
-                      className={
-                        rel.unresolvedHard ? 'pn-peers__rel pn-peers__rel--hard' : 'pn-peers__rel'
-                      }
-                      key={rel.key}
-                      title={
-                        rel.unresolvedHard
-                          ? 'unresolved hard dependency'
-                          : `${rel.direction} · ${rel.label}`
-                      }
-                    >
-                      {/* Direction is part of the relation's meaning: "blocks"
-                          and "blocked by" are the same edge type read two ways. */}
-                      <span aria-hidden="true">{rel.direction === 'outgoing' ? '→' : '←'}</span>
-                      {rel.label}
-                      {rel.count > 1 ? ` · ${rel.count}` : ''}
-                    </span>
-                  ))}
-                </div>
-              </li>
+            {withDayDividers(peers).map((entry) => (
+              <Fragment key={entry.peer.id}>
+                {entry.dayLabel ? (
+                  /* THE DIVIDER IS WHAT MAKES THIS READ AS A TIMELINE. Without
+                     it every row past the relative window printed the same bare
+                     date — four links made minutes apart all said "28 Jul" — and
+                     the section looked like an inventory again. The day is said
+                     ONCE, over the run it covers, and each row below it needs
+                     only its clock time. Same two-part treatment, and the same
+                     two helpers, as the channel feed. */
+                  <li className="pn-peers__day" data-testid="pn-peers-day">
+                    <span className="pn-peers__day-label">{entry.dayLabel}</span>
+                  </li>
+                ) : null}
+                <li className="pn-peers__row">
+                  <Chip
+                    glyph={<KindIcon kind={entry.peer.kind} />}
+                    onClick={() => onOpenEntity?.(entry.peer.id)}
+                    /* An unresolved HARD dependency is why something is blocked —
+                       the chip says so rather than looking like any other link. */
+                    title={
+                      entry.unresolvedHard
+                        ? 'unresolved hard dependency'
+                        : peerTitle(entry.peer.kind, entry.peer.title)
+                    }
+                  >
+                    {entry.peer.title}
+                  </Chip>
+                  <div className="pn-peers__rels">
+                    {entry.relations.map((rel) => (
+                      <span
+                        className={
+                          rel.unresolvedHard ? 'pn-peers__rel pn-peers__rel--hard' : 'pn-peers__rel'
+                        }
+                        key={rel.key}
+                        title={
+                          rel.unresolvedHard
+                            ? 'unresolved hard dependency'
+                            : `${rel.direction} · ${rel.label}${whenClause(rel.since, rel.changed)}`
+                        }
+                      >
+                        {/* Direction is part of the relation's meaning: "blocks"
+                            and "blocked by" are the same edge type read two ways. */}
+                        <span aria-hidden="true">{rel.direction === 'outgoing' ? '→' : '←'}</span>
+                        {rel.label}
+                        {rel.count > 1 ? ` · ${rel.count}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                  {/* WHEN — the fact this row has always held and never showed.
+                      The stamp is the peer's newest edge, which is also what the
+                      list is ordered on: a PR linked at 21:31 and a commit linked
+                      at 23:12 are two moments, and this is where they stop
+                      looking like one. The day is on the divider above, so the
+                      row carries the clock alone; the full local date and time
+                      rides on the element for anyone who needs it. */}
+                  <PeerWhen entry={entry} />
+                </li>
+              </Fragment>
             ))}
           </ul>
         </section>

@@ -1,3 +1,6 @@
+import { SkillBody } from '../skills/SkillBody';
+import { SkillEquipment } from '../skills/SkillEquipment';
+import type { SkillPort } from '../skills/port';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   CommandResult,
@@ -13,7 +16,9 @@ import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
 import { getKind, newLaunchMutationId, resolveAction } from '../domain';
-import { LaunchQuickConfig } from './launch/LaunchQuickConfig';
+/* The Run/Coordinate flow opens the canvas composer as a modal tile now —
+   design import 2026-09-07. */
+import { LaunchComposerPopup } from '../new-session';
 import type { LaunchSources } from './EntityListPanel';
 import {
   AuthoringHost,
@@ -26,6 +31,8 @@ import {
   ActionBar,
   PanelFooter,
   PanelHeader,
+  PanelIdentityItems,
+  PanelOverflow,
   PanelWindowControls,
   TabStrip,
   panelActionContext,
@@ -51,7 +58,8 @@ import {
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import {
-  EntityControlStrip, stripHasLiveControl, type ControlHost, type ControlSubject,
+  BinIcon, EntityControlStrip, RestoreIcon, RowAction, stripHasLiveControl,
+  type ControlHost, type ControlSubject,
 } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
@@ -63,6 +71,7 @@ import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
+import { MachineBody } from './bodies/MachineBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
@@ -163,6 +172,37 @@ function controlsFor(config: KindConfig): boolean {
  * stays a SUBSET rather than growing an `EntityDetail` dependency, and so the
  * compiler checks the projection instead of a cast hiding a renamed field.
  */
+/**
+ * THE COMPLETION GATE, SAID ONLY WHEN IT SAYS SOMETHING.
+ *
+ * It rode the metadata grid as `Completion Gate none` on nearly every task,
+ * because the grid's generic loop prints any non-empty string and `'none'` is
+ * four characters. A gate that is not set is not a fact worth a row; a gate
+ * that IS set changes whether `complete` will be refused, so it belongs beside
+ * the status it constrains.
+ *
+ * NO KIND BRANCH: the field is read off state by name, so a kind that never
+ * carries one renders nothing and this file learns no kind literals (§15.2).
+ * The word comes from a table rather than the wire value — `pr_merged` is a
+ * machine token and this is a reading surface.
+ */
+const GATE_WORDS: Readonly<Record<string, string>> = { pr_merged: 'PR merged' };
+
+function gateChipFor(detail: EntityDetail): ReactNode {
+  const raw = (detail.state as unknown as Record<string, unknown>).completionGate;
+  if (typeof raw !== 'string' || raw === '' || raw === 'none') return null;
+  const word = GATE_WORDS[raw] ?? raw.replace(/_/g, ' ');
+  return (
+    <span
+      className="pn-gate"
+      data-testid="panel-completion-gate"
+      title={`Completion gate: ${word} — this task cannot be completed until that holds.`}
+    >
+      Gate · {word}
+    </span>
+  );
+}
+
 function subjectOf(detail: EntityDetail): ControlSubject {
   return {
     id: detail.id,
@@ -324,6 +364,12 @@ export interface EntityDetailPanelProps {
   debugSurface?: ReactNode;
   /** The GIT surface (worktree status/diff/verbs rail). Same contract as Debug. */
   gitSurface?: ReactNode;
+  /**
+   * The CHANGES surface (review changed files, stage a selection, commit it).
+   * Same contract as Debug and Git: self-fetching, host wires the seam through
+   * `views/changesSurface.tsx`.
+   */
+  changesSurface?: ReactNode;
   /** The task detail's git section (tracked PRs/commits + gate verdict). */
   taskGitSection?: ReactNode;
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
@@ -348,15 +394,19 @@ export interface EntityDetailPanelProps {
    * flag any kind at all and a per-kind prop would be a restriction the backend
    * does not have.
    *
-   * IT MOUNTS IN TWO PLACES, which is the one thing here that is not uniform.
-   * Most archetypes take it inline in the Content body. The terminal archetype
-   * and `composition:'chat'` cannot — a live PTY owns its full height and a
-   * chat body ends at its composer, the same two structural exclusions the
-   * attachment strip carries — so for those it rides the CONNECTIONS tab
-   * instead (user ruling 2026-08-16; it rode the Activity tab until that tab
-   * was removed on 2026-08-19). Excluding them outright was the alternative
-   * and was rejected: work sessions are among the most-escalated entities in a
-   * space, and their history would have been CLI-only.
+   * IT MOUNTS IN EXACTLY ONE PLACE, and that is new. Until 2026-09-07 it had
+   * two: inline in the Content body for most archetypes, and on the CONNECTIONS
+   * tab for the terminal archetype and any declared `composition` — a live PTY
+   * owns its full height, a chat body ends at its composer, and neither could
+   * spare four cards of history (user ruling 2026-08-16; it rode the Activity
+   * tab until that tab was removed on 2026-08-19). Collapsing the section into
+   * a one-line dock removed the constraint that forced the split, so the panel
+   * now renders this below the body as chrome, for every kind and on every tab.
+   * The complementary-condition pair — and the test whose whole job was proving
+   * no kind drew it twice — went with it.
+   *
+   * A TOMBSTONE is the only entity that does not get it: there is nothing left
+   * to escalate about a deleted one.
    *
    * Absent ⇒ nothing renders. The section is invisible on any entity with no
    * history anyway, so an unwired host leaves no dangling affordance to explain.
@@ -396,7 +446,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: (AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
+  commands?: ({ skills?: SkillPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -675,6 +725,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   /** The refusal as ONE sentence. Three copies of this expression drifted the
       moment any one of them was reworded, so there is one. */
   const saveRefusal = refusalSentence(save);
+  /**
+   * DOES THIS PANEL OFFER A SAVE AT ALL?
+   *
+   * The registry's `inlineEdit` says what a kind WANTS to be editable; the
+   * seam's `capabilities.canEdit` says what the server will actually accept,
+   * and the two can disagree. `chat` is the case that exposed it: its list
+   * declares `inlineEdit: { title: true }`, and the server's `capabilitiesOf`
+   * (facade/entity-read.ts) has a hardcoded `editable` kind set that does not
+   * contain `chat` — so every chat panel drew an enabled Save beside "You
+   * cannot edit this — the server refuses edits here", permanently.
+   *
+   * THE DISTINCTION THAT MATTERS is between a refusal that could change and
+   * one that cannot. A missing command executor is a WIRING fact: D28 says
+   * show the control, disabled, carrying its reason, because the surface could
+   * be mounted with one. `canEdit === false` is a fact about the KIND — no
+   * viewer, no mount and no permission makes it true — so a control for it is
+   * not honesty, it is a promise the product can never keep.
+   *
+   * Hence the server's answer gates the control's EXISTENCE while `save`'s own
+   * `unavailable` keeps gating its enabled-ness. `titleEditable` above already
+   * consulted `save.unavailable`; this is the same question asked one level
+   * up, and the two lines below are the only ones that never asked it.
+   */
+  const editsPossible = detail?.capabilities.canEdit !== false;
 
   /**
    * PERMISSION-LOST SHORT-CIRCUITS EVERYTHING, and it must come first.
@@ -824,6 +898,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         props={controlHost}
         config={config}
         variant="chips"
+        /* Two empty date boxes were 250px of the strip spent rendering a format
+           hint twice; see the prop's own note. Collapses only when BOTH are
+           unset and both are actually writable. */
+        collapseEmptyDates
+        /* Status and priority show their value and open a picker on click —
+           no native `<select>` remains in this header at rest. */
+        inlineEditors
+        /* The gate rides the metadata line now, and only when it is set. */
+        trailing={gateChipFor(detail)}
+        /* Moved to `PanelOverflow` beside the window controls. The list's
+           control card keeps its Archive; only this host opts out, because
+           only this host has somewhere better to put it. */
+        omitArchive
       />
     ) : null;
 
@@ -873,11 +960,16 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         config={config}
         breadcrumb={breadcrumb}
         liveness={props.liveness}
+        /* The strip below renders this kind's state as a live picker, so the
+           header's read-only pill would say the same word twice in two
+           consecutive right-aligned clusters. Suppress the record pill only —
+           `deleted` and the liveness verdict still outrank this. */
+        statusInControls={strip !== null && config.list.stateControl != null}
         /* THE TITLE is editable only where registry data and the seam both
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
-        titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
+        titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         supplemental={
           (props.linkedPullRequests?.length ?? 0) > 0 ? (
@@ -934,7 +1026,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            */
           oneSurface ? (
             <>
-              {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+              {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
                 <SaveControls save={save} />
               ) : null}
               <TransferControl detail={detail} />
@@ -1019,22 +1111,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     boundsRef={actionBarRef}
                   />
                 ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
-                  <LaunchQuickConfig
+                  <LaunchComposerPopup
                     subject={detail}
                     /* The mode is the VERB's, read off the registry — so
                        Coordinate commits a coordinator and not Run's worker,
                        and no component here has to name either verb. */
                     /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
-                       `mode` and `verbLabel` are props, but the config is STATE
-                       seeded once. Without this key, pressing Coordinate then
-                       Run reused the instance: the heading re-rendered to "Run
-                       configuration" over a config still holding
-                       mode:'coordinator', and Launch spawned a coordinator
-                       under a button labelled Run. The dismissal cannot save it
-                       either — the other verb's button is inside the same
-                       `actionBarRef` bounds as the card. Remounting also clears
-                       the refusal, pending and access-mode state, all of which
-                       are equally stale across a verb switch. */
+                       `mode` and `verbLabel` are props, but parts of the config
+                       are STATE seeded once. Without this key, pressing
+                       Coordinate then Run could reuse the instance over stale
+                       refusal/pending state; the popup ALSO treats the verb's
+                       mode as prop-authoritative, so the payload follows the
+                       pressed button either way. Belt and key. */
                     key={flowRef}
                     verbLabel={resolveAction(flowRef).label}
                     {...(resolveAction(flowRef).launchMode
@@ -1043,20 +1131,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     spaceId={props.launch.spaceId || ctx.spaceId}
                     teammates={props.launch.teammates}
                     projects={props.launch.projects}
-                    loadFor={props.launch.loadFor}
                     capacity={props.launch.capacity}
-                    profileFor={props.launch.profileFor}
                     onSpawn={props.launch.onSpawn}
-                    onFullOptions={
-                      props.launch.onFullOptions
-                        ? () => {
-                            props.launch?.onFullOptions?.(detail.id);
-                            setFlowRef(null);
-                          }
+                    loadDescription={
+                      props.launch.descriptionOf
+                        ? () => props.launch!.descriptionOf!(detail.id)
+                        : undefined
+                    }
+                    onSaveSubject={
+                      props.launch.onUpdateEntity
+                        ? (edits) => props.launch!.onUpdateEntity!(detail.id, edits)
                         : undefined
                     }
                     onDismiss={() => setFlowRef(null)}
-                    boundsRef={actionBarRef}
                     newClientMutationId={() =>
                       props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
                     }
@@ -1064,7 +1151,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 ) : null
               }
             />
-            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+            {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
               <SaveControls save={save} />
             ) : null}
             {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
@@ -1072,6 +1159,29 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 is registered, so the single-server case never sees it. Kind
                 awareness lives in src/transfer, not here (§15.2). */}
             <TransferControl detail={detail} />
+            {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
+                strip as the last chip and, being the widest item there, was the
+                one flex-wrap ejected — onto its own line, directly under `✕`. A
+                destructive verb should not be a same-size neighbour of the
+                control you press when you are done looking. The control itself
+                is unchanged: same `RowAction`, same host, same `onArchive`,
+                same refusal vocabulary. */}
+            {strip !== null ? (
+              <PanelOverflow>
+                {/* The id and the link the metadata row used to spend a
+                    measured 41.8px stating on every task. */}
+                <PanelIdentityItems entityId={detail.id} spaceId={props.ctx.spaceId} />
+                <span className="pn-overflow__rule" />
+                <RowAction
+                  ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+                  row={subjectOf(detail)}
+                  props={controlHost}
+                  onRun={controlHost.onArchive}
+                  variant="wide"
+                  glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+                />
+              </PanelOverflow>
+            ) : null}
             <PanelWindowControls
               onPromote={props.onPromote}
               onClose={onClose}
@@ -1148,6 +1258,17 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     downloadHref={props.attachments?.downloadHref}
                     startUpload={props.attachments?.startUpload}
                     projectFolder={props.attachments?.projectFolder}
+                    /* Create a blank drawing attached HERE, then open it — a
+                       canvas nobody is looking at is not what "add a drawing"
+                       means. The refetch is `onAttachmentUploaded`, the same
+                       one an upload and a detach share, because all three
+                       change the same thing: this anchor's `attached_to`
+                       edges. */
+                    createDrawing={props.attachments?.createDrawing ? async () => {
+                      const id = await props.attachments!.createDrawing!(detail.id, 'Untitled drawing');
+                      props.onAttachmentUploaded?.();
+                      props.onOpenEntity?.(id);
+                    } : undefined}
                     onUploaded={props.onAttachmentUploaded}
                     onDetach={props.attachments?.detach}
                     /* A detach and an upload change the SAME thing — the
@@ -1158,17 +1279,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
-              /* ATTENTION HISTORY rides on the SAME three exclusions as the
-                 strip — and unlike the strip, the two archetypes it excludes do
-                 not LOSE the section: `PanelBody`'s connections arm mounts it
-                 for them instead. Ordered above the strip because an escalation
-                 someone may still be waiting on outranks a file list. It never
-                 goes into the subtree body's slot: that slot is the description
-                 block's, and a scored queue is not a description. */
-              const attentionSlot =
-                tab === 'content' && !isTombstone && !bodyOwnsBottom
-                  ? props.attentionSection
-                  : null;
+              /* ATTENTION HISTORY IS NO LONGER HERE. It was a section in this
+                 body for every archetype that could take one, with a second
+                 mount on the Connections tab for the ones that could not — two
+                 homes, one invariant, and a test whose whole job was proving no
+                 kind got both. The dock retired the pair: it is panel chrome
+                 now, rendered once below the body, so it is on screen at every
+                 scroll offset, on every tab, for every kind. See the mount
+                 above the footer. */
               return (
                 <>
                   <PanelBody
@@ -1180,7 +1298,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     barSlot={barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                   />
-                  {attentionSlot}
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
               );
@@ -1188,6 +1305,54 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           </AuthoringHost>
         </CatchBoundary>
       )}
+
+      {/* THE ATTENTION DOCK — one pinned line, OUTSIDE the scroller.
+
+          USER RULING 2026-09-07 ("taking up too much space at the bottom"):
+          the escalation record folds behind a bar, and the bar lives here.
+
+          WHY HERE AND NOT IN A BODY, which is where it spent its whole life
+          until now. Two reasons, and the second is the one that mattered:
+
+          1. PINNED IS FREE FROM THIS POSITION. The scroll host is `.pn-body`,
+             one level in; a sibling below it is outside the scroller, so the
+             bar is on screen at any scroll offset with no `position: sticky`,
+             no listener and no measurement.
+          2. IT KILLED THE SECOND MOUNT. The section had two homes — this
+             panel's content body, and the Connections tab for terminal and
+             `composition` bodies that own their own height and could not spare
+             four cards. One line they can spare. So the exile is gone, the
+             complementary-condition pair that enforced it is gone, and the
+             thing renders in exactly one place for every kind in the product.
+
+          ON EVERY TAB, deliberately. An escalation is a fact about the
+          ENTITY's standing, not about whichever view of it you happen to have
+          open, and the badge that announces it is not tab-scoped either.
+
+          A TOMBSTONE IS THE ONE EXCLUSION, on the same reasoning as the
+          strip and the controls above: there is nothing left to escalate about
+          a deleted entity, and offering Resolve on one would be offering a
+          write the server will refuse.
+
+          IT DOES COST THE TERMINAL A LINE, and that is deliberate rather than
+          an oversight of the 2026-07-31 ruling ("terminal all the way, till the
+          component bottom") that sends the FOOTER away just below. The two are
+          not the same trade. The footer is unconditional chrome carrying a
+          reading — presence · author · version — that a live PTY does not want
+          at any price. This dock renders ONLY when the entity has escalation
+          history, which almost no session does, and when it does render it is
+          reporting something somebody is waiting on. A session with a pending
+          escalation is exactly the case where 28px of terminal is the cheaper
+          thing to give up; a session with none still gets its full height. If
+          that reads as a conflict later, this is the note that says it was
+          weighed (user ruling 2026-09-07: one bar everywhere, work sessions
+          named explicitly as the reason).
+
+          UNWIRED HOSTS RENDER NOTHING — `attentionSectionFor` returns
+          undefined without a seam, and the component itself returns null for
+          an entity with no history, which is the overwhelming majority. No
+          empty strip appears on every entity in the app. */}
+      {isTombstone ? null : props.attentionSection}
 
       {/* USER RULING 2026-07-31 — "terminal all the way, till the component
           bottom." The footer is the last strip between the canvas and the
@@ -1261,34 +1426,14 @@ function PanelBody(
     );
   }
   if (tab === 'connections') {
-    /**
-     * THE ATTENTION SECTION'S OVERFLOW HOME, for the bodies that cannot take
-     * it inline — terminal (a live PTY owning its full height) and any declared
-     * `composition` (a chat that ends at its composer, an artifact frame that
-     * fills the panel). Those are excluded from the content-body mount for the
-     * same structural reasons the attachment strip excludes them, and a work
-     * session is one of the most-escalated things in a space, so dropping the
-     * section for them would have made session attention history reachable only
-     * from the CLI (user ruling 2026-08-16).
-     *
-     * IT MOVED HERE FROM THE ACTIVITY TAB when that tab was removed
-     * (2026-08-19). Connections is where it belongs of the two remaining: an
-     * escalation is a fact ABOUT this entity's standing, like its edges, where
-     * Discussion is a conversation with its own composer and paging and would
-     * have had to grow a slot to take it.
-     *
-     * The CONDITION IS THE EXACT COMPLEMENT of the content-body one, so the
-     * section renders in exactly one place per kind and can never appear twice
-     * — `panels.test.tsx` asserts both halves of that.
-     *
-     * Deliberately ABOVE the tab: it is the shorter, more actionable half, and
-     * the peer list has no natural end to append below.
-     */
-    const overflow =
-      config.panel.archetype === 'terminal' || config.panel.composition != null;
+    /* The attention section used to have its OVERFLOW HOME here, for the bodies
+       that could not take it inline — terminal (a live PTY owning its full
+       height) and any declared `composition`. That exile is over: the dock is
+       one pinned line of panel chrome, which a body owning its own height can
+       spare, so every kind now draws it in the same single place and this arm
+       is a plain list of edges again (user ruling 2026-09-07). */
     return (
       <>
-        {overflow ? props.attentionSection : null}
         <ConnectionsTab
           detail={detail}
           connections={props.connections}
@@ -1402,6 +1547,11 @@ function PanelBody(
             The session git host is unavailable in this view.
           </p>
         )}
+        changes={props.changesSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session changes host is unavailable in this view.
+          </p>
+        )}
         graph={props.graphSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             The session graph host is unavailable in this view.
@@ -1480,6 +1630,33 @@ function PanelBody(
       />
     );
   }
+  if (config.panel.archetype === 'conversation') {
+    /*
+     * THE BODY IS THE CONVERSATION AND NOTHING ELSE (chat as an entity).
+     *
+     * The hub arm below renders front-door regions and hangs the feed beneath
+     * them, which is right for a channel and wrong for a chat: a chat's title
+     * is generated from its first turn and its content arm is literally
+     * `{ kind: 'chat' }`, so anything drawn above the transcript would be a
+     * header repeating the first bubble.
+     *
+     * `composition: 'chat'` on the same row is what removes the strip, the
+     * attention section and the footer below — the body ends at its composer,
+     * whose ＋ already owns attach.
+     *
+     * The missing-host alert is the terminal arm's honesty, kept: every host
+     * wires the slot through `conversationSurfaceFor`, so this is the tripwire
+     * for the next one that forgets rather than a panel that silently renders
+     * an empty box where a conversation should be.
+     */
+    return props.conversationSurface ? (
+      <div className="pn-conversation-body">{props.conversationSurface}</div>
+    ) : (
+      <p className="pn-surface-host-missing" role="alert">
+        This conversation is unavailable in this view.
+      </p>
+    );
+  }
   if (config.panel.archetype === 'hub') {
     /*
      * THE HUB'S REDIRECT CAME HOME (user ruling 2026-08-01).
@@ -1523,6 +1700,8 @@ function PanelBody(
   }
   if (config.panel.archetype === 'profile') {
     return (
+      <>
+      <SkillEquipment detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />
       <ProfileBody
         detail={detail}
         blocks={config.panel.blocks ?? []}
@@ -1531,8 +1710,11 @@ function PanelBody(
         memoryAuthoring={props.memoryAuthoring}
         onMarkMemory={props.onMarkMemory}
       />
+      </>
     );
   }
+
+  if (config.panel.archetype === 'equipment') return <SkillBody detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />;
 
   if (config.panel.archetype === 'governed') {
     return (
@@ -1541,6 +1723,28 @@ function PanelBody(
         blocks={config.panel.blocks ?? []}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  /*
+   * THE MACHINE ARM (Containers P0, Design §13.2).
+   *
+   * `liveness` and NOT `detail.content` — R-UI-5. The prop is already threaded
+   * to this component for the terminal arm, and it is the SAME seam verdict:
+   * a container's runtime is probed the way a session's PTY is. Passing the
+   * recorded status here instead would make the LIVE dot a second rendering of
+   * the pill sitting next to it, which is precisely the ghost the two-source
+   * law exists to expose.
+   *
+   * REMOVING THIS ARM is lane D's negative control: `MachineBody` stops
+   * mounting and `GenericBody` renders in its place, because the chain falls
+   * through. That is what proves the fallback is real rather than assumed.
+   */
+  if (config.panel.archetype === 'machine') {
+    return (
+      <MachineBody
+        detail={detail}
+        {...(props.liveness ? { liveness: props.liveness } : {})}
       />
     );
   }

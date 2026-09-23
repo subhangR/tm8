@@ -1,5 +1,7 @@
 import type {
   ActorSummary,
+  ContainerShareMode,
+  ContainerStatus,
   EntityCapabilities,
   EntityCounters,
   EntityDetail,
@@ -133,6 +135,59 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   idle: 'in_progress',
   exited: 'done',
   failed: 'done',
+  /*
+   * container (migration 177, Design §11.1) — MIRRORING THE SESSION MAPPING
+   * ABOVE, transition for transition, because the two lifecycles have the same
+   * shape: asked-for, alive, over.
+   *
+   *   requested / provisioning  → to_do        (the session's `spawning`)
+   *   running / paused / stopping / destroying → in_progress
+   *   stopped / destroyed       → done         (the session's `exited`)
+   *   failed                    → done         (already mapped, shared word)
+   *
+   * `stopped` lands under DONE for `exited`'s reason and not because the row
+   * is finished forever: both can come back (`containers.start`,
+   * `execution.resume`), and both have no live runtime until they do.
+   *
+   * `destroying` is IN PROGRESS rather than done — it is a transition with a
+   * provider call still running, and filing it under Done would show a machine
+   * as gone while it is still being torn down.
+   *
+   * THIS IS THE SHIPPED SERVER MAPPING, verbatim — no longer the UI's reading.
+   *
+   * It began as a guess and is worth recording as one, because the checking is
+   * what made it true. Asked of lane A, it walked a container through all nine
+   * statuses on a live chain and found `status_category` STUCK at `to_do`
+   * through `destroyed` — and `status_id` pinned at the generic "To Do" state
+   * with it. Both halves stuck, which is the `work_session` empty-tab defect
+   * (477 sessions, To Do 0 / In Progress 6 / Done 471) arriving a second time.
+   *
+   * The mapping below was then ruled and implemented, including both of the
+   * judgement calls: `stopped` → `done` for `exited`'s reason (both can come
+   * back, neither has a live runtime until they do), and `destroying` →
+   * `in_progress` because a provider call is still in flight.
+   *
+   * ONE THING CHANGED ON THE WAY IN, and it is why containers carry no
+   * workflow state: `category_transition_allowed('done','in_progress')` is
+   * FALSE, so with `stopped = done` the legal `stopped → running` transition
+   * would raise inside `set_container_status` and abort the door. Lane A
+   * brute-forced all 4^9 mappings — every consistent one required
+   * `stopped = in_progress`. The resolution keeps this mapping and writes
+   * `entities.status_category` DIRECTLY, clearing `status_id`:
+   * `validate_status_transition` is `before update of status_id`, so writing
+   * the category alone never fires it.
+   *
+   * So a container's `status_id` is NULL BY DESIGN. Its lifecycle is
+   * node-owned (single writer `set_container_status`) and the category is a
+   * projection for the tabs, not an authority.
+   */
+  requested: 'to_do',
+  provisioning: 'to_do',
+  paused: 'in_progress',
+  stopping: 'in_progress',
+  stopped: 'done',
+  destroying: 'in_progress',
+  destroyed: 'done',
 };
 
 /**
@@ -963,7 +1018,8 @@ export const skillReview = summary({
   id: 'skill-review',
   kind: 'skill',
   title: 'code-review',
-  state: { kind: 'skill', description: 'Adversarial review checklist.', equipped: false },
+  state: { kind: 'skill', description: 'Adversarial review checklist.', equipped: false,
+    provider: 'tm8', level: 'space', frontmatter: {}, missing: false, changedOnDisk: false },
 });
 
 export const collectionInbox = summary({
@@ -1016,6 +1072,23 @@ export const customRitual = summary({
  * viewer's publisher chrome exercises the agent wording rather than only the
  * human one.
  */
+/**
+ * Drawing — a hand-drawn canvas as an entity (migration 194).
+ *
+ * `elementCount` is 6 rather than 0 because an EMPTY canvas is the one state
+ * that proves nothing: a list row showing "0" and a row whose state failed to
+ * project look identical. Six is a small real sketch, which is also what makes
+ * the tile's count worth drawing at all.
+ */
+export const drawingLoginFlow = summary({
+  id: 'drawing-login-flow',
+  kind: 'drawing',
+  title: 'Login flow sketch',
+  excerpt: 'excalidraw',
+  createdBy: ada,
+  state: { kind: 'drawing', format: 'excalidraw', elementCount: 6 },
+});
+
 export const artifactPulseBoard = summary({
   id: 'artifact-pulse-board',
   kind: 'artifact',
@@ -1027,7 +1100,199 @@ export const artifactPulseBoard = summary({
 
 // ---------------------------------------------------------------------------
 // roster
+/**
+ * chat — a conversation with a teammate, as an entity (migration 176).
+ *
+ * TWO ROWS, because the chat state carries TWO INDEPENDENT AXES and one row
+ * cannot show that they are independent. `runtimeState` is the durable claim
+ * about the headless child; `turnState` is the queue. The pair that matters is
+ * the second one: a chat whose node restarted with work still waiting is
+ * `stopped` AND `queued`, and a surface that folded them would have no way to
+ * say "your message is still coming" — it would draw that chat as idle.
+ *
+ * `turnCount` is TURNS, not replies. A chat is flat: every message is anchored
+ * on the chat with no thread root, and the user->agent pairing lives in
+ * `chat_turns`. There is no reply count to project.
+ */
+export const chatLaunchPlan = summary({
+  id: 'ent-chat-launch',
+  kind: 'chat',
+  title: 'Plan the launch sequence',
+  excerpt: 'Walk me through what still has to land before we ship.',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'plan',
+    workdirMode: 'scratch',
+    projectId: null,
+    runtimeState: 'live',
+    turnState: 'running',
+    turnCount: 6,
+    lastTurnAt: T.morning,
+  },
+});
+
+export const chatStoppedWithWork = summary({
+  id: 'ent-chat-stopped',
+  kind: 'chat',
+  title: 'Audit the release blockers',
+  excerpt: 'Which of the open PRs actually block the cut?',
+  createdBy: ada,
+  state: {
+    kind: 'chat',
+    teammateId: teamMemberForge.id,
+    model: 'claude-opus-5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    mode: 'ask',
+    workdirMode: 'project',
+    projectId: 'proj-tm8-ui',
+    // THE PAIR THAT PROVES THE AXES ARE INDEPENDENT: no hot child survives a
+    // node restart, so the runtime is honestly 'stopped' — and a turn is still
+    // queued behind it. Neither field can say this alone.
+    runtimeState: 'stopped',
+    turnState: 'queued',
+    turnCount: 2,
+    lastTurnAt: T.old,
+  },
+});
+
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// container — ONE PER STATUS (migration 177, Design §11.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE SIX CAPABILITY BOOLEANS, DERIVED FROM STATUS — lane B's `capabilitiesOf`
+ * (freeze part 2/4), restated here so the fixture cannot disagree with the
+ * server about which button a status permits.
+ *
+ * A HAND-WRITTEN TABLE OF NINE ROWS WOULD BE THE WRONG SHAPE. The panel test
+ * asserts "each status shows the right primaries", and if both the fixture and
+ * the test read the same nine hand-written rows the test proves only that two
+ * copies of one table agree. Derived from the status here, asserted against
+ * the RULE in the test, the two disagree the moment either drifts.
+ */
+export function containerCapsFor(
+  status: ContainerStatus,
+  opts: { nonTerminalSurface?: boolean; live?: boolean; shareMode?: ContainerShareMode } = {},
+): EntityCapabilities {
+  /*
+   * TRANSCRIBED FROM THE IMPLEMENTATION, not from the freeze message that
+   * announced it: `capabilitiesOf`'s container arm in
+   * `packages/server/src/facade/entity-read.ts` (lane B, head `d0ef9969`).
+   *
+   * IT WAS COPIED FROM THE MESSAGE FIRST, AND FOUR MEMBERS DIVERGED — one of
+   * them permissively, which is the direction that matters:
+   *
+   *   canDelete   server hard `false`; this inherited `true` from CAPS_FULL.
+   *               `archive` gates exactly on it, so EVERY container fixture
+   *               asserted a container is archivable and no test in this
+   *               package could catch a UI that wrongly offered Archive. The
+   *               fixture was on the wrong side of the bug.
+   *   canControl  had `&& mayDrive === true`, an ACTOR term the server's
+   *               signature cannot express — `capabilitiesOf(row)` takes no
+   *               viewer. See the note at `mayDrive` below: the published
+   *               server omits the term entirely and lane B has an unpushed
+   *               fix narrowing it to `share_mode === 'space'`.
+   *   canDestroy  server ANDs `live`; this omitted it.
+   *   canEdit     server is `live`; this inherited unconditional `true`.
+   *
+   * `live` is `row.deleted_at === null` (entity-read.ts:1954), and `attachable`
+   * is `surfaces.some(k => k !== 'terminal')` — the exec PTY is reached through
+   * `containers.terminal.start`, not a surface grant, so it does not make a
+   * container attachable.
+   *
+   * A FIXTURE THAT RESTATES A SERVER RULE IS A COPY and needs the same audit as
+   * any other copy. Nothing in this package could have caught the drift: the
+   * type system cannot check a fixture against a server it does not import,
+   * so only a cross-tree diff finds it.
+   */
+  const live = opts.live !== false;
+  const attachable = opts.nonTerminalSurface === true;
+  const running = status === 'running';
+  const canAttach = running && attachable;
+  /*
+   * `canControl` — AND THE PUBLISHED AUTHORITY AND THE INTENDED ONE DISAGREE,
+   * so this encodes the stricter of the two deliberately.
+   *
+   *   published (`origin/tm8/01a0652a` @ d0ef9969):  running && attachable
+   *   lane B's stated fix, NOT YET PUSHED:           … && share_mode === 'space'
+   *
+   * I verified the published half by reading the file; the second half is
+   * lane B's word, and I could not check it because the commit is local to
+   * its tree. Recorded as unverified rather than folded in silently.
+   *
+   * ENCODING THE STRICTER ONE IS SAFE UNDER BOTH. Every container fixture here
+   * carries `shareMode: 'space'`, where the two predicates agree exactly — so
+   * this changes no fixture today. If the fix does not land and someone adds a
+   * non-`space` fixture, this is stricter than the server, which is a FALSE
+   * NEGATIVE: a hidden control someone could have used, rather than a button
+   * that 403s at `grant_surface_attach`. That is the direction this program
+   * has chosen everywhere else, so it is the one to be wrong in.
+   *
+   * `'space'` is the only value the ROW can settle: `capabilitiesOf(row)` takes
+   * no viewer identity, so `'none'` (creator) and `'explicit'` (a named list)
+   * are unanswerable from the row alone.
+   */
+  const mayDrive = (opts.shareMode ?? 'space') === 'space';
+  return {
+    ...CAPS_FULL,
+    canEdit: live,
+    canDelete: false,
+    canStart: status === 'stopped',
+    canStop: running || status === 'paused',
+    canDestroy: live && status !== 'destroying' && status !== 'destroyed',
+    canAttach,
+    canControl: canAttach && mayDrive,
+    canExec: running,
+  };
+}
+
+const CONTAINER_STATUSES: readonly ContainerStatus[] = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+];
+
+function containerSummary(status: ContainerStatus): EntitySummary {
+  return summary({
+    id: `ent-ctr-${status}`,
+    kind: 'container',
+    title: `build box (${status})`,
+    excerpt: 'A shell container on the launch node.',
+    createdBy: ada,
+    state: {
+      kind: 'container',
+      status,
+      profile: 'shell',
+      provider: 'fake',
+      isolation: 'container',
+      // NOT nullable: the create door refuses a null `p_node_id` (22023), so a
+      // container always has a home node.
+      nodeId: 'node-launch',
+      // P0's fake provider offers the exec PTY and nothing else. A fixture
+      // listing a `screen` here would make `canAttach` reachable on a surface
+      // no lane has built.
+      surfaces: ['terminal'],
+      ephemeral: status !== 'stopped',
+      shareMode: 'space',
+      startedAt: status === 'running' || status === 'paused' ? T.morning : null,
+      expiresAt: null,
+    },
+  });
+}
+
+/** One per status, in §11.1 order. The panel sweep renders every one. */
+export const containerFixtures: readonly EntitySummary[] =
+  CONTAINER_STATUSES.map(containerSummary);
+
+/** `running` — the one most surfaces want a representative of. */
+export const containerRunning = containerFixtures[2]!;
 
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
@@ -1040,17 +1305,40 @@ export const fixtureSummaries: EntitySummary[] = [
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,
+  chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, customRitual, artifactPulseBoard,
+  profileHouseStyle, customRitual, artifactPulseBoard, drawingLoginFlow,
+  ...containerFixtures,
 ];
 
 // ---------------------------------------------------------------------------
 // details — one representative EntityDetail per core kind (+ custom)
 // ---------------------------------------------------------------------------
 
-function edge(id: string, type: string, source: EntitySummary, target: EntitySummary, createdBy: ActorSummary, extra: { resolved?: boolean; hard?: boolean } = {}) {
-  return { id, type, source, target, props: {}, createdBy, createdAt: T.older, updatedAt: T.morning, ...extra };
+/**
+ * EDGES DO NOT ALL HAPPEN AT ONCE, and the fixture used to say they did:
+ * every edge carried `createdAt: T.older, updatedAt: T.morning`, identically.
+ *
+ * That was invisible while the Connections tab discarded both fields. Now that
+ * the tab orders by time and stamps each row, one shared instant would make
+ * every fixture row read as the same moment — and, worse, would make every
+ * relation report "linked, then updated", because `createdAt !== updatedAt`
+ * uniformly. A fixture that cannot tell two moments apart cannot demonstrate a
+ * surface whose subject is when things happened.
+ *
+ * So each edge gets its OWN instant, derived from its id: a stable, spread
+ * sequence walking back from `T.recent`. Deterministic (no clock, no random),
+ * distinct per edge, and `updatedAt === createdAt` unless a caller says
+ * otherwise — an edge that was never re-written must not claim it was.
+ */
+let edgeSeq = 0;
+function edge(id: string, type: string, source: EntitySummary, target: EntitySummary, createdBy: ActorSummary, extra: { resolved?: boolean; hard?: boolean; createdAt?: string; updatedAt?: string } = {}) {
+  // 11 minutes apart, newest first — far enough to read as distinct times,
+  // close enough that the whole set stays inside one plausible afternoon.
+  const at = new Date(Date.parse(T.recent) - edgeSeq * 11 * 60_000).toISOString();
+  edgeSeq += 1;
+  return { id, type, source, target, props: {}, createdBy, createdAt: at, updatedAt: at, ...extra };
 }
 
 function detail(base: EntitySummary, rest: Pick<EntityDetail, 'content'> & Partial<Pick<EntityDetail, 'hierarchy' | 'connections' | 'capabilities'>>): EntityDetail {
@@ -1198,6 +1486,68 @@ export const fixtureDetails: Record<string, EntityDetail> = {
             edge('edge-remembers-2', 'remembers', teamMemberForge, memoryDisputed, forge),
             edge('edge-remembers-3', 'remembers', teamMemberForge, memorySuperseded, forge),
           ],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  /**
+   * A chat's CONTENT is empty by ruling (R5): the working directory and the
+   * native runtime session id are the two facts a client might want here, and
+   * both stay server-side. The arm exists so the discriminated union is total,
+   * and the fixture says so rather than inventing a payload to look fuller.
+   */
+  [chatLaunchPlan.id]: detail(chatLaunchPlan, {
+    content: { kind: 'chat' },
+    /**
+     * WRITTEN OUT, NOT SPREAD FROM `CAPS_FULL` — and the first draft of this
+     * fixture got it wrong, which is the argument.
+     *
+     * `detail()` defaults to `CAPS_FULL`, so a kind that says nothing here
+     * asserts all eight verbs are permitted. For `chat` FIVE of the eight are
+     * false on the server, and the fixture claimed them anyway: a spread with
+     * no override list fails OPEN by construction, so a member you do not think
+     * about does not read as missing, it reads as `true`.
+     *
+     * Each value below is read off `facade/entity-read.ts` `capabilitiesOf`,
+     * not guessed:
+     *   canEdit        false — `chat` is not in the `editable` set; there is no
+     *                          patch door for a chat in Wave 1.
+     *   canAddChild    false — not in `hierarchical`.
+     *   canPull        false — not in `pullable`.
+     *   canGrantPoints false — member / team_member only.
+     *   canComplete    false — keyed on the completion SURFACE (a work status),
+     *                          which a chat does not have.
+     *   canDelete/canLink/canReact  true — the live-only rules.
+     */
+    capabilities: {
+      canEdit: false,
+      canDelete: true,
+      canAddChild: false,
+      canLink: true,
+      canPull: false,
+      canReact: true,
+      canGrantPoints: false,
+      canComplete: false,
+    },
+    connections: {
+      // The two edges a chat is born with (176 §7): its teammate binding, and
+      // the entity it was opened ABOUT — which replaced anchoring the whole
+      // transcript on somebody else's row.
+      incoming: [],
+      outgoing: [
+        {
+          type: 'relates_to',
+          direction: 'outgoing',
+          label: 'teammate',
+          edges: [edge('edge-chat-teammate', 'relates_to', chatLaunchPlan, teamMemberForge, ada)],
+        },
+        {
+          type: 'about',
+          direction: 'outgoing',
+          label: 'about',
+          edges: [edge('edge-chat-about', 'about', chatLaunchPlan, taskQueued, ada)],
         },
       ],
       unresolvedHardDependencyCount: 0,
@@ -1470,6 +1820,71 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
   }),
 
+  /*
+   * The scene is REAL Excalidraw element JSON, not a placeholder: the panel
+   * hands `elements` straight to the library with no translation, so a fixture
+   * carrying an invented shape would render a canvas that cannot exist and
+   * would hide exactly the bugs a fixture is for. Two boxes and an arrow —
+   * the smallest thing that is recognisably a drawing.
+   *
+   * NO COLOURS. Excalidraw stores element colours as raw hex — that is its
+   * format, not this app's palette, and there is no tm8 token that could
+   * legitimately stand in for a persisted `strokeColor`. They are simply left
+   * out: they are optional members the library defaults, nothing here asserts
+   * them, and including them would put raw hex in `src/` for no gain (§14).
+   */
+  [drawingLoginFlow.id]: detail(drawingLoginFlow, {
+    content: {
+      kind: 'drawing',
+      format: 'excalidraw',
+      elements: [
+        {
+          id: 'fx-box-form', type: 'rectangle', x: 40, y: 60, width: 180, height: 100,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 101, version: 4, versionNonce: 991, isDeleted: false, groupIds: [],
+        },
+        {
+          id: 'fx-box-home', type: 'rectangle', x: 340, y: 60, width: 180, height: 100,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 102, version: 4, versionNonce: 992, isDeleted: false, groupIds: [],
+        },
+        {
+          id: 'fx-arrow', type: 'arrow', x: 230, y: 110, width: 100, height: 0,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 103, version: 3, versionNonce: 993, isDeleted: false, groupIds: [],
+          points: [[0, 0], [100, 0]],
+        },
+        {
+          id: 'fx-label-form', type: 'text', x: 70, y: 100, width: 120, height: 25,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 104, version: 2, versionNonce: 994, isDeleted: false, groupIds: [],
+          text: 'Sign in', fontSize: 20, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+        {
+          id: 'fx-label-home', type: 'text', x: 380, y: 100, width: 120, height: 25,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 105, version: 2, versionNonce: 995, isDeleted: false, groupIds: [],
+          text: 'Home', fontSize: 20, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+        {
+          id: 'fx-note', type: 'text', x: 40, y: 200, width: 400, height: 22,
+          angle: 0, fillStyle: 'solid',
+          strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100,
+          seed: 106, version: 2, versionNonce: 996, isDeleted: false, groupIds: [],
+          text: 'on success only', fontSize: 16, fontFamily: 1, textAlign: 'left', verticalAlign: 'top',
+        },
+      ],
+      appState: { gridSize: null },
+      // Always empty in phase 1 — the doors refuse a non-empty files map.
+      files: {},
+    },
+  }),
+
   [artifactPulseBoard.id]: detail(artifactPulseBoard, {
     content: {
       kind: 'artifact',
@@ -1481,4 +1896,62 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       totalSizeBytes: 4096,
     },
   }),
+
+  /*
+   * ONE CONTAINER DETAIL PER STATUS — nine of them, spread in below.
+   *
+   * Nine rather than one because the panel's whole job on this kind is to say
+   * WHAT STATE THE MACHINE IS IN and which verbs that state permits, so a
+   * single `running` fixture would leave eight of the nine renderings
+   * unexercised — including `destroyed`, where the row is soft-deleted, and
+   * `failed`, where an error string has to reach the reader.
+   *
+   * `capabilities` is DERIVED per row by `containerCapsFor`, never written out,
+   * so the fixture states lane B's rule rather than a transcription of it.
+   */
+  ...Object.fromEntries(
+    containerFixtures.map((row) => {
+      const status = (row.state as { status: ContainerStatus }).status;
+      return [row.id, detail(row, {
+        capabilities: containerCapsFor(status),
+        content: {
+          kind: 'container',
+          image: 'ghcr.io/tm8/shell:1',
+          spec: {
+            profile: 'shell',
+            image: 'ghcr.io/tm8/shell:1',
+            cpus: 2,
+            memMiB: 4096,
+            diskMiB: 20480,
+            /* READ FLAVOUR — `{ guest, ro }` and no host path (AMENDMENT 1,
+               ruling R5). A mount cannot be round-tripped: the create sheet
+               may SEND a host path, nothing ever reads one back. */
+            mounts: [{ guest: '/workspace', ro: false }],
+            env: { TM8_SPACE: 'fixture' },
+            ports: [],
+            network: { preset: 'balanced', allow: ['github.com'] },
+            surfaces: { terminal: { enabled: true } },
+            labels: { 'tm8.container': row.id, 'tm8.space': FIXTURE_SPACE_ID },
+          },
+          lifecycle: {
+            ephemeral: status !== 'stopped',
+            ttlSeconds: null,
+            idleHibernateSeconds: null,
+            graceSeconds: 600,
+            snapshotOnStop: false,
+          },
+          /* `screen` IS DELIBERATELY ABSENT on every row. `surfaceDetail` is a
+             `Partial<Record<…>>`, so a body reading `surfaceDetail.screen`
+             without a guard breaks here in jsdom rather than on a real
+             container that has no screen. */
+          surfaceDetail: { terminal: { live: status === 'running' } },
+          error: status === 'failed'
+            ? 'provider "fake" refused: no image satisfies profile shell at isolation microvm'
+            : null,
+          usage: status === 'running' ? { cpuPct: 12, memMiB: 812, diskMiB: 2048 } : null,
+          exposed: [],
+        },
+      })] as const;
+    }),
+  ),
 };

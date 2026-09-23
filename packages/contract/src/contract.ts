@@ -17,6 +17,7 @@
  * are constrained to them — drift fails the build.
  */
 
+import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 
 // ===========================================================================
@@ -43,7 +44,25 @@ export type CoreEntityKind =
   // between them lives inside the row. Content-discriminated `graphType`
   // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
   // more later). It never writes real public.edges while being crafted.
-  | 'graph';
+  | 'graph'
+  // Chat as an Entity (2026-09-03, migration 176). A conversation with a
+  // teammate is the ANCHOR of its own transcript, a spawn parent, and an
+  // `authored_from` destination — everything a work session already was, which
+  // is the whole point (ruling R-B). It is deliberately NOT creatable through
+  // `entities.create`: `chat.start` is the only door, because a chat is born
+  // with a runtime binding (teammate, model, working directory) that a generic
+  // create could not supply.
+  | 'chat'
+  // Containers (TM8-CONTAINERS-DESIGN §3.1, migration 177): a machine an
+  // agent runs IN or drives. It is an entity so hierarchy, edges, messages
+  // and attention all work on it for free; the RUNTIME behind it is not.
+  | 'container'
+  // Drawings (migration 194, 2026-09-17): a hand-drawn canvas as an entity.
+  // The scene is Excalidraw's own three parts — elements, appState, files —
+  // and `format` is a SLUG, not a closed list, so a second canvas format
+  // later costs no migration (135's R3 lesson). Phase 1 is single-writer and
+  // refuses embedded images; both are rulings, not omissions.
+  | 'drawing';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -251,7 +270,16 @@ export type CoreEntityState =
      default applies. It never means "not loaded yet"; that distinction is the
      whole point of projecting it onto the row rather than resolving it later. */
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
-      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null }
+      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null;
+      /* `mode` and `permissionMode` are ADDITIVE and OPTIONAL. They project
+         `team_members.mode` (CHECKed: worker | coordinator | coordinated-worker |
+         coordinated-coordinator | dispatcher) and `team_members.permission_mode`
+         (plain text, no CHECK) so a picker can filter teammates by role —
+         "coordinators only" for an orchestrate chat — without a per-teammate
+         round trip. `null` means the row has no value; ABSENT means an older
+         node that does not project the column, and a consumer must treat the
+         teammate as unfiltered rather than as a non-coordinator. */
+      mode?: TeamMemberMode | null; permissionMode?: string | null }
   // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
   // `null` means this node has no verdict — nothing has observed the pull
   // request yet, or the observer runs unauthenticated — and a consumer renders
@@ -273,10 +301,21 @@ export type CoreEntityState =
       headRef?: string | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
-  | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
+  | { kind: 'spell'; description?: string; equipped: boolean }
+  | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
   // tm8 additions (03 §1) — see §2 for the enums.
-  | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
+  | { kind: 'work_session'; skills?: EffectiveSkills; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
+      /**
+       * OPTIONAL, AND ITS ABSENCE MEANS `owner` — the same degrade-to-the-old-
+       * behaviour rule `sessionKind` states below. A node that predates 187, or
+       * a payload cached before the column shipped, carries no value here, and
+       * `owner` is exactly what every such session did.
+       *
+       * Never render a drive affordance on absence: "we do not know" must read
+       * as "no" for a write capability.
+       */
+      driveMode?: WorkSessionDriveMode;
       startedAt: string | null; exitedAt: string | null;
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
@@ -418,10 +457,53 @@ export type CoreEntityState =
    * vertices and edges themselves are content, not state: a summary never
    * needs them and they can be large.
    */
-  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number }
+  /**
+   * A drawing's row facts: which canvas format, and how big. The elements
+   * themselves are content, never state — a list row never needs them and a
+   * scene is the largest payload any kind carries.
+   */
+  | { kind: 'drawing'; format: string; elementCount: number }
+  /**
+   * A chat's row facts (176). Everything here answers a question a list row
+   * asks — who is it with, what is it running, is it busy — without a second
+   * read, which is the same rule `capabilities` and `category` ride on.
+   *
+   * `runtimeState` is the DURABLE claim about the headless child: 'cold' means
+   * one has never started, 'live' that a node holds it, 'stopped' that the next
+   * turn takes the lazy-resume path. `turnState` is the QUEUE, which is a
+   * different fact: a chat can be 'stopped' with a queued turn waiting, and
+   * that pair is exactly what "the node restarted, your message is still
+   * coming" looks like. Neither is derivable from the other.
+   */
+  | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
+      mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      runtimeState: 'cold' | 'live' | 'stopped';
+      turnState: 'idle' | 'queued' | 'running';
+      turnCount: number; lastTurnAt: string | null }
+  /**
+   * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
+   * carries the surface KINDS that are live and not their detail; the panel
+   * hydrates `surfaceDetail` from content.
+   *
+   * `nodeId` is `string`, NOT `string | null`: the create door refuses a null
+   * `p_node_id` with `22023`, so a container always has a home node and a
+   * consumer never has to render "nowhere".
+   *
+   * `startedAt`/`expiresAt` null are MEASURED absences — never started, and
+   * no TTL — and render nothing, never a default.
+   */
+  | { kind: 'container'; status: ContainerStatus; profile: ContainerProfile;
+      provider: string; isolation: ContainerIsolationClass; nodeId: string;
+      surfaces: ContainerSurfaceKind[]; ephemeral: boolean;
+      shareMode: ContainerShareMode;
+      startedAt: string | null; expiresAt: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
+
+export type TeamMemberMode =
+  | 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher';
 
 export type EntityState = CoreEntityState | CustomEntityState;
 
@@ -693,8 +775,56 @@ export type CoreEntityContent =
    * types choose their own members. All four carry on every read — an arm a
    * type does not use is simply empty. `layout` is presentation only.
    */
+  /**
+   * A chat has NO content beyond its summary (R5). The working directory and
+   * the native runtime session id are the two facts a client could want here
+   * and the two that stay server-side, so the arm exists to satisfy the
+   * discriminated union and says so rather than inventing a payload.
+   */
+  | { kind: 'chat' }
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
-      layout: Record<string, { x: number; y: number }>; source: string | null };
+      layout: Record<string, { x: number; y: number }>; source: string | null }
+  /**
+   * The whole Excalidraw scene in one row (194 D2).
+   *
+   * The three members are Excalidraw's own, passed through unchanged so the
+   * editor can hand `elements`/`appState` straight back to it with no
+   * translation layer to drift. They are deliberately UNTYPED beyond their
+   * containers: an element is ~30 fields of Excalidraw's private shape and
+   * pinning it here would make every upstream release a contract change.
+   *
+   * `files` is the embedded-image map. It is always `{}` today — the doors
+   * refuse a non-empty one by name — and phase 2 fills it after splitting
+   * image bytes to `public.files`.
+   */
+  | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
+      appState: Record<string, unknown>; files: Record<string, unknown> }
+  /**
+   * Containers (§4.2), hydrated in the panel.
+   *
+   * THERE IS NO `runtimeRef` HERE, and there must never be one (R5). This arm
+   * is embedded in the command result by `internal.command_entity` (007:36),
+   * so every member of it reaches the client; the door subtracts
+   * `runtime_ref` and `host_spec` for exactly that reason. Runtime ids are
+   * reachable through `containers.providers.list` and `containers.logs`,
+   * which are node-side reads with their own authorization.
+   *
+   * `surfaceDetail` is PARTIAL: a container with no `adb` surface omits the
+   * key rather than carrying a fake one, so every read of it must guard.
+   *
+   * `usage` is folded in from `container_runtime_state` AT READ TIME and is
+   * null when no sample exists. Heartbeats deliberately never touch the
+   * entity (§15, the migration-165 lesson): a 10 s periodic UPDATE on the
+   * detail row would emit `entity.upsert` per container and starve live
+   * renames. Do not read freshness off `version`.
+   */
+  | { kind: 'container'; image: string; spec: ContainerSpec;
+      lifecycle: ContainerLifecycle;
+      surfaceDetail: Partial<Record<ContainerSurfaceKind, {
+        live: boolean; geometry?: ContainerGeometry; meta?: Record<string, unknown> }>>;
+      error: string | null;
+      usage: ContainerUsage | null;
+      exposed: Array<{ port: number; url: string }> };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -764,7 +894,45 @@ export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canA
    * (doc 06 §1.5). Today no server matrix exists, so no server populates it;
    * the field lands with the contract so both old and new servers are legal.
    */
-  allowedTransitions?: string[] }
+  allowedTransitions?: string[];
+  /**
+   * CONTAINER VERBS (§15), derived from status + share_mode + actor.
+   *
+   * ADDITIVE AND OPTIONAL, structurally exactly like `allowedTransitions`
+   * above — and WITH THE OPPOSITE MEANING WHEN ABSENT. Read that sentence
+   * twice before adding a seventh member here.
+   *
+   *   `allowedTransitions` absent  → NO MATRIX; fall back to the registry
+   *                                  vocabulary, which is MORE permissive.
+   *   a capability boolean absent  → NOT PERMITTED. Deny.
+   *
+   * Two members of one interface, the same shape, opposite defaults. The
+   * reason they differ: `allowedTransitions` narrows a permission that
+   * already exists, so having nothing to say means "do not narrow". These
+   * GRANT a permission that otherwise does not exist, so having nothing to
+   * say means "no grant". A reader who reaches for the neighbouring
+   * precedent gets the wrong answer, which is why this is spelled out.
+   *
+   * Concretely, a consumer has three states and must treat them as:
+   *   `true`      → the control is live.
+   *   `false`     → disabled, with the registry's `capabilityReasons` sentence.
+   *   `undefined` → disabled, "capabilities not loaded". NEVER as `true`.
+   *
+   * Do not "simplify" `?? false` into `?? true`, and do not delete the
+   * `undefined` arm as dead code because today's server always populates
+   * these: absence is legal in the contract, and an older server is a legal
+   * peer. They are absent on every non-container kind by design.
+   *
+   * They gate the BUTTON, not the DOT. Liveness comes from
+   * `seam.liveness.statusOf` (R-UI-5): `canAttach: true` says the viewer is
+   * ALLOWED to open the screen, not that pixels are flowing.
+   */
+  canStart?: boolean;
+  canStop?: boolean;
+  canDestroy?: boolean;
+  canAttach?: boolean;
+  canControl?: boolean;
+  canExec?: boolean }
 
 export interface Page<T> { items: T[]; nextCursor: Cursor | null; total?: number }
 
@@ -791,6 +959,7 @@ export interface CollectionQuery {
     /** Tasks with any current assignment performed by one of these actors. */
     assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
+    skillProvider?: string; skillLevel?: string; skillRoot?: string; skillMissing?: boolean;
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
      * Additive (board/people wave): entities this actor WORKED, resolved
@@ -861,6 +1030,21 @@ export interface CollectionQuery {
      */
     category?: StatusCategory[];
     deleted?: 'exclude'|'only'|'include';
+    /**
+     * Additive (2026-09-15): memories whose statement, mechanism, subject
+     * scope or does-not-establish text contains ANY of these terms as a
+     * case-insensitive substring — any-of, like every other array filter
+     * here. Same kind-narrowing semantics as `status`: the four columns live
+     * on the memory arm only, so while present the query returns memories
+     * exclusively.
+     *
+     * It exists because the MCP `memory_search` tool scanned a summary's
+     * title/excerpt — a ~200-char prefix of a statement that averages 1,752
+     * chars on the launch node — and so could not reach 71% of the words it
+     * held. Memory-only on purpose: nothing searches another kind's text yet,
+     * and a predicate over columns nobody asked for is a feature, not a fix.
+     */
+    terms?: string[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -1005,49 +1189,52 @@ export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'c
  */
 export type ChatWorkdirMode = 'project' | 'scratch';
 
-export interface ChatThreadSummary {
-  rootMessageId: EntityId;
-  anchorId: EntityId;
+/**
+ * `chat.start` — the ONE door a chat is born from (176).
+ *
+ * It replaced `chat.threads.start`, which configured an ALREADY-POSTED root
+ * message: the caller posted, then bound a thread to what it had posted, and
+ * the chat was that message for the rest of its life. Here the chat entity is
+ * created and its opening message is posted in one transaction, so there is no
+ * window in which a chat exists without its first turn, and no id that means
+ * "the message this conversation started from" rather than "the conversation".
+ *
+ * `aboutId` replaces the anchor the composer used to have to supply. A chat
+ * anchors its own transcript now, so the entity a chat was opened ABOUT — the
+ * Craft blueprint, the task, the pull request — is a relation (`about`), which
+ * a human can see and correct, rather than a hidden binding column.
+ */
+export interface StartChatInput {
+  spaceId: SpaceId;
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
-  createdAt: string;
-  lastReplyAt: string | null;
-  /** The project this thread works in; null exactly when `workdirMode` is `scratch`. */
-  projectId: EntityId | null;
   workdirMode: ChatWorkdirMode;
-  /**
-   * Root message body excerpt (PR188 review F4): without it every list row
-   * reads "Conversation" and threads are indistinguishable. Optional so the
-   * write path's minted summary (start_chat_thread) stays valid.
-   */
-  title?: string | null;
-  /** Reply count for the thread footer; optional for the same reason. */
-  replyCount?: number;
-}
-
-export interface StartChatThreadInput {
-  rootMessageId: EntityId;
-  teammateId: EntityId;
-  model: string;
-  mode: ChatMode;
-  clientMutationId: string;
   /**
    * Required when `workdirMode` is `project`, refused otherwise. The server
    * resolves the actual path from `projects.working_dir` — a caller never names
-   * a directory for a project thread, so the id and the path cannot disagree.
+   * a directory for a project chat, so the id and the path cannot disagree.
    */
   projectId?: EntityId | null;
-  workdirMode: ChatWorkdirMode;
+  /** Defaults to the opening body, trimmed to 240 characters. */
+  title?: string | null;
+  /** The opening turn. A chat is never created empty. */
+  body: string;
+  attachmentIds?: EntityId[];
+  /** The entity this chat is about; written as an `about` edge. */
+  aboutId?: EntityId | null;
+  clientMutationId: string;
 }
 
-export interface StartChatThreadResult {
-  thread: ChatThreadSummary;
+export interface StartChatResult {
+  chat: EntitySummary;
+  /** The opening message, already queued as turn one. */
+  messageId: EntityId;
 }
 
 export interface ChatTurnDeltaFrame {
   type: 'chat.turn.delta';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   seq: number;
   part: MessagePart;
@@ -1055,7 +1242,7 @@ export interface ChatTurnDeltaFrame {
 
 export interface ChatTurnDoneFrame {
   type: 'chat.turn.done';
-  threadRootId: EntityId;
+  chatId: EntityId;
   messageId: EntityId;
   usage: ChatTurnUsage | null;
 }
@@ -1525,8 +1712,10 @@ export interface AuthSessionView {
   actingAsTeamMemberId: string | null;
   /** Present only for a chat runtime: the requesting human member. */
   runtimeMemberId?: string | null;
-  /** Present only for a chat runtime: the root message whose process owns it. */
+  /** Pre-176 chat runtimes only: the root message whose process owned it. */
   runtimeThreadRootId?: string | null;
+  /** Present only for a chat runtime: the chat entity whose process owns it. */
+  runtimeChatId?: string | null;
   label: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
@@ -1778,16 +1967,70 @@ export interface AuthInviteSignupResult {
 // ---------------------------------------------------------------------------
 
 /**
- * The three providers a login terminal can run.
+ * The six declared providers the credential surface can represent.
  *
- * Wider than what `account_agent_credentials` will store, and DELIBERATELY so
- * (R6): that table's CHECK admits only the two FILE-shaped providers, while a
- * GitHub token is string-shaped and belongs in 093's `account_git_credentials`.
- * `credential_sessions.provider` carries all three because the terminal can run
- * `gh auth login` regardless of where its output lands. A provider is admitted
- * by measuring its login flow, never by widening a constraint.
+ * Wider than either credential store, and DELIBERATELY so: the five
+ * FILE-shaped providers live in `account_agent_credentials`, while a GitHub
+ * token is string-shaped and belongs in 093's `account_git_credentials`.
+ * `credential_sessions.provider` carries all six because availability is a
+ * runtime fact: a declared provider whose CLI is absent is reported as
+ * unavailable and refused before a login terminal is created.
  */
-export type CredentialProviderName = 'anthropic' | 'openai' | 'github';
+export type CredentialProviderName =
+  | 'anthropic'
+  | 'openai'
+  | 'github'
+  | 'gemini'
+  | 'hermes'
+  | 'cursor'
+  | 'kimi'
+  | 'groq';
+
+/**
+ * What a connected credential CHANGES about the agent sessions a member runs.
+ *
+ * This type exists because two of the eight providers are not additional tools
+ * — they are alternative BACKENDS for a tool that already exists. Connecting
+ * Kimi does not give a member a "kimi" agent to choose; it makes every
+ * `claude-code` session they start talk to Moonshot's Anthropic-wire endpoint
+ * instead of Anthropic's, account-wide, with no per-session opt-in. Groq does
+ * the same to `codex`.
+ *
+ * That behaviour was chosen deliberately, and it is the reason this field is on
+ * the wire at all. A routing decision that is invisible is a routing decision
+ * nobody can audit: the member who connected Kimi in March and debugs an odd
+ * model response in June has no way, from the product, to discover that their
+ * sessions stopped reaching Anthropic. The card must be able to SAY it. So the
+ * server computes the routing rather than leaving the UI to hardcode a pair of
+ * provider names it would then have to keep in step with
+ * `api-key-credentials.ts`.
+ */
+export interface CredentialRoutingView {
+  /** The agent tool whose backend this provider is, e.g. `claude-code`. */
+  agentTool: string;
+  /**
+   * `backend`  — THIS provider serves `agentTool` when it is connected.
+   * `displaced` — this provider is the one being REPLACED, because the
+   *               counterpart below is connected and wins the resolution.
+   *
+   * Both halves of a displacement are described so that the member reads the
+   * same fact from whichever card they happen to be looking at.
+   */
+  role: 'backend' | 'displaced';
+  /** The provider at the other end of that relationship. */
+  counterpart: CredentialProviderName;
+  /**
+   * Whether the routing is IN EFFECT right now, as opposed to what would happen
+   * if this provider were connected.
+   *
+   * A `kimi` card that nobody has connected still carries routing with
+   * `active: false`, because the standing consequence of connecting it is
+   * exactly what a member needs to know BEFORE they press Connect. A `displaced`
+   * entry is only ever emitted with `active: true` — there is nothing to warn an
+   * Anthropic user about until a backend actually displaces them.
+   */
+  active: boolean;
+}
 
 /** One provider's card on the Connections screen. */
 export interface CredentialConnectionView {
@@ -1806,9 +2049,34 @@ export interface CredentialConnectionView {
    */
   login: string | null;
   authMethod: string | null;
-  status: 'active' | 'stale' | 'revoked' | null;
+  /**
+   * The stored row's lifecycle, PLUS one value the database never holds.
+   *
+   * `active | stale | revoked` are `account_agent_credentials.status`. The
+   * fourth, `unavailable`, is a NODE measurement — this provider's CLI is not
+   * installed here — and is deliberately carried in the same field because the
+   * UI's question is a single one ("what may I say about this provider?") and a
+   * second nullable field would let a caller render a state that contradicts
+   * this one. It is never persisted in that column, and migration 181 does not
+   * widen the CHECK to admit it.
+   *
+   * When it is set, `connected` is always false: a stored credential whose
+   * consumer cannot be found is not a usable connection. The row itself is
+   * untouched and reappears the moment the binary is installed.
+   */
+  status: 'active' | 'stale' | 'revoked' | 'unavailable' | null;
   connectedAt: string | null;
   lastVerifiedAt: string | null;
+  /**
+   * How this provider redirects agent sessions, or `null` for the six providers
+   * that redirect nothing.
+   *
+   * Nullable rather than optional for the same reason `login` is: "this
+   * provider has no routing" is a permanent fact about anthropic, openai,
+   * github, gemini, hermes and cursor, and a UI that rendered "missing"
+   * differently from "null" would draw two cards for one state.
+   */
+  routing: CredentialRoutingView | null;
 }
 
 /**
@@ -1825,7 +2093,7 @@ export interface CredentialConnectionView {
  * a node where the table exists.
  */
 export interface CredentialsStatusView {
-  /** One entry per provider in `CredentialProviderName`, always all three. */
+  /** One entry per provider in `CredentialProviderName` — always all of them. */
   providers: CredentialConnectionView[];
   /**
    * `present` — the table exists and was read.
@@ -1974,6 +2242,14 @@ export interface PatchTaskInput extends CommandContext {
 export type CreatableEntityKind = Exclude<
   EntityKind,
   'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+  // `chat` joins that list for the same reason `work_session` is on it: it is
+  // born only from its own door (`chat.start`), never from a generic create.
+  | 'chat'
+  // `container` is born ONLY from `containers.create`, which reserves the
+  // record and then provisions a runtime (§8.4). A generic create would
+  // produce a container record with no machine behind it — a row that
+  // renders, lists and counts while every verb on it fails.
+  | 'container'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -2310,6 +2586,18 @@ export interface UpdateSpaceInput extends CommandContext {
   name?: string;
   description?: string;
   githubRepo?: string | null;
+  /**
+   * 187 — the posture NEW sessions spawned into this space are given. Neither
+   * key touches a session that already exists: each carries its own pair, and
+   * a space default that reached backwards would retroactively open terminals
+   * their owners never offered.
+   *
+   * Optional in the PATCH sense, like every key here: absent means "leave it",
+   * so a caller changing the name cannot reset a sharing posture it never
+   * mentioned.
+   */
+  sessionShareDefault?: 'none' | 'space';
+  sessionDriveDefault?: WorkSessionDriveMode;
 }
 
 /**
@@ -2382,10 +2670,19 @@ export interface InviteRedemption {
  * interface with six optional fields cannot express "these are absent BY RULE".
  * `unknown` carries nothing at all: no space, no inviter, not even a hint that
  * some other code would have worked.
+ *
+ * `member` added 2026-09-19 (195, additive union widening). It is the answer
+ * for a caller who is ALREADY in the Space the code names, and it precedes
+ * every dead status because a membership outlives the link that granted it —
+ * the reported bug was a member being told "this invite is used up" about a
+ * Space they had joined ninety seconds earlier with that very code. It carries
+ * the id and name of a Space the reader is a member of, so it discloses
+ * nothing a dozen other reads would not; a stranger never sees it.
  */
 export type InvitePreview =
   | { status: 'unknown' }
   | { status: 'revoked' | 'expired' | 'exhausted'; spaceName: string }
+  | { status: 'member'; spaceId: SpaceId; spaceName: string }
   | {
       status: 'valid';
       spaceId: SpaceId;
@@ -2430,7 +2727,7 @@ export type InvitePreview =
  * so its default door is a control on the tab bar (the `inbox` precedent). The
  * registry row exists all the same, because an operator who places Help in
  * their own menu must not be refused by the server validator. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help' | 'codebrain';
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2636,6 +2933,32 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // their routes, their chords and their menu-editor eligibility — the same
   // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
+  // 2026-09-03 (chat as an entity, migration 180): CHATS became a tab of its
+  // own, seated after Home —
+  //   chats(Home) | conversations(Chats) | work | craft | graph | codebrain | settings | help
+  // Migration 176 gave a chat the core kind `chat`; that tab listed it, and it
+  // was the only group in this spine whose single item was a KIND ref rather
+  // than a view, so it drew a rail.
+  //
+  // 2026-09-05 (migration 184): AND IT LEAVES AGAIN, one day later —
+  //   chats(Home) | work | craft | graph | codebrain | settings | help
+  // 180 was right that the chat entity LIST (tiles with the turn state, the
+  // lifecycle tabs, sort, in-panel search, the row-action cluster) is a second
+  // arrangement over the same conversations and earns a door of its own — the
+  // R9 posture the Board tab takes toward `task`. It was wrong about the
+  // ADDRESS. The place a collection kind's list is addressed in this product
+  // is Home's ICON RAIL (tm8-ui `domain/home-rail.ts`), which has been
+  // eligible to carry `chat` since 176 and now leads with it. So the door
+  // moved and the tab was the duplicate: the no-kind-rows law of revision 17
+  // holds again, and the eighth of the eight group seats
+  // `internal.w2_normalize_menu_payload` allows (071:61 — `> 8` raises 22023)
+  // is free once more.
+  //
+  // The row is REMOVED rather than commented out because this spine is the one
+  // truth both parity tests read: a stale entry here is a group both the
+  // seeder and the client default would be forced to carry. `chat` stays
+  // menu-eligible, so a space can put the group back through the menu editor —
+  // a rail edit, not a feature removal (125/126/127).
   // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
   // beside Home —
   //   chats(Home) | work | board | craft | graph | files | settings
@@ -2676,11 +2999,15 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // edit here if the pending position ruling says otherwise.
   { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  // 2026-09-01 (CodeBrain, migration 173): the delivery pipeline's own tab,
-  // seated after Graph and before the utility tabs. This constant is the ONE
-  // place both parity tests read, so the group cannot land on one side alone
-  // — the 059 lesson this spine exists to encode.
-  { serverId: 'codebrain', clientId: 'codebrain' },
+  // 2026-09-15 (CodeBrain removed, migration 186): the tab 173 seated here is
+  // gone, and `codebrain` has left the MenuViewRef union above with it. #610
+  // deleted the 2.0 UI package that held the only CodeBrain SCREEN, which left
+  // the ref addressable but unrenderable — `view-ref-screens.ts` marked it
+  // `unbuilt`, and the shipped row carried a tab that could only report its own
+  // absence. Files and Board (commented out around this line) kept their refs
+  // when they left the spine because their screens still exist; this one has
+  // none to keep. The registry row and the check-constraint entry go in 186.
+  // { serverId: 'codebrain', clientId: 'codebrain' },
   // Files is no longer a shipped tab, but remains a legal customized-menu ref.
   // { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
@@ -2742,6 +3069,16 @@ export interface SpaceSummary {
   unreadTotal: number | null;
   githubRepo?: string | null;
   createdAt: string;
+  /**
+   * The posture NEW sessions spawned into this space are born with (187).
+   *
+   * Both are OPTIONAL so an older node's response still validates, and both are
+   * DEFAULTS rather than current state: changing one never moves a session that
+   * already exists, so nobody's open terminal changes posture because an admin
+   * edited a setting. Writable through `spaces.update` by a space admin.
+   */
+  sessionShareDefault?: 'none' | 'space';
+  sessionDriveDefault?: WorkSessionDriveMode;
 }
 
 /** GET /v2/spaces/:spaceId/navigation */
@@ -2779,14 +3116,19 @@ export interface KindCounts { total: number; unseen: number }
  */
 export type SpaceKindCounts = Partial<Record<EntityKind, KindCounts>>;
 
-/** Home — chat threads plus the legacy My Work snapshot during migration. */
+/**
+ * Home — the My Work snapshot.
+ *
+ * `chatThreads` is GONE (176). It was a bespoke projection over `chat_threads`
+ * that existed only because a chat had no kind to list by; a chat is an entity
+ * now, so the list is `entities.list kind=chat` like every other list in the
+ * product, with the same paging, filtering and permissions.
+ */
 export interface HomeSnapshot {
   readyToPull: CollectionResult;
   inFlight: CollectionResult;
   needsMe: CollectionResult;
   activity: Page<ActivityItem>;
-  /** Additive: every configured chat root readable by this viewer. */
-  chatThreads?: ChatThreadSummary[];
 }
 
 /** GET /v2/spaces/:spaceId/task-axes */
@@ -2961,8 +3303,29 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  */
 export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 
-/** Graph-side announce/authorize state for live terminal sharing (T-L10). */
+/**
+ * Graph-side announce/authorize state for live terminal sharing (T-L10). Gates
+ * WATCHING a session's PTY bytes.
+ *
+ * `explicit` IS INERT AND HAS ALWAYS BEEN. `grant_stream_attach` tests only
+ * `= 'none'`, so a session set to `explicit` behaves exactly like `space` — the
+ * whole space may watch — and no per-person list is consulted anywhere, because
+ * none exists. The value is kept so stored rows stay legal; a real per-person
+ * share has to BUILD the list check, and setting this value is not that.
+ */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
+
+/**
+ * Who may TYPE into a session's PTY (187). Deliberately a second dial rather
+ * than another `WorkSessionShareMode` value: watching a terminal and driving it
+ * are different grants, and the common posture — the space may watch, only the
+ * owner may type — cannot be said with one flag.
+ *
+ * `owner` is the creator plus anyone who may act as the creator, which under
+ * 075 means any member of the space may drive a TEAMMATE-launched session. That
+ * is a persona right, not a sharing setting, and `owner` does not revoke it.
+ */
+export type WorkSessionDriveMode = 'owner' | 'space';
 
 /**
  * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
@@ -3021,7 +3384,418 @@ export type WorkSessionEndedKind =
   | 'server_restart'
   | 'out_of_memory'
   | 'crashed'
+  // 177: the two endings a CONTAINER causes. `container_stopped` is
+  // orderly — the machine an exec session lived in was stopped, so the
+  // session ended with it and nothing was wrong. `runtime_lost` is the
+  // involuntary one: reconciliation found the runtime gone underneath a
+  // session that was still running. They stay distinct for the same
+  // reason `out_of_memory` does — folding them together would hide the
+  // only one of the two that means something broke.
+  | 'container_stopped'
+  | 'runtime_lost'
   | 'unknown';
+
+
+// --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
+
+/**
+ * The nine statuses. SINGLE WRITER: `public.set_container_status` — the guard
+ * trigger refuses a direct `update containers set status` with `23514`, the
+ * same shape as the worktree status guard (057:100-119). The legal edges live
+ * in `internal.container_transition_allowed`, not here.
+ */
+export type ContainerStatus =
+  | 'requested' | 'provisioning' | 'running' | 'paused' | 'stopping'
+  | 'stopped' | 'destroying' | 'destroyed' | 'failed';
+
+/** A profile is a promise about surfaces plus a default image (§9). */
+export type ContainerProfile =
+  | 'shell' | 'desktop' | 'browser' | 'android' | 'ios' | 'dind' | 'custom';
+
+/**
+ * Ordered WEAKEST TO STRONGEST — the isolation policy (§12.1) compares two of
+ * these, so the order of this union is load-bearing and `CONTAINER_ISOLATION_RANK`
+ * below is the machine-readable half. A new class must be inserted at its real
+ * strength, never appended.
+ */
+export type ContainerIsolationClass =
+  | 'process' | 'container' | 'gvisor' | 'microvm' | 'vm';
+
+/**
+ * What you can attach to. `terminal` is the exec PTY — it is reached through
+ * `containers.terminal.start`, which mints a real work_session, NOT through
+ * `containers.attach`. That is why `ContainersAttachInput.surface` is a
+ * narrower union than this type.
+ */
+export type ContainerSurfaceKind =
+  | 'terminal' | 'screen' | 'browser' | 'adb' | 'docker' | 'http';
+
+export type ContainerNetworkPreset = 'open' | 'balanced' | 'locked';
+
+/**
+ * THE SAME VOCABULARY AS `work_sessions.share_mode`, deliberately (§4.2) — an
+ * alias, not a parallel enum, so one share control serves both kinds.
+ *
+ * IT IS NOT THE EXPOSED-PORT VOCABULARY. `ContainerPortShare` has `link` and
+ * no `explicit`; this one has `explicit` and no `link`. They read alike and
+ * mean different things, so they stay two types.
+ */
+export type ContainerShareMode = WorkSessionShareMode;
+
+/** Exposed-port sharing (§6.5). See the warning on `ContainerShareMode`. */
+export type ContainerPortShare = 'none' | 'space' | 'link';
+
+/**
+ * INPUT side only. `host` is a node-local absolute path.
+ *
+ * R5 (Design v4 §3.1): host paths and native runtime identifiers stay
+ * server-side — `internal.command_entity` (007:36) embeds `entity_content` in
+ * the command result a client receives, so anything in the read arm reaches
+ * the client. The door splits an incoming spec, routing `mounts[].host` into
+ * the server-only `containers.host_spec`. A mount therefore CANNOT round-trip:
+ * you send a host path and you never read one back.
+ */
+export interface ContainerMountInput { host: string; guest: string; ro: boolean }
+
+/** READ side. What `ContainerSpec.mounts` carries — no host path, by R5. */
+export interface ContainerMount { guest: string; ro: boolean }
+
+export interface ContainerNetworkPolicy { preset: ContainerNetworkPreset; allow: string[] }
+export interface ContainerSurfaceSpec { enabled: boolean; port?: number }
+
+/** The RESOLVED spec, as stored and as read back. */
+export interface ContainerSpec {
+  profile: ContainerProfile;
+  image?: string;
+  cpus: number;
+  memMiB: number;
+  diskMiB?: number;
+  /** Guest paths only (R5). */
+  mounts: ContainerMount[];
+  /** NON-secret only — the contract REFUSES known secret-looking keys. */
+  env: Record<string, string>;
+  ports: number[];
+  network: ContainerNetworkPolicy;
+  surfaces: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  /** Always includes `tm8.container=<entityId>` and `tm8.space=<spaceId>`. */
+  labels: Record<string, string>;
+}
+
+/**
+ * What a CALLER may send. Every member optional; the node fills the rest from
+ * the profile catalog. `profile` is NOT here — it is a top-level field of
+ * `ContainersCreateInput`, because it selects the defaults this partial
+ * overrides and so cannot itself be one of them.
+ */
+export interface ContainerSpecInput {
+  image?: string;
+  cpus?: number;
+  memMiB?: number;
+  diskMiB?: number;
+  /** Input flavour: carries the host path. */
+  mounts?: ContainerMountInput[];
+  env?: Record<string, string>;
+  ports?: number[];
+  network?: ContainerNetworkPolicy;
+  surfaces?: Partial<Record<ContainerSurfaceKind, ContainerSurfaceSpec>>;
+  labels?: Record<string, string>;
+}
+
+/**
+ * Every member REQUIRED on the read side. `ttlSeconds` and
+ * `idleHibernateSeconds` are explicitly nullable and `null` means NO TTL / NO
+ * idle hibernation — a measured absence, never "not loaded".
+ */
+export interface ContainerLifecycle {
+  ephemeral: boolean;
+  ttlSeconds: number | null;
+  idleHibernateSeconds: number | null;
+  /** How long a stopped ephemeral machine survives so a human can read it (§11.2). */
+  graceSeconds: number;
+  snapshotOnStop: boolean;
+}
+
+/** The input flavour of `ContainerLifecycle` — all optional, same meanings. */
+export interface ContainerLifecycleInput {
+  ephemeral?: boolean;
+  ttlSeconds?: number | null;
+  idleHibernateSeconds?: number | null;
+  graceSeconds?: number;
+  snapshotOnStop?: boolean;
+}
+
+export interface ContainerUsage { cpuPct: number; memMiB: number; diskMiB: number }
+export interface ContainerGeometry { w: number; h: number; dpr: number }
+
+/**
+ * §5's provider descriptor, as `containers.providers.list` returns it.
+ *
+ * `probe` IS PRODUCED BY DOING — actually creating and destroying a tiny
+ * container — never by checking for a binary on PATH. That is the whole point
+ * of the field: `ok: false` with a `detail` is the honest answer a node gives
+ * when docker is installed and not working, which a PATH check calls healthy.
+ */
+export interface ContainerProviderDescriptor {
+  id: string;
+  isolation: ContainerIsolationClass;
+  profiles: ContainerProfile[];
+  surfaces: ContainerSurfaceKind[];
+  features: { pause: boolean; snapshot: boolean; fork: boolean; expose: boolean; nested: boolean; gpu: boolean };
+  limits: { maxContainers: number; maxCpus: number; maxMemMiB: number };
+  probe: { ok: boolean; detail: string; measuredAt: string };
+}
+
+/**
+ * The execution block's error codes (§4.3), mapped to the closed taxonomy in
+ * the handler layer exactly as `SpawnError.code` is.
+ */
+export type ContainerErrorCode =
+  | 'invalid_spec' | 'not_found' | 'forbidden' | 'policy'
+  | 'state' | 'budget' | 'no_provider' | 'runtime' | 'timeout';
+
+/** Isolation strength, machine-readable. See `ContainerIsolationClass`. */
+export const CONTAINER_ISOLATION_RANK: Record<ContainerIsolationClass, number> = {
+  process: 0, container: 1, gvisor: 2, microvm: 3, vm: 4,
+};
+
+/** The nine statuses as a value, for exhaustive iteration in tests and UI. */
+export const CONTAINER_STATUSES = [
+  'requested', 'provisioning', 'running', 'paused', 'stopping',
+  'stopped', 'destroying', 'destroyed', 'failed',
+] as const satisfies readonly ContainerStatus[];
+
+export const CONTAINER_PROFILES = [
+  'shell', 'desktop', 'browser', 'android', 'ios', 'dind', 'custom',
+] as const satisfies readonly ContainerProfile[];
+
+export const CONTAINER_SURFACE_KINDS = [
+  'terminal', 'screen', 'browser', 'adb', 'docker', 'http',
+] as const satisfies readonly ContainerSurfaceKind[];
+
+// --- containers: operation inputs and results (§4.2) ------------------------
+
+export interface ContainersCreateInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  title?: string | null;
+  profile: ContainerProfile;
+  /** null = the node picks the best provider satisfying policy (§12.1). */
+  provider?: string | null;
+  /** null = the serving node; else a `server_connections` name it can reach. */
+  nodeId?: string | null;
+  image?: string | null;
+  spec?: ContainerSpecInput;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  /** Nesting: the parent must be a RUNNING `dind`/microvm container, same space. */
+  parentId?: EntityId | null;
+  templateId?: EntityId | null;
+  /** When set, the project's working dir mounts at /workspace (rw) + `mounts` edge. */
+  projectId?: EntityId | null;
+  /** Required when `projectId` is untrusted — the same gate as `execution.spawn`. */
+  confirmUntrusted?: true;
+  /** Default TRUE: create and start in one call. */
+  start?: boolean;
+}
+
+/** start | stop | pause | resume. */
+export interface ContainersLifecycleInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  timeoutMs?: number;
+}
+
+export interface ContainersDestroyInput extends ContainersLifecycleInput {
+  force?: boolean;
+  keepSnapshot?: boolean;
+}
+
+export interface ContainersUpdateInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  shareMode?: ContainerShareMode;
+  labels?: Record<string, string>;
+}
+
+export interface ContainersPolicySetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  network: ContainerNetworkPolicy;
+}
+
+export interface ContainersRunInput extends CommandContext {
+  clientMutationId: string;
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  stdin?: string;
+  timeoutMs?: number;
+  user?: string;
+}
+
+export interface ContainersRunResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  durationMs: number;
+  timedOut: boolean;
+}
+
+/**
+ * NO `argv` MEMBER, and this is deliberate. The exec terminal runs the image's
+ * own login shell, which is the same RCE boundary `execution.terminal.start`
+ * already draws. An argv here would let any caller with terminal permission
+ * run an arbitrary command as a different boundary than the one reviewed.
+ */
+export interface ContainersTerminalStartInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface ContainersTerminalStartResult {
+  workSessionId: EntityId;
+  containerId: EntityId;
+}
+
+export interface ContainersAttachInput extends CommandContext {
+  clientMutationId: string;
+  /** NOT `terminal` (that is `containers.terminal.start`) and NOT `http`. */
+  surface: 'screen' | 'browser' | 'adb' | 'docker';
+  mode: 'view' | 'drive';
+}
+
+/**
+ * THE TOKEN TRAVELS ONLY IN THE SUBPROTOCOL `tm8-grant.<token>`, NEVER IN THE
+ * URL — `ptyTransport` already refuses token-bearing URLs, so a URL-token dial
+ * does not degrade, it fails.
+ */
+export interface SurfaceAttachGrant {
+  containerId: EntityId;
+  surface: ContainerSurfaceKind;
+  encoding: 'rfb' | 'frames' | 'cdp' | 'adb' | 'docker';
+  url: string;
+  protocol: 'ws';
+  mode: 'view' | 'drive';
+  token: string;
+  expiresAt: string;
+  geometry?: ContainerGeometry;
+}
+
+/**
+ * The vocabulary is deliberately the INTERSECTION of Anthropic's computer-use
+ * tool, Playwright and adb (§7.2), so a computer-use model wires in without a
+ * translation layer. Do not add an action only one driver can serve.
+ */
+export interface ContainersComputerInput extends CommandContext {
+  clientMutationId: string;
+  action: 'screenshot' | 'click' | 'double_click' | 'right_click' | 'move'
+    | 'drag' | 'type' | 'key' | 'scroll' | 'wait' | 'goto' | 'text';
+  x?: number;
+  y?: number;
+  to?: { x: number; y: number };
+  text?: string;
+  keys?: string;
+  dx?: number;
+  dy?: number;
+  ms?: number;
+  url?: string;
+  /** Default true: return a screenshot after the action. */
+  screenshot?: boolean;
+  /** Store the screenshot as an artifact revision on the container. */
+  keep?: boolean;
+  /** 0.25–1; default node-chosen so the long edge is <= 1568 px. */
+  scale?: number;
+}
+
+export interface ContainersComputerResult {
+  ok: boolean;
+  screenshot?: { mime: 'image/png' | 'image/jpeg'; base64: string; w: number; h: number; scale: number };
+  text?: string;
+  artifactRevision?: { artifactId: EntityId; revisionNumber: number };
+}
+
+export interface ContainersBrowserEndpointInput extends CommandContext {
+  clientMutationId: string;
+  ttlSeconds?: number;
+}
+
+/**
+ * `wsEndpoint` is a BEARER-BOUND URL (`/v2/containers/:id/cdp/<grantId>`) —
+ * the one documented exception to subprotocol-only grants (§16.1), because
+ * Playwright's `connectOverCDP` cannot send a subprotocol. Multi-use, <= 1 h,
+ * bound to actor + container, revoked on stop, never logged.
+ */
+export interface ContainersBrowserEndpointResult {
+  wsEndpoint: string;
+  expiresAt: string;
+  cdpVersion: string;
+}
+
+export interface ContainersExposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+  share?: ContainerPortShare;
+}
+
+export interface ContainersExposeResult {
+  port: number;
+  url: string;
+  shareToken?: string;
+}
+
+export interface ContainersUnexposeInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  port: number;
+}
+
+export interface ContainersSnapshotInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  name?: string;
+  makeTemplate?: boolean;
+}
+
+export interface ContainersForkInput extends CommandContext {
+  clientMutationId: string;
+  title?: string;
+  lifecycle?: ContainerLifecycleInput;
+  spec?: ContainerSpecInput;
+}
+
+export interface ContainersAttentionInput extends CommandContext {
+  clientMutationId: string;
+  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
+  detail?: string;
+  points?: number;
+}
+
+export interface ContainersPoolsSetInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  /** 0–8 warm children kept ready on a template container. */
+  warm: number;
+}
+
+export interface ContainersProvidersListResult {
+  nodeId: string;
+  providers: ContainerProviderDescriptor[];
+  images: Array<{ profile: ContainerProfile; ref: string; digest: string | null; cached: boolean }>;
+  caps: { containers: number; live: number };
+}
+
+export interface ContainersLogsResult {
+  containerId: EntityId;
+  lines: Array<{ ts: string; stream: 'stdout' | 'stderr'; text: string }>;
+  truncated: boolean;
+}
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
@@ -3455,7 +4229,7 @@ export type SpawnWorkdir =
 /** Provider-neutral launch controls. The execution layer maps these to each
  * agent CLI's native flags; keeping them typed here prevents a UI choice from
  * being displayed but silently discarded at the facade boundary. */
-export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 /**
  * `auto` is the posture a session gets when the request names none — the agent
  * runs what it judges safe and escalates the rest. It is listed here so a caller
@@ -3464,7 +4238,16 @@ export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
  */
 export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 export type LaunchCredentialSource = 'member' | 'node';
-export type LaunchCredentialProvider = 'anthropic' | 'openai' | 'github';
+/**
+ * Which credentials a launch may pick a SOURCE for (member's vs the node's).
+ *
+ * Defined FROM `CredentialProviderName` rather than restating it. It was a
+ * restated union and it drifted exactly as you would expect: it still read
+ * three providers after the credential set grew to five, so a launch could not
+ * express a Gemini choice the credentials screen had already offered. An alias
+ * cannot drift.
+ */
+export type LaunchCredentialProvider = CredentialProviderName;
 export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, LaunchCredentialSource>>;
 
 // --- execution.* operation family (R16) ------------------------------------
@@ -3686,6 +4469,27 @@ export interface ExecutionStreamsAttachInput extends CommandContext {
   mode: 'view' | 'drive';
 }
 
+/**
+ * execution.sessions.share (187): turn one session's two dials.
+ *
+ * Both fields are optional and a `null`/absent field MERGES — naming only
+ * `driveMode` leaves `shareMode` alone — but at least one must be present, so a
+ * request that would be a no-op is a 400 rather than a silent success.
+ *
+ * `shareMode` is NARROWER than {@link WorkSessionShareMode} on purpose: reading
+ * a session may return `'explicit'`, writing one may not. Nothing in this schema
+ * consults a per-person list, so the gate treats `'explicit'` as `'space'` while
+ * the badge renders "shared: explicit" — a stored row that says one thing and
+ * behaves as another. It stays readable so existing rows round-trip, and stays
+ * unwritable until the list it names actually exists.
+ */
+export interface ExecutionSessionsShareInput extends CommandContext {
+  shareMode?: Exclude<WorkSessionShareMode, 'explicit'>;
+  driveMode?: WorkSessionDriveMode;
+  /** Optimistic concurrency against the session entity's version, when given. */
+  expectedVersion?: number;
+}
+
 export interface StreamAttachGrant {
   workSessionId: EntityId;
   /** WebSocket URL to attach to (server-relative or absolute). */
@@ -3733,6 +4537,102 @@ export interface ExecutionGitCommitInput extends CommandContext {
   paths?: string[];
   /** Stage everything (git add -A) before committing. */
   all?: boolean;
+}
+
+/**
+ * execution.gitStage — stage or UNSTAGE paths in the session's worktree.
+ *
+ * WHY A VERB OF ITS OWN when `execution.gitCommit` already stages what it is
+ * about to commit. Because review is not commit. A reviewer moves files in and
+ * out of the index while deciding what belongs in one change, and the only way
+ * to do that through `gitCommit` is to commit — which is the decision they have
+ * not made yet. Staging that can only be expressed by committing is not
+ * staging.
+ *
+ * UNSTAGE IS A MIXED RESET AND NOTHING ELSE: `git reset -q HEAD -- <paths>`.
+ * It moves the index back to HEAD for those paths and never touches a byte in
+ * the working tree. `--hard` is absent from this verb at every layer and must
+ * stay absent: rollback is the verb that discards work, it gates on `force`,
+ * and it says so. An unstage that could delete an agent's edits would be the
+ * same verb wearing a safer word.
+ *
+ * THE ANSWER IS THE POST-OPERATION STATUS, not an acknowledgement. A client
+ * that repainted from its own optimistic guess would drift from the worktree
+ * the moment a concurrent agent turn wrote a file, so the result carries the
+ * same `files` / `dirty` shape `execution.gitStatus` returns, read AFTER the
+ * index moved.
+ */
+export type ExecutionGitStageInput = CommandContext & {
+  action: 'stage' | 'unstage';
+  /** Pathspecs, each guarded (no absolute, no `..`, no leading dash). */
+  paths?: string[];
+  /** The whole worktree: `git add -A` / `git reset HEAD`. */
+  all?: boolean;
+  /**
+   * PART of one file instead of all of it — `git add -p` without the prompt.
+   * Mutually exclusive with `paths` and `all`; naming two scopes is a refusal,
+   * not a merge, because there is no honest way to rank them.
+   *
+   * INDICES, NEVER PATCH TEXT. The server re-derives the diff and slices it
+   * itself. A patch accepted from a client and fed to `git apply --cached` is
+   * a write primitive for any path in the repository — `--cached` writes the
+   * index, so such a patch would not even have to touch the working tree to
+   * put content into the next commit. An index into a diff the server just
+   * computed cannot express that.
+   *
+   * The indices are 1-based and come from `execution.gitDiff`'s `hunks`, read
+   * in the scope that matches the action: `unstaged` to stage, `staged` to
+   * unstage. Out of range is a refusal — never a clamp, never a partial apply.
+   */
+  hunks?: {
+    path: string;
+    /** 1-based, from the matching `gitDiff` read. Order and repeats do not matter. */
+    indices: number[];
+    /**
+     * `hunkDigest` from that read, echoed back.
+     *
+     * An agent lane can write the file between render and click, and the
+     * indices would still be IN RANGE while pointing at different code. The
+     * digest is what turns that into a refusal instead of a wrong stage.
+     * Optional so a scripted caller can opt out; a UI should always send it.
+     */
+    digest?: string;
+  };
+};
+
+export interface SessionGitStageResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  action: 'stage' | 'unstage';
+  branch: string;
+  /**
+   * The paths git was ACTUALLY given, so a client can assert what moved.
+   *
+   * For `stage` that is the request. For `unstage` it can be LONGER: a staged
+   * rename is one porcelain row (`path` new, `origPath` old) over two index
+   * entries, and resetting only the requested half leaves a staged deletion
+   * the reviewer never asked for. The server expands the rename and says so
+   * here rather than echoing a request that understates what it did.
+   *
+   * EMPTY when `all` is true: `git add -A` and `git reset HEAD` are given no
+   * pathspecs, and this field reports argv, not intent. Read `all` for that.
+   */
+  paths: string[];
+  all: boolean;
+  /** The staged half AFTER the operation — what a commit would write now. */
+  staged: SessionGitFile[];
+  /** Full porcelain status AFTER the operation, capped like gitStatus. */
+  files: SessionGitFile[];
+  filesTruncated: boolean;
+  dirty: { staged: number; unstaged: number; untracked: number; total: number };
+  /**
+   * Present only for a hunk request. `applied` is the selection after
+   * de-duplication and `total` is how many hunks the file had, so a client can
+   * say "2 of 5" without a second read — and can tell a full-file result from
+   * a partial one, which the porcelain alone does not distinguish.
+   */
+  hunkSelection?: { path: string; applied: number; total: number };
+  checkedAt: string;
 }
 
 /**
@@ -3793,6 +4693,28 @@ export interface SessionGitStatus {
   checkedAt: string;
 }
 
+/**
+ * One selectable hunk of a single-file diff — the unit `execution.gitStage`
+ * takes an index into.
+ *
+ * ONLY EVER PRESENT FOR `staged` AND `unstaged` SCOPE, and only when `path`
+ * narrowed the read to one file. The `session` scope is measured from the
+ * MERGE-BASE, so its hunks have a pre-image that is not the index and cannot
+ * be handed to `git apply --cached` — offering them would be offering a
+ * selection the stage verb must then refuse. Absent is the honest answer.
+ */
+export interface SessionGitDiffHunk {
+  /** 1-based, and stable only within the read that produced it. */
+  index: number;
+  /** The text after the closing `@@` — git's guess at the enclosing function. */
+  heading: string;
+  /** Pre-image start line, which is the side a reviewer is looking at. */
+  oldStart: number;
+  newStart: number;
+  /** The hunk verbatim, header included, so a client need not re-split `diff`. */
+  text: string;
+}
+
 /** Per-file numstat digest — always complete even when the diff text is cut. */
 export interface SessionGitDiffFile {
   path: string;
@@ -3808,7 +4730,40 @@ export interface SessionGitDiffFile {
  * The digest (`stat`, `files`) is always complete; the unified `diff` text is
  * capped by `maxBytes` with `diffTruncated` saying so — digest+partial, the
  * transcript precedent.
+ *
+ * NARROWING IT: `scope` and `path`. Both are optional and both default to
+ * exactly the whole-session read described above, so every existing caller is
+ * unchanged. They exist because a REVIEWER asks two questions this read could
+ * not answer:
+ *
+ *   · "show me this ONE file" — and slicing the session diff client-side
+ *     cannot do it, because the text is byte-capped: a file past the cap is
+ *     not truncated in the payload, it is absent from it. So the narrowing
+ *     has to happen before the cap, which means server-side;
+ *   · "show me what is STAGED" vs "what is not" — the index/worktree split
+ *     the session diff deliberately flattens. `git diff --cached` and
+ *     `git diff` are different questions and only git can answer them.
+ *
+ * An UNTRACKED path is not compared the same way in all three scopes. It sits
+ * in the working tree and in neither the index nor HEAD, so:
+ *
+ *   · `session` asks what this lane changed, and the answer is the whole file.
+ *     The server produces it with `git diff --no-index` against /dev/null — a
+ *     real unified diff of a whole new file rather than a blank panel over a
+ *     file that plainly changed;
+ *   · `staged` (index vs HEAD) and `unstaged` (working tree vs index) have
+ *     nothing to compare: a commit would write none of it. Both answer EMPTY
+ *     — `diff: ''`, `files: []`, a zeroed `stat` — and that is the truthful
+ *     answer to those two questions, not a gap in the read.
  */
+export type SessionGitDiffScope =
+  /** Working tree vs the merge-base of the session's base ref. The default. */
+  | 'session'
+  /** Index vs HEAD — exactly what a commit would write. */
+  | 'staged'
+  /** Working tree vs index — what is NOT staged. */
+  | 'unstaged';
+
 export interface SessionGitDiff {
   sessionId: EntityId;
   available: boolean;
@@ -3825,6 +4780,49 @@ export interface SessionGitDiff {
   /** Unified diff text, capped at `maxBytes`. */
   diff: string;
   diffTruncated: boolean;
+  /**
+   * The scope this answer was measured in — ECHOED, never inferred. A client
+   * that asked for `staged` and rendered whatever came back would show the
+   * session diff under a "Staged" heading the day the param is dropped.
+   */
+  scope: SessionGitDiffScope;
+  /** The single path this answer was narrowed to, or null for the whole tree. */
+  path: string | null;
+  /**
+   * The selectable hunks of this file, or null when there are none to offer.
+   *
+   * Null rather than `[]`, and the distinction carries weight: `[]` would say
+   * "this file has zero hunks", which is never true of a file that appears in
+   * a diff. Null says the read cannot offer a selection at all — wrong scope,
+   * no `path`, an untracked or binary file, or a diff the byte cap cut, where
+   * the hunks parsed from a half-file would be a selection over text the
+   * reviewer never saw the end of.
+   */
+  hunks: SessionGitDiffHunk[] | null;
+  /**
+   * Pins `hunks` to the bytes they were read from. Echo it back in
+   * `execution.gitStage`; the server refuses the selection if the file moved
+   * underneath it. Null exactly when `hunks` is null.
+   *
+   * It covers hunk BODY text only — an edit elsewhere in the file renumbers
+   * every later `@@` header without changing the hunk the reviewer approved,
+   * and refusing that would make hunk staging unusable in a live agent lane,
+   * which is the only place it is used.
+   */
+  hunkDigest: string | null;
+  /**
+   * True when `path` names a file git is not tracking — recorded neither in
+   * the index nor in HEAD.
+   *
+   * A CLASSIFICATION of the path, never a claim about how the diff was
+   * produced. It is true in all three scopes, including the two that answer
+   * empty, and only `session` reaches `--no-index`. That is precisely what
+   * makes it useful: it is how a client tells a `staged` answer that is empty
+   * BECAUSE the file is untracked from one that is empty because the file is
+   * unchanged. The UI says so: "new file, not yet tracked" is a different fact
+   * from "a file with 400 added lines".
+   */
+  untracked: boolean;
   checkedAt: string;
 }
 
@@ -4350,6 +5348,21 @@ export interface SessionFileChange {
   linesRemoved: number;
   hunks: SessionFileHunk[];
   hunksTruncated: boolean;
+  /**
+   * True when the agent's MOST RECENT turn wrote this file.
+   *
+   * The counts beside it stay session-wide on purpose: "the agent has edited
+   * this file four times, most recently in the turn you just read" is the
+   * useful sentence, and two competing sets of numbers on one row is not.
+   *
+   * It inherits every honesty boundary of `source: 'transcript'` — it is what
+   * the harness OBSERVED through tool calls. A file the agent rewrote with a
+   * shell command in that same turn is not flagged, because nothing recorded
+   * it. This flag can therefore be a FALSE NEGATIVE and must never be
+   * rendered as "the agent did not touch this"; it is only ever evidence that
+   * it DID.
+   */
+  lastTurn: boolean;
 }
 
 export interface SessionFileChanges {
@@ -4359,6 +5372,22 @@ export interface SessionFileChanges {
   filesTruncated: boolean;
   /** The provenance label the UI must carry: observed tool calls, not git. */
   source: 'transcript';
+  /**
+   * How many agent turns the transcript contains, where a TURN is the work
+   * following one real user prompt.
+   *
+   * 1 for a session nobody has replied to yet, including an autonomous run
+   * that was never prompted a second time — there, the whole session is the
+   * one turn, and every file it touched is correctly `lastTurn`.
+   *
+   * A prompt is a MAIN-THREAD `user` record that is not a tool result, not a
+   * compaction summary, and not meta — the same definition `session-usage`
+   * counts prompts by. The exclusions are not tidying: the harness re-injects
+   * a compaction summary AS a user turn, so counting it would start a fresh
+   * "last turn" that the agent never worked in, and a panel reading from it
+   * would report that the agent had changed nothing.
+   */
+  turns: number;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------
@@ -4464,9 +5493,30 @@ export interface MessageDeliveryRecord {
   updatedAt: string;
 }
 
+/**
+ * One chat turn this message queued (176).
+ *
+ * A chat's delivery ledger is `chat_turns`, not `session_message_deliveries`:
+ * the latter's target column FKs `work_sessions` and a chat delivery cannot be
+ * a row in it (blocker B3). Without this arm, `messages.delivery.get` — and
+ * therefore `tm8 message send --wait settled` — would report "no deliveries"
+ * for a message that DID wake a chat, which is a worse answer than none.
+ */
+export interface MessageChatTurnRecord {
+  chatId: EntityId;
+  turnId: string;
+  state: 'queued' | 'running' | 'completed' | 'error';
+}
+
 export interface MessageDeliveryView {
   message: MessageView;
   deliveries: MessageDeliveryRecord[];
+  /**
+   * ADDITIVE and OPTIONAL, under the rolling-node rule every additive field
+   * here carries: a node that predates 176 omits the key, and its absence means
+   * "this node cannot tell you", never "this message woke no chat".
+   */
+  chatTurns?: MessageChatTurnRecord[];
 }
 
 export type HandoffDeliveryStatus = 'prepared' | 'dispatching' | 'delivered' | 'refused' | 'unknown';

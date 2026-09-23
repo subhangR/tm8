@@ -367,6 +367,12 @@ function renderInvitePreview(dto: unknown): string {
   const status = field(dto, 'status') ?? 'unknown';
   if (status === 'unknown') return 'unknown  this code does not resolve to anything on this Server';
   const space = field(dto, 'spaceName');
+  // `member` (195) is not a dead status and must not read like one: it means
+  // THIS caller is already in the Space, so it names it and says why there is
+  // nothing to redeem rather than printing a bare word beside a Space name.
+  if (status === 'member') {
+    return `member  ${space ?? ''}  you are already in this Space — nothing to redeem`.trimEnd();
+  }
   if (status !== 'valid') return `${status}  ${space ?? ''}`.trimEnd();
   return [
     'valid',
@@ -594,6 +600,28 @@ async function spaceGet(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * A closed-set flag, rejected locally with the whole vocabulary named. Same
+ * discipline as `--visibility` above: a typo in a PERMISSION default must fail
+ * loudly rather than travel to the server as a value it may or may not
+ * recognise.
+ */
+function closedFlag(
+  cmd: CommandContext,
+  flag: string,
+  allowed: readonly string[],
+): string | undefined {
+  const raw = cmd.options.value(flag);
+  if (raw === undefined) return undefined;
+  if (!allowed.includes(raw)) {
+    throw new CliError(
+      `--${flag} expects ${allowed.join('|')}, got ${JSON.stringify(raw)}`,
+      EXIT_USAGE,
+    );
+  }
+  return raw;
+}
+
 async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
   noExtraArgs('space update', cmd.args, 1);
   const spaceId = spaceFromArgOrContext(cmd, cmd.args[0]);
@@ -606,13 +634,22 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
   // removing it from the command would be a capability regression.
   const githubRepo = noneAsNull(cmd.options.value('github-repo'));
 
+  // The space-wide session sharing defaults (187). They apply to sessions
+  // spawned AFTER the change and to nothing already running — a default that
+  // reached backwards would widen terminals whose owners never agreed to it.
+  const sessionShare = closedFlag(cmd, 'session-share', ['none', 'space']);
+  const sessionDrive = closedFlag(cmd, 'session-drive', ['owner', 'space']);
+
   if (name !== undefined) body.name = name;
   if (description !== undefined) body.description = await readTextSource(description);
   if (githubRepo !== undefined) body.githubRepo = githubRepo;
+  if (sessionShare !== undefined) body.sessionShareDefault = sessionShare;
+  if (sessionDrive !== undefined) body.sessionDriveDefault = sessionDrive;
 
-  if (!['name', 'description', 'githubRepo'].some((k) => k in body)) {
+  if (!['name', 'description', 'githubRepo', 'sessionShareDefault', 'sessionDriveDefault']
+    .some((k) => k in body)) {
     throw new CliError('tm8 space update needs something to change', EXIT_USAGE, {
-      hint: 'pass --name, --description, or --github-repo',
+      hint: 'pass --name, --description, --github-repo, --session-share, or --session-drive',
     });
   }
 

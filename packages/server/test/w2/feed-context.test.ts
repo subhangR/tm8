@@ -47,6 +47,8 @@ const IDS = {
   child: '00000000-0000-7000-8000-000000000d0a',
   parent: '00000000-0000-7000-8000-000000000d0b',
   edge: '00000000-0000-7000-8000-000000000d0c',
+  chat: '00000000-0000-7000-8000-000000000d10',
+  chatTurn: '00000000-0000-7000-8000-000000000d11',
   absent: '00000000-0000-7000-8000-000000000dff',
 };
 
@@ -153,6 +155,29 @@ function sessionRow(id: string): EntityRow {
     ws_share_mode: 'space',
     ws_started_at: '2026-07-26T09:00:00.000Z',
   };
+}
+
+/**
+ * A chat entity (176). Its detail columns come off `public.chats` through the
+ * SAME 16-join read every other kind uses, which is exactly the point being
+ * proved: `entities.context` has no per-kind branch to add a chat arm TO.
+ */
+function chatRow(id: string, title = 'G13 chat'): EntityRow {
+  return {
+    ...baseRow(id, 'chat'),
+    chat_title: title,
+    chat_teammate_id: IDS.teammate,
+    chat_model: 'opus',
+    chat_provider: 'anthropic',
+    chat_agent_tool: 'claude-code',
+    chat_mode: 'ask',
+    chat_workdir_mode: 'scratch',
+    chat_project_id: null,
+    chat_runtime_state: 'live',
+    chat_turn_state: 'idle',
+    chat_turn_count: 2,
+    chat_last_turn_at: '2026-07-26T09:45:00.000Z',
+  } as EntityRow;
 }
 
 function messageRow(
@@ -401,16 +426,16 @@ function feedOn(stub: Stub, options: W2FeedContextServiceOptions = {}): {
 
 function contextOn(stub: Stub, options: W2FeedContextServiceOptions = {}): {
   db: FakeDb;
-  run: (query?: string) => Promise<EntityContextView>;
+  run: (query?: string, params?: Record<string, string>) => Promise<EntityContextView>;
 } {
   const db = new FakeDb();
   db.queryImpl = router(stub);
   const registry = registryFor(db, options);
   return {
     db,
-    run: async (query = '') =>
+    run: async (query = '', params?: Record<string, string>) =>
       (await handler(registry, 'entities.context')(
-        request('entities.context', { query }),
+        request('entities.context', { query, ...(params ? { params } : {}) }),
       )) as EntityContextView,
   };
 }
@@ -1319,5 +1344,103 @@ describe('W2.G13 entities.context bounded focus', () => {
     // would be one the continuing operation rejects. `truncated` is the signal.
     expect(view.cursors['edges']).toBeUndefined();
     expect(Object.keys(view.cursors).sort()).toEqual(['activity', 'children', 'messages']);
+  });
+});
+
+/**
+ * 176 — `tm8 entity context <chatId>` FROM A WORKER.
+ *
+ * A worker whose coordinator is a chat orients on that chat exactly as it would
+ * on a coordinator session: one `entity context` call for the summary, the
+ * recent messages and the allowed actions. The reason this can work at all is
+ * that `entities.context` has NO per-kind branch — root, messages and actions
+ * are read kind-agnostically, and 176 re-anchored a chat's messages FLAT onto
+ * the chat entity, which is the shape `entities.context:messages` already
+ * selects (`m.anchor_id = $1`, no root filter).
+ *
+ * So these assertions exist to prove there is nothing to add rather than to
+ * cover something new — and they are worth having for that: "no arm needed" is
+ * a claim that silently stops being true the first time a kind switch appears
+ * in the assembler, and nothing else in this file would notice.
+ */
+describe('W2.G13 entities.context on a chat (176)', () => {
+  const CHAT_STUB: Stub = {
+    root: [chatRow(IDS.chat)],
+    parents: [],
+    children: [],
+    edges: [],
+    messages: [
+      { entity_id: IDS.rootMessage, cursor_created_at: '2026-07-26T09:20:00.000000Z' },
+      { entity_id: IDS.chatTurn, cursor_created_at: '2026-07-26T09:21:00.000000Z' },
+    ],
+    activity: [],
+    entities: [
+      chatRow(IDS.chat),
+      // FLAT: every turn is a root message anchored on the chat itself. A
+      // `root_message_id` here would be the pre-176 threaded shape.
+      messageRow(IDS.rootMessage, { anchorId: IDS.chat, body: 'ship the lane' }),
+      messageRow(IDS.chatTurn, { anchorId: IDS.chat, body: 'on it' }),
+    ],
+    eventSeq: 5150,
+  };
+  const CHAT_PARAMS = { id: IDS.chat };
+
+  it('returns the chat summary, its recent messages and its allowed actions', async () => {
+    const { run } = contextOn(CHAT_STUB);
+    const view = await run('', CHAT_PARAMS);
+
+    expect(EntityContextViewSchema.parse(view)).toBeTruthy();
+    expect(view.root.id).toBe(IDS.chat);
+    expect(view.root.kind).toBe('chat');
+    expect(view.root.title).toBe('G13 chat');
+    expect(view.messages.map((m) => m.id).sort()).toEqual([IDS.chatTurn, IDS.rootMessage].sort());
+    expect(view.actions).toEqual(PALETTE);
+    expect(view.provenance.eventSeq).toBe(5150);
+  });
+
+  it('selects a chat message by its ANCHOR, so a flat turn is not filtered out', async () => {
+    const { db, run } = contextOn(CHAT_STUB);
+    await run('', CHAT_PARAMS);
+
+    const messagesSql = db.sql.find((sql) => sql.includes('entities.context:messages'));
+    expect(messagesSql).toBeDefined();
+    expect(messagesSql).toContain('m.anchor_id = $1');
+    // The `root_message_id is null` filter belongs to the feed's
+    // `channel_threads_v1` scope, not here — applying it would hide every reply
+    // turn in a chat, and pre-176 that is exactly what a chat's turns were.
+    expect(messagesSql).not.toContain('root_message_id');
+    expect(db.params[db.sql.indexOf(messagesSql!)]).toEqual([IDS.chat]);
+  });
+
+  it('pages a chat conversation on the direct_v1 fingerprint, like any other anchor', async () => {
+    // `defaultScopeFor` has arms for work_session, channel, message and task; a
+    // chat takes the `direct_v1` default, whose anchor kind is `any`. The cursor
+    // must therefore be one `entities.feed` will accept back.
+    expect(resolveFeedScope(undefined, 'chat')).toBe('direct_v1');
+
+    const { run } = contextOn(CHAT_STUB);
+    const view = await run('', CHAT_PARAMS);
+    const cursor = view.cursors['messages'];
+    expect(cursor).toEqual(expect.any(String));
+    expect(decodeCursor(cursor!).k[0]).toBe(
+      feedCursorFingerprint({
+        entityId: IDS.chat,
+        scope: 'direct_v1',
+        order: 'newest',
+        predicates: FEED_SCOPE_PREDICATES['direct_v1'],
+      }),
+    );
+  });
+
+  it('reads a chat through the same query as every other kind — no chat branch', async () => {
+    const { db, run } = contextOn(CHAT_STUB);
+    await run('', CHAT_PARAMS);
+    const chatRootSql = db.sql.find((sql) => sql.includes('entities.context:root'));
+
+    const { db: taskDb, run: runTask } = contextOn(CONTEXT_STUB);
+    await runTask();
+    const taskRootSql = taskDb.sql.find((sql) => sql.includes('entities.context:root'));
+
+    expect(chatRootSql).toBe(taskRootSql);
   });
 });

@@ -55,8 +55,15 @@ export interface RequestIdentity {
   authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;
-  /** Thread root recorded on an `agent_runtime` bearer row. */
+  /** Thread root recorded on a PRE-176 `agent_runtime` bearer row. */
   runtimeThreadRootId?: string;
+  /**
+   * The CHAT an `agent_runtime` bearer runs (176). This is the one place the
+   * server learns which chat a tool call came from, and it comes off the
+   * session row the token hash resolved — never from request input, which is
+   * why `messages.post` and `execution.spawn` may treat it as provenance.
+   */
+  runtimeChatId?: string;
 }
 
 /** Everything a handler is allowed to know about one request. */

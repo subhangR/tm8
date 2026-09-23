@@ -100,4 +100,94 @@ describe('DiffView', () => {
     const { getByTestId } = render(<DiffView diff="" />);
     expect(getByTestId('kit-diff').textContent).toContain('No changes.');
   });
+
+  /**
+   * PER-HUNK SELECTION — read-only unless a caller asks for it.
+   *
+   * Every surface that shows a diff mounts this component, and most of them
+   * have nothing to stage. A checkbox that appeared by default would put a
+   * control with no verb behind it on the transcript, the task detail and the
+   * commit view at once.
+   */
+  describe('hunk selection', () => {
+    const TWO_FILES = [
+      'diff --git a/one.ts b/one.ts',
+      '--- a/one.ts',
+      '+++ b/one.ts',
+      '@@ -1,2 +1,2 @@ first()',
+      '-a',
+      '+A',
+      ' keep',
+      '@@ -10,2 +10,2 @@ second()',
+      '-b',
+      '+B',
+      ' keep',
+      'diff --git a/two.ts b/two.ts',
+      '--- a/two.ts',
+      '+++ b/two.ts',
+      '@@ -1,2 +1,2 @@ third()',
+      '-c',
+      '+C',
+      ' keep',
+      '',
+    ].join('\n');
+
+    it('renders no checkbox at all when no selection is passed', () => {
+      const { queryAllByTestId } = render(<DiffView diff={TWO_FILES} />);
+      expect(queryAllByTestId('kit-diff-hunk-check')).toHaveLength(0);
+    });
+
+    it('numbers hunks 1-based ACROSS files, not restarting per file', () => {
+      const { getAllByTestId } = render(
+        <DiffView diff={TWO_FILES} selection={{ selected: new Set(), onToggle: () => {} }} />,
+      );
+      /* Restarting at each file would produce 1, 2, 1 — and the third hunk
+         would then stage the first file's first hunk instead. */
+      expect(getAllByTestId('kit-diff-hunk-check').map((b) => b.dataset.hunk)).toEqual(['1', '2', '3']);
+    });
+
+    it('reports the index that was ticked, and reflects what the caller holds', () => {
+      const seen: number[] = [];
+      const { getAllByTestId } = render(
+        <DiffView
+          diff={TWO_FILES}
+          selection={{ selected: new Set([2]), onToggle: (i) => void seen.push(i) }}
+        />,
+      );
+      const boxes = getAllByTestId('kit-diff-hunk-check') as HTMLInputElement[];
+      /* The component holds no selection of its own — the caller's set is the
+         only truth, so a stale tick cannot survive a re-read behind its back. */
+      expect(boxes.map((b) => b.checked)).toEqual([false, true, false]);
+      fireEvent.click(boxes[2]!);
+      expect(seen).toEqual([3]);
+    });
+
+    it('names each box by its index and git’s function guess, not by the @@ arithmetic', () => {
+      const { getAllByTestId } = render(
+        <DiffView diff={TWO_FILES} selection={{ selected: new Set(), onToggle: () => {} }} />,
+      );
+      /* "at at minus one comma two plus one comma two at at" is what a screen
+         reader would otherwise be given for a place in a file. */
+      expect(getAllByTestId('kit-diff-hunk-check').map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Select hunk 1: first()',
+        'Select hunk 2: second()',
+        'Select hunk 3: third()',
+      ]);
+    });
+
+    it('freezes the boxes while a mutation is in flight instead of hiding them', () => {
+      const { getAllByTestId } = render(
+        <DiffView
+          diff={TWO_FILES}
+          selection={{ selected: new Set([1]), onToggle: () => {}, disabled: true }}
+        />,
+      );
+      const boxes = getAllByTestId('kit-diff-hunk-check') as HTMLInputElement[];
+      /* Hidden boxes would make the ticks vanish mid-request and the reviewer
+         would not know what they had asked for. */
+      expect(boxes).toHaveLength(3);
+      expect(boxes.every((b) => b.disabled)).toBe(true);
+      expect(boxes[0]!.checked).toBe(true);
+    });
+  });
 });

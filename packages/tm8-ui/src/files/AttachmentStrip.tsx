@@ -57,6 +57,13 @@ export interface AttachmentStripProps {
    * upload path: an inert browse control is worse than none.
    */
   projectFolder?: ProjectFolderPort;
+  /**
+   * Creates a drawing attached to the anchor and opens it (194).
+   *
+   * Absent ⇒ the menu item is not drawn, the same rule `startUpload` follows:
+   * a control that appears to create something and cannot is worse than none.
+   */
+  createDrawing?: () => void | Promise<void>;
   /** An upload finished. The host refetches the anchor so the new edge shows. */
   onUploaded?: () => void;
   /**
@@ -124,6 +131,7 @@ export function AttachmentStrip({
   downloadHref,
   startUpload,
   projectFolder,
+  createDrawing,
   onUploaded,
   onDetach,
   onDetached,
@@ -340,8 +348,24 @@ export function AttachmentStrip({
   };
   // With exactly one wired path, ＋ acts directly — a one-item menu is a
   // click tax (addendum §4).
-  const plusAct =
-    startUpload && projectFolder ? () => setMenuOpen((open) => !open) : startUpload ? openUpload : openFolder;
+  /*
+   * WHETHER THERE IS A MENU AT ALL is "more than one thing to offer", counted
+   * — not the hard-coded `startUpload && projectFolder` pair it replaces.
+   * That pair was correct while uploading and browsing were the only two
+   * actions; adding a third made it wrong in a way that shows as a menu the
+   * new item can never appear in. Counting keeps a single-action mount doing
+   * that action directly, which is the behaviour the ＋ has always had.
+   */
+  const offered = [Boolean(startUpload), Boolean(projectFolder), Boolean(createDrawing)]
+    .filter(Boolean).length;
+  const hasMenu = offered > 1;
+  const plusAct = hasMenu
+    ? () => setMenuOpen((open) => !open)
+    : startUpload
+      ? openUpload
+      : createDrawing
+        ? () => { void createDrawing(); }
+        : openFolder;
 
   return (
     <div
@@ -422,9 +446,9 @@ export function AttachmentStrip({
                visible text — a paperclip glyph is decorative, and a button
                named "📎" is a button screen readers cannot describe. */
             aria-label="Attach a file"
-            aria-haspopup={startUpload && projectFolder ? 'menu' : undefined}
-            aria-expanded={startUpload && projectFolder ? menuOpen : undefined}
-            title="Attach a file to this entity"
+            aria-haspopup={hasMenu ? 'menu' : undefined}
+            aria-expanded={hasMenu ? menuOpen : undefined}
+            title="Attach a file to this entity — or drop or paste a file to insert it here"
             onClick={plusAct}
           >
             <span
@@ -433,23 +457,56 @@ export function AttachmentStrip({
             >
               {idle ? '📎' : '＋'}
             </span>
-            {idle ? null : <span className="fn-tile__name">attach</span>}
+            {/* IT CARRIES ITS WORD NOW. The idle form was a BARE 📎 and nothing
+                else: 70×31px, no border, no label — an accessible name only a
+                screen reader could hear, and a hit area under the touch floor.
+                A control whose whole job is to say "a file can go here" said it
+                to nobody looking. Both states now render glyph AND word, and
+                the long sentence that sat above the strip as its own paragraph
+                rides the `title` instead. */}
+            <span className="fn-tile__name">Attach</span>
           </button>
-          {menuOpen && startUpload && projectFolder ? (
+          {/* The trailing note the ProseField paragraph used to carry, beside
+              the button rather than above the strip. Drawn only where drop and
+              paste actually land bytes — `startUpload` is that capability — so
+              it never promises a path this mount does not have. */}
+          {idle && startUpload ? <span className="fn-plus__note">or drop / paste</span> : null}
+          {menuOpen && hasMenu ? (
             <div className="fn-menu" role="menu" aria-label="Attach a file">
+              {startUpload ? (
               <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
                 <span className="fn-menu__label">＋ Upload from this device</span>
                 <span className="fn-menu__hint">or drop files on the description</span>
               </button>
+              ) : null}
               {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same
                   thing. The input sends bytes from this machine; this names a
                   file already sitting in a project folder on the node, which
                   the input cannot reach because it never learns an absolute
                   path. */}
+              {projectFolder ? (
               <button type="button" className="fn-menu__item" role="menuitem" onClick={openFolder}>
                 <span className="fn-menu__label">▱ From a project folder</span>
                 <span className="fn-menu__hint">read on the node, not uploaded</span>
               </button>
+              ) : null}
+              {/* A THIRD SOURCE, and the only one that CREATES rather than
+                  links: the drawing does not exist until this is clicked. It
+                  is here because "attach a drawing to this task" is an
+                  attachment, and this is where an anchor's attachments are
+                  made. */}
+              {createDrawing ? (
+              <button
+                type="button"
+                className="fn-menu__item"
+                role="menuitem"
+                data-testid="attachment-new-drawing"
+                onClick={() => { setMenuOpen(false); void createDrawing(); }}
+              >
+                <span className="fn-menu__label">✎ New drawing</span>
+                <span className="fn-menu__hint">a blank canvas, attached here</span>
+              </button>
+              ) : null}
             </div>
           ) : null}
         </span>

@@ -1,3 +1,4 @@
+import type { SkillPort } from '../skills/port';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -136,7 +137,14 @@ import type {
   ExecutionDispatchResult,
   ExecutionSpawnInput,
   ExecutionTerminalStartInput,
+  ContainersCreateInput,
+  ContainersDestroyInput,
+  ContainersLifecycleInput,
+  ContainersProvidersListResult,
+  ContainersTerminalStartInput,
+  ContainersTerminalStartResult,
   ExecutionResumeInput,
+  ExecutionSessionsShareInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
   FileUploadCompleteInput,
@@ -183,14 +191,17 @@ import type {
   ExecutionGitMergeInput,
   ExecutionGitCherryPickInput,
   ExecutionGitBranchInput,
+  ExecutionGitStageInput,
   ExecutionGitStashInput,
   ExecutionGitRollbackInput,
   SessionGitCheckpointResult,
   SessionGitCommitResult,
   SessionGitDiff,
+  SessionGitDiffScope,
   SessionGitMergeResult,
   SessionGitCherryPickResult,
   SessionGitBranchResult,
+  SessionGitStageResult,
   SessionGitStashResult,
   SessionGitRollbackResult,
   SessionGitStatus,
@@ -198,8 +209,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  StartChatThreadInput,
-  StartChatThreadResult,
+  StartChatInput,
+  StartChatResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -420,6 +431,21 @@ export interface FileBlameOpts {
 export interface GitDiffOpts {
   /** Unified-diff byte cap; server default 256 KiB, max 1 MiB. */
   maxBytes?: number;
+  /**
+   * NARROW TO ONE FILE. Not a client-side convenience: the whole-session text
+   * is byte-capped, so a file past the cap is ABSENT from it, not truncated —
+   * slicing the big diff cannot answer "show me this one file" for exactly the
+   * files a reviewer most needs to see. The server re-runs git scoped to the
+   * path, and an untracked path is answered against /dev/null.
+   */
+  path?: string;
+  /**
+   * WHICH COMPARISON. `session` (default) is working tree vs the merge-base —
+   * what this lane changed. `staged` is index vs HEAD: what a commit would
+   * write, exactly. `unstaged` is working tree vs index. Only git can tell
+   * these apart; a client cannot derive one from another.
+   */
+  scope?: SessionGitDiffScope;
 }
 
 export interface Seam {
@@ -785,6 +811,7 @@ export interface Seam {
      * omitted context earns an honest `invalid_input` rather than a
      * synthesized id the caller could not reconcile.
      */
+    skills?: SkillPort;
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     /**
@@ -807,11 +834,11 @@ export interface Seam {
     ): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     /**
-     * Amendment 10 (with `home` above): the contract's `chat.threads.start`
-     * — the write half of the chat-home bridge. Input is an ALREADY-POSTED
-     * root message id; the op never creates messages and triggers turn 1.
+     * `chat.start` (176) — the write half of the chat-home bridge, and now the
+     * ONLY door a chat is born from. It creates the chat entity and posts its
+     * opening turn in one transaction; there is no root message to post first.
      */
-    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
+    startChat(input: StartChatInput): Promise<StartChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
@@ -982,12 +1009,82 @@ export interface Seam {
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
     /**
+     * `execution.sessions.share` (187) — TURN ONE OR BOTH OF THIS SESSION'S
+     * SHARING DIALS.
+     *
+     * TWO INDEPENDENT DIALS, and the input type is what keeps them
+     * independent: `shareMode` is who may WATCH the terminal's bytes and
+     * `driveMode` is who may TYPE into it. The RPC merges on omission — a
+     * patch that names only one leaves the other exactly where it was — so a
+     * caller that means "open watching" must not send a `driveMode` it did
+     * not intend to author.
+     *
+     * NOT a metadata control. The session ROW's visibility is governed by
+     * `entities_select` and is space-wide regardless of these dials; what
+     * they gate is the byte stream, through `grant_stream_attach`. Narrowing
+     * either dial revokes the live grants it no longer covers, so this is a
+     * command with an immediate effect on other people's open terminals and
+     * carries `expectedVersion` for the same reason `complete` does.
+     */
+    shareSession(id: EntityId, input: ExecutionSessionsShareInput): Promise<CommandResult>;
+    /**
      * Bring an `exited`/`failed` session back with its agent's conversation
      * restored. `clientMutationId` is REQUIRED by the contract DTO (unlike
      * terminate's optional `force`), and the server's `.strict()` schema
      * refuses any field the contract does not name.
      */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
+    /*
+     * CONTAINERS (migration 177, catalog rows 1–8, 10, 24). Typed with the
+     * contract's inputs VERBATIM — no seam-local shapes, so a zod refusal the
+     * server raises is a refusal this signature already made impossible.
+     *
+     * The five that ship in P0 do real work. The rest of the 25 rows are
+     * registered server-side and answer an honest 501; they get seam members
+     * when a lane has a surface for them, not before — a seam method with no
+     * caller is the thing `data/real/ops.ts`'s header forbids.
+     *
+     * `createContainer` is the BIRTH DOOR and the only one. `entities.create`
+     * refuses this kind outright ("owned by the container lifecycle"), exactly
+     * as it does for work_session, so there is no second path to try.
+     */
+    createContainer(input: ContainersCreateInput): Promise<CommandResult>;
+    /*
+     * ONE METHOD FOR start/stop/pause/resume RATHER THAN FOUR, because the
+     * four share ONE contract DTO (`ContainersLifecycleInput`) and one route
+     * shape. Four methods would be four places for the same
+     * `expectedVersion` handling to drift, and `verb` is what the catalog row
+     * already discriminates on.
+     *
+     * `expectedVersion` is MANDATORY on every one of them (freeze part 4/4,
+     * rows 2–5) and the DTO says so, so a caller cannot forget it.
+     */
+    containerLifecycle(
+      id: EntityId,
+      verb: 'start' | 'stop' | 'pause' | 'resume',
+      input: ContainersLifecycleInput,
+    ): Promise<CommandResult>;
+    /** Its own method: `force`/`keepSnapshot` are destroy's alone. */
+    destroyContainer(id: EntityId, input: ContainersDestroyInput): Promise<CommandResult>;
+    /**
+     * `containers.terminal.start` — mints a `work_session` with
+     * `session_kind='container_exec'` INSIDE the container and returns its id.
+     *
+     * NOTE THE RESULT TYPE. It is not a `CommandResult`: the door answers
+     * `{ workSessionId, containerId }`, so there are no patches to reconcile
+     * and a caller that treats it like a spawn will wait for a store update
+     * that never arrives. The session it names is an ordinary work_session and
+     * is opened the ordinary way.
+     *
+     * NO `argv` FIELD, deliberately — the shell is the image's login shell,
+     * the same RCE boundary as `execution.terminal.start`. Do not add one.
+     */
+    startContainerTerminal(
+      id: EntityId,
+      input: ContainersTerminalStartInput,
+    ): Promise<ContainersTerminalStartResult>;
+    /** `containers.providers.list` — what this node can actually build. */
+    containerProviders(): Promise<ContainersProvidersListResult>;
     /**
      * The session git rail's four verbs (Git UI wave) — checkpoint, rollback,
      * commit, and merge-the-base-FORWARD. The other merge direction (session
@@ -1000,6 +1097,14 @@ export interface Seam {
     gitCheckpoint(id: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult>;
     gitRollback(id: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult>;
     gitCommit(id: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult>;
+    /**
+     * STAGE / UNSTAGE without committing — the review half of `gitCommit`.
+     * Unstage is a path-scoped MIXED reset (`git reset HEAD -- <paths>`): the
+     * index moves, the working tree does not, and `--hard` exists at no layer
+     * of this rail. Answers with the post-operation status so a caller never
+     * has to render a list it knows is one round-trip stale.
+     */
+    gitStage(id: EntityId, input: ExecutionGitStageInput): Promise<SessionGitStageResult>;
     gitMerge(id: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult>;
     /**
      * Tier 2 completion (Amendment 8). Cherry-pick's direction is fixed by

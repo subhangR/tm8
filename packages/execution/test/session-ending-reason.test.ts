@@ -7,11 +7,16 @@
 // on each path. A single reason string applied everywhere would read like an
 // improvement and discriminate nothing, which is the failure mode to guard.
 
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import { oomKillObserved, readOomKillCount } from '../src/spawn/oom-witness.js';
+import { encodeClaudeProjectDir } from '../src/transcript/read-transcript.js';
+import type { WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -129,6 +134,146 @@ describe('a session records why it ended', () => {
     // cannot tell the situations apart — which is the whole defect.
     expect(new Set([observed, inferred, asked.reason]).size).toBe(3);
   });
+});
+
+/**
+ * THE USAGE INSTRUMENT RIDES BEHIND THE ENDING (185).
+ *
+ * Every exit path records the ending FIRST and then reads the transcript,
+ * best-effort. These pin the three things that make it safe to have added:
+ * it lands after the transition (never before, never instead), a transcript
+ * that cannot be read leaves the ending exactly as it was, and a stalled
+ * read cannot hold the shutdown sweep hostage.
+ */
+describe('a session records what it cost, after it records why it ended', () => {
+  let graph: FakeGraph;
+  let pty: PtyHostService;
+  let home: string;
+  let dataDir: string;
+
+  const CWD = '/srv/checkout';
+  const resumeInfo = (sessionId: string, overrides: Partial<WorkSessionResumeInfo> = {}): WorkSessionResumeInfo => ({
+    sessionId,
+    spaceId: 'space-1',
+    parentSessionId: null,
+    teamMemberId: 'tm-1',
+    projectId: 'proj-1',
+    taskIds: [],
+    workdirMode: 'project',
+    workdirPath: CWD,
+    mode: 'worker',
+    model: 'opus',
+    agentTool: 'claude-code',
+    title: 'A run',
+    status: 'running',
+    nativeSessionId: 'nat-1',
+    agentConfigDir: null,
+    ...overrides,
+  });
+
+  async function writeTranscript(nativeId: string): Promise<void> {
+    const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(CWD));
+    await mkdir(dir, { recursive: true });
+    const usage = { input_tokens: 3, output_tokens: 40, cache_read_input_tokens: 1000 };
+    const rec = (id: string) => JSON.stringify({
+      type: 'assistant',
+      message: { id, role: 'assistant', model: 'claude-opus-5', stop_reason: 'end_turn', content: [], usage },
+    });
+    // Two records, one message: the instrument must count it once.
+    await writeFile(join(dir, `${nativeId}.jsonl`), [rec('msg_1'), rec('msg_1')].join('\n'));
+  }
+
+  function service(): SpawnService {
+    return new SpawnService({
+      graph, pty, baseUrl: 'http://127.0.0.1:4620', nodeId: NODE, logger: quiet, dataDir,
+      env: { HOME: home },
+    });
+  }
+
+  beforeEach(async () => {
+    graph = new FakeGraph({ workingDir: '/tmp' });
+    pty = new PtyHostService({ logger: quiet });
+    home = await mkdtemp(join(tmpdir(), 'tm8-usage-home-'));
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-usage-data-'));
+  });
+  afterEach(async () => {
+    pty.shutdownAll();
+    await rm(home, { recursive: true, force: true });
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('terminate() records the de-duplicated usage AFTER the ending is on record', async () => {
+    graph.resumeInfo = resumeInfo('cancelled');
+    await writeTranscript('nat-1');
+
+    await service().terminate(AUTH, 'cancelled');
+
+    expect(endingFor(graph, 'cancelled').kind).toBe('stopped_by_operator');
+    expect(graph.usageRecords).toHaveLength(1);
+    const rec = graph.usageRecords[0]!;
+    expect(rec.sessionId).toBe('cancelled');
+    expect(rec.source).toBe('claude_transcript');
+    // After, not before: the transition was already there when this wrote.
+    expect(rec.afterTransitions).toBe(1);
+    expect(rec.usage.transcript.messages).toBe(1);
+    expect(rec.usage.transcript.totals.outputTokens).toBe(40);
+    expect(rec.usage.harness).toBeNull();
+  });
+
+  it('the exit sink records it too, on a natural exit with the spawner claims', async () => {
+    // handlePtyExit needs claims captured at spawn; `recordShutdown` and the
+    // ghost path cover the other two writers. This one goes through the sink
+    // the way createExecutionPtyHost wires it, with the fake graph answering
+    // the row facts a real spawn would have written.
+    graph.resumeInfo = resumeInfo('natural', { workdirMode: 'scratch', workdirPath: null });
+    const scratchCwd = join(dataDir, 'scratch', 'natural');
+    const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(scratchCwd));
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'nat-1.jsonl'), JSON.stringify({
+      type: 'assistant',
+      message: { id: 'm', role: 'assistant', model: 'claude-opus-5', content: [], usage: { input_tokens: 1, output_tokens: 2 } },
+    }));
+    const svc = service();
+    // The claims a spawn would have captured, without a spawn: the sink is
+    // keyed on them and refuses to write without them (see handlePtyExit).
+    (svc as unknown as { sessionAuth: Map<string, unknown> }).sessionAuth.set('natural', AUTH);
+
+    await svc.handlePtyExit('natural', 'completed', { exitCode: 0, signal: null });
+
+    expect(endingFor(graph, 'natural')).toMatchObject({ kind: 'completed', status: 'exited' });
+    expect(graph.usageRecords).toHaveLength(1);
+    expect(graph.usageRecords[0]?.afterTransitions).toBe(1);
+    // The scratch cwd is re-derived from the data dir, exactly as execution.transcript does.
+    expect(graph.usageRecords[0]?.usage.transcriptPath).toBe(join(dir, 'nat-1.jsonl'));
+  });
+
+  it('a session with no readable transcript keeps its ending and records NO usage — never a zero', async () => {
+    graph.resumeInfo = resumeInfo('blind', { nativeSessionId: null });
+    await service().terminate(AUTH, 'blind');
+    expect(endingFor(graph, 'blind').kind).toBe('stopped_by_operator');
+    expect(graph.usageRecords).toHaveLength(0);
+  });
+
+  it('a graph that refuses the usage write leaves the ending intact and does not throw', async () => {
+    graph.resumeInfo = resumeInfo('refused');
+    await writeTranscript('nat-1');
+    graph.usageError = new Error('42501 injected');
+    await expect(service().terminate(AUTH, 'refused')).resolves.toMatchObject({ outcome: 'not_found' });
+    expect(endingFor(graph, 'refused').kind).toBe('stopped_by_operator');
+    expect(graph.usageRecords).toHaveLength(0);
+  });
+
+  it('the shutdown sweep is still bounded when the usage read stalls', async () => {
+    pty.spawn({ sessionId: 'stalled', command: 'sleep 30', cwd: '/tmp', env: {} });
+    graph.resumeLookupHangs = true;
+    const started = Date.now();
+    expect(await service().recordShutdown(AUTH, 'SIGTERM')).toBe(1);
+    // Two seconds per session is the bound; well under the process's own
+    // shutdown window, and the ending was recorded before the read began.
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(endingFor(graph, 'stalled').kind).toBe('server_restart');
+    expect(graph.usageRecords).toHaveLength(0);
+  }, 10_000);
 });
 
 describe('OOM is kernel evidence, never a guess', () => {

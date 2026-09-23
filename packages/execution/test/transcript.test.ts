@@ -177,6 +177,27 @@ describe('readSessionTranscript — honesty contract', () => {
 });
 
 describe('readSessionTranscript — claude', () => {
+  it('counts a streamed message ONCE in stats — two block records sharing one message.id are one message', async () => {
+    // Measured 2026-09-15 on 311 prod transcripts: 67,552 usage records for
+    // 32,396 message.ids, byte-identical usage on every duplicate. Summing per
+    // record showed ~2x in the live Session stats panel.
+    const home = await makeHome();
+    const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 };
+    await writeClaude(home, 'dup', [
+      claudeUser('2026-08-07T10:00:00Z', 'go'),
+      { ...claudeTool('2026-08-07T10:00:01Z', 'Read'), message: { ...claudeTool('', 'Read').message, id: 'msg_1', usage } },
+      { ...claudeText('2026-08-07T10:00:02Z', 'done'), message: { ...claudeText('', 'done').message, id: 'msg_1', usage } },
+    ]);
+    const page = await readSessionTranscript({
+      sessionId: 's', agentTool: 'claude-code', nativeSessionId: 'dup', cwd: CWD, home,
+    });
+    expect(page.stats?.inputTokens).toBe(10);
+    expect(page.stats?.outputTokens).toBe(5);
+    expect(page.stats?.cacheReadTokens).toBe(100);
+    // The tool call is still per record — one tool_use block is one call.
+    expect(page.stats?.toolCalls).toBe(1);
+  });
+
   it('reads prose turns, counts tools, and sums per-turn usage', async () => {
     const home = await makeHome();
     await writeClaude(home, 'n1', [

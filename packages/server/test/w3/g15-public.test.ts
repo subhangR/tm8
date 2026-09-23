@@ -75,14 +75,26 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 131 -> 135: credentials.*; all four are mounted.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
-    expect(OPERATIONS).toHaveLength(172); // +3 148 spaces.workflows
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(171); // +3 148
+    // 197 -> 198 (187, session sharing): execution.sessions.share, one
+    // POST command — registered and mounted, so every count below moves
+    // by exactly one and the residual set is unchanged.
+    // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage, one
+    // public v1 POST. It is HTTP, so it moves EVERY count on this page in
+    // lockstep a second time: catalog 198 -> 199, catalog-non-WS 196 -> 197,
+    // mounted routes 196 -> 197, registered handlers 194 -> 195. MEASURED from
+    // this file's own failing run on the MERGED tree, not derived.
+    expect(OPERATIONS).toHaveLength(208); // +9 skills (2026-09-23) // +25 (177) containers, +1 (187), +1 (gitStage)
+    // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias.
+    // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(206);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 171, // +3 148: the spaces.workflows routes
-      implemented: 169, // +3 148
+      operations: 206, // +9 skills (2026-09-23) // +24 (177): the container HTTP rows; +1 (187); +1 (gitStage)
+      implemented: 204, // +9 skills (2026-09-23) // +24 (177): all registered, all mounted; +1 (187); +1 (gitStage)
     });
   });
 
@@ -99,13 +111,35 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operation.method !== 'WS'
       && operation.status === 'v1'
       && responses.get(operation.name)?.status === 501);
-    // RE-PINNED at tranche-v3 + 035: 36 -> 25 -> 0. Exact literal by design so it
-    // keeps catching the next drift; never a range, never a live-computed value.
-    // ZERO is a strong claim and it is the right one: every v1 HTTP operation in
-    // the catalog is now mounted by the production composition, so the node no
-    // longer answers 501 to anything it declares. presence.get was the last
-    // member and main.ts now always constructs an InMemoryPresenceStore.
-    expect(residual, residual.map((operation) => operation.name).join(', ')).toHaveLength(0);
+    // RE-PINNED at tranche-v3 + 035: 36 -> 25 -> 0, and 177 moves it OFF zero
+    // for the first time since. Still an exact MEMBERSHIP assertion rather than
+    // a count, so it keeps catching the next drift: any operation that answers
+    // 501 and is not on this list fails by name.
+    //
+    // WHY IT IS NO LONGER ZERO, and why that is honest rather than a
+    // regression. Zero used to mean "the node implements everything it
+    // declares". The container family declares 25 rows in P0 and implements
+    // ten; the other fifteen are REGISTERED and answer 501 with a named
+    // reason, because the alternative — leaving them unregistered — answers
+    // 404, which tells a caller the operation does not exist when it is in the
+    // contract (DEV-13). Registered-and-501 is the honest state; this list is
+    // where that honesty is written down.
+    //
+    // These five are the ones this probe reaches: the family's GET/PUT rows.
+    // The POST commands are probed elsewhere in the sweep.
+    expect(
+      residual.map((operation) => operation.name).sort(),
+      residual.map((operation) => operation.name).join(', '),
+    ).toEqual([
+      'containers.files.get',
+      'containers.files.put',
+      'containers.logs',
+      'containers.providers.list',
+      'containers.proxy',
+    ]);
+    // Every member must still answer the STANDARD closed 501 envelope — being
+    // on the list is permission to be unbuilt, never permission to be sloppy
+    // about how it says so. (The loop below already asserts this.)
     for (const operation of residual) {
       expectStandardNotImplemented(operation, responses.get(operation.name)!);
     }
@@ -123,7 +157,20 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // The four credentials.* rows bring the mounted set to 132.
     // 141: +3 (auth.password.change, auth.invite.signup, auth.claim.reissue),
     // all mounted and none answering 501 — 163 -> 166.
-    expect(implemented).toHaveLength(169);
+    // 169 -> 188 (177): the catalog's v1 non-WS rows are now 193, of which the
+    // five residual container reads answer 501 — so 188 answer for real.
+    // 193 - 5 = 188, and the residual membership asserted above is what makes
+    // that subtraction checkable rather than a fudge.
+    // 188 -> 189 (187): execution.sessions.share is mounted, and a no-body
+    // probe fails its schema with 400 rather than 501, so it counts here.
+    // 188 -> 189 (2026-09-19, Changes screen Phase 1): execution.gitStage is a
+    // real mounted handler, not a residual 501, so the v1 non-WS population
+    // moves 193 -> 194 and the subtraction carries: 194 - 5 = 189. MEASURED
+    // from this assertion's own failing run (`Received 189`), not derived.
+    // 189 -> 190 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
+    // branch's execution.gitStage BOTH land, so this moves twice. Git merged
+    // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
+    expect(implemented).toHaveLength(199); // +9 skills (2026-09-23), MEASURED
   });
 
   /**

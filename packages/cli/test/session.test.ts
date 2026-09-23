@@ -162,9 +162,12 @@ const body = (): Record<string, unknown> => (seen[0]?.body ?? {}) as Record<stri
 // ── registration and the anti-drift binding ─────────────────────────────────
 
 describe('registration', () => {
-  it('registers exactly the nine caller-facing execution rows', async () => {
+  it('registers exactly the ten caller-facing execution rows', async () => {
     const paths = (await sessionCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session spawn', 'session terminate', 'session transcript']);
+    // 187 adds `session share` — the WATCH and DRIVE dials on one session.
+    // Sorted position matters here: the list is the assertion, so a row that
+    // arrives has to be placed, not appended.
+    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
   });
 
   it('every registered path is in the frozen projection', async () => {
@@ -253,7 +256,7 @@ describe('execution.prompt has no command and never renders syntax', () => {
 describe('session spawn', () => {
   it('advertises --reasoning-effort with the complete closed set', () => {
     expect(discoveryFor('execution.spawn').syntax).toContain(
-      '[--reasoning-effort low|medium|high|xhigh|max]',
+      '[--reasoning-effort low|medium|high|xhigh|max|ultra]',
     );
   });
 
@@ -313,12 +316,12 @@ describe('session spawn', () => {
     expect(body().accessMode).toBe('fullAccess');
   });
 
-  it('carries an explicit --reasoning-effort', async () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])('carries --reasoning-effort %s', async (effort) => {
     const r = await drive([
-      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'xhigh',
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', effort,
     ]);
     expect(r.code).toBe(0);
-    expect(body().reasoningEffort).toBe('xhigh');
+    expect(body().reasoningEffort).toBe(effort);
   });
 
   it('refuses a reasoning effort outside the closed set', async () => {
@@ -326,7 +329,7 @@ describe('session spawn', () => {
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'extreme',
     ]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('low|medium|high|xhigh|max');
+    expect(r.stderr).toContain('low|medium|high|xhigh|max|ultra');
     expect(seen).toEqual([]);
   });
 

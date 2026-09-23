@@ -1,3 +1,4 @@
+import type { SkillPort } from '../../skills/port';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -46,6 +47,12 @@ import {
   type CollectionResult,
   type CommandContext,
   type CommandResult,
+  type ContainersCreateInput,
+  type ContainersDestroyInput,
+  type ContainersLifecycleInput,
+  type ContainersProvidersListResult,
+  type ContainersTerminalStartInput,
+  type ContainersTerminalStartResult,
   type CompleteTaskInput,
   type CreateEdgeInput,
   type CreateEntityInput,
@@ -70,6 +77,7 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
+  type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
   type FileUploadAbortInput,
   type FileUploadCompleteInput,
@@ -115,6 +123,7 @@ import {
   type ExecutionGitMergeInput,
   type ExecutionGitCherryPickInput,
   type ExecutionGitBranchInput,
+  type ExecutionGitStageInput,
   type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
@@ -123,6 +132,7 @@ import {
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
   type SessionGitBranchResult,
+  type SessionGitStageResult,
   type SessionGitStashResult,
   type SessionGitRollbackResult,
   type SessionGitStatus,
@@ -131,8 +141,8 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
-  type StartChatThreadInput,
-  type StartChatThreadResult,
+  type StartChatInput,
+  type StartChatResult,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
@@ -639,7 +649,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
       return http.call<SessionGitDiff>('execution.gitDiff', {
         params: { workSessionId },
-        query: { maxBytes: opts?.maxBytes },
+        query: { maxBytes: opts?.maxBytes, path: opts?.path, scope: opts?.scope },
       });
     },
     gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
@@ -656,6 +666,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
     gitCommit(workSessionId: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
       return http.call<SessionGitCommitResult>('execution.gitCommit', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitStage(workSessionId: EntityId, input: ExecutionGitStageInput): Promise<SessionGitStageResult> {
+      return http.call<SessionGitStageResult>('execution.gitStage', {
         params: { workSessionId },
         body: input,
       });
@@ -869,6 +885,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
     },
 
+    skills: {
+      roots(spaceId) { return http.call('skills.roots', { params: { spaceId } }); },
+      async list(spaceId, kind) {
+        const items: EntitySummary[] = [];
+        let cursor: string | undefined;
+        do {
+          const result = await http.call<CollectionResult>('collections.query', { body: { spaceId, kinds: [kind], limit: 100, cursor } });
+          items.push(...result.page.items); cursor = result.page.nextCursor ?? undefined;
+        } while (cursor);
+        return items;
+      },
+      equip(id, teamMemberId, equipped) { return http.call(equipped ? 'skills.equip' : 'skills.unequip', { params: { id }, body: { teamMemberId, clientMutationId: newId('skill') } }); },
+      create(spaceId, input) { return http.call('skills.create', { params: { spaceId }, body: { ...input, clientMutationId: newId('skill') } }); },
+      edit(id, input) { return http.call('skills.edit', { params: { id }, body: { ...input, clientMutationId: newId('skill') } }); },
+      preview(spaceId, input) { return http.call('skills.preview', { params: { spaceId }, query: input }); },
+    } satisfies SkillPort,
     createEdge(input: CreateEdgeInput): Promise<CommandResult> {
       return http.call<CommandResult>('edges.create', { body: input });
     },
@@ -939,9 +971,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<MessageBatchResult>('messages.post', { body: input });
     },
 
-    /** Amendment 10: `chat.threads.start` — the chat-home bridge's write half. */
-    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult> {
-      return http.call<StartChatThreadResult>('chat.threads.start', { body: input });
+    /** 176: `chat.start` — creates the chat entity and posts its opening turn. */
+    startChat(input: StartChatInput): Promise<StartChatResult> {
+      return http.call<StartChatResult>('chat.start', { body: input });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */
@@ -1053,12 +1085,88 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
     },
 
+    /**
+     * The two sharing dials (187). The body goes through VERBATIM: the
+     * server's `.strict()` schema refuses a field the contract does not name,
+     * and — the part that matters — it refuses a patch that names NEITHER
+     * dial, so an empty object is a 400 rather than a silent no-op.
+     */
+    shareSession(id: EntityId, input: ExecutionSessionsShareInput): Promise<CommandResult> {
+      return http.call<CommandResult>('execution.sessions.share', { params: { id }, body: input });
+    },
+
     /** A resume re-spawns the PTY, so it carries the same geometry as `spawn`. */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.resume', {
         params: { id },
         body: withMeasuredGeometry(input),
       });
+    },
+
+    // -- containers (migration 177) ----------------------------------------
+    //
+    // NO ADAPTATION HAPPENS HERE, and that is worth stating in a file whose
+    // header lists the four places the seam and the server disagree. The
+    // container routes take the contract DTOs unchanged and answer the
+    // contract results unchanged, so these are the plainest possible wrappers.
+    // If one of them ever grows a body transform, it belongs in that header's
+    // list.
+
+    createContainer(input: ContainersCreateInput): Promise<CommandResult> {
+      return http.call<CommandResult>('containers.create', { body: input });
+    },
+
+    /*
+     * The four lifecycle verbs share one DTO and one route shape, so the verb
+     * selects the operation name and nothing else varies. Written as a lookup
+     * off a frozen map rather than string concatenation: `containers.${verb}`
+     * would happily build an operation name that does not exist if the union
+     * ever widened, and the failure would be a 404 at runtime instead of a
+     * type error here.
+     */
+    containerLifecycle(
+      id: EntityId,
+      verb: 'start' | 'stop' | 'pause' | 'resume',
+      input: ContainersLifecycleInput,
+    ): Promise<CommandResult> {
+      /* `as const` so the lookup yields the catalog's own literal union and
+         not `string` — `http.call` takes an `OperationName`, which is what
+         turns a mistyped operation into a compile error instead of a 404. */
+      const op = ({
+        start: 'containers.start',
+        stop: 'containers.stop',
+        pause: 'containers.pause',
+        resume: 'containers.resume',
+      } as const)[verb];
+      return http.call<CommandResult>(op, { params: { containerId: id }, body: input });
+    },
+
+    destroyContainer(id: EntityId, input: ContainersDestroyInput): Promise<CommandResult> {
+      return http.call<CommandResult>('containers.destroy', {
+        params: { containerId: id },
+        body: input,
+      });
+    },
+
+    /*
+     * `withMeasuredGeometry` — the SAME treatment `spawn` and `startTerminal`
+     * get, and for the identical reason recorded there: the input has accepted
+     * `cols`/`rows` all along and a caller that sends none boots 80x24, which
+     * is exactly where someone runs a full-screen TUI laid out for the wrong
+     * width. A container's exec PTY is a PTY.
+     */
+    startContainerTerminal(
+      id: EntityId,
+      input: ContainersTerminalStartInput,
+    ): Promise<ContainersTerminalStartResult> {
+      return http.call<ContainersTerminalStartResult>('containers.terminal.start', {
+        params: { containerId: id },
+        body: withMeasuredGeometry(input),
+      });
+    },
+
+    containerProviders(): Promise<ContainersProvidersListResult> {
+      return http.call<ContainersProvidersListResult>('containers.providers.list', {});
     },
   };
 }

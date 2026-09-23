@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 import type { ActorSummary } from '@tm8/contract';
 import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
+import { useMobileSurface } from '../../mobile/surface';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
@@ -16,11 +17,16 @@ export interface MaestroTaskTileProps {
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
-  /** `category === 'done'` — this task FINISHED. Never `deletedAt` (C2). */
-  completed: boolean;
-  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. A row
-      may be both; the two are orthogonal axes and read differently. The
-      session tile has carried this distinction all along. */
+  /* NO `completed` PROP. The tile took one, turned it into `pn-tt--completed`
+     and struck the title through — and `category === 'done'` is the server's
+     RESOLUTION predicate, which `152_universal_status.sql` seeds the fact kinds
+     (commit, message, file, memory, artifact) into on purpose. Every artifact
+     row rendered as completed work. The mark is gone for every kind, so the
+     prop is gone with it rather than left as a dead hook; completion is said by
+     `status` below, which the Done tab and the status glyph already read. */
+  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. This
+      is the ONE axis the tile still paints, and it is never a category (C2).
+      The session tile has carried this distinction all along. */
   archived: boolean;
   childCount: number;
   childrenExpanded: boolean;
@@ -71,12 +77,12 @@ export interface MaestroTaskTileProps {
 export function MaestroTaskTile(props: MaestroTaskTileProps) {
   const {
     rootRef,
+    id,
     title,
     depth,
     selected,
     attention,
     attentionReason,
-    completed,
     archived,
     childCount,
     childrenExpanded,
@@ -93,6 +99,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     onToggleDetails,
     children,
   } = props;
+  const { oneSurface } = useMobileSurface();
   const hasChildren = childCount > 0 && onToggleChildren != null;
 
   return (
@@ -100,7 +107,6 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       ref={rootRef}
       className={[
         'pn-tt',
-        completed ? 'pn-tt--completed' : '',
         archived ? 'pn-tt--archived' : '',
         selected ? 'pn-tt--active' : '',
         attention ? 'pn-tt--attention' : '',
@@ -108,6 +114,13 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         .filter(Boolean)
         .join(' ')}
       data-testid="list-tile"
+      /* The flight layer's anchor, on all three anatomies (PR #591 review).
+         No control-card kind opts into `tree.messagePulse` today, so this is
+         dead weight right now — and that is exactly why it is here: without
+         it, enabling the flight for such a kind resolves routes normally and
+         then silently drops EVERY measurement, which reads as "the animation
+         does not work" rather than as a missing attribute. */
+      data-flight-anchor={id}
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}
@@ -214,7 +227,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
 
         <div className="pn-tt__actions lp__cluster">
-          {actions}
+          {!oneSurface || detailsExpanded ? actions : null}
           <button
             type="button"
             className={detailsExpanded ? 'pn-tt__ind pn-tt__ind--open' : 'pn-tt__ind'}

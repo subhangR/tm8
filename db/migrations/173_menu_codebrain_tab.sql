@@ -35,6 +35,52 @@ language sql immutable parallel safe as $$
   ]}'::jsonb
 $$;
 
+-- REGISTER THE REF BEFORE ANY PAYLOAD CARRIES IT. `w2_normalize_menu_payload`
+-- (071:101-112) rejects a view item whose ref is not a `menu_eligible` AND
+-- `implemented` row in `public.menu_view_registry`, and `w2_guard_menu_config`
+-- runs it on every write to `space_menu_configs`. Without this insert the update
+-- below raises 22023 'unknown or unavailable MenuConfig view ref'.
+--
+-- THIS WAS INVISIBLE TO CI. `migrations apply clean` builds a FRESH database,
+-- where no `space_menu_configs` row equals `payload_164`, so the guarded update
+-- below matches ZERO rows, the trigger never fires, and the missing registry row
+-- is never exercised. It fails only against a database that has real menu rows —
+-- i.e. only on a deployed node. Confirmed on prod 2026-09-02: the migration
+-- aborted mid-deploy and left the services stopped.
+--
+-- Every prior tab migration does this first — 045 (graph), 130 (board),
+-- 137 (craft), 160 (help). 173 was the one that skipped it.
+--
+-- THE CHECK CONSTRAINT FIRST, THEN THE ROW. `menu_view_registry.ref` carries an
+-- enumerated check constraint, so inserting an unlisted ref fails with
+-- `menu_view_registry_ref_check` before the trigger is ever reached. 160 (help),
+-- 137 (craft) and 130 (board) each drop and re-add it with their ref appended;
+-- this does the same. The list below is the contract's `MenuViewRef` union
+-- (`contract.ts:2433`) verbatim, plus the `v:`-prefixed operator-authored escape
+-- hatch the constraint has carried since 102.
+alter table public.menu_view_registry
+  drop constraint menu_view_registry_ref_check;
+
+alter table public.menu_view_registry
+  add constraint menu_view_registry_ref_check check (
+    ref in ('dashboard','feed','inbox','workspace','graph','channels','files','settings','git','messages','board','craft','help','codebrain')
+    or ref ~ '^v:[a-z0-9][a-z0-9_-]{0,48}$'
+  );
+
+-- `menu_eligible` true, `required` false: an operator MAY seat CodeBrain and no
+-- space is forced to carry it. `implemented` true because the view exists —
+-- `codebrain` is in the contract's `MenuViewRef` union and `menu-resolve.ts`
+-- resolves it with a label, icon and art.
+insert into public.menu_view_registry(
+  ref, route_template, menu_eligible, required, implemented
+)
+values ('codebrain', '#/s/{s}/codebrain', true, false, true)
+on conflict (ref) do update
+set route_template = excluded.route_template,
+    menu_eligible = excluded.menu_eligible,
+    required = excluded.required,
+    implemented = excluded.implemented;
+
 do $$
 declare
   payload_164 constant jsonb := '{"groups":[

@@ -22,10 +22,14 @@
  * positive control passes identically when the guard works and when the whole
  * feature is broken, and this lane's own history is full of that failure.
  */
-import { describe, expect, it } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CollabError } from '@tm8/contract';
-import type { OperationName } from '@tm8/contract';
+import type { CredentialProviderName, OperationName } from '@tm8/contract';
 import {
   CredentialsDeleteResultSchema,
   CredentialsLoginSessionFinishResultSchema,
@@ -33,6 +37,7 @@ import {
   CredentialsStatusViewSchema,
   OPERATIONS,
 } from '@tm8/contract';
+import { CREDENTIAL_LOGIN_COMMANDS } from '@tm8/execution';
 
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -43,11 +48,37 @@ import {
   registerCredentialHandlers,
 } from '../../src/facade/handlers/w2/credentials.js';
 import { W2CredentialCatalogService } from '../../src/facade/services/w2/credential-catalog.js';
+import { W2CredentialSessionsService } from '../../src/facade/services/w2/credential-sessions.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
 const SESSION_ID = '00000000-0000-7000-8000-0000000000a1';
 const AGENT_SESSION_ID = '00000000-0000-7000-8000-0000000000b1';
+
+// Handler composition intentionally uses the process environment, just like
+// production. Give every existing status/start positive control an executable
+// without making this suite depend on whichever vendor CLIs CI happens to have.
+const ORIGINAL_PATH = process.env['PATH'];
+let credentialBinDir = '';
+
+beforeAll(() => {
+  credentialBinDir = mkdtempSync(join(tmpdir(), 'tm8-credential-bins-'));
+  const binaries = new Set(
+    Object.values(CREDENTIAL_LOGIN_COMMANDS).map((command) => command.split(/\s+/, 1)[0]!),
+  );
+  for (const binary of binaries) {
+    const path = join(credentialBinDir, binary);
+    writeFileSync(path, '#!/bin/sh\nexit 1\n');
+    chmodSync(path, 0o755);
+  }
+  process.env['PATH'] = `${credentialBinDir}:${ORIGINAL_PATH ?? ''}`;
+});
+
+afterAll(() => {
+  if (ORIGINAL_PATH === undefined) delete process.env['PATH'];
+  else process.env['PATH'] = ORIGINAL_PATH;
+  if (credentialBinDir) rmSync(credentialBinDir, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // instruments
@@ -436,14 +467,132 @@ const serviceRpcs: RpcHandler = async (fn) => {
 // ---------------------------------------------------------------------------
 
 describe('credentials.status merges two stores and degrades honestly', () => {
-  it('answers all three providers even when nothing is connected', async () => {
+  it('answers every provider in display order even when nothing is connected', async () => {
     const db = new FakeDb(serviceQueries);
     const registry = registryFor(db);
     const view = await invoke(registry, 'credentials.status', context('credentials.status', 'browser'));
 
     const parsed = CredentialsStatusViewSchema.parse(view);
-    expect(parsed.providers.map((p) => p.provider)).toEqual(['anthropic', 'openai', 'github']);
+    expect(parsed.providers.map((p) => p.provider)).toEqual([
+      'anthropic',
+      'openai',
+      'github',
+      'gemini',
+      'hermes',
+      'cursor',
+      'kimi',
+      'groq',
+    ]);
     expect(parsed.providers.every((p) => p.connected === false)).toBe(true);
+
+    // ROUTING IS REPORTED BEFORE IT HAPPENS, AND ONLY IN ONE DIRECTION.
+    //
+    // Nothing is connected here, so no displacement is in effect — and the
+    // anthropic and openai cards say nothing, because there is nothing yet to
+    // warn them about. The kimi and groq cards still describe themselves, with
+    // `active: false`, because "what would connecting this do" is precisely the
+    // question a member has in front of the Connect button. A surface that only
+    // emitted routing for connected providers would answer it only after it was
+    // too late to matter.
+    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+    expect(routingOf.get('anthropic')).toBeNull();
+    expect(routingOf.get('openai')).toBeNull();
+    expect(routingOf.get('github')).toBeNull();
+    expect(routingOf.get('kimi')).toEqual({
+      agentTool: 'claude-code',
+      role: 'backend',
+      counterpart: 'anthropic',
+      active: false,
+    });
+    expect(routingOf.get('groq')).toEqual({
+      agentTool: 'codex',
+      role: 'backend',
+      counterpart: 'openai',
+      active: false,
+    });
+  });
+
+  it('says on BOTH cards which one is actually serving claude-code', async () => {
+    // The member has connected Kimi AND still has a working Anthropic login.
+    // This is the state the whole disclosure exists for: two connected
+    // credentials, one silently outranking the other, and — until this field —
+    // nothing in the product that said which.
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('to_regclass')) return [{ present: false }];
+      if (sql.includes('account_agent_credentials')) {
+        return [
+          {
+            provider: 'anthropic',
+            login: null,
+            auth_method: 'oauth',
+            status: 'active',
+            connected_at: new Date('2026-09-01T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
+          },
+          {
+            provider: 'kimi',
+            login: null,
+            auth_method: 'api_key',
+            status: 'active',
+            connected_at: new Date('2026-09-02T00:00:00.000Z'),
+            last_verified_at: new Date('2026-09-02T00:00:00.000Z'),
+          },
+        ];
+      }
+      return [];
+    });
+    const registry = registryFor(db);
+    const parsed = CredentialsStatusViewSchema.parse(
+      await invoke(registry, 'credentials.status', context('credentials.status', 'browser')),
+    );
+    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+
+    // The backend says what it is doing.
+    expect(routingOf.get('kimi')).toEqual({
+      agentTool: 'claude-code',
+      role: 'backend',
+      counterpart: 'anthropic',
+      active: true,
+    });
+
+    // And the provider it displaced says so from its own card, which is the
+    // half a member is far more likely to be looking at when their sessions
+    // start answering differently. Anthropic is still CONNECTED — nothing was
+    // revoked — it is simply not the one being used.
+    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
+    expect(routingOf.get('anthropic')).toEqual({
+      agentTool: 'claude-code',
+      role: 'displaced',
+      counterpart: 'kimi',
+      active: true,
+    });
+
+    // Groq is not connected, so codex is untouched and openai stays silent.
+    expect(routingOf.get('openai')).toBeNull();
+    expect(routingOf.get('groq')?.active).toBe(false);
+  });
+
+  it('reports an absent CLI as unavailable, never as a measured disconnection', async () => {
+    const catalog = new W2CredentialCatalogService({
+      db: new FakeDb(serviceQueries),
+      terminals: new FakeTerminals([]),
+      dataDir: '/tmp/tm8-credentials-test',
+      env: { HOME: '/server-home', PATH: '/server-path' },
+      binaryResolver: ({ binary }) =>
+        binary === 'hermes' ? null : `/test/bin/${binary}`,
+    });
+
+    const view = await catalog.status({
+      identityId: 'identity-human',
+      claims: { identityId: 'identity-human', authKind: 'browser' },
+    });
+    const hermes = view.providers.find((entry) => entry.provider === 'hermes');
+
+    expect(hermes?.connected).toBe(false);
+    expect((hermes as { status?: string } | undefined)?.status).toBe('unavailable');
+    // `status:null` is this view's encoding of disconnected. The two facts
+    // must remain different even though both have connected:false.
+    expect((hermes as { status?: string | null } | undefined)?.status).not.toBeNull();
   });
 
   it('reports the string-shaped store ABSENT rather than claiming GitHub is disconnected', async () => {
@@ -530,7 +679,7 @@ describe('credentials.status merges two stores and degrades honestly', () => {
 // ---------------------------------------------------------------------------
 
 describe('R3 — credentials.delete revokes first, then terminates', () => {
-  function disconnectFixture(provider: 'anthropic' | 'openai' | 'github') {
+  function disconnectFixture(provider: CredentialProviderName) {
     const order: string[] = [];
     const db = new FakeDb(
       async (sql) => {
@@ -544,7 +693,13 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     (db as unknown as { calls: string[] }).calls = order;
     const terminals = new FakeTerminals(order);
     const registry = registryFor(db, terminals);
-    return { order, db, terminals, registry, provider };
+    const catalog = new W2CredentialCatalogService({
+      db,
+      terminals,
+      dataDir: '/tmp/tm8-credentials-test',
+      removeCredentialFiles: async () => undefined,
+    });
+    return { order, db, terminals, registry, catalog, provider };
   }
 
   it('revokes BEFORE it kills anything — the order is the security property', async () => {
@@ -601,6 +756,22 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
       // a token the member believes they just disconnected.
       expect(agentQuery?.params[2]).toEqual(expected);
     }
+  });
+
+  it.each([
+    ['gemini', ['gemini']],
+    ['hermes', ['hermes']],
+  ] as const)('disconnecting %s kills only live %s agent sessions', async (provider, expected) => {
+    const { catalog, db, terminals } = disconnectFixture(provider);
+    const result = await catalog.delete(provider, {
+      identityId: 'identity-human',
+      claims: { identityId: 'identity-human', authKind: 'browser' },
+    });
+
+    const agentQuery = db.queryCalls.find((call) => call.sql.includes('work_sessions'));
+    expect(agentQuery?.params[2]).toEqual(expected);
+    expect(terminals.terminated).toContain(AGENT_SESSION_ID);
+    expect(result.terminatedAgentSessionIds).toEqual([AGENT_SESSION_ID]);
   });
 
   it('revokes GitHub through the dedicated string-shaped store', async () => {
@@ -692,6 +863,59 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
 // ---------------------------------------------------------------------------
 
 describe('the login session operations answer their contract shapes', () => {
+  // The name of this test changed with its meaning, and the reason is worth
+  // keeping. It first asserted the refusal happened BEFORE the RPC — no db
+  // calls at all. That ordering was wrong: `start_credential_session` is where
+  // `require_human_auth_kind` and `require_space_member` live, so measuring the
+  // node first answered a caller who had not yet been authorised, handing an
+  // unauthenticated probe a 400 naming a missing binary instead of the 403 it
+  // had earned. CI found it, not review: `w5/surface/sweep` was green here
+  // (this box has the CLIs installed) and red on a runner without them, because
+  // the authorization answer had come to depend on a fact about the machine.
+  //
+  // What must hold now is narrower and correct: authorisation runs first, no
+  // PTY is ever launched for an absent binary, and the row the RPC minted is
+  // released so the member can retry once they install the CLI.
+  it('refuses an absent binary without launching a PTY, and releases the row', async () => {
+    const db = new FakeDb(serviceQueries, serviceRpcs);
+    const launched: unknown[] = [];
+    const launcher = {
+      launch: (request: unknown) => {
+        launched.push(request);
+        throw new Error('launch must not be reached');
+      },
+      terminate: () => 'not_found',
+      hasLiveTerminal: () => false,
+    };
+    const service = new W2CredentialSessionsService({
+      db,
+      launcher: launcher as never,
+      dataDir: '/tmp/tm8-credentials-test',
+      env: { HOME: '/server-home', PATH: '/server-path' },
+      binaryResolver: () => null,
+    });
+
+    const error = await service.start(
+      { spaceId: SPACE_ID, provider: 'cursor' },
+      {
+        identityId: 'identity-human',
+        claims: { identityId: 'identity-human', authKind: 'browser' },
+      },
+    ).then(() => null, (reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(CollabError);
+    expect((error as CollabError).code).toBe('invalid_input');
+    expect((error as Error).message).toContain("'cursor-agent'");
+    expect((error as Error).message).toContain('curl https://cursor.com/install -fsS | bash');
+    // NOT `toEqual([])`: the RPC ran, because that is where authorisation is.
+    // What matters is that the PTY never started and the row did not stay
+    // held — a member who installs the CLI must be able to click Connect again
+    // rather than meet "a login terminal just opened elsewhere".
+    expect(launched).toEqual([]);
+    expect(db.calls).toContain('rpc:start_credential_session');
+    expect(db.calls).toContain('rpc:finish_credential_session');
+  });
+
   it('start returns the command it ACTUALLY launched, and takes none from the caller', async () => {
     const order: string[] = [];
     const db = new FakeDb(serviceQueries, serviceRpcs);
@@ -750,7 +974,7 @@ describe('the login session operations answer their contract shapes', () => {
     const launcher = {
       launch: () => ({
         sessionId: SESSION_ID, provider: 'github', command: 'gh auth login',
-        cwd: '/tmp', env: {}, reused: false,
+        cwd: '/tmp', env: { HOME: '/tmp', PATH: process.env['PATH'] ?? '' }, reused: false,
       }),
       terminate: () => 'killed',
       hasLiveTerminal: () => true,

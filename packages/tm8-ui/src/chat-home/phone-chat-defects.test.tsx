@@ -164,7 +164,7 @@ describe('a conversation opens at its newest turn', () => {
     await act(async () => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+        chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
         messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
         seq: 900,
         text: ' and more.',
@@ -180,7 +180,7 @@ describe('a conversation opens at its newest turn', () => {
     await act(async () => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+        chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
         messageId: CHAT_HOME_FIXTURE_THREAD.turns[1]!.messageId,
         seq: 901,
         text: ' and more still.',

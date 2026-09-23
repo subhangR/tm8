@@ -158,7 +158,7 @@ async function upserts(): Promise<number> {
 async function createTask(title: string, axes: Record<string, string> = {}): Promise<string> {
   const rows = await asApp((q) =>
     q(
-      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium','[]'::jsonb,null,null,null,'attached_to',$4) result`,
+      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium','[]'::jsonb,null,null,null,null,'attached_to',$4) result`,
       [fixture.spaceId, title, JSON.stringify(axes), cmid(`create-${title}`)],
     ),
   );

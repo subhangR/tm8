@@ -127,6 +127,10 @@ export async function readFileHistory(
 
   const result = await run(
     [
+      // Exact name from a file listing, never a pattern — see the note in
+      // `git-invoker`. Without this, a file called `a*.txt` reports the
+      // history of every file it would match.
+      '--literal-pathspecs',
       'log',
       '--follow',
       '--numstat',
@@ -219,7 +223,7 @@ export async function readFileRevisionDiff(
   // log, so a pre-rename oid is asked with the path AT that revision (the
   // history read supplies it per revision).
   const result = await run(
-    ['diff-tree', '-p', '-m', '--root', '--first-parent', oid, '--', path],
+    ['--literal-pathspecs', 'diff-tree', '-p', '-m', '--root', '--first-parent', oid, '--', path],
     workingDir,
   );
   if (result.code !== 0) {
@@ -274,9 +278,12 @@ export async function readFileBlame(
   const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
   await assertRepository(run, workingDir);
 
-  let result = await run(['blame', '--porcelain', '-L', `1,${maxLines}`, '--', path], workingDir);
+  let result = await run(
+    ['--literal-pathspecs', 'blame', '--porcelain', '-L', `1,${maxLines}`, '--', path],
+    workingDir,
+  );
   if (result.code !== 0 && /has only \d+ lines/.test(result.stderr)) {
-    result = await run(['blame', '--porcelain', '--', path], workingDir);
+    result = await run(['--literal-pathspecs', 'blame', '--porcelain', '--', path], workingDir);
   }
   if (result.code !== 0) {
     const stderr = result.stderr.trim();

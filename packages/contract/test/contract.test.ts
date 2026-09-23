@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ActorSummarySchema, BASE_PATH, CollabError, CollectionQuerySchema, CommandResultSchema,
-  CreateEntityInputSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
+  CreateEntityInputSchema, CredentialProviderNameSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
   EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionLivenessSchema,
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
@@ -13,8 +13,9 @@ import {
   ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
+  MOUNTED_OPERATIONS,
 } from '../src/index.js';
-import type { EntitySummary, MessageView, WorkspaceEvent } from '../src/index.js';
+import type { EntitySummary, MessageView, OperationName, WorkspaceEvent } from '../src/index.js';
 
 const actor = {
   id: 'ent_member_1', kind: 'member' as const, displayName: 'Subhang', isAgent: false,
@@ -99,12 +100,40 @@ describe('keyset cursors (DEV-5)', () => {
 });
 
 describe('operation catalog', () => {
-  it('has unique names and unique method+path bindings', () => {
+  it('has unique names, and unique method+path bindings among the rows that MOUNT', () => {
     const names = OPERATIONS.map((o) => o.name);
     expect(new Set(names).size).toBe(names.length);
-    const bindings = OPERATIONS.map((o) => `${o.method} ${o.path}`);
+    // Uniqueness is asserted over MOUNTED_OPERATIONS, not OPERATIONS, because
+    // an alias row deliberately re-declares an existing binding so a family's
+    // socket is discoverable under its own name. The invariant that matters is
+    // that nothing MOUNTS the same `method path` twice.
+    const bindings = MOUNTED_OPERATIONS.map((o) => `${o.method} ${o.path}`);
     expect(new Set(bindings).size).toBe(bindings.length);
     for (const op of OPERATIONS) expect(op.path.startsWith(BASE_PATH)).toBe(true);
+  });
+
+  // The teeth of the rule above. Without this, `aliasOf` would be a way to opt
+  // any duplicate out of the uniqueness check; with it, an alias must name a
+  // real operation, must actually MATCH that operation's binding, and must not
+  // itself be mounted. A copy-paste duplicate cannot satisfy all three.
+  it('every alias names a real operation, shares its exact binding, and is not mounted', () => {
+    const aliases = OPERATIONS.filter((o) => 'aliasOf' in o);
+    expect(aliases.length).toBeGreaterThan(0);
+    for (const alias of aliases) {
+      const target = getOperation((alias as { aliasOf: OperationName }).aliasOf);
+      expect(target.name).not.toBe(alias.name);
+      expect(`${alias.method} ${alias.path}`).toBe(`${target.method} ${target.path}`);
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).not.toContain(alias.name);
+      // The target itself must be mounted — an alias of an alias is a chain
+      // nothing would ever serve.
+      expect(MOUNTED_OPERATIONS.map((o) => o.name)).toContain(target.name);
+    }
+  });
+
+  it('mounts every operation exactly once except the declared aliases', () => {
+    expect(MOUNTED_OPERATIONS.length).toBe(
+      OPERATIONS.length - OPERATIONS.filter((o) => 'aliasOf' in o).length,
+    );
   });
 
   it('carries the execution.* family (R16) and the entityKinds family (T-L4)', () => {
@@ -136,6 +165,13 @@ describe('operation catalog', () => {
 });
 
 describe('DTO schemas', () => {
+  it('admits Cursor as the sixth credential provider and keeps the provider vocabulary closed', () => {
+    for (const provider of ['anthropic', 'openai', 'github', 'gemini', 'hermes', 'cursor']) {
+      expect(CredentialProviderNameSchema.safeParse(provider).success, provider).toBe(true);
+    }
+    expect(CredentialProviderNameSchema.safeParse('cursor-agent').success).toBe(false);
+  });
+
   it('accepts a canonical task summary and rejects drift', () => {
     expect(EntitySummarySchema.safeParse(taskSummary).success).toBe(true);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, surprise: 1 }).success).toBe(false);
@@ -188,6 +224,11 @@ describe('DTO schemas', () => {
       },
     }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
+    // Memory text terms: any-of like every array filter; a blank term or an
+    // empty array is refused rather than matching everything.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['scoped', 'tsc'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: [] } }).success).toBe(false);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { terms: ['   '] } }).success).toBe(false);
 
     // …but the kind-disjoint PAIR is refused, not silently empty: no row is
     // both a task and a work_session, so the conjunction could only ever
@@ -343,6 +384,10 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       mode: 'worker',
     };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
+    for (const reasoningEffort of ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...ok, model: 'gpt-6-astra', reasoningEffort }).success).toBe(true);
+    }
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, reasoningEffort: 'extreme' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
       ...ok, parentSessionId: '55555555-5555-4555-8555-555555555555',
     }).success).toBe(true);

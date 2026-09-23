@@ -25,8 +25,11 @@
  * VISUAL PASS (Lane D): four deliberate moves on top of the above —
  *   1. hierarchy: message text at full --pn-ink, metadata at ink-3/ink-4, so
  *      a row reads name → text → meta in that order at a glance;
- *   2. measure: `.chs-text` capped at 70ch — the row stays full-width, the
- *      TEXT column does not;
+ *   2. measure: TWO of them, and they do different jobs. `--chs-measure` on
+ *      `.chs-root` is the RAIL — the feed's children and the composer are
+ *      centred on it, so transcript and composer share one column (2026-09-18).
+ *      `.chs-text`'s 70ch is the LINE LENGTH inside that column: the row stays
+ *      full-width of the rail, the TEXT column does not;
  *   3. rhythm: 14px opens an author group, 2px inside a run, 20px opens a
  *      day — three visibly different gaps, three levels of grouping;
  *   4. the composer is its own @container so its narrow layout answers to
@@ -42,6 +45,26 @@
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   container-type: inline-size;
+  /*
+   * ONE RAIL FOR THE WHOLE SURFACE (user ruling 2026-09-18, Subhang).
+   *
+   * The transcript and the composer used to be measured SEPARATELY: the feed
+   * was full-bleed with `.chs-text` capping the prose at 70ch, and the
+   * composer capped itself at 760px and centred. A cap with no centring is
+   * what pins a transcript to the left edge and grows a gutter on the right
+   * as the panel widens — at a 1466px panel the two rails started 296px
+   * apart, which is what was photographed.
+   *
+   * So the measure is a TOKEN, inherited by both, and centring is what the
+   * token buys. `min(…, 100%)` and not a clamp: at narrow widths — the ~360px
+   * thread pane, the 440px phone container — it degrades to 100% and the
+   * existing container rules keep their say. 1100px answers "widen it
+   * properly"; it lives here so re-tuning it is one number.
+   *
+   * `.chs-text`'s 70ch is UNTOUCHED and is a different measure: this one
+   * places the column, that one keeps the line readable inside it.
+   */
+  --chs-measure: min(1100px, 100%);
   /* The reading surface's own top edge — the hub above it has no bottom rule,
      and without this the feed scrolls straight into the hub's chips. */
   border-top: 1px solid var(--pn-line);
@@ -101,6 +124,27 @@
    sits at the BOTTOM of the viewport like every chat, not floating at the top.
    The spacer absorbs the free height and collapses to zero once the feed fills. */
 .chs-feed__spacer { flex: 1 0 0; }
+
+/* EVERY DIRECT CHILD OF THE FEED RIDES THE RAIL, which is the same idiom the
+   composer already uses one screen down (`.chs-composer > :not(…)`) and the
+   reason this is one rule rather than six. The feed's children are the list,
+   the skeleton and empty and hollow states, the paging provenance line, "load
+   earlier", the refreshed-from-newest notice and the "N new items" pill — and
+   centring only SOME of them is how you get a transcript whose furniture
+   drifts off its own column.
+
+   The spacer opts out: it is a `flex: 1 0 0` strut with no content, and a
+   width on it would be a width on nothing.
+
+   Rows are NOT listed here on purpose. `.chs-row` and `.chs-day` are children
+   of `.chs-list`, so they are already 100% of the rail — which is what keeps
+   the hover tint bleeding to both edges of the reading column instead of
+   shrink-wrapping the text. */
+.chs-feed > :not(.chs-feed__spacer) {
+  box-sizing: border-box;
+  width: var(--chs-measure);
+  margin-inline: auto;
+}
 
 .chs-list {
   list-style: none;
@@ -794,12 +838,17 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
 }
 
-/* The card and its warnings track Chat Home's width: centred on the feed,
-   capped at the same 760px reading measure. The pickers are absolutely
+/* The card and its warnings are CENTRED ON THE FEED — and now actually are.
+   This rule said so in its comment from the day it was written, and it was
+   half true: it centred itself on 760px while the feed it names was
+   full-bleed, so the two sat 296px apart in a wide panel. `--chs-measure` is
+   the shared rail (see `.chs-root`); the number is no longer this rule's to
+   choose, and it deliberately no longer tracks Chat Home's own 760px, which
+   is a different surface with a different host. The pickers are absolutely
    positioned popovers and opt out. */
 .chs-composer > :not(.chs-mention-picker) {
   box-sizing: border-box;
-  width: min(760px, 100%);
+  width: var(--chs-measure);
   margin-inline: auto;
 }
 

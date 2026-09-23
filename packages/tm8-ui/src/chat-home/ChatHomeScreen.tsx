@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
-import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import { MessageAttachments } from '../files/MessageAttachments';
 import type { FileUploadTask } from '../files/upload';
-import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
   AttachmentChips,
   ComposerCard,
@@ -23,8 +21,29 @@ import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
-import type { ChatEntityResolver } from './EntityChip';
-import { ComposerSelect } from './ComposerSelect';
+import { EntityChip, type ChatEntityResolver } from './EntityChip';
+import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
+import {
+  AddToTurnMenu,
+  CrewPanel,
+  MODE_GROUPS,
+  MODE_SPECS,
+  ModeOptionsSlot,
+  ModelEffortPicker,
+  ThreadRail,
+  coordinatorModelChoices,
+  crewBrief,
+  modeConflict,
+  modeFromSlash,
+  modeSpec,
+  nearestEffort,
+  projectBindingFromChoice,
+  rungFromPermissionMode,
+  teammateRoster,
+  type CrewSpec,
+  type ModeOptionsByMode,
+  type PermissionRung,
+} from './composer';
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
@@ -33,6 +52,7 @@ import { composeThreadColumn } from './thread-column';
 import type {
   ChatHomePort,
   ChatModelOption,
+  ChatProjectOption,
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -63,8 +83,19 @@ import './chat-home.css';
 export interface ChatHomeScreenProps {
   port: ChatHomePort;
   spaceId: SpaceId | string;
-  /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
-  anchorId?: EntityId;
+  /**
+   * The entity a NEW chat here is about (176). Craft passes the blueprint; bare
+   * Home passes none.
+   *
+   * IT IS NOT AN ANCHOR ANY MORE, which is why it is not called one. A chat
+   * used to have to be posted onto somebody else's row — the seeded default
+   * channel for bare Home (GateApp substituted it because the space id is not
+   * an entity and messages.post 404s on it), the blueprint for Craft. A chat
+   * anchors its own transcript now, so the context entity is a RELATION the
+   * server writes as an `about` edge, and a chat with no subject simply has
+   * no edge instead of borrowing a channel's identity.
+   */
+  aboutId?: EntityId;
   /**
    * A host that IS a mode (Craft P1: the Craft studio pins 'craft') — new
    * threads start in it and the mode select is held, exactly as a configured
@@ -87,22 +118,22 @@ export interface ChatHomeScreenProps {
   /** Same authenticated file-byte seam used by the Files screen. */
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
   /**
-   * Starts one upload against the anchor this chat writes to.
+   * Starts one upload for a staged chip.
    *
-   * TAKES THE ANCHOR RATHER THAN BEING BOUND TO IT — same signature as
-   * `AttachmentsPort.startUpload`, so a host assigns that verb with no
-   * adapter. The screen resolves its own anchor (bare Home falls back to the
-   * seeded default channel), and binding the port outside would mean the
-   * default lived in two places, free to disagree.
-   *
-   * UPLOADS START IMMEDIATELY, against the ANCHOR, not against the thread: a
-   * new conversation has no root message until Send, and holding a pasted
-   * file until then would mean the writer watches nothing happen. The anchor
-   * exists before the first word is typed.
+   * THE ANCHOR IS OPTIONAL, AND FOR A NEW CHAT THERE IS NONE (176). Uploads
+   * start immediately — a writer who pastes an image must not watch nothing
+   * happen until Send — and a new conversation has no entity to hang them off
+   * yet. `FileUploadTaskOptions.anchorId` has been optional since the
+   * files-explorer lane: an anchor-less upload lands in the space library
+   * attached to nothing, and `chat.start` then carries its id in
+   * `attachmentIds`, which is what writes the `attached_to` edge to the
+   * opening message. That is strictly more honest than the old behaviour,
+   * which attached every staged file to the seeded default channel because
+   * the chat had no id of its own to offer.
    *
    * Absent ⇒ paste and drop stay inert and the attach control says why.
    */
-  attach?: (file: File, anchorId: EntityId) => FileUploadTask;
+  attach?: (file: File, anchorId?: EntityId) => FileUploadTask;
   /**
    * Skills `/` can REFERENCE (R1 — the agent reads the link and decides;
    * nothing is invoked). `undefined` ⇒ `/` types plain text.
@@ -293,7 +324,7 @@ type ComposerPhase =
 export function ChatHomeScreen({
   port,
   spaceId,
-  anchorId = spaceId as EntityId,
+  aboutId,
   pinnedMode,
   models,
   newMutationId = defaultMutationId,
@@ -387,6 +418,18 @@ export function ChatHomeScreen({
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
   const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
+  /* THE REST OF THE COMPOSER'S SHAPE. Per-turn: effort (remembered PER MODE),
+     the ⚙ options, the ＋ menu's enabled skills. Thread-scope: the project
+     binding (write-once on the server) and the permission ceiling. `null`
+     permission means "not chosen" — the rail derives the default from the
+     teammate's own `permission_mode` and says so. */
+  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
+  const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
+  const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
+  const [projectChoice, setProjectChoice] = useState('');
+  const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
+  const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
+  const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
@@ -652,7 +695,7 @@ export function ChatHomeScreen({
     async (rootId: EntityId): Promise<ChatThreadDetail> => {
       let next = await port.readThread(rootId);
       for (const frame of recentFramesRef.current) {
-        if (frame.threadRootId !== rootId) continue;
+        if (frame.chatId !== rootId) continue;
         next = mergeChatTurnFrame(next, frame);
       }
       return next;
@@ -773,7 +816,7 @@ export function ChatHomeScreen({
   useEffect(
     () =>
       port.subscribe((frame) => {
-        if (frame.threadRootId === activeRootRef.current) {
+        if (frame.chatId === activeRootRef.current) {
           if (frame.type === 'chat.turn.done') {
             // The turn's parts are all durable in the snapshot by now — its
             // deltas are pure replay weight. Keep the small done frame so a
@@ -800,7 +843,7 @@ export function ChatHomeScreen({
         // Any thread's activity keeps the sidebar honest, active or not — and
         // a frame for a root the list has never seen means another member
         // started a thread: re-read the list.
-        if (!knownRootsRef.current.has(frame.threadRootId) && !refreshingThreadsRef.current) {
+        if (!knownRootsRef.current.has(frame.chatId) && !refreshingThreadsRef.current) {
           refreshingThreadsRef.current = true;
           void refreshThreads().finally(() => {
             refreshingThreadsRef.current = false;
@@ -836,7 +879,7 @@ export function ChatHomeScreen({
          * and otherwise left to the next `listThreads` read.
          */
         setThreads((current) => {
-          const index = current.findIndex((thread) => thread.rootId === frame.threadRootId);
+          const index = current.findIndex((thread) => thread.rootId === frame.chatId);
           if (index === -1) return current;
           const thread = current[index];
           if (!thread) return current;
@@ -853,7 +896,7 @@ export function ChatHomeScreen({
           next[index] = { ...thread, state: 'idle', updatedAt: new Date().toISOString() };
           return next;
         });
-        if (frame.threadRootId !== activeRootRef.current) return;
+        if (frame.chatId !== activeRootRef.current) return;
         // A delta for a message we have never seen means another participant
         // started this turn — pull their message in alongside the stream.
         if (
@@ -861,9 +904,9 @@ export function ChatHomeScreen({
           detailRef.current &&
           !detailRef.current.turns.some((turn) => turn.messageId === frame.messageId)
         ) {
-          refreshDetail(frame.threadRootId);
+          refreshDetail(frame.chatId);
         }
-        const stopped = frame.threadRootId === stoppedRootRef.current;
+        const stopped = frame.chatId === stoppedRootRef.current;
         setDetail((current) => {
           if (!current) return current;
           const merged = mergeChatTurnFrame(current, frame);
@@ -878,7 +921,7 @@ export function ChatHomeScreen({
           // expectation — another participant's older turn finishing must not
           // hide the pulse for our still-queued one.
           const startedAt = firstSeenRef.current.get(frame.messageId) ?? 0;
-          if (expectingRootRef.current === frame.threadRootId && startedAt < expectingMarkRef.current) {
+          if (expectingRootRef.current === frame.chatId && startedAt < expectingMarkRef.current) {
             return;
           }
           expectingRootRef.current = null;
@@ -1049,11 +1092,21 @@ export function ChatHomeScreen({
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
   const shownModelId = activeConfig?.model ?? modelId;
   const shownMode = activeConfig?.mode ?? chatMode;
+  /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
+     decides, the effect below applies its preselect. */
+  const roster = useMemo(
+    () => teammateRoster(teammates, shownMode, shownTeammateId),
+    [teammates, shownMode, shownTeammateId],
+  );
+  useEffect(() => {
+    if (!pinned && roster.preselect) setTeammateId(roster.preselect);
+  }, [pinned, roster.preselect]);
   const teammateOptions = useMemo(() => {
-    const base = teammates.map((teammate) => ({
+    const base = roster.options.map((teammate) => ({
       id: teammate.id,
       label: teammate.label,
       actor: { id: teammate.id, avatar: teammate.avatar },
+      ...(teammate.mode ? { hint: teammate.mode } : {}),
     }));
     return activeConfig && !base.some((option) => option.id === activeConfig.teammateId)
       ? [{
@@ -1062,17 +1115,52 @@ export function ChatHomeScreen({
           actor: { id: activeConfig.teammateId, avatar: null },
         }, ...base]
       : base;
-  }, [teammates, activeConfig]);
-  const modelOptions = useMemo(() => {
-    const base = models.map((model) => ({
-      id: model.model,
-      label: model.label,
-      hint: model.provider,
-    }));
+  }, [roster.options, activeConfig]);
+  /* The COORDINATOR's list: codex models drawn disabled with the reason (ac_10). */
+  const modelChoices = useMemo(() => {
+    const base = coordinatorModelChoices(models);
     return activeConfig && !base.some((option) => option.id === activeConfig.model)
       ? [{ id: activeConfig.model, label: activeConfig.modelLabel }, ...base]
       : base;
   }, [models, activeConfig]);
+  /* Effort rides the model popover and is remembered per mode; a model that
+     lacks the remembered stop snaps to its nearest one. */
+  const effort = useMemo<LaunchModelEffort | null>(() => {
+    const wanted = effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
+    return nearestEffort(wanted, selectedModel?.efforts ?? []);
+  }, [effortByMode, shownMode, selectedModel]);
+  const modeSelectOptions = useMemo<ComposerSelectOption[]>(
+    () => MODE_SPECS.map((spec) => ({
+      id: spec.id,
+      label: spec.label,
+      hint: spec.consequence,
+      group: MODE_GROUPS.find((group) => group.id === spec.group)?.label ?? spec.group,
+    })),
+    [],
+  );
+  /* THE CEILING. Default = the teammate's own `permission_mode`, said out loud. */
+  const shownTeammate = teammates.find((teammate) => teammate.id === shownTeammateId);
+  const derivedPermission = rungFromPermissionMode(shownTeammate?.permissionMode);
+  const permission = permissionChoice ?? derivedPermission;
+  const permissionSource = permissionChoice === null && shownTeammate
+    ? `${shownTeammate.label} defaults to ${derivedPermission === 'read-only' ? 'Read-only' : derivedPermission === 'auto' ? 'Auto' : 'Ask first'}`
+    : null;
+  const conflict = modeConflict(shownMode, permission);
+  const projectBinding = projectBindingFromChoice(projectChoice);
+  const lockedProjectLabel = activeConfig
+    ? activeConfig.workdirMode === 'project' && activeConfig.projectId
+      ? projects?.find((project) => project.id === activeConfig.projectId)?.name ?? 'Project'
+      : activeConfig.workdirMode === undefined ? null : 'Scratch'
+    : null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!port.listProjects) { setProjects(null); return; }
+    port.listProjects(spaceId).then(
+      (next) => { if (!cancelled) setProjects(next); },
+      () => { if (!cancelled) setProjects(null); },
+    );
+    return () => { cancelled = true; };
+  }, [port, spaceId]);
 
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
@@ -1094,7 +1182,12 @@ export function ChatHomeScreen({
       onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
     }],
     attachments: {
-      start: attach ? (file: File) => attach(file, anchorId) : undefined,
+      // An open chat is the anchor for its own staged files; a new one has
+      // nothing to name yet and the file lands in the space library until
+      // `chat.start` attaches it.
+      start: attach
+        ? (file: File) => (selectedRootId ? attach(file, selectedRootId) : attach(file))
+        : undefined,
       placement: { mode: 'chip' },
     },
     onKeyDown: (event) => {
@@ -1239,8 +1332,14 @@ export function ChatHomeScreen({
   const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
 
   const send = useCallback(async () => {
-    const body = draft.trim();
-    if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    const draftBody = draft.trim();
+    if (draftBody === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    /* The crew rides the opening turn (see `crewBrief`): visible before send,
+       verbatim in the transcript. Only a NEW orchestrate chat has one. */
+    const brief = newThread && chatMode === 'orchestrate'
+      ? crewBrief(crew, { teammates, models, permission, options: modeOptions.orchestrate })
+      : '';
+    const body = brief ? `${draftBody}\n${brief}` : draftBody;
     const staged = attachmentsRef.current;
     // An upload still in flight is not a reason to drop it: Send waits rather
     // than posting a message whose file the writer is watching arrive.
@@ -1260,7 +1359,7 @@ export function ChatHomeScreen({
           (detailRef.current?.turns ?? []).map((turn) => turn.messageId),
         );
         await port.postTurn({
-          threadRootId: selectedRootId,
+          chatId: selectedRootId,
           body,
           clientMutationId: newMutationId('chat-turn'),
           ...(attachmentIds.length ? { attachmentIds } : {}),
@@ -1288,42 +1387,52 @@ export function ChatHomeScreen({
         return;
       }
 
+      // ONE CALL NOW (176). This was post-then-configure: a message, then a
+      // binding row keyed to it. `chat.start` creates the chat and posts its
+      // opening turn in one transaction, so the intermediate `configuring`
+      // phase — and the window it named, in which a message existed that was
+      // not yet a chat — has nothing left to describe.
       setPhase('posting-root');
-      const root = await port.startThread.createRoot({
+      const created = await port.startThread.create({
         spaceId,
-        anchorId,
+        // `aboutId` replaces the anchor. Bare Home passes none; a contextual
+        // host (Craft) passes the entity the chat is about, and the server
+        // writes it as an `about` edge instead of anchoring the transcript on
+        // somebody else's row.
+        ...(aboutId ? { aboutId } : {}),
         body,
-        clientMutationId: newMutationId('chat-root'),
-        ...(attachmentIds.length ? { attachmentIds } : {}),
-      });
-      setPhase('configuring');
-      const configured = await port.startThread.configure({
-        rootMessageId: root.threadRootId,
+        /* The chat's title defaults to the opening body; with a crew brief
+           appended that would name the chat after the brief. Name it after
+           the human's own words instead. */
+        ...(brief ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
         mode: chatMode,
-        clientMutationId: newMutationId('chat-config'),
+        /* Write-once (167): offered in the empty state, locked after this. */
+        workdirMode: projectBinding.workdirMode,
+        ...(projectBinding.projectId ? { projectId: projectBinding.projectId } : {}),
+        clientMutationId: newMutationId('chat-start'),
+        ...(attachmentIds.length ? { attachmentIds } : {}),
       });
       if (
-        configured.threadRootId !== root.threadRootId ||
-        configured.teammateId !== teammateId ||
-        configured.model !== selectedModel.model ||
-        configured.mode !== chatMode
+        created.teammateId !== teammateId ||
+        created.model !== selectedModel.model ||
+        created.mode !== chatMode
       ) {
-        throw new Error('The node returned a different thread configuration than the one selected.');
+        throw new Error('The node returned a different chat configuration than the one selected.');
       }
-      setDraft((current) => (current.trim() === body ? '' : current));
+      setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
-      // The select effect owns loading the new thread — a second concurrent
-      // read here would race it for setDetail/setPhase. `expecting` keeps the
-      // pulse honest until the first frame arrives.
-      expectingRootRef.current = root.threadRootId;
+      // The select effect owns loading the new chat — a second concurrent read
+      // here would race it for setDetail/setPhase. `expecting` keeps the pulse
+      // honest until the first frame arrives.
+      expectingRootRef.current = created.chatId;
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
-      chooseRoot(root.threadRootId);
-      onThreadSelected?.(root.threadRootId);
+      chooseRoot(created.chatId);
+      onThreadSelected?.(created.chatId);
       setPhase('streaming');
-      await refreshThreads(root.threadRootId);
+      await refreshThreads(created.chatId);
     } catch (error) {
       // Never let a failed send in one thread rewrite another's phase or show
       // its error under an unrelated conversation.
@@ -1338,7 +1447,7 @@ export function ChatHomeScreen({
       }
     }
   }, [
-    anchorId,
+    aboutId,
     busy,
     chatMode,
     chooseRoot,
@@ -1353,6 +1462,7 @@ export function ChatHomeScreen({
     selectedRootId,
     spaceId,
     teammateId,
+    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -1652,6 +1762,28 @@ export function ChatHomeScreen({
               <strong>{detail?.summary.title ?? 'New conversation'}</strong>
               <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
             </div>
+            {/* THE `about` RELATION, where the conversation is (Wave 2).
+
+                A chat's subject is an edge, and until now nothing drew it: a
+                craft chat and a bare Home chat looked identical, and the one
+                fact that distinguished them lived only in the graph. It is a
+                CHIP rather than a word so the subject is reachable — the whole
+                point of the relation is that it names something you can open.
+
+                Drawn from `summary.aboutId`, which `readThread` fills for the
+                chat actually on screen. The LIST does not carry it (see
+                `ChatThreadSummary.aboutId`), so this renders once a thread is
+                open and never flickers a wrong subject in from a stale row. */}
+            {detail?.summary.aboutId ? (
+              <div className="tch-about" data-testid="chat-about-relation">
+                <span className="tch-about__word">about</span>
+                <EntityChip
+                  refInfo={{ id: detail.summary.aboutId }}
+                  resolve={resolveEntity}
+                  onOpen={onOpenEntity}
+                />
+              </div>
+            ) : null}
           </header>
         )}
 
@@ -1842,9 +1974,17 @@ export function ChatHomeScreen({
                   aria-label="Message the chat agent"
                   aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
                   disabled={busy}
-                  placeholder={
-                    newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
-                  }
+                  placeholder={newThread ? 'What are we doing?' : 'Type a message…'}
+                  onKeyDownCapture={(event) => {
+                    /* `/build` on an otherwise-empty input selects the mode. */
+                    if (event.key !== 'Enter' || pinned || pinnedMode !== undefined) return;
+                    const slashMode = modeFromSlash(draft);
+                    if (!slashMode) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setChatMode(slashMode);
+                    setDraft('');
+                  }}
                   rows={2}
                   {...rich.areaProps}
                 />
@@ -1862,52 +2002,42 @@ export function ChatHomeScreen({
                 />
               </>}
               foot={<>
-                {attach ? (
-                  <ChooseFilesControl
-                    label="Attach a file"
-                    title="attach a file — or drop or paste one into the message"
-                    className="tch-attach"
-                    inputClassName="tch-attach__input"
-                    onChoose={attachments.addFiles}
-                  />
-                ) : (
-                  <DisabledIconControl
-                    label="Attach a file"
-                    glyph="＋"
-                    reason={{
-                      cause: 'Uploading isn’t wired on this surface',
-                      remedy: 'this chat was mounted without an attachment port',
-                    }}
-                  />
-                )}
-                {skillOptions ? (
-                  <button
-                    type="button"
-                    className="tch-attach"
-                    aria-label="Reference a skill"
-                    title="reference a skill — the agent reads it and decides; nothing runs by itself"
-                    aria-haspopup="listbox"
-                    aria-expanded={rich.popover !== null}
-                    onClick={() => {
-                      // The button and the typed sigil must land in the SAME
-                      // state, or the picker has two behaviours and only one of
-                      // them filters.
-                      if (rich.popover) rich.popover.close();
-                      else rich.openTrigger('/');
-                    }}
-                  >
-                    <span aria-hidden>/</span>
-                  </button>
+                {/* ＋ = what this turn can DRAW ON (files, skills). The
+                    typed `/` and the menu land in the same skill list. */}
+                <AddToTurnMenu
+                  {...(attach ? { onChooseFiles: attachments.addFiles } : {})}
+                  {...(skillOptions ? { skillOptions } : {})}
+                  enabledSkills={enabledSkills}
+                  onToggleSkill={(id) =>
+                    setEnabledSkills((current) =>
+                      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])}
+                  {...(skillOptions ? { onBrowseSkills: () => rich.openTrigger('/') } : {})}
+                />
+                {enabledSkills.length ? (
+                  <span className="tch-turnpills" data-testid="tch-turnpills">
+                    {enabledSkills.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="tch-pill"
+                        title="enabled for this turn — click to remove"
+                        onClick={() => setEnabledSkills((current) => current.filter((entry) => entry !== id))}
+                      >
+                        /{skillOptions?.find((skill) => skill.id === id)?.display ?? id} <span aria-hidden>×</span>
+                      </button>
+                    ))}
+                  </span>
                 ) : null}
-                {/* The thread's configuration lives HERE and nowhere else. NO
-                    `auto` teammate on purpose: there is no routing pipeline that
-                    could honour it, and an option that promises routing nobody
-                    built is exactly the fabrication this surface refuses. */}
+                {/* THE PER-TURN ROW: mode (loud) · teammate (face) · model+effort
+                    (quiet) · one fixed ⚙ slot. Nothing here appears or
+                    disappears when the mode changes (ac_12). */}
                 <span className="tch-picks">
                   <ComposerSelect
                     label="Chat mode"
                     testId="tch-mode"
-                    options={MODE_OPTIONS}
+                    options={modeSelectOptions}
+                    emphasisGroups={['Act']}
+                    tall
                     value={shownMode}
                     onChange={(id) => setChatMode(id as ChatMode)}
                     disabled={pinned || pinnedMode !== undefined}
@@ -1921,15 +2051,25 @@ export function ChatHomeScreen({
                     onChange={(id) => setTeammateId(id as EntityId)}
                     disabled={pinned}
                     emptyNote="No agent teammate is available in this space."
+                    note={roster.note}
                   />
-                  <ComposerSelect
+                  <ModelEffortPicker
                     label="Chat model"
                     testId="tch-model"
-                    options={modelOptions}
+                    className="tch-pick--model"
+                    models={models}
+                    choices={modelChoices}
                     value={shownModelId}
                     onChange={setModelId}
+                    effort={effort}
+                    onEffortChange={(next) => setEffortByMode((current) => ({ ...current, [shownMode]: next }))}
                     disabled={pinned}
-                    emptyNote="No model is available from the launch catalog."
+                    disabledReason="the model is fixed when a thread starts"
+                  />
+                  <ModeOptionsSlot
+                    mode={shownMode}
+                    values={modeOptions[shownMode]}
+                    onChange={(values) => setModeOptions((current) => ({ ...current, [shownMode]: values }))}
                   />
                 </span>
                 <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
@@ -1982,6 +2122,31 @@ export function ChatHomeScreen({
                 )}
               </>}
             />
+            {/* UNDER THE COMPOSER = THIS THREAD. Quieter than the row; stays
+                in place after the first send and compacts (the project locks,
+                permissions stays live). The conflict strip sits in the gap. */}
+            <ThreadRail
+              projects={projects}
+              projectChoice={projectChoice}
+              onProjectChange={setProjectChoice}
+              projectLocked={pinned}
+              lockedProjectLabel={lockedProjectLabel}
+              permission={permission}
+              onPermissionChange={setPermissionChoice}
+              permissionSource={permissionSource}
+              conflict={conflict}
+            />
+            {newThread && shownMode === 'orchestrate' ? (
+              <CrewPanel
+                crew={crew}
+                onChange={setCrew}
+                teammates={teammates}
+                models={models}
+                permission={permission}
+                policy={modeOptions.orchestrate}
+                {...(skillOptions ? { skillIds: skillOptions.map((skill) => ({ id: skill.id, label: skill.display })) } : {})}
+              />
+            ) : null}
           </div>
         )}
       </section>
@@ -1989,27 +2154,6 @@ export function ChatHomeScreen({
   );
 }
 
-/**
- * The composer's mode drop-up.
- *
- * Every mode carries the same tool surface (`toolPermission` in @tm8/mcp); the
- * mode states how the teammate works, not what it may touch. So these hints
- * describe intent and must never promise safety — the earlier "changes
- * nothing" copy on ask/explain/plan would now be a lie, because those modes
- * can edit the thread checkout and mutate the graph like any other.
- *
- * The hints are the menu rows' second line rather than a sentence beside a chip
- * row: read on the row it describes, each one is legible; parked at the end of
- * the bar, only the selected mode's was, and it set the composer's width.
- */
-const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
-  { id: 'ask', label: 'ask', hint: 'answers your question; acts only when you ask it to' },
-  { id: 'explain', label: 'explain', hint: 'walks the reasoning with inline diagrams, graphs and code' },
-  { id: 'plan', label: 'plan', hint: 'shapes work into steps and a durable plan to approve' },
-  { id: 'build', label: 'build', hint: 'does the work; edits this thread’s checkout for real' },
-  { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
-  { id: 'craft', label: 'craft', hint: 'sketches a blueprint row; materializes only on approval' },
-];
 
 /* -- the two waiting marks -------------------------------------------------
 
@@ -2201,11 +2345,31 @@ function Turn({
    * on send. No `viewerId` degrades to the role heuristic — never crash,
    * never guess.
    */
-  const isSelf = viewerId
-    ? turn.author
-      ? turn.author.id === viewerId
-      : turn.role === 'user'
-    : turn.role === 'user';
+  /**
+   * THIRD PARTY — this turn was written from SOMEWHERE ELSE.
+   *
+   * A chat is a routing target since 176, so a message here may have been
+   * posted by a work session reporting back, or by another chat. Neither is
+   * the person this conversation is with, and neither is its agent — but the
+   * AUTHOR cannot tell them apart: a session's persona resolves to the same
+   * `team_member` summary the chat's own agent carries. The port reads the
+   * `authored_from` edge instead and drops the chat's own id (its agent turns
+   * carry provenance too, pointing at the chat), so presence here means
+   * exactly "not from this conversation".
+   *
+   * IT OVERRIDES SIDEDNESS. A third-party turn is `role: 'user'` and, with no
+   * `viewerId` supplied, the role heuristic would land it on the viewer's own
+   * side — a worker's report drawn as something you said. Neither side is
+   * right for it, so it renders in the middle lane and says who sent it.
+   */
+  const thirdParty = turn.sourceEntityId != null;
+  const isSelf = thirdParty
+    ? false
+    : viewerId
+      ? turn.author
+        ? turn.author.id === viewerId
+        : turn.role === 'user'
+      : turn.role === 'user';
   /**
    * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
    * body twice — 'Agent turn in progress.' when the turn is claimed, the
@@ -2233,7 +2397,13 @@ function Turn({
     (turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending))
     && !turn.turnInFlight;
   return (
-    <article className="tch-turn" data-role={turn.role} data-mode={mode} data-self={isSelf ? 'true' : 'false'}>
+    <article
+      className="tch-turn"
+      data-role={turn.role}
+      data-mode={mode}
+      data-self={isSelf ? 'true' : 'false'}
+      data-third-party={thirdParty ? 'true' : undefined}
+    >
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}
@@ -2243,6 +2413,21 @@ function Turn({
           src={turn.author?.avatar}
         />
         <strong>{label}</strong>
+        {/* THE SOURCE, AS A CHIP — the same `EntityChip` a tool call's entity
+            reference gets, resolving kind mark and title through the same
+            cached reader. A bare id would say "this came from elsewhere"
+            without saying from where, which is the half of the fact that
+            matters when a worker reports into a chat you are watching. */}
+        {turn.sourceEntityId ? (
+          <span className="tch-turn__source" data-testid="chat-turn-source">
+            <span className="tch-turn__source-word">via</span>
+            <EntityChip
+              refInfo={{ id: turn.sourceEntityId }}
+              resolve={resolveEntity}
+              onOpen={onOpenEntity}
+            />
+          </span>
+        ) : null}
         <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>

@@ -18,6 +18,9 @@ import {
   NoticeHost,
   SpaceSwitcher,
   SpaceTabBar,
+  SpaceTabBarLegacy,
+  topBarVersion,
+  setTopBarVersion,
   groupIdOfTarget,
   isRaillessGroup,
   primaryTargetOfGroup,
@@ -32,11 +35,11 @@ import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
+import { chatAboutTarget } from './useChatAbout';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
-import { UiVersionReturn } from '../ui-version';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { isUnbuiltViewRef } from './view-ref-screens';
@@ -63,7 +66,7 @@ import {
   presenceHollowReason,
 } from '../fixtures';
 import type { Seam } from '../data/seam';
-import { JoinScreen, clearPendingJoin, newJoinMutationId } from '../join';
+import { JoinScreen, arriveInSpace, clearPendingJoin, newJoinMutationId } from '../join';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -84,8 +87,17 @@ import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
-import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
+import {
+  CredentialsSection,
+  CredentialsSetupDialog,
+  credentialSetupState,
+  credentialsPortFromSeam,
+  readSetupDismissed,
+  setupNudgeOf,
+  shouldOfferSetup,
+  writeSetupDismissed,
+} from '../settings-credentials';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
@@ -123,6 +135,19 @@ const LIVE_COUNT_KIND = 'work_session';
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
+
+/* WHICH TOP BAR THIS DEVICE GETS (R21) — read ONCE, at module scope, and that
+   is deliberate. Both bars mount at the top of the tree above the router, so
+   swapping them under a live tree would remount every screen below; the flag is
+   therefore a boot-time fact and `setTopBarVersion` reloads. Reading it here
+   rather than in a hook also keeps it out of every render.
+
+   `SpaceTabBarLegacy` is the bar as it stood at origin/main 4790333c, kept
+   verbatim for one release so that "go back" returns the bar that was there
+   rather than a reconstruction of it. See `shell/topbar-version.ts` for why the
+   UI-2.0 switch is NOT this control. */
+const LEGACY_BAR = topBarVersion() === 'legacy';
+const TopBar = LEGACY_BAR ? SpaceTabBarLegacy : SpaceTabBar;
 /**
  * The screen a viewer with no remembered place lands on (single-home ruling,
  * 2026-08-14): the merged Home page. A viewer's OWN remembered place still
@@ -352,6 +377,14 @@ export function GateApp(props: GateAppProps = {}) {
   const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  /* `null` = the credential status has not been read yet, so the flow has not
+     decided anything. It is deliberately three-valued: `false` is "read, and
+     this member is finished", and only that closes the question. */
+  const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
+  /* The account-menu row's sentence. Null = nothing to say (finished, or
+     never read). It is refreshed when the flow closes so a member who has
+     just connected everything does not keep being told they have not. */
+  const [setupNudge, setSetupNudge] = useState<string | null>(null);
   const [promptsOpen, setPromptsOpen] = useState(false);
   /**
    * WHICH SCREEN IS SHOWING — now DERIVED from `navStore`, not held here.
@@ -1357,6 +1390,19 @@ export function GateApp(props: GateAppProps = {}) {
    * identity check is what makes an unknown ref unrenderable rather than
    * silently generic (A1a's landing note).
    */
+  /**
+   * "CHAT ABOUT THIS" — the shell's half of the row-cluster verb.
+   *
+   * The verb is a NAVIGATION (see `useChatAbout`), and navigation is the
+   * shell's job: the two screens that draw the verb take navigation as a port
+   * and must not reach the store themselves. One function, handed to both, so
+   * the tile in the workspace and the tile on a kind screen cannot land in
+   * different places.
+   */
+  const openChatAbout = useCallback((aboutId: EntityId | null) => {
+    navStore.getState().navigate(chatAboutTarget(aboutId));
+  }, []);
+
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
     if (row.kind !== ref) return null;
@@ -1387,36 +1433,17 @@ export function GateApp(props: GateAppProps = {}) {
   const channelEntities = data.rowsFor('channel')(undefined);
 
   /**
-   * PR188 review F1: the UI half of the chat composition. The server got its
-   * composition commit (compose.ts); without this bridge the shipped home
-   * rendered a disabled composer blaming the node for operations it serves.
-   * Amendment 10 seam calls: `home` (thread list) + `startChatThread`.
+   * THE BRIDGE IS EMPTY NOW (176), and that is the change.
+   *
+   * It carried two injected readers — `listThreads` over `spaces.home`'s
+   * bespoke `chatThreads` projection, and `configureThread` over
+   * `chat.threads.start` — because a chat was not an entity: it had no kind to
+   * list by and no door of its own that a port could reach. Both are ordinary
+   * seam calls in `real-port.ts` now (`entities.list kind=chat` and
+   * `chat.start`), so the host injects nothing and the port cannot be
+   * half-wired. The object stays so a later override (`readParts`) has a place.
    */
-  const chatBridge = useMemo(() => ({
-    listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
-    configureThread: async (input: {
-      rootMessageId: string; teammateId: string; model: string;
-      mode: ChatMode; clientMutationId: string;
-    }) => {
-      const result = await data.seam.commands.startChatThread({
-        ...input,
-        // Held at today's behaviour ON PURPOSE. The picker and its default
-        // ladder (last-used project → the Space's most-recently-linked one →
-        // scratch only when the Space links nothing) are the follow-up UI
-        // change; sending anything else from here would pick a directory on
-        // the human's behalf through a control they cannot yet see or change.
-        // What this PR does give every thread, scratch included, is the full
-        // tool set in whatever directory it is bound to.
-        workdirMode: 'scratch',
-      });
-      return {
-        threadRootId: result.thread.rootMessageId,
-        teammateId: result.thread.teammateId,
-        model: result.thread.model,
-        mode: result.thread.mode,
-      };
-    },
-  }), [data.seam]);
+  const chatBridge = useMemo(() => ({}), []);
 
   const homeSlots = useMemo(
     () =>
@@ -1481,6 +1508,51 @@ export function GateApp(props: GateAppProps = {}) {
     () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
     [data.seam, data.spaceId],
   );
+
+  /* SHOULD THE FLOW OPEN ITSELF? Read ONCE PER `GateApp` MOUNT — which is
+     keyed on `activeServer.id`, so a server switch re-asks and a SPACE switch
+     deliberately does not. Never on a timer, and never again after the member
+     has answered.
+
+     THREE THINGS MUST BE TRUE BEFORE ANYONE IS INTERRUPTED, and each refusal
+     below prevents a different way of being wrong. There must be an account
+     (an unauthenticated shell has nobody to set up); the member must not have
+     already said Later; and the node's own answer must be READABLE — a status
+     that measured nothing is our instrumentation failing, not a member who
+     skipped a step, and `shouldOfferSetup` refuses it for us.
+
+     The read is fire-and-forget and its failure is SILENT here on purpose: if
+     `credentials.status` refuses, the member simply is not interrupted, and
+     the same refusal is stated in full the moment they open the flow from the
+     account menu. A boot-blocking error card for a convenience would be the
+     louder of two wrong answers. */
+  useEffect(() => {
+    if (setupOpen !== null) return;
+    if (!credentialsPort || !authAccount) return;
+    let live = true;
+    void credentialsPort.load().then(
+      (status) => {
+        if (!live) return;
+        const dismissed = readSetupDismissed(nodeKey, authAccount.handle);
+        setSetupOpen(shouldOfferSetup(status, dismissed));
+        setSetupNudge(setupNudgeOf(credentialSetupState(status)));
+      },
+      () => { if (live) setSetupOpen(false); },
+    );
+    return () => { live = false; };
+  }, [credentialsPort, authAccount, nodeKey, setupOpen]);
+
+  /* Re-read after the flow closes, so the menu row stops nagging the moment
+     the member is actually finished. Read-only: it never re-opens the dialog
+     — the member has just answered that question, and answering it for them
+     again would be the loop this flow is built to avoid. */
+  const refreshSetupNudge = useCallback(() => {
+    if (!credentialsPort) return;
+    void credentialsPort.load().then(
+      (status) => setSetupNudge(setupNudgeOf(credentialSetupState(status))),
+      () => undefined,
+    );
+  }, [credentialsPort]);
 
   // The branch-topology section for the shell's externally-owned `projects`
   // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
@@ -1670,7 +1742,6 @@ export function GateApp(props: GateAppProps = {}) {
              node that serves both operations. */
           chatBridge={chatBridge}
           {...(viewerMemberId ? { viewerMemberId } : {})}
-          {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
             : {})}
@@ -1758,13 +1829,15 @@ export function GateApp(props: GateAppProps = {}) {
             : {})}
           onJoined={(spaceId) => {
             clearPendingJoin();
-            // A FULL RELOAD, not a state flip. Membership is an INPUT to boot:
-            // the spaces list, the menu, the counts and the socket
-            // subscription were all resolved for an account that was not in
-            // this space, and there is no partial-refresh path that re-derives
-            // them. Landing on the space's own address is the honest arrival,
-            // and this happens once per invite, never on a hot path.
-            location.assign(`/#/s/${spaceId}`);
+            // A FULL RELOAD, not a state flip — and until 01a0baf5 the line
+            // here said so while doing the opposite. `location.assign` to a
+            // url that differs only in its FRAGMENT does not reload anything,
+            // and `capturePendingJoin` has already stripped the path to `/`,
+            // so a successful join left the viewer staring at a disabled
+            // "Joining…" button over a membership that had already committed.
+            // `arriveInSpace` sets the address and then loads it. See
+            // `join/arrive.ts` for the measurement.
+            arriveInSpace(spaceId);
           }}
           onDismiss={() => {
             clearPendingJoin();
@@ -1788,7 +1861,7 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
-        <SpaceTabBar
+        <TopBar
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
              Still ONE control — the single-home rule holds, only the address
              changed; the old read-only server label is not restored. The
@@ -1848,6 +1921,11 @@ export function GateApp(props: GateAppProps = {}) {
              nothing — `copyLinkUrl` would return null and the control would be
              a button that cannot perform, which is the shape this codebase
              refuses everywhere else. */
+          /* Only the LEGACY bar draws this; the current bar hosts copy-link
+             as a row in the account menu. Passing it to both is harmless —
+             `SpaceTabBar` renders `shareSlot` only when it is also hosting the
+             other utilities — but it is passed conditionally anyway, so the
+             intent is readable rather than inferred from another file. */
           shareSlot={
             data.spaceId ? (
               <CopyLinkControl
@@ -1857,15 +1935,56 @@ export function GateApp(props: GateAppProps = {}) {
               />
             ) : undefined
           }
-          /* THE WAY BACK, and only when this bundle is actually the mounted
-             1.0 UI. `BASE_URL` is `/ui-1.0/` in that build and `/` in every
-             other — dev, tests, and a root-served build — so the control
-             appears exactly where it means something. Offering it at the root
-             would be a link from the product UI to itself. */
-          uiSwitchSlot={import.meta.env.BASE_URL !== '/' ? <UiVersionReturn /> : undefined}
           accountSlot={
             authAccount && data.viewerActor ? (
-              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+              <AccountMenu
+                actor={data.viewerActor}
+                theme={theme}
+                onThemeChange={setTheme}
+                agentToolsNudge={setupNudge}
+                {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
+                /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
+                   bar. On the legacy bar these three verbs are still in the row
+                   itself, and handing them to the menu as well would draw every
+                   one of them twice. One control, one home, in both bars. */
+                {...(LEGACY_BAR
+                  ? {}
+                  : {
+                      onOpenInbox: () => navigateTo({ type: 'view', ref: 'inbox' }),
+                      onOpenPrompts: () => setPromptsOpen(true),
+                      utilityRows: (
+                        <>
+                          {data.spaceId ? (
+                            <CopyLinkControl
+                              className="auth-menu__row auth-menu__row--live"
+                              spaceId={data.spaceId}
+                              target={activeTarget ?? WORKSPACE_TARGET}
+                              openEntity={openOnScreen}
+                            />
+                          ) : null}
+                          {/* THE ROLLBACK, and the only control that performs
+                              it. Deliberately the last row of the group and
+                              deliberately plain: it is an escape hatch for one
+                              release, not a feature. */}
+                          <button
+                            type="button"
+                            className="auth-menu__row auth-menu__row--live"
+                            data-testid="use-previous-topbar"
+                            title="Go back to the previous top bar on this device"
+                            onClick={() => {
+                              setTopBarVersion('legacy');
+                              window.location.reload();
+                            }}
+                          >
+                            <span className="auth-menu__glyph" aria-hidden>
+                              ↩
+                            </span>
+                            Use the previous top bar
+                          </button>
+                        </>
+                      ),
+                    })}
+              />
             ) : undefined
           }
         />
@@ -2001,6 +2120,8 @@ export function GateApp(props: GateAppProps = {}) {
                 channelFeedPort: graphChatFeedPort,
                 connection: data.connection,
                 viewerMemberId,
+                nodeKey,
+                skillOptions: data.skillOptions,
               }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'git' ? (
@@ -2128,6 +2249,7 @@ export function GateApp(props: GateAppProps = {}) {
               kind={activeTarget.ref}
               reasons={reasons}
               onNotice={notices.push}
+              onChatAbout={openChatAbout}
               onKindChange={(next) => navigateTo({ type: 'kind', ref: next })}
               /* §1.1 — the shell HOLDS the layout mode, so it survives
                  re-renders of this ternary and a kind switch resets it
@@ -2242,11 +2364,15 @@ export function GateApp(props: GateAppProps = {}) {
                   spaceId={data.spaceId}
                   nodeKey={nodeKey}
                   bridge={chatBridge}
-                  /* PR188 review F3: the space id is NOT an entity and
-                     messages.post 404s on it (measured). Bare-home chats anchor
-                     to the seeded default channel; the per-user home thread is
-                     the ruled follow-up (R1) and needs a server seam first. */
-                  anchorId={channelEntities[0]?.id}
+                  /* THE DEFAULT-CHANNEL SUBSTITUTION IS GONE (176).
+                     It read: "the space id is NOT an entity and messages.post
+                     404s on it (measured), so bare-home chats anchor to the
+                     seeded default channel". Both halves were true and the
+                     workaround is no longer needed — a chat anchors its own
+                     transcript, so bare Home passes no subject at all rather
+                     than borrowing a channel's identity for every conversation
+                     that had nothing to do with it. A contextual host (Craft)
+                     passes `aboutId`, which the server writes as an edge. */
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
@@ -2269,6 +2395,11 @@ export function GateApp(props: GateAppProps = {}) {
                   createKindUnavailable={regions.createKindUnavailable}
                   routeThreadId={regions.routeThreadId}
                   onThreadSelected={regions.onThreadSelected}
+                  /* `?about=` — the subject "Chat about this" bound before it
+                     navigated here. Absent for a bare Home chat, which is the
+                     ordinary case; see `HomeView`'s prop for why it rides the
+                     address rather than component state. */
+                  {...(regions.aboutId ? { aboutId: regions.aboutId } : {})}
                   stage={regions.stage}
                   onStageChange={regions.onStageChange}
                   /* The fleet's Transcript link lands on the session's own
@@ -2317,6 +2448,19 @@ export function GateApp(props: GateAppProps = {}) {
                               <CredentialsSection
                                 port={credentialsPort}
                                 serverBaseUrl={activeServer.routeBaseUrl}
+                                /* Settings is the OTHER reader of the same
+                                   derivation. Without this, connecting GitHub
+                                   here left the account-menu nudge still
+                                   saying it was not connected until a reload.
+
+                                   DERIVED FROM THE VALUE IT HANDS OVER, never
+                                   re-read: `credentials.status` shells out on
+                                   the node once per provider, and a refresh
+                                   that called it again would double the cost
+                                   of every write on this screen. */
+                                onStatusRead={(status) =>
+                                  setSetupNudge(setupNudgeOf(credentialSetupState(status)))
+                                }
                               />
                             ),
                           }
@@ -2363,6 +2507,7 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               viewerMemberId={viewerMemberId}
               serverBaseUrl={activeServer.routeBaseUrl}
+              onChatAbout={openChatAbout}
               nav={nav}
               leftKind={kinds.leftKind}
               rightKind={kinds.rightKind}
@@ -2573,6 +2718,28 @@ export function GateApp(props: GateAppProps = {}) {
             await props.onAddServer(input);
           }}
         />
+        {credentialsPort ? (
+          <CredentialsSetupDialog
+            open={setupOpen === true}
+            port={credentialsPort}
+            serverBaseUrl={activeServer.routeBaseUrl}
+            /* DISMISS and CLOSE are different answers and are recorded
+               differently. Later is a standing preference — it is written down,
+               so a reload does not ask again. Close is "I am done with this
+               window", which is what Done and Escape mean, and it records
+               nothing: a member who finished is finished on the measurement,
+               and a member who closed without finishing gets asked next boot. */
+            onDismiss={() => {
+              if (authAccount) writeSetupDismissed(nodeKey, authAccount.handle);
+              setSetupOpen(false);
+              refreshSetupNudge();
+            }}
+            onClose={() => {
+              setSetupOpen(false);
+              refreshSetupNudge();
+            }}
+          />
+        ) : null}
         {projectOnboardingPort ? (
           <NewSpaceProjectDialog
             key={activeServer.id}

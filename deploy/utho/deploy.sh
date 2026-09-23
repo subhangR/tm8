@@ -29,7 +29,7 @@
 # THE FIVE THINGS THAT MAKE THE OBVIOUS RECIPE WRONG
 #
 #  1. STAGING HAS NO UI BUILD; PROD'S IS SEPARATE. `bun run build` is `tsc -b`
-#     only. Prod serves TM8_UI_DIR=packages/tm8_ui_2.0/dist, so prod needs a second,
+#     only. Prod serves TM8_UI_DIR=packages/tm8-ui/dist, so prod needs a second,
 #     explicit `vite build` — skip it and you ship a stale UI against a new server
 #     with no error anywhere. Staging runs vite DEV against source, so the
 #     checkout alone updates its UI and a build there is wasted work.
@@ -318,20 +318,55 @@ rok "server + CLI built"
 
 if [[ "$BUILD_UI" == 1 ]]; then
   # Prod only. `bun run build` above is tsc -b and does NOT touch the UI; prod
-  # serves packages/tm8_ui_2.0/dist, so skipping this ships a stale UI, silently.
+  # serves packages/tm8-ui/dist, so skipping this ships a stale UI, silently.
+  #
+  # ONE BUNDLE SINCE 2026-09-15. packages/tm8-ui is the only UI package; the
+  # alternate at /ui-2.0/ and the legacy oracle were both deleted.
+  #
+  # STALE SYMLINK FIRST. packages/tm8-ui/dist has been a symlink into the (now
+  # deleted) alternate package on this box, while a root-owned env named the old
+  # path. That makes a vite build write THROUGH it, outside the package. Remove
+  # it before building; idempotent, and a no-op on a box that never had one.
+  if [[ -L "$DIR/packages/tm8-ui/dist" ]]; then
+    rm -f "$DIR/packages/tm8-ui/dist"
+    rok "removed stale symlink $DIR/packages/tm8-ui/dist -> (gone)"
+  fi
+
   say "building the UI bundle (separate vite build — prod serves dist)"
-  runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8_ui_2.0' && umask 022 && bun run build >/dev/null" \
+  runuser -u tm8 -- bash -lc "cd '$DIR/packages/tm8-ui' && umask 022 && bun run build >/dev/null" \
     || rdie "vite build failed — nothing has been stopped"
-  [[ -f "$DIR/packages/tm8_ui_2.0/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
+  [[ -f "$DIR/packages/tm8-ui/dist/index.html" ]] || rdie "vite build reported success but dist/index.html is missing"
   rok "UI bundle built"
 
-  # The env file predates the tm8_ui_2.0 relocation and is root-owned, so the
-  # checkout update alone cannot move TM8_UI_DIR — and a stale pointer serves
-  # the frozen 1.0 snapshot with every other check green. Fix it here, where we
-  # are root anyway. Idempotent: a no-op once the env file already points right.
-  if grep -q "packages/tm8-ui/dist" "$ENVFILE"; then
-    sed -i 's|packages/tm8-ui/dist|packages/tm8_ui_2.0/dist|' "$ENVFILE"
-    rok "TM8_UI_DIR moved to packages/tm8_ui_2.0/dist in $ENVFILE"
+  # /etc/tm8/prod.env is 0600 root:root, so the checkout update alone cannot move
+  # these pointers — and a stale TM8_UI_DIR serves the WRONG UI, or since the
+  # deletion NO UI, with every other check green. Fix them here, where we are
+  # root anyway. Both edits are idempotent: no-ops once the env file is right.
+  #
+  # ANCHORED TO THE TM8_UI_DIR LINE (2026-09-07). It was not, and the unanchored
+  # form rewrote TM8_UI_2_0_DIR as collateral while aiming at TM8_UI_DIR,
+  # pointing it at a directory that did not exist; the mount then registered
+  # nothing and /ui-2.0/ answered "no operation bound" on a box that rebuilt the
+  # bundle every deploy. The seeder could not repair it either, because it
+  # appended only when the key was ABSENT and the key was present-and-wrong. The
+  # pair were a one-way ratchet into the broken state. Both of those blocks are
+  # gone with the mount; the ANCHOR stays, because the hazard it fixes is the
+  # unanchored sed, not the variable it damaged.
+  #
+  # THIS REPAIR IS NOW LOAD-BEARING, not defensive: a box whose TM8_UI_DIR still
+  # names the deleted package has no bundle to fall back to, so the site serves
+  # the API and nothing else.
+  if grep -q "^TM8_UI_DIR=.*packages/tm8_ui_2.0/dist" "$ENVFILE"; then
+    sed -i '/^TM8_UI_DIR=/ s|packages/tm8_ui_2.0/dist|packages/tm8-ui/dist|' "$ENVFILE"
+    rok "TM8_UI_DIR moved to packages/tm8-ui/dist in $ENVFILE"
+  fi
+  # The second-mount pointers are dead: the server stopped reading them when the
+  # alternate package was deleted. They are inert rather than harmful, but a
+  # deployed env naming a package that no longer exists is exactly the kind of
+  # thing the next reader spends an hour on. Strip them.
+  if grep -qE '^TM8_UI_(1|2)_0_DIR=' "$ENVFILE"; then
+    sed -i -E '/^TM8_UI_(1|2)_0_DIR=/d' "$ENVFILE"
+    rok "removed the dead TM8_UI_1_0_DIR/TM8_UI_2_0_DIR pointers from $ENVFILE"
   fi
 else
   say "staging runs vite DEV against source — no UI build (the checkout already updated it)"

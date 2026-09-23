@@ -1,7 +1,7 @@
 // Which package is the product UI, and is it ready to run?
 //
-// THE PACKAGE IS `packages/tm8_ui_2.0` — NOT `packages/tm8-ui` (the frozen 1.0
-// snapshot) and NOT `packages/ui` (the legacy collab-v2 oracle).
+// THE PACKAGE IS `packages/tm8-ui`, and since 2026-09-15 it is the ONLY UI
+// package in this repo.
 //
 // This file used to point at `packages/ui`, and everything downstream inherited
 // the mistake: `bun run dev` started the wrong Vite app, `bun run start` built
@@ -9,50 +9,21 @@
 // reported on a directory nothing serves. That is why this constant exists:
 // it is THE pointer every launcher, doctor, and deploy path reads.
 //
-// 2026-08-29: the pointer moved from `packages/tm8-ui` to `packages/tm8_ui_2.0`
-// when the Astryx redesign (PRs #526/#531) became the product UI. Prod's
-// TM8_UI_DIR must point at `packages/tm8_ui_2.0/dist`.
+// The history it arbitrated is over, and is kept short here because the shape
+// of it is the warning: the pointer moved to the Astryx redesign
+// (`packages/tm8_ui_2.0`) on 2026-08-29, the pair swapped which was mounted and
+// which was root twice inside a week, and for the last stretch the alternate at
+// `/ui-2.0/` 404ed on prod because its directory pointer named a path that did
+// not exist. On 2026-09-15 the owner had both the redesign fork and the legacy
+// `packages/ui` oracle deleted; there is one UI, it is served at `/`, and there
+// is no second mount to keep in step.
 //
-// 2026-09-02: `tm8-ui` is BUILT AND SERVED AGAIN, as the ALTERNATE UI behind
-// the version switch — at `/ui-1.0/`, from `dist-1.0`, on the same origin, and
-// only when an operator sets TM8_UI_1_0_DIR. It is still not the product UI and
-// this pointer does not move.
-//
-// THE REACT NOTE ABOVE WAS RIGHT, and an earlier cut of this change said it was
-// not. Measured on a dev box whose install happened to hoist only one copy of
-// `@types/react`, the snapshot typechecked clean, and that was mistaken for
-// proof the React 18 declaration never mattered. Under CI's frozen lockfile it
-// pulls `@types/react` 18 BESIDE the hoisted 19 and fails immediately — two
-// React type identities in one program. The claim was install-layout luck.
-//
-// What makes it gateable now is a real change, not a re-reading: the package
-// declares React 19 (matching the runtime the root `overrides` already forced
-// on it), and the six `RefObject<T>` props React 19 widened to
-// `RefObject<T | null>` are corrected. See tools/ci/check.sh.
-
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT } from "./env.mjs";
 
 /** The product UI package. */
-export const UI_DIR = join(REPO_ROOT, "packages", "tm8_ui_2.0");
-
-/** The legacy collab-v2 oracle. Not served, not built, not started. */
-export const LEGACY_UI_DIR = join(REPO_ROOT, "packages", "ui");
-
-/**
- * The pre-Astryx 1.0 snapshot — the ALTERNATE UI, not the product one.
- *
- * Built to `dist-1.0` (never `dist`; the reason is a production interlock
- * documented in its vite.config.ts) and served under `/ui-1.0/` when
- * TM8_UI_1_0_DIR names that directory.
- */
-export const UI_1_0_DIR = join(REPO_ROOT, "packages", "tm8-ui");
-
-/** Where the 1.0 bundle is emitted, and what TM8_UI_1_0_DIR should name. */
-export function ui10BundleDir() {
-  return join(UI_1_0_DIR, "dist-1.0");
-}
+export const UI_DIR = join(REPO_ROOT, "packages", "tm8-ui");
 
 /**
  * Can we start a Vite dev server for the product UI?
@@ -67,25 +38,25 @@ export function uiDevStatus() {
   try {
     pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
   } catch (err) {
-    return { ready: false, reason: `packages/tm8_ui_2.0/package.json is unreadable: ${err.message}` };
+    return { ready: false, reason: `packages/tm8-ui/package.json is unreadable: ${err.message}` };
   }
   const devScript = pkg.scripts?.dev;
-  if (!devScript) return { ready: false, reason: "packages/tm8_ui_2.0 has no `dev` script" };
+  if (!devScript) return { ready: false, reason: "packages/tm8-ui has no `dev` script" };
   if (/^echo\b/.test(devScript.trim())) {
-    return { ready: false, reason: "packages/tm8_ui_2.0 `dev` script is still a placeholder" };
+    return { ready: false, reason: "packages/tm8-ui `dev` script is still a placeholder" };
   }
   const hasVite =
     Boolean(pkg.devDependencies?.vite || pkg.dependencies?.vite) ||
     ["vite.config.ts", "vite.config.js", "vite.config.mts"].some((f) =>
       existsSync(join(UI_DIR, f)),
     );
-  if (!hasVite) return { ready: false, reason: "packages/tm8_ui_2.0 has no vite config or dependency" };
+  if (!hasVite) return { ready: false, reason: "packages/tm8-ui has no vite config or dependency" };
   // node_modules per workspace package is not optional under bun's isolated
-  // linker: `vite` resolves out of packages/tm8_ui_2.0/node_modules/.bin, and its
+  // linker: `vite` resolves out of packages/tm8-ui/node_modules/.bin, and its
   // absence fails as "vite: not found" long after the launcher has claimed
   // everything is fine.
   if (!existsSync(join(UI_DIR, "node_modules"))) {
-    return { ready: false, reason: "packages/tm8_ui_2.0 has no node_modules — run `bun install`" };
+    return { ready: false, reason: "packages/tm8-ui has no node_modules — run `bun install`" };
   }
   return { ready: true, reason: "" };
 }

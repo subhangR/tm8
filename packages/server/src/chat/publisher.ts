@@ -21,7 +21,7 @@ import type { SubscriptionRegistry } from '../events/subscriptions.js';
  *     grants a Space member every non-deleted `visibility='space'` entity. Its
  *     only other arm is `visibility='restricted' and kind='project'`, so a
  *     non-space-visible MESSAGE is readable by nobody at all — including the
- *     configuring human, whose `start_chat_thread` would have been refused.
+ *     configuring human, whose `start_chat` would have been refused.
  *     A chat thread that some Space member cannot read therefore cannot exist.
  *
  * Space member + space-visible thread = the same set on both sides, which is

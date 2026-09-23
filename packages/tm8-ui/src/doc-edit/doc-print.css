@@ -1,0 +1,236 @@
+/*
+ * THE PRINT SHEET — what a document looks like when it stops being an app.
+ *
+ * DELIBERATELY UNSCOPED. Every other rule in this package hangs off `.cv2-root`
+ * because it styles one surface inside the app. These rules are DOCUMENT-level
+ * by necessity: `#root` and the print root are siblings under `<body>`, and a
+ * scoped selector cannot reach either. `printDoc.ts` carries the full reasoning
+ * for why the clone is a sibling rather than a revealed descendant.
+ *
+ * NO TOKENS IN THE PRINT BLOCK, and that is a decision. The palette here is
+ * paper-tinted for a screen; on paper (or in a PDF) the only honest ground is
+ * white and the only honest ink is black. Nothing below is a raw hex — the
+ * package's §14 hex ban holds — they are CSS named colours and alpha blacks,
+ * which is what the ban leaves available for exactly this case.
+ */
+
+/* Off-print the clone does not exist. This is also what makes a missed
+   `afterprint` harmless rather than a visible artefact. */
+#tm8-print-root {
+  display: none;
+}
+
+@media print {
+  /* THE APP IS NOT THE DOCUMENT. One rule each way. */
+  body > #root {
+    display: none !important;
+  }
+  #tm8-print-root {
+    display: block !important;
+  }
+
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  html,
+  body {
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  #tm8-print-root {
+    color: black;
+    background: white;
+    font-size: 11pt;
+    line-height: 1.55;
+    /* Points, not pixels: this text is going onto a physical page size. */
+
+    /* THE REAL STACK, NOT `inherit`, because of a cascade trap that is
+       invisible on screen. `inherit` resolves against <body>, whose rule is
+       `font-family: var(--pn-ui)` — but `--pn-ui` is declared at
+       styles/tokens.css:62 INSIDE the `.cv2-root` block. Custom properties
+       inherit DOWNWARD, so <body> cannot see a token declared on its own
+       descendant: the declaration is invalid at computed-value time and the
+       entire PDF falls back to the UA serif. Verified in a real print engine —
+       every page came out in Times New Roman.
+       Nothing on screen reveals this, because everything the user looks at
+       lives inside `.cv2-root`. Only the print clone — deliberately a SIBLING
+       of `#root`, see printDoc.ts — is outside it. Restating the stack is the
+       narrow fix; moving the tokens up to `:root` is the correct broad one and
+       carries a far wider blast radius than this feature should. */
+    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* The header we add when the body does not already open with its own title. */
+  #tm8-print-root .dp-title {
+    font-size: 20pt;
+    line-height: 1.2;
+    margin: 0 0 12pt;
+  }
+
+  /* A heading stranded at the foot of a page is the classic print defect;
+     `break-after: avoid` keeps it with the text it introduces. */
+  #tm8-print-root h1,
+  #tm8-print-root h2,
+  #tm8-print-root h3,
+  #tm8-print-root h4,
+  #tm8-print-root h5,
+  #tm8-print-root h6 {
+    break-after: avoid-page;
+    break-inside: avoid;
+    color: black;
+  }
+
+  #tm8-print-root p,
+  #tm8-print-root li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Things that are unreadable when split across a page boundary. */
+  #tm8-print-root pre,
+  #tm8-print-root blockquote,
+  #tm8-print-root table,
+  #tm8-print-root figure,
+  #tm8-print-root img {
+    break-inside: avoid;
+  }
+
+  #tm8-print-root img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  #tm8-print-root pre,
+  #tm8-print-root code {
+    /* Long lines must WRAP rather than run off the trimmed edge, where the
+       reader cannot scroll them back. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: transparent;
+    border: 1px solid rgb(0 0 0 / 22%);
+  }
+  #tm8-print-root code {
+    border: none;
+  }
+
+  /* THE CLONE LOSES EVERY `.cv2-root`-SCOPED RULE, and `Markdown.tsx` expresses
+     a code fence through CLASSES rather than tags:
+     `.md-fence > .md-fence__lang + pre.md-fence__pre`. Every `.md-*` rule in
+     kit/markdown.css is scoped under `.cv2-root` (see :130, :139, :171), so in
+     the print root both wrappers drop to `display: inline`. The <pre> survives
+     on its UA default, but the language label lands above it as a stray bare
+     word — "bash" with no strip and no border. Restoring the two wrappers is
+     enough; the tag-level rules above already carry the rest.
+     The general lesson, since this will recur: anything Markdown.tsx styles
+     through a class arrives in the PDF unstyled unless it is restated here. */
+  #tm8-print-root .md-fence,
+  #tm8-print-root .md-tablewrap {
+    display: block;
+  }
+  #tm8-print-root .md-fence__lang {
+    display: block;
+    font-size: 8pt;
+    text-transform: lowercase;
+    color: rgb(0 0 0 / 55%);
+    margin: 0 0 2pt;
+  }
+
+  /* --- diagrams ------------------------------------------------------------
+     The same lesson as the fence above, in its expensive form. A mermaid fence
+     renders as `.md-mermaid.kit-zfig > .kit-zfig__viewport > .kit-zfig__canvas`
+     with a control cluster as the viewport's sibling, and EVERY rule shaping it
+     — kit/markdown.css:197+ and the whole of kit/zoomable-figure.css — is
+     written `.cv2-root .kit-zfig...`. In the clone all of it evaporates at once.
+
+     Most of that loss is harmless, and this sheet deliberately does not restate
+     it: `position: relative`, `display: block` and the viewport's
+     `overflow: auto` all fall back to the UA default the print page wanted
+     anyway. Two losses do reach the paper.
+
+     1. The control cluster. `zoomable-figure.css:90-107` hides it with
+        `opacity: 0` and argues, correctly, that `display: none` there would
+        drop four buttons out of the tab order. That argument is about a LIVE
+        document. A printed page has no tab order and no hover, so `display:
+        none` is not merely safe here, it is the only honest answer -- and it is
+        needed, because the cluster loses its `position: absolute` too and
+        otherwise prints as a strip of empty boxes under every diagram.
+     2. The frame and the centring, which markdown.css puts on `.md-mermaid`
+        and which the figure shell deliberately leaves to its host.
+
+     The canvas transform is the one thing the clone DOES keep. It is an inline
+     style (`ZoomableFigure.tsx:406`), written only while a figure is zoomed or
+     expanded, so it survives `cloneNode` and outranks this sheet. A reader who
+     zooms a diagram and then downloads would otherwise get it printed
+     off-register. That is why `!important` appears on these two lines and
+     nowhere else in this file. */
+  #tm8-print-root .kit-zfig__controls {
+    display: none !important;
+  }
+  #tm8-print-root .kit-zfig__canvas {
+    transform: none !important;
+  }
+
+  #tm8-print-root .md-mermaid {
+    text-align: center;
+    break-inside: avoid;
+    padding: 8pt;
+    border: 1px solid rgb(0 0 0 / 22%);
+    /* Mermaid paints its nodes with SVG `fill`, which prints, but the themed
+       card behind them is a background, which a print dialog drops unless the
+       reader thinks to tick "Background graphics". A diagram is the one thing
+       in a design doc that is not readable in outline. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Measured, and worth recording because it contradicts the obvious guess:
+     mermaid writes its own inline `max-width` on the root <svg>, and THAT is
+     what keeps a wide flowchart inside the trim today -- losing
+     `.cv2-root .md-mermaid__svg svg` does not clip anything. This restates the
+     clamp so a drawing whose source omits that attribute still fits. */
+  #tm8-print-root .md-mermaid__svg svg,
+  #tm8-print-root .kit-zfig__canvas svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* A diagram that could not be drawn keeps the author's SOURCE on the page
+     (`Mermaid.tsx:179-190`) rather than vanishing, which is the right call in
+     print too -- a reader holding the PDF can still see what was meant. But it
+     is a <pre> inside the centred box above, and centring inherits, so every
+     line of that source would print centre-justified. */
+  #tm8-print-root .md-mermaid--failed {
+    text-align: left;
+  }
+
+  #tm8-print-root table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  #tm8-print-root th,
+  #tm8-print-root td {
+    border: 1px solid rgb(0 0 0 / 35%);
+    padding: 4pt 6pt;
+    text-align: left;
+  }
+
+  #tm8-print-root blockquote {
+    margin: 0 0 10pt;
+    padding-left: 10pt;
+    border-left: 2pt solid rgb(0 0 0 / 30%);
+    color: rgb(0 0 0 / 72%);
+  }
+
+  #tm8-print-root a {
+    color: black;
+    text-decoration: underline;
+  }
+
+  #tm8-print-root hr {
+    border: none;
+    border-top: 1px solid rgb(0 0 0 / 30%);
+  }
+}

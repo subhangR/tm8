@@ -23,7 +23,7 @@
  * "reset" is implemented by deleting the delta rather than by remembering what
  * the original was.
  */
-import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry } from '@tm8/contract';
+import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry, type LaunchModelEffort } from '@tm8/contract';
 
 /** The tools this UI knows how to launch. Free strings on the wire; a closed
     set here, because the launcher builds a different CLI invocation per tool. */
@@ -40,6 +40,8 @@ export interface CatalogModel {
   builtIn: boolean;
   /** True when a built-in has a local edit applied. Drives "reset". */
   overridden: boolean;
+  /** Effort stops the model accepts (contract). ABSENT for a browser-added model: nobody measured it. */
+  efforts?: readonly LaunchModelEffort[];
 }
 
 /** A user's addition. Kept minimal: everything else is derived or defaulted. */
@@ -158,6 +160,7 @@ function applyOverride(entry: LaunchModelCatalogEntry, over: BuiltInOverride | u
     provider: entry.provider,
     builtIn: true,
     overridden: over !== undefined && (over.label !== undefined || over.note !== undefined),
+    efforts: entry.efforts,
   };
 }
 

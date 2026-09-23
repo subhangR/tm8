@@ -10,7 +10,6 @@
 import {
   CollabError,
   type CollectionResult,
-  type ChatThreadSummary,
   type HomeSnapshot,
   type NavChannelNode,
   type SpaceKindCounts,
@@ -39,6 +38,9 @@ export interface SpaceRow {
   github_repo: string | null;
   created_at: Date | string;
   member_count: string;
+  /** 187 sharing defaults. Optional so pre-187 row fixtures still type. */
+  session_share_default?: string | null;
+  session_drive_default?: string | null;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -54,6 +56,17 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
     // measured one. `spaces.navigation` is where the real number lives.
     unreadTotal: null,
     githubRepo: row.github_repo,
+    // 187, the space-wide sharing defaults. Spread rather than defaulted:
+    // absence means this server did not read the columns, and the DTO
+    // documents absence as "assume nothing, offer no control". Two plain
+    // columns off the row `s` is already scanned for — no join, no
+    // subquery, so the boot-gate budget below is untouched.
+    ...(row.session_share_default === 'none' || row.session_share_default === 'space'
+      ? { sessionShareDefault: row.session_share_default }
+      : {}),
+    ...(row.session_drive_default === 'owner' || row.session_drive_default === 'space'
+      ? { sessionDriveDefault: row.session_drive_default }
+      : {}),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
 }
@@ -103,6 +116,7 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
  */
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
+  s.session_share_default, s.session_drive_default,
   (select count(*)::text from public.members member_count_row
     where member_count_row.space_id = s.id) as member_count`;
 
@@ -342,54 +356,6 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         viewerIdentity,
       );
       const activityPage = await loadActivity(q, { spaceId, limit: 20 });
-      const chatThreads = await q.query<{
-        root_message_id: string;
-        anchor_id: string;
-        teammate_id: string;
-        model: string;
-        chat_mode: 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
-        title: string | null;
-        reply_count: number;
-        created_at: string;
-        last_reply_at: string | null;
-        project_id: string | null;
-        workdir_mode: 'project' | 'scratch';
-      }>(
-        `select ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.chat_mode,
-                ct.project_id, ct.workdir_mode,
-                left(root_msg.body, 240) as title,
-                count(reply.entity_id)::int as reply_count,
-                to_char(ct.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-                to_char(max(reply.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_reply_at
-           from public.chat_threads ct
-           join public.messages root_msg on root_msg.entity_id = ct.root_message_id
-           left join public.messages reply on reply.root_message_id = ct.root_message_id
-          where ct.space_id = $1
-          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.chat_mode,
-                   ct.project_id, ct.workdir_mode, ct.created_at, root_msg.body
-          order by coalesce(max(reply.created_at), ct.created_at) desc, ct.root_message_id desc`,
-        [spaceId],
-      );
-      const chatThreadItems: ChatThreadSummary[] = chatThreads.map((thread) => ({
-        rootMessageId: thread.root_message_id,
-        anchorId: thread.anchor_id,
-        teammateId: thread.teammate_id,
-        model: thread.model,
-        mode: thread.chat_mode,
-        createdAt: thread.created_at,
-        lastReplyAt: thread.last_reply_at,
-        // The binding, so a list row can say WHERE the thread works. Only the
-        // id travels: the client already holds `projects.working_dir` for every
-        // project it can see, so it renders the name and directory from a row
-        // it was authorised to read rather than from a path we hand it.
-        projectId: thread.project_id,
-        workdirMode: thread.workdir_mode,
-        // PR188 review F4: a list of rows all reading "Conversation" is not a
-        // thread list. The root body is the only honest title a chat has.
-        title: thread.title,
-        replyCount: thread.reply_count,
-      }));
-
       const home: HomeSnapshot = {
         readyToPull: readyToPull as CollectionResult,
         inFlight: inFlight as CollectionResult,
@@ -408,7 +374,6 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         // through — the cursor itself is microsecond-exact as of the fix to
         // ActivityRow.cursor_created_at.
         activity: { items: activityPage.items, nextCursor: null },
-        chatThreads: chatThreadItems,
       };
       return home;
     });

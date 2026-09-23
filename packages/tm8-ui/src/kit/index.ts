@@ -35,6 +35,13 @@ export {
   type MarkdownProps,
 } from './Markdown';
 export { Mermaid, type MermaidProps } from './Mermaid';
+export {
+  ZoomableFigure,
+  clampFigureZoom,
+  FIGURE_ZOOM_MAX,
+  FIGURE_ZOOM_MIN,
+  type ZoomableFigureProps,
+} from './ZoomableFigure';
 export { Timestamp, type TimestampProps } from './Timestamp';
 export {
   CLOCK_TICK_MS, RELATIVE_WINDOW_MS,

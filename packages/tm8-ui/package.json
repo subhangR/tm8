@@ -10,9 +10,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "audit:mobile": "node e2e/mobile-audit.mjs"
+    "audit:mobile": "node e2e/mobile-audit.mjs",
+    "test:mobile-lists": "node e2e/check-mobile-lists.mjs"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "@maestro/pty-protocol": "workspace:*",
     "@tm8/cli": "workspace:*",
     "@tm8/contract": "workspace:*",

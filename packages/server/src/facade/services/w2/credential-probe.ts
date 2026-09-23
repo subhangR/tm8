@@ -20,16 +20,51 @@
  *   anthropic  `claude auth status`  → JSON `{loggedIn, authMethod, email, orgId}`
  *   github     `gh auth status`      → text, `Logged in to github.com account <login>`
  *   openai     `codex login status`  → NOT YET CAPTURED on any node
+ *   gemini     `.gemini/oauth_creds.json` under the isolated HOME
+ *   hermes     no verified status verb OR credential-file location
+ *   cursor     `cursor-agent status --format json` → JSON `{isAuthenticated}`
  *
  * The openai row is the honest one. Nobody has run that command and recorded
  * its output, so this file does not pretend to parse it: an answer it cannot
  * read is recorded as `stale`, never as success. `stale` is the correct verdict
  * — a credential may well exist on disk, we simply cannot confirm it — and it
  * is a status `account_agent_credentials` already models.
+ *
+ * Gemini and Hermes cannot be given plausible-looking status commands. Gemini
+ * 0.58.0 was measured on this node: bare `gemini` owns the interactive OAuth
+ * flow and a completed Google login writes `.gemini/oauth_creds.json` beneath
+ * HOME. That file plus a resolvable binary is the positive signal; its absence
+ * is UNKNOWN, not disconnected, because there is no status verb with which to
+ * distinguish an abandoned flow from another supported credential shape.
+ * Hermes is stricter still: neither a status verb nor its credential-file
+ * location has been measured, so a present binary can only answer `stale`.
+ * Inventing either would turn declaration into evidence.
+ *
+ * Cursor Agent 2026.09.02-c22c1a3 is the first of these new providers with a
+ * real status verb. Its measured signed-out answer carries
+ * `isAuthenticated:false`; that boolean is the whole decision. No signed-in
+ * shape has been observed, so this probe neither names nor guesses any other
+ * field. Missing, non-boolean or unparseable data is `stale`, never a confident
+ * connection or disconnection. Its HOME-scoped credential file was separately
+ * located at `.cursor/cli-config.json` and is recorded in the spec below.
  */
 import { execFile } from 'node:child_process';
+import { accessSync, constants, statSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
-import type { CredentialProvider } from '@tm8/execution';
+import { readFile } from 'node:fs/promises';
+
+import {
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_VERIFY_URL,
+  composeCredentialEnv,
+  CREDENTIAL_LOGIN_COMMANDS,
+  isApiKeyCredentialProvider,
+  type ApiKeyCredentialProvider,
+  type CredentialProvider,
+} from '@tm8/execution';
 
 /** Probes are non-interactive status reads; a slow one is a hung one. */
 const PROBE_TIMEOUT_MS = 20_000;
@@ -44,11 +79,109 @@ const PROBE_MAX_BUFFER = 1024 * 1024;
  * `execFile` with NO SHELL. There is nothing to quote, so there is nothing to
  * quote wrongly.
  */
-export const CREDENTIAL_PROBE_COMMANDS = {
-  anthropic: ['claude', 'auth', 'status'],
-  openai: ['codex', 'login', 'status'],
-  github: ['gh', 'auth', 'status'],
-} as const satisfies Record<CredentialProvider, readonly string[]>;
+const CREDENTIAL_PROBE_SPECS = {
+  anthropic: {
+    command: ['claude', 'auth', 'status'],
+    credentialFile: null,
+    install:
+      'Install Claude Code with `npm install -g @anthropic-ai/claude-code`, then make its bin directory available to tm8.',
+  },
+  openai: {
+    command: ['codex', 'login', 'status'],
+    credentialFile: null,
+    install:
+      'Install Codex with `npm install -g @openai/codex`, then make its bin directory available to tm8.',
+  },
+  github: {
+    command: ['gh', 'auth', 'status'],
+    credentialFile: null,
+    install:
+      'Install GitHub CLI with your operating system package manager, then make `gh` available to tm8.',
+  },
+  gemini: {
+    command: null,
+    credentialFile: ['.gemini', 'oauth_creds.json'],
+    install:
+      'Install Gemini CLI with `npm install -g @google/gemini-cli`, then make its bin directory available to tm8.',
+  },
+  hermes: {
+    command: null,
+    credentialFile: null,
+    // Point at the vendor's guide instead of inventing a package name. Unlike
+    // a guessed status verb this is independently verifiable without running
+    // the absent CLI, and gives the operator an actionable installation path.
+    install:
+      'Install Hermes Agent from https://hermes-agent.nousresearch.com/docs/getting-started/quickstart/ and make its `hermes` binary available to tm8.',
+  },
+  cursor: {
+    command: ['cursor-agent', 'status', '--format', 'json'],
+    credentialFile: ['.cursor', 'cli-config.json'],
+    install:
+      'Install Cursor Agent with `curl https://cursor.com/install -fsS | bash`, then make its `cursor-agent` binary available to tm8.',
+  },
+  // THE API-KEY PROVIDERS. `command: null` for the same reason as Gemini — no
+  // vendor status verb exists — but the resemblance ends there, and the
+  // difference is worth stating because it makes these the STRONGEST probes in
+  // this table rather than the weakest.
+  //
+  // Gemini's probe can only ask whether a file exists, and a file's existence
+  // does not prove a credential works, which is why it reports `stale` rather
+  // than claiming more than it measured. Here the file is one tm8 wrote itself,
+  // and its contents can be presented to the vendor for a verdict. So the probe
+  // does not infer from presence: it AUTHENTICATES, and reports `active` only
+  // when the vendor accepted the key seconds ago.
+  //
+  // `install` names no package deliberately. There is nothing to install: the
+  // binary derived from the login command is `node`, which ships with the
+  // server. If it is ever reported unavailable, the fault is tm8's own PATH and
+  // the message should say so rather than send an operator to npm for a
+  // package that would not help.
+  kimi: {
+    command: null,
+    credentialFile: ['kimi', 'api-key'],
+    install:
+      "Kimi needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
+  },
+  groq: {
+    command: null,
+    credentialFile: ['groq', 'api-key'],
+    install:
+      "Groq needs no vendor CLI — tm8 stores the API key itself. This message means tm8's own Node runtime was not found on the login terminal's PATH, which is a server configuration problem rather than a missing vendor tool.",
+  },
+} as const satisfies Record<
+  CredentialProvider,
+  {
+    command: readonly string[] | null;
+    credentialFile: readonly string[] | null;
+    install: string;
+  }
+>;
+
+// Compile-time guard, not a runtime check: `API_KEY_FILENAME` is a literal
+// type, so these assignments fail to compile the day the filename changes in
+// `api-key-credentials.ts` without the two literals above changing with it.
+// The `satisfies` on the table needs the literals to stay literals, so the
+// agreement is asserted here instead of expressed by interpolation.
+const _kimiCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.kimi.credentialFile[1] =
+  API_KEY_FILENAME;
+const _groqCredentialFilenameAgrees: typeof CREDENTIAL_PROBE_SPECS.groq.credentialFile[1] =
+  API_KEY_FILENAME;
+void _kimiCredentialFilenameAgrees;
+void _groqCredentialFilenameAgrees;
+
+/**
+ * Only providers with measured, non-interactive status verbs appear here.
+ * A partial record is the control: Gemini and Hermes would each require a real
+ * command, so neither can acquire a guessed `--status` by exhaustiveness.
+ * Cursor appears because its status verb was observed on this node.
+ */
+export const CREDENTIAL_PROBE_COMMANDS: Readonly<
+  Partial<Record<CredentialProvider, readonly string[]>>
+> = Object.fromEntries(
+  Object.entries(CREDENTIAL_PROBE_SPECS).flatMap(([provider, spec]) =>
+    spec.command === null ? [] : [[provider, spec.command]],
+  ),
+) as Readonly<Partial<Record<CredentialProvider, readonly string[]>>>;
 
 /**
  * The GitHub cross-check (sub-doc 14, finding D6).
@@ -71,13 +204,17 @@ export interface ProbeResult {
   /** True ONLY when the probe positively confirmed an authenticated identity. */
   connected: boolean;
   /**
-   * `active` when confirmed, `stale` when the probe could not be read.
+   * `active` when the probe gave a confident answer (connected OR
+   * disconnected), `stale` when it could not tell, and `unavailable` when PATH
+   * resolution positively established no binary.
    *
    * There is deliberately no `failed`: a probe that cannot be parsed has told
    * us nothing about the credential, and recording "no credential" on the
    * strength of an unreadable answer is a claim the evidence does not support.
+   * `unavailable` is not that failure: the measurement completed and answered
+   * a different question with a definite no.
    */
-  status: 'active' | 'stale';
+  status: 'active' | 'stale' | 'unavailable';
   /** Display only. NULL forever for anthropic — see `reasons.ts` and R4. */
   login: string | null;
   authMethod: string | null;
@@ -96,6 +233,148 @@ export type CommandRunner = (
   argv: readonly string[],
   options: { env: Record<string, string>; cwd: string },
 ) => Promise<CommandOutcome>;
+
+/** Resolve one executable exactly against the PATH and cwd a child will use. */
+export type CredentialBinaryResolver = (input: {
+  binary: string;
+  path: string;
+  cwd: string;
+}) => string | null;
+
+export interface CredentialBinaryMeasurement {
+  provider: CredentialProvider;
+  binary: string;
+  /** `unknown` is a failed measurement; `unavailable` is a measured absence. */
+  status: 'available' | 'unavailable' | 'unknown';
+  resolvedPath: string | null;
+  detail: string | null;
+}
+
+/** The binary is derived from the fixed login command, never repeated in a table. */
+export function credentialBinaryFor(provider: CredentialProvider): string {
+  const binary = CREDENTIAL_LOGIN_COMMANDS[provider].trim().split(/\s+/, 1)[0];
+  if (!binary) throw new Error(`credential login command for ${provider} has no binary`);
+  return binary;
+}
+
+/**
+ * Resolve an executable the way the login terminal's shell will.
+ *
+ * Empty and relative PATH entries are relative to the child's cwd, not the
+ * server's cwd. Remembering that distinction matters here because credential
+ * terminals deliberately run from the identity's private HOME.
+ */
+export const resolveCredentialBinary: CredentialBinaryResolver = ({ binary, path, cwd }) => {
+  const candidates = binary.includes('/')
+    ? [isAbsolute(binary) ? binary : resolve(cwd, binary)]
+    : path.split(delimiter).map((dir) => join(dir === '' ? cwd : isAbsolute(dir) ? dir : resolve(cwd, dir), binary));
+
+  let unreadable: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      if (!statSync(candidate).isFile()) continue;
+      try {
+        accessSync(candidate, constants.X_OK);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // EACCES/EPERM positively establish that the shell cannot execute this
+        // file. An I/O failure establishes nothing and must remain `unknown`.
+        if (code !== 'EACCES' && code !== 'EPERM') unreadable ??= error;
+        continue;
+      }
+      return candidate;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') unreadable ??= error;
+    }
+  }
+  // Missing paths are a successful negative measurement. Permission or I/O
+  // failures are not: laundering either into "not installed" would tell an
+  // operator to reinstall a CLI whose directory we simply could not inspect.
+  if (unreadable) throw unreadable;
+  return null;
+};
+
+/** Measure binary presence in an environment that has already been composed. */
+export function measureCredentialBinaryInEnv(input: {
+  provider: CredentialProvider;
+  env: Record<string, string>;
+  cwd: string;
+  resolveBinary?: CredentialBinaryResolver;
+}): CredentialBinaryMeasurement {
+  const binary = credentialBinaryFor(input.provider);
+  try {
+    const resolvedPath = (input.resolveBinary ?? resolveCredentialBinary)({
+      binary,
+      path: input.env['PATH'] ?? '',
+      cwd: input.cwd,
+    });
+    if (resolvedPath !== null) {
+      return {
+        provider: input.provider,
+        binary,
+        status: 'available',
+        resolvedPath,
+        detail: null,
+      };
+    }
+    return {
+      provider: input.provider,
+      binary,
+      status: 'unavailable',
+      resolvedPath: null,
+      detail: `credential CLI '${binary}' is not on the login terminal's PATH`,
+    };
+  } catch (error) {
+    return {
+      provider: input.provider,
+      binary,
+      status: 'unknown',
+      resolvedPath: null,
+      detail:
+        `could not inspect the login terminal's PATH for credential CLI '${binary}': ` +
+        (error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
+
+/**
+ * Compose the login terminal's environment first, then inspect THAT PATH.
+ *
+ * This is the status/start seam. Checking `parentEnv.PATH` directly would miss
+ * the package-manager directories `withAgentBinDirs` appends inside
+ * `composeCredentialEnv`, falsely reporting a CLI unavailable even though the
+ * terminal would have launched it.
+ */
+export function measureCredentialBinary(input: {
+  provider: CredentialProvider;
+  homeDir: string;
+  configDir: string;
+  parentEnv: NodeJS.ProcessEnv;
+  resolveBinary?: CredentialBinaryResolver;
+}): CredentialBinaryMeasurement {
+  const env = composeCredentialEnv({
+    provider: input.provider,
+    homeDir: input.homeDir,
+    configDir: input.configDir,
+    parentEnv: input.parentEnv,
+  });
+  return measureCredentialBinaryInEnv({
+    provider: input.provider,
+    env,
+    cwd: input.homeDir,
+    ...(input.resolveBinary ? { resolveBinary: input.resolveBinary } : {}),
+  });
+}
+
+/** The caller-fixable refusal used before a login work_session can be minted. */
+export function credentialCliInstallMessage(provider: CredentialProvider): string {
+  const binary = credentialBinaryFor(provider);
+  return (
+    `credential CLI '${binary}' is not installed on this node's login-terminal PATH. ` +
+    CREDENTIAL_PROBE_SPECS[provider].install
+  );
+}
 
 /**
  * The real runner: `execFile`, NO SHELL, and an environment that REPLACES
@@ -355,6 +634,273 @@ export interface RunCredentialProbeInput {
   env: Record<string, string>;
   cwd: string;
   run?: CommandRunner;
+  /** Injected independently from the command runner: presence is its own fact. */
+  resolveBinary?: CredentialBinaryResolver;
+}
+
+function negativeProbe(
+  provider: CredentialProvider,
+  status: 'stale' | 'unavailable',
+  detail: string,
+): ProbeResult {
+  return {
+    provider,
+    connected: false,
+    status,
+    login: null,
+    authMethod: null,
+    detail,
+  };
+}
+
+/**
+ * Ask the vendor whether the member's stored key still works.
+ *
+ * THIS IS THE ONLY PROBE IN THIS FILE THAT LEAVES THE MACHINE, and the reason
+ * is that it is the only one that can. Every other provider is asked a local
+ * question — does a CLI report a session, does a credential file exist — because
+ * that is all a local CLI can be asked without running a billable request. Here
+ * tm8 holds the secret itself, and the vendor publishes a free, unauthenticated-
+ * rejecting model list, so the honest question ("does this credential work?")
+ * is directly answerable.
+ *
+ * The three outcomes are the same three the paste harness reports at capture
+ * time, deliberately: a key that passed there must not be classified
+ * differently here for a reason neither program can see.
+ *
+ *   200         → `active` + connected. The vendor accepted it just now.
+ *   401 / 403   → `active` + NOT connected. A determinate, understood negative;
+ *                 `active` describes the PROBE, not the credential, and
+ *                 negative probes are never persisted as a credential row.
+ *   anything else, or no answer at all
+ *               → `stale`, meaning "cannot confirm". A 429 or a 5xx or a DNS
+ *                 failure says nothing whatever about the key, and reporting
+ *                 one as a rejection would tell a member to re-paste a
+ *                 perfectly good credential.
+ *
+ * A MISSING KEY FILE IS A DETERMINATE NEGATIVE HERE, unlike Gemini's ENOENT
+ * below. That asymmetry is not an oversight. Gemini's file is written by a
+ * vendor CLI whose storage shape we have only measured, so its absence might
+ * mean a credential we do not know how to find. This file is written by tm8, at
+ * a path tm8 chose, and by nothing else — so if it is not there, there is no
+ * key, and saying `stale` would be feigning uncertainty we do not have.
+ */
+async function readApiKeyProbe(
+  provider: ApiKeyCredentialProvider,
+  env: Record<string, string>,
+): Promise<ProbeResult> {
+  const display = API_KEY_PROVIDER_DISPLAY_NAME[provider];
+  const home = env['HOME'];
+  if (!home) {
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown because the isolated HOME was not present`,
+    );
+  }
+
+  let apiKey: string;
+  try {
+    apiKey = (await readFile(join(home, provider, API_KEY_FILENAME), 'utf8')).trim();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return {
+        provider,
+        connected: false,
+        status: 'active',
+        login: null,
+        authMethod: null,
+        detail: `no ${display} API key has been stored for this member`,
+      };
+    }
+    // A permissions or I/O error is NOT an absence. The key may be perfectly
+    // good and unreadable for a reason that has nothing to do with the member.
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown because its stored key could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (apiKey.length === 0) {
+    return {
+      provider,
+      connected: false,
+      status: 'active',
+      login: null,
+      authMethod: null,
+      detail: `the stored ${display} API key is empty`,
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(API_KEY_PROVIDER_VERIFY_URL[provider], {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      return {
+        provider,
+        connected: true,
+        status: 'active',
+        // The vendor's model list carries no account identity, so there is no
+        // login name to report. `null` states that rather than inventing one
+        // from the key — a key prefix is not a username.
+        login: null,
+        // Named for what it is. This member authenticates with a pasted API
+        // key, not an OAuth session, and the card should not imply otherwise.
+        authMethod: 'api_key',
+        detail: null,
+      };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        provider,
+        connected: false,
+        status: 'active',
+        login: null,
+        authMethod: null,
+        detail: `${display} rejected the stored API key (HTTP ${response.status})`,
+      };
+    }
+
+    return negativeProbe(
+      provider,
+      'stale',
+      `${display} credential state is unknown: the vendor answered HTTP ${response.status}, which says nothing about the key`,
+    );
+  } catch (error) {
+    return negativeProbe(
+      provider,
+      'stale',
+      controller.signal.aborted
+        ? `${display} credential state is unknown: no answer within ${PROBE_TIMEOUT_MS / 1000}s`
+        : `${display} credential state is unknown because the vendor could not be reached: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Gemini has no verified status command. Its measured OAuth file is therefore
+ * the whole positive signal, and every non-positive result remains `stale`.
+ * In particular, ENOENT is not "logged out": it may be an abandoned flow, a
+ * different credential mode, or a later CLI storage shape we have not measured.
+ */
+async function readGeminiProbe(env: Record<string, string>): Promise<ProbeResult> {
+  const home = env['HOME'];
+  if (!home) {
+    return negativeProbe(
+      'gemini',
+      'stale',
+      'Gemini credential state is unknown because the isolated HOME was not present',
+    );
+  }
+  const parts = CREDENTIAL_PROBE_SPECS.gemini.credentialFile;
+  const credentialFile = join(home, ...parts);
+  try {
+    const info = await stat(credentialFile);
+    if (!info.isFile()) {
+      return negativeProbe(
+        'gemini',
+        'stale',
+        'Gemini credential state is unknown because the measured credential path is not a file',
+      );
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return negativeProbe(
+      'gemini',
+      'stale',
+      code === 'ENOENT'
+        ? 'Gemini credential state is unknown: its measured OAuth credential file is not present and there is no verified status verb'
+        : `Gemini credential state is unknown because its measured credential file could not be inspected: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    );
+  }
+  return {
+    provider: 'gemini',
+    connected: true,
+    status: 'active',
+    // File presence establishes a usable OAuth credential, not the Google
+    // account name or the CLI's own name for that auth method.
+    login: null,
+    authMethod: null,
+    detail: null,
+  };
+}
+
+/**
+ * `cursor-agent status --format json` — a measured boolean answer.
+ *
+ * The signed-out payload observed on this node includes several other fields,
+ * but a signed-in payload has not been observed. Reading only
+ * `isAuthenticated` makes both boolean answers usable without inventing a
+ * login, auth method, token field or status vocabulary that the evidence does
+ * not establish. Exit status is deliberately irrelevant.
+ */
+function readCursorProbe(outcome: CommandOutcome): ProbeResult {
+  const base = { provider: 'cursor' as const, authMethod: null, login: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(firstJsonObject(outcome.stdout));
+  } catch {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json did not answer JSON',
+    };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json returned an unexpected payload',
+    };
+  }
+
+  const isAuthenticated = (parsed as Record<string, unknown>)['isAuthenticated'];
+  if (typeof isAuthenticated !== 'boolean') {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'cursor-agent status --format json did not answer a boolean isAuthenticated',
+    };
+  }
+
+  if (!isAuthenticated) {
+    return {
+      ...base,
+      connected: false,
+      // `active` describes a successfully understood probe. Because negative
+      // probes are never persisted, it cannot become an active credential row.
+      status: 'active',
+      detail: 'cursor-agent status reports isAuthenticated=false',
+    };
+  }
+
+  return {
+    ...base,
+    connected: true,
+    status: 'active',
+    detail: null,
+  };
 }
 
 /**
@@ -370,10 +916,48 @@ export async function runCredentialProbe(input: RunCredentialProbeInput): Promis
 
   if (provider === 'github') assertNoGitHubTokenEnv(env);
 
-  const outcome = await run(CREDENTIAL_PROBE_COMMANDS[provider], { env, cwd });
+  const binary = measureCredentialBinaryInEnv({
+    provider,
+    env,
+    cwd,
+    ...(input.resolveBinary ? { resolveBinary: input.resolveBinary } : {}),
+  });
+  if (binary.status === 'unavailable') {
+    return negativeProbe(
+      provider,
+      'unavailable',
+      `${binary.detail}. ${CREDENTIAL_PROBE_SPECS[provider].install}`,
+    );
+  }
+  if (binary.status === 'unknown') {
+    return negativeProbe(provider, 'stale', binary.detail ?? 'credential CLI presence is unknown');
+  }
+
+  if (isApiKeyCredentialProvider(provider)) return readApiKeyProbe(provider, env);
+  if (provider === 'gemini') return readGeminiProbe(env);
+  if (provider === 'hermes') {
+    return negativeProbe(
+      provider,
+      'stale',
+      'Hermes credential state is unknown: neither a status verb nor a credential-file location has been verified on this node',
+    );
+  }
+
+  const command = CREDENTIAL_PROBE_COMMANDS[provider];
+  if (!command) {
+    // Exhaustiveness above should make this unreachable. Keep it a refusal,
+    // not a guessed command, if a provider is added without a measured probe.
+    return negativeProbe(
+      provider,
+      'stale',
+      `credential state for ${provider} is unknown because no verified probe exists`,
+    );
+  }
+  const outcome = await run(command, { env, cwd });
 
   if (provider === 'anthropic') return readAnthropicProbe(outcome);
   if (provider === 'github') return readGithubProbe(outcome, env, cwd, run);
+  if (provider === 'cursor') return readCursorProbe(outcome);
   return readOpenAiProbe(outcome);
 }
 

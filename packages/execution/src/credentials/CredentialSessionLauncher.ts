@@ -4,8 +4,20 @@
 // is in what it REFUSES to accept rather than in what it does. Read
 // CREDENTIAL_LOGIN_COMMANDS below before changing anything here.
 
+import { fileURLToPath } from 'node:url';
+
 import type { PtyHostService } from '../pty/PtyHostService.js';
 import type { Logger } from '../pty/types.js';
+import { shellQuote } from '../spawn/manifest.js';
+import {
+  API_KEY_CREDENTIAL_PROVIDERS,
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_CONSOLE_URL,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_KEY_PREFIX,
+  API_KEY_PROVIDER_VERIFY_URL,
+  type ApiKeyCredentialProvider,
+} from './api-key-credentials.js';
 import { composeCredentialEnv, type CredentialProvider } from './credential-env.js';
 
 /**
@@ -19,7 +31,7 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  * args field and no flags field — the absence is the control, because a field
  * that does not exist cannot be forwarded by a later refactor.
  *
- * Each entry is a measured decision, not a plausible guess:
+ * The first three entries are measured decisions, not plausible guesses:
  *
  *  anthropic — `claude auth login`, AMENDING R4 (which ruled `claude
  *    setup-token` for its narrower scope: `user:inference` only, vs the six
@@ -60,12 +72,125 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    `--skip-ssh-key` because tm8 has no business generating a key pair on the
  *    member's behalf, and `--git-protocol https` because that is the protocol
  *    the credential this login produces can actually serve.
+ *
+ *  gemini — bare `gemini`, MEASURED on this node (2026-09-04,
+ *    @google/gemini-cli 0.58.0). There is no `gemini auth` or `gemini login`
+ *    subcommand to reach for: `gemini --help` lists only `mcp`, `extensions`,
+ *    `skills`, `hooks`, `gemma` and the default query command, and the auth
+ *    chooser (Login with Google / API key) runs on interactive start. So the
+ *    bare binary IS the login verb here rather than a stand-in for one.
+ *
+ *    Its isolation was measured too, and it is weaker than the three above:
+ *    `GEMINI_DIR` appears throughout the shipped bundle but it is the CONSTANT
+ *    `".gemini"`, not a variable read from the environment — resolution is
+ *    `homedir() + '/.gemini'`. `HOME=$(mktemp -d) gemini -p hi` wrote `.gemini`
+ *    into that temporary HOME and nowhere else, so the per-identity HOME every
+ *    login terminal already gets IS the whole isolation mechanism for this
+ *    vendor. That is a real guarantee, but it is one rung lower than a
+ *    vendor-documented config-dir override, and `CREDENTIAL_CONFIG_DIR_VAR`
+ *    records it as `null` rather than inventing a variable the CLI never reads.
+ *
+ *  hermes — `hermes login` is DECLARED, NOT MEASURED. No `hermes` binary exists
+ *    on this node, so no login flow was observed and this entry is the argv to
+ *    use once an operator installs one. Migration 083's admission rule is
+ *    satisfied not by this string but by the server: the probe reports
+ *    `unavailable`, and login-session start refuses — naming the binary —
+ *    before it mints a work session or starts a PTY. Nothing here retroactively
+ *    claims a measurement, and the entry must not be reworded as though it did
+ *    until someone has actually watched the flow.
+ *
+ *  cursor — `cursor-agent login` is MEASURED on this node (2026-09-04,
+ *    cursor-agent 2026.09.02-c22c1a3): the binary is present, the login verb
+ *    was observed, and its HOME-scoped storage was located at
+ *    `.cursor/cli-config.json`. This is evidence, unlike Hermes's declaration
+ *    above. `cursor-agent logout` also exists, but tm8 Disconnect revokes the
+ *    stored credential plus its sessions; invoking a vendor logout is a
+ *    separate decision and is deliberately not wired here.
+ *
+ *  kimi, groq — TM8'S OWN HARNESS, not a vendor binary, and the only two
+ *    entries in this table that are not somebody else's program. Neither vendor
+ *    ships a login CLI; both issue an API key from a web console. The
+ *    measurement behind that claim — including the two npm packages whose names
+ *    suggest otherwise and are unrelated software — is recorded in
+ *    `api-key-credentials.ts` rather than repeated here.
+ *
+ *    `credentialBinaryFor` derives `node` from these entries, and that is a
+ *    TRUE answer rather than a convenient one: node is what runs, it is present
+ *    wherever the server is, and the install check consequently passes for the
+ *    right reason. These are the only entries whose binary is not the thing
+ *    being authenticated against, so an installability check for kimi or groq
+ *    says nothing about the vendor — which is correct, because there is nothing
+ *    vendor-supplied to install.
  */
-export const CREDENTIAL_LOGIN_COMMANDS = {
-  anthropic: 'claude auth login',
-  openai: 'codex login --device-auth',
-  github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
-} as const satisfies Record<CredentialProvider, string>;
+/**
+ * Absolute path to tm8's own credential paste harness.
+ *
+ * Mirrors {@link echoAgentPath} exactly, including WHY the relative specifier
+ * has the shape it does: `../../harness/credential-paste.mjs` lands on the same
+ * file from `src/credentials/` (vitest, running TypeScript directly) and from
+ * `dist/credentials/` (the built server), because both are two levels below the
+ * package root.
+ */
+export function credentialPastePath(): string {
+  return fileURLToPath(new URL('../../harness/credential-paste.mjs', import.meta.url));
+}
+
+/**
+ * The login command for an API-key provider: tm8's own harness, not a vendor's.
+ *
+ * Every argument is read from `api-key-credentials.ts` at composition time, so
+ * the vendor facts have ONE authority and the `.mjs` — which cannot import
+ * TypeScript — never restates them. Each is shell-quoted because this is a
+ * command STRING handed to a PTY, and the display names contain spaces.
+ *
+ * Nothing here is reachable from a client: the provider is validated against
+ * `CREDENTIAL_PROVIDERS` before a session is minted, and every other argument is
+ * a table lookup. That preserves the property the vendor entries have — the
+ * table is closed over the command, and no caller can influence what runs.
+ */
+function apiKeyLoginCommand(provider: ApiKeyCredentialProvider): string {
+  return [
+    'node',
+    shellQuote(credentialPastePath()),
+    '--provider',
+    shellQuote(provider),
+    '--display',
+    shellQuote(API_KEY_PROVIDER_DISPLAY_NAME[provider]),
+    '--console-url',
+    shellQuote(API_KEY_PROVIDER_CONSOLE_URL[provider]),
+    '--verify-url',
+    shellQuote(API_KEY_PROVIDER_VERIFY_URL[provider]),
+    '--key-prefix',
+    shellQuote(API_KEY_PROVIDER_KEY_PREFIX[provider]),
+    '--filename',
+    shellQuote(API_KEY_FILENAME),
+  ].join(' ');
+}
+
+/**
+ * NOTE ON THE TYPE. This was `as const satisfies Record<CredentialProvider,
+ * string>`, which gave each entry a string-literal type. The two API-key
+ * entries cannot be literals — they embed an absolute path resolved from
+ * `import.meta.url`, which differs between `src/` under vitest and `dist/` on
+ * the deployed server — so the table is now a frozen `Record` built once at
+ * module load. Nothing consumed the literal types: every reader indexes it at
+ * runtime (`credentialBinaryFor`, the launcher, the tests), and the exhaustive
+ * `Record<CredentialProvider, string>` annotation still fails the build if a
+ * provider is added to the union without an entry here, which was the only
+ * guarantee that mattered.
+ */
+export const CREDENTIAL_LOGIN_COMMANDS: Readonly<Record<CredentialProvider, string>> =
+  Object.freeze({
+    anthropic: 'claude auth login',
+    openai: 'codex login --device-auth',
+    github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
+    gemini: 'gemini',
+    hermes: 'hermes login',
+    cursor: 'cursor-agent login',
+    ...(Object.fromEntries(
+      API_KEY_CREDENTIAL_PROVIDERS.map((provider) => [provider, apiKeyLoginCommand(provider)]),
+    ) as Record<ApiKeyCredentialProvider, string>),
+  });
 
 /**
  * Everything the launcher accepts.

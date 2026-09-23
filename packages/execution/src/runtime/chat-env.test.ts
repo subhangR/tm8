@@ -13,6 +13,9 @@
 // four tools and no filesystem, because the git-root inference it depended on
 // failed for every thread ever started. Giving chat `Bash` is what turns `env`
 // into a superuser credential, so the fix ships with that capability.
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHAT_ENV_KEYS, composeChatEnv } from './chat-env.js';
 
@@ -93,13 +96,40 @@ describe('composeChatEnv', () => {
     // child is not, and cannot be while it authenticates from that home.
     const env = composeChatEnv(PRODUCTION_LIKE_ENV);
     expect(env['HOME']).toBe('/home/tm8');
-    expect(env['PATH']).toBe('/usr/bin:/bin');
+    // The parent's PATH is PRESERVED AS A PREFIX. `composeChatEnv` appends the
+    // agent bin dirs that exist on this host, so the tail is machine-dependent
+    // and deliberately not asserted here — `appends the agent bin dirs …` below
+    // pins that behaviour against a fixture instead.
+    expect(env['PATH']?.startsWith('/usr/bin:/bin')).toBe(true);
   });
 
   it('falls back to a service PATH rather than emitting none', () => {
     // Absent PATH is the one unsurvivable omission: the child could not find
     // git, node, or anything Bash is asked to run.
-    expect(composeChatEnv({ HOME: '/home/tm8' })['PATH']).toBe('/usr/bin:/bin:/usr/sbin:/sbin');
+    expect(composeChatEnv({ HOME: '/home/tm8' })['PATH']?.startsWith('/usr/bin:/bin:/usr/sbin:/sbin')).toBe(
+      true,
+    );
+  });
+
+  it('appends the agent bin dirs so the chat child can find `claude`', () => {
+    // REGRESSION, measured 2026-09-17 on the production node. Under
+    // `tm8-prod.service` the server's PATH is the systemd default and `claude`
+    // lives in `~/.local/bin`, so `ClaudeHeadlessAdapter`'s bare `spawn('claude')`
+    // died with ENOENT on EVERY chat turn — while agent sessions on the same node
+    // were fine, because `composeEnv` and `composeCredentialEnv` both run PATH
+    // through `withAgentBinDirs` and chat, the fourth sibling, did not.
+    const home = mkdtempSync(join(tmpdir(), 'tm8-chat-env-'));
+    mkdirSync(join(home, '.local', 'bin'), { recursive: true });
+    const servicePath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+
+    const path = composeChatEnv({ HOME: home, PATH: servicePath })['PATH'] ?? '';
+
+    expect(path.split(':')).toContain(join(home, '.local', 'bin'));
+    // APPENDED, never prepended: an operator's own `claude` earlier on PATH
+    // must keep winning, so the service PATH stays an exact prefix.
+    expect(path.startsWith(servicePath)).toBe(true);
+
+    rmSync(home, { recursive: true, force: true });
   });
 
   it('omits an empty value rather than passing it through', () => {

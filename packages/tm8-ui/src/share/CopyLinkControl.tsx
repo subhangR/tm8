@@ -19,7 +19,46 @@ export interface CopyLinkControlProps {
   /** Test/host seam. Production defaults to the current app origin and path. */
   appBaseUrl?: string;
   label?: string;
+  /**
+   * Host chrome for the control's root element, so a host can dress it in its
+   * own row grammar (the account menu passes `auth-menu__row`) without this
+   * component learning that host's classes.
+   */
+  className?: string;
+  /**
+   * Hover/description text. Defaults to `SPACE_LINK_HINT`; a host with a
+   * narrower truth to tell may override it, but it must still say what the
+   * link exposes.
+   */
+  hint?: string;
 }
+
+/**
+ * WHAT THE HOVER SAYS, and why these words.
+ *
+ * User-ordered (2026-08-31): "when they hover over copy link give information
+ * that they are sharing the space". Before this the control had NO title at
+ * all — the only thing a person could learn by hovering was the word "Copy
+ * link", which describes the clipboard and not the consequence. Someone
+ * copying a link to a task they were reading had no way to know the address
+ * names the whole space around it.
+ *
+ * The wording is held to four rules:
+ *   1. NAME THE SPACE, not the screen. That is the owner's whole point: the
+ *      thing being handed over is a way in, not a page.
+ *   2. SAY WHAT THE RECIPIENT SEES, concretely — "conversations, people and
+ *      work" — because "shares this space" alone leaves a reader guessing
+ *      whether that means one page or everything.
+ *   3. STAY TRUE. A link is not a grant: ruling R1=(a) is that recipients are
+ *      already members, and nothing in this codec authorizes anybody. Copy
+ *      that promised access the link cannot give would be a lie in the one
+ *      place a person is deciding who to trust. Hence "once they sign in with
+ *      an account that is already in this space".
+ *   4. CUSTOMER LANGUAGE. No "entity", no "target", no "route" or "codec" —
+ *      the reader is a person deciding whether to paste this into a chat.
+ */
+export const SPACE_LINK_HINT =
+  'Copies a link to this space, opened at this page. Anyone you send it to lands exactly here and can see this space — its conversations, people and work — once they sign in with an account that is already in this space. Share it only with people you want inside.';
 
 /**
  * Build the share URL from the route authorities, with deliberately empty
@@ -38,7 +77,25 @@ export function copyLinkUrl({
   openEntity = null,
   appBaseUrl = currentAppBaseUrl(),
 }: Pick<CopyLinkControlProps, 'spaceId' | 'target' | 'openEntity' | 'appBaseUrl'>): string | null {
-  const routeTarget = routeViewOf(target, openEntity);
+  return urlForRouteTarget(spaceId, routeViewOf(target, openEntity), appBaseUrl);
+}
+
+/**
+ * The one place a share URL is spelled. Split out of `copyLinkUrl` when a
+ * second caller appeared that already knows its route and has no `MenuTarget`
+ * to resolve — the panel's overflow, which shares the entity it is showing.
+ *
+ * IT EXISTS SO THERE IS STILL EXACTLY ONE FORMAT. The alternative was a second
+ * caller assembling its own address, and the obvious hand-built form —
+ * `${origin}/e/${id}` — is a PATH route this app does not answer on, unscoped
+ * by space. Two spellings of "a link to this thing" is one more than can ever
+ * be kept true.
+ */
+function urlForRouteTarget(
+  spaceId: SpaceId,
+  routeTarget: ReturnType<typeof routeViewOf>,
+  appBaseUrl: string,
+): string | null {
   if (!routeTarget || !appBaseUrl) return null;
 
   const outcome = build(
@@ -49,6 +106,27 @@ export function copyLinkUrl({
     }),
   );
   return new URL(outcome.hash, appBaseUrl).toString();
+}
+
+/**
+ * A link to ONE ENTITY, space-scoped, for a caller already looking at it that
+ * does not know which screen it is on.
+ *
+ * `originView` is deliberately omitted rather than guessed: it is a breadcrumb
+ * hint saying which screen the reader came from, and the detail panel is
+ * mounted by five different hosts — claiming `workspace` from a panel opened on
+ * the graph would put a false trail in a link someone else follows.
+ */
+export function entityLinkUrl({
+  spaceId,
+  entityId,
+  appBaseUrl = currentAppBaseUrl(),
+}: {
+  spaceId: SpaceId;
+  entityId: EntityId;
+  appBaseUrl?: string;
+}): string | null {
+  return urlForRouteTarget(spaceId, { view: 'entity', entityId, origin: null }, appBaseUrl);
 }
 
 /**
@@ -63,13 +141,15 @@ export function CopyLinkControl({
   onCopy,
   appBaseUrl,
   label = 'Copy link',
+  className,
+  hint = SPACE_LINK_HINT,
 }: CopyLinkControlProps) {
   const [copied, setCopied] = useState(false);
   const [manualCopy, setManualCopy] = useState(false);
   const url = copyLinkUrl({ spaceId, target, openEntity, ...(appBaseUrl ? { appBaseUrl } : {}) });
 
   if (!url) {
-    return (
+    const refused = (
       <DisabledAction
         label={label}
         reason={{
@@ -77,9 +157,15 @@ export function CopyLinkControl({
           remedy: 'the route registry does not address this screen',
         }}
       >
-        <span aria-hidden>↗</span> {label}
+        <span className="copy-link__glyph" aria-hidden>
+          ↗
+        </span>{' '}
+        {label}
       </DisabledAction>
     );
+    /* No `hint` on this branch: there is no link, so there is nothing being
+       shared to describe. The refusal's own reason is the true thing to say. */
+    return className ? <span className={className}>{refused}</span> : refused;
   }
 
   const clipboard =
@@ -90,7 +176,10 @@ export function CopyLinkControl({
 
   if (!hasCopier || manualCopy) {
     return (
-      <label className="copy-link copy-link--manual">
+      <label
+        className={`copy-link copy-link--manual${className ? ` ${className}` : ''}`}
+        title={hint}
+      >
         <span className="copy-link__instruction">Clipboard unavailable — copy this link manually</span>
         <input
           className="copy-link__field"
@@ -106,8 +195,9 @@ export function CopyLinkControl({
   return (
     <button
       type="button"
-      className="copy-link copy-link__button"
+      className={`copy-link copy-link__button${className ? ` ${className}` : ''}`}
       aria-label={label}
+      title={hint}
       onClick={async () => {
         setCopied(false);
 
@@ -136,8 +226,10 @@ export function CopyLinkControl({
         setManualCopy(true);
       }}
     >
-      <span aria-hidden>↗</span>
-      <span>{copied ? 'Copied' : label}</span>
+      <span className="copy-link__glyph" aria-hidden>
+        ↗
+      </span>
+      <span className="copy-link__label">{copied ? 'Copied' : label}</span>
       <span className="copy-link__status" aria-live="polite">
         {copied ? 'Link copied' : ''}
       </span>

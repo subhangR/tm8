@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, EntityId, FileAttachment, SpaceId } from '@tm8/contract';
+import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -34,14 +34,14 @@ export type ChatTurnPart = ChatTurnItem & { seq: number };
 export type ChatTurnFrame =
   | {
       type: 'chat.turn.delta';
-      threadRootId: EntityId;
+      chatId: EntityId;
       messageId: EntityId;
       seq: number;
       part: ChatTurnItem;
     }
   | {
       type: 'chat.turn.done';
-      threadRootId: EntityId;
+      chatId: EntityId;
       messageId: EntityId;
       usage: ChatUsage;
     };
@@ -52,12 +52,33 @@ export interface ChatModelOption {
   provider: string;
   agentTool: string;
   note?: string;
+  /**
+   * Reasoning-effort stops the model accepts, ascending. ABSENT means the
+   * catalog entry predates effort capability data (a browser-added model, an
+   * older node) and the effort dial renders disabled with that reason; EMPTY
+   * means the model has one fixed level. Never invented client-side.
+   */
+  efforts?: readonly LaunchModelEffort[];
 }
 
 export interface ChatTeammateOption {
   id: EntityId;
   label: string;
   avatar?: string | null;
+  /**
+   * `team_members.mode`, projected by the node (ac_11). ABSENT ⇒ the node
+   * does not project it and no filter may pretend to know; `null` ⇒ the row
+   * has no role. Only `coordinator` / `coordinated-coordinator` are
+   * coordinators.
+   */
+  mode?: TeamMemberMode | null;
+  /** `team_members.permission_mode` — free text; the rail derives its default rung from it. */
+  permissionMode?: string | null;
+}
+
+export interface ChatProjectOption {
+  id: EntityId;
+  name: string;
 }
 
 export interface ChatThreadConfig {
@@ -66,22 +87,38 @@ export interface ChatThreadConfig {
   model: string;
   modelLabel: string;
   mode: ChatMode;
+  /** The write-once directory binding. Absent on a port that predates 167. */
+  workdirMode?: ChatWorkdirMode;
+  projectId?: EntityId | null;
 }
 
 export interface ChatThreadSummary {
+  /** The chat entity's id (176). It used to be the root message's. */
   rootId: EntityId;
   /**
-   * The entity this conversation hangs off — the seeded default channel for
-   * bare Home, the crafted `graph` row for a Craft thread.
+   * The entity this conversation is ABOUT — the crafted `graph` row for a Craft
+   * chat, `null` for a bare Home chat.
    *
-   * SURFACED BECAUSE A HOST CANNOT SCOPE WITHOUT IT. `listThreads` is
-   * space-wide by construction, so a contextual surface (Craft) that wants
-   * "the conversations about THIS object" had no way to ask: the L2 read has
-   * carried `anchorId` all along (`ChatThreadListItem`) and the fold to a
-   * summary simply dropped it. Filtering here is honest — same rows, fewer —
-   * where a second anchored read would be a second source of truth.
+   * RENAMED FROM `anchorId` (Wave 2). Since 176 it is the `about` EDGE, not
+   * the message anchor: a chat is the anchor of its own transcript now, so the
+   * context entity is a relation rather than the place the messages had to
+   * live. Wave 1 kept the old name for one wave so the Craft picker's filter
+   * did not move in the same change as the data model underneath it.
+   *
+   * `null` MEANS "NO SUBJECT", AND IT USED TO MEAN "ITSELF". Wave 1 folded an
+   * absent subject to the chat's own id (`item.aboutId ?? item.chatId`), which
+   * made every bare Home chat look like a chat about itself — harmless while
+   * the only reader was an equality filter that never matched, and a lie the
+   * moment a panel header draws the relation. It is null now.
+   *
+   * IT IS NOT POPULATED BY `listThreads`. A chat's subject is an edge and no
+   * list read carries edges, so Wave 1 paid one `connections` call PER CHAT to
+   * fill this in — a documented N+1 on the one read that scales with the
+   * space. That read is gone: `readThread` fills the field for the ONE chat
+   * being opened, and a host that wants "the conversations about X" asks X
+   * instead (`chatIdsAbout`, one incoming-edge read).
    */
-  anchorId: EntityId;
+  aboutId: EntityId | null;
   title: string;
   preview: string;
   updatedAt: string;
@@ -154,6 +191,30 @@ export interface ChatTurn {
   body: string;
   parts: ChatTurnPart[];
   /**
+   * THE ENTITY THIS MESSAGE WAS AUTHORED FROM — the recorder-owned
+   * `authored_from` edge's target (`FeedItem.sourceWorkSessionId`, which is
+   * named for its first destination kind and carries whatever the edge points
+   * at: since 176 that may be a work_session OR a chat).
+   *
+   * WHAT IT IS FOR: a chat is a routing target now, so a message in this
+   * transcript may have been written by a work session reporting back or by
+   * another chat — and neither is the person or the agent this conversation is
+   * between. Those render as THIRD-PARTY bubbles with a chip naming the source,
+   * and this is the only field that can tell them apart. `state.author` cannot:
+   * a session's persona resolves to the same `team_member` summary the chat's
+   * own agent has, and a chat author resolves to a bare `member`.
+   *
+   * THE CHAT'S OWN AGENT TURNS CARRY IT TOO, pointing at the chat itself —
+   * `createAgentMessage` passes `p_source_chat_id = turn.chatId` so the SQL
+   * self-guard fires and the chat is never handed its own output. So a reader
+   * must compare against the chat's id rather than test for presence.
+   *
+   * OPTIONAL, like every other additive field here: `messages.list` does not
+   * carry provenance, so a port that reads only that supplies none, and absent
+   * renders exactly as today.
+   */
+  sourceEntityId?: EntityId | null;
+  /**
    * Files carried on this message — the server's own `content.attachments`,
    * populated on every message read (`FileAttachment[]`, contract v1). The
    * write path staged and posted them all along; the transcript simply never
@@ -176,39 +237,59 @@ export interface ChatThreadDetail {
   turns: ChatTurn[];
 }
 
-export interface ChatRootInput {
+/**
+ * ONE input, and one call (176).
+ *
+ * This used to be two: `createRoot` posted a message, then `configure` bound a
+ * chat_threads row to it. That shape existed because a chat WAS its root
+ * message — there was nothing to create until something had been posted. A
+ * chat is an entity now, so `chat.start` creates it and posts its opening turn
+ * in one transaction, and the two-call dance (with its window in which a
+ * message existed that was not yet a chat) has nothing left to express.
+ */
+export interface ChatCreateInput {
   spaceId: SpaceId | string;
-  /** Bare Home uses the space entity id; contextual Chat uses that context entity. */
-  anchorId: EntityId;
+  /**
+   * The entity this chat is ABOUT — the Craft blueprint, the task, whatever the
+   * host opened it from. Written as an `about` edge.
+   *
+   * It replaces `anchorId`, and the rename is the point: a chat is the anchor
+   * of its own transcript now, so the context entity is a relation rather than
+   * the place the messages had to live. Bare Home passes none.
+   */
+  aboutId?: EntityId | null;
   body: string;
+  teammateId: EntityId;
+  model: string;
+  mode: ChatMode;
+  /**
+   * Where the thread's changes land. Write-once on the server (167), which is
+   * why the composer offers it only in the empty state. Absent ⇒ `scratch`.
+   */
+  workdirMode?: ChatWorkdirMode;
+  projectId?: EntityId | null;
+  /** Overrides the server's default title (the opening body, trimmed). */
+  title?: string | null;
   clientMutationId: string;
   /**
-   * Files staged on the composer, already uploaded against `anchorId` — this
-   * carries their entity ids onto the message (R4: chat surfaces stage chips).
-   * Optional because a port older than the rich-input adoption simply never
-   * sends any, and a message with none is the ordinary case.
+   * Files staged on the composer, already uploaded — this carries their entity
+   * ids onto the opening message (R4: chat surfaces stage chips). Optional
+   * because a port older than the rich-input adoption simply never sends any,
+   * and a message with none is the ordinary case.
    */
   attachmentIds?: EntityId[];
 }
 
-export interface ChatConfigureInput {
-  rootMessageId: EntityId;
-  teammateId: EntityId;
-  model: string;
-  mode: ChatMode;
-  clientMutationId: string;
-}
-
 export interface ChatPostInput {
-  threadRootId: EntityId;
+  chatId: EntityId;
   body: string;
   clientMutationId: string;
-  /** Same contract as `ChatRootInput.attachmentIds` — every turn may carry files. */
+  /** Same contract as `ChatCreateInput.attachmentIds` — every turn may carry files. */
   attachmentIds?: EntityId[];
 }
 
 export interface ChatStartResult {
-  threadRootId: EntityId;
+  chatId: EntityId;
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
@@ -222,22 +303,43 @@ export interface ChatHomePort {
   /** Non-null means the space-wide L2 read does not exist on this node yet. */
   threadListUnavailableReason?: string | null;
   listThreads(spaceId: SpaceId | string): Promise<readonly ChatThreadSummary[]>;
-  readThread(threadRootId: EntityId): Promise<ChatThreadDetail>;
+  /**
+   * The chats whose `about` edge points at one entity — the ONE read that
+   * replaces Wave 1's per-chat N+1.
+   *
+   * ASKED OF THE SUBJECT, NOT OF THE CHATS, and that is the whole saving: the
+   * edge is chat → subject, so reading it from the subject's INCOMING side
+   * answers for every chat at once. Wave 1 asked each chat what it was about
+   * (one `connections` call per row, bounded only by the chat list) to serve a
+   * single host — Craft's picker — that already knew which subject it cared
+   * about.
+   *
+   * Returns ids rather than summaries: the caller already holds the rows from
+   * `listThreads` and wants to FILTER them, and returning summaries here would
+   * be a second source of truth about what exists — the thing `onThreadsChange`
+   * exists to prevent.
+   */
+  chatIdsAbout(aboutId: EntityId): Promise<readonly EntityId[]>;
+  readThread(chatId: EntityId): Promise<ChatThreadDetail>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;
   /**
-   * C4's sole new catalog operation. A non-null reason keeps the visible new-chat
-   * composer honest while an older node has no start/config operation yet.
+   * Projects this space can bind a chat to. OPTIONAL: a port without one
+   * renders the project control disabled with that reason rather than an
+   * empty menu that implies the space has no projects.
+   */
+  listProjects?(spaceId: SpaceId | string): Promise<readonly ChatProjectOption[]>;
+  /**
+   * `chat.start`. A non-null reason keeps the visible new-chat composer honest
+   * while an older node has no start operation.
    */
   startThread: {
     unavailableReason: string | null;
-    /** Call 1: existing messages.post creates the human-authored root/first prompt. */
-    createRoot(input: ChatRootInput): Promise<{ threadRootId: EntityId }>;
-    /** Call 2: the sole new catalog op write-once configures the root and triggers turn one. */
-    configure(input: ChatConfigureInput): Promise<ChatStartResult>;
+    /** Creates the chat AND posts its opening turn. One call, one transaction. */
+    create(input: ChatCreateInput): Promise<ChatStartResult>;
   };
-  /** C4: every user turn, including the first, is an existing messages.post reply. */
+  /** Every later turn is a messages.post ANCHORED on the chat. */
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
-  interrupt?(threadRootId: EntityId): Promise<void>;
+  interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;
 }
 
@@ -246,7 +348,7 @@ export function isChatTurnFrame(value: unknown): value is ChatTurnFrame {
   const frame = value as Record<string, unknown>;
   if (frame.type === 'chat.turn.delta') {
     return (
-      typeof frame.threadRootId === 'string' &&
+      typeof frame.chatId === 'string' &&
       typeof frame.messageId === 'string' &&
       Number.isInteger(frame.seq) &&
       (frame.seq as number) >= 0 &&
@@ -257,7 +359,7 @@ export function isChatTurnFrame(value: unknown): value is ChatTurnFrame {
   }
   if (frame.type === 'chat.turn.done') {
     return (
-      typeof frame.threadRootId === 'string' &&
+      typeof frame.chatId === 'string' &&
       typeof frame.messageId === 'string' &&
       typeof frame.usage === 'object' &&
       frame.usage !== null

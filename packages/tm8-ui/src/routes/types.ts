@@ -24,13 +24,34 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discu
  * Per-panel content surface, meaningful only for work_session panels. NEVER
  * expands the `t` vocabulary. Phase 1 preserves-and-clamps (D12).
  */
-export type ContentSurface = 'terminal' | 'transcript' | 'git' | 'debug' | 'graph';
+/*
+ * Per-panel content surface. Named for work_session's five, and since
+ * migration 177 it also carries the container's — `terminal` is SHARED (a
+ * session's PTY and a container's exec PTY are the same surface word), and
+ * `screen` and `logs` are the machine's own.
+ *
+ * ONE UNION RATHER THAN TWO, deliberately: the codec parses this slot
+ * generically off `CONTENT_SURFACES` and clamps anything it does not know, so
+ * a second per-kind vocabulary would need a second parse path and a second
+ * clamp — and the panel that reads it is one component either way.
+ */
+export type ContentSurface =
+  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph'
+  | 'screen' | 'logs';
 export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'terminal',
   'transcript',
+  // `changes` is the REVIEW surface — which files changed, what is in them,
+  // what goes into the next commit. `git` next to it is the LANE surface —
+  // which branch this is, how far it has moved, and the verbs that move it.
+  // Two questions, two surfaces; folding them made one panel with two jobs.
+  'changes',
   'git',
   'debug',
   'graph',
+  // container (Design §13.1: content surfaces `screen | terminal | logs`)
+  'screen',
+  'logs',
 ];
 
 /**
@@ -107,6 +128,29 @@ export type HomeRootTarget =
        * UI that no longer exists is how dead vocabulary outlives its feature.
        */
       stage?: CockpitStage | null;
+      /**
+       * `?about=` — the entity a NEW conversation started here is about,
+       * written as an `about` edge by `chat.start`.
+       *
+       * IT IS AN ADDRESS BECAUSE THE VERB THAT SETS IT IS A NAVIGATION.
+       * "Chat about this" sits on a row's action cluster and on the Chats
+       * list header, and neither has anywhere to ask for a teammate, a model
+       * and a mode — so the verb opens Home's composer with the subject bound
+       * and the human commits it there. Carrying that binding in component
+       * state would lose it on a reload and make it unshareable, which is the
+       * same argument `?stage=` above makes for itself.
+       *
+       * ONLY MEANINGFUL WITH NO `threadId`. It configures the composer, and an
+       * OPEN conversation's subject is already decided — so a link carrying
+       * both names a thread and an intention that cannot both be honoured.
+       * Parse keeps it (round-trip fidelity, the preserve rule) and the Home
+       * screen ignores it once a thread is selected.
+       *
+       * LOSSY-TOLERANT like `?stage=`: any value that is not a plausible id is
+       * simply not carried, and a subject that no longer exists resolves to a
+       * chip that says so rather than blocking the composer.
+       */
+      aboutId?: EntityId | null;
     };
 
 /** Where the view host points. One member per WLT §2.2 route line. */
@@ -183,18 +227,6 @@ export type NavView =
    * the contents instead of a broken screen.
    */
   | { view: 'help'; plate: string | null }
-  /*
-   * CODEBRAIN (2026-09-01): the delivery pipeline module. A FLAT segment with
-   * no state of its own — the run it shows is the one the roster reports, so
-   * there is nothing selection-like to carry. When a phase becomes linkable it
-   * takes a trailing segment the way `help` carries `plate`.
-   *
-   * This snapshot has no CodeBrain SCREEN (`view-ref-screens.ts` says so). The
-   * ROUTE still exists, because the route table is shared: a `MenuViewRef`
-   * that cannot round-trip through the codec breaks deep links and the back
-   * button for every view that shares it, not only its own.
-   */
-  | { view: 'codebrain' }
   /*
    * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
    * universal board — any entity kind, columns = the four status categories

@@ -523,3 +523,15 @@ describe('hydration ingestion', () => {
     expect(s.handoffsByWorkSession.ws1.map((h) => h.handoffId)).toEqual(['h2']);
   });
 });
+describe('equipment endpoint projection refresh', () => {
+ for (const batch of [false, true]) it(`updates summaries and open detail on equip and unequip (batch=${batch})`, () => {
+   let state = initialDomainState();
+   state = { ...state, ...ingestDetail(state, detail('skill')) };
+   for (const type of ['edge.upsert', 'edge.deleted'] as const) {
+     const e = edge('equipment', 'member', 'skill', { type: 'equips', target: summary('skill', { title: type, version: 2 }) });
+     const change = event(type, { edge: e });
+     state = { ...state, ...(batch ? reduceEvents(state, [change]) : reduceEvent(state, change)) };
+     expect(state.entities.skill.title).toBe(type); expect(state.details.skill.title).toBe(type);
+   }
+ });
+});

@@ -1,3 +1,4 @@
+import { SkillCreateControl } from '../skills/SkillCreateControl';
 import type { CommandResult, EntityId, SpaceId } from '@tm8/contract';
 import type { KindConfig } from '../domain';
 import type { Seam } from '../data/seam';
@@ -37,6 +38,7 @@ export function EntityCreateControl({
   onNotice?: (text: string) => void;
 }) {
   const label = config.palette?.createLabel ?? '＋ New';
+  if (config.createForm === 'skill-file') return <SkillCreateControl spaceId={spaceId} port={commands?.skills} onNotice={onNotice} />;
   if (config.createForm === 'file-upload') {
     // A kind whose substance IS its bytes cannot be created before them.
     return (

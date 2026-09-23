@@ -44,6 +44,7 @@ import { AuxEntityPanel } from './auxPanel';
 import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
 import {
   EntityListPanel,
+  NewContainerSheet,
   type ControlHost,
   type DetailReasons,
 } from '../panels';
@@ -53,6 +54,7 @@ import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { navStore, selectTrailEntity, useNavStore } from '../stores/navStore';
+import { chatAboutTarget, composeListActions, useChatAbout } from './useChatAbout';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
@@ -64,7 +66,7 @@ import {
   slugOfKind,
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
-import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
+import { rootBirthDispatch, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import type { Notice } from '../shell';
@@ -74,6 +76,7 @@ import { useMembershipSurface } from './membershipSurface';
 import { usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import type { GateData } from './useGateData';
 
 /* ---------------------------------------------------------------------------
@@ -102,6 +105,23 @@ export const HOME_CENTER_MIN = 360;
 export const HOME_LIST_MIN = 240;
 export const HOME_LIST_DEFAULT = 340;
 export const HOME_LIST_MAX = 560;
+/** THE WIDTH BELOW WHICH A'S CHROME GOES COMPACT.
+
+    Home passed `compact` as a hardcoded literal, so the panel's header rows
+    were IDENTICAL at 240 and at 560: dragging the column changed the list and
+    nothing above it, and the row designed for the floor was also what a 560px
+    column got — ~274px of empty filter row between the last chip and the sort
+    control. `WorkspaceView` has derived the same prop from its measured width
+    since it gained one (`layout.left <= 220`); this is that rule for a column
+    whose floor is 240 rather than 200, which is why the number differs.
+
+    420 is where the filter row stops fitting WORDS. At `--pn-fs-micro` the
+    four controls it can carry at once — `Filter ▾`, `People ▾`,
+    `Collections ▾` and `↓ Recently modified`, the longest sort label the task
+    registry declares — need ~410px with their gaps and the row's two 10px
+    gutters. Below this the sort control collapses to its glyph (T0-3 frame 4)
+    and the row still fits; above it the row reads as words. */
+export const HOME_LIST_COMPACT_MAX = 420;
 /** A's separator track. It has no border of its own. */
 export const HOME_LIST_CHROME = 8;
 
@@ -186,6 +206,20 @@ export interface HomeChatRegions {
   stage?: CockpitStage | null;
   onStageChange?(next: CockpitStage | null): void;
   /**
+   * `?about=` — the entity a NEW conversation started here should be about.
+   *
+   * Route-owned for the same reason `?stage=` is, and for one more: the verb
+   * that sets it ("Chat about this", on a row's action cluster and on the
+   * Chats list header) is a NAVIGATION, not a command. It has nowhere to ask
+   * for a teammate, a model and a mode, so it hands the subject to the
+   * composer through the address and the human commits it there — where a
+   * reload keeps it and a paste carries it.
+   *
+   * IGNORED once a thread is open: an existing conversation's subject is
+   * already decided.
+   */
+  aboutId?: EntityId | null;
+  /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
    * workspace list draws (user ruling 2026-08-16: "exact tree structure,
@@ -237,6 +271,11 @@ export function HomeView(props: HomeViewProps) {
      Resolved here, once, so the screen never has to arbitrate. */
   const routeStage: CockpitStage | null =
     routeRoot?.type === 'chats' && !centerId ? (routeRoot.stage ?? null) : null;
+  /* The subject a new conversation here is about (`?about=`), from the same
+     root. Unlike the stage it does not compete with region B for space — it
+     configures the COMPOSER — so it survives an open entity. */
+  const routeAboutId: EntityId | null =
+    routeRoot?.type === 'chats' ? (routeRoot.aboutId ?? null) : null;
 
   /* Switching the root is BROWSING (D6): it renames the address's root and
      touches neither trail. Remembered so a bare `/home` returns here. */
@@ -318,8 +357,9 @@ export function HomeView(props: HomeViewProps) {
   );
 
   /* `onFullOptions` rides in when the shell wired `onLaunchOpen` — a task
-     row's Run then goes STRAIGHT to the launch sheet this screen mounts,
-     the same outranking the kind screens apply. */
+     row's Run pops the composer, and this is the popup's `full options ▸`
+     escape to the launch sheet this screen mounts (precedence flipped
+     2026-09-07: the popup outranks the sheet everywhere a flow can mount). */
   const launchPort = useLaunchPort(data, {
     ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
     ...(props.onLaunchOpen
@@ -330,6 +370,8 @@ export function HomeView(props: HomeViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifyActionFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   /* THE SESSIONS CELL'S BIRTH VERB (user ruling 2026-08-19). Home had no
      session-start dispatcher at all, so its Sessions root offered no way to
@@ -341,9 +383,48 @@ export function HomeView(props: HomeViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
+    onOpen: (id: EntityId) => navStore.getState().openCenter(id),
+    onError: (verb: ActionRef, error: unknown) => notifyActionFailed(verb, '', error),
+  });
+
+  /* The container birth sheet — same shape as `sessionStart` above, plus the
+     modal obligations. See `useNewContainerSheet`. */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
     onOpen: (id) => navStore.getState().openCenter(id),
     onError: (verb, error) => notifyActionFailed(verb, '', error),
   });
+
+  /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb. Home builds the route
+   * verb itself: unlike the workspace and the kind screen it already owns
+   * `navStore` for its own root and thread addresses.
+   */
+  const chatAbout = useChatAbout({
+    open: (aboutId) => navStore.getState().navigate(chatAboutTarget(aboutId)),
+  });
+  /* MEMOISED because `birthFor` below depends on it: `composeListActions`
+     builds a fresh object every call, and an always-changing dependency turns
+     that `useCallback` into a no-op. */
+  const listActions = useMemo(
+    () =>
+      composeListActions([
+        { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+        { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+        { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+      ]),
+    [
+      sessionStart.onAction,
+      sessionStart.wiredActions,
+      chatAbout.onAction,
+      chatAbout.wiredActions,
+      newContainer.onAction,
+      newContainer.wiredActions,
+    ],
+  );
   const rowLifecycle = useRowLifecycle({
     data,
     viewerMemberId: props.viewerMemberId,
@@ -424,19 +505,13 @@ export function HomeView(props: HomeViewProps) {
    */
   const birthFor = useCallback(
     (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
-      const action = rootBirthAction(kind);
-      if (action) {
-        const dispatch = sessionStart.onAction;
-        return dispatch
-          ? { refusal: null, perform: () => dispatch(action, '') }
-          : {
-              refusal: {
-                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
-                remedy: 'this surface was mounted without a command executor',
-              },
-              perform: () => undefined,
-            };
-      }
+      /* Both `chat` (`chat-about`) and `container` (`new-container`) reach
+         this arm, and neither is performed by `useSessionStart`. See
+         `rootBirthDispatch` for why the gate is `wiredActions` and not the
+         presence of a dispatcher — `composeListActions` always returns an
+         `onAction`, so a presence check can never refuse. */
+      const verb = rootBirthDispatch(kind, listActions);
+      if (verb) return verb;
       const target = getKind(kind);
       return {
         refusal:
@@ -454,7 +529,7 @@ export function HomeView(props: HomeViewProps) {
           }),
       };
     },
-    [newEntity, sessionStart.onAction],
+    [newEntity, listActions],
   );
   const cellBirth = birthFor(cellConfig.kind);
 
@@ -601,6 +676,7 @@ export function HomeView(props: HomeViewProps) {
           /* Same executor, same reason as `EntityView`: this list draws the
              session row's ⏻ too, and until now nothing was behind it. */
           onTerminate={primaries.terminate}
+          onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
@@ -609,12 +685,17 @@ export function HomeView(props: HomeViewProps) {
           membershipSets={rowLifecycle.membershipSets}
           connectionsOf={data.connectionsOf}
           launch={launchPort}
-          compact
+          onAction={listActions.onAction}
+          wiredActions={listActions.wiredActions}
+          /* MEASURED, not asserted. This was `compact` — a bare literal, true
+             at every one of the 320px this column drags through. See
+             `HOME_LIST_COMPACT_MAX`. */
+          compact={listWidth <= HOME_LIST_COMPACT_MAX}
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, ctx, centerId, rowLifecycle, primaries, launchPort],
+    [data, ctx, centerId, rowLifecycle, primaries, launchPort, listActions, listWidth],
   );
 
   const regions: HomeChatRegions = {
@@ -645,6 +726,10 @@ export function HomeView(props: HomeViewProps) {
     /* The stage PANE itself is rendered by the screen, not composed here: the
        fleet and the graph are both folds of the THREAD, and the turns live in
        the screen. This layer owns only the address. */
+    /* Only while the composer is what is on screen — see the prop's docblock.
+       A link that names both a thread and a subject names an intention that
+       cannot be honoured, and the thread is the more specific of the two. */
+    ...(routeAboutId && routeThreadId == null ? { aboutId: routeAboutId } : {}),
     stage: routeStage,
     onStageChange: (next) =>
       navStore.getState().navigate({
@@ -772,12 +857,45 @@ export function HomeView(props: HomeViewProps) {
           projects={data.launch.projects}
           profiles={data.launch.profiles}
           memories={data.launch.memories}
+          loadSkillPreview={data.launch.loadSkillPreview}
           capacity={data.launch.capacity}
           loadCredentialStatus={data.seam.credentials.status}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
         />
+      )}
+      {/* THE CONTAINER BIRTH SHEET — same overlay slot and same reason as the
+          launch sheet above: it overlays the region rather than entering it as
+          a column, so it never touches V/cMin. Mounted only while open, so the
+          draft is discarded on dismiss rather than persisting invisibly into
+          the next open. */}
+      {newContainer.isOpen && (
+        <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+          <div
+            className="pn-ncs-host"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New container"
+            /* The scrim dismisses; the sheet must not. Without this a click on
+               any control inside bubbles up and closes the form under the
+               viewer's own cursor. */
+            onClick={(event) => event.stopPropagation()}
+          >
+            <NewContainerSheet
+              spaceId={data.spaceId}
+              projects={data.launch.projects
+                .filter((project) => !project.scratch)
+                .map((project) => ({
+                  id: project.id as EntityId,
+                  title: project.name,
+                  trusted: project.trusted,
+                }))}
+              onCreate={newContainer.create}
+              onCancel={newContainer.close}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

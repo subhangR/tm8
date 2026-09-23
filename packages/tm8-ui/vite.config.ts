@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { pwaShell } from './vite-plugin-pwa-shell';
@@ -15,36 +17,72 @@ import { pwaShell } from './vite-plugin-pwa-shell';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 /**
- * THIS PACKAGE IS THE FROZEN 1.0 SNAPSHOT, and since the UI version switch it
- * is BUILT AND SERVED AGAIN — as the alternate UI at `/ui-1.0/`, never as the
- * product one. `packages/tm8_ui_2.0` is the product UI; see `scripts/lib/ui.mjs`.
+ * THIS PACKAGE IS THE PRODUCT UI, served at `/`, and since 2026-09-15 it is the
+ * ONLY UI in this repo. The Astryx redesign (`packages/tm8_ui_2.0`, the
+ * alternate at `/ui-2.0/`) and the legacy collab-v2 oracle (`packages/ui`) were
+ * both deleted; see `scripts/lib/ui.mjs`, the pointer every launcher, doctor
+ * and deploy path reads.
  *
- * Three things here exist only because of that, and each would be wrong for a
- * bundle served at the root:
+ * THE `/ui-2.0` MOUNT IS GONE IN BOTH ITS CHAINS. It is recorded here because
+ * the shape of it is the thing to recognise if a second bundle is ever wanted
+ * again: the path STRING lived in five places (the server's mount constant, the
+ * alternate bundle's `base`, this package's service worker, and two vite
+ * proxies), while the directory POINTER `TM8_UI_2_0_DIR` was a SEPARATE chain
+ * through `deploy/prod/env.sh`, `deploy/utho/deploy.sh`, the server's `ui20Dir`
+ * and `main.ts`. The two chains met only in `main.ts` — which is why `/ui-2.0/`
+ * spent its last weeks 404ing on prod with every path string perfectly correct:
+ * the env value named a directory that did not exist. A second mount that ever
+ * returns needs both chains, and needs a test that fails when only one is done
+ * (`packages/server/test/static-ui.test.ts` holds that line today).
  *
- *  1. `base` — the mount path is baked into every asset URL at build time. It
- *     is duplicated in `packages/server/src/http/static.ts` (UI_1_0_MOUNT_PATH)
- *     and `tm8_ui_2.0/src/ui-version/mount.ts`; changing it means changing all
- *     three and rebuilding this bundle.
+ * Three things follow from being the ROOT bundle, and each was the opposite
+ * while this package was the mounted one:
  *
- *  2. `build.outDir` is `dist-1.0`, NOT `dist`. This is a production safety
- *     interlock, not a preference. On the live box `/opt/tm8/prod/packages/
- *     tm8-ui/dist` is a SYMLINK to `../tm8_ui_2.0/dist`, bridging a stale
- *     root-owned `/etc/tm8/prod.env` that still names the old path. Emitting a
- *     real `dist/` here would replace that symlink on the next deploy and
- *     silently repoint production at the 1.0 bundle — a total UI swap that
- *     nothing would report. Do not "tidy" this back to `dist`.
+ *  1. NO `base`. Vite's default `/` is correct and must stay implicit-correct:
+ *     a mount path is baked into every asset URL at build time, so a `base`
+ *     here would make every asset 404 at the root.
  *
- *  3. NO `pwaShell`. A service worker for this bundle would install with
- *     `/ui-1.0/` scope beside the product worker's root scope; two workers
- *     racing over one origin is not something the alternate UI needs to be
- *     worth having. `tm8_ui_2.0/src/pwa/service-worker.js` excludes this mount
- *     for the matching reason on its side.
+ *  2. `build.outDir` is the default `dist`, and `TM8_UI_DIR` names it. The old
+ *     `dist-1.0` override was a production interlock against a stale
+ *     root-owned `/etc/tm8/prod.env`; that pointer has since been rewritten and
+ *     `deploy/utho/deploy.sh` removes the legacy `dist` symlink before building,
+ *     so emitting `dist` here no longer risks repointing production.
+ *
+ *  3. `pwaShell` IS INSTALLED. A service worker belongs to whichever bundle
+ *     holds the root scope, and that is this one; `src/pwa/register.ts` guards
+ *     on `BASE_URL === '/'` so a mounted build of this package would still
+ *     register nothing.
  */
 export default defineConfig({
-  base: '/ui-1.0/',
-  build: { outDir: 'dist-1.0' },
-  plugins: [react()],
+  plugins: [
+    react(),
+    /**
+     * The precache list. `critical` (the HTML, entry chunk and stylesheet) is
+     * derived from the bundle; these are the copied-from-`public/` files worth
+     * having offline on top of it.
+     *
+     * The two font faces are Hanken Grotesk 400 and 600 latin — `--pn-ui` at
+     * body weight and at the weight every heading, title and tab label uses.
+     * They are 69 kB together and they are the difference between the installed
+     * app looking like itself on a cold offline launch and falling back to
+     * system-ui. The other faces (latin-ext, the serif display face, the mono)
+     * are runtime-cached: they are wanted less often and `font-display: swap`
+     * means their absence costs a repaint, not a broken screen.
+     */
+    pwaShell({
+      optional: [
+        '/manifest.webmanifest',
+        '/icons/icon-192.png',
+        '/icons/icon-512.png',
+        '/icons/icon-maskable-512.png',
+        '/icons/apple-touch-icon-180.png',
+        '/favicon.ico',
+        '/tm8-mark.png',
+        '/fonts/HankenGrotesk-400-latin.woff2',
+        '/fonts/HankenGrotesk-600-latin.woff2',
+      ],
+    }),
+  ],
   server: {
     port: 4612,
     strictPort: true,
@@ -85,6 +123,20 @@ export default defineConfig({
     // failed by which neighbour ran first in their worker.
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     setupFiles: ['./test-setup.ts'],
+    /*
+     * EXCALIDRAW IS STUBBED FOR EVERY SUITE. See `test/excalidraw-stub.tsx`
+     * for the why — the short version is that it cannot render in jsdom AND
+     * its `open-color` JSON import throws under node resolution, which took
+     * the whole drawing body into the panel's CatchBoundary and silently
+     * removed the attachment strip below it.
+     *
+     * The CSS entry is separate and must be aliased too: a bare `.css` import
+     * from inside a node-resolved dependency has nothing to handle it here.
+     */
+    alias: [
+      { find: /^@excalidraw\/excalidraw$/, replacement: resolve(__dirname, 'test/excalidraw-stub.tsx') },
+      { find: /^@excalidraw\/excalidraw\/index\.css$/, replacement: resolve(__dirname, 'test/excalidraw-stub.css') },
+    ],
     /**
      * THE DEADLINE IS A CLAIM ABOUT THE MACHINE, AND THE DEFAULT ONE IS FALSE
      * HERE.

@@ -43,6 +43,9 @@ import type {
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
+/* The container refusals live with the verbs that raise them, so the sentence
+   a button refuses with and the sentence this row declares are one string. */
+import { CONTAINER_CAPABILITY_REASONS } from './actions';
 import type { SessionLiveness } from '../data/seam';
 
 /** WLT §2.1 reserved words — never a kind slug. */
@@ -451,14 +454,19 @@ const COLLECTIONS_BLOCK: ContentBlockRef = {
 };
 
 /** The shape every kind gets before its own divergence is layered on. */
-function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
+function baseList(
+  overrides: Partial<Omit<ListConfig, 'categories'>> &
+    Pick<ListConfig, 'tile'> & {
+      /**
+       * `null` means THIS KIND HAS NO WORKFLOW TO PROJECT — see the fact-kind
+       * ruling below. Omitted still means "the ruled four".
+       */
+      categories?: readonly StatusCategoryTab[] | null;
+    },
+): ListConfig {
   return {
     quickCreate: true,
     sort: DEFAULT_SORT,
-    // Universal by DEFAULT (D41): a kind opts into a richer partition, never
-    // out of having tabs at all. A row that forgot them would silently lose
-    // its tab row, so absence is not an available state.
-    categories: CATEGORY_TABS,
     // Universal for the same reason: `contains` accepts every dst kind, so
     // every list can be lensed by a collection and every row added to one.
     membership: COLLECTION_MEMBERSHIP,
@@ -471,6 +479,31 @@ function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): Li
        it by declaring its own chips. Last in the row on purpose: it is an
        envelope disposition, not a property of the work. */
     filters: [...(overrides.filters ?? [assigneeFilter, attentionFilter]), archivedFilter],
+    /* APPENDED AFTER THE OVERRIDES for the same reason `filters` is, and
+       carrying the one ruling that changed here.
+
+       D41 used to read: a kind opts INTO a richer partition, never out of
+       having tabs at all. That was right while the four buckets meant one
+       thing. Phase 5 (migration 152) gave them a second job — `is_resolved`
+       answers `status_category = 'done'` — and for the five FACT KINDS the two
+       jobs came apart. `152_universal_status.sql` seeds commit, message, file,
+       memory and artifact to `done` deliberately, because a fact about the past
+       must not block a `depends_on` forever. That `done` is a resolution
+       predicate, NOT a lifecycle position: a memory is a recorded observation,
+       not an intention, and it was never `to_do`.
+
+       So those kinds were handed a four-stage tab row for a workflow they do
+       not have — and, because the row defaults to `tabs[0]`, every one of them
+       opened on To Do and showed NOTHING. All 24 memories in the production
+       space were invisible on arrival; that is the bug this fixes, and it was a
+       filter the whole time, not a failed read.
+
+       `null` is therefore now an available state, and it means what absence
+       always should have: no workflow to project, so no row. Every consumer
+       already degrades correctly — `CategoryTabs` returns null for empty tabs,
+       and `EntityTree` falls back to the unfiltered `{deleted:'exclude'}`. */
+    categories:
+      overrides.categories === null ? undefined : (overrides.categories ?? CATEGORY_TABS),
   };
 }
 
@@ -872,6 +905,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'agentTool' },
           { source: 'model' },
           { source: 'shareMode' },
+          { source: 'driveMode' },
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
@@ -960,8 +994,14 @@ const ROWS: readonly KindConfig[] = [
        * control" ruling that took the tick out in the first place. The swap is
        * per-ROW state, so the component that sees the row owns it; this array
        * keeps saying which verbs the kind HAS.
+       *
+       * `share-session` follows the identical reading (187). Declared here in
+       * its PRIVATE half, because that is the state a session is in before
+       * anyone has decided anything about it; `sharingControlFor` swaps it to
+       * `unshare-session` from the row's own `shareMode`, and `unshare-session`
+       * is absent from this array for exactly the reason `resume` is.
        */
-      rowActions: ['complete', 'terminate'],
+      rowActions: ['complete', 'share-session', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {
@@ -1184,6 +1224,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messageAuthor' }, { source: 'points' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'MESSAGE' }] },
   },
@@ -1357,6 +1400,9 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'repository' }, { source: 'sha' }] },
       sort: [BY_CREATED, BY_ACTIVITY],
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1385,6 +1431,9 @@ const ROWS: readonly KindConfig[] = [
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'mimeType' }, { source: 'sizeBytes' }] },
       inlineEdit: { title: true },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       archetype: 'generic',
@@ -1446,17 +1495,24 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '✦', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
     card: { fields: ['equipped', 'excerpt', 'activityAt'] },
     list: baseList({
-      tile: { badges: [{ source: 'equipped' }] },
-      inlineEdit: { title: true },
+      tile: { badges: [{ source: 'provider' }, { source: 'level' }, { source: 'skillRoot' }, { source: 'equipped' }, { source: 'missing' }] },
+      filters: [
+        { id: 'provider', label: 'Provider', options: ['agents', 'claude', 'codex', 'hermes', 'tm8'].map(value => ({ id: value, label: value, filter: { skillProvider: value } })) },
+        { id: 'level', label: 'Level', options: ['project', 'user', 'nested', 'system', 'admin', 'plugin', 'synced', 'session', 'space'].map(value => ({ id: value, label: value, filter: { skillLevel: value } })) },
+        { id: 'missing', label: 'Missing', options: [{ id: 'missing', label: 'Missing files', filter: { skillMissing: true } }] },
+        { id: 'equipped', label: 'Equipped', options: [{ id: 'mine', label: 'Equipped by me', filter: { edge: { type: 'equips', direction: 'incoming', entityId: VIEWER_ACTOR } } }] },
+      ],
+      inlineEdit: { title: false },
     }),
     panel: {
-      archetype: 'generic',
+      archetype: 'equipment',
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
         { block: 'items', label: 'EQUIPPED BY' },
         COLLECTIONS_BLOCK,
       ],
     },
+    createForm: 'skill-file',
     palette: { createLabel: 'New skill' },
   },
 
@@ -1599,6 +1655,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     /*
      * PROFILE, not generic — and this is the archetype working as designed
@@ -1715,6 +1774,308 @@ const ROWS: readonly KindConfig[] = [
     ],
   },
 
+  /*
+   * -- drawing (migration 194: an Excalidraw canvas as an entity) --
+   *
+   * THE CANVAS IS THE BODY. `graph` reasoned its way to putting a picture
+   * first and this row inherits that conclusion, but goes one step further:
+   * the blueprint block is READ-ONLY because Craft's studio is where a graph
+   * is edited, and a drawing has no studio. The panel is the only place it is
+   * ever drawn, so the block is the editor.
+   *
+   * `quickCreate` is on: a drawing's empty state is a legitimate starting
+   * point — a title and a blank canvas is exactly what "new drawing" means,
+   * unlike a kind that needs a runtime binding before it means anything.
+   *
+   * `primaries: ['edit']` covers the TITLE only. The scene is saved by the
+   * canvas itself under the ordinary version guard, not through the edit
+   * sheet, which is why no scene field is declared here (§15.1 requires every
+   * declared field to be reachable, and a 40-shape scene is not a form input).
+   */
+  {
+    kind: 'drawing',
+    label: 'Drawing',
+    labelPlural: 'Drawings',
+    icon: '✎',
+    iconArt: KIND_ART.drawing,
+    slug: 'drawings',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree'],
+    chip: { glyph: '✎', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'canvas' }, { block: 'fields', label: 'DRAWING' }, COLLECTIONS_BLOCK],
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Login wireframe' },
+    ],
+  },
+
+  /*
+   * -- chat (migration 176: a conversation with a teammate, as an entity) --
+   *
+   * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a
+   * generic fields body and a one-badge tile — because `registry.test.ts`
+   * asserts totality over `CoreEntityKindSchema` and a kind with no row is a
+   * build failure. The surfaces are here now.
+   *
+   *   * `panel.archetype: 'conversation'` — the body IS the transcript and its
+   *     composer, with nothing above it. See the archetype's own docblock in
+   *     `types.ts` for why this is neither `hub` (which hangs a feed beneath
+   *     front-door regions a chat does not have) nor `terminal`.
+   *   * `panel.conversation: 'chat-thread'` — WHICH conversation, as registry
+   *     DATA, so `defaultConversationSurfaceKind` never reads a kind literal.
+   *   * `composition: 'chat'` — the body ends at its composer, so no strip, no
+   *     attention section, no footer under it. The same declaration `channel`
+   *     and `work_session` carry, for the same reason.
+   *   * `panel.threads` is ABSENT, i.e. false: a chat is FLAT (176 §1.3 — every
+   *     turn is a root message on the chat and the user→agent pairing lives in
+   *     `chat_turns`). A thread pane here would offer to branch a conversation
+   *     the data model cannot branch.
+   *   * `quickCreate: false` — a chat is born from `chat.start`, which needs a
+   *     teammate, a model and a mode. The placeholder-only generic flow cannot
+   *     supply them, and `chat` is excluded from `CreatableEntityKind` for
+   *     exactly that reason. A refused Create control is not a control (the
+   *     `work_session` ruling above, same shape). The list header points at the
+   *     composer instead — see `quickLaunch` below.
+   *   * `rowActions` names NO verbs of its own. `run` arrives by derivation
+   *     (`applyLaunch`) and `chat-about` by derivation (`applyChatAbout`), and
+   *     a chat has no third verb a row can perform: it cannot be completed
+   *     (no category vocabulary of its own) and it cannot be terminated (the
+   *     runtime is stopped from the composer, which knows whether a turn is in
+   *     flight).
+   *
+   * THE TILE PRINTS WHAT THE ROW ACTUALLY CARRIES. `model`, `mode`,
+   * `turnState` and `lastTurnAt` are all on `state` (contract `kind: 'chat'`).
+   * The TEAMMATE'S NAME is not — the state carries `teammateId` and nothing
+   * else, and a tile that rendered a uuid would be worse than one that renders
+   * nothing. The name is visible where the conversation is (the thread header
+   * resolves it through `listTeammates`), and putting it on the row needs one
+   * server-side join in `entity-read.ts`'s chat arm. Recorded rather than
+   * faked.
+   */
+  {
+    kind: 'chat',
+    label: 'Chat',
+    labelPlural: 'Chats',
+    icon: '❝',
+    iconArt: KIND_ART.chat,
+    slug: 'chats',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '❝', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: {
+        badges: [
+          { source: 'chatTurnState' },
+          { source: 'model' },
+          { source: 'chatMode' },
+          { source: 'chatLastTurnAt' },
+          { source: 'messages' },
+        ],
+      },
+      // The header verb is the ONE door a chat is actually born through, and
+      // it is `chat-about` rather than `create` for the same reason
+      // `quickCreate` is false: the composer is the configuration.
+      //
+      // `quickStart`, NOT `quickLaunch` — the two are not interchangeable and
+      // the difference is exactly this verb's shape: `quickLaunch` carries
+      // `flow: 'launch'` and EXPANDS the spawn config in place, while this one
+      // commits on click (it navigates to the composer). Declared as
+      // `quickLaunch` it would open a five-section execution card for a chat.
+      //
+      // At the HEADER there is no row, so the verb opens a chat about nothing
+      // — which is bare Home's new conversation, the honest reading of "start
+      // a chat" from a list of chats. See the action's availability: a subject
+      // is optional, not required.
+      quickStart: 'chat-about',
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'conversation',
+      conversation: 'chat-thread',
+      composition: 'chat',
+    },
+  },
+
+  // -- container (a machine as an entity; migration 177, Design §13.1) --------
+  //
+  // THE ONLY PLACE THE KIND IS SPELLED. Everything a container looks like —
+  // the chip tint, the tile badges, the panel body, the verbs on the bar — is
+  // read from this row. `EntityDetailPanel` has NO kind switch: the body comes
+  // from `panel.archetype`, and a kind literal outside `domain/` fails the
+  // §15.2 build guard. So a change of appearance is an edit HERE, never a
+  // branch in a component.
+  {
+    kind: 'container',
+    label: 'Container',
+    labelPlural: 'Containers',
+    /*
+     * `◫`, NOT the `▣` Design §13.1 names. That glyph is already `file`'s
+     * (registry.ts:1376), and while the artwork test only guards the DRAWN
+     * mark, shipping a duplicate text glyph would re-open the exact defect the
+     * icon set was rebuilt to close — two kinds indistinguishable in every
+     * string-only surface. `◫` is a divided box, which is what KIND_ART.container
+     * draws, so the fallback and the artwork say the same thing.
+     */
+    icon: '◫',
+    iconArt: KIND_ART.container,
+    slug: 'containers',
+    strategy: 'collection',
+    defaultMode: 'list',
+    // Board is hidden for work_session's reason, and it applies twice over
+    // here: server grouping guards on `state.kind === 'task'`, and a
+    // container's status is OBSERVED (the single writer is
+    // `public.set_container_status`), so a drag-to-move board column would be
+    // a control that cannot commit. Gallery has no image to draw.
+    hiddenModes: ['board', 'gallery'],
+    /*
+     * ALL NINE STATUSES ARE KEYED. A value absent from this map renders the
+     * neutral `idle` tone — silently, and NO vitest can see it, because jsdom
+     * loads no stylesheets. The map is therefore asserted AS DATA in
+     * `registry.test.ts` rather than by reading a rendered colour.
+     */
+    chip: {
+      glyph: '◫',
+      tintBy: 'containerStatus',
+      tones: {
+        requested: 'wait',
+        provisioning: 'wait',
+        running: 'run',
+        paused: 'info',
+        stopping: 'wait',
+        stopped: 'idle',
+        destroying: 'wait',
+        destroyed: 'idle',
+        failed: 'block',
+      },
+    },
+    card: { fields: ['containerStatus', 'profile', 'provider', 'activityAt'] },
+    list: baseList({
+      // Same reading as work_session's: a container's category is OBSERVED,
+      // and the question this list opens on is "what is running".
+      defaultCategory: 'in_progress',
+      // Nesting is real (a dind/microvm container may parent children), so the
+      // tree is the honest arrangement rather than a flat list.
+      tree: { by: 'hierarchy', guideLines: true },
+      tile: {
+        anatomy: 'session-tree',
+        badges: [
+          { source: 'containerStatus' },
+          { source: 'profile' },
+          { source: 'provider' },
+          { source: 'isolation' },
+          { source: 'createdBy' },
+          { source: 'shareMode' },
+        ],
+        /*
+         * NO `pulse` IN P0, and its absence is deliberate rather than
+         * forgotten. Design §13.1 asks for `{ signal: 'surface-activity',
+         * gate: 'live' }`, but `PulseBinding.signal` is the closed value
+         * `'terminal-activity'` and NOTHING emits a surface signal until the
+         * surfaces exist (P1/P2). Declaring a pulse now would bind a tile
+         * animation to a pool no producer writes to — dead data that reads as
+         * a working feature, which is the failure `HANDLED_SOURCES` exists to
+         * make loud one field over. The surface lane adds the signal and this
+         * binding together.
+         */
+      },
+      liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} running` },
+      /*
+       * NOT `quickCreate`. The birth verb is `containers.create`, NEVER
+       * `entities.create`: `container` joins `CreatableEntityKind`'s exclusion
+       * and the node refuses a generic create with "owned by the container
+       * lifecycle", exactly as it does for `work_session`. The placeholder flow
+       * `quickCreate: true` mounts would therefore be a Create control that
+       * always refuses, and a refused control is not a control (the ruling
+       * already made for work_session's row).
+       */
+      quickCreate: false,
+      quickStart: 'new-container',
+      filters: [attentionFilter],
+      sort: DEFAULT_SORT,
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      /*
+       * A NEW ARCHETYPE (§13.2), and explicitly not a special case of
+       * `terminal` — see the `'machine'` member's own note in `types.ts` for
+       * why folding it in would put a kind branch inside `WorkSessionContent`.
+       */
+      archetype: 'machine',
+      /*
+       * `frame`: the body is a VIEWPORT onto a machine and the panel exists to
+       * show it, so no attachment strip and no footer are stapled underneath.
+       *
+       * READ `MachineBody`'s stylesheet before adding a floored region here.
+       * The artifact panel — the other `frame` kind — shipped a section with
+       * `min-height: 0` above a child holding a 420px floor, and on a short
+       * panel THE FRAME PAINTED STRAIGHT OVER THE BLOCK BELOW IT. MachineBody
+       * carries no px floor for exactly that reason.
+       */
+      composition: 'frame',
+      primaries: [
+        'container-start',
+        'container-stop',
+        'container-destroy',
+        'container-terminal',
+        'container-screen',
+      ],
+      statusPill: {
+        source: 'containerStatus',
+        // The chip's map, restated: the pill and the chip must never disagree
+        // about what `failed` looks like. `registry.test.ts` asserts they are
+        // equal rather than trusting two hand-kept copies.
+        tones: {
+          requested: 'wait',
+          provisioning: 'wait',
+          running: 'run',
+          paused: 'info',
+          stopping: 'wait',
+          stopped: 'idle',
+          destroying: 'wait',
+          destroyed: 'idle',
+          failed: 'block',
+        },
+      },
+      /*
+       * L6 wording for the capabilities the SERVER turns off. Server truth
+       * decides ON/OFF; these only supply the honest sentence.
+       */
+      capabilityReasons: CONTAINER_CAPABILITY_REASONS,
+      z4: { immersive: true },
+    },
+    palette: { createLabel: 'New container', primaryAction: 'new-container' },
+    /*
+     * NO `editFields`, DELIBERATELY — and §15.1 is what forced the decision
+     * rather than taste: a kind that declares fields must also offer `edit` in
+     * `panel.primaries`, or the fields are unreachable and `registry.test.ts`
+     * says so by name.
+     *
+     * Adding `edit` would have bought nothing and cost a slot. The only member
+     * a dialog could offer is the TITLE, which `inlineEdit: { title: true }`
+     * above already reaches in one gesture — so the dialog would be a second
+     * door to a member that has one. The other three things
+     * `containers.update` patches (lifecycle, shareMode, labels) cannot go in
+     * a dialog at all: they are version-guarded commands carrying
+     * `expectedVersion`, and the edit dialog sends a bare `entities.patch`.
+     *
+     * The bar is already at six with the derived `run`. A seventh control that
+     * opens onto one field the panel edits in place is the kind of accumulation
+     * that pushed the panel tabs off their own row once before.
+     */
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',
@@ -1821,6 +2182,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: false,
       tile: { badges: [] },
+      // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
+      // resolution predicate, with no lifecycle to project. No tab row.
+      categories: null,
     }),
     panel: {
       /*
@@ -1979,7 +2343,43 @@ function applyLaunch(row: KindConfig): KindConfig {
   };
 }
 
-const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch);
+/**
+ * `chat-about` — "open a chat about this", on every row that can BE talked
+ * about, which is every row.
+ *
+ * DERIVED FOR THE SAME REASON `run` IS. The verb is drawn from the tile's
+ * `list.rowActions`, and writing it into nineteen arrays by hand would make
+ * "which kinds can you open a chat about?" a question with nineteen possible
+ * answers and no authority — the exact drift `applyLaunch` was extracted to
+ * end. Here it has one answer, and it is the graph's: `about` is registered
+ * with `dst_kinds = array['*']` (migration 056:203), so every kind is a legal
+ * subject and no per-kind list belongs in this package.
+ *
+ * TWO EXCLUSIONS, both structural rather than editorial:
+ *
+ *   · `message` — `strategy: 'anchored'` with `slug: null`. It has no
+ *     collection surface, so it has no tile for the verb to sit on; declaring
+ *     it would be a control on a list that does not exist.
+ *   · `chat` itself — the verb OPENS a chat, and a chat about a chat is a
+ *     nesting nobody asked for. Its row still gets the HEADER verb
+ *     (`quickStart`), which is where starting a conversation belongs on a list
+ *     of conversations.
+ *
+ * Appended LAST rather than prepended: `run` leads the cluster by ruling
+ * (`RULED_ORDER`), and an unranked verb keeps its declared position, so this
+ * lands after the kind's own verbs and before the tail's process control.
+ * Idempotent — a row that already names it keeps its own ordering.
+ */
+const NO_CHAT_ABOUT: ReadonlySet<string> = new Set(['message', 'chat']);
+
+function applyChatAbout(row: KindConfig): KindConfig {
+  if (NO_CHAT_ABOUT.has(row.kind)) return row;
+  const declared = row.list.rowActions ?? [];
+  if (declared.includes('chat-about')) return row;
+  return { ...row, list: { ...row.list, rowActions: [...declared, 'chat-about'] } };
+}
+
+const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch).map(applyChatAbout);
 
 const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row.kind, row]));
 

@@ -1,3 +1,5 @@
+import { serializeSkillIndex, type PromptSkill } from './skill-index.js';
+export { serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
 /**
  * `@tm8/prompt` — the ONE agent-prompt composer, shared by the spawn path and
  * the CLI.
@@ -32,10 +34,12 @@ import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
 import {
   coordinatorBootstrapControl,
+  coordinatorKindOf,
   dispatcherBootstrapControl,
   taskAssignmentInjection,
   workerBootstrapControl,
   type BootstrapControlFacts,
+  type CoordinatorKind,
 } from './templates.js';
 
 /**
@@ -124,12 +128,20 @@ export interface PromptManifest {
         threadChannelId?: string | null | undefined;
       }>
     | undefined;
-  coordinator?: { sessionId?: string; displayName?: string } | null | undefined;
+  coordinator?:
+    | {
+        sessionId?: string;
+        /** `work_session | chat` (176). Absent means work_session. */
+        kind?: string | null | undefined;
+        displayName?: string;
+      }
+    | null
+    | undefined;
   directive?:
     | { subject?: string; message?: string; fromSessionId?: string }
     | null
     | undefined;
-  skills?: ReadonlyArray<{ name?: string | undefined; body?: string | undefined }> | undefined;
+  skills?: ReadonlyArray<PromptSkill> | undefined;
   promptExtra?: string | null | undefined;
 }
 
@@ -375,6 +387,28 @@ export const COORDINATION_INSTRUCTION =
   'exact `coordinator_session_id` above, the moment you complete or block. Never send ' +
   'that completion report to the assignment or task anchor, and do not simply go idle.';
 
+/**
+ * The same instruction when the coordinator is a CHAT (176).
+ *
+ * Written as its own constant rather than a suffix because the first sentence
+ * of the original is now false in this case — the thing waiting is not a
+ * coordinator session, and a worker told to look for one will not find it. The
+ * COMMAND is deliberately identical: a chat is an anchor like any other, and
+ * suggesting otherwise would invent a second protocol that does not exist.
+ */
+export const COORDINATION_INSTRUCTION_CHAT =
+  'A CHAT spawned you and is waiting on a durable answer. Its id above is a chat ' +
+  'entity, not a work session, and `tm8 message send --to <coordinator-session-id> ' +
+  '"<body>"` reaches it exactly as it reaches a session: the message lands in the ' +
+  'chat transcript, runs the chat\'s next turn, and the human reading that chat sees ' +
+  'it. Send it the moment you complete or block. Never send that completion report ' +
+  'to the assignment or task anchor, and do not simply go idle.';
+
+/** The §14 instruction for a coordinator of the given kind. */
+export function coordinationInstructionFor(kind: CoordinatorKind): string {
+  return kind === 'chat' ? COORDINATION_INSTRUCTION_CHAT : COORDINATION_INSTRUCTION;
+}
+
 export const COMMAND_SURFACE_INSTRUCTION =
   'These are real HTTP calls against your tm8 server, and they ' +
   'are how your work becomes visible; nothing else in this environment writes to ' +
@@ -384,7 +418,21 @@ export const COMMAND_SURFACE_INSTRUCTION =
   '`tm8 entity context <id>` for orientation — `entity get` returns the whole ' +
   'entity unbounded, so reach for it only when you need the full body and version. ' +
   'When a command pages, always pass --limit and continue with the returned ' +
-  'cursor. Never re-issue a read you have already made this session.';
+  'cursor. Never re-issue a read you have already made this session. ' +
+  'The same economy governs the REPOSITORY, where most of the tokens actually ' +
+  'go: measured on this fleet, tool results are 93.8% of everything re-read on ' +
+  'every later turn. If the project carries a code graph at ' +
+  '`graphify-out/merged-graph.json`, ask it before you grep — ' +
+  '`graphify affected|path|explain|query "<x>" --graph graphify-out/merged-graph.json` ' +
+  'answers a structural question (what calls this, what breaks if I change it, ' +
+  'where does this path lead) from an AST index in one bounded call. Measured ' +
+  'against grepping and opening candidate files on the same three questions: ' +
+  '40% cheaper, half the tool calls, and it named transitive dependents the ' +
+  'file-reading run never reached. When the graph answers, that IS the answer — ' +
+  'do not re-check it by grepping: it is an AST index of the same files, not a ' +
+  'guess. One or two queries settle a structural question; if three have not, ' +
+  'the question is not structural. Read the files themselves when you need to ' +
+  'understand or change code — the graph answers structure, not intent.';
 
 /**
  * Codex's legacy read-only sandbox cannot enable command networking. A tm8
@@ -522,6 +570,20 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
       usage: 'tm8 message send --to <anchor-entity-id> "<body>"',
       what: 'durable communication — a result, a milestone or a blocker is a message on an anchor',
     },
+    // The second undiscoverable-by-accident path, and it is here for the same
+    // reason `message send` is — not as an operation inventory (§9 rule 1 still
+    // stands; the other 80 rows stay behind `tm8 help`).
+    //
+    // Every harness tm8 spawns brings its OWN artifact/canvas tool. So an agent
+    // told "make me an artifact" does not experience a gap it could resolve with
+    // `tm8 help` — it believes it already has the verb, reaches for the native
+    // one, and publishes somewhere tm8 cannot see. Discovery cannot fix a verb
+    // an agent never knows to look up. This is the `task link-pr` precedent
+    // exactly: a deliverable nobody can see did not happen.
+    {
+      usage: 'tm8 artifact publish <dir> --name "<name>"',
+      what: 'publish a directory of HTML/JS/CSS AS A TM8 ARTIFACT — the only way a built page becomes an entity in this space; your harness\'s own artifact/canvas tool publishes elsewhere and leaves nothing in tm8',
+    },
   ];
   if (hasSession) {
     cmds.push({
@@ -562,6 +624,8 @@ interface BootstrapView {
     launchProjectId?: string | null;
     trust: string;
     coordinatorSessionId?: string | null;
+    /** `work_session | chat` (176). Absent means work_session. */
+    coordinatorKind?: string | null;
   };
   interactionProfile: {
     entityId: string;
@@ -623,6 +687,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     launchProjectId: view.session.launchProjectId ?? null,
     primaryTaskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
     interactionProfileId: profile.entityId,
     interactionProfileVersion: profile.version,
     resolvedProfileHash: profile.resolvedHash,
@@ -643,6 +708,7 @@ function composeBootstrapSystem(view: BootstrapView, manifestPath: string): stri
     resolvedProfileHash: profile.resolvedHash,
     taskId: view.assignment?.primaryTaskId ?? null,
     coordinatorSessionId: view.session.coordinatorSessionId ?? null,
+    coordinatorKind: coordinatorKindOf(view.session.coordinatorKind),
   };
   const control =
     view.identity.mode === 'dispatcher'
@@ -713,6 +779,7 @@ export function composePrompt(
   const tasks = manifest.tasks ?? [];
   const commands = commandSurface(sessionId !== null);
   const coordinatorSessionId = manifest.coordinator?.sessionId?.trim() || null;
+  const coordinatorKind = coordinatorKindOf(manifest.coordinator?.kind);
 
   // A `manifestVersion: "2"` bootstrap manifest takes the harness path: the
   // §5.2 kernel and one §14 control block, with no persona/skill/memory frame
@@ -820,9 +887,13 @@ export function composePrompt(
   if (coordinatorSessionId) {
     s.push('  <coordination>');
     s.push(`    <coordinator_session_id>${esc(coordinatorSessionId)}</coordinator_session_id>`);
+    // WHAT that id names. Emitted unconditionally, including the `work_session`
+    // case: a kind that appears only for chats would make its absence ambiguous
+    // between "a session" and "a manifest too old to say".
+    s.push(`    <coordinator_kind>${esc(coordinatorKind)}</coordinator_kind>`);
     if (coordinator?.displayName)
       s.push(`    <coordinator>${esc(coordinator.displayName)}</coordinator>`);
-    s.push(`    <instruction>${COORDINATION_INSTRUCTION}</instruction>`);
+    s.push(`    <instruction>${coordinationInstructionFor(coordinatorKind)}</instruction>`);
     s.push('  </coordination>');
   }
 
@@ -833,23 +904,8 @@ export function composePrompt(
   }
   s.push('  </command_surface>');
 
-  const skills = manifest.skills ?? [];
-  if (skills.length > 0) {
-    // A skill body is `public.skills.content` — graph text any space member can
-    // write through `entities.patch`. The NAME stays a trusted attribute (the
-    // frame owns it as an identifier); the BODY is authored content and travels
-    // as untrusted data like every other authored payload.
-    s.push('  <skills>');
-    for (const skill of skills) {
-      const name = skill.name ?? 'unnamed';
-      if (skill.body) {
-        s.push(untrustedData({ type: 'skill-body', body: skill.body, extraAttrs: { name } }));
-      } else {
-        s.push(`    <skill name="${esc(name)}" />`);
-      }
-    }
-    s.push('  </skills>');
-  }
+  const skillIndex = serializeSkillIndex(manifest.skills ?? []);
+  if (skillIndex) s.push(skillIndex);
 
   if (manifest.promptExtra) {
     // `--context` / `ExecutionSpawnInput.promptExtra`, and the most exposed

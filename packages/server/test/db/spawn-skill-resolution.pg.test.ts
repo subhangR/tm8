@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { ManifestSkillContext } from '@tm8/execution';
 import { PgDb } from '../../src/db/client.js';
 import { DbGraphPort } from '../../src/facade/execution-handlers.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -18,6 +19,8 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
  * Before this landed, `composeManifest` emitted a hardcoded `skills: []`, so
  * every one of these assertions would have read as an empty array.
  */
+
+vi.mock('../../src/skills/service.js', () => ({ scanSpaceSkills: async () => ({ scannedAt: '2026-09-22T00:00:00Z', discovered: 0, upserted: 0, missing: 0, errors: [] }) }));
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
@@ -68,7 +71,7 @@ async function skill(
     [id, args.spaceId, args.memberId],
   );
   await client.query(
-    `insert into public.skills(entity_id,name,content) values($1,$2,$3)`,
+    `insert into public.skills(entity_id,name,content,description) values($1,$2,$3,$3)`,
     [id, args.name, args.content],
   );
   await client.query(
@@ -149,7 +152,7 @@ afterAll(async () => {
 
 const auth = () => ({ identityId: fx.identityId, kind: 'auto-owner' }) as never;
 
-async function skillsFor(teamMemberId: string): Promise<Array<{ name: string; body: string }>> {
+async function skillsFor(teamMemberId: string): Promise<ManifestSkillContext[]> {
   const ctx = await port.loadSpawnContext(auth(), { spaceId: fx.spaceId, teamMemberId });
   return ctx.skills ?? [];
 }
@@ -166,14 +169,15 @@ describe('loadSpawnContext — skill resolution over the ancestor chain', () => 
     expect(names).toEqual(['LeafSkill', 'Shared', 'MidSkill', 'RootSkill']);
   });
 
-  it('carries the skill body from public.skills.content', async () => {
+  it('carries description metadata without the skill body', async () => {
     const leaf = (await skillsFor(fx.leafId)).find((s) => s.name === 'LeafSkill');
-    expect(leaf?.body).toBe('leaf body');
+    expect(leaf?.description).toBe('leaf body');
+    expect(leaf).not.toHaveProperty('body');
   });
 
   it('lets the nearer persona shadow an ancestor skill of the same name', async () => {
     const shared = (await skillsFor(fx.leafId)).find((s) => s.name === 'Shared');
-    expect(shared?.body).toBe('leaf version');
+    expect(shared?.description).toBe('leaf version');
     expect(await skillsFor(fx.leafId)).toHaveLength(4); // not 5 — one was shadowed
   });
 
@@ -240,4 +244,22 @@ describe('loadSpawnContext — skill resolution over the ancestor chain', () => 
       });
     }
   });
+});
+
+
+it('atomically persists the effective session audit and creates no session equips', async () => {
+  const sessionId = await database.transaction(async client => {
+    const id = (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+    await client.query(`insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'work_session',0,$3)`, [id, fx.spaceId, fx.memberId]);
+    await client.query('insert into public.work_sessions(entity_id,title) values($1,$2)', [id, 'Skill audit']);
+    return id;
+  });
+  const audit = { native: [], indexed: [{ entityId: 'skill', name: 'Skill', description: 'metadata only', provider: 'tm8', level: 'space', native: false, loadPointer: 'tm8 entity get skill', hash: 'abc' }], skipped: [{ entityId: 'gone', name: 'Gone', reason: 'missing', hash: 'old' }], scannedAt: '2026-09-22T00:00:00Z' };
+  const auditDb = new PgDb({ databaseUrl: database.url, role: 'tm8_app' });
+  await auditDb.rpc({ identityId: fx.identityId }, 'public.record_session_manifest', [sessionId, JSON.stringify({ effectiveSkills: audit }), [], '<system/>', '<task/>', null]);
+  expect((await database.query<{ skills: unknown }>('select skills from public.work_sessions where entity_id=$1', [sessionId]))[0]?.skills).toEqual(audit);
+  expect((await database.query<{ n: string }>(`select count(*) as n from public.edges where src_id=$1 and type='equips'`, [sessionId]))[0]?.n).toBe('0');
+  const foreign = '00000000-0000-4000-8000-000000000001';
+  await expect(auditDb.rpc({ identityId: foreign }, 'public.record_session_manifest', [sessionId, JSON.stringify({ effectiveSkills: audit }), []])).rejects.toThrow();
+  await auditDb.end();
 });

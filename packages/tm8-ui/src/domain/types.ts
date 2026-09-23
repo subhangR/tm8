@@ -85,6 +85,12 @@ export type TileBadgeSource =
   | 'agentTool'
   | 'model'
   | 'shareMode'
+  // 187 — the OTHER dial. Its own badge rather than a clause inside
+  // `shareMode`'s, because the two are independent: a session can be
+  // watchable by the space with drive still held by its owner, and folding
+  // them into one word would make the common case unreadable and the
+  // uncommon one invisible.
+  | 'driveMode'
   // other kinds
   | 'channelTopic'
   | 'unread'
@@ -103,6 +109,9 @@ export type TileBadgeSource =
   | 'sha'
   | 'mimeType'
   | 'sizeBytes'
+  | 'level'
+  | 'missing'
+  | 'skillRoot'
   | 'equipped'
   | 'collectionType'
   | 'itemCount'
@@ -110,7 +119,23 @@ export type TileBadgeSource =
   | 'profileStatus'
   | 'profileVersions'
   | 'messageAuthor'
+  // chat (migration 176). `model` above already resolves for a chat — the
+  // source reads `state.model` and a chat state carries one — so only the
+  // facts no other kind has get their own members here.
+  | 'chatMode'
+  | 'chatTurnState'
+  | 'chatLastTurnAt'
   | 'customFields'
+  // container (Containers P0, Design §13.1). FOUR NEW SOURCES, and each needs
+  // three edits, not one: a member here, a `renderBadge` arm in
+  // `panels/list/tile-badges.ts`, and a `HANDLED_SOURCES` entry beside it.
+  // A source with only the first ships as DEAD DATA — the registry row reads
+  // correct and the tile draws nothing — which is the defect `HANDLED_SOURCES`
+  // and its coverage test exist to make loud.
+  | 'containerStatus'
+  | 'profile'
+  | 'provider'
+  | 'isolation'
   // counters, present on every summary
   | 'points'
   | 'messages';
@@ -139,6 +164,8 @@ export interface PulseBinding {
 export type StatusSource =
   | 'status'
   | 'sessionStatus'
+  /** A container's nine-value lifecycle (§11.1). Reads `EntityState.status`. */
+  | 'containerStatus'
   | 'prState'
   | 'profileStatus'
   | 'memberRole'
@@ -360,6 +387,21 @@ export type ActionRef =
   // so a launch config would open a card asking for things already decided.
   | 'resume'
   | 'prompt-session'
+  // THE SHARING CONTROL (187) — `execution.sessions.share`, the WATCH dial.
+  //
+  // Two refs for one slot, on the `terminate`/`resume` model next door: the
+  // verb a row offers depends on the row's OWN `shareMode`, and
+  // `ActionAvailability` has no `hidden`, so a single ref could only ever
+  // render one label. `sharingControlFor` in `domain/actions.ts` picks
+  // between them, and the component that holds the row calls it — the same
+  // derivation, for the same reason, as the process control.
+  //
+  // WATCH only. The drive dial (`driveMode`) is deliberately not a row verb:
+  // handing someone your keyboard is a decision that wants a sentence, not a
+  // one-click icon, and it stays on `tm8 session share --drive` until there
+  // is a surface that can ask the question properly.
+  | 'share-session'
+  | 'unshare-session'
   // §8 share-into-session (seam-deferred, §10.7)
   | 'share-into-session'
   | 'withdraw-handoff'
@@ -390,7 +432,48 @@ export type ActionRef =
   | 'unlink'
   | 'set-as-default'
   | 'mark-read'
-  | 'quote';
+  | 'quote'
+  /**
+   * OPEN A CHAT ABOUT THIS ROW (chat as an entity, 2026-09-03).
+   *
+   * A chat is an entity with an `about` edge to whatever it concerns, and
+   * `about` accepts every dst kind (`edge_types`, migration 056: `array['*']`),
+   * so this verb is universal by the same derivation `run` is — see
+   * `applyChatAbout` in the registry. Deriving it there rather than writing it
+   * into nineteen `rowActions` arrays is what keeps "which kinds can you chat
+   * about?" a question with one answer.
+   *
+   * IT NAVIGATES; IT DOES NOT SPAWN. `chat.start` needs a teammate, a model
+   * and a mode, and a row cluster has nowhere to ask for them — so the verb
+   * opens Home's new-conversation composer with the subject already bound
+   * (`/home/chat?about={id}`), and the human commits it there. That is the
+   * same two-clicks-to-launch rule `launch-session` follows, reached through
+   * the address instead of an expand: the composer IS the configuration, and
+   * the subject survives a reload and a paste.
+   */
+  | 'chat-about'
+  /*
+   * CONTAINER LIFECYCLE (Containers P0, Design §13.1). Five panel primaries
+   * and one birth verb.
+   *
+   * NAMESPACED `container-*` RATHER THAN REUSING `run` / `terminate`, and the
+   * reason is not tidiness. Those two verbs already mean something exact —
+   * `run` opens the launch config and spawns an AGENT SESSION, `terminate`
+   * ends one — and a container is the HOST a session runs inside, with its own
+   * nine-value lifecycle. Reusing them would put one word on two acts, which is
+   * the failure `coordinate`-vs-`run` was split to fix (see `launchMode`).
+   *
+   * `container-screen` is DEFERRED in P0 and says so through its own
+   * availability, not through absence: the screen surface is a later phase, so
+   * the verb renders disabled-with-reason (R7) rather than being hidden. A
+   * verb that is coming must be visible and refused, never missing.
+   */
+  | 'container-start'
+  | 'container-stop'
+  | 'container-destroy'
+  | 'container-terminal'
+  | 'container-screen'
+  | 'new-container';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
@@ -920,11 +1003,61 @@ export type BodyArchetype =
   | 'hub'
   | 'profile'
   | 'generic'
+  // F4 (#648): a file-backed body with its equipment. Named for what the
+  // body SHOWS, never after a kind (§15.2 no-branching).
+  | 'equipment'
   | 'terminal'
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
   | 'governed'
-  | 'restricted';
+  | 'restricted'
+  /**
+   * THE BODY *IS* THE CONVERSATION (chat as an entity, 2026-09-03).
+   *
+   * Not `hub`: a hub renders its front-door regions and hangs the feed
+   * BENEATH them, which is right for a channel — a channel has a topic, a
+   * roster and a description that the conversation is about. A chat has none
+   * of that. Its title is generated from its first turn and its content
+   * arm is literally `{ kind: 'chat' }` (contract: "A chat has NO content
+   * beyond its summary"), so a fields block above the transcript would be a
+   * header printing the same sentence the first bubble already says.
+   *
+   * Not `terminal` either: that arm mounts `WorkSessionContent`, a five-surface
+   * strip over a live PTY. A chat has one surface.
+   *
+   * So the arm returns the host's conversation surface and nothing else.
+   * `composition: 'chat'` rides along and does the rest — no attachment strip,
+   * no attention section, no footer under a body that ends at its composer.
+   */
+  | 'conversation'
+  /**
+   * The MACHINE archetype (Containers P0, Design §13.2) — a container's panel.
+   *
+   * A NEW ARCHETYPE AND NOT A SPECIAL CASE OF `terminal`, which is the reading
+   * that would seem cheapest and is wrong. The terminal archetype is a session:
+   * one live PTY canvas, with the transcript/git/debug/graph surfaces beside it
+   * and `WorkSessionContent` owning the switch. A machine is a HOST that a
+   * session may run inside — its surfaces are a screen, an exec terminal and a
+   * log stream, it has a nine-value lifecycle a session does not have, and it
+   * outlives every session bound to it. Folding it into `terminal` would put a
+   * `kind === 'container'` branch inside `WorkSessionContent`, which is exactly
+   * the per-kind switch §15.2 keeps out of components.
+   */
+  | 'machine';
+
+/**
+ * WHICH conversation a kind's panel mounts — REGISTRY DATA, so no component
+ * and no host asks what kind it is holding (§15.2).
+ *
+ * The values are the `ConversationSurfaceKind`s `views/conversationSurface.tsx`
+ * can compose, minus the two a kind never declares for itself: `'discussion'`
+ * is the tab EVERY entity has (the host asks for it explicitly), and a host
+ * may still override any of these per call.
+ *
+ * Absent ⇒ the archetype default: a hub gets its channel feed, everything else
+ * gets the session transcript.
+ */
+export type PanelConversationSurface = 'channel-feed' | 'chat-thread' | 'transcript';
 
 export type ContentBlockKind =
   | 'fields'
@@ -936,6 +1069,18 @@ export type ContentBlockKind =
   // studio is where you EDIT a blueprint; this block is where every other
   // surface can SEE it, so a graph stops rendering two different ways.
   | 'blueprint'
+  // The Excalidraw canvas (194). Unlike `blueprint`, which is read-only
+  // because Craft owns editing a graph, this block IS the editor: a drawing
+  // has no studio screen of its own, so the panel is where it is drawn. The
+  // component behind it is lazily imported — Excalidraw is ~47 MB unpacked
+  // and must never enter the main chunk.
+  //
+  // NAMED `canvas`, NOT `drawing`, and the difference is load-bearing: a block
+  // id that spells a kind name makes `case 'drawing':` in a component
+  // indistinguishable from a kind literal, which §15.2 forbids and its scanner
+  // cannot tell apart. The block is also the thing a FUTURE second canvas
+  // format would reuse, so naming it after one kind was wrong anyway.
+  | 'canvas'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —
@@ -1035,6 +1180,17 @@ export interface PanelConfig {
    * silently inherit a footer nobody chose for it.
    */
   composition?: 'chat' | 'frame';
+  /**
+   * The kind's conversation surface, when it is not the archetype's default.
+   *
+   * DATA rather than a fork in the composer, for the reason `launchMode` is
+   * data on an `ActionDef`: without it `defaultConversationSurfaceKind` would
+   * have to read `detail.kind === 'chat'`, and a kind literal outside
+   * `domain/` is a build failure (§15.2). It also means a host can keep
+   * asking for a surface EXPLICITLY — the parameter still wins — so this
+   * changes what a kind gets by default and nothing else.
+   */
+  conversation?: PanelConversationSurface;
   /**
    * The kind's chat surface reads THREAD ROOTS and opens a reply branch in a
    * side pane (the Slack-thread model). REGISTRY DATA, not a kind literal: the
@@ -1182,7 +1338,7 @@ export interface KindConfig {
    * `list.quickCreate` continues to decide whether the header has a create
    * affordance at all.
    */
-  createForm?: 'scheduled-work' | 'file-upload';
+  createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

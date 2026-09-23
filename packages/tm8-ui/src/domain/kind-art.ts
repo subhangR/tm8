@@ -42,6 +42,8 @@
  * §15.2 permits them in, and this is the file that defines them.
  */
 
+import type { ContentSurface } from '../routes/types';
+
 /** SVG path `d` strings on the 16×16 grid. Stroked, never filled. */
 export type KindArt = readonly string[];
 
@@ -175,6 +177,34 @@ export const KIND_ART = {
     'M11.7 7.8v2.2',
   ],
 
+  /**
+   * A speech bubble with a tail, and a second one behind it.
+   *
+   * NOT the message mark (one bubble) and not the channel mark (a hash): a chat
+   * is a CONVERSATION — two speakers, durable, with a life longer than any one
+   * message — and the two overlapping bubbles say exactly that at 16px.
+   */
+  chat: [
+    'M5.4 2.6h6.4a1.8 1.8 0 0 1 1.8 1.8v3.4a1.8 1.8 0 0 1-1.8 1.8H9.2L6.6 11.4V9.6H5.4a1.8 1.8 0 0 1-1.8-1.8V4.4a1.8 1.8 0 0 1 1.8-1.8z',
+    'M2.4 6.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1v1.6',
+  ],
+
+  /**
+   * A pencil, and the stroke it left.
+   *
+   * The stroke is the half that carries the meaning. A pencil alone is an
+   * EDIT mark — it is what every "rename this" affordance in the app already
+   * uses — so a pencil by itself would read as "edit", not "a drawing". The
+   * loose line underneath is what makes it a hand-drawn thing rather than an
+   * action, and it is deliberately not straight: `graph` owns straight lines
+   * between nodes, and the two marks must not converge at 16px.
+   */
+  drawing: [
+    'M11.4 2.7 13.3 4.6 6.9 11 4.1 11.9 5 9.1z',
+    'M10.1 4 12 5.9',
+    'M2.6 14c1.6-1.5 3.1.6 4.7-.7',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 
@@ -182,6 +212,28 @@ export const KIND_ART = {
   worktree: [
     'M6.2 5.8h5.6a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4H6.2a1.4 1.4 0 0 1-1.4-1.4V7.2a1.4 1.4 0 0 1 1.4-1.4z',
     'M10.4 5.8V4.2a1.4 1.4 0 0 0-1.4-1.4H4.2a1.4 1.4 0 0 0-1.4 1.4V9a1.4 1.4 0 0 0 1.4 1.4h.6',
+  ],
+
+  /**
+   * A RACK — two stacked bays with a status lamp in each. A container is a
+   * machine, and this is how the world draws one.
+   *
+   * DELIBERATELY NOT A PLAIN BOX, and not the `▣` the design named in §13.1:
+   * that glyph is already `file`'s, and the whole point of this set is that no
+   * two kinds share a silhouette (`registry.test.ts` fails on duplicate
+   * artwork). The lamps are what make it a MACHINE at 13px rather than another
+   * quadrilateral — the exact failure mode this module's header describes,
+   * where thirteen of twenty marks collapsed into one lozenge.
+   *
+   * Read against its nearest neighbours: `worktree` is two offset sheets,
+   * `file` a paperclip, `artifact` a sealed package, `task` a checked box.
+   * None of them is a divided box with dots.
+   */
+  container: [
+    'M3.8 2.8h8.4a1.4 1.4 0 0 1 1.4 1.4v7.6a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4V4.2a1.4 1.4 0 0 1 1.4-1.4z',
+    'M2.4 8h11.2',
+    'M5.4 6.1a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
+    'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
   ],
 
   /**
@@ -283,15 +335,6 @@ export const VIEW_ART = {
     'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
     'M9.4 4l2.6 2.6',
   ],
-  /* CodeBrain — a node on a wire into a closing angle bracket. Copied
-     verbatim from `tm8_ui_2.0`'s table so the two packages draw one view one
-     way; this snapshot has no CodeBrain SCREEN, but a ref the rail can be
-     asked to render still needs a mark. */
-  codebrain: [
-    'M2.6 8h10.8',
-    'M4.4 8a1.4 1.4 0 1 0 0-.1z',
-    'M13.4 4.6 10.4 8l3 3.4',
-  ],
   /**
    * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
    * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the
@@ -357,6 +400,17 @@ export const SURFACE_ART = {
     'M6.1 8.6h2.8',
   ],
 
+  /**
+   * A DIFF: a `+` row above a `−` row.
+   *
+   * Not the branch mark (`git`, below) and not a page: this surface is not
+   * about where the lane is or which document is open, it is about what the
+   * lines DID. Plus over minus is the one silhouette that says that without a
+   * word, and it is the same vocabulary `DiffView` draws inside the panel — so
+   * the tab and its contents agree at a glance.
+   */
+  changes: ['M3 5.4h2.4', 'M4.2 4.2v2.4', 'M7.4 5.4h5.6', 'M3 10.6h2.4', 'M7.4 10.6h5.6'],
+
   /** The branch mark, shared with the Git VIEW because it is the same idea. */
   git: VIEW_ART.git,
 
@@ -376,4 +430,49 @@ export const SURFACE_ART = {
    * for the same question would be a distinction the reader has to invent.
    */
   graph: VIEW_ART.graph,
+
+  /**
+   * A DISPLAY ON A STAND — the container's `screen` surface (§6.2), the RFB /
+   * frame view onto a machine's desktop.
+   *
+   * Deliberately NOT `KIND_ART.container`, which is a RACK: that mark means the
+   * machine itself and sits in the panel header a few pixels away. This one
+   * means "the picture the machine is painting", which is one of its surfaces —
+   * the same thing/part distinction `terminal` draws against
+   * `KIND_ART.work_session` at the top of this table.
+   */
+  screen: ['M2.6 3.6h10.8v6.6H2.6z', 'M6.4 12.6h3.2', 'M8 10.2v2.4'],
+
+  /**
+   * THE CONTAINER'S LOG STREAM. Lines of unequal length with no leading ticks
+   * — deliberately close to `debug` above without being it, because the two ARE
+   * nearly the same idea seen from opposite ends: `debug` is the agent's own
+   * journal (its calls, hence the ticks), this is stdout/stderr coming off a
+   * machine that knows nothing about agents. Ragged right is what says "a
+   * stream someone else is writing".
+   */
+  logs: ['M3 4.4h9.4', 'M3 7.2h6.6', 'M3 10h8.2', 'M3 12.8h4.8'],
 } as const satisfies Record<string, KindArt>;
+
+/**
+ * THE WORD FOR EACH SURFACE — the label half of `SURFACE_ART` above.
+ *
+ * LIFTED HERE FROM `WorkSessionContent` when the container's surfaces joined
+ * `ContentSurface` (migration 177). It was a module-private constant while
+ * exactly one body drew a surface switcher; now two do, and a second private
+ * copy is how the same surface ends up called two things in two panels — the
+ * `SURFACE_ART`/`VIEW_ART` sharing note above, one table over.
+ *
+ * TOTAL over `ContentSurface`, so a surface added to that union without a word
+ * for it fails the build here rather than rendering a blank tab.
+ */
+export const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
+  terminal: 'Terminal',
+  transcript: 'Transcript',
+  changes: 'Changes',
+  git: 'Git',
+  debug: 'Debug',
+  graph: 'Graph',
+  screen: 'Screen',
+  logs: 'Logs',
+};

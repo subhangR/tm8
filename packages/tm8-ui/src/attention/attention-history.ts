@@ -99,3 +99,35 @@ export function settlementLine(row: AttentionRequest, now?: string): string | nu
   if (!who && !when) return verb;
   return `${verb} by ${who ?? 'someone'}${when ? ` · ${relTime(when, now ? Date.parse(now) : undefined)}` : ''}`;
 }
+
+/**
+ * The one pending row a COLLAPSED bar speaks for — loudest first, oldest as the
+ * tie-break.
+ *
+ * Not `orderHistory`'s first element, and the difference is the whole reason
+ * this exists. That ordering is newest-first within the pending group, because
+ * a list you are reading top to bottom is a story. A bar has room for exactly
+ * one reason, and the one worth spending it on is the LOUDEST — the same row
+ * `maxPendingPoints` counts and the same one the badge is shouting about.
+ * Oldest wins a tie because the thing that has been waiting longer is the more
+ * embarrassing of two equal escalations.
+ *
+ * Null when nothing is pending: a settled history has no live fact to lead
+ * with, and the bar says a count instead rather than quoting a closed row as
+ * though it were still open.
+ */
+export function leadPending(rows: readonly AttentionRequest[]): AttentionRequest | null {
+  let lead: AttentionRequest | null = null;
+  for (const row of rows) {
+    if (!isPending(row)) continue;
+    if (
+      lead === null ||
+      row.points > lead.points ||
+      (row.points === lead.points &&
+        (row.createdAt.localeCompare(lead.createdAt) || lead.id.localeCompare(row.id)) < 0)
+    ) {
+      lead = row;
+    }
+  }
+  return lead;
+}

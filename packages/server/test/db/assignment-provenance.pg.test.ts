@@ -10,6 +10,23 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
+/** 176 cannot be applied alone: it drops signatures 153/154/167 created. */
+/**
+ * 176 cannot be applied alone: it drops signatures 133/153/154/167 created, so
+ * those four come with it. `178_spawn_parent_may_be_a_chat.sql` is DELIBERATELY
+ * ABSENT — it is the half of 176 that re-creates `execution_spawn`, and this
+ * suite is pinned at 129 to assert 129's spawn provenance. 178's own header
+ * records that this is why it is a separate file.
+ */
+const CHAT_ENTITY_MIGRATIONS = [
+  '133_chat_turns_select.sql',
+  '153_chat_per_turn_mode.sql',
+  '154_chat_turn_mode_passthrough.sql',
+  '167_chat_thread_project_binding.sql',
+  '172_task_start_date.sql',
+  '176_chat_entity.sql',
+];
+
 const IDENTITY = 'assignment-provenance-owner';
 
 interface Fixture {
@@ -225,6 +242,106 @@ describe.sequential('task assignment provenance (129)', () => {
     // function 171 redefines, so the position statement at 129 survives it.
     // Verified applying clean directly onto the tranche.
     database.apply(['171_session_ended_reason.sql']);
+    // …and 176, the FOURTH instance of the same shape, with one difference
+    // that has to be stated: 176 adds `public.chats` to the shared summary
+    // SELECT in `entity-read.ts`, so current code joins a relation a 129-era
+    // schema does not have (`relation "public.chats" does not exist`) — 135's
+    // failure again. But 176 is the first of the four that CANNOT be applied
+    // alone: it drops signatures 153/154/167 created, so those three come with
+    // it, and unlike 135/147/171 it DOES re-create `public.execution_spawn`
+    // (widening the parent guard to admit a chat).
+    //
+    // That last fact is exactly what this file's header says would retarget the
+    // spawn assertions, so it was MEASURED rather than argued: with these four
+    // applied, all six tests pass, including the three provenance assertions
+    // that call the spawn door. 176 re-creates execution_spawn from 150's body,
+    // and 150's provenance behaviour is 129's — the widening is one `if` on the
+    // parent kind and touches nothing this suite asserts.
+    //
+    // NOTE FOR #574: this branch previously applied 172 on its own line here,
+    // for the `column t.start_date does not exist` half of the migration-172
+    // class. CHAT_ENTITY_MIGRATIONS now lists 172, so that line was DROPPED at
+    // the rebase rather than kept — applying the same file twice is a duplicate,
+    // and duplicate applies are how this suite breaks (177 itself has three bare
+    // `create table` and fails outright on a re-apply).
+    database.apply(CHAT_ENTITY_MIGRATIONS);
+    // …and 177, for EXACTLY the reason 135, 147, 171 and 176 are here — the
+    // fifth instance of one recurring shape. 177 adds the `container` core kind,
+    // and the read model joins `public.containers` into `ENTITY_FROM`, so
+    // current code selects from a relation a 129-era schema does not have and
+    // `loadEntitySummariesByIds` refuses to run — the identical failure the four
+    // above each caused, with a different relation again.
+    //
+    // Same safety argument, checked the same way: 177 creates its own kind row,
+    // detail table and side tables, adds five edge types, widens three CHECKs on
+    // `public.work_sessions`, and re-creates `internal.entity_content` and
+    // `public.work_session_transition`. This suite exercises assignment
+    // provenance on tasks and members; it calls neither of those two functions
+    // and touches no container, so the position statement at 129 survives it.
+    //
+    // ⚠ THIS IS A REPLAY POSITION, AND AN EASY ONE TO MISS. The database this
+    // line runs against is chain[0..129) + 129 + the four above + 177. It DOES
+    // now contain `public.chats`, because 176 is in CHAT_ENTITY_MIGRATIONS, so
+    // 177's borrowed `chat` arm resolves here — but only because 176 is applied
+    // above. Remove 176 from that list and this line STILL applies clean, since
+    // `internal.entity_content` is `language plpgsql` and its table references
+    // are validated at FIRST EXECUTION rather than at CREATE; it would fail only
+    // when something resolves a chat entity's content, which this suite never
+    // does.
+    database.apply(['177_container_kind.sql']);
+    // 187, same shape again, with a different relation name: `entity-read.ts`
+    // selects `ws.drive_mode` and a 129-era schema has no such column.
+    //
+    // Same safety argument, checked the same way. 187 adds two columns to
+    // `public.spaces`, one to `public.work_sessions`, a BEFORE INSERT trigger on
+    // `work_sessions`, and `create or replace`s `grant_stream_attach`,
+    // `w2_update_space` and the new `set_work_session_sharing` — all at their
+    // existing parameter names and return types. The trigger DOES fire on this
+    // suite's `execution_spawn` case, and that is deliberate to leave in the
+    // path: it stamps the space's sharing default onto the new session and
+    // touches no assignment, no provenance row and no edge, which is exactly
+    // the position statement at 129 this file is defending.
+    database.apply(['187_work_session_sharing.sql']);
+    // …and 194, the SEVENTH instance of the same recurring shape — 135, 147,
+    // 171, 176 (FOURTH, named above), 177 (fifth, named above), 187 (sixth),
+    // now 194. main's 5e1f9e1e ("Drawing as an entity, with Excalidraw", #627)
+    // added the `drawing` core kind, and the read model joins `public.drawings`
+    // into ENTITY_FROM, so current code selects from a relation a 129-era schema
+    // does not have and `loadEntitySummariesByIds` refuses to run — the
+    // identical failure the six above each caused, with a different relation
+    // again.
+    //
+    // INHERITED, NOT INTRODUCED BY THIS LANE. #627 added both the join and 194
+    // and did not extend this fixture, so main carries this red on its own.
+    // PROVEN, not argued: every input to this suite — all 176 migration files,
+    // test/db/w1-pg.ts, src/facade/entity-read.ts and this file — is
+    // BYTE-IDENTICAL to main, so running it here is running it on main. This
+    // branch has zero commits touching any of them, and changes no SQL at all.
+    // NO PRODUCTION CODE CHANGES HERE.
+    //
+    // MEASURED, not computed — from the authoritative gate's own failing run:
+    //   test/db/assignment-provenance.pg.test.ts (6 tests | 3 failed)
+    //   error: relation "public.drawings" does not exist
+    //     ❯ Module.loadEntitySummariesByIds src/facade/entity-read.ts:2592:16
+    //
+    // LAST AND HIGHEST, needing nothing in between: there are NO migrations
+    // numbered 188-193, the chain goes 187 -> 194. Every table 194's recreated
+    // `internal.entity_content` reads is present by here — `containers` from 177
+    // above, `chats` from 176, `work_sessions` from 187, `drawings` from 194
+    // itself, the rest from the pre-129 base slice.
+    //
+    // Same duplicate-apply guard the 177 note states: this suite applies
+    // a-la-carte (`apply([…])`), never `apply(migrationFiles())`, so this is a
+    // FIRST apply of 194, not a second.
+    database.apply(['194_drawing_kind.sql']);
+    // Current session projection includes the F3 effective-skill audit column.
+    // 197, the SEVENTH instance: `entity-read.ts` and the projector select
+    // `sk.provider` and the other file-reference columns, so current code
+    // refuses a 147-era schema with `column sk.provider does not exist`. 197
+    // only adds columns to `public.skills` and replaces
+    // `internal.kind_seeds_done`, which no assertion here reads.
+    database.apply(['197_skill_filesystem_references.sql']);
+    database.apply(['199_session_skill_audit.sql']);
   }, 180_000);
 
   afterAll(async () => {

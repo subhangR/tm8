@@ -19,7 +19,8 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   ListRootHeader,
-  rootBirthAction,
+  NewContainerSheet,
+  rootBirthDispatch,
   type DetailReasons,
 } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -47,7 +48,9 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
+import { useNewContainerSheet } from './useNewContainerSheet';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -58,6 +61,7 @@ import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
@@ -79,6 +83,14 @@ export interface WorkspaceViewProps {
   menuCollapsed: boolean;
   reasons: DetailReasons;
   onNotice(notice: Notice): void;
+  /**
+   * "Chat about this" — the row cluster's and the list header's verb, which is
+   * a NAVIGATION to Home's composer with the subject bound. Supplied by the
+   * shell (`chatAboutTarget`), because this screen takes navigation as a port
+   * (`nav: NavPort`) and must not reach the global store. Absent ⇒ the verb
+   * renders refused with a reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   onPinRefusal?(id: EntityId, refusal: string): void;
   /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
   onLeftKindChange?(kind: string): void;
@@ -254,6 +266,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
     onError: notifySessionVerbFailed,
+     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   const handleSessionTerminate = primaries.terminate;
 
@@ -377,6 +391,42 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     },
   });
 
+  /**
+   * THE LIST'S DISPATCHERS, COMPOSED — the session-start verbs and
+   * `chat-about`, routed by which one names the verb.
+   *
+   * `wiredActions` is the union, so `HeaderActions` and `RowActionCluster`
+   * draw exactly the verbs something behind them can perform; a verb in
+   * neither list keeps its honest refusal rather than lighting up inert.
+   */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  /* The container birth sheet — same space-scoped shape as `sessionStart`
+     above, plus the modal obligations. See `useNewContainerSheet`. */
+  const newContainer = useNewContainerSheet({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    /* The view's OWN opener, the one `sessionStart` uses — a container the
+       member just created lands where a row they clicked would. */
+    onOpen: openEntity,
+    onError: (_verb: ActionRef, error: unknown) => props.onNotice({
+      id: 'container-create-failed',
+      tone: 'error',
+      title: 'Container could not be created',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 6_000,
+    }),
+  });
+
+  /* ONE `onAction` reaches each list panel and two hooks perform verbs for it.
+     This view mounts the panel TWICE, so composing once here is also what stops
+     the two sides drifting into different verb sets. */
+  const listActions = composeListActions([
+    { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+    { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+    { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+  ]);
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -449,6 +499,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
           gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
+          changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
           taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
           graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
           attachments={attachments}
@@ -476,6 +527,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             livenessOf: data.livenessOf,
             channelFeedPort,
             viewerMemberId: props.viewerMemberId,
+            nodeKey: data.nodeKey,
+            skillOptions: data.skillOptions,
             onOpenEntity: openEntity,
             onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
           })}
@@ -486,6 +539,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             livenessOf: data.livenessOf,
             channelFeedPort,
             viewerMemberId: props.viewerMemberId,
+            nodeKey: data.nodeKey,
+            skillOptions: data.skillOptions,
             onOpenEntity: openEntity,
             onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
           }, 'discussion')}
@@ -653,30 +708,19 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      * different things.
      *
      * Two arms, and the registry decides which (never a kind literal, §15.2):
-     *   - `rootBirthAction` ⇒ the kind is STARTED. Sessions are the case: the
-     *     birth is `start-terminal`, dispatched through `useSessionStart`,
-     *     which owns the space and the project a terminal needs.
+     *   - `rootBirthDispatch` ⇒ the kind is STARTED (or otherwise born by a
+     *     VERB). Sessions are the case: `start-terminal`, dispatched through
+     *     `useSessionStart`, which owns the space and project a terminal
+     *     needs. Chats are the other: `chat-about`, through `useChatAbout`.
+     *     It routes on the COMPOSED `wiredActions`, so a verb no dispatcher
+     *     performs refuses out loud instead of clicking into nothing.
      *   - otherwise ⇒ the generic create, with the TARGET kind's own
      *     placeholder. `flow` is the vehicle (its commands, its `onCreated`),
      *     not the subject — its bound kind is only the default.
      */
     const birthFor = (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
-      const action = rootBirthAction(kind);
-      if (action) {
-        const dispatch = sessionStart.onAction;
-        /* The SAME gate the retired header button used: `onAction` is present
-           exactly when a terminal can be started, so a surface without a
-           command seam refuses out loud instead of throwing on click. */
-        return dispatch
-          ? { refusal: null, perform: () => dispatch(action, '') }
-          : {
-              refusal: {
-                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
-                remedy: 'this surface was mounted without a command executor',
-              },
-              perform: () => undefined,
-            };
-      }
+      const verb = rootBirthDispatch(kind, listActions);
+      if (verb) return verb;
       const target = getKind(kind);
       return {
         refusal: flow.unavailableFor(target.kind) ?? refusalFor(target),
@@ -781,6 +825,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
             onTerminate={handleSessionTerminate}
+            onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
@@ -824,8 +869,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
                is absent from the list, so it is not drawn at all rather than
                drawn as a live button this dispatcher would silently drop. */
-            onAction={sessionStart.onAction}
-            wiredActions={sessionStart.wiredActions}
+            onAction={listActions.onAction}
+            wiredActions={listActions.wiredActions}
           />
         </>
       }
@@ -861,6 +906,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               /* Undefined until the kind is hydrated, and the sheet draws that
                  as "unknown" rather than "none" — see the picker's comment. */
               memories={data.launch.memories}
+          loadSkillPreview={data.launch.loadSkillPreview}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
               onCancel={() => props.onLaunchCancel?.()}
@@ -869,6 +915,35 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                  button's comment for why dispatch cannot carry a config. */
               onDispatch={props.onLaunchDispatch}
             />
+          )}
+          {/* THE CONTAINER BIRTH SHEET — same overlay slot and same reason as
+              the launch sheet above: it overlays the stack region rather than
+              entering it as a column, so it never touches V/cMin. */}
+          {newContainer.isOpen && (
+            <div className="pn-ncs-scrim" role="presentation" onClick={newContainer.close}>
+              <div
+                className="pn-ncs-host"
+                role="dialog"
+                aria-modal="true"
+                aria-label="New container"
+                /* The scrim dismisses; the sheet must not — otherwise a click
+                   on any control inside closes the form under the cursor. */
+                onClick={(event) => event.stopPropagation()}
+              >
+                <NewContainerSheet
+                  spaceId={data.spaceId}
+                  projects={data.launch.projects
+                    .filter((project) => !project.scratch)
+                    .map((project) => ({
+                      id: project.id as EntityId,
+                      title: project.name,
+                      trusted: project.trusted,
+                    }))}
+                  onCreate={newContainer.create}
+                  onCancel={newContainer.close}
+                />
+              </div>
+            </div>
           )}
           {centreIsEmpty ? (
             <EmptyCenter
@@ -919,6 +994,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
             onTerminate={handleSessionTerminate}
+            onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
@@ -940,8 +1016,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
                is absent from the list, so it is not drawn at all rather than
                drawn as a live button this dispatcher would silently drop. */
-            onAction={sessionStart.onAction}
-            wiredActions={sessionStart.wiredActions}
+            onAction={listActions.onAction}
+            wiredActions={listActions.wiredActions}
           />
         </>
       }

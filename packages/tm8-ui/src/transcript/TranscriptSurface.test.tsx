@@ -28,6 +28,21 @@ const upload = vi.mocked(uploadClipboardFile);
 
 const SESSION = '01900000-0000-7000-8000-0000000000a1';
 
+/**
+ * `findBy*` for a fake-timer test: settle the tree without leaving the clock.
+ *
+ * A single `advanceTimersByTimeAsync(0)` drains one round of microtasks, which
+ * was enough while React flushed a resolved promise's setState in the same
+ * round. Under React 19 the resolution and the render it causes are separate
+ * rounds, so a `getBy*` on the next line reads a tree that has not painted the
+ * first window yet — a miss that looks exactly like the component failing to
+ * render the control. The cases below cannot use `findBy*` instead: it polls
+ * on a timer this test owns.
+ */
+async function settleFake(rounds = 4): Promise<void> {
+  for (let i = 0; i < rounds; i += 1) await vi.advanceTimersByTimeAsync(0);
+}
+
 const NODE_PATH = '/Users/agent/.tm8/clipboard/shot.png';
 
 function uploaded(path = NODE_PATH, filename = 'shot.png') {
@@ -84,10 +99,13 @@ function page(over: Partial<SessionTranscriptPage> = {}): SessionTranscriptPage 
   } as SessionTranscriptPage;
 }
 
-function seamWith(p: SessionTranscriptPage | Error, prompt = vi.fn().mockResolvedValue({ ok: true })) {
+function seamWith(
+  p: SessionTranscriptPage | Error,
+  postMessage = vi.fn().mockResolvedValue({ messageBatchId: 'b1', messages: [] }),
+) {
   return {
     transcript: vi.fn(() => (p instanceof Error ? Promise.reject(p) : Promise.resolve(p))),
-    commands: { prompt },
+    commands: { postMessage },
   } as never;
 }
 
@@ -107,7 +125,7 @@ function pagingSeam(pages: Record<'tail' | number, SessionTranscriptPage>) {
       ? Promise.reject(new Error(`no fixture window for cursor ${String(key)}`))
       : Promise.resolve(hit);
   });
-  return { seam: { transcript, commands: { prompt: vi.fn() } } as never, transcript };
+  return { seam: { transcript, commands: { postMessage: vi.fn() } } as never, transcript };
 }
 
 const turn = (text: string) => ({
@@ -284,13 +302,13 @@ describe('the Transcript surface', () => {
             release = () => { resolve(pages[900]); };
           });
         });
-        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        const seam = { transcript, commands: { postMessage: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         fireEvent.click(screen.getByTestId('transcript-load-older'));
         await vi.advanceTimersByTimeAsync(5_000);
         release!();
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         // The window landed rather than being discarded...
         expect(screen.getByText('the middle turn')).toBeTruthy();
@@ -350,12 +368,12 @@ describe('the Transcript surface', () => {
         let tail = stuck;
         const transcript = vi.fn((_id: string, opts?: { before?: number }) =>
           opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
-        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        const seam = { transcript, commands: { postMessage: vi.fn() } } as never;
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
 
         // The poll never paused — no window was ever held — so the tail moves.
@@ -363,7 +381,7 @@ describe('the Transcript surface', () => {
         await vi.advanceTimersByTimeAsync(5_000);
 
         // The poll's render and the lift it triggers are separate rounds.
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         // A different cursor is on offer, so the refusal no longer applies.
         expect(screen.queryByTestId('transcript-stalled')).toBeNull();
@@ -385,9 +403,9 @@ describe('the Transcript surface', () => {
       try {
         const { seam, transcript } = pagingSeam(windows());
         render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         fireEvent.click(screen.getByTestId('transcript-load-older'));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
 
         const afterWalk = transcript.mock.calls.length;
         await vi.advanceTimersByTimeAsync(30_000);
@@ -398,7 +416,7 @@ describe('the Transcript surface', () => {
         // Resuming drops the walk and re-reads the tail — the one refresh that
         // cannot leave a gap.
         fireEvent.click(screen.getByRole('button', { name: /back to the newest turns/i }));
-        await vi.advanceTimersByTimeAsync(0);
+        await settleFake();
         expect(transcript.mock.calls.length).toBeGreaterThan(afterWalk);
         expect(screen.queryByTestId('transcript-poll-paused')).toBeNull();
         expect(screen.queryByText('the middle turn')).toBeNull();
@@ -419,14 +437,22 @@ describe('the Transcript surface', () => {
 
   describe('the composer', () => {
     /**
-     * THE CLAIM THAT MATTERS MOST. The box looks like every other composer in
-     * the app and does something else entirely: it types into the session's
-     * PTY. If this ever silently became `messages.post`, the surface would be
-     * lying about where a reader's words went.
+     * THE CLAIM THAT MATTERS MOST — and it INVERTED on 2026-09-15. This test
+     * used to assert `execution.prompt` and to forbid `messages.post`. The
+     * Server then made `execution.prompt` an internal-only delivery adapter
+     * that refuses every public caller (`use_message_send`), so the old
+     * transport could no longer deliver anything at all: the composer's only
+     * output was the 403 text in its failure card.
+     *
+     * The DESTINATION is unchanged — the bytes still reach the session's PTY —
+     * but the ROUTE is now persistence first: post the message anchored on the
+     * session, and the Server's own route table hands it to that same internal
+     * adapter. So this asserts the anchor, because posting to the wrong anchor
+     * is the one mistake that would silently stop reaching the terminal.
      */
-    it('injects into the PTY via execution.prompt, and posts no message', async () => {
-      const prompt = vi.fn().mockResolvedValue({ ok: true });
-      const seam = seamWith(page(), prompt);
+    it('posts the message anchored on the session, which delivers it to the PTY', async () => {
+      const postMessage = vi.fn().mockResolvedValue({ messageBatchId: 'b1', messages: [] });
+      const seam = seamWith(page(), postMessage);
       render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
 
       const field = await screen.findByLabelText(/send input to this session/i);
@@ -434,7 +460,9 @@ describe('the Transcript surface', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
       await waitFor(() => {
-        expect(prompt).toHaveBeenCalledWith(SESSION, { message: 'ls -la' });
+        expect(postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ anchorIds: [SESSION], body: 'ls -la' }),
+        );
       });
       // Cleared, not echoed: there is no message id to echo with, and the turn
       // appears only when the agent writes it to the transcript.
@@ -447,8 +475,9 @@ describe('the Transcript surface', () => {
      * THE DISCLOSURE MOVED; IT DID NOT GO. It used to be a 10px paragraph
      * hanging under the card, which the user asked to have removed and which
      * this test used to find in `document.body.textContent`. The FACT is
-     * load-bearing — this is the one composer here that does not post a
-     * message — so it now rides the field's accessible name, its `title` and
+     * load-bearing — this composer's words are typed at a PROGRAM, and land
+     * back in view only if the agent writes them down — so it now rides the
+     * field's accessible name, its `title` and
      * its placeholder, and this test follows it there rather than being
      * deleted with the paragraph. All three are asserted, because each answers
      * a different reader: a screen reader on focus, a hover, and a glance.
@@ -456,7 +485,7 @@ describe('the Transcript surface', () => {
     it('still tells a reader the input goes to a terminal, on the field itself', async () => {
       render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
       const field = await screen.findByLabelText(/send input to this session/i);
-      const disclosure = /not posted as a message/i;
+      const disclosure = /typed into the session’s terminal/i;
       expect(field.getAttribute('aria-label')).toMatch(disclosure);
       expect(field.getAttribute('title')).toMatch(disclosure);
       expect(field.getAttribute('placeholder')).toMatch(/terminal/i);
@@ -507,8 +536,8 @@ describe('the Transcript surface', () => {
   /**
    * ATTACHMENTS — a file becomes a PATH IN THE DRAFT, never a graph reference.
    *
-   * The destination decides the transport: Send here is `execution.prompt`,
-   * which injects into the PTY, and a `tm8://file/<id>` typed at an agent's
+   * The destination decides the transport: Send here reaches the PTY (via
+   * `messages.post`'s delivery route), and a `tm8://file/<id>` typed at an agent's
    * stdin resolves to nothing. Every agent CLI we support reads files by path.
    */
   describe('attaching a file to a terminal draft', () => {
@@ -674,9 +703,9 @@ describe('the Transcript surface', () => {
     });
 
     it('surfaces a rejected injection rather than swallowing it', async () => {
-      const prompt = vi.fn().mockRejectedValue(new Error('no pty for this session'));
+      const postMessage = vi.fn().mockRejectedValue(new Error('no pty for this session'));
       render(
-        <TranscriptSurface seam={seamWith(page(), prompt)} sessionId={SESSION} liveness="live" />,
+        <TranscriptSurface seam={seamWith(page(), postMessage)} sessionId={SESSION} liveness="live" />,
       );
       const field = await screen.findByLabelText(/send input to this session/i);
       fireEvent.change(field, { target: { value: 'echo hi' } });

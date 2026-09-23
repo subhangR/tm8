@@ -180,7 +180,14 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
     // plus the node mode alias — none of which moves the catalog count.
     // 156 -> 159 (148): space workflow list|set|delete.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // MEASURED on the merged tree (176's `chat` noun AND the container noun).
+    // Neither branch's number survives: main counts chat's five and not the
+    // container paths, my branch the reverse. Summing them would be arithmetic
+    // over two partial views.
+    // 188 -> 189 (187): `session share`, one catalog-driven command over the
+    // new execution.sessions.share row. `doctor` is still absent from the
+    // catalog, which is what this test is actually about.
+    expect(COMMAND_PATHS).toHaveLength(196); // +7 tm8 skill commands (2026-09-23). MEASURED.
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

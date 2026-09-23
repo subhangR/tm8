@@ -1,31 +1,33 @@
 /**
  * HomePage — the merged single home (user ruling, task 01a0027d, 2026-08-14).
  *
- * ONE canvas, three altitudes:
+ * ONE canvas, two altitudes:
  *
- *   1. The CHAT is the hero — the existing chat-home surface, mounted solo
- *      (its thread sidebar hidden by this module's stylesheet; full thread
- *      management stays on the Messages screen).
- *   2. NEEDS YOU directly beneath, only when it has rows — triage outranks
- *      everything, and an inbox-zero space shows rails only.
- *   3. Glance RAILS for the daily collections (domain's `HOME_RAIL_KINDS`),
- *      a teammate presence row, and the escape hatch to the full workspace.
+ *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
+ *      inbox-zero space stays quiet.
+ *   2. The CHAT remains the full-bleed hero, with main's root list, resizer,
+ *      focus mode and beside-it detail column left intact.
+ *
+ * WHAT IS NO LONGER HERE, AND WHY (Subhang, 2026-09-05). This page used to
+ * stack two credential sections between the two altitudes above — the full
+ * `CredentialsProviderBlock` and the compact `ProviderRail`. Both are gone.
+ *
+ * They were wrong in two independent ways. STRUCTURALLY: a card grid is a flex
+ * item with `min-height: auto`, so it could not shrink; on any ordinary window
+ * the two sections plus the chat exceeded `.hp-page`, and with no `overflow` on
+ * the column the grid painted straight over the conversation underneath.
+ * EDITORIALLY: they were shown to every member on every visit, finished or not,
+ * which is a permanent region of the screen spent on a task that has an end.
+ *
+ * Credentials now live in exactly two places: `CredentialsSetupDialog` (the
+ * guided flow, opened for a member who has not finished) and Settings → Agent
+ * credentials (the management surface). Home is the rail, the list and the
+ * view — nothing stacked on top of them.
  *
  * WHAT THIS FILE DELIBERATELY REUSES rather than re-implements:
  *   - `useHomeData` / `composeMyWork` (src/home) — the NEEDS YOU composition
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
- *   - `homeRowOf` — the one summary→row projection, so a rail card's status
- *     word and dot obey the same verdict-outranks-record law as every other
- *     surface.
- *
- * Rails are GLANCEABLE, not exhaustive: the top rows by `activityAt`,
- * sideways-scrolling, with the rail header opening the full collection. Depth
- * lives in Workspace; this page is peripheral vision around the conversation.
- *
- * §15.2: no kind literal appears in this directory — the rail and presence
- * kinds come from `domain/home-page.ts`, presence state is read structurally
- * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';
@@ -38,8 +40,18 @@ import {
 } from '../home';
 import './home-page.css';
 
+/**
+ * Home's narrow read port, and nothing more.
+ *
+ * It used to widen `seam` with `Pick<Seam, 'credentials'>` for the two
+ * credential sections this page hosted. Those are gone, so the widening goes
+ * with them: a page that cannot reach the human-only credential operations
+ * cannot grow a surface that quietly starts calling them again.
+ */
+export type HomePageData = HomeScreenData;
+
 export interface HomePageProps {
-  data: HomeScreenData;
+  data: HomePageData;
   /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
   /**
@@ -122,9 +134,9 @@ export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
 
-  /* The full T5-1 composition, reused for its NEEDS YOU section alone — the
-     other sections' facts render as rails below, where the whole space (not
-     just "mine") is the design. */
+  /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
+     chat/list surface owns the collection inventory; Home does not recreate
+     the glance rails that moved to Work. */
   const needsYou = useMemo(() => {
     const work = composeMyWork({
       sessionPool: home.sessionPool,
@@ -153,16 +165,16 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-      {needsYou && needsYou.rows.length > 0 ? (
-        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-      ) : needsYou && (home.viewerError || home.notificationsError) ? (
-        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
-      ) : null}
+        {needsYou && needsYou.rows.length > 0 ? (
+          <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
+        ) : needsYou && (home.viewerError || home.notificationsError) ? (
+          <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+        ) : null}
 
-      <section className="hp-chat hp-chat--full" aria-label="Chat">
-        {props.chat}
-        {props.listRail ?? null}
-      </section>
+        <section className="hp-chat hp-chat--full" aria-label="Chat">
+          {props.chat}
+          {props.listRail ?? null}
+        </section>
       </div>
 
       {props.aside ?? null}

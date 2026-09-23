@@ -78,14 +78,14 @@ describe('Chat Home stability', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'Fast answer.' },
       });
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         usage: { output_tokens: 5 },
       });
@@ -135,7 +135,7 @@ describe('Chat Home stability', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000bb' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Reply to another member.' },
@@ -159,7 +159,7 @@ describe('Chat Home stability', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000cc' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Working…' },
@@ -203,7 +203,7 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId: '019f0000-0000-7000-8000-0000000000ff' as EntityId,
         seq: 0,
         part: { kind: 'text', text: 'Someone else’s agent is answering.' },
@@ -249,14 +249,14 @@ describe('Chat Home snapshot reconciliation', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: { kind: 'text', text: 'Streamed after the snapshot.' },
       });
       controls.emit({
         type: 'chat.turn.done',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         usage: { output_tokens: 3 },
       });
@@ -309,7 +309,7 @@ describe('Chat Home entity chip suppression', () => {
     act(() => {
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 0,
         part: {
@@ -322,7 +322,7 @@ describe('Chat Home entity chip suppression', () => {
       });
       controls.emit({
         type: 'chat.turn.delta',
-        threadRootId: THREAD_ID,
+        chatId: THREAD_ID,
         messageId,
         seq: 1,
         part: {

@@ -737,7 +737,19 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // execution.git* family (status/diff/commit/checkpoint/rollback/merge/
     // cherryPick/branch/stash), execution.dispatch, plus terminal/transcript
     // rows that landed with their lanes.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(20);
+    // 20 -> 21 (187): execution.sessions.share — the WATCH and DRIVE dials on a
+    // work session. It is a SETTING on the record, not a spawn, so it does not
+    // change the point this test is making: none of these 21 rows can build a
+    // live session through the contract.
+    // 20 -> 21 (2026-09-19, Changes screen Phase 1): `execution.gitStage`, the
+    // TENTH execution.git* row. The enumeration above is now status/diff/
+    // commit/checkpoint/rollback/STAGE/merge/cherryPick/branch/stash — the
+    // index verb the Changes surface stages with. MEASURED from this
+    // assertion's own failing run (`expected 21 to be 20`), never derived.
+    // 21 -> 22 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): the merged tree holds BOTH execution.sessions.share (187)
+    // and execution.gitStage, so the family moves twice from 20. MEASURED from this
+    // assertion's own failing run on the merged tree.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(22);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

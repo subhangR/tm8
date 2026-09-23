@@ -79,7 +79,6 @@ export interface MobileShellProps {
    * no server behind it, and there the refusal is the truth.
    */
   chatBridge?: ChatHomeL2Bridge;
-  chatAnchorId?: EntityId;
   spaceLabel?: string;
 
   /*
@@ -963,7 +962,6 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
           spaceId={props.spaceId}
           nodeKey={props.nodeKey}
           {...(props.chatBridge ? { bridge: props.chatBridge } : {})}
-          {...(props.chatAnchorId ? { anchorId: props.chatAnchorId } : {})}
           /* ONE SURFACE: the thread column is the header's sheet, not a band
              stacked above the conversation. See `ChatHosting` and the state
              that builds it. */

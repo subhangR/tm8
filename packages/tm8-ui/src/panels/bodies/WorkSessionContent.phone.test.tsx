@@ -61,6 +61,7 @@ describe('WorkSessionContent on a phone', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Transcript',
       'Terminal',
+      'Changes',
     ]);
     expect(screen.getByTestId('work-session-content').dataset.surface).toBe('transcript');
     /* Two fields, not one: `data-surface` says what is SHOWING and
@@ -93,9 +94,16 @@ describe('WorkSessionContent on a phone', () => {
     expect(marker.textContent).toContain('Git');
     expect(marker.textContent).toContain('Debug');
     expect(marker.textContent).toContain('Graph');
+    /* CHANGES IS NOT IN THE MARKER ANY MORE, and this assertion is the one that
+       has to be updated deliberately when a refusal is retired. Changes got a
+       phone arrangement — list, or one full-width diff with a way back — so it
+       is offered as a tab. Leaving its name in the refusal card while its chip
+       sat in the bar would be the same silence this file exists to catch,
+       pointing the other way: a surface REPORTED missing that is right there. */
+    expect(marker.textContent).not.toContain('Changes');
     /* It is a STATEMENT, not a fourth tab: a screen reader walking the tablist
        must not be offered something it cannot select. */
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
   });
 
   /**
@@ -206,10 +214,10 @@ describe('WorkSessionContent on a phone', () => {
   /**
    * THE CONTROL ON THE CONTROL. Every assertion above would also pass on a
    * component that had simply been broken for the desktop too, so one case
-   * proves the fork is a fork: no provider, five tabs, terminal default, and
+   * proves the fork is a fork: no provider, six tabs, terminal default, and
    * the marker absent.
    */
-  it('leaves the desktop arrangement alone — five surfaces, terminal first, no marker', () => {
+  it('leaves the desktop arrangement alone — six surfaces, terminal first, no marker', () => {
     render(
       <WorkSessionContent
         sessionId={SESSION}
@@ -222,6 +230,7 @@ describe('WorkSessionContent on a phone', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Terminal',
       'Transcript',
+      'Changes',
       'Git',
       'Debug',
       'Graph',

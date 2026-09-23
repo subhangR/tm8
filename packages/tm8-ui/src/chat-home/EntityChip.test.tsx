@@ -5,7 +5,9 @@ import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { EntityChip, resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs, truncateEntityId } from './entity-refs';
-import { createChatHomeFixturePort } from './fixtures';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
+import { getKind } from '../domain/registry';
+import { CUSTOM_KIND_FALLBACK } from '../domain/types';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -14,6 +16,7 @@ const MODELS: ChatModelOption[] = [
 ];
 
 const TASK_ID = '019f0000-0000-7000-8000-000000000021';
+const CHAT_ID = '019f0000-0000-7000-8000-0000000000c1' as EntityId;
 const BARE_ID = '019f0000-0000-7000-8000-000000000022';
 
 beforeEach(() => resetChatEntityResolutionCache());
@@ -65,6 +68,31 @@ describe('EntityChip', () => {
     expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);
   });
 
+  it('resolves a CHAT with the chat kind\'s own word and mark', async () => {
+    /*
+     * A chat became a kind in migration 176, and chips are how it appears
+     * wherever it is referenced — the `about` subject on a conversation
+     * header, and the SOURCE of a third-party turn, which is the one place a
+     * chat-to-chat message is legible as one.
+     *
+     * The MARK matters as much as the word here. Every kind in this registry
+     * has a unique drawn path (`registry.test.ts` pins the uniqueness), and a
+     * kind added without one falls back to the generic `c:*` row — which
+     * renders, and reads at a glance exactly like a correct chip.
+     */
+    const view = render(
+      <EntityChip refInfo={{ id: CHAT_ID, kind: 'chat', title: 'Plan the launch sequence' }} />,
+    );
+    const chip = view.getByTestId('chat-entity-chip');
+    expect(within(chip).getByText('Plan the launch sequence')).toBeTruthy();
+    expect(within(chip).getByText(/chat/i)).toBeTruthy();
+    // Its OWN artwork, not the fallback row's.
+    const paths = [...chip.querySelectorAll('path')].map((p) => p.getAttribute('d'));
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths).toEqual(getKind('chat').iconArt.map((d) => d));
+    expect(paths).not.toEqual(getKind(CUSTOM_KIND_FALLBACK).iconArt.map((d) => d));
+  });
+
   it('shows a truncated id while resolving, then the resolved title', async () => {
     const resolve: ChatEntityResolver = vi
       .fn()
@@ -90,16 +118,56 @@ describe('EntityChip', () => {
     expect(onOpenEntity).toHaveBeenCalledWith(BARE_ID);
   });
 
-  it('renders NO chips anywhere for the fixture thread — the chip era is over', async () => {
+  it('renders NO chips in the TRANSCRIPT for the fixture thread — the chip era is over', async () => {
     /* S3 replaced the transcript's chip row with the ledger's counted line;
        S4 replaced the tray's chip strip with the ledger panel. The chip
        survives only where a payload IS content (ExplanationToolCard's
-       durable-entity row), which the fixture thread does not exercise. */
-    const { port } = createChatHomeFixturePort();
+       durable-entity row), which the fixture thread does not exercise.
+       
+       SCOPED TO THE TRANSCRIPT, and the scope is the ruling rather than a
+       weakening of it. What S3/S4 retired was the chip as a SUMMARY — a strip
+       of everything a turn happened to touch, which said "these were
+       mentioned" and nothing more, and which the counted ledger line says
+       better. A chip that names ONE relation is a different thing, and two of
+       them landed with the chat entity (Wave 2):
+       
+         · the conversation header's `about` subject, which is the only place
+           the relation appears at all — without it a craft chat and a bare
+           Home chat are indistinguishable on screen; and
+         · a third-party turn's SOURCE, which is what makes a work session's
+           report legible as a report rather than as something you said.
+       
+       Both are the payload, not a summary of it. The header's is asserted
+       below, so this file pins the whole census rather than one half of it. */
+    /* The DEMO thread, named rather than defaulted: this case is about the
+       transcript's own chip census, and it must not silently change meaning if
+       the port's default list ever widens again. */
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
     );
     await waitFor(() => expect(view.getAllByTestId('chat-ledger-reads')).toHaveLength(1));
-    expect(view.queryAllByTestId('chat-entity-chip')).toHaveLength(0);
+    const transcript = view.container.querySelector('.tch-transcript');
+    expect(transcript).not.toBeNull();
+    expect(transcript!.querySelectorAll('[data-testid="chat-entity-chip"]')).toHaveLength(0);
+  });
+
+  it('draws the `about` subject as a chip on the conversation header', async () => {
+    /* The fixture thread carries `aboutId` (the fixture channel), which is
+       what makes this observable at all — a fixture with no subject would let
+       a header that never draws the relation look correct. */
+    /* The DEMO thread, named rather than defaulted: this case is about the
+       transcript's own chip census, and it must not silently change meaning if
+       the port's default list ever widens again. */
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={vi.fn()} />,
+    );
+    const relation = await waitFor(() => view.getByTestId('chat-about-relation'));
+    expect(relation.textContent).toContain('about');
+    expect(within(relation).getByTestId('chat-entity-chip')).toBeTruthy();
+    /* It is INSIDE the header and not in the transcript: the subject is a fact
+       about the conversation, not about any one turn in it. */
+    expect(relation.closest('.tch-conversation__head')).not.toBeNull();
   });
 });

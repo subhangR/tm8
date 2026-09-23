@@ -76,18 +76,20 @@ export {
   slugOfKind,
 } from './registry';
 
-export { KIND_ART, SURFACE_ART, VIEW_ART, type KindArt } from './kind-art';
+export { KIND_ART, SURFACE_ART, SURFACE_LABEL, VIEW_ART, type KindArt } from './kind-art';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 
 export {
   PROCESS_CONTROL,
   REASONS,
+  SHARING_CONTROL,
   allActions,
   deferredActions,
   hasEnded,
   processControlFor,
   resolveAction,
+  sharingControlFor,
 } from './actions';
 
 export {
@@ -128,10 +130,15 @@ export {
   accessModeLabel,
   describeAccessMode,
   nextAccessMode,
+  AGENT_CREDENTIAL_PROVIDER,
+  CREDENTIAL_PROVIDER_LABEL,
+  EFFORT_LABELS,
+  effortLabel,
 } from './launch';
 export type {
   AgentToolDef,
   LaunchAccessMode,
+  LaunchCredentialSource,
   LaunchCapacity,
   LaunchConfig,
   LaunchMode,
@@ -174,6 +181,7 @@ export { CATEGORY_DEFAULT_STATUS } from './status-categories';
 export {
   CHATS_ROOT,
   DEFAULT_HOME_KIND,
+  HOME_RAIL_WITHHELD_KINDS,
   LEGACY_HOME_TAB_KINDS,
   homeRailGroups,
   homeRootKinds,

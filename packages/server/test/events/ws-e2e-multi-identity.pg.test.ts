@@ -107,7 +107,7 @@ async function createTaskAsA(title: string): Promise<string> {
   const result = await db.rpc<{ entity: { id: string } }>(
     claimsFor(memberA.identityId),
     'public.create_task',
-    [spaceId, title, memberA.memberId, '', null, null, null, 'medium', null, null, null, null, 'attached_to', `cmid_${randomUUID()}`],
+    [spaceId, title, memberA.memberId, '', null, null, null, 'medium', null, null, null, null, null, 'attached_to', `cmid_${randomUUID()}`],
   );
   return result.entity.id;
 }
@@ -303,7 +303,7 @@ describe('two-socket fan-out across real identities', () => {
     const controlTitle = `d-own-space-${randomUUID().slice(0, 8)}`;
     await db.rpc(claimsFor(identityD), 'public.create_task', [
       otherSpace.space.id, controlTitle, dMemberId, '',
-      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      null, null, null, 'medium', null, null, null, null, null, 'attached_to',
       `cmid_${randomUUID()}`,
     ]);
     await ticks(8);

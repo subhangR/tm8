@@ -313,6 +313,7 @@
    leaves the text a block box to ellipsise inside. */
 .cv2-root[data-shell='mobile'] .pn-tt__title,
 .cv2-root[data-shell='mobile'] .lp__title {
+  box-sizing: border-box;
   min-block-size: var(--mobile-touch-min);
   padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
 }
@@ -570,6 +571,55 @@
 
 
 /* ==========================================================================
+   7j''. THE THIRD ANATOMY, AND THE LAST ONE STILL PINNED OPEN.
+
+   7j is written about `.pn-tt__actions` (the task tile) and 7j' about
+   `.lp__rowactions` (the standard tile). THREE containers carry this cluster —
+   `panels.css` enumerates them by name where the shell-marker reveal is stated
+   — and the SESSION tile, `.pn-st__actions`, was the one member of that shape
+   that never got the amendment. It kept the pinned-open treatment on the one
+   screen where it costs the most.
+
+   MEASURED IN THE CAPTURE (Sessions, 390px): SIX controls per row — archive,
+   tick, run, copy-id, terminate, disclosure — on an opaque `--pn-hover`
+   backing floated over the row's right edge, so every title on the screen was
+   covered mid-word: `Remove codebrain from`, `Transcript message sen`,
+   `Terminal scrolling in mo`. Not ellipsised: the text is laid out and
+   measurable, and the backing is on top of it. Same class of defect 7j'
+   records on the channel row's `12 unread`, one anatomy over, and found the
+   same way — only a screenshot shows it.
+
+   It is worse here than on either of the other two for a reason worth stating:
+   this cluster is the WIDEST of the three (it is the only one carrying Copy
+   and the process control as well as the registry verbs), and the sessions
+   list is the one whose titles are longest. The float and the title were
+   always going to collide; on a 390px phone they collide on every row.
+
+   THE SHAPE IS 7j's, RULE FOR RULE, because the three anatomies must not
+   drift: keep the container (it holds the opener), drop its other children
+   while the row is closed, un-float it, and grow the opener to the touch
+   floor. Nothing is lost that touch could reach — the verbs are one 44px tap
+   away, and this tile's expand already opens the full `EntityControlStrip`
+   (`MaestroSessionTile.detail`), a strictly larger set than the five it was
+   pinning open.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-st:not([data-details='open']) .pn-st__actions > *:not(.pn-st__btn--ind) {
+  display: none;
+}
+
+/* In the flow, not over the title. The session cluster is `position: absolute`
+   with an opaque backing (`panels.css`), which is what put it on top of the
+   title rather than beside it; 7j' had to un-float the standard tile for the
+   same reason. `background` is dropped with the float — an opaque strip that
+   no longer covers anything is just a box around one chevron. */
+.cv2-root[data-shell='mobile'] .pn-st__actions {
+  position: static;
+  transform: none;
+  padding-left: 0;
+  background: none;
+}
+
+/* ==========================================================================
    7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
 
    MEASURED, a row carrying no badges: 56px, of which
@@ -616,6 +666,110 @@
   padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
 }
 
+
+/* Phone list rows own their geometry, including :hover and :focus-within.
+   Base hover rules translate desktop clusters by half their height. A static
+   mobile cluster must never inherit that transform after a tap. */
+.cv2-root[data-shell='mobile'] .pn-tt > .pn-tt__main,
+.cv2-root[data-shell='mobile'] .pn-st > .pn-st__main {
+  flex-wrap: wrap;
+  gap: 0 6px;
+  padding: 4px 8px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt > .pn-tt__main > .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-st > .pn-st__main > .pn-st__actions {
+  position: static;
+  transform: none;
+  background: none;
+  padding: 0;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 4px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Expanded verbs get a separate band, never the title's remaining width. */
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] > .pn-tt__main > .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-st[data-details='open'] > .pn-st__main > .pn-st__actions {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] .pn-tt__ind,
+.cv2-root[data-shell='mobile'] .pn-st[data-details='open'] .pn-st__btn--ind {
+  margin-left: auto;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__actions > *,
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__actions > * {
+  box-sizing: border-box;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  flex-shrink: 0;
+}
+
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__title {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-block: 0;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__model,
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__statusglyph {
+  display: none;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__arrow {
+  width: 24px;
+  height: var(--mobile-touch-min);
+  flex: 0 0 24px;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__arrow--empty {
+  visibility: hidden;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__tag {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stable gutters and a quiet separator keep each title with its own facts. */
+.cv2-root[data-shell='mobile'] .pn-tt,
+.cv2-root[data-shell='mobile'] .pn-st {
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__badges {
+  padding: 0 12px 8px 58px;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-st__badges {
+  padding: 0 12px 8px 59px;
+}
+/* Long worktree branches must shrink before the mode mark or PR chips. */
+.cv2-root[data-shell='mobile'] .pn-st .pn-lane {
+  max-width: 100%;
+}
+.cv2-root[data-shell='mobile'] .pn-st .pn-lane__branch {
+  min-width: 0;
+  display: block;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__meta {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--pn-line);
+  gap: 10px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__rowdetail--chips {
+  gap: 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__rowdetail--chips > :last-child {
+  margin-left: 0;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__statesel {
+  border-radius: 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt .lp__dateadd {
+  min-height: var(--mobile-touch-min);
+}
 
 /* ==========================================================================
    8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
@@ -1337,4 +1491,64 @@
 
 .cv2-root[data-shell='mobile'] .lp__sheetmenu .lp__filterempty {
   padding-inline: var(--pn-space-3);
+}
+
+/* Phone sessions open as a full-screen reading/terminal surface. Details and
+   navigation remain one tap away in the surface switch. Keep the existing
+   frame in charge of keyboard insets; do not reparent the running terminal. */
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-immersive='true']) {
+  grid-template-rows: 1fr;
+  padding-top: var(--mobile-safe-top, 0px);
+  padding-bottom: var(--mobile-safe-bottom, 0px);
+}
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-immersive='true']) > :is(.mobile-frame__header, .mobile-frame__tabbar),
+.cv2-root[data-shell='mobile'] .pn-panel:has(.pn-work-session-content[data-immersive='true']) > :is(.pn-head, .pn-panelbar, .pn-foot),
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__refused {
+  display: none;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] > .pn-surface-switch {
+  padding-block: 0;
+  gap: var(--pn-space-1);
+}
+.cv2-root[data-shell='mobile'] .pn-session-details-toggle {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-size: 20px;
+  cursor: pointer;
+}
+.cv2-root[data-shell='mobile'] .pn-session-details-toggle:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The session input is a compact command row until it is being edited.
+   Attachments/errors keep a full-width row above it. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot {
+  padding: var(--pn-space-1);
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card > :not(.ri-host, .ri-card__foot) {
+  grid-column: 1 / -1;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea {
+  min-height: 44px;
+  height: 44px;
+  padding: 10px 8px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea:focus {
+  height: 72px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card__foot {
+  flex-wrap: nowrap;
+  padding: 0 4px;
 }

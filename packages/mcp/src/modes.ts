@@ -13,6 +13,11 @@ export const DIRECT_TOOL_NAMES = [
   'web_fetch', 'web_search',
   'memory_write', 'memory_search',
   'git_branch', 'git_status', 'git_diff', 'git_pr',
+  // Containers (TM8-CONTAINERS-DESIGN §14.1). DIRECT rather than `tm8_act`
+  // guides because agents call these in tight loops and need TYPED results —
+  // a screenshot as an image block, an exit code as a number — not a template
+  // to fill in. Every other containers.* operation stays a guide row.
+  'container_computer', 'container_run', 'container_screenshot',
 ] as const;
 
 export type DirectToolName = (typeof DIRECT_TOOL_NAMES)[number];

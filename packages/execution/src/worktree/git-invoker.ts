@@ -30,6 +30,15 @@ export interface GitRunOptions {
    * themselves, honestly, with a `truncated` flag.
    */
   maxBufferBytes?: number;
+  /**
+   * Bytes fed to the child's stdin, which is then closed.
+   *
+   * Exists for `git apply --cached -`: a patch cannot go in argv (it is
+   * multi-line, unbounded, and argv has an OS size limit), and it must not go
+   * through a temp file (a second process could read or swap it between write
+   * and apply). stdin is the same channel `git add -p` uses internally.
+   */
+  stdin?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -42,7 +51,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  */
 export function runGit(args: readonly string[], options: GitRunOptions = {}): Promise<GitResult> {
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       'git',
       // Defense in depth against argv-option injection: `--` is not usable
       // everywhere, so instead no caller-supplied value may LOOK like an
@@ -61,6 +70,17 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
           // Never let an interactive credential/editor prompt hang a server.
           GIT_TERMINAL_PROMPT: '0',
           GIT_EDITOR: 'true',
+          // DELIBERATELY NOT `GIT_LITERAL_PATHSPECS` HERE. A pathspec is a
+          // glob and `--` does not change that, so every caller-supplied
+          // exact path in this package passes `--literal-pathspecs` before
+          // its subcommand (see `stage`, `unstage`, `file-history`, and the
+          // diff reads in the server facade). Setting it as an ENV default
+          // looked like the safer choke point and is not: the variable is
+          // inherited by git's own internals, and `git stash push -u` builds
+          // pathspecs of its own — under a literal default it stops matching
+          // untracked content and silently leaves it in the worktree.
+          // Measured: `execution/test/spawn-safety` stash case regresses.
+          // The guarantee belongs at the call sites that own the path.
         },
       },
       (error, stdout, stderr) => {
@@ -73,6 +93,21 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
         resolve({ code: typeof code === 'number' ? code : 1, stdout, stderr });
       },
     );
+    if (options.stdin !== undefined) {
+      const input = child.stdin;
+      if (input === null) {
+        reject(new Error('git child has no stdin stream'));
+        return;
+      }
+      // A child that has already exited (bad argv, timeout kill) leaves a pipe
+      // with no reader, and writing to it emits EPIPE/ERR_STREAM_DESTROYED as
+      // an UNHANDLED 'error' event — which takes the process down rather than
+      // failing this call. Swallow it here: the callback above is what reports
+      // the outcome, and it reports git's own stderr, which is the honest
+      // diagnosis. Anything else would mask `git apply`'s rejection message.
+      input.on('error', () => {});
+      input.end(options.stdin);
+    }
   });
 }
 

@@ -13,10 +13,13 @@ import {
   composeEnv,
   composeManifest,
   resolveCommandNetworkPolicy,
+  resolveCoordinatorKind,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
+  routingIntentFor,
   supportsPositionalPrompt,
+  taskFactsFor,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -47,6 +50,12 @@ function context(overrides: Partial<SpawnContext['teamMember']> = {}): SpawnCont
 const base: SpawnRequest = { spaceId: 'space-1', teamMemberId: 'tm-1' };
 
 describe('resolveLaunchConfig', () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const)(
+    'preserves Astra effort %s during launch resolution', (reasoningEffort) => {
+      expect(resolveLaunchConfig({ ...base, reasoningEffort }, context({ model: 'gpt-6-astra' }), {}))
+        .toMatchObject({ model: 'gpt-6-astra', agentTool: 'codex', reasoningEffort });
+    },
+  );
   it('prefers the request over the persona, and the persona over the default', () => {
     expect(resolveLaunchConfig({ ...base, model: 'haiku' }, context(), {}).model).toBe('haiku');
     expect(resolveLaunchConfig(base, context(), {}).model).toBe('opus');
@@ -250,19 +259,41 @@ describe('resolveLaunchConfig', () => {
   });
 
   it('resolves each provider credential source independently and keeps legacy fallback', () => {
+    // Exhaustive over `CredentialProviderName`, kimi and groq included. Those
+    // two entries are INERT by construction and that is deliberate rather than
+    // an oversight: a claude-code session's per-provider choice is read under
+    // `anthropic` (see `AGENT_CREDENTIAL_PROVIDER`), and answering 'node' there
+    // skips the credential port entirely — which already skips the Kimi backend
+    // with it. A `credentialSources.kimi` would be a second, quieter way to
+    // express a choice that already has one, so nothing reads it.
     expect(resolveLaunchConfig(base, context(), {}).credentialSources).toEqual({
       anthropic: null,
       openai: null,
+      gemini: null,
+      hermes: null,
+      cursor: null,
       github: null,
+      kimi: null,
+      groq: null,
     });
 
     expect(resolveLaunchConfig({
       ...base,
-      credentialSources: { anthropic: 'node', github: 'member' },
+      credentialSources: {
+        anthropic: 'node',
+        github: 'member',
+        gemini: 'member',
+        cursor: 'node',
+      },
     }, context(), {}).credentialSources).toEqual({
       anthropic: 'node',
       openai: null,
+      gemini: 'member',
+      hermes: null,
+      cursor: 'node',
       github: 'member',
+      kimi: null,
+      groq: null,
     });
 
     // A new provider-specific choice overrides only its own legacy/global arm.
@@ -273,7 +304,12 @@ describe('resolveLaunchConfig', () => {
     }, context(), {}).credentialSources).toEqual({
       anthropic: 'node',
       openai: 'node',
+      gemini: 'node',
+      hermes: 'node',
+      cursor: 'node',
       github: 'member',
+      kimi: 'node',
+      groq: 'node',
     });
 
     // Existing manifests remain inheritable: their one source fans out only
@@ -286,7 +322,12 @@ describe('resolveLaunchConfig', () => {
     }).credentialSources).toEqual({
       anthropic: 'member',
       openai: 'member',
+      gemini: 'member',
+      hermes: 'member',
+      cursor: 'member',
       github: 'node',
+      kimi: 'member',
+      groq: 'member',
     });
   });
 
@@ -523,6 +564,14 @@ describe('buildAgentCommand', () => {
     expect(accept).toContain('--no-alt-screen');
   });
 
+  it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const)(
+    'passes Astra effort %s to Codex', (reasoningEffort) => {
+      const command = buildAgentCommand({ ...launch, agentTool: 'codex', model: 'gpt-6-astra', reasoningEffort }, {});
+      expect(command).toContain("--model 'gpt-6-astra'");
+      expect(command).toContain(`-c 'model_reasoning_effort="${reasoningEffort}"'`);
+    },
+  );
+
   it('builds the exact Codex argv for every posture before shell joining', () => {
     const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5.6-sol' };
     expect(CODEX_LOOPBACK_CONFIG_OVERRIDES).toEqual([
@@ -753,6 +802,47 @@ describe('composeEnv', () => {
     expect('TM8_JOURNAL_PATH' in env).toBe(false);
   });
 
+  describe('CLAUDE_CODE_AUTO_COMPACT_WINDOW — removed, and stays removed', () => {
+    // tm8 used to pin every claude-code launch to a 200k auto-compaction
+    // window. That knob is gone: the harness's own default now decides where
+    // a session compacts, and no tm8 code names the variable. These pin both
+    // halves of "gone" — the launch never sets it, and composeEnv's allowlist
+    // never lets the server process's own value leak into a child.
+    const withLaunch = (overrides: Partial<Parameters<typeof resolveLaunchConfig>[0]>, member = {}) => {
+      const launch = resolveLaunchConfig({ ...base, ...overrides }, context(member), {});
+      return composeManifest({
+        sessionId: 'sess-compact',
+        request: { ...base, ...overrides },
+        context: context(member),
+        launch,
+        workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+        command: buildAgentCommand(launch, {}),
+        baseUrl: 'http://127.0.0.1:4610',
+      });
+    };
+
+    it('is ABSENT from a claude-code launch environment', () => {
+      const m = withLaunch({});
+      expect(m.launch.tool).toBe('claude-code');
+      expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in composeEnv(m, '/tmp/m.json', 'http://x', {})).toBe(false);
+    });
+
+    it('is ABSENT from a codex launch environment', () => {
+      const m = withLaunch({}, { model: 'gpt-5.6-sol', agentTool: 'codex' });
+      expect(m.launch.tool).toBe('codex');
+      expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in composeEnv(m, '/tmp/m.json', 'http://x', {})).toBe(false);
+    });
+
+    it('never inherits the variable from the server process', () => {
+      for (const member of [{}, { model: 'gpt-5.6-sol', agentTool: 'codex' }]) {
+        const env = composeEnv(withLaunch({}, member), '/tmp/m.json', 'http://x', {
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '500000',
+        });
+        expect('CLAUDE_CODE_AUTO_COMPACT_WINDOW' in env).toBe(false);
+      }
+    });
+  });
+
   it('uses only the explicitly minted session credential and never inherits one', () => {
     const inherited = composeEnv(manifest, '/tmp/m.json', 'http://x', {
       TM8_AGENT_TOKEN: 'operator-token-must-not-cross',
@@ -796,6 +886,89 @@ describe('composeEnv', () => {
     expect(env.CLAUDECODE).toBe('');
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('');
   });
+
+  /**
+   * WHAT A KEYLESS CREDENTIAL HOME IS FOR, stated as the difference between two
+   * `composeEnv` calls that differ in ONE argument.
+   *
+   * `DbAgentCredentialHome.resolve` can find an `active` Kimi row whose key file
+   * it cannot read — a partial write, a restored backup, a hand-edited
+   * directory, a 0700 mode lost to an operator's `chown`. The question is what
+   * it hands back, and the two candidate answers produce the two environments
+   * below. They are asserted TOGETHER, in one test, because neither is
+   * interesting alone: the fix is the DELTA, and a test that only asserted the
+   * fixed arm would still pass if suppression were removed from both.
+   *
+   * Arm 1 (`undefined`) is the pre-fix behaviour and the reason this matters.
+   * The node's own `ANTHROPIC_API_KEY` is forwarded by `AUTH_ENV_KEYS`, and
+   * every line that would remove it lives inside `if (credentialHome)`. So a
+   * member who deliberately connected Kimi gets a `claude-code` session running
+   * on the NODE's Anthropic key: the wrong vendor, the wrong account billed, and
+   * nothing anywhere to say so. That is not the "has not connected" case the
+   * null return is documented for — that member connected, and the row says so.
+   *
+   * Arm 2 is the fix. A home with no `apiKey` still carries the provider, so
+   * suppression runs and `CLAUDE_CONFIG_DIR` is pinned to the member's own
+   * `kimi/` directory; the routing block is skipped because `apiKey` is absent.
+   * The session then starts with NO Anthropic credential at all and fails
+   * visibly and attributably, which is the behaviour the file's own header
+   * demands of a stale credential and is owed equally to an unreadable one.
+   */
+  it('a keyless credential home suppresses the node key that a null home leaves behind', () => {
+    const nodeEnv = { ANTHROPIC_API_KEY: 'sk-ant-node-account' };
+
+    // ARM 1 — no credential home. The node's key survives into the session.
+    const unresolved = composeEnv(manifest, '/tmp/m.json', 'http://x', nodeEnv);
+    expect(unresolved.ANTHROPIC_API_KEY).toBe('sk-ant-node-account');
+    expect(unresolved).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+
+    // ARM 2 — an active kimi row whose key could not be read.
+    const keyless = composeEnv(manifest, '/tmp/m.json', 'http://x', nodeEnv, undefined, undefined, {
+      provider: 'kimi',
+      homeDir: '/var/lib/tm8/credentials/identity-alice',
+      configDir: '/var/lib/tm8/credentials/identity-alice/kimi',
+    });
+
+    // The node key is GONE — this single assertion is the finding.
+    expect(keyless).not.toHaveProperty('ANTHROPIC_API_KEY');
+    // And so is the other Anthropic precedence name, which the kimi row also
+    // suppresses: injecting neither while leaving `ANTHROPIC_AUTH_TOKEN` live
+    // would move the same silent fallback one variable to the left.
+    expect(keyless).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN');
+    // Nothing was injected in its place. `apiKey` is absent, so the routing
+    // block is skipped: no bearer token and no Moonshot base URL, because there
+    // is no key to send to it. A base URL without a key is a 401 far from here.
+    expect(keyless).not.toHaveProperty('ANTHROPIC_BASE_URL');
+    // The CLI is pointed at the member's own directory, which holds no Anthropic
+    // login either, so there is no third place for a credential to come from.
+    expect(keyless.CLAUDE_CONFIG_DIR).toBe('/var/lib/tm8/credentials/identity-alice/kimi');
+  });
+
+  /**
+   * The same shape for Groq, where the variable is `OPENAI_API_KEY` and the
+   * suppression is therefore load-bearing in a way Anthropic's is not: it is
+   * BOTH the node key deleted and the key routing would have set. A keyless
+   * home must delete it and put nothing back.
+   */
+  it('a keyless groq home leaves no node OPENAI_API_KEY and no half-configured route', () => {
+    const env = composeEnv(
+      manifest,
+      '/tmp/m.json',
+      'http://x',
+      { OPENAI_API_KEY: 'sk-openai-node-account' },
+      undefined,
+      undefined,
+      {
+        provider: 'groq',
+        homeDir: '/var/lib/tm8/credentials/identity-alice',
+        configDir: '/var/lib/tm8/credentials/identity-alice/groq',
+      },
+    );
+
+    expect(env).not.toHaveProperty('OPENAI_API_KEY');
+    expect(env).not.toHaveProperty('OPENAI_BASE_URL');
+    expect(env.CODEX_HOME).toBe('/var/lib/tm8/credentials/identity-alice/groq');
+  });
 });
 
 describe('composeManifest', () => {
@@ -807,6 +980,70 @@ describe('composeManifest', () => {
     expect(() => resolveCoordinatorSessionId('coordinated-worker', null)).toThrow(
       /requires parentSessionId/,
     );
+  });
+
+  /**
+   * 176 — the parent of a coordinated worker may be a CHAT.
+   *
+   * `resolveCoordinatorSessionId` stays a string by design: the id and what it
+   * names are two facts, and the kind arrives on the SpawnContext because a
+   * spawn's parent is graph state the loader reads, not something the caller
+   * asserts about someone else's row.
+   */
+  describe('the coordinator kind (176)', () => {
+    const coordinated = {
+      sessionId: 'sess-chat-parent',
+      request: { ...base, parentSessionId: 'chat-1' },
+      launch: {
+        mode: 'coordinated-worker' as const,
+        model: 'opus',
+        agentTool: 'claude-code',
+        permissionMode: 'bypassPermissions' as const,
+      },
+      workdir: { mode: 'project' as const, path: '/tmp/tm8-fixture' },
+      command: "claude --model 'opus'",
+      baseUrl: 'http://127.0.0.1:4610',
+    };
+
+    it('carries a chat parent through to the manifest coordinator block', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toEqual({ sessionId: 'chat-1', kind: 'chat' });
+    });
+
+    it('reads a parent the loader could not resolve as the pre-176 meaning', () => {
+      // Never a refused launch and never a blank: the return ADDRESS is what a
+      // coordinated mode requires, and that guard is resolveCoordinatorSessionId's.
+      for (const parentKind of [undefined, null] as const) {
+        const manifest = composeManifest({
+          ...coordinated,
+          context: { ...context(), parentKind },
+        });
+        expect(manifest.coordinator).toEqual({
+          sessionId: 'chat-1',
+          kind: 'work_session',
+        });
+      }
+    });
+
+    it('emits no coordinator at all for an uncoordinated mode, chat parent or not', () => {
+      const manifest = composeManifest({
+        ...coordinated,
+        launch: { ...coordinated.launch, mode: 'worker' },
+        context: { ...context(), parentKind: 'chat' },
+      });
+      expect(manifest.coordinator).toBeNull();
+    });
+
+    it('folds an unrecognised parent kind rather than passing it through', () => {
+      expect(resolveCoordinatorKind('chat')).toBe('chat');
+      expect(resolveCoordinatorKind('work_session')).toBe('work_session');
+      expect(resolveCoordinatorKind(null)).toBe('work_session');
+      expect(resolveCoordinatorKind(undefined)).toBe('work_session');
+      expect(resolveCoordinatorKind('channel' as never)).toBe('work_session');
+    });
   });
 
   it('persists the effective Codex command-network policy separately from posture', () => {
@@ -862,7 +1099,10 @@ describe('composeManifest', () => {
 
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
-    expect(manifest.coordinator).toEqual({ sessionId: 'coord-session-1' });
+    expect(manifest.coordinator).toEqual({
+      sessionId: 'coord-session-1',
+      kind: 'work_session',
+    });
     expect(manifest.launch.permissionMode).toBe('bypassPermissions');
     expect(manifest.launch.commandNetwork).toEqual({
       mode: 'provider-default',
@@ -917,5 +1157,167 @@ describe('composeManifest', () => {
     };
     expect(composeManifest({ ...args, context: withTask }).session.title).toBe('wire the prompt seam');
     expect(composeManifest({ ...args, context: context() }).session.title).toBe('Draco session');
+  });
+});
+
+// --- routing (@tm8/jev) -----------------------------------------------------
+//
+// The whole point of these is that `resolveLaunchConfig` stayed PURE. A
+// routing verdict is a plain object literal here — no network, no fake client,
+// no jev package at all — because it arrives as a parameter rather than as a
+// call. If a later change moves the ask inside this function, these tests are
+// the ones that stop compiling, which is the alarm they exist to be.
+
+function taskCtx(task: Partial<SpawnContext['tasks'][number]> = {}): SpawnContext {
+  const c = context();
+  return {
+    ...c,
+    tasks: [
+      {
+        id: 'task-1',
+        version: 1,
+        title: 'Fix a typo in the README',
+        description: 'One word.',
+        priority: 'low',
+        status: 'open',
+        acceptanceCriteria: ['reads correctly'],
+        ...task,
+      },
+    ],
+  };
+}
+
+describe('resolveLaunchConfig with routing advice', () => {
+  const advice = { model: 'claude-haiku-4-5-20251001', agentTool: 'claude-code', effort: 'medium' };
+
+  it('lets advice replace the persona default, but never an explicit request', () => {
+    // Nobody asked: the router's choice beats the persona's static default.
+    expect(resolveLaunchConfig(base, context(), {}, null, advice).model).toBe(
+      'claude-haiku-4-5-20251001',
+    );
+    // A human typed a model. It wins, and it must keep winning — the policy
+    // that decides whether to overrule a human lives upstream, and by the time
+    // a verdict reaches here it has already been cleared to apply.
+    expect(resolveLaunchConfig({ ...base, model: 'opus' }, context(), {}, null, advice).model).toBe(
+      'opus',
+    );
+  });
+
+  it('is a no-op when absent, in every form', () => {
+    const plain = resolveLaunchConfig(base, context(), {});
+    for (const nothing of [undefined, null, {}] as const) {
+      expect(resolveLaunchConfig(base, context(), {}, null, nothing)).toEqual(plain);
+    }
+  });
+
+  it('carries the harness across providers, and the effort with it', () => {
+    const codex = { model: 'gpt-6-astra', agentTool: 'codex', effort: 'high' };
+    // agentToolForModel already derives codex from the model name, so the
+    // interesting assertion is that nothing fights it and effort survives.
+    expect(resolveLaunchConfig(base, context({ model: null }), {}, null, codex)).toMatchObject({
+      model: 'gpt-6-astra',
+      agentTool: 'codex',
+      reasoningEffort: 'high',
+    });
+    // An effort the caller named is still the caller's.
+    expect(
+      resolveLaunchConfig({ ...base, reasoningEffort: 'low' }, context(), {}, null, codex)
+        .reasoningEffort,
+    ).toBe('low');
+  });
+
+  it('rejects a malformed effort rather than passing it through', () => {
+    expect(
+      resolveLaunchConfig(base, context(), {}, null, { ...advice, effort: 'turbo' })
+        .reasoningEffort,
+    ).toBeNull();
+  });
+});
+
+describe('taskFactsFor', () => {
+  it('projects the first task, which the seam has always carried', () => {
+    expect(taskFactsFor(taskCtx())).toEqual({
+      id: 'task-1',
+      title: 'Fix a typo in the README',
+      description: 'One word.',
+      priority: 'low',
+      status: 'open',
+      acceptanceCriteriaCount: 1,
+    });
+  });
+
+  it('declines on no task and on an empty one', () => {
+    expect(taskFactsFor(context())).toBeNull();
+    expect(taskFactsFor(taskCtx({ title: '  ', description: '' }))).toBeNull();
+  });
+
+  it('routes a multi-task session by its lead assignment, not an average', () => {
+    const c = taskCtx();
+    const two: SpawnContext = {
+      ...c,
+      tasks: [...c.tasks, { ...c.tasks[0]!, id: 'task-2', title: 'Migrate the billing schema' }],
+    };
+    expect(taskFactsFor(two)?.id).toBe('task-1');
+  });
+});
+
+describe('routingIntentFor', () => {
+  it('reads the human choice from the REQUEST alone', () => {
+    // The persona's model is a default, not a choice. Folding it in here would
+    // make every spawn look deliberate and silently disable routing.
+    expect(routingIntentFor(base, context())).toEqual({
+      requestedModel: null,
+      memberModel: 'opus',
+      requestedAgentTool: null,
+    });
+    expect(routingIntentFor({ ...base, model: ' haiku ' }, context()).requestedModel).toBe('haiku');
+  });
+});
+
+describe('composeManifest routing block', () => {
+  const args = {
+    sessionId: 's-1',
+    request: base,
+    context: context(),
+    launch: resolveLaunchConfig(base, context(), {}),
+    workdir: { mode: 'project' as const, path: '/tmp/tm8-fixture' },
+    command: 'claude',
+    baseUrl: 'http://127.0.0.1:17777',
+  };
+
+  it('is null on an unrouted launch — the field is present, the decision is not', () => {
+    expect(composeManifest(args).launch.routing).toBeNull();
+  });
+
+  it('records the decision beside the model it produced', () => {
+    const activation = {
+      at: '2026-09-21T00:00:00.000Z',
+      mode: 'inline' as const,
+      policy: 'advise' as const,
+      jevModel: 'jev-1.13.0',
+      latencyMs: 930,
+      jevInputTokens: 1262,
+      jevCostUsd: 0.000053,
+      verdict: {
+        tier: 'economy' as const,
+        model: 'claude-haiku-4-5-20251001',
+        agentTool: 'claude-code' as const,
+        effort: 'medium',
+        need: 0.45,
+        reasons: [],
+        attention: 0,
+      },
+      baselineModel: 'opus',
+      appliedModel: 'claude-haiku-4-5-20251001',
+      appliedAgentTool: 'claude-code' as const,
+      changed: true,
+      overriddenByHuman: false,
+      savings: null,
+      summary: 'Jev routed opus -> claude-haiku-4-5-20251001 (economy, need 0.45) — cheaper.',
+    };
+    const m = composeManifest({ ...args, routing: activation });
+    expect(m.launch.routing).toMatchObject({ appliedModel: 'claude-haiku-4-5-20251001', changed: true });
+    // It must survive redactSecretsDeep, which every manifest passes through.
+    expect(m.launch.routing?.summary).toContain('economy');
   });
 });

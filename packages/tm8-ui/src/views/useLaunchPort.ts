@@ -28,8 +28,9 @@
  * panel's existing disabled-with-reason path covers a host that has neither.
  */
 import { useCallback, useMemo } from 'react';
-import type { ExecutionSpawnInput } from '@tm8/contract';
+import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, type ProfileResolution } from '../domain';
+import { entityPatchInput } from '../authoring';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -98,6 +99,56 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [sourceProjects],
   );
 
+  /**
+   * The launch popup's description autofill. The hydrated detail answers when
+   * the viewer has one; otherwise a fresh read does — a list row's summary
+   * does not carry the body, and the popup must not display a guess.
+   */
+  const descriptionOf = useCallback(
+    async (entityId: string): Promise<string | null> => {
+      const read = (detail: unknown): string | null => {
+        const description = (detail as { content?: { description?: unknown } } | undefined)
+          ?.content?.description;
+        return typeof description === 'string' ? description : null;
+      };
+      /* The cache answers only when it actually CARRIES a description — a
+         hydrated detail without content (or from before the latest edit) must
+         fall through to a fresh read, not masquerade as "no description". */
+      const cached = read(data.detailOf(entityId));
+      if (cached !== null) return cached;
+      return read(await data.seam.entity(entityId as never).catch(() => undefined));
+    },
+    [data],
+  );
+
+  /**
+   * The launch popup's edits — title and/or description — persisted onto the
+   * SUBJECT through the same `patchEntity` the inline editors use, in ONE
+   * mutation (the task RPC merges per field, so both land or neither). The
+   * expected version comes from the hydrated detail when the viewer has one
+   * and otherwise from a fresh read — an edit against a version nobody looked
+   * up would turn the optimistic check into a guess.
+   */
+  const onUpdateEntity = useCallback(
+    async (entityId: string, edits: { title?: string; description?: string }) => {
+      const commands = data.seam.commands;
+      if (!commands) throw new Error('This node cannot edit entities, so the edits were not saved.');
+      const version = data.detailOf(entityId)?.version
+        ?? (await data.seam.entity(entityId as never).catch(() => undefined))?.version;
+      if (version == null) {
+        throw new Error('The task could not be read back, so the edits were not saved.');
+      }
+      await commands.patchEntity(entityId as EntityId, entityPatchInput({
+        ...(edits.title !== undefined ? { title: edits.title } : {}),
+        ...(edits.description !== undefined ? { content: { description: edits.description } } : {}),
+      }, version));
+      /* The row's summary re-reads through the normal detail path, so the list
+         shows the new name without waiting for the next event. */
+      data.refetchDetail(entityId);
+    },
+    [data],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
@@ -105,10 +156,12 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       projects,
       profileFor,
       mutationId: () => newLaunchMutationId(),
+      descriptionOf,
+      onUpdateEntity,
       ...(capacity ? { capacity } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
     }),
-    [data.spaceId, teammates, projects, profileFor, capacity, onSpawn, onFullOptions],
+    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, onSpawn, onFullOptions],
   );
 }

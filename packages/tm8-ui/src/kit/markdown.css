@@ -226,7 +226,18 @@
    scaled down: a shrunk flowchart with unreadable labels is worse than one you
    pan. Mermaid bakes its palette into the SVG at render time (see kit/Mermaid),
    so almost nothing about the drawing itself is styleable from here — this is
-   the frame around it. */
+   the frame around it.
+
+   THAT ARGUMENT STILL HOLDS, and it is still what a resting diagram does. What
+   it never gave the reader was a way OUT of the column for a graph that is
+   genuinely too big for one — which in a chat lane is most of them. So the
+   drawn phase is wrapped in `kit/ZoomableFigure`, and the sideways scroll moved
+   one element in with it: `.kit-zfig__viewport` is the scroll container now,
+   because the same box has to be able to stop scrolling and start being panned
+   by a transform once the reader zooms. Everything else here — the border, the
+   padding, the paper, the centring — is unchanged and still belongs to this
+   file. The figure only ever adds `position: relative` on top of it, and
+   restyles the frame solely in the expanded state. */
 .cv2-root .md-mermaid {
   display: block;
   margin: 0 0 0.9em;
@@ -234,8 +245,14 @@
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
-  overflow-x: auto;
   text-align: center;
+}
+/* The still-rendering and failed phases are NOT figures — there is nothing to
+   zoom — so they keep their own scroll here rather than inheriting the
+   viewport's. */
+.cv2-root .md-mermaid[data-phase='rendering'],
+.cv2-root .md-mermaid--failed {
+  overflow-x: auto;
 }
 .cv2-root .md-mermaid__svg svg {
   max-width: 100%;

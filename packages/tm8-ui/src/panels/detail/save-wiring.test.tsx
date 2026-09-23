@@ -558,6 +558,79 @@ describe('a RUNNING work session can be renamed from the panel (085)', () => {
   });
 });
 
+describe('the SEAM has the last word: a kind the server will not edit gets no Save', () => {
+  /**
+   * THE DISAGREEMENT THIS GUARDS, and it shipped: the registry's `inlineEdit`
+   * says what a kind WANTS to be editable; `capabilities.canEdit` says what
+   * the server will actually accept. `chat` declares `inlineEdit: {title:true}`
+   * and the server's `capabilitiesOf` (facade/entity-read.ts) has a hardcoded
+   * `editable` kind set that does not contain `chat` — so every chat panel drew
+   * an enabled Save beside "You cannot edit this — the server refuses edits
+   * here", permanently, on a control that could never work.
+   *
+   * NOT THE SAME AS A MISSING EXECUTOR. That is a WIRING fact and D28 is right
+   * about it: render the control, disabled, carrying its reason, because a
+   * different mount would have one. `canEdit === false` is a fact about the
+   * KIND — no viewer, no mount and no permission makes it true — so the
+   * control is a promise the product cannot keep.
+   *
+   * Written against `task` rather than `chat` ON PURPOSE: it is the general
+   * rule, and a fixture whose capabilities happen to say `canEdit: true`
+   * cannot make it vacuous, because the refusal is set here explicitly.
+   */
+  const refusedByServer: EntityDetail = {
+    ...TASK,
+    capabilities: { ...TASK.capabilities, canEdit: false },
+  };
+
+  it('renders no Save control and no title editor when the seam refuses edits', () => {
+    // BOTH premises guarded, or the assertion can pass for the wrong reason:
+    // the registry must still WANT this editable, and the seam must refuse.
+    expect(getKind(TASK.kind).list.inlineEdit?.title ?? false).toBe(true);
+    expect(refusedByServer.capabilities.canEdit).toBe(false);
+
+    const { container, getByTestId } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={refusedByServer}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(ok) }}
+        />
+      </div>,
+    );
+    /* BOTH ROWS, because the panel seats these controls in two different
+       places depending on the shell (`panel-toolbar` on the compact one,
+       `panel-header` otherwise) and asserting only one is how a control that
+       is still on screen reads as gone. Cost a false green here first: the
+       mutation that restores the defect passes a header-only assertion. */
+    for (const row of ['panel-toolbar', 'panel-header']) {
+      expect(getByTestId(row).textContent, row).not.toContain('Save');
+      // The refusal sentence goes with the control it belonged to. Left behind
+      // it is a banner about a thing that is no longer on screen.
+      expect(getByTestId(row).textContent, row).not.toContain('You cannot edit this');
+    }
+    expect(container.querySelector('[data-testid="authoring-title"]')).toBeNull();
+  });
+
+  it('STILL renders it for the same kind when the seam permits edits — the gate is the capability, not the kind', () => {
+    // The negative control. Without this, deleting the Save control outright
+    // would pass the test above.
+    const { getByTestId } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={TASK}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(ok) }}
+        />
+      </div>,
+    );
+    expect(TASK.capabilities.canEdit).toBe(true);
+    expect(getByTestId('panel-header').querySelector('[data-testid="authoring-title"]')).not.toBeNull();
+  });
+});
+
 describe('which kinds get an edit surface is REGISTRY DATA', () => {
   it('a kind with no inline-editable field gets no editor and no Save', () => {
     const tracked = fixtureDetails[commitFoundation.id]!;

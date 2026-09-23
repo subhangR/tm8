@@ -1,0 +1,191 @@
+/* ==========================================================================
+   MACHINE BODY — the `machine` archetype's interior (Design §13.2).
+
+   COLOURS ARE TOKENS ONLY (§14; `src/hex-ban.test.ts` scans this file). The
+   micro-type literals (12/11.5/11/10/9.5px) are D5-verbatim: the global scale
+   is the single `zoom` lever on `.cv2-root`, never a per-element bump.
+
+   ── THE ONE RULE THIS SHEET EXISTS TO STATE ──────────────────────────────
+
+   NOTHING HERE MAY CARRY A px FLOOR, and that is a defect carried forward,
+   not a preference.
+
+   `container` is the second kind with `composition: 'frame'`. The first is
+   `artifact`, and its sheet records the overpaint that resulted: the frame's section took
+   `min-height: 0` while `.pn-preview__frame` beneath it held a 420px floor,
+   so the section shrank freely, nothing on the path clipped, and on a short
+   panel THE IFRAME PAINTED STRAIGHT OVER THE BLOCK BELOW IT. See panels.css
+   at `.pn-preview__frame` for the full account and the `min-height: auto`
+   fix.
+
+   P0's body has no viewport in it — the surface rail is text — so the defect
+   is structurally unreachable today. IT BECOMES REACHABLE THE MOMENT THE
+   SCREEN SURFACE LANDS (P2). Whoever adds that canvas: give the surface
+   section `min-height: auto` so it cannot shrink below its child's floor and
+   the panel SCROLLS instead of overlapping. Do not reach for `min-height: 0`
+   to make the column behave — that is exactly the edit that produced the bug.
+
+   ── WHAT NO TEST HERE CAN SEE ────────────────────────────────────────────
+
+   jsdom loads no stylesheets, so no vitest in this package observes a single
+   value below. Anything that MATTERS — a surface hidden by status, a tone
+   that must differ — is therefore asserted twice: once as a DOM attribute the
+   tests can read (`data-surface`, `data-testid`), and once against this
+   file's SOURCE TEXT. A rule that only exists here is a rule nothing checks.
+   ========================================================================== */
+
+.cv2-root .pn-machine {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* `0`, not `auto`: this is the OUTER column and it holds no floored child.
+     The floor rule above is about the surface SECTION, when it grows one. */
+  min-height: 0;
+}
+
+/* --- the status line ------------------------------------------------------ */
+
+.cv2-root .pn-machine__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The liveness word is a SEPARATE reading from the pill beside it (R-UI-5),
+   and it is drawn quieter on purpose: the pill is what the graph records, this
+   is whether anything answered. */
+.cv2-root .pn-machine__liveness {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-machine__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cv2-root .pn-machine__liveness--live { color: var(--pn-run); }
+.cv2-root .pn-machine__liveness--off { color: var(--pn-ink-4); }
+
+/* UNVERIFIED IS NOT "OFF" AND MUST NOT LOOK LIKE IT. It gets no dot at all —
+   a hollow dot would still be a claim about the machine, and the honest
+   rendering of "nobody measured" is the absence of the mark, with the word. */
+.cv2-root .pn-machine__liveness--unverified {
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+.cv2-root .pn-machine__usage {
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+
+/* --- the failure sentence ------------------------------------------------- */
+
+.cv2-root .pn-machine__error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pn-block) 6%, transparent);
+  color: var(--pn-ink);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* --- the spec table ------------------------------------------------------- */
+
+.cv2-root .pn-machine__spec { display: flex; flex-direction: column; gap: 6px; }
+
+.cv2-root .pn-machine__rows { margin: 0; display: flex; flex-direction: column; }
+
+.cv2-root .pn-machine__row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-machine__row:last-child { border-bottom: 0; }
+
+.cv2-root .pn-machine__row dt {
+  flex: none;
+  width: 84px;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-machine__row dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink);
+  /* A long image ref or a mount list must WRAP, never widen the panel: the
+     detail panel is a fixed column and a horizontal scrollbar here would push
+     the whole body sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* --- the surface rail ----------------------------------------------------- */
+
+.cv2-root .pn-machine__surfaces { display: flex; flex-direction: column; gap: 6px; }
+
+.cv2-root .pn-machine__rail {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv2-root .pn-machine__surface {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-hover);
+}
+
+.cv2-root .pn-machine__surface-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-machine__surface-state {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* THE REFUSAL IS FULL WIDTH AND ALWAYS RENDERED — never a tooltip, never
+   truncated. It is the answer to "why can I not see the screen", and an answer
+   behind a hover is an answer a touch device cannot reach. */
+.cv2-root .pn-machine__surface-refusal {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pn-ink-2);
+}

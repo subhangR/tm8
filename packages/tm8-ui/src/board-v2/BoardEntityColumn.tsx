@@ -68,6 +68,8 @@ export function BoardEntityColumn({
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       }),
+    /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
+    versionOf: (id) => data.detailOf(id)?.version,
   });
   const membership = useMembershipSurface({
     spaceId: data.spaceId,

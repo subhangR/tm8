@@ -72,6 +72,12 @@ export interface ManifestLaunch {
 /** Present when a coordinator spawned this session — the return path. */
 export interface ManifestCoordinator {
   sessionId?: string;
+  /**
+   * `work_session | chat` — WHAT `sessionId` names (176). Carried verbatim
+   * rather than validated here: the composer owns the vocabulary and folds
+   * anything it does not recognise, including absent, to `work_session`.
+   */
+  kind?: string;
   displayName?: string;
 }
 
@@ -85,7 +91,15 @@ export interface ManifestDirective {
 /** A skill rendered into the prompt from the graph via `equips` edges (R19). */
 export interface ManifestSkill {
   name?: string;
-  body?: string;
+  entityId?: string;
+  description?: string;
+  provider?: string;
+  level?: string;
+  sourcePath?: string;
+  loadPointer?: string;
+  native?: boolean;
+  hash?: string;
+  allowImplicitInvocation?: boolean;
 }
 
 export interface Tm8Manifest {
@@ -195,7 +209,10 @@ function projectBootstrap(bootstrap: BootstrapManifestV2): Tm8Manifest {
     }),
     tasks: taskIds.length > 0 ? taskIds.map((id) => ({ id })) : undefined,
     coordinator: coordinated
-      ? { sessionId: session.coordinatorSessionId as string }
+      ? defined<ManifestCoordinator>({
+          sessionId: session.coordinatorSessionId as string,
+          kind: session.coordinatorKind,
+        })
       : undefined,
   });
 }
@@ -239,7 +256,13 @@ export function parseManifest(raw: unknown): Tm8Manifest {
     : undefined;
 
   const skills = Array.isArray(raw.skills)
-    ? raw.skills.filter(isRecord).map((s) => defined<ManifestSkill>({ name: str(s.name), body: str(s.body) }))
+    ? raw.skills.filter(isRecord).map((s) => defined<ManifestSkill>({
+        name: str(s.name), entityId: str(s.entityId), description: str(s.description),
+        provider: str(s.provider), level: str(s.level), sourcePath: str(s.sourcePath),
+        loadPointer: str(s.loadPointer), hash: str(s.hash),
+        native: typeof s.native === 'boolean' ? s.native : undefined,
+        allowImplicitInvocation: typeof s.allowImplicitInvocation === 'boolean' ? s.allowImplicitInvocation : undefined,
+      }))
     : undefined;
 
   return defined<Tm8Manifest>({
@@ -275,6 +298,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
     coordinator: coordRaw
       ? defined<ManifestCoordinator>({
           sessionId: str(coordRaw.sessionId),
+          kind: str(coordRaw.kind),
           displayName: str(coordRaw.displayName),
         })
       : undefined,

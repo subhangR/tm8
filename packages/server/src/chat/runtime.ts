@@ -67,7 +67,8 @@ export interface ChatLaunchConfig {
 }
 
 export interface ChatLaunchConfigInput {
-  readonly rootMessageId: string;
+  /** 176: the chat entity. Was `rootMessageId` while a chat was a message. */
+  readonly chatId: string;
   /** Human whose current turn authorizes this runtime token. */
   readonly requesterIdentityId: string;
   /**

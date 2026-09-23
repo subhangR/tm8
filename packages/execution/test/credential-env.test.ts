@@ -21,8 +21,17 @@
  * to scrub" — the same single-principal mistake that makes an RLS test
  * worthless.
  */
+import { existsSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
+import {
+  API_KEY_FILENAME,
+  API_KEY_PROVIDER_CONSOLE_URL,
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  API_KEY_PROVIDER_KEY_PREFIX,
+  API_KEY_PROVIDER_VERIFY_URL,
+} from '../src/credentials/api-key-credentials.js';
 import {
   composeCredentialEnv,
   credentialEnvKeys,
@@ -31,6 +40,7 @@ import {
   type CredentialProvider,
 } from '../src/credentials/credential-env.js';
 import {
+  credentialPastePath,
   CredentialSessionLauncher,
   CREDENTIAL_LOGIN_COMMANDS,
   type CredentialLaunchRequest,
@@ -65,6 +75,7 @@ function pollutedParentEnv(): NodeJS.ProcessEnv {
     OPENAI_API_KEY: 'sk-LEAKED',
     GEMINI_API_KEY: 'LEAKED',
     GOOGLE_API_KEY: 'LEAKED',
+    CURSOR_API_KEY: 'cursor-LEAKED',
 
     // C7 — the spawning human's FULL identity, not a reduced principal.
     TM8_AGENT_TOKEN: 'tm8-agent-token-LEAKED',
@@ -90,8 +101,36 @@ function pollutedParentEnv(): NodeJS.ProcessEnv {
 }
 
 describe('composeCredentialEnv — acceptance criterion 1: the exact key set', () => {
+  it('pins the complete provider order and each config-directory override', () => {
+    expect(CREDENTIAL_PROVIDERS).toEqual([
+      'anthropic',
+      'openai',
+      'github',
+      'gemini',
+      'hermes',
+      'cursor',
+      'kimi',
+      'groq',
+    ]);
+    expect(CREDENTIAL_CONFIG_DIR_VAR).toEqual({
+      anthropic: 'CLAUDE_CONFIG_DIR',
+      openai: 'CODEX_HOME',
+      github: 'GH_CONFIG_DIR',
+      gemini: null,
+      hermes: null,
+      cursor: null,
+      // Null for a DIFFERENT reason from the three above, and the difference is
+      // worth stating where the value is pinned: those three have a vendor CLI
+      // whose storage tm8 cannot redirect, while these two have no vendor CLI
+      // at all. tm8's own paste harness writes the file, into the directory it
+      // is handed, so there is nothing to override. See `credential-env.ts`.
+      kimi: null,
+      groq: null,
+    });
+  });
+
   it.each(CREDENTIAL_PROVIDERS)(
-    'returns exactly the provider key set for %s, and the config variable is the only vendor credential key',
+    'returns exactly the provider key set for %s, with no unselected vendor credential key',
     (provider) => {
       const env = composeCredentialEnv({
         provider,
@@ -99,10 +138,11 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         configDir: CONFIG_DIR(provider),
         parentEnv: pollutedParentEnv(),
       });
+      const configDirVar = CREDENTIAL_CONFIG_DIR_VAR[provider];
 
       // THE PRIMARY CONTROL. Not "does not contain X" — "is exactly this".
       expect(Object.keys(env).sort()).toEqual([
-        CREDENTIAL_CONFIG_DIR_VAR[provider],
+        ...(configDirVar === null ? [] : [configDirVar]),
         'HOME',
         'LANG',
         'PATH',
@@ -110,6 +150,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         'TERM',
         'XDG_CONFIG_HOME',
         ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
+        ...(provider === 'cursor' ? ['NO_OPEN_BROWSER'] : []),
       ].sort());
 
       // The exported helper must agree with the function it describes; the
@@ -117,14 +158,24 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       // silently weaken a different test in a different package.
       expect(Object.keys(env).sort()).toEqual(credentialEnvKeys(provider));
 
-      // Exactly ONE vendor config variable, never two.
-      const vendorKeys = Object.values(CREDENTIAL_CONFIG_DIR_VAR).filter((key) => key in env);
-      expect(vendorKeys).toEqual([CREDENTIAL_CONFIG_DIR_VAR[provider]]);
-      expect(env[CREDENTIAL_CONFIG_DIR_VAR[provider]]).toBe(CONFIG_DIR(provider));
+      // Exactly the selected vendor override when one exists, and none for the
+      // HOME-only providers. In particular, null must not become a key named
+      // "null" or an entry whose value is undefined.
+      const documentedConfigKeys = Object.values(CREDENTIAL_CONFIG_DIR_VAR).filter(
+        (key): key is string => key !== null,
+      );
+      const vendorKeys = documentedConfigKeys.filter((key) => key in env);
+      expect(vendorKeys).toEqual(configDirVar === null ? [] : [configDirVar]);
+      if (configDirVar === null) {
+        expect(env).not.toHaveProperty('null');
+        expect(Object.values(env)).not.toContain(CONFIG_DIR(provider));
+      } else {
+        expect(env[configDirVar]).toBe(CONFIG_DIR(provider));
+      }
     },
   );
 
-  it('makes GitHub device login non-interactive without changing the other providers', () => {
+  it('sets each measured headless-PTY flag only for its own provider', () => {
     for (const provider of CREDENTIAL_PROVIDERS) {
       const env = composeCredentialEnv({
         provider,
@@ -135,7 +186,12 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
 
       if (provider === 'github') expect(env['GH_PROMPT_DISABLED']).toBe('1');
       else expect(env).not.toHaveProperty('GH_PROMPT_DISABLED');
+
+      if (provider === 'cursor') expect(env['NO_OPEN_BROWSER']).toBe('1');
+      else expect(env).not.toHaveProperty('NO_OPEN_BROWSER');
     }
+
+    expect(credentialEnvKeys('cursor')).toContain('NO_OPEN_BROWSER');
   });
 
   /**
@@ -168,6 +224,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         'OPENAI_API_KEY',
         'GEMINI_API_KEY',
         'GOOGLE_API_KEY',
+        'CURSOR_API_KEY',
         'XDG_CACHE_HOME',
         'CLAUDE_CODE_ENTRYPOINT',
         'CLAUDECODE',
@@ -341,7 +398,8 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // The values are asserted literally rather than compared to themselves.
     // `codex login --device-auth` in particular must never decay to bare
     // `codex login`, which opens a loopback listener nobody can reach.
-    expect(CREDENTIAL_LOGIN_COMMANDS).toEqual({
+    const { kimi, groq, ...vendor } = CREDENTIAL_LOGIN_COMMANDS;
+    expect(vendor).toEqual({
       // `claude auth login`, not `claude setup-token` — setup-token PRINTS a
       // token and never persists a login, so the `claude auth status` finish
       // probe could never see a completed flow (R4 amendment, measured on
@@ -349,7 +407,43 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
       anthropic: 'claude auth login',
       openai: 'codex login --device-auth',
       github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
+      gemini: 'gemini',
+      hermes: 'hermes login',
+      cursor: 'cursor-agent login',
     });
+
+    // The two API-key entries are pinned STRUCTURALLY rather than literally,
+    // and not for convenience: they embed the absolute path of the paste
+    // harness, derived from `import.meta.url`, which differs between a checkout,
+    // a worktree and the deployed unit. A literal pin would be a test that only
+    // ever passed on the machine it was written on.
+    //
+    // What is asserted instead is everything that could actually go wrong: the
+    // program is `node` and not a shell, the harness path is the one file that
+    // implements this flow, and every vendor fact the harness is told comes
+    // from `api-key-credentials.ts` rather than being retyped here.
+    for (const [provider, command] of [['kimi', kimi], ['groq', groq]] as const) {
+      expect(command.startsWith('node ')).toBe(true);
+      expect(command).toContain('/harness/credential-paste.mjs');
+      expect(command).toContain(`--provider '${provider}'`);
+      expect(command).toContain(`--display '${API_KEY_PROVIDER_DISPLAY_NAME[provider]}'`);
+      expect(command).toContain(`--console-url '${API_KEY_PROVIDER_CONSOLE_URL[provider]}'`);
+      expect(command).toContain(`--verify-url '${API_KEY_PROVIDER_VERIFY_URL[provider]}'`);
+      expect(command).toContain(`--key-prefix '${API_KEY_PROVIDER_KEY_PREFIX[provider]}'`);
+      expect(command).toContain(`--filename '${API_KEY_FILENAME}'`);
+      // Every interpolated value is single-quoted by `shellQuote`. This is the
+      // RCE guard restated at the table: none of these strings is client input
+      // today, and the quoting is what keeps that true if one ever becomes so.
+      expect(command).not.toContain('$(');
+      expect(command).not.toContain('`');
+    }
+  });
+
+  it('points the login command at a paste harness that actually exists', () => {
+    // The path is computed from `import.meta.url` and consumed by a PTY, where
+    // a wrong path surfaces as `node: cannot find module` inside a terminal the
+    // member is staring at. Cheaper to find here.
+    expect(existsSync(credentialPastePath())).toBe(true);
   });
 
   it('lets no request field reach argv, even when every field is hostile', () => {

@@ -100,6 +100,30 @@ const PATCH_DOORS = [
   'update_commit_entity',
   'update_custom_entity',
   'update_document',
+  // 2026-09-19: migration 194 (drawings) added `update_drawing_entity`, which
+  // carries 038's replay binding from birth —
+  // `internal.ledger_replay(p_client_mutation_id, 'entities.patch')` at
+  // 194_drawing_kind.sql:293 and `internal.require_replay_subject` at :297, the
+  // two predicates this file's derivation matches. Sixteen -> seventeen; the
+  // detector fired on the independent catalog enumeration, exactly as the
+  // header promises a new door should be noticed.
+  //
+  // INHERITED, NOT INTRODUCED BY THIS LANE. main's 5e1f9e1e ("Drawing as an
+  // entity, with Excalidraw", #627) added the door and left this frozen literal
+  // untouched, so main carries this red on its own; merging main into the lane
+  // only surfaces it. This branch has zero commits touching this file. NO
+  // PRODUCTION BEHAVIOUR CHANGES HERE — the migration is correct and the door is
+  // genuinely bound; only the hand-listed literal was stale.
+  //
+  // Per the header: new EXACT LITERALS, before and after recorded, never a
+  // pattern, never a live-computed set.
+  // BEFORE (16): rename_work_session, update_channel, update_collection, update_commit_entity, update_custom_entity, update_document, update_file_entity, update_graph_entity, update_loop, update_memory, update_pull_request_entity, update_skill_entity, update_spell_entity, update_task_content, update_team_member, update_worktree.
+  // AFTER (17): the same sixteen, plus `update_drawing_entity`.
+  // MEASURED from the gate's own failing run of this assertion, not computed:
+  //   expected [ 'rename_work_session', …(16) ] to deeply equal
+  //            [ 'rename_work_session', …(15) ]   (+ "update_drawing_entity")
+  //   i.e. derived-from-pg_proc 17, frozen literal 16.
+  'update_drawing_entity',
   'update_file_entity',
   // 2026-08-16: migration 135 (Craft P1) added `update_graph_entity`, carrying
   // 038's replay binding from birth. Fifteen -> sixteen; the detector fired
@@ -160,9 +184,16 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
   // update_loop arrived on separate branches, each side counting fourteen;
   // the union is fifteen and the detector fired on the merge.
   // 2026-08-16: sixteen — 135's update_graph_entity (Craft P1).
-  it('the frozen list is exactly sixteen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(16);
-    expect(new Set(PATCH_DOORS).size).toBe(16);
+  // 2026-09-19 (merge): seventeen — main's 194_drawing_kind.sql (#627) added
+  // `update_drawing_entity` carrying 038's replay binding from birth, and did
+  // not move this count. MEASURED, not computed: the failing run printed
+  //   expected [ 'rename_work_session', …(16) ] to have a length of 16 but got 17
+  // at :188, after the membership repair above turned the derived-enumeration
+  // test green. Two pins, one migration — the length and the Set size both
+  // freeze the same number, so both move together or the second hides.
+  it('the frozen list is exactly seventeen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(17);
+    expect(new Set(PATCH_DOORS).size).toBe(17);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

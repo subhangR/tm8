@@ -26,10 +26,57 @@ function port() {
 describe('the credentials port against a real seam', () => {
   it('returns the merged view AND its completeness report', async () => {
     const status = await port().load();
-    // All three providers, always — the contract says the array is never
-    // partial, so a screen may index it without guarding.
-    expect(status.providers.map((p) => p.provider).sort()).toEqual(['anthropic', 'github', 'openai']);
+    // Every provider, always — the contract says the array is never partial,
+    // so a screen may index it without guarding.
+    expect(status.providers.map((p) => p.provider)).toEqual([
+      'anthropic',
+      'openai',
+      'github',
+      'gemini',
+      'hermes',
+      'cursor',
+      'kimi',
+      'groq',
+    ]);
+    expect(status.providers.find((provider) => provider.provider === 'cursor')).toMatchObject({
+      connected: true,
+      login: null,
+      status: 'active',
+    });
     expect(status.gitCredentialStore).toBe('absent');
+  });
+
+  it('carries the routing disclosure through the seam, from both ends', async () => {
+    // The fixture scripts kimi CONNECTED and groq not, so one card is stating a
+    // current fact and the other is describing a consequence. A seam that
+    // dropped `routing` would leave the account-wide redirection invisible —
+    // which is the one thing this field exists to prevent.
+    const status = await port().load();
+    const routingOf = new Map(status.providers.map((p) => [p.provider, p.routing]));
+
+    expect(routingOf.get('kimi')).toEqual({
+      agentTool: 'claude-code',
+      role: 'backend',
+      counterpart: 'anthropic',
+      active: true,
+    });
+    expect(routingOf.get('anthropic')).toEqual({
+      agentTool: 'claude-code',
+      role: 'displaced',
+      counterpart: 'kimi',
+      active: true,
+    });
+    // Not connected, and still saying what Connect would do.
+    expect(routingOf.get('groq')?.active).toBe(false);
+    // A provider that redirects nothing says nothing.
+    expect(routingOf.get('github')).toBeNull();
+  });
+
+  it('carries the node measurement that makes Hermes unavailable, not disconnected', async () => {
+    const status = await port().load();
+    const hermes = status.providers.find((provider) => provider.provider === 'hermes');
+    expect(hermes?.connected).toBe(false);
+    expect(hermes?.status).toBe('unavailable');
   });
 
   it('carries anthropic’s permanently-null login through unchanged', async () => {

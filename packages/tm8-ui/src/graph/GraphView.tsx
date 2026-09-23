@@ -36,11 +36,13 @@ import {
   focusSubgraph,
   searchMatches,
   windowSpec,
+  type GraphGroup,
   type GraphModel,
   type PlacedEdge,
   type PlacedNode,
 } from './model';
 import { DEFAULT_LENS, LENSES, lensSpec, type LensId } from './relevance';
+import { GROUP_BYS, discriminatingGroupBys, groupSpec, type GroupById } from './grouping';
 import { GraphSearch } from './GraphSearch';
 import { Minimap } from './Minimap';
 
@@ -85,12 +87,45 @@ const ZOOM_MAX = 1.75;
 const PAN_STEP = 80;
 
 /**
+ * THE LEGIBILITY FLOOR — the zoom the canvas may not choose FOR the reader.
+ *
+ * `fit()` solves `min(w/W, h/H, 1)`. On a tall canvas the height term wins, and
+ * clamping only at ZOOM_MIN meant the graph opened at 0.35 and painted the 15px
+ * card title at 5.3px — a god's-eye view of labels nobody can read.
+ *
+ * The two callers want different things and conflating them is what produced
+ * that view:
+ *   · the canvas choosing a zoom for the reader owes legibility → FIT_FLOOR;
+ *   · a reader pressing ⤢ or `0` has asked to see everything, and is owed
+ *     everything → ZOOM_MIN, unchanged.
+ *
+ * 0.72 is DERIVED, not taste: the shortest text-bearing row on a card is
+ * `__foot` at 16.5px, and 16.5 × 0.72 = 11.9px of box carrying 10px type.
+ */
+export const FIT_FLOOR = 0.72;
+
+/**
+ * SEMANTIC ZOOM. Below this the canvas gets `data-lod="far"` and a card sheds
+ * every register the scale cannot carry, keeping the family stripe, the title
+ * and a liveness mark. The words it hides move into the card's `title`
+ * attribute — colour + word-in-title, which is how `Minimap` already resolves
+ * the same tension for a 4px rect.
+ *
+ * `LOD_FAR_BELOW < FIT_FLOOR` is the invariant, asserted in the unit tests: the
+ * view the reader is GIVEN is never in far mode; reaching far mode is always
+ * something they asked for.
+ */
+export const LOD_FAR_BELOW = 0.62;
+
+/**
  * StatusSource → the EntityState member it names (the chrome.tsx pattern —
  * keyed by SOURCE, never by kind; adding a kind touches neither).
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
   status: 'status',
   sessionStatus: 'status',
+  // A container's nine-value lifecycle also lands on `EntityState.status`.
+  containerStatus: 'status',
   prState: 'state',
   profileStatus: 'status',
   memberRole: 'role',
@@ -186,6 +221,17 @@ export function GraphView(props: GraphViewProps) {
   const [localWindowId, setLocalWindowId] = useState<string>(DEFAULT_WINDOW);
   const readBacked = props.window !== undefined && props.onChooseWindow !== undefined;
   const windowId = props.window ?? localWindowId;
+  // THE CONTEXTUAL PARTITION. Islands answer "what is wired to what"; this
+  // answers "what is blocked / mine / still open". Status is the default
+  // because it is the dimension that is populated on every work entity and
+  // reads as a pipeline; `No grouping` returns the islands unchanged and is one
+  // click away in the same control.
+  const [groupBy, setGroupBy] = useState<GroupById>('status');
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  // Conversation is volume on its anchor, not a card per message. ON by
+  // default — it is by far the largest declutter and it costs no meaning, the
+  // same bargain folding makes.
+  const [rollUp, setRollUp] = useState(true);
   // Folding is ON by default (it is the largest declutter and costs no meaning)
   // but the user can always ask to see every leaf as its own card.
   const [fold, setFold] = useState(true);
@@ -293,13 +339,18 @@ export function GraphView(props: GraphViewProps) {
         pinnedIds,
         focusId: focus?.id ?? null,
         fold,
-        frozen: frozenRef.current ?? undefined,
+        groupBy,
+        collapsedGroups,
+        rollUpConversation: rollUp,
+        // Grouping owns the positions, so a frozen snapshot from the previous
+        // partition would strand cards outside their own band's frame.
+        frozen: groupBy === 'none' ? frozenRef.current ?? undefined : undefined,
       }),
     // frozenRef is read intentionally without being a dep (the same idiom as
     // prevCanvasIds below): it is refreshed by the snapshot effect after commit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick,
-     lens, windowId, liveIds, matches, pinnedIds, focus, fold],
+     lens, windowId, liveIds, matches, pinnedIds, focus, fold, groupBy, collapsedGroups, rollUp],
   );
 
   // Snapshot placed positions AFTER each compute — the next compute freezes on
@@ -311,6 +362,132 @@ export function GraphView(props: GraphViewProps) {
   }, [model]);
 
   const posById = useMemo(() => new Map(model.placed.map((p) => [p.entity.id, p])), [model]);
+
+  /**
+   * THE RELATION LINE — the edge a card is standing in, in words.
+   *
+   * Titles do not identify nodes on their own: a `work_session` is titled after
+   * its task, so a task and three of its sessions can all read the same words,
+   * and the reader has no way to tell which card is which. The edge already
+   * says it ("working on · redesign the graph UX") and the model already
+   * computed the label, so this spends a fact that was being thrown away.
+   *
+   * A BLOCKED edge always wins the slot — the word "blocked" never disappears
+   * (honesty law), whatever else the node is doing.
+   */
+  const relationById = useMemo(() => {
+    const titleOf = new Map(model.placed.map((p) => [p.entity.id, p.entity.title]));
+    const ranked = [...model.edges].sort(
+      (a, b) => Number(b.blocked) - Number(a.blocked) || a.label.localeCompare(b.label),
+    );
+    const out = new Map<string, { label: string; title: string; blocked: boolean }>();
+    for (const e of ranked) {
+      const title = titleOf.get(e.targetId);
+      if (title === undefined) continue;
+      const own = titleOf.get(e.sourceId);
+      // A RELATION MUST NOT RESTATE THE CARD'S OWN TITLE. A `work_session` is
+      // titled after its task, so its edges point at things carrying the same
+      // words — "messaged Floating AI Website" on a card already headed
+      // "Floating AI Website" spends a whole row saying nothing. A blocked
+      // edge is exempt: that word never disappears, redundant or not.
+      const redundant = own !== undefined && title === own && !e.blocked;
+      const existing = out.get(e.sourceId);
+      if (existing === undefined) {
+        out.set(e.sourceId, { label: e.label, title, blocked: e.blocked });
+        continue;
+      }
+      // Only ever trade UP: a redundant pick yields to an informative one,
+      // and an informative pick is never replaced.
+      const existingRedundant = existing.title === own && !existing.blocked;
+      if (existingRedundant && !redundant) {
+        out.set(e.sourceId, { label: e.label, title, blocked: e.blocked });
+      }
+    }
+
+    /* When EVERY edge a card has restates its own title, the edges cannot tell
+       it apart from its neighbours — and on this canvas that is exactly the
+       case a reader hits (a task and three of its sessions, all reading the
+       same words). Fall back to WHO IS HOLDING IT, which the payload carries on
+       every session as `state.teammate` and which the card was spending
+       nowhere. This is a structural read of the state shape, not a kind
+       literal (§15.2) — the same idiom as STATUS_FIELD above. */
+    for (const p of model.placed) {
+      const current = out.get(p.entity.id);
+      if (current !== undefined && current.title !== p.entity.title) continue;
+      const holder = (p.entity.state as { teammate?: { displayName?: unknown } } | undefined)
+        ?.teammate?.displayName;
+      if (typeof holder !== 'string' || holder.length === 0) continue;
+      out.set(p.entity.id, { label: 'held by', title: holder, blocked: false });
+    }
+    return out;
+  }, [model]);
+
+  /**
+   * WHAT IS MOVING, from data that exists in the running app.
+   *
+   * The ticker below is fed by `props.timeline`, which only a scripted fixture
+   * preview ever passes — so in production this surface has rendered zero rows
+   * since it shipped, and a `role="log"` that never speaks is a promise to a
+   * screen reader that is never kept. This feed is derived from `activityAt`
+   * and the liveness VERDICT, both of which the seam delivers on every node the
+   * canvas is already drawing.
+   *
+   * TWO FACTS, KEPT APART, because they are constantly confused and have
+   * different sources (R-UI-5):
+   *   · LIVE is `livenessOf(id) === 'live'` — the seam's snapshot. Never
+   *     inferred from recency.
+   *   · RECENT is `activityAt`, a real field, honestly ordered.
+   * A scripted timeline still wins the slot when one is passed, so the fixture
+   * previews are unchanged.
+   */
+  const derivedTicker = useMemo<readonly TickerEntry[]>(() => {
+    if (model.placed.length === 0) return [];
+    const live = model.placed.filter((p) => livenessOf(p.entity.id) === 'live');
+    const recent = [...model.placed]
+      .filter((p) => livenessOf(p.entity.id) !== 'live')
+      .sort((a, b) => (a.entity.activityAt < b.entity.activityAt ? 1 : -1));
+    const rows: TickerEntry[] = [];
+    for (const p of live.slice(0, 3)) {
+      rows.push({
+        key: `live:${p.entity.id}`,
+        label: `● live · ${getKind(p.entity.kind).label} · ${p.entity.title}`,
+        entityId: p.entity.id,
+      });
+    }
+    for (const p of recent.slice(0, Math.max(0, 6 - rows.length))) {
+      rows.push({
+        key: `recent:${p.entity.id}`,
+        label: `${getKind(p.entity.kind).label} · ${p.entity.title}`,
+        entityId: p.entity.id,
+      });
+    }
+    return rows;
+  }, [model.placed, livenessOf]);
+
+  /* A scripted timeline, when a fixture harness passes one, outranks the
+     derived feed: that preview is ABOUT the scripted arrivals. */
+  const tickerRows = ticker.length > 0 ? ticker : derivedTicker;
+
+  /* The meter's bar is relative to the BUSIEST thread on this canvas, so the
+     comparison it invites ("this one is where the talking is") is one the
+     picture can actually support. The number is always printed beside it — the
+     bar is the comparison, never the value. */
+  const convMax = useMemo(
+    () => Math.max(1, ...model.placed.map((p) => p.conversation?.count ?? 0)),
+    [model],
+  );
+
+  /* Offer only the dimensions that would actually split this node set — plus
+     whatever is currently chosen, so a dimension never disappears out from
+     under the reader when the data thins. */
+  const offeredGroupBys = useMemo(() => {
+    const found = discriminatingGroupBys(modelNodes, {
+      now,
+      edges: allEdges as EdgeView[],
+      nodes: modelNodes,
+    });
+    return found.includes(groupBy) ? found : [...found, groupBy];
+  }, [modelNodes, allEdges, now, groupBy]);
 
   // Latest-value mirrors so the size-change reveal effect can read them while
   // depending ONLY on vpSize (a selection or pan change must not re-trigger it).
@@ -391,24 +568,34 @@ export function GraphView(props: GraphViewProps) {
     };
   }, [vpSize]);
 
-  const fit = useCallback(() => {
-    if (model.width === 0) return;
-    const { w, h } = vpMetrics();
-    if (w === 0) return;
-    const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(w / model.width, h / model.height, 1)));
-    setTf({
-      x: (w - model.width * k) / 2,
-      y: Math.max(16, (h - model.height * k) / 2),
-      k,
-    });
-  }, [model.width, model.height, vpMetrics]);
+  const fitAt = useCallback(
+    (floor: number) => {
+      if (model.width === 0) return;
+      const { w, h } = vpMetrics();
+      if (w === 0) return;
+      const k = Math.min(ZOOM_MAX, Math.max(floor, Math.min(w / model.width, h / model.height, 1)));
+      setTf({
+        x: (w - model.width * k) / 2,
+        // At or above the floor the canvas can overflow the viewport, which is
+        // the point: the reader pans a legible canvas instead of squinting at a
+        // whole one. Pin to the top so panning starts where reading starts.
+        y: Math.max(16, (h - model.height * k) / 2),
+        k,
+      });
+    },
+    [model.width, model.height, vpMetrics],
+  );
+
+  /** ⤢ / `0` — the reader ASKED for everything, so they get everything. */
+  const fit = useCallback(() => fitAt(ZOOM_MIN), [fitAt]);
 
   useEffect(() => {
     if (fittedRef.current) return;
     if (model.placed.length === 0) return;
     fittedRef.current = true;
-    fit();
-  }, [fit, model.placed.length]);
+    // The UNINVOKED fit owes legibility — see FIT_FLOOR.
+    fitAt(FIT_FLOOR);
+  }, [fitAt, model.placed.length]);
 
   // Measure the viewport so the minimap can draw the visible-window frame in
   // canvas space. Re-attaches when the viewport (un)mounts with the empty state.
@@ -611,6 +798,22 @@ export function GraphView(props: GraphViewProps) {
     frozenRef.current = null;
     setFold((f) => !f);
   }, []);
+  const chooseGroupBy = useCallback((next: GroupById) => {
+    // A partition change invalidates every frozen position by definition, so
+    // the next compute must be a full re-layout.
+    frozenRef.current = null;
+    setCollapsedGroups(new Set());
+    setGroupBy(next);
+  }, []);
+  const toggleGroup = useCallback((key: string) => {
+    frozenRef.current = null;
+    setCollapsedGroups((prior) => {
+      const next = new Set(prior);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const expandHub = useCallback((hubId: EntityId) => {
     frozenRef.current = null;
     setExpandedHubs((prior) => {
@@ -724,8 +927,50 @@ export function GraphView(props: GraphViewProps) {
           ))}
         </div>
         <span className="gv-toolbar__count">
-          {model.placed.length} nodes · {model.edges.length} edges · {model.componentCount}{' '}
-          {model.componentCount === 1 ? 'island' : 'islands'}
+          {model.placed.length} nodes · {model.edges.length} edges ·{' '}
+          {model.groupBy === 'none' ? (
+            <>
+              {model.componentCount} {model.componentCount === 1 ? 'island' : 'islands'}
+            </>
+          ) : (
+            <>
+              {model.groups.length} {model.groups.length === 1 ? 'band' : 'bands'} by{' '}
+              {groupSpec(model.groupBy).label.toLowerCase()}
+            </>
+          )}
+          {/* THE DECLUTTER STATES ITS OWN PRICE. A message is not dropped — it
+              is volume on the entity it was anchored to, and this is where that
+              is accounted for. Clicking draws every one as its own card. */}
+          {model.rolledUpCount > 0 && (
+            <button
+              type="button"
+              className="gv-toolbar__fold"
+              onClick={() => setRollUp(false)}
+              title="Messages are drawn as a conversation meter on the entity they are anchored to, which carries the count, the voices and the recency. Click to draw every message as its own card."
+            >
+              {' '}
+              · {model.rolledUpCount} in conversation
+            </button>
+          )}
+          {!rollUp && (
+            <button type="button" className="gv-toolbar__fold" onClick={() => setRollUp(true)}>
+              {' '}
+              · roll conversation up
+            </button>
+          )}
+          {/* An orphan is a rolled-up message whose anchor is NOT on this
+              canvas, so no card accounts for it. Normally zero; surfaced rather
+              than absorbed, because a count nobody can find is the failure this
+              whole pass exists to remove. */}
+          {model.rolledUpOrphans > 0 && (
+            <span
+              className="gv-toolbar__fold"
+              title="These messages were rolled up but their anchor is not drawn, so no card carries them. Widen the lens to bring the anchor onto the canvas."
+            >
+              {' '}
+              · {model.rolledUpOrphans} without an anchor here
+            </span>
+          )}
           {/* Hubs are why the islands are islands. Saying so here is what keeps
               the partition from looking arbitrary to someone who can plainly
               see an edge crossing between two of them. */}
@@ -747,11 +992,13 @@ export function GraphView(props: GraphViewProps) {
               onClick={toggleFold}
               title="Leaves with a single connection are folded onto their neighbor, which carries the count. Click to draw every one as its own card."
             >
+              {' '}
               · {model.foldedCount} folded
             </button>
           )}
           {!fold && (
             <button type="button" className="gv-toolbar__fold" onClick={toggleFold}>
+              {' '}
               · re-fold leaves
             </button>
           )}
@@ -791,6 +1038,47 @@ export function GraphView(props: GraphViewProps) {
             at its next wake): per-kind and per-edge chips became two compact
             MULTI-SELECT dropdowns — with every kind and edge type inlined the
             toolbar wrapped to multiple rows and taxed the canvas. */}
+        {/* THE GROUPING DIMENSION, on the right with the other view controls.
+            It began as a nine-wide button row beside the lens and window, which
+            put the widest control in the bar at its centre and pushed search
+            and the filters off the row. It is a refinement of HOW the canvas is
+            arranged, not of WHAT is on it, so it belongs with Entities and
+            Edges — and in their shape, which costs one line instead of nine. */}
+        <GroupSelect
+          value={groupBy}
+          options={GROUP_BYS.filter((spec) => offeredGroupBys.includes(spec.id))}
+          onChoose={chooseGroupBy}
+        />
+        {/* CONVERSATION — a real control, not a footnote.
+            Rolling messages onto their anchor is the single largest declutter
+            this canvas performs, and the way back was a click on a number in
+            the count line: discoverable only by someone who already knew it was
+            there. A reader whose question is "show me every message" must be
+            able to SEE that the option exists. It sits beside Group because it
+            is the same kind of decision — how the canvas is arranged, not what
+            the space contains. */}
+        <ChoiceSelect
+          face={`✉ ${rollUp ? 'Rolled up' : 'Every message'}`}
+          active={!rollUp}
+          label="Conversation"
+          options={[
+            {
+              id: 'rolled',
+              label: 'Rolled onto anchors',
+              hint: 'A message is drawn as a meter on the entity it is anchored to — count, voices and recency — rather than as its own card. Nothing is hidden: the anchor carries the total.',
+            },
+            {
+              id: 'every',
+              label: 'Every message as a node',
+              hint: 'Draw every message as its own card, with its anchored_to and authored_from edges. This is the whole graph, exactly as tm8 records it.',
+            },
+          ]}
+          value={rollUp ? 'rolled' : 'every'}
+          onChoose={(id) => {
+            frozenRef.current = null;
+            setRollUp(id === 'rolled');
+          }}
+        />
         <FilterSelect
           label="Entities"
           options={kindsPresent.map((kind) => {
@@ -933,12 +1221,50 @@ export function GraphView(props: GraphViewProps) {
         >
           <div
             className={panEase ? 'gv-canvas gv-canvas--ease' : 'gv-canvas'}
+            data-lod={tf.k < LOD_FAR_BELOW ? 'far' : 'near'}
             style={{
               width: model.width,
               height: model.height,
               transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.k})`,
             }}
           >
+            {/* BAND FRAMES. Drawn first so every edge and card sits above
+                them — a frame is a ground, never a thing that can occlude a
+                node. A band header is a real button: collapsing states its own
+                count, so a collapsed band is an accounted-for band. */}
+            {model.groups.map((g) => (
+              <div
+                key={g.key}
+                className={g.residual ? 'gv-band gv-band--residual' : 'gv-band'}
+                style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
+              >
+                <button
+                  type="button"
+                  className="gv-band__head"
+                  aria-expanded={!g.collapsed}
+                  title={
+                    g.residual
+                      ? `${g.count} the ${groupSpec(model.groupBy).label.toLowerCase()} signal cannot speak about`
+                      : `${g.count} in ${g.label} — click to ${g.collapsed ? 'expand' : 'collapse'}`
+                  }
+                  onClick={() => toggleGroup(g.key)}
+                >
+                  {g.kindRef ? (
+                    <span className="gv-band__glyph" aria-hidden>
+                      <KindIcon kind={g.kindRef} />
+                    </span>
+                  ) : null}
+                  <span className="gv-band__label">
+                    {g.kindRef ? getKind(g.kindRef).labelPlural : g.label}
+                  </span>
+                  <span className="gv-band__count">{g.count}</span>
+                  <span className="gv-band__chev" aria-hidden>
+                    {g.collapsed ? '▸' : '▾'}
+                  </span>
+                </button>
+              </div>
+            ))}
+
             <svg className="gv-edges" width={model.width} height={model.height} aria-hidden>
               <defs>
                 <marker id="gv-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -964,14 +1290,23 @@ export function GraphView(props: GraphViewProps) {
                 ]
                   .filter(Boolean)
                   .join(' ');
-                // Declutter: labels are noise at fit zoom. Show one only when the
-                // canvas is legible (k ≥ 0.9), when its edge touches the hovered
-                // or selected node, or when it is BLOCKED — the word "blocked"
-                // never disappears (honesty law), whatever the zoom.
+                // Labels are ON DEMAND, not on zoom.
+                //
+                // This used to also show every label at k ≥ 0.9, which was safe
+                // only because the canvas never opened above 0.35. With the fit
+                // floor it opens near 1.0, and 18 labels painted at once
+                // collided into unreadable runs ("workworking") — the declutter
+                // this whole pass exists to perform, undone by its own success.
+                //
+                // Nothing is lost: the relation an edge names is now printed in
+                // words on the card that owns it (`gv-node__rel`), so the type
+                // is readable without hovering. What remains here is the
+                // pointed-at edge and the BLOCKED one — the word "blocked"
+                // never disappears (honesty law), at any zoom.
                 const touchesFocus =
                   (hoverId !== null && (e.sourceId === hoverId || e.targetId === hoverId)) ||
                   (selectedId !== null && (e.sourceId === selectedId || e.targetId === selectedId));
-                const showLabel = tf.k >= 0.9 || touchesFocus || e.blocked;
+                const showLabel = touchesFocus || e.blocked;
                 return (
                   <g key={e.id} className={cls}>
                     <path
@@ -1015,6 +1350,7 @@ export function GraphView(props: GraphViewProps) {
                 .filter(Boolean)
                 .join(' ');
               const focused = focus?.id === p.entity.id;
+              const relation = relationById.get(p.entity.id);
               return (
                 // A role=button div (not a <button>) so the focus affordance can
                 // be a REAL nested button — nested <button>s are invalid HTML.
@@ -1025,6 +1361,18 @@ export function GraphView(props: GraphViewProps) {
                   tabIndex={0}
                   className={cls}
                   aria-current={selected ? 'true' : undefined}
+                  /* The liveness verdict as an ATTRIBUTE, so semantic zoom can
+                     keep the mark after the pill is gone. Colour + word at near
+                     zoom; colour + shape + word-in-title at far. */
+                  data-live={liveness}
+                  title={
+                    /* What far mode hides moves in here — the same
+                       colour + word-in-title Minimap uses for a 4px rect. */
+                    `${getKind(p.entity.kind).label} · ${p.entity.title}` +
+                    (pill ? ` · ${pill.word}` : '') +
+                    (liveness === 'live' ? ' · live' : liveness === 'stale' ? ' · stale' : '') +
+                    (relation ? ` · ${relation.label} ${relation.title}` : '')
+                  }
                   style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
                   onClick={() => onSelect(p.entity.id)}
                   onKeyDown={(event) => {
@@ -1068,6 +1416,49 @@ export function GraphView(props: GraphViewProps) {
                     </span>
                   </span>
                   <span className="gv-node__title">{p.entity.title}</span>
+                  {relation && (
+                    <span
+                      className={
+                        relation.blocked ? 'gv-node__rel gv-node__rel--blocked' : 'gv-node__rel'
+                      }
+                      title={`${relation.label} — ${relation.title}`}
+                    >
+                      <span className="gv-node__relverb">{relation.label}</span> {relation.title}
+                    </span>
+                  )}
+                  {/* THE CONVERSATION METER. What the messages anchored here
+                      became — count, voices, recency. Same accounting duty as
+                      the fold badge: a thread is RELOCATED onto its anchor,
+                      never dropped, and this is where it is accounted for.
+                      Clicking opens the entity, which is where a thread is
+                      actually read. */}
+                  {p.conversation && (
+                    <span
+                      className="gv-node__conv"
+                      title={`${p.conversation.count} ${
+                        p.conversation.count === 1 ? 'message' : 'messages'
+                      } from ${p.conversation.voices} ${
+                        p.conversation.voices === 1 ? 'voice' : 'voices'
+                      }, anchored here — open the entity to read the thread`}
+                    >
+                      <span className="gv-node__conv-n">✉ {p.conversation.count}</span>
+                      <span className="gv-node__conv-bar" aria-hidden>
+                        <span
+                          className="gv-node__conv-fill"
+                          style={{ width: `${Math.min(100, Math.round((p.conversation.count / convMax) * 100))}%` }}
+                        />
+                      </span>
+                      <span className="gv-node__conv-v">
+                        {p.conversation.voices} {p.conversation.voices === 1 ? 'voice' : 'voices'}
+                      </span>
+                      <Timestamp
+                        className="gv-node__conv-v"
+                        at={p.conversation.lastAt}
+                        now={now}
+                        title="most recent message"
+                      />
+                    </span>
+                  )}
                   <span className="gv-node__foot">
                     <Avatar
                       actorId={p.entity.createdBy.id}
@@ -1141,7 +1532,7 @@ export function GraphView(props: GraphViewProps) {
           overview ABOVE the event ticker (both stay visible, column-gapped).
           Hidden below 8 nodes: an overview of nothing is noise. onJump gives
           CANVAS-space coords → jumpTo centers the transform at the current k. */}
-      {(showMinimap || ticker.length > 0) && (
+      {(showMinimap || tickerRows.length > 0) && (
         <div className="gv-rail">
           {showMinimap && (
             <Minimap
@@ -1152,9 +1543,9 @@ export function GraphView(props: GraphViewProps) {
               onJump={jumpTo}
             />
           )}
-          {ticker.length > 0 && (
+          {tickerRows.length > 0 && (
             <div className="gv-ticker" role="log" aria-label="Recent graph events">
-              {ticker.map((entry) => (
+              {tickerRows.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
@@ -1168,6 +1559,121 @@ export function GraphView(props: GraphViewProps) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * GroupSelect — the single-select twin of FilterSelect, for the grouping
+ * dimension. Same face, same popover, same dismiss behavior; one choice rather
+ * than a set, so it renders radios and closes on pick.
+ *
+ * Only DISCRIMINATING dimensions reach it (see `offeredGroupBys`): offering
+ * "Priority" on a canvas of nothing but sessions is offering a partition of one
+ * band, and the reader would learn that only by spending a click.
+ */
+function ChoiceSelect({
+  face,
+  active,
+  label,
+  options,
+  value,
+  onChoose,
+}: {
+  face: string;
+  active: boolean;
+  label: string;
+  options: readonly { id: string; label: string; hint: string }[];
+  value: string;
+  onChoose(id: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismissable(open, rootRef, () => setOpen(false));
+  const current = options.find((o) => o.id === value);
+  return (
+    <div className="gv-select" ref={rootRef}>
+      <button
+        type="button"
+        className={active ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={current?.hint}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {face} <span aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="gv-select__pop gv-select__pop--wide" role="listbox" aria-label={label}>
+          {options.map((opt) => (
+            <label key={opt.id} className="gv-select__row gv-select__row--tall" title={opt.hint}>
+              <input
+                type="radio"
+                name={`gv-choice-${label}`}
+                checked={opt.id === value}
+                onChange={() => {
+                  onChoose(opt.id);
+                  setOpen(false);
+                }}
+              />
+              <span>
+                <b className="gv-select__rowlabel">{opt.label}</b>
+                <span className="gv-select__rowhint">{opt.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GroupSelect({
+  value,
+  options,
+  onChoose,
+}: {
+  value: GroupById;
+  options: readonly { id: GroupById; label: string; hint: string }[];
+  onChoose(id: GroupById): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismissable(open, rootRef, () => setOpen(false));
+
+  const current = options.find((o) => o.id === value) ?? options[0];
+  const grouped = value !== 'none';
+
+  return (
+    <div className="gv-select" ref={rootRef}>
+      <button
+        type="button"
+        className={grouped ? 'gv-select__face gv-select__face--filtered' : 'gv-select__face'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={current?.hint}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Group · {value === 'none' ? 'islands' : current?.label.toLowerCase()} <span aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="gv-select__pop" role="listbox" aria-label="Graph grouping">
+          {options.map((opt) => (
+            <label key={opt.id} className="gv-select__row" title={opt.hint}>
+              <input
+                type="radio"
+                name="gv-group-by"
+                checked={opt.id === value}
+                onChange={() => {
+                  onChoose(opt.id);
+                  setOpen(false);
+                }}
+              />
+              <span>{opt.id === 'none' ? 'Islands' : opt.label}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

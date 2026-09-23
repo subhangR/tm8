@@ -32,19 +32,36 @@
 /* The idle affordance: an icon, not a tile. No name row, no dashed frame, no
    64px column — it sits in the panel like any other quiet icon control, and
    it is 28px so a thumb can hit it. */
+/* THE IDLE CONTROL CARRIES ITS WORD AND A REAL TARGET. It was a bare 28px
+   paperclip: no border, no label, an accessible name only a screen reader
+   could hear, and a hit area under the touch floor — a control whose whole job
+   is to say "a file can go here", saying it to nobody looking. It now matches
+   the populated `＋` tile's shape and language, inside a dashed frame that
+   reads as a drop target. */
 .fn-tile--clip {
-  width: 28px;
-  height: 28px;
+  width: 66px;
+  height: 66px;
   flex: none;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 5px;
+  border: 1px dashed var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   color: var(--pn-ink-3);
   cursor: pointer;
+  background: none;
+}
+.fn-tile--clip .fn-tile__name { font-size: var(--pn-fs-micro); }
+/* The sentence the ProseField paragraph used to carry, beside the button. */
+.fn-plus__note {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  align-self: center;
 }
 
-.fn-tile--clip:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.fn-tile--clip:hover { color: var(--pn-ink); background: var(--pn-hover); border-color: var(--pn-ink-4); }
 
 .fn-tile__face--clip {
   display: flex;

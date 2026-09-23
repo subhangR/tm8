@@ -1,3 +1,6 @@
+import { SkillPreview } from '../skills/SkillPreview';
+import type { SkillPort } from '../skills/port';
+import type { SkillPreviewResult } from '@tm8/contract';
 /**
  * LaunchSheet — the full launch configuration (D44/D51, T5-5 anatomy).
  *
@@ -65,6 +68,8 @@ import './launch-sheet-mobile.css';
 import {
   accessModeLabel,
   agentTool,
+  AGENT_CREDENTIAL_PROVIDER,
+  CREDENTIAL_PROVIDER_LABEL,
   describeAccessMode,
   LAUNCH_MODES,
   nextAccessMode,
@@ -81,6 +86,7 @@ import {
 import { MEMORY_IDS_MAX } from '../domain/memory';
 
 export interface LaunchSheetProps {
+  loadSkillPreview?: (input: Parameters<SkillPort['preview']>[1]) => Promise<SkillPreviewResult>;
   /** The entity being launched from. The sheet is bound to it and dies with it. */
   subjectId: EntityId;
   /** T5-5's FROM strip: the launch context, named honestly. */
@@ -133,18 +139,9 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
 type CredentialChoice = '' | 'member' | 'node';
-type AgentCredentialProvider = Extract<CredentialProviderName, 'anthropic' | 'openai'>;
-
-const AGENT_CREDENTIAL_PROVIDER: Partial<Record<string, AgentCredentialProvider>> = {
-  'claude-code': 'anthropic',
-  codex: 'openai',
-};
-
-const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  github: 'GitHub',
-};
+// The tool→provider map and the vendor labels live in `domain/launch` now —
+// the New Session composer is their second consumer, and two private copies
+// of a vocabulary is the copy-drift class (D34).
 
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles, memories } = props;
@@ -220,13 +217,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
   // always SENDS one (unlike the quick config, which can send nothing at all).
   const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
   // Each provider defaults independently to Auto (the absent key). Keeping the
-  // UI state provider-keyed means switching Claude ↔ Codex does not carry an
-  // Anthropic choice into OpenAI, while GitHub remains independent from both.
-  const [credentialChoices, setCredentialChoices] = useState<Record<CredentialProviderName, CredentialChoice>>({
-    anthropic: '',
-    openai: '',
-    github: '',
-  });
+  // UI state provider-keyed means switching tools never carries one vendor's
+  // choice into another, while GitHub remains independently selectable.
+  const [credentialChoices, setCredentialChoices] = useState<
+    Partial<Record<CredentialProviderName, CredentialChoice>>
+  >({});
   const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
   const [credentialStatusState, setCredentialStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     props.loadCredentialStatus ? 'loading' : 'idle',
@@ -270,9 +265,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
 
   const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
   const agentCredentialSource = agentCredentialProvider
-    ? credentialChoices[agentCredentialProvider]
+    ? credentialChoices[agentCredentialProvider] ?? ''
     : '';
-  const githubCredentialSource = credentialChoices.github;
+  const githubCredentialSource = credentialChoices.github ?? '';
   const agentConnection = agentCredentialProvider
     ? credentialStatus?.providers.find((entry) => entry.provider === agentCredentialProvider)
     : null;
@@ -499,7 +494,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 data-testid="launch-reasoning-effort"
                 onChange={(event) => setReasoningEffort(event.target.value as NonNullable<LaunchConfig['reasoningEffort']>)}
               >
-                {['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => (
+                {['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map((effort) => (
                   <option key={effort} value={effort}>{effort}</option>
                 ))}
               </select>
@@ -807,6 +802,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
             pinned at launch — immutable for this session&apos;s whole life (T2-4)
           </span>
         </section>
+
+        <SkillPreview load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
 
         {/*
           * MEMORIES — the spawn-time hand-off (D3a, `memoryIds`).

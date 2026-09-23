@@ -1205,11 +1205,69 @@
 .cv2-root .auth-menu__group--last {
   border-top: 1px solid var(--pn-line);
 }
+/* THE UTILITY GROUP (task 01a07a56 item 3, and the owner's earlier 2026-08-31
+   request) — Inbox, System prompts and the hosted rows, between the identity
+   head and Appearance. It carries its own separator rather than pushing a
+   border onto the Appearance group: the group that MOVED owns the line it
+   introduced, so the appearance group's markup is untouched. Same 1px and same
+   --pn-line as `--last` above, so this menu has ONE boundary treatment. */
+.cv2-root .auth-menu__group--utility {
+  border-bottom: 1px solid var(--pn-line);
+}
+/* The inbox mark is DRAWN geometry sitting in the 15px column the TYPED glyphs
+   use, so this variant centres a box instead of a baseline. A modifier rather
+   than a change to `.auth-menu__glyph` itself: the o / # / <- rows are text and
+   are already centred correctly, and nudging all of them to lay out an icon
+   that only one row has would charge the rows that did not move. */
+.cv2-root .auth-menu__glyph--art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* HOSTED ROWS wear `auth-menu__row`, and `CopyLinkControl` brings its own
+   layout from `share/copy-link.css`. These are the seam between the two, and
+   only where they actually disagree. */
+.cv2-root .auth-menu__row .copy-link__glyph {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+/* The manual-copy fallback is an instruction ABOVE a field, never a flex row:
+   inside a 320px menu the row form would squeeze the field to nothing. It is
+   also not a verb, so it must not take the live row's pointer or hover. */
+.cv2-root .auth-menu__row.copy-link--manual {
+  display: grid;
+  gap: 4px;
+  cursor: default;
+}
+.cv2-root .auth-menu__row.copy-link--manual:hover {
+  background: transparent;
+}
+/* A hosted row's own label must ellipsise rather than push the row wide — the
+   same rule the box-sizing note above exists to enforce. */
+.cv2-root .auth-menu__row .copy-link__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cv2-root .auth-menu__row {
   appearance: none;
   border: 0;
   background: transparent;
   width: 100%;
+  /* MEASURED 2026-09-07, task 01a07a56: `width: 100%` plus 12px inline padding
+     WITHOUT border-box made every row 24px wider than the menu containing it —
+     a 280px card grew a 304px Appearance row, which pushed the light/dark
+     toggle 12px past the card's clipped edge and cut "dark" mid-word. That is
+     the defect in the owner's screenshot. A row must never exceed the box that
+     holds it, and `overflow: hidden` on the card must be a backstop rather than
+     the only thing standing between a control and being unreachable. */
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1260,6 +1318,10 @@
   color: var(--pn-ink-4);
   padding-left: 24px;
 }
+/* The setup nudge reads as something to DO, not as the quiet aside the
+   sign-out note is. Colour is not doing the work alone: the row only exists
+   with a sentence in it, and the sentence names what is missing. */
+.cv2-root .auth-menu__note--warn { color: var(--pn-wait); }
 /* L419: the "phase 2" pill — the ONE refusal the oracle itself draws */
 .cv2-root .auth-menu__pill {
   font-family: var(--pn-mono);
@@ -1576,9 +1638,17 @@
 .cv2-root .auth-menu--anchored {
   position: absolute;
   top: calc(100% + 6px);
+  /* Anchored by its RIGHT edge under the trigger, so growing content extends
+     the menu leftward and never past the viewport's right edge. */
   right: 0;
-  width: min(280px, calc(100vw - 24px));
-  max-width: none;
+  /* 280 -> 320 (task 01a07a56 item 3): the card gains a utility group, and the
+     widest row it must hold is "Account & access tokens" beside a 15px glyph
+     column. 280 could not draw the two rows it already had. */
+  width: min(320px, calc(100vw - 24px));
+  /* Was `none`, to undo the base rule's trigger-relative clamp. A viewport
+     clamp instead of no clamp at all: whatever box anchors this menu, it can
+     never exceed the screen. */
+  max-width: calc(100vw - 24px);
   z-index: 80;
 }
 .cv2-root .auth-menu--anchored .auth-menu__head .auth-server__text {
