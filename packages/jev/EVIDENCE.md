@@ -1,5 +1,14 @@
 # Jev phase 1 — what was actually measured
 
+> **Historical record, 2026-09-22.** The measurements below were taken with the
+> phase-1 spawn-time advisor. The Jev Launch Advisor program (design 01a0cb80)
+> removed spawn-time routing: `JevRoutingAdvisor`, `TM8_ROUTING_POLICY`, the
+> savings projection and the ledger no longer exist, and Jev now runs only when
+> a person presses Ask Jev. The weights, floors, ladder and the eight questions
+> that produced these numbers are unchanged in `src/model.ts`, and
+> `scripts/fleet-run.mjs` re-derives the "What it chose" table through
+> `adviseModel`. The per-attempt timeout is now 2 s (5 s total, one retry).
+
 Everything below came from calls to `https://api.typesafe.ai/v1/systemone` on
 **2026-09-22**, model **jev-1.13.0**, using this package's own `JevClient` and
 `JevRoutingAdvisor` — not a hand-rolled fetch and not a mock. The tasks are 57
@@ -15,7 +24,8 @@ mattered (see "The bug only a live call could find").
 ## Reproducing it
 
 ```
-TYPESAFE_API_KEY=<key> node packages/jev/scripts/fleet-run.mjs --limit 57 --policy auto
+bun run build:jev
+TYPESAFE_API_KEY=<key> node packages/jev/scripts/fleet-run.mjs --limit 57
 ```
 
 The key is read from the server's environment and never leaves it — it is not

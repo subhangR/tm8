@@ -104,6 +104,10 @@ fi
 # contract is built or it reports errors for fields that exist in source.
 TSC_PROJECTS=(
   packages/contract
+  # packages/jev is the Launch Advisor's pure Jev client. Named here rather
+  # than left to the server's project reference, so a lane that drops that
+  # reference cannot silently stop typechecking it.
+  packages/jev
   # mcp before server: the post-#188 server REQUIRES @tm8/mcp/dist at boot,
   # and a project absent from this list is a dist CI never builds — every
   # cli integration suite then dies at server start, masking real reds.
@@ -169,10 +173,10 @@ fi
 # while packages are still being authored.
 TEST_PACKAGES=(
   packages/contract
-  # packages/jev is the decisioning layer. It is TYPECHECKED transitively (the
-  # execution project references it), so its absence here would not have shown
-  # up as a red build — only as a package whose whole suite never ran, which is
-  # the exact shape of the packages/tm8-ui gap documented below.
+  # packages/jev is the Launch Advisor's Jev client (wire, client, rank, model,
+  # cost). Its absence here would not show up as a red build — only as a
+  # package whose whole suite never ran, which is the exact shape of the
+  # packages/tm8-ui gap documented below.
   packages/jev
   packages/server
   packages/execution
