@@ -2560,7 +2560,9 @@ export const CATALOG_DIGEST =
   // skills.scan/list/show/preview on top of main's 199 rows. RECOMPUTED from
   // `JSON.stringify(OPERATIONS)` and matched to the regenerated manifest.
   // Re-measured 2026-09-23 with F4 (#648): skills.roots/create/edit/equip/unequip.
-  'sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e';
+  // Re-measured 2026-09-23, Jev lane F: + launch.suggest. Matched to the
+  // regenerated conformance manifest's catalogDigest.
+  'sha256:1ebce8d21b5a346d01f90a21332e0986faf0552db1adae26f8a4a6aae50d021f';
 
 export const GRAMMAR_VERSION = '2';
 

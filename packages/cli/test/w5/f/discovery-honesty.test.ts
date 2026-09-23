@@ -107,7 +107,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows).toHaveLength(208); // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED from CI's failing run on main.
+    expect(rows).toHaveLength(209); // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED from CI's failing run on main.
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -134,7 +134,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 195 -> 196 (Changes screen Phase 1): execution.gitStage is a v1,
     // non-reserved row, so it joins this population too. MEASURED.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(unknownRows).toHaveLength(206); // +9 skills (2026-09-23). MEASURED.
+    expect(unknownRows).toHaveLength(207); // +9 skills (2026-09-23); +1 launch.suggest (Jev lane F). MEASURED.
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

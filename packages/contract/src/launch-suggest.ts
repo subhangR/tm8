@@ -186,7 +186,7 @@ export const LaunchSuggestDraftSchema = z.object({
  * request that asks nothing is a client bug — and unique, because each group
  * is one costed Jev call and a duplicate would ask (and bill) twice.
  */
-export const LaunchSuggestInputSchema = z.object({
+const launchSuggestInputObject = z.object({
   runId: Uuid,
   requestId: Uuid,
   subjectId: Uuid,
@@ -199,6 +199,10 @@ export const LaunchSuggestInputSchema = z.object({
     }),
   clientMutationId: z.string().optional(),
 }).strict();
+
+// Annotated so the server's INPUT_SCHEMAS parity guard can name the contract
+// type it binds; the unannotated object above is what `SameShape` checks.
+export const LaunchSuggestInputSchema: z.ZodType<LaunchSuggestInput> = launchSuggestInputObject;
 
 export const JevFailureSchema = z.enum(JEV_FAILURES);
 
@@ -288,7 +292,7 @@ export type SameShape<A, B> =
 type Assert<T extends true> = T;
 
 export type LaunchSuggestShapeProof = [
-  Assert<SameShape<z.infer<typeof LaunchSuggestInputSchema>, LaunchSuggestInput>>,
+  Assert<SameShape<z.infer<typeof launchSuggestInputObject>, LaunchSuggestInput>>,
   Assert<SameShape<z.infer<typeof LaunchSuggestDraftSchema>, LaunchSuggestDraft>>,
   Assert<SameShape<z.infer<typeof LaunchSuggestResultSchema>, LaunchSuggestResult>>,
   Assert<SameShape<z.infer<typeof LaunchSuggestResultSchema>['groups'], LaunchSuggestResult['groups']>>,

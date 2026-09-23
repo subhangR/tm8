@@ -216,6 +216,6 @@ describe('W5.C generator proof', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
-    expect(ENTRIES).toHaveLength(125);
+    expect(ENTRIES).toHaveLength(126); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
