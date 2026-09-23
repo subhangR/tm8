@@ -212,11 +212,20 @@ describe('ConnectionsTab — read as a timeline', () => {
   it('says the DAY once over the run it covers, and gives each row its clock', () => {
     // The defect this closes: past the 7-day relative window every row printed
     // the same bare date, so four links made minutes apart read as one moment.
+    //
+    // Days are the VIEWER's local days, so the fixture has to split into two
+    // days in every zone, not just UTC. The third row is a day after the first
+    // two, and the first two are 21 minutes apart; they could only land on
+    // different local dates in a zone whose midnight falls at 11:31–11:52Z,
+    // an offset of about ±12:10 that no zone uses. (The old 21:31Z / 23:12Z /
+    // 01:48Z fixture collapsed to one day east of UTC+02:29 or west of
+    // UTC-01:48 — IST read all three as Aug 15 — so it failed on those dev
+    // machines while passing in UTC CI.)
     const detail = detailWith(
       [timedGroup('tracks', 'tracks', 'outgoing', [
-        { id: 'e1', peer: alpha, createdAt: '2026-08-14T21:31:40.000Z' },
-        { id: 'e2', peer: beta, createdAt: '2026-08-14T23:12:09.000Z' },
-        { id: 'e3', peer: gamma, createdAt: '2026-08-15T01:48:25.000Z' },
+        { id: 'e1', peer: alpha, createdAt: '2026-08-14T11:31:40.000Z' },
+        { id: 'e2', peer: beta, createdAt: '2026-08-14T11:52:09.000Z' },
+        { id: 'e3', peer: gamma, createdAt: '2026-08-15T11:48:25.000Z' },
       ])],
       [],
     );

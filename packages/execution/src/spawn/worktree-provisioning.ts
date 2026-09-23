@@ -210,6 +210,19 @@ export async function provisionWorktree(
       throw asSpawnError(error, 'git worktree add failed');
     }
 
+    // Step 5b — borrow the launch project's gitignored shared paths (the code
+    // graph) by symlink. Best-effort by design: a lane without the graph is a
+    // slower lane, not a broken one, so a failure here never fails the spawn.
+    try {
+      await manager.linkSharedPaths(repoRoot, path);
+    } catch (error) {
+      params.logger?.warn?.('worktree: linking shared paths failed', {
+        worktreeId,
+        path,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     // Step 6 (§4.7) — the entity that names what step 5 created. The path
     // persisted here is the exact string step 5 created and step 3's
     // post-creation assertion re-validated.

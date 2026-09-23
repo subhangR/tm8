@@ -246,6 +246,7 @@ const out = {
   nodes,
   links,
   directed: code.directed ?? false,
+  multigraph: false,
 };
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(out));
