@@ -22,6 +22,7 @@ import {
   SHA256_HEX_RE,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
+import type { SameShape } from './launch-suggest.js';
 import type {
   ArtifactsCreateInput, ArtifactsPreviewStartInput,
   ArtifactsPublishInput, ArtifactsRestoreInput,
@@ -61,7 +62,7 @@ import type {
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
-  ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
+  ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
@@ -2857,7 +2858,13 @@ const CredentialSourcesSchema = z.object({
   github: CredentialSourceSchema.optional(),
 }).strict();
 
-export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.object({
+/** `selection` (design 01a0cb80 §5.2): the exact sets, bounded like `memoryIds` and the skill index. */
+export const SpawnSelectionSchema = z.object({
+  memoryIds: z.array(SpawnUuidSchema).max(32),
+  skillIds: z.array(SpawnUuidSchema).max(128),
+}).strict();
+
+const executionSpawnInputObject = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
@@ -2880,9 +2887,43 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+  selection: SpawnSelectionSchema.optional(),
+  jevRunId: SpawnUuidSchema.optional(),
   cols: TerminalDimSchema,
   rows: TerminalDimSchema,
 }).strict();
+
+export const SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE =
+  'selection and memoryIds cannot be combined: selection is the exact memory and skill set for the session, '
+  + 'memoryIds adds to the working set — send one or the other';
+
+export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = executionSpawnInputObject.superRefine(
+  (input, ctx) => {
+    if (input.selection && input.memoryIds !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['selection'],
+        message: SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE,
+      });
+    }
+  },
+);
+
+type Assert<T extends true> = T;
+
+// The new fields' schema and type must agree key for key; `z.ZodType<T>`
+// alone cannot prove that for optional keys (see `SameShape`).
+export type SpawnSelectionShapeProof = [
+  Assert<SameShape<z.infer<typeof SpawnSelectionSchema>, SpawnSelection>>,
+  Assert<SameShape<
+    NonNullable<z.infer<typeof executionSpawnInputObject>['selection']>,
+    NonNullable<ExecutionSpawnInput['selection']>
+  >>,
+  Assert<SameShape<
+    z.infer<typeof executionSpawnInputObject>['jevRunId'],
+    ExecutionSpawnInput['jevRunId']
+  >>,
+];
 
 /**
  * execution.terminal.start — a vanilla shell session (101).
