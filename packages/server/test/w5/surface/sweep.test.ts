@@ -1296,10 +1296,6 @@ const EXPECTED_HANDLER_501: readonly string[] = [
   'containers.terminal.start',
   'containers.unexpose',
   'containers.update',
-  // Jev lane F (2026-09-23): the launch.suggest PLACEHOLDER (jev/handlers.ts)
-  // refuses with not_implemented until lane B lands the real handler, which
-  // removes this entry.
-  'launch.suggest',
   // 2026-07-31: voice.token.create is MOUNTED and REACHED, and on a node with
   // no TM8_LIVEKIT_* configured its handler answers an honest not_implemented
   // naming the env vars to set (services/voice.ts). A refusal authored by the
