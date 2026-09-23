@@ -31,7 +31,8 @@ export function modelApplyRefusal(
   if (entry.agentTool !== suggestion.agentTool) {
     return `This node runs ${entry.label} on ${entry.agentTool}, not ${suggestion.agentTool}.`;
   }
-  if (entry.efforts && !entry.efforts.includes(suggestion.effort)) {
+  // An empty list means the model takes no effort setting at all, not "none allowed".
+  if (entry.efforts && entry.efforts.length > 0 && !entry.efforts.includes(suggestion.effort)) {
     return `${entry.label} takes no “${suggestion.effort}” reasoning effort.`;
   }
   const verdict = canLaunch({
