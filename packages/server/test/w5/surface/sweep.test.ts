@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(SURFACE).toHaveLength(218); // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(rows).toHaveLength(218); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(208); // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(new Set(rows.map((r) => r.op)).size).toBe(218); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
   });
 
   /**
@@ -1352,6 +1352,11 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // reached, like credentials.delete above.
   'credentials.serviceKeys.delete',
   'credentials.serviceKeys.put',
+  // SC-3: policy.set on both space and node read `:provider` off the PATH and
+  // refuse the sweep's synthetic value, like the service-key ops above.
+  // credentials.space.create is NOT here: it refuses a non-member of the
+  // synthetic space (403) before the vendor probe, so it never reaches a 400.
+  'credentials.space.policy.set',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',
@@ -1362,6 +1367,8 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // SC-3: node policy set reads `:provider` off the PATH (see space above).
+  'node.credentials.policy.set',
   // 2026-08-10 (files consolidation): projects.files.read validates its `path`
   // query in-handler, and folderUploads.init validates its manifest in-handler;
   // the sweep's synthetic bodies reach both refusals.

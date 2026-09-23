@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(212); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(rows.length).toBe(222); // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -425,6 +425,10 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   screenshot: '--no-screenshot, the same negative spelling — `containers.computer` returns an image by default (2026-09-03)',
   // `ro` is not a top-level flag and must not become one: it belongs to ONE
   // mount, and a bare `--ro` could not say WHICH. Same shape as isInitial above.
+  // SC-3: node.credentials.policy.set is deliberately COMMANDLESS (human
+  // settings only, `cmd: null`), so allowNode reaches the wire only from the UI
+  // seam — there is no CLI flag to collide with. Same shape as `all` above.
+  allowNode: 'no CLI flag: node.credentials.policy.set is a commandless human-settings row; the node settings screen sets it (2026-09-23)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 

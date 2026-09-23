@@ -70,7 +70,12 @@ export async function startSurfaceServer(label: string): Promise<SurfaceServer> 
     // `loadConfig` rejects port 0 for operator input by design; the already
     // validated config is amended afterward so the kernel assigns an isolated
     // ephemeral port without weakening production configuration validation.
-    production = await bootstrap({ config: { ...configured, port: 0 } });
+    production = await bootstrap({
+      config: { ...configured, port: 0 },
+      // SC-3: never call a vendor from the sweep. The synthetic key is refused
+      // deterministically, exactly as a real vendor would refuse it.
+      spaceCredentialProbe: async () => ({ ok: false, reason: 'rejected', detail: 'HTTP 401' }),
+    });
   } catch (error) {
     await database.destroy();
     await removeOwnedDataDir(dataDir);

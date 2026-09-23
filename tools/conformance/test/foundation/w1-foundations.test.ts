@@ -78,16 +78,17 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 2026-09-23 F4 (#648): skills.roots/create/edit/equip/unequip, all mounted v1 HTTP. MEASURED on the merged tree.
       // 2026-09-23 Jev lane F: launch.suggest, one mounted v1 POST command. MEASURED from the regenerated manifest.
       // Jev lane K: credentials.serviceKeys.{status,put,delete}, three mounted v1 rows. MEASURED.
-      total: 212,
-      v1: 210,
+      // SC-3: credentials.space.* (8) and node.credentials.* (2), ten mounted v1 rows. MEASURED.
+      total: 222,
+      v1: 220,
       reserved: 2,
-      http: 210,
+      http: 220,
       ws: 1,
-      registerableV1Http: 208,
-      methods: { GET: 70, POST: 105, PATCH: 13, DELETE: 13, PUT: 9, WS: 2 },
-      kinds: { read: 74, command: 136, stream: 2 },
-      uniqueNames: 212,
-      uniqueBindings: 211,
+      registerableV1Http: 218,
+      methods: { GET: 73, POST: 107, PATCH: 14, DELETE: 14, PUT: 12, WS: 2 },
+      kinds: { read: 77, command: 143, stream: 2 },
+      uniqueNames: 222,
+      uniqueBindings: 221,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
@@ -98,7 +99,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // 196 -> 197 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 206 -> 207 (Jev lane F): launch.suggest. MEASURED.
-    expect(manifest.routes.http).toHaveLength(210); // +3 (Jev lane K). MEASURED.
+    expect(manifest.routes.http).toHaveLength(220); // +10 (SC-3). +3 (Jev lane K). MEASURED.
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -153,7 +154,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 176 -> 177 (Jev lane F): registerableV1Http 205 minus the frozen 28. MEASURED.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(180); // 177 -> 180 (Jev lane K).
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(190); // 180 -> 190 (SC-3). 177 -> 180 (Jev lane K).
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -186,7 +187,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 167 -> 171 (2026-09-23): the four skills.* rows; registerableV1Http 199 minus 28.
       // 171 -> 176 (2026-09-23 F4): registerableV1Http 204 minus 28.
       // 176 -> 177 (Jev lane F, launch.suggest): registerableV1Http 205 minus 28.
-      unimplementedV1Http: 180, // 177 -> 180 (Jev lane K): registerableV1Http 208 minus 28.
+      unimplementedV1Http: 190, // 180 -> 190 (SC-3): registerableV1Http 218 minus 28. 177 -> 180 (Jev lane K).
     });
   });
 
@@ -241,7 +242,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // +25 (177) containers; 197 -> 198 (187): execution.sessions.share.
     // 198 -> 199 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-    expect(manifest.help.operations).toHaveLength(212); // +3 service keys (Jev lane K). // +1 launch.suggest (Jev lane F). MEASURED.
+    expect(manifest.help.operations).toHaveLength(222); // +10 (SC-3). // +3 service keys (Jev lane K). // +1 launch.suggest (Jev lane F). MEASURED.
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -470,7 +471,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 181 -> 185 (2026-09-23): the four skills.* handlers. MEASURED on the merged tree.
     // 185 -> 190 (2026-09-23 F4): five skills.* handlers. MEASURED.
     // 190 -> 191 (Jev lane F): the launch.suggest placeholder (jev/handlers.ts). MEASURED.
-    expect(handlers.facade).toHaveLength(194); // +3 service keys (Jev lane K). MEASURED.
+    expect(handlers.facade).toHaveLength(204); // +10 space/node credentials (SC-3). +3 service keys (Jev lane K). MEASURED.
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -500,7 +501,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 195 -> 199 (2026-09-23): the four skills.* facade handlers. MEASURED on the merged tree.
     // 199 -> 204 (2026-09-23 F4). MEASURED.
     // 204 -> 205 (Jev lane F): launch.suggest. MEASURED.
-    expect(handlers.all).toHaveLength(208); // +3 (Jev lane K). MEASURED.
+    expect(handlers.all).toHaveLength(218); // +10 (SC-3). +3 (Jev lane K). MEASURED.
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -528,7 +529,8 @@ describe('W2.C01 current mounted registry inventory', () => {
       // Re-measured 2026-09-23 with F4 by CALLING readHandlerSourceInventory.
       // Re-measured (Jev lane F): launch.suggest joins; read out of this assertion's own failing-run Received line.
       // Re-measured (Jev lane K): the three service-key handlers join; read from the failing run's Received line.
-      .toBe('534dc731291fe22421e30fa6203c050fd1b40ae3aadd8501c0ed3aace483a6ff');
+      // Re-measured (SC-3): the ten space/node credential handlers join; read from the failing run's Received line.
+      .toBe('c2792d39fd9cab9140f20bfd7aea58b599e4310d72660333c731a598d79e85b6');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -552,7 +554,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 120 -> 121 (2026-09-23): skills.scan binds SkillScanInputSchema. MEASURED on the merged tree.
     // 121 -> 125 (2026-09-23 F4): create/edit/equip/unequip bind local schemas. MEASURED.
     // 125 -> 126 (Jev lane F): launch.suggest binds LaunchSuggestInputSchema. MEASURED.
-    expect(inputSchemas.bound).toHaveLength(128) // +2: service-key put and delete bind (Jev lane K).
+    expect(inputSchemas.bound).toHaveLength(135) // +7: the SC-3 space/node credential commands bind. +2: service-key put and delete bind (Jev lane K).
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -589,7 +591,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 195 -> 199 (2026-09-23): the four skills.* rows, all mounted v1 HTTP. MEASURED on the merged tree.
     // 199 -> 204 (2026-09-23 F4). MEASURED.
     // 204 -> 205 (Jev lane F): launch.suggest, mounted (placeholder). MEASURED.
-    expect(registerableV1Http).toHaveLength(208); // +3 (Jev lane K). MEASURED.
+    expect(registerableV1Http).toHaveLength(218); // +10 (SC-3). +3 (Jev lane K). MEASURED.
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

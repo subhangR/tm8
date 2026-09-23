@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:bde021c4e34a74460a53fdf1fa9b022eaed41603b1965f959f5db62fec335d7a",
+  "catalogDigest": "sha256:5144c9bcc5d0cff45a03ee3c0c86219c489953bab58156e54d8b474856288bc0",
   "catalog": {
-    "total": 212,
-    "v1": 210,
+    "total": 222,
+    "v1": 220,
     "reserved": 2,
-    "http": 210,
+    "http": 220,
     "ws": 1,
-    "registerableV1Http": 208,
+    "registerableV1Http": 218,
     "methods": {
-      "GET": 70,
-      "POST": 105,
-      "PATCH": 13,
-      "DELETE": 13,
-      "PUT": 9,
+      "GET": 73,
+      "POST": 107,
+      "PATCH": 14,
+      "DELETE": 14,
+      "PUT": 12,
       "WS": 2
     },
     "kinds": {
-      "read": 74,
-      "command": 136,
+      "read": 77,
+      "command": 143,
       "stream": 2
     },
-    "uniqueNames": 212,
-    "uniqueBindings": 211
+    "uniqueNames": 222,
+    "uniqueBindings": 221
   },
   "reservedOperations": [
     "search.query",
@@ -1489,6 +1489,76 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.rekey",
+        "method": "PUT",
+        "path": "/v2/space-credentials/:credentialId/secret",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.setDefault",
+        "method": "POST",
+        "path": "/v2/space-credentials/:credentialId/default",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.rename",
+        "method": "PATCH",
+        "path": "/v2/space-credentials/:credentialId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.delete",
+        "method": "DELETE",
+        "path": "/v2/space-credentials/:credentialId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.policy.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/credential-policy",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.policy.set",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/credential-policy/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.credentials.status",
+        "method": "GET",
+        "path": "/v2/node/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.credentials.policy.set",
+        "method": "PUT",
+        "path": "/v2/node/credential-policy/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.transcript",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/transcript",
@@ -1888,7 +1958,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 180
+    "unimplementedV1Http": 190
   },
   "schemas": {
     "additive": {
@@ -5135,6 +5205,180 @@
           "service",
           "keys",
           "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.list",
+        "intentTags": [
+          "credentials",
+          "space",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.create",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.create",
+        "intentTags": [
+          "credentials",
+          "space",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.rekey",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.rekey",
+        "intentTags": [
+          "credentials",
+          "space",
+          "rekey"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.setDefault",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.setDefault",
+        "intentTags": [
+          "credentials",
+          "space",
+          "set",
+          "default"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.rename",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.rename",
+        "intentTags": [
+          "credentials",
+          "space",
+          "rename"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.delete",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.delete",
+        "intentTags": [
+          "credentials",
+          "space",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.policy.get",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.policy.get",
+        "intentTags": [
+          "credentials",
+          "space",
+          "policy",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.policy.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.policy.set",
+        "intentTags": [
+          "credentials",
+          "space",
+          "policy",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.credentials.status",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.credentials.status",
+        "intentTags": [
+          "node",
+          "credentials",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.credentials.policy.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.credentials.policy.set",
+        "intentTags": [
+          "node",
+          "credentials",
+          "policy",
+          "set"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
