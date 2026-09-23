@@ -1,4 +1,7 @@
 import type { SkillPort } from '../skills/port';
+import type { JevPort } from '../jev/port';
+import type { FixtureJevScenario } from './fixtures/jev-fixture';
+import type { LaunchSuggestInput } from '@tm8/contract';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -812,6 +815,12 @@ export interface Seam {
      * synthesized id the caller could not reconcile.
      */
     skills?: SkillPort;
+    /**
+     * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
+     * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
+     * button refused-with-reason, never hidden.
+     */
+    jev?: JevPort;
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     /**
@@ -1215,6 +1224,12 @@ export interface FixtureControls {
   setLiveness(spaceId: SpaceId, liveEntityIds: string[], nodeBootId?: string): void;
   triggerResync(spaceId: SpaceId): void;
   setPrMergeGuard(guard: FixturePrMergeGuard): void;
+  /** Script `launch.suggest`: every group ok, one group failed, no key, or a 501 node. */
+  setJevScenario(scenario: FixtureJevScenario): void;
+  /** Hold each Ask Jev answer this long (ms), so the asking state is visible. */
+  setJevDelay(ms: number): void;
+  /** Every `launch.suggest` input received, in order. */
+  jevRequests(): readonly LaunchSuggestInput[];
 }
 
 export interface FixtureSeam extends Seam {

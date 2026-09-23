@@ -149,6 +149,7 @@ import type {
   SessionLiveness,
   Unsubscribe,
 } from '../seam';
+import { createJevFixture } from './jev-fixture';
 import {
   FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
@@ -2116,6 +2117,10 @@ export function createFixtureSeam(): FixtureSeam {
 
   // -- the seam --------------------------------------------------------------
 
+  /* Ask Jev (`launch.suggest`), scripted over THIS seam's live rows so a
+     memory created through a command becomes a candidate on the next ask. */
+  const jevFixture = createJevFixture(() => [...summaries.values()]);
+
   const seam: FixtureSeam = {
     async openSpace(spaceId) {
       openSpaces.add(spaceId);
@@ -3167,6 +3172,7 @@ export function createFixtureSeam(): FixtureSeam {
     },
 
     commands: {
+      jev: jevFixture.port,
       async createEntity(input) {
         if (input.parentId) requireSummary(input.parentId);
         /*
@@ -5007,6 +5013,9 @@ export function createFixtureSeam(): FixtureSeam {
       setPrMergeGuard(guard) {
         prMergeGuard = guard;
       },
+      setJevScenario: (scenario) => jevFixture.setScenario(scenario),
+      setJevDelay: (ms) => jevFixture.setDelay(ms),
+      jevRequests: () => jevFixture.requests,
     },
   };
 

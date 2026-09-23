@@ -417,6 +417,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       complete: (id, input) => ops.complete(id, input),
       work: (id, input) => ops.work(id, input),
       skills: ops.skills,
+      jev: ops.jev,
       createEdge: (input) => ops.createEdge(input),
       deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
       addToCollection: (collectionId, input) => ops.addToCollection(collectionId, input),

@@ -1,4 +1,5 @@
 import type { SkillPort } from '../../skills/port';
+import type { JevPort } from '../../jev/port';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -901,6 +902,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       edit(id, input) { return http.call('skills.edit', { params: { id }, body: { ...input, clientMutationId: newId('skill') } }); },
       preview(spaceId, input) { return http.call('skills.preview', { params: { spaceId }, query: input }); },
     } satisfies SkillPort,
+    jev: {
+      // A command row (POST), so the body carries the input; the facade may
+      // inject a `clientMutationId`, which the contract tolerates.
+      suggest(spaceId, input) { return http.call('launch.suggest', { params: { spaceId }, body: input }); },
+    } satisfies JevPort,
     createEdge(input: CreateEdgeInput): Promise<CommandResult> {
       return http.call<CommandResult>('edges.create', { body: input });
     },
