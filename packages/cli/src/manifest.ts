@@ -122,6 +122,8 @@ export interface Tm8Manifest {
   mode?: AgentMode;
   agent?: ManifestAgent;
   project?: ManifestProject | null;
+  /** The directory the PTY actually runs in (worktree, project or scratch). */
+  session?: { workingDirectory?: string };
   launch?: ManifestLaunch;
   tasks?: ManifestTask[];
   coordinator?: ManifestCoordinator | null;
@@ -228,6 +230,8 @@ export function parseManifest(raw: unknown): Tm8Manifest {
   const agentRaw = isRecord(raw.agent) ? raw.agent : undefined;
   const projectRaw = isRecord(raw.project) ? raw.project : undefined;
   const launchRaw = isRecord(raw.launch) ? raw.launch : undefined;
+  const sessionRaw = isRecord(raw.session) ? raw.session : undefined;
+  const sessionWorkingDirectory = sessionRaw ? str(sessionRaw.workingDirectory) : undefined;
   const coordRaw = isRecord(raw.coordinator) ? raw.coordinator : undefined;
   const directiveRaw = isRecord(raw.directive) ? raw.directive : undefined;
 
@@ -287,6 +291,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
           workingDir: str(projectRaw.workingDir),
         })
       : undefined,
+    session: sessionWorkingDirectory ? { workingDirectory: sessionWorkingDirectory } : undefined,
     launch: launchRaw
       ? defined<ManifestLaunch>({
           tool: str(launchRaw.tool),

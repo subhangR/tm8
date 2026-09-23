@@ -301,3 +301,42 @@ describe('composePrompt', () => {
     expect(instructionFor('nonsense' as AgentMode)).toBe(instructionFor('worker'));
   });
 });
+
+describe('<session_context><working_dir> names where the session actually runs', () => {
+  const ROOT = '/Users/agent/tm8';
+  const workingDirOf = (m: PromptManifest): string[] =>
+    [...composePrompt(m).system.matchAll(/<working_dir>([^<]*)<\/working_dir>/g)].map((x) => x[1] ?? '');
+
+  it('worktree mode: prints the worktree, never the shared project checkout', () => {
+    const worktree = '/data/worktrees/proj-1/sess-1';
+    expect(
+      workingDirOf({
+        ...manifest,
+        project: { id: 'p1', name: 'tm8', workingDir: ROOT },
+        session: { workingDirectory: worktree },
+      }),
+    ).toEqual([worktree]);
+  });
+
+  it('project mode: session cwd and project root agree, printed once', () => {
+    expect(
+      workingDirOf({
+        ...manifest,
+        project: { id: 'p1', name: 'tm8', workingDir: ROOT },
+        session: { workingDirectory: ROOT },
+      }),
+    ).toEqual([ROOT]);
+  });
+
+  it('scratch mode with no project: prints the scratch directory and no <project>', () => {
+    const scratch = '/data/scratch/sess-1';
+    const m: PromptManifest = { ...manifest, project: null, session: { workingDirectory: scratch } };
+    expect(workingDirOf(m)).toEqual([scratch]);
+    expect(composePrompt(m).system).not.toContain('<project>');
+  });
+
+  it('falls back to the project root when the manifest has no session working directory', () => {
+    expect(workingDirOf({ ...manifest, project: { name: 'tm8', workingDir: ROOT } })).toEqual([ROOT]);
+    expect(workingDirOf({ ...manifest, project: null })).toEqual([]);
+  });
+});

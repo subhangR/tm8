@@ -91,6 +91,11 @@ export interface PromptManifest {
       }
     | undefined;
   project?: { id?: string; name?: string; workingDir?: string } | null | undefined;
+  /**
+   * Where the session actually runs. For a worktree or scratch session this is
+   * NOT the project root, so it wins over `project.workingDir` in the prompt.
+   */
+  session?: { workingDirectory?: string | undefined } | undefined;
   launch?:
     | {
         tool?: string | undefined;
@@ -844,10 +849,12 @@ export function composePrompt(
   if (spaceId) s.push(`    <space_id>${esc(spaceId)}</space_id>`);
   if (runtime.baseUrl) s.push(`    <server>${esc(runtime.baseUrl)}</server>`);
   const project = manifest.project;
-  if (project) {
-    if (project.name) s.push(`    <project>${esc(project.name)}</project>`);
-    if (project.workingDir) s.push(`    <working_dir>${esc(project.workingDir)}</working_dir>`);
-  }
+  if (project?.name) s.push(`    <project>${esc(project.name)}</project>`);
+  // The session's own cwd, not the project root: a worktree session told to
+  // work in the shared checkout edits the wrong tree. The project root is only
+  // the fallback for a manifest that predates `session.workingDirectory`.
+  const workingDir = manifest.session?.workingDirectory || project?.workingDir;
+  if (workingDir) s.push(`    <working_dir>${esc(workingDir)}</working_dir>`);
   s.push('  </session_context>');
 
   if (manifest.launch?.accessMode === 'plan') {
