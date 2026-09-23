@@ -62,6 +62,7 @@ import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { commandDiscovery } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
+import { successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -620,17 +621,17 @@ async function linkCreatedInSession(
   cmd: CommandContext,
   created: unknown,
   explicitConnections: ReadonlyArray<{ type: string; targetId: string }>,
-): Promise<void> {
+): Promise<{ ref?: ReceiptRef; warning?: ReceiptWarning }> {
   const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return;
-  if (cmd.options.bool('no-session-link')) return;
+  if (sessionId === undefined) return {};
+  if (cmd.options.bool('no-session-link')) return {};
   // One entity has one birth session (`edges_created_in_source_idx`), so an
   // explicit claim wins outright rather than racing the inferred one.
-  if (explicitConnections.some((c) => c.type === 'created_in')) return;
+  if (explicitConnections.some((c) => c.type === 'created_in')) return {};
 
   const entityId = (created as { entity?: { id?: unknown } } | null)?.entity?.id;
-  if (typeof entityId !== 'string' || entityId === '') return;
-  if (entityId === sessionId) return; // nothing is born in itself
+  if (typeof entityId !== 'string' || entityId === '') return {};
+  if (entityId === sessionId) return {}; // nothing is born in itself
 
   // A session id that is not a UUID can never be the benign cross-database
   // answer the catch below swallows — it is a misconfigured TM8_SESSION_ID.
@@ -638,15 +639,15 @@ async function linkCreatedInSession(
   // (22P02 maps to 404), so without this check the misconfiguration is
   // indistinguishable from the harness leak and stays invisible forever.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
-    cmd.out.warn(
-      `note: TM8_SESSION_ID ${JSON.stringify(sessionId)} is not a UUID, so the ` +
-        'created_in session link was not attempted. The entity was created.',
-    );
-    return;
+    const message =
+      `TM8_SESSION_ID ${JSON.stringify(sessionId)} is not a UUID, so the ` +
+      'created_in session link was not attempted. The entity was created.';
+    cmd.out.warn(`note: ${message}`);
+    return { warning: { code: 'session_link_skipped', message } };
   }
 
   try {
-    await clientFor(cmd.ctx).invoke('edges.create', {
+    const edge = await clientFor(cmd.ctx).invoke<unknown>('edges.create', {
       body: {
         srcId: entityId,
         dstId: sessionId,
@@ -654,6 +655,9 @@ async function linkCreatedInSession(
         clientMutationId: resolveMutationId(undefined),
       },
     });
+    // The receipt's `refs` is where a chained caller finds this edge (D2.4).
+    const edgeId = (edge as { edge?: { id?: unknown } } | null)?.edge?.id;
+    return typeof edgeId === 'string' ? { ref: { kind: 'edge', type: 'created_in', id: edgeId } } : {};
   } catch (err) {
     // `not_found` on the session is not a failure — it is the answer to a
     // question we were right to ask. It means this invocation is not operating
@@ -667,11 +671,12 @@ async function linkCreatedInSession(
     // Anything else — forbidden, invalid_input, a transport failure, a 500 — is a
     // claim we SHOULD have been able to record and could not, so it is surfaced.
     // Silent absence is the exact failure mode this change exists to remove.
-    if (err instanceof ApiError && err.code === 'not_found') return;
-    cmd.out.warn(
-      `note: could not record this entity as created in session ${sessionId} ` +
-        `(${err instanceof Error ? err.message : String(err)}). The entity was created.`,
-    );
+    if (err instanceof ApiError && err.code === 'not_found') return {};
+    const message =
+      `could not record this entity as created in session ${sessionId} ` +
+      `(${err instanceof Error ? err.message : String(err)}). The entity was created.`;
+    cmd.out.warn(`note: ${message}`);
+    return { warning: { code: 'session_link_failed', message } };
   }
 }
 
@@ -713,8 +718,12 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
     body: withActor(cmd, body),
   });
   // After the create has landed, never before it — see linkCreatedInSession.
-  await linkCreatedInSession(cmd, data, connections);
-  cmd.out.data(data, renderCommandResult);
+  const claim = await linkCreatedInSession(cmd, data, connections);
+  cmd.out.mutation('entity.create', data, renderCommandResult, () =>
+    successReceipt('entity.create', data, {
+      ...(claim.ref ? { refs: [claim.ref] } : {}),
+      ...(claim.warning ? { warnings: [claim.warning] } : {}),
+    }));
   return EXIT_OK;
 }
 
@@ -747,7 +756,8 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     params: { id },
     body: withActor(cmd, body),
   });
-  cmd.out.data(data, renderCommandResult);
+  cmd.out.mutation('entity.update', data, renderCommandResult, () =>
+    successReceipt('entity.update', data, { expectedVersion }));
   return EXIT_OK;
 }
 

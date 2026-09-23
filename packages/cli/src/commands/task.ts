@@ -48,6 +48,7 @@ import {
   withActor,
 } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
+import { successReceipt, type ReceiptWarning } from '../receipt.js';
 
 /**
  * The six statuses `task transition` documents, in the frozen contract
@@ -75,7 +76,8 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
       status,
     }),
   });
-  cmd.out.data(data, renderCommandResult);
+  cmd.out.mutation('task.transition', data, renderCommandResult, () =>
+    successReceipt('task.transition', data));
   return EXIT_OK;
 }
 
@@ -109,7 +111,8 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
       completerIds,
     }),
   });
-  cmd.out.data(data, renderCommandResult);
+  cmd.out.mutation('task.complete', data, renderCommandResult, () =>
+    successReceipt('task.complete', data, { expectedVersion, completerIds }));
   return EXIT_OK;
 }
 
@@ -131,24 +134,29 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
  * the PR as a tracked object; the coder may be one of several sessions on
  * the branch. Liveness still outranks both.
  */
+interface ClaimOutcome {
+  /** A claim that should have landed and did not — a receipt warning. */
+  warning?: ReceiptWarning;
+}
+
 async function claimLinkedArtifactSession(
   cmd: CommandContext,
   data: unknown,
   artifactKind: 'pull_request' | 'commit',
-): Promise<void> {
+): Promise<ClaimOutcome> {
   const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return;
+  if (sessionId === undefined) return {};
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return {};
 
   const patches = (data as { patches?: unknown } | null)?.patches;
-  if (!Array.isArray(patches)) return;
+  if (!Array.isArray(patches)) return {};
   const artifact = patches.find(
     (p): p is { id: string; kind: string } =>
       typeof p === 'object' && p !== null &&
       (p as { kind?: unknown }).kind === artifactKind &&
       typeof (p as { id?: unknown }).id === 'string',
   );
-  if (artifact === undefined) return;
+  if (artifact === undefined) return {};
 
   try {
     await clientFor(cmd.ctx).invoke('edges.create', {
@@ -159,17 +167,19 @@ async function claimLinkedArtifactSession(
         clientMutationId: resolveMutationId(undefined),
       },
     });
+    return {};
   } catch (err) {
     // `not_found` on the session is the benign cross-database answer (env
     // leakage into a harness, or --server pointing elsewhere): no edge is the
     // correct outcome. `conflict` means an earlier link already claimed a
     // birth session — also correct, first claim wins. Anything else is a
     // claim that should have landed, so it is warned, never raised.
-    if (err instanceof ApiError && (err.code === 'not_found' || err.code === 'conflict')) return;
-    cmd.out.warn(
-      `note: could not record this session as the linker of ${artifact.id} ` +
-        `(${err instanceof Error ? err.message : String(err)}). The link itself landed.`,
-    );
+    if (err instanceof ApiError && (err.code === 'not_found' || err.code === 'conflict')) return {};
+    const message =
+      `could not record this session as the linker of ${artifact.id} ` +
+      `(${err instanceof Error ? err.message : String(err)}). The link itself landed.`;
+    cmd.out.warn(`note: ${message}`);
+    return { warning: { code: 'session_link_failed', message } };
   }
 }
 
@@ -194,8 +204,19 @@ function linker(
       body: withActor(cmd, body),
     });
     // After the link has landed, never before it — see claimLinkedArtifactSession.
-    await claimLinkedArtifactSession(cmd, data, artifactKind);
-    cmd.out.data(data, renderCommandResult);
+    // The claim reads the artifact id from the FULL result, so it works the
+    // same whatever the caller asked to print (§9.9); the receipt is projected
+    // only after it, at render time.
+    const claim = await claimLinkedArtifactSession(cmd, data, artifactKind);
+    const op = artifactKind === 'pull_request' ? 'task.link-pr' : 'task.link-commit';
+    // The claim's own edge is not a ref here, unlike `entity create`'s: the
+    // spec's link-pr receipt is the artifact and its `tracks` edge (§5), and
+    // nothing chains off the linker edge. A claim that failed IS reported.
+    cmd.out.mutation(op, data, renderCommandResult, () =>
+      successReceipt(op, data, {
+        url,
+        ...(claim.warning ? { warnings: [claim.warning] } : {}),
+      }));
     return EXIT_OK;
   };
 }

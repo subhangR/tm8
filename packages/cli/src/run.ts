@@ -292,6 +292,7 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
       color: invocation.globals.color,
       quiet: invocation.globals.quiet,
       render: invocation.globals.render,
+      receipts: invocation.globals.receipts,
       streams,
     });
     const exit = await dispatch(invocation, out, (path) => {

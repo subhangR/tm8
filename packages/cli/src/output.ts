@@ -16,6 +16,13 @@ export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 
 import { CliError, EXIT_USAGE } from './exit.js';
 import { projectTerse, type RenderMode } from './terse.js';
+import {
+  deprecationNotice,
+  renderReceiptHuman,
+  type Receipt,
+  type ReceiptMode,
+  type ReceiptOp,
+} from './receipt.js';
 
 export interface OutputStreams {
   stdout(chunk: string | Uint8Array): void;
@@ -41,6 +48,12 @@ export interface OutputOptions {
    * `terse.ts` for the shape and the two load-bearing rules.
    */
   render?: RenderMode;
+  /**
+   * How the ten receipt commands print (`receipt.ts`). Absent means `full`:
+   * today's result, no notice — so an Output built without a mode (unit
+   * tests, embedded callers) behaves exactly as before receipts existed.
+   */
+  receipts?: ReceiptMode;
   streams?: OutputStreams;
 }
 
@@ -52,6 +65,7 @@ export class Output {
   readonly color: boolean;
   readonly quiet: boolean;
   readonly render: RenderMode;
+  readonly receipts: ReceiptMode;
   private readonly streams: OutputStreams;
   private wroteBytes = false;
   private wroteStructured = false;
@@ -61,6 +75,7 @@ export class Output {
     this.color = opts.color ?? false;
     this.quiet = opts.quiet ?? false;
     this.render = opts.render ?? 'full';
+    this.receipts = opts.receipts ?? 'full';
     this.streams = opts.streams ?? processStreams;
   }
 
@@ -81,6 +96,34 @@ export class Output {
       return;
     }
     this.streams.stdout(`${JSON.stringify(payload)}\n`);
+  }
+
+  /**
+   * The result of one of the ten receipt commands (spec 01a0cf2e §8).
+   *
+   * In `receipt` mode the receipt is the whole of stdout: ONE MINIFIED LINE
+   * under both json and jsonl (D1.5) — `--terse` is a no-op here, because a
+   * receipt has no summaries left to project — or one human line (§4.4).
+   * The receipt is built lazily, so the other modes never pay for it.
+   *
+   * Otherwise the full result goes through `data()` exactly as it did before
+   * receipts, so `--full` is byte-identical to today's `--format json --full`;
+   * `deprecated` adds the one stderr line naming `--full` under json/jsonl.
+   */
+  mutation<T>(op: ReceiptOp, dto: T, human: HumanRenderer<T>, receipt: () => Receipt): void {
+    if (this.receipts !== 'receipt') {
+      this.data(dto, human);
+      if (this.receipts === 'deprecated' && this.format !== 'human') {
+        this.streams.stderr(`${deprecationNotice(op)}\n`);
+      }
+      return;
+    }
+    this.assertNoBytes();
+    this.wroteStructured = true;
+    const built = receipt();
+    this.streams.stdout(
+      this.format === 'human' ? `${renderReceiptHuman(built)}\n` : `${JSON.stringify(built)}\n`,
+    );
   }
 
   /**

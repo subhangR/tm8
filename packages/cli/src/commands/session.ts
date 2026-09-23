@@ -58,6 +58,7 @@ import {
   type SessionTranscriptPage,
 } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
+import { spawnedWorktreeId, successReceipt } from '../receipt.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
 const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
@@ -475,8 +476,33 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body });
-  cmd.out.data(data, renderSpawned);
+  const workdirPath =
+    cmd.out.receipts === 'receipt' ? await spawnedWorktreePath(cmd, data) : undefined;
+  cmd.out.mutation('session.spawn', data, renderSpawned, () =>
+    successReceipt('session.spawn', data, workdirPath === undefined ? {} : { workdirPath }));
   return EXIT_OK;
+}
+
+/**
+ * The checkout path a spawned worktree session works in — the one receipt
+ * fact the spawn result does not carry (the worktree rides it as a SUMMARY,
+ * which has its branch but not its path). One bounded read, receipt mode only,
+ * and best effort: the spawn has already landed, so a failed read drops
+ * `workdir.path` rather than failing the command. Phase 2's server receipt
+ * supplies the path directly and retires this read.
+ */
+async function spawnedWorktreePath(cmd: CommandContext, data: unknown): Promise<string | undefined> {
+  const worktreeId = spawnedWorktreeId(data);
+  if (worktreeId === undefined) return undefined;
+  try {
+    const worktree = await clientFor(cmd.ctx).invoke<{ content?: { path?: unknown } }>('entities.get', {
+      params: { id: worktreeId },
+    });
+    const path = worktree?.content?.path;
+    return typeof path === 'string' && path !== '' ? path : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -552,7 +578,8 @@ async function sessionTerminate(cmd: CommandContext): Promise<ExitCode> {
     params: { id },
     body,
   });
-  cmd.out.data(data, renderTerminated);
+  cmd.out.mutation('session.terminate', data, renderTerminated, () =>
+    successReceipt('session.terminate', data));
   return EXIT_OK;
 }
 

@@ -28,6 +28,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolveJournalClass } from './journal-stats.js';
+import { isAgentContext } from './credentials.js';
+import { resolveReceiptMode, type ReceiptMode } from './receipt.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
@@ -229,6 +231,12 @@ export interface GlobalOptions {
    * request — so when both are present, full wins.
    */
   render: 'full' | 'terse';
+  /**
+   * How the ten receipt commands print (spec 01a0cf2e, `receipt.ts`): the
+   * compact receipt for agent-class callers, today's result for `--full`, and
+   * today's result plus a deprecation notice for everyone else.
+   */
+  receipts: ReceiptMode;
   help: boolean;
   version: boolean;
 }
@@ -431,6 +439,12 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     quiet,
     fresh,
     render: full ? 'full' : terse ? 'terse' : defaultRender(),
+    receipts: resolveReceiptMode({
+      full,
+      agentContext: isAgentContext(process.env),
+      journalClass: resolveJournalClass(process.env, [], process.cwd()),
+      env: process.env,
+    }),
     help,
     version,
   };
