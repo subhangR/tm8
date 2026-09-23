@@ -131,6 +131,14 @@ export interface PromptManifest {
         /** Thread-derived tasks (064/099): the live thread's root and channel. */
         threadRootMessageId?: string | null | undefined;
         threadChannelId?: string | null | undefined;
+        /** Palette-linked references (see `TaskLinkedEntity`); bounded upstream. */
+        linked?: ReadonlyArray<{
+          entityId: string;
+          kind: string;
+          link: string;
+          title?: string | null | undefined;
+        }> | undefined;
+        linkedTotal?: number | undefined;
       }>
     | undefined;
   coordinator?:
@@ -953,6 +961,8 @@ export function composePrompt(
       attachments: task.attachments,
       threadRootMessageId: task.threadRootMessageId ?? null,
       threadChannelId: task.threadChannelId ?? null,
+      linked: task.linked ?? [],
+      linkedTotal: task.linkedTotal ?? 0,
     }));
   }
   if (tasks.length === 0) {

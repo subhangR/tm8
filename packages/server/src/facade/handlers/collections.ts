@@ -256,6 +256,18 @@ const UNBLOCKED_PREDICATE = `not exists (
      and not internal.is_resolved(dep.dst_id)
 )`;
 
+/**
+ * The searchable title text. `entities` has no title column — each kind keeps
+ * its own on its detail row, and `titleOf` (entity-read.ts) picks the arm in
+ * JS. Every join in `ENTITY_FROM` is `entity_id`-unique, so at most one of
+ * these is non-null per row and `coalesce` selects exactly the kind's arm.
+ * A memory's title is derived from its statement, so the statement is what
+ * is searched. Kinds without an arm here never match a title search.
+ */
+const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.name,
+  tm.name, mem.display_name, col.name, ch.name, vc.name, f.name, memo.statement,
+  art.name, lp.title, gr.title, cht.title, ctr.title, pr.title, ppd.name, '')`;
+
 function buildWhere(query: CollectionQuery, p: Params): string[] {
   const where: string[] = [`e.space_id = ${p.add(assertUuid(query.spaceId, 'spaceId'))}`];
   const f = query.filters ?? {};
@@ -344,6 +356,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
        where position(lower(term) in lower(concat_ws(' ',
                memo.statement, memo.mechanism, memo.subject_scope, memo.does_not_establish))) > 0
     )`);
+  }
+
+  // Title substring, any kind (the entity pickers: the task attach palette
+  // pairs it with `kinds`). `position`, not LIKE, for the reason `terms`
+  // gives above: raw substring semantics with no wildcard to escape — a `%`
+  // typed into a picker is a percent sign, not a pattern.
+  if (f.titleContains !== undefined) {
+    const needle = f.titleContains.trim();
+    if (needle.length > 0) {
+      where.push(`position(lower(${p.add(needle)}::text) in lower(${TITLE_TEXT})) > 0`);
+    }
   }
 
   // A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, architect Ruling 16) and the

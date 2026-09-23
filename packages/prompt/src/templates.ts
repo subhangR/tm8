@@ -312,11 +312,78 @@ export interface TaskAssignmentFacts {
   threadRootMessageId?: string | null;
   /** The channel the thread is anchored on; pairs with the root id. */
   threadChannelId?: string | null;
+  /**
+   * Other entities linked to the task (the attach palette's teammates,
+   * sessions, drawings, docs, artifacts), as references only. `linkedTotal`
+   * is the exact count when the caller's list was already bounded; absent ⇒
+   * the list's length.
+   */
+  linked?: readonly TaskLinkedEntity[];
+  linkedTotal?: number;
+}
+
+/**
+ * One entity linked to a task. `entityId`, `kind` and `link` are
+ * server-validated identifiers. `title` is AUTHOR-CONTROLLED, so it renders
+ * in the untrusted `linked-names` block the same way attachment names do.
+ * A work_session carries no title at all: a session is handed over by id
+ * alone, never by transcript or name.
+ */
+export interface TaskLinkedEntity {
+  entityId: string;
+  kind: string;
+  link: string;
+  title?: string | null;
+}
+
+/**
+ * Bounded like the attachment manifest and for the same reasons. The count
+ * cap and the name cap keep a heavily linked task well inside the
+ * 16,384-byte assignmentSnapshot budget (16 rows at about 140 bytes of control
+ * plus 120 characters of name each). The surplus is DECLARED as `omitted`,
+ * never dropped in silence.
+ */
+const LINKED_MANIFEST_MAX = 16;
+const LINKED_NAME_MAX_CHARS = 120;
+/** The one kind referenced by id alone (task decision 2, 01a0cfb0). */
+const ID_ONLY_KIND = 'work_session';
+
+function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
+  control: string[];
+  names: string;
+} {
+  const count = Math.max(total, all.length);
+  if (count === 0) return { control: ['  <linked count="0" />'], names: '' };
+  const shown = all.slice(0, LINKED_MANIFEST_MAX);
+  const omitted = count - shown.length;
+  const open =
+    `  <linked count="${count}"` +
+    (omitted > 0 ? ` omitted="${omitted}"` : '') +
+    ' fetch_with="tm8 entity context &lt;entity-id&gt;">';
+  const named = shown.flatMap((item) => {
+    if (item.kind === ID_ONLY_KIND || !item.title) return [];
+    const name = item.title.length > LINKED_NAME_MAX_CHARS
+      ? `${item.title.slice(0, LINKED_NAME_MAX_CHARS)}…`
+      : item.title;
+    return [{ entityId: item.entityId, name }];
+  });
+  return {
+    control: [
+      open,
+      ...shown.map((item) =>
+        `    <entity id="${attr(item.entityId)}" kind="${attr(item.kind)}" link="${attr(item.link)}"` +
+        (item.kind === ID_ONLY_KIND ? ' reference="id_only"' : '') +
+        ' />'),
+      '  </linked>',
+    ],
+    names: named.length === 0 ? '' : untrustedData({ type: 'linked-names', body: JSON.stringify(named) }),
+  };
 }
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
   const attachments = attachmentManifest(f.attachments ?? []);
+  const linked = linkedManifest(f.linked ?? [], f.linkedTotal ?? 0);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
@@ -324,6 +391,7 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="${attr(f.threadRootMessageId)}"${f.threadChannelId ? ` channel_id="${attr(f.threadChannelId)}"` : ''} />`,
     '  <context />',
     ...attachments.control,
+    ...linked.control,
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
@@ -337,7 +405,8 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
   const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
-  return `${control}\n${data}${attachmentNames}`;
+  const linkedNames = linked.names === '' ? '' : `\n${linked.names}`;
+  return `${control}\n${data}${attachmentNames}${linkedNames}`;
 }
 
 // -- §14.4 incoming message ---------------------------------------------------
