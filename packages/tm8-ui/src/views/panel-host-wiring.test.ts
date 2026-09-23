@@ -173,6 +173,17 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes sessionContextSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('sessionContextSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass sessionContextSurface, so a live ` +
+          'session on this host shows no context number on its panel bar — and nothing on ' +
+          'screen says one is missing',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes membershipAuthoring at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -266,6 +277,13 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
           `${file} builds sessionStatsSurface inline; use sessionStatsSurfaceFor() so the read ` +
             'stays one-shot and file-scanning on every host — a hand-rolled copy that polls ' +
             'would re-scan a whole transcript on a timer for a session that cannot change',
+        ).toBe(true);
+      }
+      if (block.includes('sessionContextSurface')) {
+        expect(
+          block.includes('sessionContextSurfaceFor'),
+          `${file} builds sessionContextSurface inline; use sessionContextSurfaceFor() so every ` +
+            'host polls the one shared tail read at the same liveness-gated pace',
         ).toBe(true);
       }
       if (block.includes('conversationSurface')) {

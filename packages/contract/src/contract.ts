@@ -5358,6 +5358,67 @@ export interface SessionTranscriptPage {
    * `source: 'transcript'` is the label that keeps the claim honest.
    */
   fileChanges?: SessionFileChanges | null;
+  /**
+   * The LATEST REQUEST'S context reading — what the session panel's toolbar
+   * number shows. Absent from an older server; null on a page that cannot
+   * speak about now (a page-back, or an unavailable transcript). See
+   * `SessionTranscriptContext`, and keep it apart from `stats`, which are
+   * window aggregates and can never be an occupancy.
+   */
+  context?: SessionTranscriptContext | null;
+}
+
+/**
+ * ONE REQUEST'S context usage, read from the newest usage-bearing record in the
+ * tail window. A SNAPSHOT, not a live view: the agent's context has grown by
+ * whatever it said and was told since, and the next request's report is what
+ * will show it.
+ *
+ * Every count is null when unknown and 0 only when the provider said 0. The
+ * numerator and denominator of the cache ratio (`cacheReadTokens` /
+ * `requestInputTokens`) and `observedAt` all come from the SAME record, so a
+ * reader can divide them; nothing here is a cumulative total.
+ *
+ * - claude: used = input + cache_read + cache_creation of the latest
+ *   main-thread assistant message (sub-agent sidechains are other contexts).
+ * - codex: used = `last_token_usage.input_tokens`, which already INCLUDES
+ *   `cached_input_tokens` — adding them would count the cache twice.
+ */
+export interface SessionTranscriptContext {
+  /** Input tokens of the latest request — the context it was sent with. */
+  usedTokens: number | null;
+  /** The context window, only where something authoritative reported it. */
+  capacityTokens: number | null;
+  /** Input served from cache on that same request. Cache WRITES are not reuse. */
+  cacheReadTokens: number | null;
+  /** The cache ratio's denominator: that same request's total input. */
+  requestInputTokens: number | null;
+  /** Model named on the sampled request. */
+  model: string | null;
+  /** The provider record's own timestamp — never the time of this read. */
+  observedAt: string | null;
+  source: 'claude_request_usage' | 'codex_request_usage' | null;
+  /**
+   * `provider` — the transcript reported the window beside the usage (codex).
+   * `runtime` — the session was launched on a model whose id names its window
+   *   (`…[1m]`) and the sample came from that same model.
+   */
+  capacitySource: 'provider' | 'runtime' | null;
+  /**
+   * Why there is no reading, when there is none.
+   * - `not_reported` — the window holds no usage-bearing request.
+   * - `incomplete_usage` — the latest request's usage is missing a part.
+   * - `sample_outside_window` — the tail is partial and holds no request; the
+   *   next request repairs it.
+   * - `awaiting_new_sample` — the context was compacted, or the model changed,
+   *   after the latest sample, so that sample no longer describes it.
+   */
+  unavailableReason:
+    | 'not_reported'
+    | 'incomplete_usage'
+    | 'sample_outside_window'
+    | 'awaiting_new_sample'
+    | null;
 }
 
 /** One observed Edit/Write, with its text capped but its counts exact. */

@@ -29,6 +29,7 @@
 import { open, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
+  SessionTranscriptContext,
   SessionTranscriptEntry,
   SessionTranscriptPage,
   SessionTranscriptStats,
@@ -498,6 +499,167 @@ function collectStats(
   };
 }
 
+// ── latest-request context ──────────────────────────────────────────────────
+
+/** The window a `…[1m]` launch model names. The only capacity tm8 states
+ *  without the provider reporting it, because the model id itself says it. */
+const ONE_M_CONTEXT_TOKENS = 1_000_000;
+const ONE_M_SUFFIX = '[1m]';
+
+/** A provider count: a finite, nonnegative integer, or unknown. */
+const count = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;
+
+const NO_CONTEXT: Omit<SessionTranscriptContext, 'source' | 'unavailableReason'> = {
+  usedTokens: null,
+  capacityTokens: null,
+  cacheReadTokens: null,
+  requestInputTokens: null,
+  model: null,
+  observedAt: null,
+  capacitySource: null,
+};
+
+/**
+ * The context reading of the NEWEST request in the window.
+ *
+ * NOT DERIVED FROM `collectStats`, and that is the point. Stats SUM claude's
+ * usage across messages and take codex's RUNNING total; either one, labelled
+ * as occupancy, reports a figure that grows without bound and never falls
+ * after a compaction. This reads exactly one request's own numbers.
+ *
+ * A forward pass, so the latest event wins: a sample is REPLACED by a newer
+ * one and INVALIDATED by a compaction (or, on codex, a model switch) that
+ * lands after it — the old number describes a context that no longer exists,
+ * and showing it as current would be the one lie this reading must not tell.
+ *
+ * `runtimeModel` is the session row's launch model. It supplies a capacity
+ * only for a claude `…[1m]` launch whose sample came from that same base
+ * model; everything else stays unknown rather than guessed from a table.
+ */
+export function collectContext(
+  lines: unknown[],
+  codex: boolean,
+  partialWindow: boolean,
+  runtimeModel: string | null = null,
+): SessionTranscriptContext {
+  const source = codex ? 'codex_request_usage' as const : 'claude_request_usage' as const;
+  let sample: SessionTranscriptContext | null = null;
+  let invalidated = false;
+  let codexModel: string | null = null;
+  // The live sample's model, kept beside it so a turn_context can compare
+  // without reading through `sample` (which narrowing pins to null here).
+  let sampleModel: string | null = null;
+
+  // Assigned inline rather than through helpers: a closure write hides the
+  // assignment from control-flow narrowing, and `sample` reads as never-set.
+
+  for (const line of lines) {
+    const rec = asRecord(line);
+    if (!rec) continue;
+    const observedAt = iso(parseTimestamp(rec));
+
+    if (codex) {
+      const payload = asRecord(rec.payload);
+      if (rec.type === 'compacted' || (rec.type === 'event_msg' && payload?.type === 'context_compacted')) {
+        sample = null;
+        sampleModel = null;
+        invalidated = true;
+        continue;
+      }
+      if (rec.type === 'turn_context' && typeof payload?.model === 'string') {
+        if (sampleModel !== null && sampleModel !== payload.model) {
+          sample = null;
+          sampleModel = null;
+          invalidated = true;
+        }
+        codexModel = payload.model;
+        continue;
+      }
+      if (rec.type !== 'event_msg' || payload?.type !== 'token_count') continue;
+      // A token_count carrying only rate limits has `info: null` — not a request.
+      const info = asRecord(payload.info);
+      const lastUsage = asRecord(info?.last_token_usage);
+      if (!lastUsage) continue;
+      // Codex's input_tokens INCLUDES cached_input_tokens, so the input is
+      // both the occupancy and the cache ratio's denominator.
+      const input = count(lastUsage.input_tokens);
+      const cached = count(lastUsage.cached_input_tokens);
+      const window = count(info?.model_context_window);
+      const capacity = window !== null && window > 0 ? window : null;
+      invalidated = false;
+      sampleModel = codexModel;
+      sample = {
+        usedTokens: input,
+        capacityTokens: capacity,
+        cacheReadTokens: cached,
+        requestInputTokens: input,
+        model: codexModel,
+        observedAt,
+        source,
+        capacitySource: capacity === null ? null : 'provider',
+        unavailableReason: input === null ? 'incomplete_usage' : null,
+      };
+      continue;
+    }
+
+    // Claude. Sub-agent sidechains run in their own context.
+    if (rec.isSidechain === true) continue;
+    if (rec.type === 'system' && rec.subtype === 'compact_boundary') {
+      sample = null;
+      invalidated = true;
+      continue;
+    }
+    if (rec.type !== 'assistant') continue;
+    const message = asRecord(rec.message);
+    const model = message?.model;
+    // `<synthetic>` is a locally fabricated turn with no request behind it.
+    if (model === '<synthetic>') continue;
+    const usage = asRecord(message?.usage);
+    if (!usage) continue;
+    // Every record of one streamed message repeats the same usage, so the
+    // last record of the newest message is simply the newest sample — no
+    // summing, so no double count to dedupe.
+    const input = count(usage.input_tokens);
+    const read = count(usage.cache_read_input_tokens);
+    const created = count(usage.cache_creation_input_tokens);
+    // An absent cache part is UNKNOWN, not zero: filling it with 0 would
+    // understate the context by exactly the cached prefix, usually most of it.
+    const used = input !== null && read !== null && created !== null ? input + read + created : null;
+    const modelId = typeof model === 'string' ? model : null;
+    const capacity =
+      runtimeModel !== null &&
+      runtimeModel.endsWith(ONE_M_SUFFIX) &&
+      modelId !== null &&
+      runtimeModel.slice(0, -ONE_M_SUFFIX.length) === modelId
+        ? ONE_M_CONTEXT_TOKENS
+        : null;
+    invalidated = false;
+    sample = {
+      usedTokens: used,
+      capacityTokens: capacity,
+      cacheReadTokens: read,
+      requestInputTokens: used,
+      model: modelId,
+      observedAt,
+      source,
+      capacitySource: capacity === null ? null : 'runtime',
+      unavailableReason: used === null ? 'incomplete_usage' : null,
+    };
+  }
+
+  if (sample !== null) return sample;
+  return {
+    ...NO_CONTEXT,
+    source,
+    unavailableReason: invalidated
+      ? 'awaiting_new_sample'
+      : partialWindow
+        ? 'sample_outside_window'
+        : 'not_reported',
+  };
+}
+
 // ── stuck heuristic ─────────────────────────────────────────────────────────
 
 /**
@@ -789,6 +951,8 @@ export interface ReadTranscriptOptions extends LocateTranscriptOptions {
    * default: the full-file scan costs more than the tail window.
    */
   includeFileChanges?: boolean;
+  /** `work_sessions.model` — the launch model, for `collectContext`'s capacity. */
+  runtimeModel?: string | null;
 }
 
 /**
@@ -935,6 +1099,7 @@ export async function readSessionTranscript(
     return ts !== null && (newest === null || ts > newest) ? ts : newest;
   }, null);
 
+  const partialWindow = windowStart > 0 || tail.windowEnd < tail.size;
   const page: SessionTranscriptPage = {
     sessionId: opts.sessionId,
     available: true,
@@ -951,7 +1116,7 @@ export async function readSessionTranscript(
     // `cursor` made it claim the counts were partial when they were not, and
     // the CLI prints a sentence over these numbers that would then be wrong.
     stats: collectStats(
-      lines, all.map((e) => e.entry), codex, windowStart > 0 || tail.windowEnd < tail.size,
+      lines, all.map((e) => e.entry), codex, partialWindow,
     ),
     // A historical window is in no position to say whether an agent is stuck
     // NOW: it is describing bytes that were written minutes or hours ago, and
@@ -961,6 +1126,11 @@ export async function readSessionTranscript(
     malformed,
     windowStart: cursor,
     hasOlder: cursor > 0,
+    // "Current" context is a claim about NOW, like `stuck`: a historical
+    // window refuses it rather than presenting an old request as the latest.
+    context: pagingBack
+      ? null
+      : collectContext(lines, codex, partialWindow, opts.runtimeModel ?? null),
   };
 
   if (opts.includeFileChanges) {
