@@ -63,6 +63,7 @@ import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { commandDiscovery } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
+import { resolveWireSchema, schemaOption } from '../wire-schema.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -472,17 +473,30 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
   }
   const totalBytes = byteBudgetOption(cmd, 'total-bytes', 1024, 32_768);
   const sectionBytes = byteBudgetOption(cmd, 'section-bytes', 512, 8192);
+  // The actions section rolls out to `tm8.actions.v2` rows like `action list`
+  // does. Only asked about when the section is in a view that prints it: the
+  // human render shows no actions, so it keeps sending no query at all.
+  const wantsActions = cmd.out.format !== 'human'
+    && (sections === undefined || sections.split(',').includes('actions'));
+  const actionsSchema = wantsActions
+    ? resolveWireSchema(cmd, {
+      flag: 'actions-schema',
+      subject: `\`tm8 ${cmd.path.join(' ')}\` actions section under`,
+      v2Name: 'tm8.actions.v2 rows (target and epoch once, cursors.actions continues in `tm8 action list --cursor`)',
+    })
+    : schemaOption(cmd, 'actions-schema');
 
   return {
     ...(sections === undefined ? {} : { sections }),
     ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
     ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
+    ...(actionsSchema === 'v2' ? { actionsSchema } : {}),
   };
 }
 
 async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes']);
+  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes', 'actions-schema']);
   const id = requireArg(cmd, 0, '<entity-id>');
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {

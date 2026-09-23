@@ -35,13 +35,35 @@
  * The renderer honours that by never describing a listed action in availability
  * vocabulary.
  */
-import { EXIT_OK, type ExitCode } from '../exit.js';
+import { expandActionRows, isActionRows, type ActionDiscoveryPage } from '@tm8/contract';
+
+import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
+import { isAgentCaller, resolveWireSchema } from '../wire-schema.js';
+
+/** Mirrors the Server's `actions.list` page bounds (v2 only). */
+const PAGE_MAX = 100;
 
 async function actionList(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('action list', cmd.options.value('mutation-id'));
+
+  const target = cmd.options.value('for');
+  const all = cmd.options.bool('all');
+  const limit = cmd.options.integer('limit');
+  if (limit !== undefined && (limit < 1 || limit > PAGE_MAX)) {
+    throw new CliError(`--limit expects 1..${PAGE_MAX}, got ${limit}`, EXIT_USAGE);
+  }
+  const cursor = cmd.options.value('cursor');
+  // Paging is a v2 capability, so asking to page asks for v2 — unless the
+  // caller pinned v1 explicitly, in which case the Server says why it refuses.
+  const schema = resolveWireSchema(cmd, {
+    flag: 'schema',
+    subject: '`tm8 action list`',
+    v2Name: 'the factored tm8.actions.v2 page (target and epoch once, one row per action, --limit/--cursor)',
+    forceV2: limit !== undefined || cursor !== undefined,
+  });
 
   // `--for <entity-id>` is the operation's `contextEntityId`. Omitted entirely
   // when absent: a global palette and a palette on a target are different
@@ -53,15 +75,17 @@ async function actionList(cmd: CommandContext): Promise<ExitCode> {
   // `spaces.create`, …) that answer identically on every entity.
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'actions.list', {
     query: {
-      contextEntityId: cmd.options.value('for'),
-      scope: cmd.options.bool('all') ? 'all' : undefined,
+      contextEntityId: target,
+      scope: all ? 'all' : undefined,
+      schema: schema === 'v2' ? 'v2' : undefined,
+      limit: limit === undefined ? undefined : String(limit),
+      cursor,
     },
   });
 
-  cmd.out.data(data, renderActions);
+  cmd.out.data(data, (dto) => renderActions(dto, { target, all }), { minify: isAgentCaller() });
   return EXIT_OK;
 }
-
 interface ActionRow {
   operation?: unknown;
   label?: unknown;
@@ -89,8 +113,10 @@ interface DiscoveryResult {
  * is kept on every row because it is the id a follow-up `tm8 help --operation`
  * takes.
  */
-function renderActions(dto: unknown): string {
-  const view = (dto ?? {}) as DiscoveryResult;
+function renderActions(dto: unknown, request: { target?: string; all: boolean }): string {
+  // v2 is rendered through its own expansion, so both shapes print identically.
+  const page = isActionRows(dto) ? (dto as ActionDiscoveryPage) : undefined;
+  const view = (page ? expandActionRows(page) : dto ?? {}) as DiscoveryResult;
   const rows: ActionRow[] = Array.isArray(view.actions) ? (view.actions as ActionRow[]) : [];
 
   const header = [
@@ -121,7 +147,11 @@ function renderActions(dto: unknown): string {
       .filter((part) => part.length > 0)
       .join('  '),
   );
-  return [header, ...lines].filter(Boolean).join('\n');
+  const more = page?.nextCursor
+    ? `${rows.length} of ${page.total} shown; next: tm8 action list${
+      request.target ? ` --for ${request.target}` : ''}${request.all ? ' --all' : ''} --cursor ${page.nextCursor}`
+    : '';
+  return [header, ...lines, more].filter(Boolean).join('\n');
 }
 
 /** Wired into `src/commands/registry.ts` by the coordinator: one import, one spread. */

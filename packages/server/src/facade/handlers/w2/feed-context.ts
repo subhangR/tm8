@@ -50,15 +50,11 @@ function defaultActions(
   deps: FacadeDeps,
 ): NonNullable<W2FeedContextServiceOptions['actions']> {
   const actionDeps: FacadeDeps = { ...deps, db: taggedDb(deps.db, 'actions') };
-  return async (ctx, entityId) => {
-    const query = new URLSearchParams({ contextEntityId: entityId });
-    const discovery = await createSavedViewsActionsService(actionDeps, registry).listActions({
-      ...ctx,
-      query,
-      body: undefined,
-    } satisfies RequestContext);
-    return discovery.actions;
-  };
+  return (ctx, entityId) => createSavedViewsActionsService(actionDeps, registry).discoverActions({
+    ...ctx,
+    query: new URLSearchParams(),
+    body: undefined,
+  } satisfies RequestContext, entityId);
 }
 
 export type { W2FeedContextServiceOptions };

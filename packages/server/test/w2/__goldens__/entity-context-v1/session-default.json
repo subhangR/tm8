@@ -134,7 +134,7 @@
   ],
   "actions": [
     {
-      "id": "action:entities.get:g13",
+      "id": "action:entities.get:00000000-0000-7000-8000-000000000d02",
       "label": "entities get",
       "kind": "navigate",
       "operation": "entities.get",
@@ -156,6 +156,6 @@
     "messages": "eyJ2IjoyLCJrIjpbIjIyNmFkNzhkOTIzMjNlNGQ1NjhhYzI0YTExYzZlMDVhZDAxOGUzOTJhZDQ5NmM1YmMxNTk4NTI4NmE4ZWUyYzUiLCIyMDI2LTA3LTI2VDA5OjIwOjAwLjEyMzQ1NloiLCIwMDAwMDAwMC0wMDAwLTcwMDAtODAwMC0wMDAwMDAwMDBkMDYiXX0",
     "activity": "eyJ2IjoyLCJrIjpbIjIyNmFkNzhkOTIzMjNlNGQ1NjhhYzI0YTExYzZlMDVhZDAxOGUzOTJhZDQ5NmM1YmMxNTk4NTI4NmE4ZWUyYzUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
   },
-  "byteSize": 3270,
+  "byteSize": 3303,
   "truncated": false
 }

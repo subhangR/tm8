@@ -94,7 +94,9 @@ const READ_GUIDES = [
   guide('edgeTypes.list', 'Read the registered graph relationship vocabulary.', {}),
   guide('attentionRequests.list', 'Read open human-attention requests.', { query: { limit: '50' } }),
   guide('inbox.list', 'Read the requesting human/persona inbox.', { query: { unread: 'true', limit: '50' } }),
-  guide('actions.list', 'Discover currently allowed actions for an entity.', { query: { contextEntityId: '<entity-id>' } }),
+  guide('actions.list', 'Discover currently allowed actions for an entity, most relevant first, as tm8.actions.v2 rows (page with limit and the returned nextCursor).', {
+    query: { contextEntityId: '<entity-id>', limit: '20' },
+  }),
   guide('events.poll', 'Page durable space events after a sequence.', {
     params: { spaceId: '<space-id>' }, query: { since: '0', limit: '50' },
   }),
@@ -625,9 +627,21 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'containers.attention',
 ]);
 
+/**
+ * Query defaults an MCP caller gets without asking: the factored
+ * `tm8.actions.v2` action rows (target and epoch stated once). A model that
+ * names the key itself — `schema: 'v1'` — still gets what it named.
+ */
+const QUERY_DEFAULTS: Partial<Record<OperationName, Record<string, QueryValue>>> = {
+  'actions.list': { schema: 'v2' },
+  'entities.context': { actionsSchema: 'v2' },
+};
+
 function invokeOptions(args: Record<string, unknown>, operation: OperationName): CatalogInvokeOptions {
   const params = stringRecord(args.params, 'params');
-  const query = queryRecord(args.query);
+  const given = queryRecord(args.query);
+  const defaults = QUERY_DEFAULTS[operation];
+  const query = defaults ? { ...defaults, ...given } : given;
   let body = optionalObject(args.body, 'body');
   if (REQUIRES_MUTATION_ID.has(operation)) {
     body = { ...(body ?? {}), clientMutationId: body?.clientMutationId ?? randomUUID() };

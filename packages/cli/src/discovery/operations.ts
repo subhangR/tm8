@@ -1439,7 +1439,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── capability discovery ─────────────────────────────────────────────────
   'actions.list': {
     cmd: ['action', 'list'],
-    syn: 'tm8 action list [--for <entity-id>] [--all]',
+    syn: 'tm8 action list [--for <entity-id>] [--all] [--limit <count>] [--cursor <cursor>] [--schema v1|v2]',
     sum: 'Ask what THIS actor may actually do on a target right now',
     authz: 'entity',
     input: 'none',
@@ -1448,6 +1448,9 @@ const ROWS: Record<OperationName, Row> = {
       'static help answers "what can tm8 express?"; this answers "what may I do here now?" — they are different questions',
       'results are bound to an actor, a Space, a target version, and a capabilityEpoch, and go stale in 30 seconds',
       'with --for, only operations on that entity are listed, most relevant first; --all appends the Space-level and global ones (auth, spaces.create, ...) — the complete authorized inventory',
+      'v2 (tm8.actions.v2): target, capabilityEpoch and actor once, then one [operation, kind, authzTarget, exposure] row per action; id/label/helpRef are derived (action:<op>:<target>, op with dots as spaces, tm8://help/operation/<op>)',
+      'v2 pages: 20 rows by default, --limit 1..100; continue with --cursor <nextCursor>. A cursor is bound to the capabilityEpoch — if capabilities changed, list again without it',
+      'agent sessions get v2 minified by default; a non-agent --format json keeps the v1 objects this release (stderr notice); --schema pins either',
     ],
   },
 
@@ -1934,13 +1937,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
+    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--actions-schema v1|v2]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'exactly three flags bind — --sections, --total-bytes, --section-bytes (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'exactly four flags bind — --sections, --total-bytes, --section-bytes, --actions-schema (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'actions under v2 (agent default) are tm8.actions.v2 rows; cursors.actions continues in `tm8 action list --for <id> --cursor <c>`',
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
@@ -2955,7 +2959,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['chat show', {
     path: ['chat', 'show'],
-    syntax: 'tm8 chat show <chat-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
+    syntax: 'tm8 chat show <chat-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--actions-schema v1|v2]',
     summary: 'One chat in bounded context — configuration, recent transcript, and what it is about',
     notes: [
       'sugar over entities.context; bounded by design, so a long transcript is excerpted rather than paged here',

@@ -1,7 +1,12 @@
 import {
+  ActionDiscoveryPageSchema,
   ActionDiscoveryResultSchema,
+  OPERATIONS,
   SavedViewSchema,
+  expandActionRows,
   getOperation,
+  type ActionDiscoveryPage,
+  type ActionDiscoveryResult,
   type OperationName,
   type SavedViewInput,
 } from '@tm8/contract';
@@ -456,5 +461,199 @@ describe('W2.G09 saved views and action discovery', () => {
       authzTarget: 'space',
       helpRef: 'tm8://help/operation/savedViews.create',
     });
+  });
+});
+
+/**
+ * `tm8.actions.v2`: the factored rows, paging, and the size gate.
+ *
+ * The fixture is the PRODUCTION composition's shape: every non-reserved
+ * catalog operation is implemented, so the contextual list and the full
+ * inventory are as long as a real node's.
+ */
+describe('actions.list schema=v2 — factored rows, paging, size gate', () => {
+  const SAVED_VIEWS_AND_SELF = new Set<string>([
+    'savedViews.list', 'savedViews.create', 'savedViews.update', 'savedViews.delete', 'actions.list',
+  ]);
+
+  function fullCatalog(workStatus = 'working'): { registry: HandlerRegistry; setVersion(v: number): void } {
+    let version = 4;
+    const db = new FakeDb();
+    db.queryImpl = async <R>(sql: string) => {
+      if (sql.includes('internal.current_member_id')) {
+        return [{
+          id: IDS.entity,
+          space_id: IDS.space,
+          kind: 'task',
+          version,
+          deleted_at: null,
+          work_status: workStatus,
+          message_author_id: null,
+          actor_id: IDS.member,
+          is_space_admin: true,
+        }] as R[];
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    };
+    const noOp: OperationHandler = async () => ({ ok: true });
+    const registry = register(db, (target) => {
+      for (const op of OPERATIONS) {
+        if (op.status === 'reserved' || SAVED_VIEWS_AND_SELF.has(op.name)) continue;
+        target.register(op.name, noOp);
+      }
+    });
+    return { registry, setVersion: (v) => { version = v; } };
+  }
+
+  async function list(registry: HandlerRegistry, query: string): Promise<unknown> {
+    return handler(registry, 'actions.list')(request('actions.list', { query }));
+  }
+
+  async function page(registry: HandlerRegistry, query: string): Promise<ActionDiscoveryPage> {
+    return ActionDiscoveryPageSchema.parse(await list(registry, query));
+  }
+
+  async function v1(registry: HandlerRegistry, query: string): Promise<ActionDiscoveryResult> {
+    return ActionDiscoveryResultSchema.parse(await list(registry, query));
+  }
+
+  /** Every page of a listing, following nextCursor to the end. */
+  async function walk(registry: HandlerRegistry, query: string): Promise<ActionDiscoveryPage[]> {
+    const pages: ActionDiscoveryPage[] = [];
+    let cursor: string | null = null;
+    do {
+      const next = await page(
+        registry,
+        `${query}&schema=v2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+      );
+      pages.push(next);
+      cursor = next.nextCursor;
+    } while (cursor !== null && pages.length < 50);
+    return pages;
+  }
+
+  /**
+   * The v1 object exactly as it was constructed BEFORE v2 existed — written
+   * out here independently, so the reversibility check is against the old
+   * wire, not against the derivation helpers it is testing.
+   */
+  function legacyAction(
+    result: Pick<ActionDiscoveryResult, 'targetEntityId' | 'targetVersion' | 'capabilityEpoch'>,
+    action: { operation: OperationName; kind: string; authzTarget: string; exposure: string },
+  ): Record<string, unknown> {
+    return {
+      id: `action:${action.operation}:${result.targetEntityId ?? 'global'}`,
+      label: action.operation.replaceAll('.', ' '),
+      kind: action.kind,
+      operation: action.operation,
+      ...(result.targetEntityId
+        ? { targetEntityId: result.targetEntityId, targetVersion: result.targetVersion }
+        : {}),
+      capabilityEpoch: result.capabilityEpoch,
+      authzTarget: action.authzTarget,
+      exposure: action.exposure,
+      helpRef: `tm8://help/operation/${action.operation}`,
+    };
+  }
+
+  for (const [name, query] of [
+    ['contextual', `contextEntityId=${IDS.entity}`],
+    ['scope=all', `contextEntityId=${IDS.entity}&scope=all`],
+    ['global', ''],
+  ] as const) {
+    it(`reconstructs every v1 action object exactly from v2 pages (${name})`, async () => {
+      const { registry } = fullCatalog();
+      const legacy = await v1(registry, query);
+      const pages = await walk(registry, query);
+      const rows = pages.flatMap((p) => p.rows);
+
+      expect(rows.length).toBe(legacy.actions.length);
+      expect(pages.every((p) => p.total === legacy.actions.length)).toBe(true);
+      // Byte-identical, key order included: v2 loses nothing v1 said.
+      const rebuilt = expandActionRows({ ...pages[0]!, rows });
+      expect(JSON.stringify(rebuilt)).toBe(JSON.stringify(legacy));
+      // ...and v1 itself is still what the old construction produced.
+      for (const action of legacy.actions) {
+        expect(JSON.stringify(action)).toBe(JSON.stringify(legacyAction(legacy, action)));
+      }
+      if (name === 'global') expect(pages[0]!.target).toBeUndefined();
+      else expect(pages[0]!.target).toEqual({ id: IDS.entity, kind: 'task', version: 4 });
+    });
+  }
+
+  it('keeps the size gate: the default contextual page on a working task is at most 1.5 KB minified', async () => {
+    const { registry } = fullCatalog('working');
+    const legacy = await v1(registry, `contextEntityId=${IDS.entity}`);
+    const first = await page(registry, `contextEntityId=${IDS.entity}&schema=v2`);
+    const bytes = Buffer.byteLength(JSON.stringify(first), 'utf8');
+
+    expect(first.rows.length).toBe(Math.min(20, legacy.actions.length));
+    expect(first.rows[0]?.[0]).toBe('entities.commands.complete');
+    expect(bytes).toBeLessThanOrEqual(1500);
+    // The v1 answer to the same question, for scale (not a gate).
+    expect(Buffer.byteLength(JSON.stringify(legacy), 'utf8')).toBeGreaterThan(bytes * 4);
+  });
+
+  it('bounds every page of the full inventory, at the default and the maximum limit', async () => {
+    const { registry } = fullCatalog();
+    for (const limit of [20, 100]) {
+      const pages: ActionDiscoveryPage[] = [];
+      let cursor: string | null = null;
+      do {
+        const next = await page(registry, `contextEntityId=${IDS.entity}&scope=all&schema=v2&limit=${limit}${
+          cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        pages.push(next);
+        cursor = next.nextCursor;
+      } while (cursor !== null && pages.length < 50);
+      for (const p of pages) {
+        expect(p.rows.length).toBeLessThanOrEqual(limit);
+        // ~60 B per row plus a ~350 B header: a page can never grow unboundedly.
+        expect(Buffer.byteLength(JSON.stringify(p), 'utf8')).toBeLessThanOrEqual(400 + limit * 80);
+      }
+      expect(pages.at(-1)!.nextCursor).toBeNull();
+      expect(new Set(pages.flatMap((p) => p.rows.map(([op]) => op))).size)
+        .toBe(pages.flatMap((p) => p.rows).length);
+    }
+  });
+
+  it('binds a cursor to its listing: a changed epoch, another scope or a forged cursor is invalid_cursor', async () => {
+    const { registry, setVersion } = fullCatalog();
+    const first = await page(registry, `contextEntityId=${IDS.entity}&scope=all&schema=v2`);
+    const cursor = encodeURIComponent(first.nextCursor!);
+
+    // The contextual listing is a different ranked list; its cursor is not this one's.
+    await expect(list(registry, `contextEntityId=${IDS.entity}&schema=v2&cursor=${cursor}`))
+      .rejects.toMatchObject({ code: 'invalid_cursor' });
+    await expect(list(registry, `contextEntityId=${IDS.entity}&scope=all&schema=v2&cursor=abc`))
+      .rejects.toMatchObject({ code: 'invalid_cursor' });
+
+    // Same listing, same epoch: accepted and continues right after page one.
+    const second = await page(registry, `contextEntityId=${IDS.entity}&scope=all&schema=v2&cursor=${cursor}`);
+    expect(second.rows[0]).not.toEqual(first.rows.at(-1));
+    expect(second.capabilityEpoch).toBe(first.capabilityEpoch);
+
+    // The target moved: the ranked list the cursor pointed into is gone.
+    setVersion(5);
+    await expect(list(registry, `contextEntityId=${IDS.entity}&scope=all&schema=v2&cursor=${cursor}`))
+      .rejects.toMatchObject({ code: 'invalid_cursor' });
+  });
+
+  it('keeps v1 the unpaged default and refuses paging it cannot express', async () => {
+    const { registry } = fullCatalog();
+    const legacy = await v1(registry, `contextEntityId=${IDS.entity}&scope=all`);
+    expect(legacy.actions.length).toBeGreaterThan(20);
+    expect(await list(registry, `contextEntityId=${IDS.entity}&schema=v1`)).toEqual(
+      await list(registry, `contextEntityId=${IDS.entity}`),
+    );
+    for (const query of [
+      `contextEntityId=${IDS.entity}&limit=5`,
+      `contextEntityId=${IDS.entity}&schema=v1&cursor=abc`,
+      `contextEntityId=${IDS.entity}&schema=v3`,
+      `contextEntityId=${IDS.entity}&schema=v2&limit=0`,
+      `contextEntityId=${IDS.entity}&schema=v2&limit=101`,
+      `contextEntityId=${IDS.entity}&schema=v2&limit=ten`,
+    ]) {
+      await expect(list(registry, query)).rejects.toMatchObject({ code: 'invalid_input' });
+    }
   });
 });

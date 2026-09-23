@@ -325,7 +325,7 @@
   ],
   "actions": [
     {
-      "id": "action:entities.get:g13",
+      "id": "action:entities.get:00000000-0000-7000-8000-000000000d02",
       "label": "entities get",
       "kind": "navigate",
       "operation": "entities.get",
@@ -347,6 +347,6 @@
     "messages": null,
     "activity": "eyJ2IjoyLCJrIjpbIjY2OWU5M2FiM2FjOTg1YjdlMDc5YWY2YzhkYmM5NGJjMmEwZmQ0ZDBiZGRkNzg2NmEyZmE1MGUxZmUyNmExNWUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
   },
-  "byteSize": 6227,
+  "byteSize": 6260,
   "truncated": false
 }

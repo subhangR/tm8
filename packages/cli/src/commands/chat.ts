@@ -232,7 +232,7 @@ function renderChats(dto: unknown): string {
 
 async function chatShow(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('chat show', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes']);
+  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes', 'actions-schema']);
   const id = requireArg(cmd, 0, '<chat-id>');
 
   // `entities.context`, not `entities.get`: a chat's whole point is its
