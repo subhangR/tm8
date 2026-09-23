@@ -378,6 +378,40 @@ const ROWS: Record<OperationName, Row> = {
       '`connected` and `stored` are separate answers — a verified GitHub login reports stored=false where its string-shaped store is not present',
     ],
   },
+  'credentials.serviceKeys.status': {
+    cmd: null,
+    sum: 'Read which server-side service keys (TypeSafe, for Ask Jev) this member has stored — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'service-key', 'typesafe', 'jev', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'answers the last four characters of a stored key at most — never the key',
+      'a service key is used by the server for this member alone and is never injected into a spawned session',
+    ],
+  },
+  'credentials.serviceKeys.put': {
+    cmd: null,
+    sum: 'Store or replace this member\'s TypeSafe key for Ask Jev, encrypted at rest — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'service-key', 'typesafe', 'jev', 'paste', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the key is sealed with the node credential key before it reaches Postgres and is never echoed back',
+    ],
+  },
+  'credentials.serviceKeys.delete': {
+    cmd: null,
+    sum: 'Remove this member\'s stored TypeSafe key — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'service-key', 'typesafe', 'jev', 'disconnect', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'idempotent; Ask Jev then falls back to the node key, if the node has one',
+    ],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',

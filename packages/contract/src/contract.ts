@@ -2216,6 +2216,65 @@ export interface CredentialsLoginSessionFinishResult {
   terminated: boolean;
 }
 
+/**
+ * A key tm8 uses ON THE SERVER, on the member's behalf — NOT an agent
+ * credential.
+ *
+ * `typesafe` is the TypeSafe key behind Jev. It is used only when this member
+ * presses ✦ Ask Jev (`launch.suggest`), and it is never injected into a spawned
+ * session's environment, manifest, credential home or PTY. That is why it is
+ * its own union rather than a ninth `CredentialProviderName`: every consumer of
+ * that union (login terminals, probes, spawn injection, disconnect's session
+ * kill) is about agents, and a provider that is not one would have to be
+ * special-cased out of each of them. Here it cannot be special-cased IN.
+ */
+export type ServiceKeyProviderName = 'typesafe';
+
+/** One service key as the Settings screen may show it. Never the key itself. */
+export interface ServiceKeyView {
+  provider: ServiceKeyProviderName;
+  /** A key is stored for this member. */
+  connected: boolean;
+  /** The stored key's last four characters, so a member can recognise it. Null when none is stored. */
+  keyHint: string | null;
+  updatedAt: string | null;
+  /**
+   * With no key of their own, whether this member's Ask Jev would still work
+   * because the NODE has one (`TYPESAFE_API_KEY` in the server's environment).
+   * A boolean only — the node's key is never described.
+   */
+  nodeFallback: boolean;
+}
+
+/**
+ * `credentials.serviceKeys.status`. `store: 'absent'` means migration 203 is
+ * not applied on this node, so `connected: false` is UNKNOWN, not measured.
+ */
+export interface CredentialsServiceKeysStatusView {
+  keys: ServiceKeyView[];
+  store: 'present' | 'absent';
+}
+
+/**
+ * `credentials.serviceKeys.put` — paste or replace. The provider rides the
+ * path; the key is the body's one field and is never echoed back.
+ */
+export interface CredentialsServiceKeyPutInput {
+  apiKey: string;
+  clientMutationId?: string;
+}
+
+/** `credentials.serviceKeys.delete` — idempotent; the provider rides the path. */
+export interface CredentialsServiceKeyDeleteInput {
+  clientMutationId?: string;
+}
+
+export interface CredentialsServiceKeyDeleteResult {
+  provider: ServiceKeyProviderName;
+  /** True when a stored key was removed or none was stored. */
+  revoked: boolean;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;

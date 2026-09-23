@@ -3,9 +3,11 @@
  * `JevAdvisorPort`; only `jev-adapter.ts` imports `@tm8/jev`.
  */
 export { registerJevHandlers, type JevHandlerOptions } from './handlers.js';
-export { jevAdvisorFromEnv } from './jev-adapter.js';
+export { jevAdvisorForKey, jevAdvisorFromEnv } from './jev-adapter.js';
+export { createJevAdvisorResolver, type JevAdvisorResolverDeps } from './advisor.js';
 export type {
   JevAdvisorPort,
+  JevAdvisorResolver,
   JevCallRecord,
   JevCandidate,
   JevModelResult,

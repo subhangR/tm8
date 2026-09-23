@@ -56,10 +56,19 @@
  * one is the readable one and that one is the one that cannot be bypassed by a
  * future caller who reaches the RPCs another way.
  */
-import { CollabError, CredentialProviderNameSchema } from '@tm8/contract';
+import {
+  CollabError,
+  CredentialProviderNameSchema,
+  CredentialsServiceKeyPutInputSchema,
+  ServiceKeyProviderNameSchema,
+} from '@tm8/contract';
 import type {
   CredentialProviderName,
   CredentialsLoginSessionStartInput,
+  CredentialsServiceKeyDeleteResult,
+  CredentialsServiceKeysStatusView,
+  ServiceKeyProviderName,
+  ServiceKeyView,
 } from '@tm8/contract';
 import { OPERATIONS } from '@tm8/contract';
 import type { OperationName } from '@tm8/contract';
@@ -67,6 +76,11 @@ import type { OperationName } from '@tm8/contract';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import { DbGitHubCredentialStore } from '../../../credentials/github-credential-store.js';
+import {
+  DbServiceKeyStore,
+  SERVICE_KEY_PROVIDERS,
+  SERVICE_KEY_PROVIDER_NAMES,
+} from '../../../credentials/service-key-store.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import {
@@ -157,11 +171,29 @@ function providerParam(ctx: RequestContext): CredentialProviderName {
   return parsed.data;
 }
 
+/** `:provider` for the service-key operations — its own set, never an agent provider. */
+function serviceKeyProviderParam(ctx: RequestContext): ServiceKeyProviderName {
+  const parsed = ServiceKeyProviderNameSchema.safeParse(ctx.params.provider);
+  if (!parsed.success) {
+    throw new CollabError(
+      'invalid_input',
+      `unsupported service key provider: ${String(ctx.params.provider)}`,
+    );
+  }
+  return parsed.data;
+}
+
 export interface CredentialHandlerDeps {
   /** Starts the login PTY. Built in the composition root; see `facade/index.ts`. */
   launcher: W2CredentialSessionsServiceLauncher;
   /** Node data root; the per-identity credential home hangs off it. */
   dataDir: string;
+  /**
+   * The server environment, read for ONE boolean per service key: whether the
+   * node has a fallback key (`TYPESAFE_API_KEY`). Never forwarded. Defaults to
+   * `process.env`.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Structural alias so this module does not import `@tm8/execution` for a type. */
@@ -265,6 +297,51 @@ export function registerCredentialHandlers(
     };
   };
 
+  // -- service keys (Lane K): keys tm8 uses server-side, never agent credentials.
+  const serviceKeys = new DbServiceKeyStore({ db: deps.db, dataDir: credentials.dataDir });
+  const env = credentials.env ?? process.env;
+  const nodeFallback = (provider: ServiceKeyProviderName): boolean =>
+    Boolean(env[SERVICE_KEY_PROVIDERS[provider].nodeEnvVar]?.trim());
+  const viewOf = (
+    provider: ServiceKeyProviderName,
+    stored: { keyHint: string; updatedAt: string } | undefined,
+  ): ServiceKeyView => ({
+    provider,
+    connected: stored !== undefined,
+    keyHint: stored?.keyHint ?? null,
+    updatedAt: stored?.updatedAt ?? null,
+    nodeFallback: nodeFallback(provider),
+  });
+
+  const serviceKeyStatus: OperationHandler = async (ctx): Promise<CredentialsServiceKeysStatusView> => {
+    const { claims } = await principalFor(deps, ctx);
+    const present = await serviceKeys.present(claims);
+    const rows = present ? await serviceKeys.status(claims) : [];
+    return {
+      keys: SERVICE_KEY_PROVIDER_NAMES.map((provider) =>
+        viewOf(provider, rows.find((row) => row.provider === provider))),
+      store: present ? 'present' : 'absent',
+    };
+  };
+
+  const serviceKeyPut: OperationHandler = async (ctx): Promise<ServiceKeyView> => {
+    const provider = serviceKeyProviderParam(ctx);
+    // Re-parsed here for the TRIMMED key; the facade has already refused a bad
+    // body. The key is never echoed — only its last four characters return.
+    const { apiKey } = CredentialsServiceKeyPutInputSchema.parse(ctx.body);
+    const { claims } = await principalFor(deps, ctx);
+    return viewOf(provider, await serviceKeys.put(claims, provider, apiKey));
+  };
+
+  const serviceKeyDelete: OperationHandler = async (ctx): Promise<CredentialsServiceKeyDeleteResult> => {
+    const provider = serviceKeyProviderParam(ctx);
+    const { claims } = await principalFor(deps, ctx);
+    // Idempotent: an absent key is already the state asked for. No session is
+    // killed — no session ever held this key.
+    await serviceKeys.delete(claims, provider);
+    return { provider, revoked: true };
+  };
+
   // EVERY VALUE HERE IS `requireHumanSession(...)`. An entry that is not is a
   // credential operation reachable by an agent holding its owner's identity.
   // `credentials-registration` in the test suite asserts this over the catalog,
@@ -274,6 +351,9 @@ export function registerCredentialHandlers(
     'credentials.delete': requireHumanSession(disconnect),
     'credentials.loginSessions.start': requireHumanSession(startLogin),
     'credentials.loginSessions.finish': requireHumanSession(finishLogin),
+    'credentials.serviceKeys.status': requireHumanSession(serviceKeyStatus),
+    'credentials.serviceKeys.put': requireHumanSession(serviceKeyPut),
+    'credentials.serviceKeys.delete': requireHumanSession(serviceKeyDelete),
   });
 }
 

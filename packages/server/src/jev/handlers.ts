@@ -14,9 +14,11 @@
  *      `jev_calls` row per Jev call (failures included, `requestId` makes a
  *      retry free), and the run's running total, which is what `run` returns.
  *
- * No client configured (no `TYPESAFE_API_KEY`) is an ANSWER, not an error:
- * every requested group is `failed: no_key` and the response is still 200, so
- * the UI can say "Jev isn't configured" and Launch is unaffected.
+ * WHOSE KEY is decided per request (`advisor.ts`): the caller's own TypeSafe
+ * key from Settings → agent credentials, else the node's `TYPESAFE_API_KEY`.
+ * Neither is an ANSWER, not an error: every requested group is `failed:
+ * no_key` and the response is still 200, so the UI can say the key is missing
+ * and Launch is unaffected.
  */
 import {
   LaunchSuggestInputSchema,
@@ -43,14 +45,19 @@ import {
   type CandidateSet,
 } from './candidates.js';
 import { runGroup, ZERO_COST, type GroupRun } from './groups.js';
-import type { JevAdvisorPort } from './port.js';
+import type { JevAdvisorPort, JevAdvisorResolver } from './port.js';
 import { insertCalls, runTotals, storedSuggestion, upsertRun } from './store.js';
 
 type AnyGroupRun = GroupRun<ModelSuggestion | TeammateSuggestion | EntitySuggestion>;
 type RankGroup = Exclude<LaunchSuggestGroup, 'model'>;
 
 export interface JevHandlerOptions {
-  /** Built ONCE at startup (`jevAdvisorFromEnv`). Null or absent: every group answers `no_key`. */
+  /**
+   * Picks the advisor for each request from the caller's claims — production
+   * wires `createJevAdvisorResolver`. Wins over `advisor` when both are given.
+   */
+  resolveAdvisor?: JevAdvisorResolver;
+  /** One fixed advisor for every caller (tests). Null or absent: every group answers `no_key`. */
   advisor?: JevAdvisorPort | null;
 }
 
@@ -62,13 +69,16 @@ export function registerJevHandlers(
   deps: FacadeDeps,
   options: JevHandlerOptions = {},
 ): void {
-  const advisor = options.advisor ?? null;
+  const fixed = options.advisor ?? null;
+  const resolveAdvisor: JevAdvisorResolver = options.resolveAdvisor ?? (async () => fixed);
 
   registry.register('launch.suggest', async (ctx) => {
     const input = LaunchSuggestInputSchema.parse(ctx.body);
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const owner = await deps.owner();
     const claims = claimsFor(owner, ctx);
+    // THIS caller's advisor: their key, else the node's, else null (no_key).
+    const advisor = await resolveAdvisor(claims);
 
     // 1. READ.
     const plan = await deps.db.tx(claims, async (q) => {
