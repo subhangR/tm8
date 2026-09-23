@@ -16,3 +16,4 @@ export * from './agent-readable.js';
 export * from './artifact-manifest.js';
 export * from './pty-protocol.js';
 export * from './skill-reference.js';
+export * from './launch-suggest.js';

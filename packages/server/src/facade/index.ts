@@ -1,5 +1,6 @@
 import { registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
+import { registerJevHandlers } from '../jev/handlers.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
  * and the one function the composition root calls to mount everything.
@@ -179,6 +180,8 @@ export function registerFacadeHandlers(
   registerW2ProjectsAssociationsHandlers(registry, facade);
   registerSkillHandlers(registry, facade);
   registerSkillMutations(registry, facade);
+  // launch.suggest (Jev, UI-only advice). One registration; see jev/handlers.ts.
+  registerJevHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs

@@ -1095,6 +1095,7 @@ const ROWS: Record<OperationName, Row> = {
   'skills.create': { cmd: ['skill', 'create'], syn: 'tm8 skill create --root <project-id|home> --name <name> [--provider agents|claude|codex|hermes] [--level project|user] [--description <text>] [--body <text-source>]', sum: 'Write SKILL.md and scan its reference', authz: 'space', input: 'bound' },
   'skills.edit': { cmd: ['skill', 'edit'], syn: 'tm8 skill edit <skill-id> --expected-version <version> [--content-hash <hash>] [--name <name>] [--description <text>] [--body <text-source>]', sum: 'Edit a writable skill, preserving unknown frontmatter', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
   'skills.roots': { cmd: null, sum: 'List authorized skill authoring roots', authz: 'space', input: 'none', tags: ['skills'] },
+  'launch.suggest': { cmd: null, sum: 'Ask Jev for model, teammate, memory and skill suggestions for a launch', authz: 'space', input: 'bound', tags: ['jev', 'launch', 'skills', 'memory', 'model'], notes: ['Launch-sheet API; no CLI — Jev is UI-only (design 01a0cb80).'] },
   'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
   'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },
@@ -2485,6 +2486,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
   credentials: 'credential',
+  // `launch.suggest` groups under `session`: it advises the launch of one, and
+  // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
+  // would name no command. `tools/conformance`'s generator holds the same map.
+  launch: 'session',
 };
 
 function nounFor(operation: OperationName): string {
@@ -2555,7 +2560,9 @@ export const CATALOG_DIGEST =
   // skills.scan/list/show/preview on top of main's 199 rows. RECOMPUTED from
   // `JSON.stringify(OPERATIONS)` and matched to the regenerated manifest.
   // Re-measured 2026-09-23 with F4 (#648): skills.roots/create/edit/equip/unequip.
-  'sha256:4b1199f12846b6983ff6ebb0f9f408bae262c9ae6daa8550faf92a463f40896e';
+  // Re-measured 2026-09-23, Jev lane F: + launch.suggest. Matched to the
+  // regenerated conformance manifest's catalogDigest.
+  'sha256:1ebce8d21b5a346d01f90a21332e0986faf0552db1adae26f8a4a6aae50d021f';
 
 export const GRAMMAR_VERSION = '2';
 

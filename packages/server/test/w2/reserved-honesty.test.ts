@@ -143,9 +143,9 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(OPERATIONS).toHaveLength(208); // +25 (177) containers, MEASURED
+    expect(OPERATIONS).toHaveLength(209); // +25 (177) containers, MEASURED; +1 launch.suggest (Jev lane F)
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage are both v1. MEASURED on the merged tree from this assertion's own failing run.
-    expect(V1_OPERATIONS).toHaveLength(206);
+    expect(V1_OPERATIONS).toHaveLength(207); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -154,7 +154,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // `events.subscribe`'s binding under the container family's own name.
     // 195 -> 196: execution.gitStage is HTTP, so it lands in this half. MEASURED.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): mounted HTTP gains sharing + gitStage. MEASURED from this assertion's own failing run (Received 197).
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(206);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(207); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
       // The alias, and it must declare itself as one: `aliasOf` is what keeps
@@ -179,7 +179,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // printed `Received 194` against a stale `Expected 193`.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(204); // 169 -> 193 (177): the container handlers; +1 (187); +1 (execution.gitStage); +9 skills (2026-09-23)
+    )).toHaveLength(205); // +1 launch.suggest (Jev lane F); 169 -> 193 (177): the container handlers; +1 (187); +1 (execution.gitStage); +9 skills (2026-09-23)
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

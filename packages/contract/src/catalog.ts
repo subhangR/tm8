@@ -56,6 +56,10 @@ export const OPERATIONS = [
   { name: 'skills.list', method: 'GET', path: '/v2/spaces/:spaceId/skills', kind: 'read', status: 'v1' },
   { name: 'skills.preview', method: 'GET', path: '/v2/spaces/:spaceId/skills/preview', kind: 'read', status: 'v1' },
   { name: 'skills.show', method: 'GET', path: '/v2/skills/:id', kind: 'read', status: 'v1' },
+  // launch.suggest — Jev's launch-sheet advice (design 01a0cb80 §5.1). UI only:
+  // no CLI, no dispatch, no spawn-time call. A command because it writes the
+  // jev_runs / jev_calls cost rows; `requestId` in the body is its idempotency key.
+  { name: 'launch.suggest', method: 'POST', path: '/v2/spaces/:spaceId/launch/suggest', kind: 'command', status: 'v1' },
   // identity & spaces
   { name: 'identity.get',            method: 'GET',    path: '/v2/identity',                                kind: 'read',    status: 'v1' },
   { name: 'serverConnections.list',  method: 'GET',    path: '/v2/server-connections',                      kind: 'read',    status: 'v1' },

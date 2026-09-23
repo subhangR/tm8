@@ -36,6 +36,16 @@ export interface SkippedSkill {
   name: string;
   hash?: string;
   sourcePath?: string;
+  /**
+   * Why the skill is not in the session's index. A free string so an older
+   * manifest's value still reads; the vocabulary written today:
+   * - `missing` — the reference's file is gone.
+   * - `native-shadowed` — a native copy of the same skill won.
+   * - `byte-budget` — the index would have exceeded its byte budget.
+   * - `not-selected` — equipped, but left unticked in an `execution.spawn`
+   *   `selection` (design 01a0cb80 §5.2).
+   * - `relevance` — legacy: spawn-time Jev trimmed it. No longer written.
+   */
   reason: string;
 }
 export interface EffectiveSkills {

@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(208); // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(rows.length).toBe(209); // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

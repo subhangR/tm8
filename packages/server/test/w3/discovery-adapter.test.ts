@@ -45,12 +45,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // reserved (2) and ws (1) are UNMOVED: neither new row is reserved,
         // and neither mounts a socket.
         // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
-        total: 208,
-        v1: 206,
+        // +1 launch.suggest (Jev lane F, 2026-09-23): one mounted v1 POST, so all four move. MEASURED.
+        total: 209,
+        v1: 207,
         reserved: 2,
-        http: 206,
+        http: 207,
         ws: 1,
-        registerableV1Http: 204,
+        registerableV1Http: 205,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

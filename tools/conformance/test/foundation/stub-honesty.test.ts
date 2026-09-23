@@ -33,7 +33,8 @@ describe('W1 stub route and honesty oracle', () => {
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 2026-09-23 F4 (#648): skills.roots/create/edit/equip/unequip, all mounted v1 HTTP. MEASURED on the merged tree.
-    expect(http).toHaveLength(206);
+    // 206 -> 207 (Jev lane F): launch.suggest. MEASURED.
+    expect(http).toHaveLength(207);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

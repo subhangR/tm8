@@ -3,7 +3,6 @@ export { SpawnService, type SpawnServiceOptions } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
   DEFAULT_MODEL,
-  type LaunchAdvice,
   DEFAULT_PERMISSION_MODE,
   ECHO_AGENT_CMD,
   CODEX_LOOPBACK_CONFIG_OVERRIDES,
@@ -22,8 +21,6 @@ export {
   withAgentResume,
   type ComposeManifestInput,
   type ResolvedLaunchConfig,
-  routingIntentFor,
-  taskFactsFor,
 } from './manifest.js';
 export {
   assertCodexNetworkFeatureList,

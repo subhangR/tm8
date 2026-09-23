@@ -68,6 +68,7 @@ import {
   ExecutionResumeInputSchema,
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
+  LaunchSuggestInputSchema,
   ExecutionGitCheckpointInputSchema,
   ExecutionGitRollbackInputSchema,
   ExecutionGitCommitInputSchema,
@@ -273,6 +274,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'skills.equip': SkillEquipInputSchema,
   'skills.unequip': SkillEquipInputSchema,
   'skills.scan': SkillScanInputSchema,
+  // Jev's launch-sheet advice (design 01a0cb80 §5.1): validated for real from day one.
+  'launch.suggest': LaunchSuggestInputSchema,
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,
   'projects.unlink': RequiredCommandContextSchema,

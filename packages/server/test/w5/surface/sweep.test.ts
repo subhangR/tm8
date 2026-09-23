@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(204);
+    expect(SURFACE).toHaveLength(205); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(204);
+    expect(rows).toHaveLength(205); // +1 launch.suggest (Jev lane F). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(204);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(205); // +1 launch.suggest (Jev lane F). MEASURED.
   });
 
   /**
@@ -1053,7 +1053,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // hand main a silently-short count. If this branch ends up landing BEFORE
     // #635, this number is wrong and the correct edit is 177, not a re-guess.
     // 178 -> 181 (2026-09-23): 197, 198 and 199, the filesystem-skills migrations. MEASURED.
-    expect(server.appliedMigrations.length).toBe(181);
+    // 181 -> 183 (2026-09-23, Jev lane F): 200_continue_a_session (#652, which
+    // left this pin at 181 — main read 182 here) and 201_jev_runs. MEASURED.
+    expect(server.appliedMigrations.length).toBe(183);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1294,6 +1296,10 @@ const EXPECTED_HANDLER_501: readonly string[] = [
   'containers.terminal.start',
   'containers.unexpose',
   'containers.update',
+  // Jev lane F (2026-09-23): the launch.suggest PLACEHOLDER (jev/handlers.ts)
+  // refuses with not_implemented until lane B lands the real handler, which
+  // removes this entry.
+  'launch.suggest',
   // 2026-07-31: voice.token.create is MOUNTED and REACHED, and on a node with
   // no TM8_LIVEKIT_* configured its handler answers an honest not_implemented
   // naming the env vars to set (services/voice.ts). A refusal authored by the

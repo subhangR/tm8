@@ -4271,6 +4271,14 @@ export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, L
  * - Every `execution.*` command is recorded in the command_ledger like any
  *   other mutation — the ledger is the execution audit trail.
  */
+/** `execution.spawn.selection` — the exact memory and skill entity ids a session carries. */
+export interface SpawnSelection {
+  /** Memory entities, same space. At most 32. */
+  memoryIds: EntityId[];
+  /** Skill entities, same space. At most 128. */
+  skillIds: EntityId[];
+}
+
 export interface ExecutionSpawnInput extends CommandContext {
   clientMutationId: string;
   spaceId: SpaceId;
@@ -4326,6 +4334,25 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The EXACT memory and skill sets for this session, as ticked in the launch
+   * UI (design 01a0cb80 §5.2). When present it replaces the teammate's working
+   * set, the task's `remembers` set and the equipped skills; when absent the
+   * launch behaves exactly as it always has. A selected skill that is not
+   * equipped is loaded for this session only — no edges are written — and an
+   * equipped skill left unticked is audited as `not-selected`.
+   *
+   * Refused together with `memoryIds` (`invalid_input`), so a spawn field has
+   * only one meaning: `memoryIds` ADDS to the working set, `selection` IS it.
+   */
+  selection?: SpawnSelection;
+  /**
+   * The Ask Jev run (`launch.suggest` `runId`) that informed this launch.
+   * After a successful spawn the server links `jev_runs.session_id` and writes
+   * `launch.jevRunId` on the manifest. Execution passes it through and never
+   * interprets it; spawn never calls Jev.
+   */
+  jevRunId?: EntityId;
   /**
    * The terminal geometry the client has measured for the pane this session
    * will be shown in, so the PTY BOOTS at the real width instead of the 80x24

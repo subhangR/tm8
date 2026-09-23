@@ -110,8 +110,9 @@ describe('W1 adopted catalog target', () => {
     // stack pinned against its own older base and never saw main's 199.
     // MEASURED on the merged tree from this assertion's own failing run.
     // 203 -> 208 (2026-09-23): skills.roots/create/edit/equip/unequip (F4, #648), all v1. MEASURED on the merged tree.
-    expect(OPERATIONS).toHaveLength(208);
-    expect(V1_OPERATIONS).toHaveLength(206);
+    // 208 -> 209 (2026-09-23, Jev lane F): launch.suggest, a v1 POST command. MEASURED from this assertion's own failing run.
+    expect(OPERATIONS).toHaveLength(209);
+    expect(V1_OPERATIONS).toHaveLength(207); // launch.suggest is v1: 206 -> 207. MEASURED.
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -154,7 +155,8 @@ describe('W1 adopted catalog target', () => {
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): GET 65->68 (skills.list,
     // skills.show, skills.preview), POST 100->101 (skills.scan). MEASURED on the merged tree.
     // 2026-09-23 F4: GET 68->69 (roots), POST 101->104 (create/equip/unequip), PATCH 12->13 (edit). MEASURED.
-    }).toEqual({ GET: 69, POST: 104, PATCH: 13, DELETE: 12, PUT: 8, WS: 2 });
+    // 2026-09-23 Jev lane F: POST 104->105 (launch.suggest). MEASURED.
+    }).toEqual({ GET: 69, POST: 105, PATCH: 13, DELETE: 12, PUT: 8, WS: 2 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -171,7 +173,8 @@ describe('W1 adopted catalog target', () => {
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): read 69->72, command 128->129.
     // MEASURED on the merged tree.
     // 2026-09-23 F4: read 72->73, command 129->133. MEASURED.
-    }).toEqual({ read: 73, command: 133, stream: 2 });
+    // 2026-09-23 Jev lane F: command 133->134 (launch.suggest). MEASURED.
+    }).toEqual({ read: 73, command: 134, stream: 2 });
   });
 });
 
