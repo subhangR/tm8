@@ -722,6 +722,47 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(none).not.toHaveProperty('memoryIds');
   });
 
+  it('carries ✦ Jev’s exact selection and run, and never pairs selection with memoryIds', () => {
+    /*
+     * Design 01a0cb80 §5.2: `selection` IS the working set, `memoryIds` ADDS to
+     * it, and the node refuses both at once. So the builder drops `memoryIds`
+     * whenever a selection is present — and copies the selection verbatim,
+     * because a truncated exact set is a different set.
+     */
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    const withJev = buildSpawnInput({
+      clientMutationId: 'cmid-5',
+      spaceId: 'space-1',
+      config: {
+        ...config,
+        memoryIds: ['mem-picked'],
+        selection: { memoryIds: ['mem-a'], skillIds: ['sk-a', 'sk-b'] },
+        jevRunId: 'run-1',
+      },
+    });
+    expect(withJev.selection).toEqual({ memoryIds: ['mem-a'], skillIds: ['sk-a', 'sk-b'] });
+    expect(withJev.jevRunId).toBe('run-1');
+    expect(withJev).not.toHaveProperty('memoryIds');
+
+    // The run alone (Reset, or a launch while Jev was still answering).
+    const runOnly = buildSpawnInput({ clientMutationId: 'cmid-6', spaceId: 'space-1', config: { ...config, jevRunId: 'run-1' } });
+    expect(runOnly.jevRunId).toBe('run-1');
+    expect(runOnly).not.toHaveProperty('selection');
+
+    // An empty exact set is still a statement ("no skills"), so it is sent.
+    const empty = buildSpawnInput({
+      clientMutationId: 'cmid-7',
+      spaceId: 'space-1',
+      config: { ...config, selection: { memoryIds: [], skillIds: [] } },
+    });
+    expect(empty.selection).toEqual({ memoryIds: [], skillIds: [] });
+
+    // Without Jev, neither key exists.
+    const plain = buildSpawnInput({ clientMutationId: 'cmid-8', spaceId: 'space-1', config });
+    expect(plain).not.toHaveProperty('selection');
+    expect(plain).not.toHaveProperty('jevRunId');
+  });
+
   it('refuses an untrusted project WITH the mechanism, until consent is explicit', () => {
     const projects = [
       { projectId: 'p-1', name: 'vendor-import', trusted: false, untrustedReason: UNTRUSTED_REASON },

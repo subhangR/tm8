@@ -418,6 +418,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // risk the appended groups below guard against does not arise.
       'gitStage',
       'gitStash',
+      // Jev lane U (design 01a0cb80 §5.1): `jev` — the `launch.suggest` port,
+      // one namespaced member like `skills`. Inserted at its sorted position.
+      'jev',
       'markRead',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking

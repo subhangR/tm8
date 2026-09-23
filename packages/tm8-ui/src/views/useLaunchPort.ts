@@ -51,7 +51,7 @@ export type LaunchPort = LaunchSources & {
 };
 
 export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): LaunchPort {
-  const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity } = data.launch;
+  const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev } = data.launch;
   const { onSpawn, onFullOptions } = options;
 
   /**
@@ -159,9 +159,10 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       descriptionOf,
       onUpdateEntity,
       ...(capacity ? { capacity } : {}),
+      ...(jev ? { jev } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
     }),
-    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, onSpawn, onFullOptions],
+    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, onSpawn, onFullOptions],
   );
 }

@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { JevPort } from '../jev/port';
 import type {
   ActorSummary,
   CollectionGroup,
@@ -506,6 +507,8 @@ export interface LaunchSources {
   onUpdateEntity?: (entityId: string, edits: { title?: string; description?: string }) => Promise<unknown> | void;
   /** Caller owns uniqueness of the optimistic-journal id. */
   mutationId: (entityId: string) => string;
+  /** ✦ Ask Jev in the Run popup. Absent ⇒ the button renders refused with the reason. */
+  jev?: JevPort;
 }
 
 /**
@@ -3533,6 +3536,7 @@ export function Tile({
               teammates={props.launch?.teammates ?? []}
               projects={props.launch?.projects ?? []}
               capacity={props.launch?.capacity}
+              jev={props.launch?.jev}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
@@ -3787,6 +3791,7 @@ export function Tile({
             teammates={props.launch?.teammates ?? []}
             projects={props.launch?.projects ?? []}
             capacity={props.launch?.capacity}
+            jev={props.launch?.jev}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf

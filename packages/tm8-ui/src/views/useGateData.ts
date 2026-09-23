@@ -1,4 +1,5 @@
 import type { SkillPort } from '../skills/port';
+import type { JevPort } from '../jev/port';
 import type { SkillPreviewResult } from '@tm8/contract';
 /**
  * Gate boot: seam → domain store → the selectors the views hand to the panels.
@@ -697,6 +698,8 @@ export interface GateData {
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
   /** Launch resources from the active seam; never presentation fixtures. */
   launch: {
+    /** ✦ Ask Jev's port, when the active seam carries one. */
+    jev?: JevPort;
     loadSkillPreview?: (input: Parameters<SkillPort['preview']>[1]) => Promise<SkillPreviewResult>;
     teammates: readonly LaunchTeammate[];
     projects: readonly LaunchProject[];
@@ -2432,6 +2435,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
          takes `teammates[0]` as the teammate. Sorting in the surfaces instead
          would be three call sites that can drift, and would leave whichever one
          nobody remembered on the old insertion order. */
+      ...(seam.commands.jev ? { jev: seam.commands.jev } : {}),
       ...(seam.commands.skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => seam.commands.skills!.preview(spaceId, input) } : {}),
       teammates: orderTeammatesByRecency(teammates, launchRecents),
       projects,

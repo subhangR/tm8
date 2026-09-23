@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { LaunchModelEffort } from '@tm8/contract';
 
 import {
@@ -159,6 +159,10 @@ export interface NewSessionComposerProps {
   skillOptions?: readonly TriggerOption[];
   attach?: (file: File) => FileUploadTask;
   autoFocus?: boolean;
+  /** A host's line above the footer controls — the Run popup's ✦ Jev strip. */
+  aboveControls?: ReactNode;
+  /** A host's control just before Launch — the Run popup's ✦ Ask Jev. */
+  beforeLaunch?: ReactNode;
 }
 
 type MenuName = 'workdir' | 'dots' | 'model' | 'perm' | 'team';
@@ -259,6 +263,8 @@ export function NewSessionComposer({
   skillOptions,
   attach,
   autoFocus,
+  aboveControls,
+  beforeLaunch,
 }: NewSessionComposerProps) {
   const area = useRef<HTMLTextAreaElement | null>(null);
   const card = useRef<HTMLDivElement | null>(null);
@@ -575,6 +581,8 @@ export function NewSessionComposer({
           />
         </div>
 
+        {aboveControls}
+
         <div className="nsx-composer__foot">
           <div className="nsx-anchor">
             <button
@@ -747,6 +755,8 @@ export function NewSessionComposer({
           </div>
 
           <span className="nsx-foot__spacer" />
+
+          {beforeLaunch}
 
           <button
             type="button"
