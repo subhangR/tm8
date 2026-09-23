@@ -244,17 +244,29 @@ export type NavView =
 
 /** The panel-engine state the URL mirrors (LLD §11: the URL owns all of it). */
 export interface PanelState {
-  /** `p` — bottom→top. On Home the stack IS the centre TRAIL: the top
-   *  renders, the rest are its breadcrumb (task 01a00932 R7/D2). */
+  /** `p` — bottom→top. On Home the stack IS the Trail: the whole walk, of
+   *  which `cursor` names the entry that renders (task 01a0c864 U2/U8). */
   stack: EntityId[];
   /** `pin` — pin order. */
   pinned: EntityId[];
   /**
-   * `r` — Home's RIGHT-PANEL trail, bottom→top, same encoding as `p`
-   * (task 01a00932 R6/R7). The top renders in the right panel; the rest are
-   * its breadcrumb. Empty ⇒ no right panel. Other views carry it verbatim.
+   * `pc` — WHERE IN THE TRAIL the viewer stands, as the ENTITY'S OWN ID.
+   *
+   * `null` ⇒ THE TOP, and that default is the compatibility guarantee: every
+   * link that exists today carries no `pc`, so it parses and renders exactly
+   * as it does today (U8/D2).
+   *
+   * An id rather than an index because `normalize` can REMOVE an entry from
+   * `stack` — it cross-filters against pins — and an index would then aim one
+   * place to the left, at a real entity, with nothing to detect. An id
+   * re-resolves to the same entity across that shift, and when the entity
+   * itself was removed it is simply ABSENT: the cursor clamps to the top under
+   * the standard drop notice rather than landing somewhere wrong.
+   *
+   * Well-defined only because the Trail cannot repeat an entity (a revisit
+   * moves the cursor, ruled 2026-09-22). The two rules hold each other up.
    */
-  right: EntityId[];
+  cursor: EntityId | null;
   /** `t` — omitted pairs default to `content`. */
   tabs: Record<EntityId, PanelTab>;
   /** `contentSurface` — preserved verbatim, including Phase-2 `chat` (D12). */
@@ -275,7 +287,7 @@ export interface Route {
  */
 export type DropClass =
   | 'tabs'
-  | 'right'
+  | 'cursor'
   | 'pins'
   | 'stack'
   | 'query'
@@ -286,7 +298,11 @@ export type DropClass =
 
 export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
   tabs: 'tab and surface state',
-  right: 'the side panel',
+  /* NOT folded into `stack`: when `pc` is unreadable the Trail itself arrives
+     whole and only the POSITION in it is lost. A notice saying open panels
+     were dropped would name a loss that did not happen, which is worse than
+     naming none — R4-7 asks the class to be actionable, not merely present. */
+  cursor: 'your place in the trail',
   pins: 'pinned panels',
   stack: 'open panels',
   query: 'filter state',
@@ -370,5 +386,5 @@ export const MAX_HASH_LENGTH = 2048;
 export const UNADDRESSED_HASH = '#/';
 
 export function emptyPanels(): PanelState {
-  return { stack: [], pinned: [], right: [], tabs: {}, contentSurface: {}, session: null };
+  return { stack: [], pinned: [], cursor: null, tabs: {}, contentSurface: {}, session: null };
 }

@@ -46,12 +46,46 @@ export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 export interface NavState {
   spaceId: SpaceId;
   view: NavView;
-  /** bottom → top. On Home the stack is the centre TRAIL (task 01a00932). */
+  /**
+   * bottom → top. On Home the stack IS the Trail (U4) — the whole walk, not
+   * just what renders. On Work it is the panel stack, unchanged.
+   */
   stack: EntityId[];
   /** pin order. */
   pinned: EntityId[];
-  /** Home's right-panel trail, bottom → top (`r`). Empty ⇒ no right panel. */
-  right: EntityId[];
+  /**
+   * WHERE THE VIEWER STANDS in Home's Trail: an INDEX into `stack`.
+   *
+   * AN INDEX HERE, AN ID ON THE WIRE (`pc=<entityId>`), and the split is
+   * load-bearing rather than incidental. An index is what `trailBack`,
+   * `trailForward` and the render want — they move along an array. But an
+   * index is the WRONG thing to put in a URL, because `normalize` can remove
+   * an entry from `stack` (it cross-filters against pins, codec.ts) and every
+   * index after that entry then aims one place to the left. That is a silently
+   * WRONG destination with correct-looking chrome. An id absorbs the shift:
+   * re-resolved against the canonical stack it still names the same entity,
+   * and when the entity itself is gone it is ABSENT — detectable, so the
+   * cursor clamps to the top under the standard notice instead of guessing.
+   *
+   * The id is only well-defined because of the no-repeats ruling below: a
+   * Trail that could repeat an entity could not be addressed by id at all.
+   * The two rulings compose, and neither works without the other.
+   *
+   * (The design's D2 argued the opposite from `p=a,b,a` being a legal walk. It
+   * is not — `normalize` dedupes the stack, so a repeat never round-trips. The
+   * premise was withdrawn on 2026-09-22 and the conclusion with it.)
+   *
+   * `stack[cursor]` is what HOME renders. `stack[stack.length - 1]` is what
+   * WORK renders, and that is left exactly as it was (U1). The two can only
+   * disagree mid-Trail on Home, because every non-Trail verb parks the cursor
+   * at the top.
+   *
+   * ALWAYS IN RANGE: 0 while the stack is empty, else `[0, stack.length - 1]`.
+   * `clampCursor` is the single enforcer and every `set` that touches `stack`
+   * goes through it — an out-of-range cursor would render a blank centre while
+   * the address looked perfectly well-formed.
+   */
+  cursor: number;
   tabs: Record<EntityId, PanelTab>;
   contentSurface: Record<EntityId, ContentSurface>;
   session: EntityId | null;
@@ -111,25 +145,39 @@ export interface NavActions {
    */
   applyNormalization(next: { stack: EntityId[]; pinned: EntityId[] }): void;
   /**
-   * HOME'S TRAILS (task 01a00932 R6/R7). The centre trail is `stack` and the
-   * right trail is `right`; these verbs are the crumb/relation gestures —
-   * every one is USER navigation (history: push).
+   * HOME'S TRAIL (task 01a0c864, U2-U5). One Trail, one cursor. Every verb
+   * here is USER navigation (history: push) and NONE of them is `push`.
+   *
+   * WHY NOT `push`: the design's verb table rewrote `push` to truncate the
+   * forward half and append without deduping. But `push` is WORK's verb — its
+   * dedupe-and-raise is the single-host law (WLT §5.2c), it is declared in
+   * `shell/nav-port.ts`'s `NavPort` contract, and `WorkspaceView`/`GateApp`
+   * call it in sixteen places. U1 says Work stays as it is, so the Trail got
+   * its own verbs and `push` was left alone.
    */
   /**
-   * A LIST click roots the centre (R6a): the trail RESTARTS at this entity.
-   * Distinct from `push`, which grows the trail — an in-place tree hop.
+   * A LIST click roots the Trail (U10): it RESTARTS at this entity, cursor 0.
    */
   openCenter(id: EntityId): void;
-  /** Open an entity in the right panel: raise if present, else push. */
-  openRight(id: EntityId): void;
-  /** Crumb click: truncate the right trail so `id` is its top. No-op if absent. */
-  rightTo(id: EntityId): void;
-  /** Esc/✕ on the right panel: pop its top; empty trail is a no-op. */
-  popRight(): void;
-  /** Close the right panel entirely. */
-  closeRight(): void;
-  /** Crumb click on the centre trail: truncate so `id` is the top. */
-  stackTo(id: EntityId): void;
+  /**
+   * A HOP — a connection hop and a hierarchy hop are the same gesture now (U2).
+   *
+   * A REVISIT MOVES THE CURSOR (ruled 2026-09-22): hopping to an entity already
+   * on the Trail seeks to it rather than appending a second crumb, so the Trail
+   * stays a PATH and not a log. Anywhere new from mid-Trail discards the
+   * forward half (U5) — that is the one thing that truncates it.
+   */
+  trailPush(id: EntityId): void;
+  /**
+   * Crumb click (and the jump menu, D6): seek the cursor to `id`. THE TRAIL IS
+   * NOT TOUCHED — what is ahead of you stays ahead of you (U5). This is the
+   * verb that used to be `stackTo`, which truncated.
+   */
+  cursorTo(id: EntityId): void;
+  /** Esc / one hop back along the Trail. Clamped; never truncates (U11/D7). */
+  trailBack(): void;
+  /** One hop forward along the Trail. Clamped. */
+  trailForward(): void;
   /** Return the centre to its resting state (Home: the conversation). */
   clearStack(): void;
 }
@@ -141,7 +189,7 @@ const INITIAL: NavState = {
   view: { view: 'home' },
   stack: [],
   pinned: [],
-  right: [],
+  cursor: 0,
   tabs: {},
   contentSurface: {},
   session: null,
@@ -165,6 +213,29 @@ function sameIds(a: readonly EntityId[], b: readonly EntityId[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
+/**
+ * The cursor invariant, in ONE place. Out of range is not a state this store
+ * can hold: a cursor past the end renders a blank centre from an address that
+ * looks well-formed, which is the hardest kind of wrong to see.
+ */
+function clampCursor(stack: readonly EntityId[], cursor: number): number {
+  if (stack.length === 0) return 0;
+  if (!Number.isInteger(cursor) || cursor < 0) return 0;
+  return Math.min(cursor, stack.length - 1);
+}
+
+/**
+ * Where every NON-TRAIL verb parks the cursor: the top.
+ *
+ * This is what keeps U1 true. Work moves `stack` through `push`/`pop`/`close`/
+ * `pin`/`unpin`/`promote`/`applyNormalization` and reads `stack[length - 1]`;
+ * parking the cursor at the top after each means Work's read and Home's
+ * `stack[cursor]` cannot disagree on any path Work can take.
+ */
+function atTop(stack: readonly EntityId[]): number {
+  return stack.length === 0 ? 0 : stack.length - 1;
+}
+
 export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) => ({
   ...INITIAL,
 
@@ -172,10 +243,17 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     // Cross-set dedup with precedence pin > stack happens in `normalize`,
     // BEFORE first render (WLT §2.2).
     const canonical = normalize(route);
+    const { cursor: cursorId, ...panels } = canonical.panels;
+    /* THE ONE PLACE THE WIRE ID BECOMES AN INDEX, and it resolves against the
+       ALREADY-NORMALIZED stack — which is the whole reason the wire carries an
+       id. Resolving before normalization would re-introduce exactly the shift
+       the id exists to absorb. Absent (or omitted) ⇒ the top, per D2. */
+    const at = cursorId === null ? -1 : panels.stack.indexOf(cursorId);
     set((s) => ({
       spaceId: canonical.spaceId,
       view: canonical.target,
-      ...canonical.panels,
+      ...panels,
+      cursor: at === -1 ? atTop(panels.stack) : at,
       history: 'replace',
       revision: s.revision + 1,
     }));
@@ -202,15 +280,15 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
       return;
     }
     const stack = [...s.stack.filter((x) => x !== id), id];
-    set({ stack, history: 'push', revision: s.revision + 1 });
+    set({ stack, cursor: atTop(stack), history: 'push', revision: s.revision + 1 });
   },
 
   pop() {
     const s = get();
     if (s.stack.length === 0) return;
     const stack = s.stack.slice(0, -1);
-    const open = new Set([...stack, ...s.pinned, ...s.right]);
-    set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+    const open = new Set([...stack, ...s.pinned]);
+    set({ stack, cursor: atTop(stack), ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 
   close(id) {
@@ -218,17 +296,19 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     if (!s.stack.includes(id) && !s.pinned.includes(id)) return;
     const stack = s.stack.filter((x) => x !== id);
     const pinned = s.pinned.filter((x) => x !== id);
-    const open = new Set([...stack, ...pinned, ...s.right]);
-    set({ stack, pinned, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+    const open = new Set([...stack, ...pinned]);
+    set({ stack, pinned, cursor: atTop(stack), ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 
   pin(id) {
     const s = get();
     if (s.pinned.includes(id)) return { ok: true };
     if (s.pinned.length >= MAX_PINNED) return { ok: false, reason: `${MAX_PINNED} pins max` };
+    const stack = s.stack.filter((x) => x !== id);
     set({
-      stack: s.stack.filter((x) => x !== id),
+      stack,
       pinned: [...s.pinned, id],
+      cursor: atTop(stack),
       history: 'push',
       revision: s.revision + 1,
     });
@@ -238,9 +318,11 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
   unpin(id) {
     const s = get();
     if (!s.pinned.includes(id)) return;
+    const stack = [...s.stack.filter((x) => x !== id), id];
     set({
       pinned: s.pinned.filter((x) => x !== id),
-      stack: [...s.stack.filter((x) => x !== id), id],
+      stack,
+      cursor: atTop(stack),
       history: 'push',
       revision: s.revision + 1,
     });
@@ -250,7 +332,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     const s = get();
     const stack = s.stack.filter((x) => x !== id);
     const pinned = s.pinned.filter((x) => x !== id);
-    const open = new Set([...stack, ...pinned, ...s.right]);
+    const open = new Set([...stack, ...pinned]);
     // `origin` is preserved across the promotion so the Z4 screen knows the
     // companion to return to (WLT §2.2 canonical-reload rule).
     const origin =
@@ -258,6 +340,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     set({
       stack,
       pinned,
+      cursor: atTop(stack),
       ...pruned(s, open),
       view: { view: 'entity', entityId: id, origin },
       history: 'push',
@@ -297,10 +380,11 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
   applyNormalization(next) {
     const s = get();
     if (sameIds(s.stack, next.stack) && sameIds(s.pinned, next.pinned)) return;
-    const open = new Set([...next.stack, ...next.pinned, ...s.right]);
+    const open = new Set([...next.stack, ...next.pinned]);
     set({
       stack: [...next.stack],
       pinned: [...next.pinned],
+      cursor: atTop(next.stack),
       ...pruned(s, open),
       history: 'replace',
       revision: s.revision + 1,
@@ -309,63 +393,73 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
 
   openCenter(id) {
     const s = get();
-    if (s.stack.length === 1 && s.stack[0] === id) {
+    if (s.stack.length === 1 && s.stack[0] === id && s.cursor === 0) {
       set({ history: 'push', revision: s.revision + 1 });
       return;
     }
     const stack = [id];
-    const open = new Set([...stack, ...s.pinned, ...s.right]);
-    set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+    const open = new Set([...stack, ...s.pinned]);
+    set({ stack, cursor: 0, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 
-  openRight(id) {
-    const s = get();
-    const right = [...s.right.filter((x) => x !== id), id];
-    if (sameIds(s.right, right)) {
-      set({ history: 'push', revision: s.revision + 1 });
-      return;
-    }
-    set({ right, history: 'push', revision: s.revision + 1 });
-  },
-
-  rightTo(id) {
-    const s = get();
-    const at = s.right.indexOf(id);
-    if (at === -1 || at === s.right.length - 1) return;
-    const right = s.right.slice(0, at + 1);
-    const open = new Set([...s.stack, ...s.pinned, ...right]);
-    set({ right, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
-  },
-
-  popRight() {
-    const s = get();
-    if (s.right.length === 0) return;
-    const right = s.right.slice(0, -1);
-    const open = new Set([...s.stack, ...s.pinned, ...right]);
-    set({ right, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
-  },
-
-  closeRight() {
-    const s = get();
-    if (s.right.length === 0) return;
-    const open = new Set([...s.stack, ...s.pinned]);
-    set({ right: [], ...pruned(s, open), history: 'push', revision: s.revision + 1 });
-  },
-
-  stackTo(id) {
+  trailPush(id) {
     const s = get();
     const at = s.stack.indexOf(id);
-    if (at === -1 || at === s.stack.length - 1) return;
-    const stack = s.stack.slice(0, at + 1);
-    const open = new Set([...stack, ...s.pinned, ...s.right]);
-    set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+    /* A REVISIT SEEKS, it does not append (ruled 2026-09-22). Walking
+       `a → b → a` leaves `[a, b]` with the cursor back at `a` and `b` still
+       ahead of you, rather than growing a third crumb naming a place already
+       on the Trail. Two reasons it has to be this way round and not the
+       design's: `normalize` dedupes `p` (codec.ts), so a repeated crumb would
+       be collapsed by the very next URL write and the Trail would disagree
+       with its own address; and a Trail that can repeat is a LOG, while the
+       thing this screen is for is a PATH. */
+    if (at !== -1) {
+      if (at === s.cursor) {
+        set({ history: 'push', revision: s.revision + 1 });
+        return;
+      }
+      set({ cursor: at, history: 'push', revision: s.revision + 1 });
+      return;
+    }
+    /* SOMEWHERE NEW FROM MID-TRAIL DISCARDS THE FORWARD HALF (U5). This is
+       the ONLY verb that shortens the Trail — `cursorTo` and `trailBack`
+       deliberately do not, which is the whole of "keep forward". */
+    const stack = [...s.stack.slice(0, s.cursor + 1), id];
+    const open = new Set([...stack, ...s.pinned]);
+    set({
+      stack,
+      cursor: stack.length - 1,
+      ...pruned(s, open),
+      history: 'push',
+      revision: s.revision + 1,
+    });
+  },
+
+  cursorTo(id) {
+    const s = get();
+    const at = s.stack.indexOf(id);
+    if (at === -1 || at === s.cursor) return;
+    // THE TRAIL IS UNTOUCHED — no `pruned` call, because nothing closed.
+    set({ cursor: at, history: 'push', revision: s.revision + 1 });
+  },
+
+  trailBack() {
+    const s = get();
+    if (s.cursor <= 0) return;
+    set({ cursor: s.cursor - 1, history: 'push', revision: s.revision + 1 });
+  },
+
+  trailForward() {
+    const s = get();
+    if (s.cursor >= s.stack.length - 1) return;
+    set({ cursor: s.cursor + 1, history: 'push', revision: s.revision + 1 });
   },
 
   clearStack() {
     const s = get();
     if (s.stack.length === 0) return;
-    const open = new Set([...s.pinned, ...s.right]);
-    set({ stack: [], ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+    const open = new Set([...s.pinned]);
+    set({ stack: [], cursor: 0, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 }));
 
@@ -421,6 +515,25 @@ export function selectStackTop(s: NavState): EntityId | null {
   return s.stack.length ? s.stack[s.stack.length - 1] : null;
 }
 
+/**
+ * WHAT HOME RENDERS — `stack[cursor]`, the entity the viewer is standing on.
+ *
+ * Named APART from `selectStackTop` on purpose, and both are kept: they answer
+ * different questions and the difference is the whole feature. Work renders the
+ * TOP of its panel stack (U1, untouched); Home renders the CURSOR's entry, which
+ * is the top only until you walk back. Collapsing them into one selector is how
+ * "keep forward" would quietly stop being true.
+ */
+export function selectTrailEntity(s: NavState): EntityId | null {
+  if (s.stack.length === 0) return null;
+  return s.stack[clampCursor(s.stack, s.cursor)] ?? null;
+}
+
+/** The Trail's root — crumb 0, which is where `openCenter` planted it. */
+export function selectTrailRoot(s: NavState): EntityId | null {
+  return s.stack.length ? s.stack[0]! : null;
+}
+
 export function selectIsPinned(s: NavState, id: EntityId): boolean {
   return s.pinned.includes(id);
 }
@@ -452,7 +565,9 @@ export function routeOf(s: NavState): Route {
   const panels: PanelState = {
     stack: s.stack,
     pinned: s.pinned,
-    right: s.right,
+    /* NULL AT THE TOP so `pc` is omitted — "omitted ⇒ the top" (D2) is what
+       makes every link that exists today build byte-identically. */
+    cursor: s.cursor >= s.stack.length - 1 ? null : (s.stack[s.cursor] ?? null),
     tabs: s.tabs,
     contentSurface: s.contentSurface,
     session: s.session,
@@ -620,5 +735,8 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
 
 /** Test/boot helper: reset the store to a clean space. */
 export function resetNav(spaceId: SpaceId = '', view: NavView = { view: 'home' }): void {
-  navStore.setState({ ...INITIAL, ...defaultRoute(spaceId, view).panels, spaceId, view });
+  const { cursor: _cursorId, ...panels } = defaultRoute(spaceId, view).panels;
+  // `cursor` is an INDEX in state and an ID in `PanelState`; a default route
+  // has an empty stack, so the index is 0 and the id it would resolve is none.
+  navStore.setState({ ...INITIAL, ...panels, cursor: 0, spaceId, view });
 }

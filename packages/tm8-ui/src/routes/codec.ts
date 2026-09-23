@@ -251,10 +251,27 @@ export function parse(hash: string): ParseOutcome {
   const spaceId: SpaceId = segments[1];
   const rest = segments.slice(2);
 
+  const stack = parseIdList(query.get('p'), drop('stack'));
+
+  /* O1 — A RETIRED `r=` LINK FOLDS, IT DOES NOT DROP.
+     `r` carried Home's third panel, which no longer exists (U2/U6). A link to
+     it still names a destination the viewer meant to reach, so `r`'s TOP — the
+     entity that panel was actually showing — is appended to `p` and the rest of
+     `r` is discarded SILENTLY. Folding rather than dropping-with-a-notice is
+     the point: a notice tells the viewer something was lost, folding means
+     nothing was. Because the fold lands the entity at the top of `p` and an
+     absent `pc` means the top, the link opens on exactly the entity it named.
+     Deliberately reversible on review — see the PR body.
+     Its drop callback is a NO-OP: `r` has no drop class any more, and a
+     malformed one is exactly the "discard the rest silently" case. */
+  const legacyRight = parseIdList(query.get('r'), () => {});
+  const foldedTop = legacyRight.length > 0 ? legacyRight[legacyRight.length - 1]! : null;
+  if (foldedTop !== null && !stack.includes(foldedTop)) stack.push(foldedTop);
+
   const panels: PanelState = {
-    stack: parseIdList(query.get('p'), drop('stack')),
+    stack,
     pinned: parseIdList(query.get('pin'), drop('pins')),
-    right: parseIdList(query.get('r'), drop('right')),
+    cursor: null,
     tabs: parsePairs<PanelTab>(query.get('t'), TABS, drop('tabs')),
     contentSurface: parsePairs<ContentSurface>(
       query.get('contentSurface'),
@@ -264,6 +281,20 @@ export function parse(hash: string): ParseOutcome {
     ),
     session: null,
   };
+
+  /* `pc` NAMES AN ENTRY OF `p`, so a `pc` that is not in `p` is not a cursor —
+     it is a dangling address, and it clamps to the top under its own class
+     rather than being honoured. Omitted is the COMMON case and means the top:
+     that is what makes every pre-`pc` link parse to what it parses to today. */
+  const cursorRaw = query.get('pc');
+  if (cursorRaw !== null) {
+    const cursor = dec(cursorRaw);
+    if (cursor === null || cursor.length === 0 || !panels.stack.includes(cursor)) {
+      drop('cursor')();
+    } else {
+      panels.cursor = cursor;
+    }
+  }
 
   const sessionRaw = query.get('session');
   if (sessionRaw !== null) {
@@ -540,12 +571,18 @@ export function build(route: Route): BuildOutcome {
   if (route.panels.session) viewParams.push(['session', enc(route.panels.session)]);
 
   const qParam: Param[] = t.view === 'kind' && t.q ? [['q', encodeQ(t.q)]] : [];
-  const stackParam: Param[] = route.panels.stack.length ? [['p', idList(route.panels.stack)]] : [];
+  const stackParam: Param[] = [];
+  if (route.panels.stack.length) {
+    stackParam.push(['p', idList(route.panels.stack)]);
+    /* `pc` RIDES IN `p`'s OWN TIER, never its own. A `pc` that outlived the `p`
+       it points into would be a dangling address, and the 2048-cap drop tiers
+       are the one machine in this file that could manufacture one.
+       Null ⇒ the cursor is at the top ⇒ the param is omitted entirely, which is
+       why a Trail nobody has walked back through builds the same bytes it
+       built before `pc` existed. */
+    if (route.panels.cursor !== null) stackParam.push(['pc', enc(route.panels.cursor)]);
+  }
   const pinParam: Param[] = route.panels.pinned.length ? [['pin', idList(route.panels.pinned)]] : [];
-  /* Tolerant of hand-built pre-`right` shapes (stored last-places, fixtures). */
-  const rightParam: Param[] = (route.panels.right ?? []).length
-    ? [['r', idList(route.panels.right)]]
-    : [];
   const tabsParam: Param[] = [];
   if (Object.keys(route.panels.tabs).length) tabsParam.push(['t', pairs(route.panels.tabs)]);
   if (Object.keys(route.panels.contentSurface).length) {
@@ -554,11 +591,11 @@ export function build(route: Route): BuildOutcome {
 
   // Drop tiers, most-droppable first. `t` and contentSurface go TOGETHER —
   // they are one tier, because surface state without tab state is a lie about
-  // which panel the surface belongs to. The right trail outranks only that
-  // pair: a side panel is a supplement to the centre it annotates.
+  // which panel the surface belongs to. The `right` tier is gone with the
+  // third panel (U2/U6); `pc` did NOT take its place in the order — it is part
+  // of the `stack` tier, because it is part of the Trail, not a supplement.
   const tiers: { cls: DropClass; params: Param[] }[] = [
     { cls: 'tabs', params: tabsParam },
-    { cls: 'right', params: rightParam },
     { cls: 'pins', params: pinParam },
     { cls: 'stack', params: stackParam },
     { cls: 'query', params: qParam },
@@ -602,11 +639,27 @@ export function normalize(route: Route): Route {
   const pinned = dedupe(route.panels.pinned);
   const pinnedSet = new Set(pinned);
   const stack = dedupe(route.panels.stack).filter((id) => !pinnedSet.has(id));
-  /* The right trail dedupes within itself only — it is a separate panel, not
-     a third host in the pin/stack single-host law, and the same entity open
-     in the centre AND beside it is a state the viewer can honestly make. */
-  const right = dedupe(route.panels.right ?? []);
-  const open = new Set([...pinned, ...stack, ...right]);
+  const open = new Set([...pinned, ...stack]);
+
+  /* THE CURSOR IS RESOLVED AGAINST THE CANONICAL STACK, which is the entire
+     reason `pc` is an id. Both filters above can REMOVE an entry — the dedupe
+     within `p`, and the pin cross-filter, which fires on a Trail that walked
+     onto something pinned over in Work. An index would survive that silently
+     and aim one place to the left, at a real entity, with correct-looking
+     chrome. An id either still names its entity (the common case: an entry
+     BEFORE the cursor was removed, and the cursor is simply unaffected) or is
+     absent, and absent clamps to the top.
+
+     Canonical form is NULL AT THE TOP, so `normalize ∘ normalize = normalize`
+     holds and the omitted-`pc` link stays the one true spelling of "at the
+     end". */
+  const cursorTop = stack.length > 0 ? stack[stack.length - 1]! : null;
+  const cursor =
+    route.panels.cursor !== null &&
+    route.panels.cursor !== cursorTop &&
+    stack.includes(route.panels.cursor)
+      ? route.panels.cursor
+      : null;
 
   const tabs: Record<EntityId, PanelTab> = {};
   for (const [id, tab] of Object.entries(route.panels.tabs)) {
@@ -633,7 +686,7 @@ export function normalize(route: Route): Route {
   return {
     spaceId: route.spaceId,
     target,
-    panels: { stack, pinned, right, tabs, contentSurface, session: route.panels.session },
+    panels: { stack, pinned, cursor, tabs, contentSurface, session: route.panels.session },
   };
 }
 

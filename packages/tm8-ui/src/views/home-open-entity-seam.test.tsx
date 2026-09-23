@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 /**
- * THE HOST'S ENTITY-OPEN SEAM — one generic route into the right panel,
- * asserted through the real GateApp (task 01a023fb-23da, S5).
+ * THE HOST'S ENTITY-OPEN SEAM — one generic route into the DETAIL panel,
+ * asserted through the real GateApp (task 01a023fb-23da, S5; re-seated onto
+ * the Trail by task 01a0c864 U2).
  *
  * The ledger surfaces (sticky panel tree rows, transcript create lines, the
  * expanded read line) all open entities through ONE handler: the chat
- * surface's `onOpenEntity`, which the gate binds to `navStore.openRight` —
- * region C, the aside beside the conversation (GateApp's ChatHomeSurface
- * mount; HomeView.tsx `openEntity`). Sessions are not a special door: a
+ * surface's `onOpenEntity`, which the gate binds to `navStore.trailPush` —
+ * region B, the Trail beside the conversation (GateApp's ChatHomeSurface
+ * mount; HomeView.tsx `openEntity`). The DESTINATION changed when the third
+ * panel retired; the seam being ONE generic handler did not, which is what
+ * these cases are actually for. Sessions are not a special door: a
  * `work_session` rides the same route and its DETAIL VIEW happens to be the
  * terminal (registry: `archetype: 'terminal'` → EntityDetailPanel mounts
  * TerminalBody). Kind routing is host-side and automatic.
  *
  * Nothing in the suite asserted this half before: gate-chat-home-wiring
- * covers the stage verbs, home-trails covers the CENTRE trail, and every
+ * covers the stage verbs, the store suite covers the Trail verbs, and every
  * FleetPane/chip test renders the component directly and checks that it ASKS.
  * These cases check that the gate ANSWERS — the observable consequence in the
  * aside, not prop presence — so they survive the FleetPane → LedgerPanel swap:
@@ -49,8 +52,8 @@ beforeEach(() => {
   screenStackStore.getState().clearAll();
 });
 
-describe('the entity-open seam lands in the right panel', () => {
-  it('an expanded read-line row opens the aside — the ledger asks, the gate answers with region C', async () => {
+describe('the entity-open seam lands on the Trail', () => {
+  it('an expanded read-line row extends the Trail — the ledger asks, the gate answers in region B', async () => {
     /* Originally this case clicked a transcript entity CHIP; S3 retired the
        chips for the ledger lines, so the ledger's own route is what gets
        pinned now: expand the counted read line (S3b) and click a row inside.
@@ -69,19 +72,19 @@ describe('the entity-open seam lands in the right panel', () => {
     expect(row.closest('button'), 'the row rendered inert — the gate stopped wiring onOpenEntity').toBeTruthy();
     fireEvent.click(row);
 
-    /* The observable consequence: the aside opens, and the address carries it
-       (`r=` is the right trail — a reload reproduces the arrangement). */
-    await waitFor(() => expect(view.getByTestId('hp-aside')).toBeTruthy());
-    await waitFor(() => expect(target.getHash()).toContain('r='));
+    /* The observable consequence: the detail opens ON THE TRAIL, and the
+       address carries it (`p=` is the Trail — a reload reproduces the walk). */
+    await waitFor(() => expect(view.getByTestId('hp-center-trail-host')).toBeTruthy());
+    await waitFor(() => expect(target.getHash()).toContain('p='));
     view.unmount();
   });
 
-  it('a ledger-panel session row opens ITS TERMINAL in the aside — S5, the whole path through the real host', async () => {
+  it('a ledger-panel session row opens ITS TERMINAL on the Trail — S5, the whole path through the real host', async () => {
     /* The fixture thread delegates once (execution.spawn → the entity
        fixtures' live session), so the sticky panel has a sessions row to
        follow: expand the panel, click the row, and the terminal must be
-       standing in region C. Every hop is real — LedgerPanel → the screen's
-       onOpenEntity → the gate's openRight → AuxEntityPanel → the registry's
+       standing in region B. Every hop is real — LedgerPanel → the screen's
+       onOpenEntity → the gate's trailPush → AuxEntityPanel → the registry's
        terminal archetype. Rows stay view-only: opening navigates; the
        composer keeps addressing the conversation it always did. */
     const target = createMemoryTarget(`#/s/${SPACE}/home`);
@@ -92,9 +95,9 @@ describe('the entity-open seam lands in the right panel', () => {
     const row = await view.findByTestId('ledger-panel-session', {}, { timeout: 5000 });
     fireEvent.click(row);
 
-    const aside = await waitFor(() => view.getByTestId('hp-aside'));
-    await waitFor(() => expect(within(aside).getByTestId('terminal-body')).toBeTruthy());
-    /* View-only, observably: the conversation region is still mounted beside
+    const host = await waitFor(() => view.getByTestId('hp-center-trail-host'));
+    await waitFor(() => expect(within(host).getByTestId('terminal-body')).toBeTruthy());
+    /* View-only, observably: the conversation region is still mounted behind
        the terminal — the row navigated, it did not retarget or evict. */
     expect(view.getByTestId('chat-home-screen')).toBeTruthy();
     view.unmount();
@@ -106,15 +109,15 @@ describe('the entity-open seam lands in the right panel', () => {
     await waitFor(() => view.getByTestId('chat-home-screen'));
 
     /* The same verb a ledger session row will call: the gate binds
-       `onOpenEntity` to `openRight`, so driving the store here IS the seam
+       `onOpenEntity` to `trailPush`, so driving the store here IS the seam
        below the row — the chip case above proves the surface reaches it. */
-    act(() => navStore.getState().openRight(sessionLive.id as EntityId));
+    act(() => navStore.getState().trailPush(sessionLive.id as EntityId));
 
-    const aside = await waitFor(() => view.getByTestId('hp-aside'));
+    const host = await waitFor(() => view.getByTestId('hp-center-trail-host'));
     /* Not "a panel opened" — THE TERMINAL opened. The registry's terminal
        archetype is what makes a session row's click different from a task
        row's, and it must engage with no per-kind wiring in the opener. */
-    await waitFor(() => expect(within(aside).getByTestId('terminal-body')).toBeTruthy());
+    await waitFor(() => expect(within(host).getByTestId('terminal-body')).toBeTruthy());
     view.unmount();
   });
 
@@ -123,13 +126,13 @@ describe('the entity-open seam lands in the right panel', () => {
     const view = render(<GateApp routerTarget={target} />);
     await waitFor(() => view.getByTestId('chat-home-screen'));
 
-    act(() => navStore.getState().openRight(taskGuideLines.id as EntityId));
+    act(() => navStore.getState().trailPush(taskGuideLines.id as EntityId));
 
-    const aside = await waitFor(() => view.getByTestId('hp-aside'));
+    const host = await waitFor(() => view.getByTestId('hp-center-trail-host'));
     await waitFor(() =>
-      expect(within(aside).getAllByText(taskGuideLines.title).length).toBeGreaterThan(0),
+      expect(within(host).getAllByText(taskGuideLines.title).length).toBeGreaterThan(0),
     );
-    expect(within(aside).queryByTestId('terminal-body')).toBeNull();
+    expect(within(host).queryByTestId('terminal-body')).toBeNull();
     view.unmount();
   });
 });

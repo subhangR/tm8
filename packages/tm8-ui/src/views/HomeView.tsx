@@ -1,37 +1,41 @@
 /**
- * HomeView — the unified Home's three regions (task 01a006f8, generalized by
- * task 01a00932; selection model re-seated by its D1 ruling).
+ * HomeView — Home's TWO regions (task 01a0c864 U2, superseding task 01a00932's
+ * three-region R6/R7).
  *
  *   A · the left column (root header, list) — drawn by ChatHomeScreen, fed
- *       through the host's render prop.
- *   B · the centre: the SELECTION, now the route's `p` TRAIL. The chat
- *       conversation when the trail is empty; a row selected from A restarts
- *       the trail (`openCenter`); an IN-TREE click inside B grows it
- *       (`push` — R6: hierarchy navigates in place) while the chat stays
- *       MOUNTED but hidden (D8). The trail renders as B's breadcrumb (R7).
- *   C · the right panel: the route's `r` TRAIL. A RELATED entity clicked in
- *       B — different kind, or same kind outside the root's tree — opens
- *       here, beside B, never in the Workspace (D12/R6). A chip inside C
- *       pushes onto its trail (same panel, longer crumb). "Open here"
- *       PROMOTES C's subject to B's root and moves the list selection (R6).
- *       Esc pops C first, then B (D14 generalized to the trails).
+ *       through the host's render prop. It is THE ROOT CHOOSER and nothing
+ *       else: a row restarts the Trail here (U10).
+ *   B · the detail: ONE TRAIL. The chat conversation while it is empty; a row
+ *       from A roots it (`openCenter`); every click inside B — a hierarchy
+ *       child, a Connections pick, a Needs-you card — extends the SAME Trail
+ *       (`trailPush`), while the chat stays MOUNTED but hidden (D8). The
+ *       cursor is where you stand in it, and B renders `stack[cursor]`.
  *
- * THE ROUTE OWNS ALL OF IT (D1, the LLD's central reconciliation): both
- * trails live in `navStore` and therefore in the URL, so a Home deep link
- * reproduces the whole arrangement and the back button walks it. What the
- * old module-level stores held is gone — `homeRegionStore` keeps only the
- * remembered ROOT (D15), and GateApp's D11 spawn flip writes `navStore`.
+ * THE THIRD PANEL IS GONE (U2/U6). A connection hop and a hierarchy hop were
+ * two gestures landing in two places; they are one gesture landing in one
+ * place, and the separator in the strip is where the difference now lives —
+ * `›` for a hierarchy step, `→` for a connection step, DERIVED at render
+ * (D4), never stored.
  *
- * "IN THE TREE" is one definition (R6): the clicked entity's parent chain,
- * walked through `detailOf`, reaches B's trail root. An unloaded parent
- * chain falls back to the RIGHT panel — sideways is the reversible default;
- * silently re-rooting the centre is not.
+ * THE ROUTE OWNS ALL OF IT (D1, the LLD's central reconciliation): the Trail
+ * is `navStore.stack` and therefore `p`, the cursor is `navStore.cursor` and
+ * therefore `pc`, so a Home deep link reproduces the whole walk AND the place
+ * in it, and Back/Forward walk the Trail (D3). What the old module-level
+ * stores held is gone — `homeRegionStore` keeps only the remembered ROOT
+ * (D15), and GateApp's D11 spawn flip writes `navStore`.
+ *
+ * COLUMN A HOLDS STILL (U7/D5). Walk the Trail off A's population and A keeps
+ * its list and simply carries NO selected row; walk back onto something it
+ * lists and the row highlights again. A is where you came from; the Trail is
+ * where you are. This is what retired R6's `inTreeOf` branch — the guard
+ * against the centre silently re-rooting — along with the hazard it guarded:
+ * with one Trail, a restart can only come from A.
  *
  * WHY THE PORTS ARE BUILT HERE AND NOT IN `auxPanel`: every one of them —
  * `primaries`, `membership`, `launchPort`, `rowLifecycle`, `attachments` — is
- * a per-SCREEN singleton shared by BOTH mounts (B's entity occupant and C).
- * Two executors that disagree about what a write means is the failure
- * `auxPanel`'s docblock names. One screen, one set.
+ * a per-SCREEN singleton, and B's entity occupant and the chat's own surfaces
+ * share them. Two executors that disagree about what a write means is the
+ * failure `auxPanel`'s docblock names. One screen, one set.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
@@ -48,7 +52,7 @@ import { getKind } from '../domain';
 import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { navStore, useNavStore } from '../stores/navStore';
+import { navStore, selectTrailEntity, useNavStore } from '../stores/navStore';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
@@ -63,7 +67,6 @@ import type { CockpitStage, NavView } from '../routes/types';
 import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
-import { inTreeOf } from './home-tree';
 import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
@@ -72,15 +75,6 @@ import { usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useSessionStart } from './useSessionStart';
 import type { GateData } from './useGateData';
-
-/* Same floor and same default as the channel screen's aside: two surfaces
-   showing the same `EntityDetailPanel` at two different widths is the drift
-   `PanelResizer` was made to stop. */
-const ASIDE_MIN = 320;
-const ASIDE_DEFAULT = 440;
-/** The 8px separator track plus the aside's own 1px border — this package sets
-    no global `border-box`, so that border ADDS to the declared width. */
-const ASIDE_CHROME = 8 + 1;
 
 /* ---------------------------------------------------------------------------
    COLUMN A AND THE RAIL (task 01a00ac2)
@@ -108,8 +102,7 @@ export const HOME_CENTER_MIN = 360;
 export const HOME_LIST_MIN = 240;
 export const HOME_LIST_DEFAULT = 340;
 export const HOME_LIST_MAX = 560;
-/** A's separator track. It has no border of its own — unlike the aside, which
-    is why this is 8 and `ASIDE_CHROME` is 9. */
+/** A's separator track. It has no border of its own. */
 export const HOME_LIST_CHROME = 8;
 
 /* The rail's two widths, which the SOLVER needs and CSS used to own alone
@@ -213,13 +206,18 @@ function homeViewOf(root: HomeRoot): NavView {
 export function HomeView(props: HomeViewProps) {
   const { data, reasons, onNotice } = props;
 
-  /* THE TRAILS — route state, read live (D1). B is the stack; C is `r`. */
+  /* THE TRAIL — route state, read live (D1). `stack` is the WHOLE walk and
+     `cursor` is where the viewer stands in it, so what B renders is
+     `stack[cursor]` and NOT the top (D1). That substitution is the heart of
+     this screen's change: the top is merely where the cursor usually is. */
   const navView = useNavStore((s) => s.view);
   const stack = useNavStore((s) => s.stack);
-  const rightTrail = useNavStore((s) => s.right);
-  const centerId = stack.length > 0 ? stack[stack.length - 1]! : null;
-  const drillId = rightTrail.length > 0 ? rightTrail[rightTrail.length - 1]! : null;
-  const openEntity = useCallback((id: EntityId) => navStore.getState().openRight(id), []);
+  const cursor = useNavStore((s) => s.cursor);
+  const centerId = useNavStore((s) => selectTrailEntity(s));
+  /* EVERY HOP IS THE SAME GESTURE NOW (U2). A chip, a Needs-you card and a
+     Connections pick all extend ONE Trail in region B; there is no third
+     panel left for any of them to open sideways into. */
+  const openEntity = useCallback((id: EntityId) => navStore.getState().trailPush(id), []);
 
   /* THE ROOT: the address wins; a bare `/home` falls back to the remembered
      root (D15). An unregistered slug is not a root we can list — the memory
@@ -273,19 +271,24 @@ export function HomeView(props: HomeViewProps) {
     [],
   );
 
-  /* R6's click rule at its one seam: in-tree grows B's trail (in place);
-     everything else opens beside it. `inTreeOf` is the shared definition —
-     see views/home-tree.ts and its decision table. */
-  const treeRootId = stack.length > 0 ? stack[0]! : null;
-  const openFromCenter = useCallback(
+  /* R6's in-tree/out-of-tree branch is GONE (D5). It existed to stop the
+     centre silently re-rooting when you clicked something outside its own
+     hierarchy — but with one Trail, and a restart that can only come from
+     column A (U10), the centre has no other way to re-root. The hazard
+     retires with the branch rather than being left uncovered; the tree walk
+     it used, `views/home-tree.ts`, goes with it. */
+  const openFromCenter = openEntity;
+
+  /* The single-step parent compare D4 needs for the hop marks — NOT the
+     ancestor walk the old branch did. `undefined` means the read has not
+     landed, which is what buys `HomeTrail` its neutral separator instead of a
+     guess that would later flip. */
+  const parentOf = useCallback(
     (id: EntityId) => {
-      const nav = navStore.getState();
-      const parentOf = (cursor: EntityId) =>
-        (data.detailOf(cursor)?.parentId ?? null) as EntityId | null;
-      if (inTreeOf(treeRootId, id, parentOf)) nav.push(id);
-      else nav.openRight(id);
+      const detail = data.detailOf(id);
+      return detail ? ((detail.parentId ?? null) as EntityId | null) : undefined;
     },
-    [treeRootId, data],
+    [data],
   );
 
   /* Trail crumbs resolve titles through the same read the panels use. */
@@ -358,14 +361,10 @@ export function HomeView(props: HomeViewProps) {
   );
 
   const ctx = useMemo(() => ({ spaceId: data.spaceId }), [data.spaceId]);
-  /* The control host serves BOTH panel mounts; its `kind` feeds only the
-     "this kind has no state to set" refusal, so the drilled entity (the most
-     recently opened) wins and an unloaded detail claims nothing. */
-  const focusDetail = drillId
-    ? data.detailOf(drillId)
-    : centerId
-      ? data.detailOf(centerId)
-      : undefined;
+  /* The control host's `kind` feeds only the "this kind has no state to set"
+     refusal, so the entity under the cursor answers for it and an unloaded
+     detail claims nothing. */
+  const focusDetail = centerId ? data.detailOf(centerId) : undefined;
   const controls = useMemo<ControlHost>(
     () => ({
       kind: focusDetail?.kind ?? '',
@@ -389,9 +388,8 @@ export function HomeView(props: HomeViewProps) {
     [focusDetail?.kind, ctx, data, primaries, rowLifecycle],
   );
 
-  /* The panels read `detailOf`; nothing else on Home does, so the pulls are
-     this screen's to ask for — one per mounted region. */
-  if (drillId && !data.detailOf(drillId)) data.pull?.(drillId);
+  /* The panels read `detailOf`; nothing else on Home does, so the pull is
+     this screen's to ask for. */
   if (centerId && !data.detailOf(centerId)) data.pull?.(centerId);
 
   /* D2/D3 generalized (R5) — the kind cell's ＋: create an "Untitled {kind}"
@@ -466,7 +464,6 @@ export function HomeView(props: HomeViewProps) {
      reads as "the terminal is broken". */
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rootWidth = useElementWidth(rootRef);
-  const pref = usePanelWidth('home.aside', ASIDE_DEFAULT, ASIDE_MIN);
   const outerWidth = rootWidth > 0
     ? rootWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
@@ -486,13 +483,12 @@ export function HomeView(props: HomeViewProps) {
      behind one toggle, and B + C take the whole row. */
   const railWidth = focus ? 0 : railCollapsed ? HOME_RAIL_COLLAPSED : HOME_RAIL_EXPANDED;
 
-  /* A's ceiling is what the row can spare once the rail, B's floor and — when
-     C is open — C's floor have been paid. `outerWidth === 0` is jsdom, which
-     cannot measure; the same law the overlay follows applies here, so an
-     unmeasurable row imposes no ceiling rather than a fabricated one. */
-  const asideReserve = drillId ? ASIDE_MIN + ASIDE_CHROME : 0;
+  /* A's ceiling is what the row can spare once the rail and B's floor have
+     been paid. There is no third column to reserve for any more (U2).
+     `outerWidth === 0` is jsdom, which cannot measure, so an unmeasurable row
+     imposes no ceiling rather than a fabricated one. */
   const listCeiling = outerWidth > 0
-    ? Math.max(HOME_LIST_MIN, Math.min(HOME_LIST_MAX, outerWidth - railWidth - HOME_CENTER_MIN - HOME_LIST_CHROME - asideReserve))
+    ? Math.max(HOME_LIST_MIN, Math.min(HOME_LIST_MAX, outerWidth - railWidth - HOME_CENTER_MIN - HOME_LIST_CHROME))
     : HOME_LIST_MAX;
   /* The PREFERENCE is never rewritten by a narrow window — `usePanelWidth`'s
      own docblock is explicit that clamping on write is how a preference dies.
@@ -500,36 +496,31 @@ export function HomeView(props: HomeViewProps) {
      asked for. */
   const listWidth = focus ? 0 : Math.min(Math.max(HOME_LIST_MIN, listPref.width), listCeiling);
 
-  /* Everything left of C, at its ACTUAL width rather than a bundled guess. */
-  const leftFloor = focus ? HOME_CENTER_MIN : railWidth + listWidth + HOME_LIST_CHROME + HOME_CENTER_MIN;
-  const asideMax = Math.max(0, outerWidth - leftFloor - ASIDE_CHROME);
-  /** Beside-mode is affordable only while C's floor fits next to B's floor.
-      jsdom measures 0 ⇒ beside, so the overlay never triggers in tests that
-      cannot measure (the same law as the workspace demotion loop). */
-  const overlay = outerWidth > 0 && asideMax < ASIDE_MIN;
-  const asideWidth = overlay
-    ? Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, outerWidth - 48))
-    : Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, asideMax));
 
-  /* Esc walks DOWN one step per press: C's trail first, then B's, until the
-     chat is back (D14, generalized to the trails). The launch sheet's own
-     capture-phase Esc handler consumes its key before this listener can see
-     it, and `defaultPrevented` honours any other surface that claimed the
-     press (a focused terminal, the doc editor). */
-  const hasDrill = drillId !== null;
+  /* ESC STEPS THE CURSOR BACK, AND NEVER TRUNCATES (U11/D7). At the root it
+     returns B to the conversation, which is already mounted behind it (D8).
+     Esc is the one gesture people press without looking, so it is the one
+     that must not lose the forward half — `trailBack` moves the cursor and
+     leaves the walk whole.
+
+     The cursor is read LIVE from the store inside the handler rather than
+     closed over: a stale index here would step from where the viewer used to
+     be. The launch sheet's own capture-phase Esc consumes its key before this
+     listener sees it, and `defaultPrevented` honours any other surface that
+     claimed the press (a focused terminal, the doc editor). */
   const hasCenter = centerId !== null;
   useEffect(() => {
-    if (!hasDrill && !hasCenter) return;
+    if (!hasCenter) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
       const nav = navStore.getState();
-      if (hasDrill) nav.popRight();
-      else nav.pop();
+      if (nav.cursor > 0) nav.trailBack();
+      else nav.clearStack();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [hasDrill, hasCenter]);
+  }, [hasCenter]);
 
   const hostBundle = {
     data,
@@ -545,17 +536,19 @@ export function HomeView(props: HomeViewProps) {
     viewerMemberId: props.viewerMemberId,
   };
 
-  /* REGION B's entity occupant, under its trail crumb (R7). Clicks inside it
-     split by R6: in-tree grows THIS trail (in place); relations open C —
-     sideways lands BESIDE the selection, not over it. Closing returns B to
-     the chat. */
+  /* REGION B's entity occupant, under the Trail strip. Every click inside it
+     extends THIS Trail (U2) — there is nowhere sideways to land any more.
+     A crumb SEEKS the cursor (`cursorTo`) and leaves the walk whole, so what
+     is ahead of you stays ahead of you (U5). Closing returns B to the chat. */
   const centerOverride = centerId ? (
     <div className="hp-trail-host" data-testid="hp-center-trail-host">
       <HomeTrail
         trail={stack}
-        label="Centre trail"
+        cursor={cursor}
+        label="Trail"
         titleOf={titleOf}
-        onCrumb={(id) => navStore.getState().stackTo(id)}
+        parentOf={parentOf}
+        onCrumb={(id) => navStore.getState().cursorTo(id)}
       />
       <AuxEntityPanel
         host={hostBundle}
@@ -741,87 +734,11 @@ export function HomeView(props: HomeViewProps) {
     </div>
   );
 
-  /* R6's PROMOTE — "open here": C's subject becomes B's ROOT, the left list
-     follows it (selection AND, when its kind differs, the root list), and
-     both trails settle. The explicit escape hatch out of sideways reading. */
-  const promoteDrill = useCallback(() => {
-    if (!drillId) return;
-    const nav = navStore.getState();
-    const kind = data.detailOf(drillId)?.kind;
-    if (kind && isHomeRootKind(kind) && kind !== root) {
-      rememberHomeRoot(data.spaceId, kind);
-      nav.navigate(homeViewOf(kind));
-    }
-    nav.openCenter(drillId);
-    nav.closeRight();
-  }, [drillId, data, root]);
-
-  /* REGION C. Chips inside it PUSH onto its trail (drilling sideways, never
-     a fourth column — the crumb is how you walk back, R7). The workspace
-     hand-off and Promote are C's explicit chrome actions and exist nowhere
-     else on this screen. */
-  const aside = drillId ? (
-    <>
-      {overlay ? null : (
-        <PanelResizer
-          side="right"
-          label="Entity details"
-          controls="home-view-aside"
-          width={asideWidth}
-          minWidth={ASIDE_MIN}
-          maxWidth={asideMax}
-          onResize={pref.setWidth}
-          onReset={pref.reset}
-        />
-      )}
-      <aside
-        className={`hp-aside${overlay ? ' hp-aside--overlay' : ''}`}
-        id="home-view-aside"
-        aria-label="Entity details"
-        data-testid="hp-aside"
-      >
-        <div className="hp-aside__bar">
-          <button
-            type="button"
-            className="hp-aside__workspace"
-            title="Make this entity the centre's root — the list follows it"
-            onClick={promoteDrill}
-          >
-            ⇤ Open here
-          </button>
-          {props.onOpenInWorkspace ? (
-            <button
-              type="button"
-              className="hp-aside__workspace"
-              title="Leave Home and open this entity in the full workspace"
-              onClick={() => props.onOpenInWorkspace!(drillId)}
-            >
-              Open in Workspace <span aria-hidden>→</span>
-            </button>
-          ) : null}
-        </div>
-        <HomeTrail
-          trail={rightTrail}
-          label="Side panel trail"
-          titleOf={titleOf}
-          onCrumb={(id) => navStore.getState().rightTo(id)}
-        />
-        <AuxEntityPanel
-          host={hostBundle}
-          entityId={drillId}
-          onOpenEntity={openEntity}
-          onClose={() => navStore.getState().closeRight()}
-        />
-      </aside>
-    </>
-  ) : null;
-
   return (
     <div
       className="hp-host"
       ref={rootRef}
       style={{
-        '--hp-aside': `${asideWidth}px`,
         /* Handed to CSS rather than duplicated in it — the same rule that
            keeps the workspace's floors in `geometry.ts` and out of
            `shell.css`. `--hp-rail` replaces the 72/172 literals that used to
@@ -836,7 +753,6 @@ export function HomeView(props: HomeViewProps) {
         rail={rail}
         listRail={listRail}
         focus={focus}
-        {...(aside ? { aside } : {})}
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
            — "show me that" — from two places on one screen. */
         onOpenEntity={(id) => openEntity(id as EntityId)}
