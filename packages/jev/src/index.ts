@@ -1,21 +1,36 @@
-// @tm8/jev — Jev as tm8's decisioning layer.
+// @tm8/jev — a pure client for Jev, the TypeSafe decisioning model.
 //
-// Jev decides WHICH model runs; it is never the model that runs. It generates
-// no text and cannot be a coding agent, so nothing in this package replaces an
-// agent — it chooses one, and gets out of the way.
+// Four things, nothing else: a bounded HTTP call (`createJevClient`), relevance
+// ranking (`rankByRelevance`), a model suggestion from the eight routing
+// answers (`adviseModel`), and the price of a call (`costOf`). No database, no
+// graph, no filesystem, no environment policy, no logging. Jev runs only when a
+// person presses Ask Jev on the launch sheet, and what it says takes effect
+// only through an Apply click (design 01a0cb80 §7.2).
 //
-// Wiring is opt-in and fail-open at every level: no key, no advisor, no
-// opinion, no change. See `nullRoutingAdvisor`.
+// This list is the root task's frozen public API; `test/surface.test.ts` holds
+// it exactly.
 
-export * from './primitives.js';
-export * from './client.js';
-export * from './questions.js';
-export * from './tiers.js';
-export * from './policy.js';
-export * from './savings.js';
-export * from './advisor.js';
-export * from './rerank.js';
-export * from './context.js';
-export * from './roster.js';
-export * from './from-env.js';
-export * from './ledger.js';
+export {
+  createJevClient,
+  jevClientFromEnv,
+  type JevAskResult,
+  type JevCallRecord,
+  type JevClient,
+  type JevClientOptions,
+} from './client.js';
+export { rankByRelevance, levelOf, type RankCandidate, type RankedCandidate, type RankResult } from './rank.js';
+export {
+  adviseModel,
+  ROUTING_QUESTIONS,
+  readSignals,
+  decide,
+  TIER_LADDER,
+  DEFAULT_WEIGHTS,
+  type AdviseModelResult,
+  type ModelSubject,
+  type RoutingSignals,
+  type RoutingWeights,
+  type TierRung,
+} from './model.js';
+export { costOf, JEV_INPUT_USD_PER_TOKEN } from './cost.js';
+export type { JevAnswer, JevQuestion, JevQuestionSet, JevResponse, JevUsage } from './wire.js';
