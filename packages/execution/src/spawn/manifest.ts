@@ -1393,6 +1393,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
       command,
+      // Passed through untouched; absent stays absent so a launch without
+      // Ask Jev writes the same manifest it always did.
+      ...(request.jevRunId ? { jevRunId: request.jevRunId } : {}),
     },
     session: {
       title: resolveSessionTitle(request, context),

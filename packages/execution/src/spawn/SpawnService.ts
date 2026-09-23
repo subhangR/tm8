@@ -838,6 +838,7 @@ export class SpawnService {
       // a later instant than the persona it is composed beside.
       parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
+      ...(request.selection ? { selection: request.selection } : {}),
     });
 
     const inherited = await this.inheritedPosture(auth, request);

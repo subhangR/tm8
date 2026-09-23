@@ -14,7 +14,7 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
-import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName } from '@tm8/contract';
+import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName, SpawnSelection } from '@tm8/contract';
 import type { CoordinatorKind } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
@@ -181,6 +181,15 @@ export interface LoadSpawnContextInput {
    * teammate's injected memory set for this session only.
    */
   memoryIds?: string[];
+  /**
+   * The EXACT memory and skill sets for this session (design 01a0cb80 §5.2).
+   * When present it replaces the teammate's working set, the tasks'
+   * `remembers` sets and the equipped skills; a selected skill the teammate
+   * is not equipped with is loaded for this session only (no edge is
+   * written), and equipped skills left out are audited as `not-selected`.
+   * Absent, the load is exactly what it was before the field existed.
+   */
+  selection?: SpawnSelection;
 }
 
 /**
@@ -815,6 +824,8 @@ export interface Tm8Manifest {
     sandboxDegraded?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
+    /** The Ask Jev run this launch came from, when it came from one. Absent otherwise — never null. */
+    jevRunId?: string;
   };
 
   session: {
@@ -879,6 +890,13 @@ export interface SpawnRequest {
   promptExtra?: string | null;
   /** Spawn-time memory hand-off (D3a); see `LoadSpawnContextInput.memoryIds`. */
   memoryIds?: string[];
+  /** The exact memory and skill sets; see `LoadSpawnContextInput.selection`. */
+  selection?: SpawnSelection;
+  /**
+   * The Ask Jev run this launch came from. Written to the manifest as
+   * `launch.jevRunId` and otherwise never interpreted by execution.
+   */
+  jevRunId?: string;
   /** S12: untrusted projects require per-spawn consent. */
   confirmUntrusted?: boolean;
   clientMutationId?: string | null;
