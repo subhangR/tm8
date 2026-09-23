@@ -8,7 +8,9 @@
 //         between validation and `git worktree add`, and cleans up
 //   G2.4  N concurrent adds on one repo serialize; N distinct paths/branches
 //   G2.5  idempotent cleanup — remove twice, remove on already-gone, converge
-import { mkdtemp, mkdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+//   G2.7  shared paths — a lane borrows the launch project's gitignored
+//         graphify-out by symlink, stays clean, and removes without touching it
+import { lstat, mkdtemp, mkdir, readFile, readlink, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -514,5 +516,63 @@ describe('G2.6 — default base ref is the project default branch, not parked HE
     const { ref, oid } = await manager.resolveBaseRef(localMain);
     expect(ref).toBe('main');
     expect(oid).toBe(mainOid);
+  });
+});
+
+describe('G2.7 — shared paths: a lane borrows graphify-out by symlink', () => {
+  let launch: string;
+  let lanes: WorktreeManager;
+
+  async function addLane(n: number, oid: string): Promise<string> {
+    const { path } = await lanes.withProjectLock(PROJECT_ID, () =>
+      lanes.add({ repoRoot: launch, projectId: PROJECT_ID, worktreeId: uuidN(n), branch: `tm8/shared-${n}`, baseCommitOid: oid }),
+    );
+    return path;
+  }
+
+  beforeAll(async () => {
+    launch = join(base, 'launch');
+    await mkdir(launch, { recursive: true });
+    await git(['init', '-b', 'main'], launch);
+    await git(['config', 'user.email', 't@t'], launch);
+    await git(['config', 'user.name', 't'], launch);
+    await writeFile(join(launch, '.gitignore'), '/graphify-out\n');
+    await git(['add', '.'], launch);
+    await git(['commit', '-m', 'initial'], launch);
+    lanes = new WorktreeManager({ worktreeRoot: join(base, 'lanes') });
+  });
+
+  it('no graph in the launch project → nothing linked, no dangling link', async () => {
+    const path = await addLane(1000, await git(['rev-parse', 'HEAD'], launch));
+    expect(await lanes.linkSharedPaths(launch, path)).toEqual([]);
+    await expect(lstat(join(path, 'graphify-out'))).rejects.toThrow();
+  });
+
+  it('links the launch graph; the lane stays clean, sees later refreshes, and removal spares the target', async () => {
+    await mkdir(join(launch, 'graphify-out'));
+    await writeFile(join(launch, 'graphify-out', 'merged-graph.json'), '{"v":1}');
+    const path = await addLane(1001, await git(['rev-parse', 'HEAD'], launch));
+
+    expect(await lanes.linkSharedPaths(launch, path)).toEqual(['graphify-out']);
+    expect(await readlink(join(path, 'graphify-out'))).toBe(join(launch, 'graphify-out'));
+    // The lane is not dirty, so it is not delete-protected forever.
+    expect(await lanes.isDirty(path)).toBe(false);
+    // A refresh in the launch project is visible in the lane with no copy step.
+    await writeFile(join(launch, 'graphify-out', 'merged-graph.json'), '{"v":2}');
+    expect(await readFile(join(path, 'graphify-out', 'merged-graph.json'), 'utf8')).toBe('{"v":2}');
+    // Idempotent: an existing entry is left alone.
+    expect(await lanes.linkSharedPaths(launch, path)).toEqual([]);
+
+    await lanes.remove({ repoRoot: launch, path });
+    await expect(stat(path)).rejects.toThrow();
+    expect(await readFile(join(launch, 'graphify-out', 'merged-graph.json'), 'utf8')).toBe('{"v":2}');
+  });
+
+  it('a lane whose checkout does not ignore the path is never linked (it would be dirty)', async () => {
+    await writeFile(join(launch, '.gitignore'), '');
+    await git(['commit', '-am', 'stop ignoring'], launch);
+    const path = await addLane(1002, await git(['rev-parse', 'HEAD'], launch));
+    expect(await lanes.linkSharedPaths(launch, path)).toEqual([]);
+    expect(await lanes.isDirty(path)).toBe(false);
   });
 });

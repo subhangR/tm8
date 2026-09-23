@@ -17,7 +17,7 @@
 // database at all (the package has no driver and must never gain one).
 
 import { createHash } from 'node:crypto';
-import { mkdir, realpath, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import {
@@ -28,6 +28,19 @@ import {
   runGit,
   type GitRunOptions,
 } from './git-invoker.js';
+
+/**
+ * Untracked paths a lane borrows from the launch project by SYMLINK, never by
+ * copy. `git worktree add` checks out tracked files only, so anything a
+ * project builds locally and gitignores is absent from every lane.
+ *
+ * `graphify-out` is the code graph CLAUDE.md tells every agent to query at
+ * `graphify-out/merged-graph.json`. `scripts/graphify-refresh.sh` rewrites it
+ * in the launch project by rename; a link means every lane reads the latest
+ * refresh, not the one current when it was provisioned, without a per-lane
+ * copy of a file that runs to tens of megabytes.
+ */
+export const LANE_SHARED_PATHS: readonly string[] = ['graphify-out'];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -348,6 +361,36 @@ export class WorktreeManager {
       );
     }
     return { path };
+  }
+
+  /**
+   * Link each `LANE_SHARED_PATHS` entry from the launch project into a freshly
+   * added worktree. Returns the paths it linked.
+   *
+   * A path is linked only when all three hold, and skipped silently otherwise:
+   *
+   *   * it exists in the launch project — no dangling links;
+   *   * the lane does not already have it — checked-out content wins;
+   *   * the lane's gitignore ignores it. An untracked symlink would make
+   *     `isDirty` answer true for every lane forever, and dirty lanes are
+   *     delete-protected (§5.3), so an unignored path is never linked.
+   *
+   * Removal needs nothing extra: `git worktree remove` ignores ignored files
+   * and `rm` unlinks a symlink without following it.
+   */
+  async linkSharedPaths(repoRoot: string, worktreePath: string): Promise<string[]> {
+    const linked: string[] = [];
+    for (const rel of LANE_SHARED_PATHS) {
+      const target = join(repoRoot, rel);
+      const link = join(worktreePath, rel);
+      if (!(await stat(target).then((s) => s.isDirectory(), () => false))) continue;
+      if (await lstat(link).then(() => true, () => false)) continue;
+      const ignored = await runGit(['-C', worktreePath, 'check-ignore', '-q', rel], this.gitOpts());
+      if (ignored.code !== 0) continue;
+      await symlink(target, link, 'dir');
+      linked.push(rel);
+    }
+    return linked;
   }
 
   /**

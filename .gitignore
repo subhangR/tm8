@@ -18,3 +18,9 @@ dist-mine/
 # does not need. Delete these two lines once no live checkout carries one.
 dist-1.0/
 dist-2.0/
+# The graphify code graph (scripts/graphify-refresh.sh). Generated, tens of MB,
+# and rebuilt nightly, so it is never committed. No trailing slash on purpose:
+# in a worker lane this path is a SYMLINK to the launch project's directory, and
+# `graphify-out/` would match only a directory — leaving the link untracked and
+# every lane permanently dirty.
+/graphify-out

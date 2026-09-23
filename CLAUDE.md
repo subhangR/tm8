@@ -2,10 +2,17 @@
 
 ## Answer structural questions from the code graph, not from grep
 
-This repository carries a pre-built graph of itself at `graphify-out/merged-graph.json`
-(46,924 nodes: every file and symbol from an AST pass, plus every tm8 task, session and
-commit, joined by 1,633 `commit -> file` edges extracted from `git show`). It is rebuilt
-nightly by `scripts/graphify-refresh.sh` and costs no model tokens to build or query.
+A pre-built graph of this repository sits at `graphify-out/merged-graph.json`: every file
+and symbol from an AST pass, plus every tm8 task, session and commit in the space (paged,
+not sampled), joined by `commit -> file` edges extracted from `git show`. Link order is
+caller -> callee, so `affected` and `path` answer in the right direction. It costs no model
+tokens to build or query. The refresh prints its current counts.
+
+It is not committed (`/graphify-out` is gitignored). `scripts/graphify-refresh.sh` writes it
+into the **launch project** — the checkout worker lanes are cut from — and worktree
+provisioning **symlinks** each new lane's `graphify-out` to that directory, so a lane needs
+no copy step and always sees the latest refresh. A lane provisioned before the link step
+existed has no `graphify-out`; `ln -s <launch-project>/graphify-out graphify-out` fixes it.
 
 **Ask it first for anything structural:**
 
@@ -38,5 +45,8 @@ is not structural — stop querying and read the file.
 **Where it does not help.** Reading code to understand or change it. The graph answers
 structure, not intent. Open the file for that.
 
-**If the graph is stale or missing**, rebuild it with `scripts/graphify-refresh.sh` — one
-AST pass, no model call — or fall back to grep and say that you did.
+**If the graph is stale or missing**, rebuild it in the launch project — never from inside
+a lane, where `graphify-out` is the shared symlink (the script refuses) — with
+`scripts/graphify-refresh.sh <launch-project> <space-id> origin/main`: one AST pass of a
+clean `origin/main`, no model call. With no arguments it targets the prod host. Or fall back
+to grep and say that you did.
