@@ -217,9 +217,16 @@ export class DbSpaceCredentialStore {
   ): Promise<SpaceCredential> {
     const secret = normaliseSecret(input.secret);
     const credentialId = randomUUID();
-    // The AAD must be the text Postgres hands back to the spawn reader: a uuid
-    // column answers lowercase, so an uppercase id sealed as given never opens.
-    const spaceId = input.spaceId.toLowerCase();
+    // The AAD must be the text Postgres hands back to the spawn reader. A uuid
+    // column accepts uppercase, braced and unhyphenated input but answers the
+    // canonical form, so an id sealed as given never opens: seal under
+    // Postgres's own rendering of it, as rekey seals under the stored row.
+    const [canonical] = await this.db.query<{ space_id: string }>(
+      claims,
+      'select $1::uuid::text as space_id',
+      [input.spaceId],
+    );
+    const spaceId = canonical!.space_id;
     const sealed = sealSecret(await this.key(), secret, {
       spaceId,
       credentialId,

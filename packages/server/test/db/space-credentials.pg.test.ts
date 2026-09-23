@@ -341,6 +341,17 @@ describe('the sealed store', () => {
     await expect(store.readForSpawn(claims(A), ids.S!, 'anthropic', credential.id)).resolves.toMatchObject({ secret });
   });
 
+  it('t1-9: a space id given unhyphenated or braced (forms Postgres accepts) seals as Postgres answers it', async () => {
+    for (const spaceId of [ids.S!.replaceAll('-', ''), `{${ids.S!}}`, ids.S!.replaceAll('-', '').toUpperCase()]) {
+      const secret = `sk-ant-${randomUUID()}`;
+      const credential = await store.create(claims(A), {
+        spaceId, provider: 'anthropic', shape: 'api_key', label: label('form'), secret,
+      });
+      expect(credential.spaceId, spaceId).toBe(ids.S);
+      await expect(store.readForSpawn(claims(A), ids.S!, 'anthropic', credential.id), spaceId).resolves.toMatchObject({ secret });
+    }
+  });
+
   it('t1-13: rekey is creator-or-admin, and the next read gets the new key', async () => {
     const { credential } = await newApiKey(A, 'openai');
     await expect(store.rekey(claims(B), credential.id, key('b'))).rejects.toThrow(/creator or a space admin/);
@@ -456,6 +467,15 @@ describe('logins (083 split, M3, M4)', () => {
     await expect(db.rpc(claims(ADM), 'finish_credential_session', [own.workSessionId])).resolves.toMatchObject({ finished: true });
     // And the space path still finishes the space login.
     await expect(store.finishLogin(claims(ADM), space.workSessionId, true)).resolves.toMatchObject({ connected: true });
+  });
+
+  it('the re-created member finish (083 finish_credential_session) is human-only (control: browser closes it)', async () => {
+    const own = await db.rpc<{ workSessionId: string }>(claims(A), 'start_credential_session', [ids.S, 'github', 900, 100]);
+    await expect(db.rpc(agent(A), 'finish_credential_session', [own.workSessionId])).rejects.toThrow(/human-only/);
+    const [open] = await asOwner(async (c) => (await c.query<{ finished_at: Date | null }>(
+      'select finished_at from public.credential_sessions where work_session_id = $1', [own.workSessionId])).rows);
+    expect(open!.finished_at).toBeNull();
+    await expect(db.rpc(claims(A), 'finish_credential_session', [own.workSessionId])).resolves.toMatchObject({ finished: true });
   });
 
   it('only the account that opened a space login can finish it', async () => {
@@ -714,7 +734,11 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(await recorded(running)).toEqual([]);
   });
 
-  it('t1-10: a delete waits for an in-flight record, then finds its session (FOR SHARE vs FOR UPDATE)', async () => {
+  // This does NOT guard the writer's FOR SHARE (206:1142): the inserted row's
+  // composite foreign key takes KEY SHARE on the credential, which blocks
+  // delete's FOR UPDATE on its own, so the test stays green with FOR SHARE
+  // removed. The guard is the delete-first test below.
+  it('t1-10: a delete waits for an in-flight record (held by the FK’s KEY SHARE), then finds its session', async () => {
     const { credential } = await newApiKey(A);
     const s = await session(ids.S!, ids.TB!);
     let release!: () => void;
@@ -739,7 +763,9 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(live.sessions.map((x) => x.workSessionId)).toContain(s);
   });
 
-  it('t1-10: a record that waits behind a committed delete inserts nothing and is refused', async () => {
+  // The guard on the writer's FOR SHARE (206:1142): without it the insert's
+  // active check reads its pre-wait snapshot and records onto the revoked row.
+  it('t1-10: a record that waits behind a committed delete inserts nothing and is refused (guards the writer FOR SHARE)', async () => {
     const { credential } = await newApiKey(A);
     const s = await session(ids.S!, ids.TB!);
     let release!: () => void;
@@ -845,5 +871,72 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     await store.revoke(claims(A), credential.id);
     await expect(store.repointSession(agent(A), s)).rejects.toThrow(/no longer active/);
     expect((await recorded(s))[0]!.launcher_account_id).toBe(accounts[B]);
+  });
+
+  // The two repoint lock tests (206:1195-1203, repoint's FOR SHARE). Each gate
+  // is released and each held transaction settled in `finally`: if a wait
+  // never happens, waitForLockWait throws, and a gate left shut would hold its
+  // transaction open and hang the suite instead of failing this test.
+  it('C3: a repoint waiting behind an uncommitted delete refuses once the delete commits', async () => {
+    const { credential } = await newApiKey(A);
+    const s = await session(ids.S!, ids.TB!);
+    await recordManifest(agent(A), s, manifest({ anthropic: credential.id }));
+    await setSessionStatus(s, 'idle');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let lockedInTx!: () => void;
+    const locked = new Promise<void>((r) => { lockedInTx = r; });
+    const del = db.tx(claims(A), async (q) => {
+      await q.rpc('delete_space_credential', [credential.id]);
+      lockedInTx();
+      await gate;
+    });
+    try {
+      await locked;
+      const settled = store.repointSession(agent(B), s).then(() => 'ok', (e: unknown) => e);
+      await waitForLockWait();
+      release();
+      await del;
+      const outcome = await settled;
+      expect(outcome).toBeInstanceOf(Error);
+      expect(String((outcome as Error).message)).toMatch(/no longer active/);
+      expect((await recorded(s))[0]!.launcher_account_id).toBe(accounts[A]);
+    } finally {
+      release();
+      await del.catch(() => undefined);
+    }
+  });
+
+  it('C3: a delete waits for an in-flight repoint (guards repoint’s FOR SHARE)', async () => {
+    const { credential } = await newApiKey(A);
+    const s = await session(ids.S!, ids.TB!);
+    await recordManifest(agent(A), s, manifest({ anthropic: credential.id }));
+    await setSessionStatus(s, 'idle');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let repointedInTx!: () => void;
+    const repointed = new Promise<void>((r) => { repointedInTx = r; });
+    const tx = db.tx(agent(B), async (q) => {
+      await q.rpc('repoint_session_space_credentials', [s]);
+      repointedInTx();
+      await gate;
+    });
+    let revoke: Promise<unknown> | undefined;
+    try {
+      await repointed;
+      let revokeDone = false;
+      revoke = store.revoke(claims(A), credential.id).then((r) => { revokeDone = true; return r; });
+      await waitForLockWait();
+      expect(revokeDone).toBe(false);
+      release();
+      await tx;
+      await expect(revoke).resolves.toMatchObject({ revoked: true });
+      // The repoint committed first, so the revoked credential's session names B.
+      expect((await recorded(s))[0]!.launcher_account_id).toBe(accounts[B]);
+    } finally {
+      release();
+      await tx.catch(() => undefined);
+      await revoke?.catch(() => undefined);
+    }
   });
 });
