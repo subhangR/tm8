@@ -890,6 +890,30 @@ export function buildSpawnInput(args: {
   return input;
 }
 
+/**
+ * Is launching on this subject a CONTINUATION rather than work on it?
+ *
+ * True for a `work_session` (migration 200): ▶ on a session spawns a NEW
+ * session anchored on a derived "Continue: <title>" task that tells the agent
+ * to read the source session's transcript and wait. That changes what the
+ * launch popup's two fields mean:
+ *
+ *   · the TITLE names the new session, and is never written back — renaming
+ *     the session you are continuing FROM is not what a launch asked for;
+ *   · the TEXTAREA is the viewer's instructions for the new agent, sent as
+ *     `promptExtra` — a session has no description to edit.
+ *
+ * Every other kind keeps the ruled behaviour: both fields edit the subject.
+ */
+export function continuesSubject(subject: { kind?: string } | null | undefined): boolean {
+  return subject?.kind === 'work_session';
+}
+
+/** The title a launch on `subject` gives the new session by default. */
+export function launchTitleFor(subject: { kind?: string; title: string }): string {
+  return continuesSubject(subject) ? `Continue: ${subject.title}` : subject.title;
+}
+
 let launchMutationSequence = 0;
 
 /** Fresh per deliberate submit; callers keep the returned value only when

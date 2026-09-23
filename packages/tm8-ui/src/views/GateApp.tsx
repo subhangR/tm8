@@ -55,7 +55,7 @@ import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewO
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
 import { getKind } from '../domain';
-import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
+import { buildSpawnInput, launchTitleFor, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import type { DetailReasons } from '../panels';
 import { BootLoader, VectorIcon, usePanelFlag } from '../kit';
@@ -1111,6 +1111,7 @@ export function GateApp(props: GateAppProps = {}) {
     launchInFlight.current = true;
     setLaunching(true);
     setLaunchRefusal(null);
+    const subject = data.detailOf(config.subjectId);
     void data
       .spawn(
         buildSpawnInput({
@@ -1119,7 +1120,8 @@ export function GateApp(props: GateAppProps = {}) {
           config,
           // Any kind: the server derives the task anchor (064).
           taskIds: [config.subjectId],
-          title: data.detailOf(config.subjectId)?.title,
+          // A session subject is CONTINUED: the new session is not its namesake.
+          title: subject ? launchTitleFor(subject) : undefined,
         }),
       )
       .then((sessionId) => {

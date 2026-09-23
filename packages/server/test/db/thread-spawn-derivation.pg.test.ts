@@ -138,6 +138,12 @@ async function seed(scratch: W1ScratchDatabase): Promise<Fixture> {
        values($1,'A plain task','open','medium')`,
       [base.plainTaskId],
     );
+    // What the session was assigned — 200 lists it in a continuation's body.
+    await client.query(
+      `insert into public.edges(space_id,src_id,dst_id,type,created_by)
+       values($1,$2,$3,'working_on',$4)`,
+      [base.spaceId, base.workSessionId, base.plainTaskId, base.alice],
+    );
 
     const newMessage = async (
       rootId: string | null,
@@ -283,21 +289,51 @@ describe.sequential('derive_task_for_entity after 099', () => {
     expect(derived.taskId).toBe(open[1]!.taskId);
   });
 
-  it('still refuses a work_session, and still fast-paths a task, after the signature change', async () => {
-    await expect(
-      asViewer((client) => derive(client, fixture.workSessionId)),
-    ).rejects.toThrow(/cannot derive a task from a work_session/);
-
-    // force_new must not offer a loophole around the refusal either.
-    await expect(
-      asViewer((client) => derive(client, fixture.workSessionId, true)),
-    ).rejects.toThrow(/cannot derive a task from a work_session/);
-
+  it('still fast-paths a task after the signature change', async () => {
     const passthrough = await asViewer((client) => derive(client, fixture.plainTaskId, true));
     expect(passthrough).toEqual({
       taskId: fixture.plainTaskId, sourceEntityId: fixture.plainTaskId,
       sourceKind: 'task', created: false,
     });
+  });
+});
+
+/**
+ * CONTINUE A SESSION — 200 lifts 064's refusal. A session is not an anchor, so
+ * ▶ on one derives a TASK that points back at it and tells the new agent how
+ * to read it live, then to wait.
+ */
+describe.sequential('derive_task_for_entity on a work_session (200)', () => {
+  it('derives a Continue task whose body names the live reads and says to wait', async () => {
+    const derived = await asViewer((client) => derive(client, fixture.workSessionId));
+    expect(derived.created).toBe(true);
+    expect(derived.sourceKind).toBe('work_session');
+    expect(derived.sourceEntityId).toBe(fixture.workSessionId);
+
+    const task = await taskRow(derived.taskId);
+    expect(task.title).toBe('Continue: a session');
+    expect(task.description).toContain(`tm8 session transcript ${fixture.workSessionId}`);
+    expect(task.description).toContain(`tm8 entity context ${fixture.workSessionId}`);
+    expect(task.description).toContain(`tm8 session launch ${fixture.workSessionId}`);
+    // What the source session was working on, by id and title.
+    expect(task.description).toContain(`\`${fixture.plainTaskId}\` A plain task (open)`);
+    expect(task.description).toContain('WAIT for instructions');
+
+    const edges = await asOwner(async (client) =>
+      (await client.query<{ dst_id: string }>(
+        `select dst_id from public.edges where src_id = $1 and type = 'derived_from'`,
+        [derived.taskId],
+      )).rows);
+    expect(edges.map((edge) => edge.dst_id)).toEqual([fixture.workSessionId]);
+  });
+
+  it('reuses the open continuation, and force_new mints another', async () => {
+    const again = await asViewer((client) => derive(client, fixture.workSessionId));
+    expect(again.created).toBe(false);
+
+    const forced = await asViewer((client) => derive(client, fixture.workSessionId, true));
+    expect(forced.created).toBe(true);
+    expect(forced.taskId).not.toBe(again.taskId);
   });
 });
 

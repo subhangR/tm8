@@ -4,6 +4,8 @@ import type { ExecutionSpawnInput } from '@tm8/contract';
 import {
   buildSpawnInput,
   canLaunch,
+  continuesSubject,
+  launchTitleFor,
   newLaunchMutationId,
   type LaunchCapacity,
   type LaunchMode,
@@ -41,6 +43,11 @@ import './new-session.css';
  * ONLY ON SUCCESS (owner's final ruling 2026-09-07) — a refusal keeps it up
  * with the reason under the card and a shake, so a failed launch can never
  * be pixel-identical to a successful one.
+ *
+ * A SESSION SUBJECT IS CONTINUED, NOT EDITED (migration 200, `continuesSubject`):
+ * the title field names the NEW session and the textarea carries instructions
+ * for it as `promptExtra`; neither is loaded from nor saved onto the session
+ * being continued.
  */
 
 /** The persona rows as the panels supply them — `LaunchTeammateOption`'s shape. */
@@ -52,8 +59,11 @@ export interface PopupTeammate {
 }
 
 export interface LaunchComposerPopupProps {
-  /** The entity being run — supplies the assignment link and the session title. */
-  subject: { id: string; title: string };
+  /**
+   * The entity being run — supplies the assignment link and the session title.
+   * `kind` decides whether the launch edits it or continues it.
+   */
+  subject: { id: string; title: string; kind?: string };
   spaceId: string;
   teammates: readonly PopupTeammate[];
   projects?: readonly LaunchProjectOption[];
@@ -142,9 +152,10 @@ export function LaunchComposerPopup({
      `alive === false`, and was discarded, so the field stayed empty (found
      live, 2026-09-07). The ref pins the closure from the first render;
      `alive` now means "this popup is still mounted", nothing shorter. */
-  const [draft, setDraftState] = useState<string | null>(loadDescription ? null : '');
+  const continuing = continuesSubject(subject);
+  const [draft, setDraftState] = useState<string | null>(loadDescription && !continuing ? null : '');
   const seed = useRef('');
-  const loadRef = useRef(loadDescription);
+  const loadRef = useRef(continuing ? undefined : loadDescription);
   useEffect(() => {
     const load = loadRef.current;
     if (!load) return;
@@ -167,7 +178,8 @@ export function LaunchComposerPopup({
   /* THE TASK'S TITLE, AS A VALUE — not a placeholder (owner's ask 2026-09-07).
      The field opens holding the real name so "continue" is doing nothing and
      "rename" is ordinary editing; a launch persists an edit to the task. */
-  const [title, setTitle] = useState(subject.title);
+  const defaultTitle = launchTitleFor(subject);
+  const [title, setTitle] = useState(defaultTitle);
 
   const [pending, setPending] = useState(false);
   /** The node's own words when it refuses. Null until it does. */
@@ -204,8 +216,8 @@ export function LaunchComposerPopup({
     if (!onSpawn || pending) return;
     setNodeRefusal(null);
     setPending(true);
-    const sessionTitle = title.trim() || subject.title;
-    const edits: { title?: string; description?: string } = {
+    const sessionTitle = title.trim() || defaultTitle;
+    const edits: { title?: string; description?: string } = continuing ? {} : {
       ...(sessionTitle !== subject.title ? { title: sessionTitle } : {}),
       /* Only a REAL edit is saved: an untouched autofill (or a load that never
          answered) writes nothing back. Clearing the text IS an edit — it
@@ -220,7 +232,9 @@ export function LaunchComposerPopup({
         buildSpawnInput({
           clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
           spaceId,
-          config,
+          config: continuing && description.trim()
+            ? { ...config, promptExtra: description.trim() }
+            : config,
           // Still named `taskIds` on the wire; the server maps a non-task
           // subject through `derive_task_for_entity` (064).
           taskIds: [subject.id],
@@ -259,11 +273,13 @@ export function LaunchComposerPopup({
           refusal={refusal}
           notice={nodeRefusal}
           /* The subject names the session unless the viewer types their own. */
-          derivedTitle={subject.title}
+          derivedTitle={defaultTitle}
           title={title}
           onTitleChange={setTitle}
           requirePrompt={false}
-          promptPlaceholder="Task description — the agent reads this as its briefing…"
+          promptPlaceholder={continuing
+            ? 'Instructions for the new session (optional) — it reads this session’s transcript first…'
+            : 'Task description — the agent reads this as its briefing…'}
           onDismissRequest={onDismiss}
           autoFocus
         />

@@ -259,3 +259,47 @@ describe('the model menu', () => {
     expect(input.agentTool).toBe('claude-code');
   });
 });
+
+/**
+ * ▶ ON A SESSION CONTINUES IT (migration 200). The subject is the session being
+ * picked up, so neither field edits it: the title names the NEW session and the
+ * body is the viewer's instructions for it, carried as `promptExtra`.
+ */
+describe('a session subject is continued, not edited', () => {
+  const session = { id: 'ws-7', title: 'Fix the reconnect loop', kind: 'work_session' };
+
+  it('opens titled "Continue: …", loads no description, and saves nothing back', async () => {
+    const onSaveSubject = vi.fn();
+    const loadDescription = vi.fn(() => Promise.resolve('never shown'));
+    const { getByTestId, getByLabelText, props } = renderPopup({
+      subject: session,
+      loadDescription,
+      onSaveSubject,
+    });
+    expect((getByTestId('nsx-title') as HTMLInputElement).value).toBe('Continue: Fix the reconnect loop');
+    expect(loadDescription).not.toHaveBeenCalled();
+
+    fireEvent.change(getByTestId('nsx-title'), { target: { value: 'Reconnect, round two' } });
+    fireEvent.change(getByLabelText('Describe what this session should do'), {
+      target: { value: 'Then check the backoff constants.' },
+    });
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+
+    // The session being continued is never renamed or re-described.
+    expect(onSaveSubject).not.toHaveBeenCalled();
+    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.taskIds).toEqual(['ws-7']);
+    expect(input.title).toBe('Reconnect, round two');
+    expect(input.promptExtra).toBe('Then check the backoff constants.');
+  });
+
+  it('with nothing typed, sends the default title and no promptExtra', async () => {
+    const { getByTestId, props } = renderPopup({ subject: session });
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.title).toBe('Continue: Fix the reconnect loop');
+    expect('promptExtra' in input).toBe(false);
+  });
+});

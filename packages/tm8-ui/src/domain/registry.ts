@@ -2284,33 +2284,36 @@ const ROWS: readonly KindConfig[] = [
 
 /**
  * The ONE authority for "which kinds cannot launch" — a DENYLIST, because the
- * answer is now "all of them but one".
+ * answer is "all of them".
  *
- * `derive_task_for_entity` (064) raises for `work_session` and auto-derives a
- * "Work on: <title>" task for every other live kind, so the backend's answer to
- * "can I point an agent at this?" is yes-except-one. Expressing that as ~20
- * hand-written `launchable: true` rows made the common case the one you had to
- * remember, and the flag was in fact missing from eleven kinds that the server
- * would have happily launched — Run simply did not appear on them.
+ * `derive_task_for_entity` (064) derives a "Work on: <title>" task for every
+ * live kind, so the backend's answer to "can I point an agent at this?" is yes.
+ * Expressing that as ~20 hand-written `launchable: true` rows made the common
+ * case the one you had to remember, and the flag was in fact missing from
+ * eleven kinds that the server would have happily launched — Run simply did
+ * not appear on them.
  *
  * Inverted, `launchable` stops being an input a row can forget and becomes
  * DERIVED OUTPUT of this set (see below), so a new kind is launchable by
  * default and opting out is a deliberate, visible edit in one place.
+ *
+ * EMPTY, and the set stays so that opting out remains a one-line edit here.
+ *
+ *   · `work_session` was the one refusal, and it was the backend's: 064 raised
+ *     for it on the reading that "a session is a run — it is not something you
+ *     run". Migration 200 lifts it on the owner's ask ("sessions also should
+ *     have a play button … it spawns another session with context of this
+ *     session"): ▶ on a session derives a "Continue: <title>" task that points
+ *     back at it and tells the new agent to read its transcript and wait. The
+ *     launch popup treats that subject as CONTINUED, not edited — see
+ *     `continuesSubject` in `domain/launch.ts`.
+ *   · `graph` and `loop` were here briefly, carried over from the `launchable:
+ *     false` rows this set replaced. Owner ruling 2026-08-17: both launch.
+ *     Their old rationale argued that Run MEANS something else on those kinds
+ *     — but that is an argument about which verb should be PRIMARY, not about
+ *     whether an agent can be pointed at the row.
  */
-const NOT_LAUNCHABLE: ReadonlySet<string> = new Set([
-  // The only refusal, and it is the BACKEND's: `derive_task_for_entity` raises
-  // for `work_session`. A session is a run — it is not something you run.
-  'work_session',
-  //
-  // `graph` and `loop` were here briefly, carried over from the `launchable:
-  // false` rows this set replaced. Owner ruling 2026-08-17: both launch. Their
-  // old rationale argued that Run MEANS something else on those kinds (a graph
-  // is orchestrated from the Craft tab; a loop's job is to run something else
-  // on a period) — but that is an argument about which verb should be PRIMARY,
-  // not about whether an agent can be pointed at the row, and the server will
-  // derive a task for either. Whatever else a kind offers, "work on this" is
-  // still a coherent thing to ask for.
-]);
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * `run` — the launch action, in every place that renders one.
