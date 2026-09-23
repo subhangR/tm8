@@ -20,6 +20,15 @@ export interface StatementCounter {
   total(): number;
   reset(): void;
   restore(): void;
+  /**
+   * Make statements tagged `tag` reject before they reach PostgreSQL — the
+   * fault a partial-failure test needs ("a list section whose loader failed
+   * lands in `errors[]`"). Thrown client-side so the transaction is not
+   * aborted, which is what a per-section failure behind a savepoint looks like
+   * to the assembler. The statement is still counted.
+   */
+  failOn(tag: string): void;
+  clearFaults(): void;
 }
 
 export const UNTAGGED = '(untagged)';
@@ -30,9 +39,14 @@ export function contextTagOf(sql: string): string {
 
 export function countStatements(db: Db): StatementCounter {
   const statements: string[] = [];
+  const faults = new Set<string>();
   const counted = (q: Querier): Querier => ({
     query: <R = Record<string, unknown>>(sql: string, params?: readonly unknown[]) => {
       statements.push(sql);
+      const tag = contextTagOf(sql);
+      if (faults.has(tag)) {
+        return Promise.reject(new Error(`injected fault: entities.context:${tag}`));
+      }
       return q.query<R>(sql, params);
     },
     rpc: <T = unknown>(fn: string, args?: readonly unknown[]) => {
@@ -70,6 +84,12 @@ export function countStatements(db: Db): StatementCounter {
     },
     restore() {
       Object.assign(target, original);
+    },
+    failOn(tag) {
+      faults.add(tag);
+    },
+    clearFaults() {
+      faults.clear();
     },
   };
 }
