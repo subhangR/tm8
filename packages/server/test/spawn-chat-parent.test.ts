@@ -29,7 +29,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import { DbGraphPort, registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
-import type { OperationName } from '@tm8/contract';
+import { CollabError, type OperationName } from '@tm8/contract';
 import type { RequestContext, RequestIdentity } from '../src/http/types.js';
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
@@ -94,6 +94,11 @@ class SpawnDb implements Db {
       } as T;
     }
     if (fn === 'read_account_git_credential') return null as T;
+    // As 206's read_space_credential_for_spawn answers a space with no default:
+    // P0002, which the Db maps to a CollabError carrying the reason.
+    if (fn === 'read_space_credential_for_spawn') {
+      throw new CollabError('not_found', 'this space has no default credential', { details: { reason: 'no_default' } });
+    }
     return {} as T;
   }
 

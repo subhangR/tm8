@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { OperationName } from '@tm8/contract';
+import { CollabError, type OperationName } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import { registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
@@ -77,6 +77,11 @@ class SpawnDb implements Db {
       return { workSessionId: SESSION, pinRevision: 1, profileId: null, profileVersion: null, templateKey: 'tm8.chat.core', templateVersion: 1, resolvedHash: 'h', source: 'core_default', createdAt: '2026-09-23T00:00:00.000Z' } as T;
     }
     if (fn === 'read_account_git_credential') return null as T;
+    // As 206's read_space_credential_for_spawn answers a space with no default:
+    // P0002, which the Db maps to a CollabError carrying the reason.
+    if (fn === 'read_space_credential_for_spawn') {
+      throw new CollabError('not_found', 'this space has no default credential', { details: { reason: 'no_default' } });
+    }
     return {} as T;
   }
 
