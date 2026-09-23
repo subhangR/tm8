@@ -22,6 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: var(--pn-space-2);
   min-height: 18px;
 }
 
@@ -89,6 +90,27 @@
 
 .cv2-root[data-shell='mobile'] .drw__stage > .excalidraw {
   zoom: 1;
+}
+
+/*
+ * FULLSCREEN — the artifact viewer's state (`panels.css`, `.pn-preview--
+ * fullscreen`), same altitude: `z-index: 60` covers the panel chrome and
+ * stays under dialogs (120+) and the palette (200). The stage drops its
+ * in-panel height and takes whatever the bar leaves.
+ */
+.drw--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  margin: 0;
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+}
+
+.drw--fullscreen .drw__stage {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .drw__loading {

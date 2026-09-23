@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EntityDetail } from '@tm8/contract';
@@ -31,7 +31,20 @@ vi.mock('@excalidraw/excalidraw', () => ({
     mounted.onChange = props.onChange as (els: unknown[], app: unknown) => void;
     mounted.viewMode = props.viewModeEnabled as boolean;
     mounted.initial = props.initialData;
-    return <div data-testid="excalidraw-mock" />;
+    // The real root's class, and the real root's Escape: 0.18.1 claims EVERY
+    // Escape pressed in its container — idle ones too — with preventDefault
+    // and stopPropagation (measured in a browser). A mock that let it bubble
+    // would pass a block that can never leave fullscreen by key.
+    return (
+      <div
+        className="excalidraw"
+        data-testid="excalidraw-mock"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
+        }}
+      />
+    );
   },
 }));
 vi.mock('@excalidraw/excalidraw/index.css', () => ({}));
@@ -186,6 +199,81 @@ describe('DrawingBlock', () => {
     const stage = container.querySelector('.drw__stage');
     expect(stage?.getAttribute('data-owns-keys')).toBe('canvas');
     expect(screen.getByTestId('excalidraw-mock').closest('[data-owns-keys]')).toBe(stage);
+  });
+
+  describe('fullscreen', () => {
+    const idle = { activeTool: { type: 'selection' }, selectedElementIds: {} };
+    const block = () => screen.getByTestId('drawing-block');
+    const toggle = () => screen.getByRole('button', { name: /fullscreen/i });
+
+    async function enterFullscreen() {
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      fireEvent.click(toggle());
+      expect(block().classList.contains('drw--fullscreen')).toBe(true);
+    }
+
+    it('the toggle flips a class on the SAME element — the canvas never remounts', async () => {
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      const before = block();
+      const canvas = screen.getByTestId('excalidraw-mock');
+      expect(before.classList.contains('drw--fullscreen')).toBe(false);
+      expect(toggle().getAttribute('aria-pressed')).toBe('false');
+
+      fireEvent.click(toggle());
+      expect(block()).toBe(before);
+      expect(screen.getByTestId('excalidraw-mock')).toBe(canvas);
+      expect(before.classList.contains('drw--fullscreen')).toBe(true);
+
+      fireEvent.click(toggle());
+      expect(before.classList.contains('drw--fullscreen')).toBe(false);
+    });
+
+    it('keeps a visible Exit control while fullscreen — Escape is the fast way out, not the only one', async () => {
+      await enterFullscreen();
+      const exit = screen.getByRole('button', { name: 'Exit fullscreen' });
+      expect(exit.getAttribute('aria-pressed')).toBe('true');
+      expect(exit.closest('.drw__bar')).not.toBeNull();
+    });
+
+    it('Escape on the bar exits AND claims the press, so the panel stack does not also pop', async () => {
+      await enterFullscreen();
+      const notCancelled = fireEvent.keyDown(toggle(), { key: 'Escape' });
+      expect(notCancelled).toBe(false); // preventDefault — EntityView's pop checks exactly this
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+    });
+
+    it('Escape on an IDLE canvas exits — even though Excalidraw would swallow it', async () => {
+      await enterFullscreen();
+      act(() => mounted.onChange!([el('a', 1)], { ...idle, selectedElementIds: { a: true } }));
+      fireEvent.keyDown(screen.getByTestId('excalidraw-mock'), { key: 'Escape' });
+      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+    });
+
+    it('Escape the canvas has a use for stays in the canvas — and fullscreen stays on', async () => {
+      await enterFullscreen();
+      act(() => mounted.onChange!([el('a', 1)], { ...idle, activeTool: { type: 'rectangle' } }));
+      fireEvent.keyDown(screen.getByTestId('excalidraw-mock'), { key: 'Escape' });
+      expect(block().classList.contains('drw--fullscreen')).toBe(true);
+    });
+
+    it('Escape something above already claimed (defaultPrevented) leaves fullscreen on', async () => {
+      await enterFullscreen();
+      // The app's modal layer consumes in a window capture listener, ahead of
+      // every React handler.
+      const claim = (e: KeyboardEvent) => e.preventDefault();
+      window.addEventListener('keydown', claim, true);
+      try {
+        fireEvent.keyDown(toggle(), { key: 'Escape' });
+      } finally {
+        window.removeEventListener('keydown', claim, true);
+      }
+      expect(block().classList.contains('drw--fullscreen')).toBe(true);
+    });
+
+    it('Escape outside fullscreen is left alone for the panel stack', async () => {
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      expect(fireEvent.keyDown(toggle(), { key: 'Escape' })).toBe(true);
+    });
   });
 
   it('the stage reserves HEIGHT in the stylesheet — invisible to every other case here', () => {
