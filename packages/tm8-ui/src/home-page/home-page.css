@@ -181,9 +181,10 @@
   min-height: 0;
 }
 
-/* The page is a COLUMN inside a ROW: the detail column opened from a chip or a
-   NEEDS YOU card sits beside the conversation instead of replacing the screen,
-   so the thing you were reading is still there when you look back at it. */
+/* The page is a COLUMN inside a ROW: the rail sits beside it. (The row once
+   also held region C, the detail column beside the conversation; C retired
+   with the right trail — task 01a0c864 U2 — and an opened entity now walks
+   the centre's Trail instead.) */
 .cv2-root .hp-root--chat {
   flex-direction: row;
   min-height: 0;
@@ -195,35 +196,12 @@
   min-width: 0;
   min-height: 0;
 }
-.cv2-root .hp-aside {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  width: var(--hp-aside, 440px);
-  min-width: 0;
-  min-height: 0;
-  border-left: 1px solid var(--pn-line);
-  background: var(--pn-surface);
-  overflow: hidden;
-}
-.cv2-root .hp-aside > * {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-/* D13: when the window cannot afford all three regions, region C becomes an
-   overlay DRAWER over B at its own width instead of crushing B — a squeezed
-   xterm reflows to nonsense columns and reads as "the terminal is broken".
-   `.hp-host` is the positioning context (it already wraps the whole row). */
+/* `.hp-host` became a positioning context for D13's overlay drawer (region C
+   over B on a narrow window). C retired with the right trail (task 01a0c864),
+   and nothing in this sheet positions against `.hp-host` any more — but the
+   chat surface it wraps is styled elsewhere, so the context stays rather than
+   silently re-parenting some other sheet's absolute box to the canvas. */
 .cv2-root .hp-host { position: relative; }
-.cv2-root .hp-aside--overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  box-shadow: var(--pn-sh-pop);
-}
 /* --- the icon rail (task 01a00932 R4) ------------------------------------ */
 /* Entities only, collapsed by default at 72px with the word UNDER the mark
    (the #269 law: collapsed keeps the word). Expanded, rows widen to
@@ -330,7 +308,7 @@
 }
 .cv2-root .hr-rail__toggle:hover { color: var(--pn-ink); background: var(--pn-hover); }
 
-/* --- trails (task 01a00932 R7): the crumb IS the route's p/r state -------- */
+/* --- the Trail (task 01a0c864 U3/U9): the crumb IS the route's p/pc state - */
 .cv2-root .hp-trail {
   display: flex;
   flex-wrap: wrap;
@@ -366,6 +344,65 @@
 .cv2-root .hp-trail__here { color: var(--pn-ink); font-weight: 600; }
 .cv2-root .hp-trail__glyph { display: inline-flex; flex: none; }
 
+/* The `…` and its jump menu (D6). The segment is the positioning context so
+   the menu hangs off the ellipsis it belongs to, not off the strip. */
+.cv2-root .hp-trail__seg { position: relative; }
+.cv2-root .hp-trail__more {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .hp-trail__more:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-trail__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-surface);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .hp-trail__jump {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .hp-trail__jump:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-trail__jump[aria-current='location'] { color: var(--pn-ink); font-weight: 600; }
+/* AHEAD OF THE CURSOR: listed, and dimmed rather than hidden — "keep forward"
+   is only believable if you can see what is still forward of you (U5/D6). */
+.cv2-root .hp-trail__jump[data-ahead] { opacity: 0.55; }
+.cv2-root .hp-trail__jump-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* B's trail host: crumb on top, the panel filling the rest. */
 .cv2-root .hp-trail-host {
   display: flex;
@@ -375,29 +412,6 @@
   min-height: 0;
 }
 .cv2-root .hp-trail-host > *:last-child { flex: 1; min-height: 0; }
-/* The aside's every-child flex:1 must not stretch its crumb strip. */
-.cv2-root .hp-aside > .hp-trail { flex: none; }
-
-/* D12: C's chrome carries the ONE explicit route out of Home. */
-.cv2-root .hp-aside__bar {
-  display: flex;
-  flex: none;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--pn-line);
-}
-.cv2-root .hp-aside__workspace {
-  padding: 3px 9px;
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  background: var(--pn-card);
-  color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-.cv2-root .hp-aside__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
 /* The inset around Home's surface is HALF what it was (Subhang, 2026-08-19):
    the old 10/14 gutter spent a visible band of the canvas on nothing on every
    side of the screen. All three rules move together — they are the same edge,

@@ -435,7 +435,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
   });
 });
 
-describe('the unified Home root and the right trail (task 01a00932)', () => {
+describe('the unified Home root and the Trail (task 01a00932, re-seated by 01a0c864)', () => {
   it('round-trips /home/k/{slug} — a kind root is addressable', () => {
     const route = routeOf({ target: { view: 'home', root: { type: 'kind', slug: 'tasks' } } });
     const { hash } = build(route);
@@ -467,62 +467,187 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
     });
   });
 
-  it('round-trips the right trail through r=, dot-joined like p=', () => {
+  /* THE COMPATIBILITY GUARANTEE. Every link that exists today was written
+     before `pc` did, so every one of them parses with the cursor absent. This
+     test is what says the retirement of `r` and the arrival of `pc` cost
+     those links nothing — if it ever goes red, a shared URL has changed
+     meaning, which is the one outcome this whole change is not allowed. */
+  it('a TODAY-SHAPED link with no pc parses, normalizes and rebuilds byte-identical', () => {
+    // Param order is `build`'s own (drop-tier order) so "byte-identical"
+    // means what it says rather than testing a reordering.
+    const hash = `#/s/${SPACE}/home?t=${id(1)}:connections&pin=${id(3)}&p=${id(1)}.${id(2)}`;
+    const { route, dropped } = parse(hash);
+    expect(dropped).toEqual([]);
+    expect(route?.panels.stack).toEqual([id(1), id(2)]);
+    expect(route?.panels.pinned).toEqual([id(3)]);
+    expect(route?.panels.tabs).toEqual({ [id(1)]: 'connections' });
+    // Absent `pc` IS a position — the top — not a missing value to repair.
+    expect(route?.panels.cursor).toBeNull();
+    // Renders what it rendered: the cursor resolves to the end of `p`.
+    const canonical = normalize(route!);
+    expect(canonical.panels.cursor).toBeNull();
+    expect(canonical.panels.stack[canonical.panels.stack.length - 1]).toBe(id(2));
+    expect(build(canonical).hash).toBe(hash);
+    expect(build(canonical).hash).not.toContain('pc=');
+  });
+
+  it('pc carries the cursor as an ENTITY ID, and is omitted at the top', () => {
     const route = normalize(
-      routeOf({ panels: { ...emptyPanels(), stack: ['a', 'b'], right: ['c', 'd'] } }),
+      routeOf({ panels: { ...emptyPanels(), stack: [id(1), id(2), id(3)], cursor: id(1) } }),
     );
     const { hash } = build(route);
-    expect(hash).toContain('r=c.d');
-    expect(parse(hash).route?.panels.right).toEqual(['c', 'd']);
+    expect(hash).toContain(`pc=${id(1)}`);
+    expect(parse(hash).route?.panels.cursor).toBe(id(1));
+
+    // At the top there is no address to carry.
+    const atTop = normalize(
+      routeOf({ panels: { ...emptyPanels(), stack: [id(1), id(2)], cursor: id(2) } }),
+    );
+    expect(atTop.panels.cursor).toBeNull();
+    expect(build(atTop).hash).not.toContain('pc=');
   });
 
-  it('a malformed r is discarded atomically under its own drop class', () => {
-    const { route, dropped } = parse('#/s/sp/home?r=');
-    expect(route?.panels.right).toEqual([]);
-    expect(dropped).toContain('right');
+  it('a pc that names nothing on the Trail drops under its OWN class', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}&pc=${id(9)}`);
+    // Clamped to the top, never a blank centre from a well-formed address.
+    expect(route?.panels.cursor).toBeNull();
+    expect(route?.panels.stack).toEqual([id(1), id(2)]);
+    // 'cursor', not 'stack': a notice naming the wrong class is a false
+    // statement about what the viewer lost (R4-7).
+    expect(dropped).toContain('cursor');
+    expect(dropped).not.toContain('stack');
   });
 
-  it('normalize dedupes the right trail within itself, never against the stack', () => {
+  /* §3.2's case 2 AT THE SEAM THAT REPORTS. `parse` is the only tier that can
+     raise a notice, and the pin cross-filter runs after it, in `normalize` —
+     so a `pc` naming a pinned entity used to pass `parse` as a real position
+     and then clamp to the top with nothing said. Absent is absent whichever
+     filter made it so. */
+  it('a pc naming an entity that is also PINNED drops under its own class', () => {
+    const { route, dropped } = parse(
+      `#/s/${SPACE}/home?pin=${id(2)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
+    );
+    expect(route?.panels.cursor).toBeNull();
+    expect(dropped).toContain('cursor');
+    expect(dropped).not.toContain('stack');
+    expect(normalize(route!).panels.stack).toEqual([id(1), id(3)]);
+
+    // Case 1 is NOT a drop: a pinned crumb BEFORE the cursor shifts the index
+    // and the id absorbs it — nothing was lost, so nothing is announced.
+    const shifted = parse(
+      `#/s/${SPACE}/home?pin=${id(1)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
+    );
+    expect(shifted.dropped).toEqual([]);
+    expect(shifted.route?.panels.cursor).toBe(id(2));
+  });
+
+  /* THE PIN CROSS-FILTER, BOTH HALVES. `normalize` strips from `stack` any id
+     that is also pinned, and pins survive a Work→Home switch, so a Trail CAN
+     lose an entry under the cursor's feet. An id absorbs the shift where an
+     index would have aimed one place to the left at a real entity. */
+  it('normalize resolves the cursor against the pin cross-filter', () => {
+    // A crumb BEFORE the cursor is removed: the cursor is simply unaffected.
+    const shifted = normalize(
+      routeOf({
+        panels: {
+          ...emptyPanels(),
+          stack: [id(1), id(2), id(3)],
+          pinned: [id(1)],
+          cursor: id(2),
+        },
+      }),
+    );
+    expect(shifted.panels.stack).toEqual([id(2), id(3)]);
+    expect(shifted.panels.cursor).toBe(id(2));
+
+    // The CURSOR'S OWN entity removed, mid-Trail: its id is now absent, which
+    // is detectable — it clamps to the top.
+    const pulled = normalize(
+      routeOf({
+        panels: {
+          ...emptyPanels(),
+          stack: [id(1), id(2), id(3)],
+          pinned: [id(2)],
+          cursor: id(2),
+        },
+      }),
+    );
+    expect(pulled.panels.stack).toEqual([id(1), id(3)]);
+    expect(pulled.panels.cursor).toBeNull();
+  });
+
+  it('normalize is idempotent over the cursor: a top cursor canonicalises to null', () => {
     const route = routeOf({
-      panels: { ...emptyPanels(), stack: ['a'], right: ['a', 'b', 'b'] },
+      panels: { ...emptyPanels(), stack: [id(1), id(2)], cursor: id(2) },
     });
-    // The same entity open centre AND beside it is an honest viewer state.
-    expect(normalize(route).panels.right).toEqual(['a', 'b']);
-    expect(normalize(route).panels.stack).toEqual(['a']);
+    const once = normalize(route);
+    expect(once.panels.cursor).toBeNull();
+    expect(normalize(once)).toEqual(once);
   });
 
-  it('keeps tab state for a right-panel id — right ids are open ids', () => {
+  it('pc rides p OWN tier — it can never outlive the list it addresses', () => {
+    const stack = Array.from(
+      { length: 60 },
+      (_, i) => `panel-entity-${i}-abcdefghijklmnopqrstuvwxyz`,
+    );
     const route = routeOf({
-      panels: {
-        ...emptyPanels(),
-        right: ['c'],
-        tabs: { c: 'connections' as PanelTab },
-      },
-    });
-    expect(normalize(route).panels.tabs).toEqual({ c: 'connections' });
-  });
-
-  it('drops the right trail after the t tier and before pins', () => {
-    const stack = ['keep'];
-    const right = Array.from({ length: 60 }, (_, i) => `panel-entity-${i}-abcdefghijklmnopqrstuvwxyz`);
-    const pinned = ['pin-1'];
-    const route = routeOf({
-      panels: {
-        ...emptyPanels(),
-        stack,
-        right,
-        pinned,
-        tabs: { keep: 'connections' as PanelTab },
-      },
+      panels: { ...emptyPanels(), stack, pinned: ['pin-1'], cursor: stack[0] },
     });
     const { hash, dropped } = build(route);
     expect(hash.length).toBeLessThanOrEqual(MAX_HASH_LENGTH);
-    // The right trail went; the pins and the centre stack survived it.
-    expect(dropped).toContain('right');
-    expect(dropped).not.toContain('pins');
-    expect(dropped).not.toContain('stack');
-    expect(hash).toContain('pin=');
-    expect(hash).toContain('p=');
+    // Whichever way the cap falls, `pc` is never present without its `p`.
+    if (!hash.includes('p=')) expect(hash).not.toContain('pc=');
+    expect(dropped).not.toContain('cursor');
+  });
+
+  /* O1 — a retired `r=` link FOLDS. Open to reversal on review; see the PR. */
+  it('an old r= link folds its TOP onto p, so the destination survives', () => {
+    const { route, dropped } = parse(
+      `#/s/${SPACE}/home?p=${id(1)}.${id(2)}&r=${id(3)}.${id(4)}`,
+    );
+    // `r`'s top is what that third panel was actually showing; it becomes the
+    // end of the Trail, and an absent `pc` lands the viewer exactly there.
+    expect(route?.panels.stack).toEqual([id(1), id(2), id(4)]);
+    expect(route?.panels.cursor).toBeNull();
+    // The rest of `r` goes silently: nothing was lost, so nothing is announced.
+    expect(dropped).toEqual([]);
+  });
+
+  it('a folded r top already on the Trail is not doubled, and a malformed r is silent', () => {
+    const already = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}&r=${id(2)}`);
+    expect(already.route?.panels.stack).toEqual([id(1), id(2)]);
+    expect(already.dropped).toEqual([]);
+
+    const malformed = parse(`#/s/${SPACE}/home?p=${id(1)}&r=`);
+    expect(malformed.route?.panels.stack).toEqual([id(1)]);
+    expect(malformed.dropped).toEqual([]);
+  });
+
+  /* The fold's promise is "the link opens on exactly the entity it named".
+     When `r`'s top is ALREADY on `p` below its top, appending would repeat an
+     entity the Trail cannot hold twice — so the fold SEEKS, which is the same
+     rule a live revisit follows (`trailPush`). Before this, the case
+     silently opened on `p`'s top instead: the centre, not the panel. */
+  it('a folded r top already on p but BELOW its top seeks the cursor there', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}&r=${id(1)}`);
+    expect(route?.panels.stack).toEqual([id(1), id(2)]);
+    expect(route?.panels.cursor).toBe(id(1));
+    expect(dropped).toEqual([]);
+    const canonical = normalize(route!);
+    expect(canonical.panels.cursor).toBe(id(1));
+    expect(build(canonical).hash).toContain(`pc=${id(1)}`);
+
+    // `pc` is the current vocabulary and outranks a retired one: a hand-built
+    // link carrying both keeps the position it states.
+    const both = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}.${id(3)}&r=${id(1)}&pc=${id(2)}`);
+    expect(both.route?.panels.cursor).toBe(id(2));
+  });
+
+  it('build never emits r= again', () => {
+    const route = normalize(
+      routeOf({ panels: { ...emptyPanels(), stack: [id(1), id(2)], cursor: id(1) } }),
+    );
+    expect(build(route).hash).not.toMatch(/[?&]r=/);
   });
 });
 

@@ -3,6 +3,14 @@
 **Status:** LLD for ruling · task `01a00932-e001-7564-b0fa-f43c1dbf8f52` · 2026-08-16
 **Baseline:** main `3a549223` (menu revision 16, PRs #269/#271/#272/#276 landed, #277 open)
 
+> **PARTLY SUPERSEDED — 2026-09-22, task `01a0c864`.** **R6** (centre vs right)
+> and **R7** (breadcrumbs on both panels) no longer describe the code: Home is
+> TWO panels and one **Trail**, the `r` param and the right panel are retired,
+> and the in-tree/out-of-tree branch (`views/home-tree.ts`) is deleted along
+> with the hazard it guarded. See **`HOME-TWO-PANELS-ONE-TRAIL.md`**. Every
+> other ruling here still stands — this document remains the record of how
+> Home got its shape, and the annotations below mark only what moved.
+
 ## 1. What this is
 
 Today the space has seven tabs — Collab | Work | Board | Graph | Channels | Files |
@@ -63,14 +71,21 @@ reachable like every other kind: through Home's switcher and rail.
 - **R5 — Split-button create.** `+` creates an entity of the currently
   selected kind. The caret opens the kind list; picking a kind *switches* the
   root list, it never creates. `[Chats +]` creates a new chat.
-- **R6 — Center vs right.** List click roots the center. Inside the center,
+- **R6 — Center vs right.** ⚠️ **Superseded (01a0c864 U2/D5).** There is no
+  right panel: every hop extends ONE Trail in the centre, and the marks in the
+  strip (`›`/`→`) carry the distinction this rule used to carry by
+  destination. Promote is gone with the panel it promoted from. As ruled in
+  2026-08-16: List click roots the center. Inside the center,
   clicks within the root's own tree navigate in place. A related entity of a
   different kind opens in the right panel. A related entity of the same kind
   that is *not* in the root's tree also opens right. An explicit
   "open here" (promote) on the right panel re-roots the center **and moves the
   left list's selection**.
-- **R7 — Breadcrumbs on both panels.** Center and right each carry a
-  breadcrumb trail of the hops that led there.
+- **R7 — Breadcrumbs on both panels.** ⚠️ **Superseded (01a0c864 U2/U5/U9).**
+  One strip, on one panel, showing one Trail — with a cursor along it, a
+  collapsed middle and a jump menu. Crumb click SEEKS rather than truncates.
+  As ruled in 2026-08-16: Center and right each carry a breadcrumb trail of
+  the hops that led there.
 - **R8 — Reuse the panel system.** The entity center is the existing
   `EntityDetailPanel` machinery (post-#276), including work_session content
   surfaces (terminal | chat | git | debug | graph), the doc editor, files.
@@ -114,11 +129,14 @@ Panel params, reusing the existing codec vocabulary (`p`, `pin`, `t`,
 - `p` — the **center trail**, bottom→top. Top renders in the center; the rest
   *are* the center breadcrumb (R7). This is today's stack, reinterpreted: no
   codec change, only presentation.
-- `r` — the **right trail**, same encoding, new param. Top renders in the right
-  panel; the rest are its breadcrumb. Absent → no right panel.
+- `r` — the **right trail**. ⚠️ **Retired (01a0c864 U6).** Replaced by `pc`,
+  the cursor's address into `p` — omitted when the cursor is at the top, so
+  every link written before it still means what it meant. An old `r=` link
+  folds its top entry onto the end of `p` (O1).
 
-**D2 (proposed): breadcrumb = trail = stack.** No separate history structure.
-Clicking a crumb truncates the trail to it. A right-panel hop pushes onto `r`
+**D2 (proposed): breadcrumb = trail = stack.** ⚠️ **Amended (01a0c864 U5).**
+Clicking a crumb now moves a CURSOR and truncates nothing — what is ahead of
+you stays ahead of you. No separate history structure. A right-panel hop pushes onto `r`
 (replace-render, single visible slot — the trail gives depth without a third
 column). Promote (R6) moves the top of `r` onto `p` as the new root (clearing
 both trails), sets the list selection, and — when the promoted entity's kind
@@ -225,6 +243,10 @@ kind arrives through relations (right panel) or a root switch.
 
 ### 4.3 Center and right panels (R6, R7, R8)
 
+⚠️ **This section is superseded below the R8 bullet** (01a0c864). The centre is
+the only entity panel; relation clicks and hierarchy clicks both call
+`trailPush`; the crumb strip is `HomeTrail` and a crumb click calls `cursorTo`.
+
 - `renderPanel` (detail hosting incl. content surfaces, archetype-based chat
   surface pick) extracts from `WorkspaceView` into a shared module both Home
   and any remaining callers use (R8: reuse, don't rebuild).
@@ -309,7 +331,8 @@ each stands alone behind the still-present Work tab until 5 flips the chrome.
   or defer entirely to Collab. **Needs a ruling only when lane 5 lands.**
 - **Git topology view (Code)** — route + palette only, per R4. If that proves
   too buried, it can become a content surface on `project`/`worktree` detail.
-- **Mobile** (`src/mobile/`) is untouched by this design; the R6 rules assume
+- **Mobile** (`src/mobile/`) is untouched by this design; the (now superseded)
+  R6 rules assume
   three columns and will need a phone-shaped answer separately.
 - **Custom kinds** in the rail: included by R3; icon fallback comes from the
   registry's `c:*` art.

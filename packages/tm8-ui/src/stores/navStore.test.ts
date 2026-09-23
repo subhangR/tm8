@@ -23,6 +23,7 @@ import {
   selectPanelIds,
   selectOpenPanelIds,
   selectStackTop,
+  selectTrailEntity,
   selectSurface,
   selectTab,
   selectVisibleCount,
@@ -382,100 +383,207 @@ describe('the router sync loop', () => {
   });
 });
 
-describe('the Home trails — openCenter/push and the right panel (task 01a00932)', () => {
-  it('openCenter RESTARTS the centre trail; push GROWS it — R6a vs R6b', () => {
-    const s = navStore.getState();
-    s.openCenter('task-1');
-    s.push('doc-child');
-    expect(navStore.getState().stack).toEqual(['task-1', 'doc-child']);
-    // A list click plants a new root: the old trail does not survive it.
-    s.openCenter('task-2');
-    expect(navStore.getState().stack).toEqual(['task-2']);
+describe('the Trail — one walk, a cursor along it (U2–U5, task 01a0c864)', () => {
+  beforeEach(() => {
+    resetNav(SPACE, { view: 'home' });
   });
 
-  it('stackTo truncates the centre trail to the crumb — and to nothing else', () => {
+  it('openCenter ROOTS the Trail; trailPush HOPS along it (U10)', () => {
+    const s = navStore.getState();
+    s.openCenter('task-1');
+    expect(navStore.getState().stack).toEqual(['task-1']);
+    expect(navStore.getState().cursor).toBe(0);
+
+    s.trailPush('doc-child');
+    expect(navStore.getState().stack).toEqual(['task-1', 'doc-child']);
+    expect(navStore.getState().cursor).toBe(1);
+
+    // A list click plants a new root: the old Trail does not survive it (U10).
+    s.openCenter('task-2');
+    expect(navStore.getState().stack).toEqual(['task-2']);
+    expect(navStore.getState().cursor).toBe(0);
+  });
+
+  it('a REVISIT SEEKS: hopping onto an entity already on the Trail moves the cursor', () => {
     const s = navStore.getState();
     s.openCenter('a');
-    s.push('b');
-    s.push('c');
-    s.stackTo('a');
-    expect(navStore.getState().stack).toEqual(['a']);
-    // A crumb that is already the top, or absent, moves nothing.
-    s.stackTo('a');
-    s.stackTo('zz');
-    expect(navStore.getState().stack).toEqual(['a']);
+    s.trailPush('b');
+    s.trailPush('c');
+    // `a → b → c → a` is a walk back to `a`, not a fourth crumb naming it.
+    s.trailPush('a');
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(navStore.getState().cursor).toBe(0);
+    // …and `c` is still ahead of you, which is the point.
+    expect(selectTrailEntity(navStore.getState())).toBe('a');
+    s.trailPush('c');
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(navStore.getState().cursor).toBe(2);
+  });
+
+  it('KEEPS FORWARD: cursorTo, trailBack and trailForward never shorten the Trail (U5)', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.trailPush('c');
+
+    s.cursorTo('a');
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(selectTrailEntity(navStore.getState())).toBe('a');
+
+    s.trailForward();
+    expect(selectTrailEntity(navStore.getState())).toBe('b');
+    s.trailForward();
+    expect(selectTrailEntity(navStore.getState())).toBe('c');
+    s.trailBack();
+    s.trailBack();
+    expect(selectTrailEntity(navStore.getState())).toBe('a');
+    // Eight cursor moves later the walk is the walk it was.
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+
+    // A crumb that is absent, or already under the cursor, moves nothing.
+    s.cursorTo('zz');
+    s.cursorTo('a');
+    expect(navStore.getState().cursor).toBe(0);
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+  });
+
+  it('somewhere NEW from mid-Trail discards the forward half — the one thing that truncates', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.trailPush('c');
+    s.cursorTo('a');
+    s.trailPush('d');
+    expect(navStore.getState().stack).toEqual(['a', 'd']);
+    expect(navStore.getState().cursor).toBe(1);
+  });
+
+  it('a discarded forward half takes its per-panel state with it', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.setTab('b', 'connections');
+    // Walking back does NOT prune `b` — it is still on the Trail, ahead of you.
+    s.trailBack();
+    expect(navStore.getState().tabs['b']).toBe('connections');
+    // Walking somewhere new drops it, and its tab goes with it.
+    s.trailPush('c');
+    expect(navStore.getState().stack).toEqual(['a', 'c']);
+    expect(navStore.getState().tabs['b']).toBeUndefined();
+  });
+
+  it('trailBack clamps at the root and trailForward at the top', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.trailForward();
+    expect(navStore.getState().cursor).toBe(1);
+    s.trailBack();
+    s.trailBack();
+    s.trailBack();
+    expect(navStore.getState().cursor).toBe(0);
+    expect(navStore.getState().stack).toEqual(['a', 'b']);
+    // Esc at the root is a no-op here; returning the centre to rest is
+    // HomeView's call (D7), not a second meaning for trailBack.
   });
 
   it('clearStack returns the centre to rest (Home: the conversation)', () => {
     const s = navStore.getState();
     s.openCenter('a');
-    s.push('b');
+    s.trailPush('b');
     s.clearStack();
     expect(navStore.getState().stack).toEqual([]);
+    expect(navStore.getState().cursor).toBe(0);
+    expect(selectTrailEntity(navStore.getState())).toBeNull();
   });
 
-  it('openRight pushes and RAISES — the single-host law inside one trail', () => {
+  it('WORK VERBS PARK THE CURSOR AT THE TOP — U1 held in one assertion', () => {
     const s = navStore.getState();
-    s.openRight('x');
-    s.openRight('y');
-    s.openRight('x');
-    expect(navStore.getState().right).toEqual(['y', 'x']);
-  });
-
-  it('rightTo truncates, popRight steps, closeRight clears', () => {
-    const s = navStore.getState();
-    s.openRight('x');
-    s.openRight('y');
-    s.openRight('z');
-    s.rightTo('x');
-    expect(navStore.getState().right).toEqual(['x']);
-    s.openRight('y');
-    s.popRight();
-    expect(navStore.getState().right).toEqual(['x']);
-    s.closeRight();
-    expect(navStore.getState().right).toEqual([]);
-    // Empty-trail pops and closes are no-ops, not errors.
-    s.popRight();
-    s.closeRight();
-    expect(navStore.getState().right).toEqual([]);
-  });
-
-  it('a right-panel id is an OPEN id: its tab state survives centre changes', () => {
-    const s = navStore.getState();
-    s.openRight('x');
-    s.setTab('x', 'connections');
     s.openCenter('a');
+    s.trailPush('b');
+    s.trailPush('c');
+    s.cursorTo('a');
+    expect(navStore.getState().cursor).toBe(0);
+
+    // `push` is Work's verb and knows nothing about a cursor; parking it at
+    // the top is what stops a Work session inheriting a stale mid-Trail index.
+    s.push('w');
+    expect(selectStackTop(navStore.getState())).toBe('w');
+    expect(navStore.getState().cursor).toBe(navStore.getState().stack.length - 1);
     s.pop();
-    expect(navStore.getState().tabs['x']).toBe('connections');
-    // …and is pruned the moment the right trail lets go of it.
-    s.openRight('x');
-    navStore.getState().closeRight();
-    expect(navStore.getState().tabs['x']).toBeUndefined();
+    expect(navStore.getState().cursor).toBe(navStore.getState().stack.length - 1);
+    s.close('b');
+    expect(navStore.getState().cursor).toBe(navStore.getState().stack.length - 1);
+    s.pin('a');
+    expect(navStore.getState().cursor).toBe(Math.max(0, navStore.getState().stack.length - 1));
   });
 
-  it('the right trail rides the URL as r=, and hydrates back', () => {
+  it('the cursor rides the URL as an ID, and is OMITTED at the top (D2, as corrected)', () => {
     const s = navStore.getState();
     s.openCenter('a');
-    s.openRight('x');
-    s.openRight('y');
+    s.trailPush('b');
+    s.trailPush('c');
+    // At the top the cursor has no address to carry: null is the canonical
+    // spelling of "at the end", which is why every pre-`pc` link still lands
+    // where it landed.
+    expect(routeOf(navStore.getState()).panels.cursor).toBeNull();
+    expect(build(routeOf(navStore.getState())).hash).not.toContain('pc=');
+
+    s.cursorTo('a');
     const route = routeOf(navStore.getState());
-    expect(route.panels.right).toEqual(['x', 'y']);
+    expect(route.panels.cursor).toBe('a');
+    expect(build(route).hash).toContain('pc=a');
+  });
+
+  it('hydrate resolves the id against the stack — and an absent one clamps to the top', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.trailPush('c');
+    s.cursorTo('b');
+    const route = routeOf(navStore.getState());
+
     resetNav(SPACE, { view: 'home' });
     navStore.getState().hydrate(route);
-    expect(navStore.getState().right).toEqual(['x', 'y']);
-    expect(navStore.getState().stack).toEqual(['a']);
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(selectTrailEntity(navStore.getState())).toBe('b');
+
+    // An id that is not on the Trail is not a position. Clamp to the top —
+    // never a blank centre from an address that looks well-formed.
+    resetNav(SPACE, { view: 'home' });
+    navStore.getState().hydrate({
+      ...route,
+      panels: { ...route.panels, cursor: 'gone' },
+    });
+    expect(selectTrailEntity(navStore.getState())).toBe('c');
   });
 
-  it('every trail verb is USER navigation: history says push', () => {
+  it('a round trip through the URL preserves the Trail AND the place in it', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.trailPush('b');
+    s.trailPush('c');
+    s.cursorTo('b');
+    const { hash } = build(routeOf(navStore.getState()));
+    const reparsed = parse(hash).route!;
+    resetNav(SPACE, { view: 'home' });
+    navStore.getState().hydrate(reparsed);
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(selectTrailEntity(navStore.getState())).toBe('b');
+  });
+
+  it('every Trail verb is USER navigation: history says push (D3)', () => {
     const s = navStore.getState();
     for (const go of [
       () => s.openCenter('a'),
-      () => s.push('b'),
-      () => s.stackTo('a'),
-      () => s.openRight('x'),
-      () => s.popRight(),
+      () => s.trailPush('b'),
+      () => s.trailPush('c'),
+      () => s.cursorTo('a'),
+      () => s.trailForward(),
+      () => s.trailBack(),
       () => s.clearStack(),
     ]) {
+      navStore.setState({ history: 'replace' });
       go();
       expect(navStore.getState().history).toBe('push');
     }
