@@ -128,6 +128,10 @@ import type {
   CredentialsLoginSessionFinishResult,
   CredentialsLoginSessionStartResult,
   CredentialsStatusView,
+  CredentialsServiceKeyDeleteResult,
+  CredentialsServiceKeysStatusView,
+  ServiceKeyProviderName,
+  ServiceKeyView,
   Cursor,
   DurableWorkspaceEvent,
   EdgeView,
@@ -1193,6 +1197,14 @@ export interface Seam {
     ): Promise<CredentialsLoginSessionStartResult>;
     /** Harvests what the terminal achieved. `connected` and `stored` differ. */
     finishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult>;
+    /**
+     * Service keys (`credentials.serviceKeys.*`) — keys the SERVER uses for this
+     * member, today only the TypeSafe key behind ✦ Ask Jev. Pasted here, never
+     * shown back beyond four characters, never given to an agent session.
+     */
+    serviceKeys(): Promise<CredentialsServiceKeysStatusView>;
+    saveServiceKey(provider: ServiceKeyProviderName, apiKey: string): Promise<ServiceKeyView>;
+    removeServiceKey(provider: ServiceKeyProviderName): Promise<CredentialsServiceKeyDeleteResult>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

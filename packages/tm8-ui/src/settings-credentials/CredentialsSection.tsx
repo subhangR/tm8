@@ -12,11 +12,13 @@ import type {
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import { CredentialsProviderBlock } from './CredentialsProviderBlock';
+import { ServiceKeysBlock } from './ServiceKeysBlock';
 import { presentationOf } from './provider-presentation';
 import {
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
+  type ServiceKeysPort,
 } from './port';
 import './credentials.css';
 
@@ -43,6 +45,11 @@ export interface CredentialsSectionProps {
    * The reader derives from this value and issues no second call.
    */
   onStatusRead?: (status: CredentialsStatusView) => void;
+  /**
+   * Service keys (today: TypeSafe, for ✦ Ask Jev). Rendered below the agent
+   * logins when the host wires it; absent, the block is simply not shown.
+   */
+  serviceKeysPort?: ServiceKeysPort;
 }
 
 interface ObservedStatus {
@@ -117,6 +124,7 @@ export function CredentialsSection({
   heading = 'Agent credentials',
   serverBaseUrl,
   onStatusRead,
+  serviceKeysPort,
 }: CredentialsSectionProps) {
   const [observed, setObserved] = useState<ObservedStatus | null>(null);
 
@@ -167,6 +175,8 @@ export function CredentialsSection({
       <div className="set-cred__shared">
         <CredentialsProviderBlock port={observedPort} serverBaseUrl={serverBaseUrl} />
       </div>
+
+      {serviceKeysPort ? <ServiceKeysBlock port={serviceKeysPort} /> : null}
     </SectionFrame>
   );
 }

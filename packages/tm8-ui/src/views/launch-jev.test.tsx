@@ -16,7 +16,8 @@ import type { CredentialsStatusView, EntityId, LaunchSuggestResult, ModelSuggest
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 import { MobileSurfaceProvider } from '../mobile';
-import { JEV_UNAVAILABLE_COPY } from '../jev';
+import { JEV_ADD_KEY_COPY, JEV_UNAVAILABLE_COPY } from '../jev';
+import { navStore } from '../stores/navStore';
 import type { JevPort } from '../jev/port';
 import { answeringPort, failedGroup, MODEL, okGroup, pendingPort, answer } from '../jev/test-support';
 
@@ -126,16 +127,20 @@ describe('each group lands inside its own section', () => {
     expect(view.launch().selection).toBeUndefined();
   });
 
-  it('with no key everywhere it says Jev isn’t configured, and Launch is unaffected', async () => {
+  it('with no key anywhere it says the TypeSafe key is missing, links to Settings, and Launch is unaffected', async () => {
     const port = answeringPort({
       model: failedGroup('no_key'), teammates: failedGroup('no_key'),
       memories: failedGroup('no_key'), skills: failedGroup('no_key'),
     });
     const view = renderSheet({ jev: port });
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
-    expect(view.getByTestId('jev-unavailable').textContent).toBe(JEV_UNAVAILABLE_COPY);
-    // Said ONCE, inline — a node fact, not four section failures.
+    expect(view.getByTestId('jev-unavailable').textContent).toBe(`${JEV_UNAVAILABLE_COPY} ${JEV_ADD_KEY_COPY}`);
+    // Said ONCE, inline — a missing key, not four section failures.
     expect(view.getAllByText(new RegExp(JEV_UNAVAILABLE_COPY))).toHaveLength(1);
+    // Actionable (Lane K): the link lands on Settings → Agent credentials.
+    navStore.getState().navigate({ view: 'home' });
+    fireEvent.click(view.getByTestId('jev-add-key'));
+    expect(navStore.getState().view).toEqual({ view: 'settings', section: 'credentials' });
     const config = view.launch();
     expect(config.selection).toBeUndefined();
     expect(config.model).toBe('claude-sonnet-5');

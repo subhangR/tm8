@@ -89,7 +89,9 @@ export interface JevSuggestions {
   toSpawnFields(): JevSpawnFields;
 }
 
-export const JEV_UNAVAILABLE_COPY = 'Jev isn’t configured on this node';
+/** Every group said `no_key`: neither this member nor this node has a TypeSafe key. */
+export const JEV_UNAVAILABLE_COPY = 'Ask Jev needs a TypeSafe key, and none is saved for you.';
+export const JEV_ADD_KEY_COPY = 'Add yours in Settings → Agent credentials';
 export const JEV_UNWIRED_REASON = 'Jev isn’t wired on this surface, so there is nobody to ask.';
 export const MEMORY_LIMIT_REASON =
   `A launch carries at most ${String(MEMORY_IDS_MAX)} memories — untick one before ticking another.`;

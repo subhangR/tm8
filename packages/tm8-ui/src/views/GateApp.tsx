@@ -93,6 +93,7 @@ import {
   CredentialsSetupDialog,
   credentialSetupState,
   credentialsPortFromSeam,
+  serviceKeysPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
   shouldOfferSetup,
@@ -1516,6 +1517,9 @@ export function GateApp(props: GateAppProps = {}) {
     () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
     [data.seam, data.spaceId],
   );
+  // Service keys (TypeSafe, for ✦ Ask Jev) ride the same section; account-
+  // scoped, so no space is bound.
+  const serviceKeysPort = useMemo(() => serviceKeysPortFromSeam(data.seam), [data.seam]);
 
   /* SHOULD THE FLOW OPEN ITSELF? Read ONCE PER `GateApp` MOUNT — which is
      keyed on `activeServer.id`, so a server switch re-asks and a SPACE switch
@@ -2438,6 +2442,13 @@ export function GateApp(props: GateAppProps = {}) {
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
             <SettingsShell
+              /* `/settings/<section>` opens on that section — e.g. the Jev
+                 launch surface's "add your TypeSafe key" link lands on
+                 credentials. Keyed so arriving by a new address re-opens. */
+              key={navView.view === 'settings' ? navView.section ?? 'default' : 'default'}
+              {...(navView.view === 'settings' && navView.section
+                ? { initialSection: navView.section }
+                : {})}
               port={settingsPort}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
               /* W2 -> W1/W3: an axis write must reach the workspace's own
@@ -2455,6 +2466,7 @@ export function GateApp(props: GateAppProps = {}) {
                             credentials: (
                               <CredentialsSection
                                 port={credentialsPort}
+                                serviceKeysPort={serviceKeysPort}
                                 serverBaseUrl={activeServer.routeBaseUrl}
                                 /* Settings is the OTHER reader of the same
                                    derivation. Without this, connecting GitHub
