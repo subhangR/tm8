@@ -285,6 +285,8 @@ function isAvailable(operation: OperationName, row: ActionContextRow | null): bo
 
   // Parameter-free operations are real palette composers in both global and
   // contextual discovery. They may open a form, but they never claim a target.
+  // AUTHORIZATION stops here; whether one is SHOWN beside a context entity is
+  // `actionScope`'s separate, presentation-only question.
   if (params.length === 0) return true;
   if (!row) return false;
 
@@ -296,6 +298,202 @@ function isAvailable(operation: OperationName, row: ActionContextRow | null): bo
   }
 
   return structurallyAvailable(operation, row);
+}
+
+/**
+ * Parameter-free operations whose BODY or QUERY names the context entity —
+ * the anchor of a message, the source of an edge, the parent of a child. They
+ * carry no path parameter, yet on this kind of entity they are about the
+ * entity, so they belong in its contextual list. Every other parameter-free
+ * operation (`auth.*`, `spaces.create`, `identity.get`, …) is global: it
+ * answers the same way on every entity and is withheld from the contextual
+ * list unless the caller asks for `scope=all`.
+ */
+function anchoredOn(operation: OperationName, row: ActionContextRow): boolean {
+  if (row.deleted_at !== null) return false;
+  switch (operation) {
+    case 'messages.post':
+    case 'edges.create':
+    case 'edges.list':
+    case 'placements.apply':
+    case 'attentionRequests.list':
+    case 'graph.query':
+    case 'files.uploadInit':
+      return true;
+    case 'entities.create':
+    case 'collections.query':
+      return MOVABLE_KINDS.has(row.kind);
+    case 'tracking.refresh':
+      return row.kind === 'task' || row.kind === 'pull_request' || row.kind === 'commit';
+    case 'execution.spawn':
+    case 'execution.dispatch':
+      return row.kind === 'task';
+    default:
+      return false;
+  }
+}
+
+/**
+ * Where an AUTHORIZED operation sits relative to a context entity.
+ *
+ *   entity  acts on or with this entity — the default contextual list
+ *   space   needs only the entity's Space (`spaces.get`, `savedViews.list`)
+ *   global  needs nothing at all (`auth.logout`, `spaces.create`)
+ *
+ * Presentation only: the complete authorized inventory is still one
+ * `scope=all` away, and the capabilityEpoch is computed over that inventory.
+ */
+type ActionScope = 'entity' | 'space' | 'global';
+
+function actionScope(operation: OperationName, row: ActionContextRow): ActionScope {
+  const params = operationParams(operation);
+  if (params.length === 0) return anchoredOn(operation, row) ? 'entity' : 'global';
+  if (params.every((param) => param === 'spaceId')) return 'space';
+  return 'entity';
+}
+
+/**
+ * What an agent most plausibly wants to do next on an entity, most relevant
+ * first. A kind's head list is followed by this generic order; anything named
+ * in neither keeps registry order after both. Deterministic by construction:
+ * the inputs are the operation name, the kind and the stored work status.
+ */
+const GENERIC_RELEVANCE: readonly OperationName[] = [
+  'messages.post',
+  'entities.context',
+  'entities.patch',
+  'messages.list',
+  'edges.create',
+  'entities.get',
+  'entities.children',
+  'entities.hierarchy',
+  'entities.connections',
+  'edges.list',
+  'entities.activity',
+  'entities.feed',
+  'entities.versions',
+  'entities.react',
+  'placements.apply',
+  'entities.create',
+  'entities.move',
+  'files.uploadInit',
+  'attentionRequests.list',
+  'graph.query',
+  'collections.query',
+  'presence.get',
+  'entities.delete',
+];
+
+const ACTIVE_WORK = new Set(['working', 'in_review']);
+
+function kindRelevance(row: ActionContextRow): readonly OperationName[] {
+  switch (row.kind) {
+    case 'task':
+      if (row.work_status !== null && ACTIVE_WORK.has(row.work_status)) {
+        return [
+          'entities.commands.complete',
+          'messages.post',
+          'entities.commands.linkPr',
+          'entities.commands.linkCommit',
+          'entities.patch',
+          'edges.create',
+          'tracking.refresh',
+          'entities.context',
+        ];
+      }
+      if (row.work_status === 'done' || row.work_status === 'cancelled') {
+        return ['messages.post', 'entities.context', 'entities.patch'];
+      }
+      return [
+        'entities.commands.work',
+        'entities.commands.pull',
+        'messages.post',
+        'entities.patch',
+        'execution.spawn',
+        'execution.dispatch',
+        'entities.context',
+        'entities.commands.complete',
+      ];
+    case 'message':
+      return [
+        'messages.post',
+        'messages.edit',
+        'entities.react',
+        'messages.attachments.add',
+        'messages.attachments.remove',
+        'messages.delivery.get',
+        'messages.delete',
+      ];
+    case 'channel':
+      return ['messages.post', 'messages.list', 'entities.context'];
+    case 'work_session':
+      return [
+        'messages.post',
+        'handoffs.send',
+        'handoffs.list',
+        'execution.streams.attach',
+        'execution.terminate',
+      ];
+    case 'pull_request':
+    case 'commit':
+      return ['tracking.refresh', 'messages.post', 'projects.associations.correct'];
+    case 'file':
+      return ['files.download', 'messages.post'];
+    case 'team_member':
+      return [
+        'messages.post',
+        'entities.points.add',
+        'entities.patch',
+        'teamMembers.interactionProfile.setDefault',
+      ];
+    case 'member':
+      return ['messages.post', 'entities.points.add'];
+    case 'interaction_profile':
+      return [
+        'interactionProfiles.updateDraft',
+        'interactionProfiles.validate',
+        'interactionProfiles.preview',
+        'interactionProfiles.activate',
+        'interactionProfiles.retire',
+      ];
+    default:
+      return [];
+  }
+}
+
+const SCOPE_ORDER: Record<ActionScope, number> = { entity: 0, space: 1, global: 2 };
+
+/**
+ * Order authorized operations for a context entity: scope first (entity, then
+ * space, then global), then relevance within the scope, then registry order.
+ * The byte-capped `entities.context` actions section trims from the END, so
+ * this order is what decides which rows survive the cap.
+ */
+function rankForContext(
+  operations: readonly OperationName[],
+  row: ActionContextRow,
+): OperationName[] {
+  const rank = new Map<OperationName, number>();
+  for (const operation of [...kindRelevance(row), ...GENERIC_RELEVANCE]) {
+    if (!rank.has(operation)) rank.set(operation, rank.size);
+  }
+  return operations
+    .map((operation, index) => ({
+      operation,
+      scope: SCOPE_ORDER[actionScope(operation, row)],
+      relevance: rank.get(operation) ?? rank.size,
+      index,
+    }))
+    .sort((a, b) => a.scope - b.scope || a.relevance - b.relevance || a.index - b.index)
+    .map((entry) => entry.operation);
+}
+
+type DiscoveryScope = 'contextual' | 'all';
+
+function discoveryScope(raw: string | null): DiscoveryScope {
+  if (raw === null || raw === 'contextual') return 'contextual';
+  if (raw === 'all') return 'all';
+  throw new CollabError('invalid_input', 'scope must be contextual or all');
 }
 
 function authzTarget(operation: OperationName): PaletteAction['authzTarget'] {
@@ -371,12 +569,25 @@ async function listActions(
   const owner = await deps.owner();
   const rawContextId = ctx.query.get('contextEntityId');
   const contextEntityId = optionalUuid(rawContextId, 'contextEntityId');
+  const scope = discoveryScope(ctx.query.get('scope'));
 
   return deps.db.tx(claimsFor(owner, ctx), async (q) => {
     const row = contextEntityId ? await actionContext(q, contextEntityId) : null;
     const actorId = row?.actor_id ?? owner.identityId;
-    const operations = registry.implemented().filter((operation) => isAvailable(operation, row));
-    const epoch = capabilityEpoch(actorId, row, operations);
+    // The epoch digests the COMPLETE authorized inventory in registry order,
+    // never the filtered or ranked view: two views of the same capability
+    // state must carry the same epoch, and a client comparing epochs must not
+    // see a change that is only a change of presentation.
+    const authorized = registry.implemented().filter((operation) => isAvailable(operation, row));
+    const epoch = capabilityEpoch(actorId, row, authorized);
+    // Without a context entity every authorized operation is already global,
+    // and the order stays the registry's. With one, the entity's own
+    // operations lead, most relevant first; space and global ones follow only
+    // under `scope=all`.
+    const operations = row
+      ? rankForContext(authorized, row).filter((operation) =>
+        scope === 'all' || actionScope(operation, row) === 'entity')
+      : authorized;
     const actions: PaletteAction[] = operations.map((operation) => ({
       id: `action:${operation}:${row?.id ?? 'global'}`,
       label: operation.replaceAll('.', ' '),

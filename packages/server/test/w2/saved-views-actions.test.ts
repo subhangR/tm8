@@ -312,6 +312,138 @@ describe('W2.G09 saved views and action discovery', () => {
     expect(second.capabilityEpoch).not.toBe(parsed.capabilityEpoch);
   });
 
+  function taskContextDb(workStatus: string): FakeDb {
+    const db = new FakeDb();
+    db.queryImpl = async <R>(sql: string) => {
+      if (sql.includes('internal.current_member_id')) {
+        return [{
+          id: IDS.entity,
+          space_id: IDS.space,
+          kind: 'task',
+          version: 3,
+          deleted_at: null,
+          work_status: workStatus,
+          message_author_id: null,
+          actor_id: IDS.member,
+          is_space_admin: false,
+        }] as R[];
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    };
+    return db;
+  }
+
+  /** Registry order is alphabetical, so every global row would lead an unranked list. */
+  function registerTaskSurface(db: Db): HandlerRegistry {
+    const noOp: OperationHandler = async () => ({ ok: true });
+    return register(db, (target) => {
+      for (const operation of [
+        'artifacts.create',
+        'auth.login',
+        'auth.logout',
+        'spaces.create',
+        'spaces.get',
+        'spaces.members.list',
+        'identity.get',
+        'attentionRequests.list',
+        'edges.create',
+        'entities.get',
+        'entities.context',
+        'entities.patch',
+        'entities.delete',
+        'entities.commands.complete',
+        'entities.commands.linkCommit',
+        'entities.commands.linkPr',
+        'entities.commands.work',
+        'messages.post',
+        'tracking.refresh',
+      ] as const) {
+        target.register(operation, noOp);
+      }
+    });
+  }
+
+  async function discover(registry: HandlerRegistry, query: string) {
+    return ActionDiscoveryResultSchema.parse(await handler(registry, 'actions.list')(
+      request('actions.list', { query }),
+    ));
+  }
+
+  it('lists a working task\'s own operations first, most relevant first, and withholds global ones', async () => {
+    const registry = registerTaskSurface(taskContextDb('working'));
+    const result = await discover(registry, `contextEntityId=${IDS.entity}`);
+    const operations = result.actions.map((action) => action.operation);
+
+    expect(operations.slice(0, 8)).toEqual([
+      'entities.commands.complete',
+      'messages.post',
+      'entities.commands.linkPr',
+      'entities.commands.linkCommit',
+      'entities.patch',
+      'edges.create',
+      'tracking.refresh',
+      'entities.context',
+    ]);
+    // Global and Space-level operations answer the same on every entity; the
+    // contextual list does not carry them.
+    for (const global of [
+      'auth.login', 'auth.logout', 'spaces.create', 'identity.get', 'artifacts.create',
+      'savedViews.create', 'spaces.get', 'spaces.members.list', 'savedViews.list',
+    ]) {
+      expect(operations).not.toContain(global);
+    }
+    // Body-anchored parameter-free operations stay: they are about this entity.
+    expect(operations).toContain('attentionRequests.list');
+    // Deleting is the least likely next step and ranks last among what it names.
+    expect(operations.indexOf('entities.delete')).toBeGreaterThan(operations.indexOf('entities.get'));
+  });
+
+  it('orders a not-yet-started task around starting work', async () => {
+    const registry = registerTaskSurface(taskContextDb('open'));
+    const operations = (await discover(registry, `contextEntityId=${IDS.entity}`))
+      .actions.map((action) => action.operation);
+    expect(operations[0]).toBe('entities.commands.work');
+    expect(operations.indexOf('messages.post')).toBeLessThan(operations.indexOf('entities.commands.complete'));
+  });
+
+  it('keeps the complete authorized inventory behind scope=all, contextual rows first, under one epoch', async () => {
+    const registry = registerTaskSurface(taskContextDb('working'));
+    const contextual = await discover(registry, `contextEntityId=${IDS.entity}`);
+    const all = await discover(registry, `contextEntityId=${IDS.entity}&scope=all`);
+    const contextualOps = contextual.actions.map((action) => action.operation);
+    const allOps = all.actions.map((action) => action.operation);
+
+    expect(allOps.slice(0, contextualOps.length)).toEqual(contextualOps);
+    const rest = allOps.slice(contextualOps.length);
+    // Space-level before global, each group in registry order.
+    expect(rest).toEqual([
+      'savedViews.list',
+      'spaces.get',
+      'spaces.members.list',
+      'artifacts.create',
+      'auth.login',
+      'auth.logout',
+      'identity.get',
+      'savedViews.create',
+      'spaces.create',
+    ]);
+    // Filtering is presentation, not authorization: the epoch digests the
+    // whole inventory, so both views of the same state agree on it.
+    expect(all.capabilityEpoch).toBe(contextual.capabilityEpoch);
+    expect(all.actions.every((action) => action.capabilityEpoch === contextual.capabilityEpoch)).toBe(true);
+    expect([...allOps].sort()).toEqual([...new Set(allOps)].sort());
+
+    const explicit = await discover(registry, `contextEntityId=${IDS.entity}&scope=contextual`);
+    expect(explicit.actions.map((action) => action.operation)).toEqual(contextualOps);
+  });
+
+  it('refuses an unknown discovery scope', async () => {
+    const registry = registerTaskSurface(taskContextDb('working'));
+    await expect(handler(registry, 'actions.list')(
+      request('actions.list', { query: `contextEntityId=${IDS.entity}&scope=everything` }),
+    )).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
   it('reports only invokable operations for the current Server composition without entity context', async () => {
     const registry = register(new FakeDb());
     const result = ActionDiscoveryResultSchema.parse(await handler(registry, 'actions.list')(
