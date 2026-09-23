@@ -271,17 +271,26 @@ export function parse(hash: string): ParseOutcome {
      the point: a notice tells the viewer something was lost, folding means
      nothing was. Because the fold lands the entity at the top of `p` and an
      absent `pc` means the top, the link opens on exactly the entity it named.
+     When that entity is ALREADY on `p` below its top it cannot be appended (the
+     Trail holds each entity once), so the fold SEEKS instead — the cursor goes
+     to it, the same rule a live revisit follows. Appending nothing and seeking
+     nothing would have opened the link on `p`'s top: the old centre, not the
+     panel the link named. An explicit `pc` still outranks the fold.
      Deliberately reversible on review — see the PR body.
      Its drop callback is a NO-OP: `r` has no drop class any more, and a
      malformed one is exactly the "discard the rest silently" case. */
   const legacyRight = parseIdList(query.get('r'), () => {});
   const foldedTop = legacyRight.length > 0 ? legacyRight[legacyRight.length - 1]! : null;
-  if (foldedTop !== null && !stack.includes(foldedTop)) stack.push(foldedTop);
+  let foldedSeek: EntityId | null = null;
+  if (foldedTop !== null) {
+    if (!stack.includes(foldedTop)) stack.push(foldedTop);
+    else if (stack[stack.length - 1] !== foldedTop) foldedSeek = foldedTop;
+  }
 
   const panels: PanelState = {
     stack,
     pinned: parseIdList(query.get('pin'), drop('pins')),
-    cursor: null,
+    cursor: foldedSeek,
     tabs: parsePairs<PanelTab>(query.get('t'), TABS, drop('tabs')),
     contentSurface: parsePairs<ContentSurface>(
       query.get('contentSurface'),
@@ -295,12 +304,23 @@ export function parse(hash: string): ParseOutcome {
   /* `pc` NAMES AN ENTRY OF `p`, so a `pc` that is not in `p` is not a cursor —
      it is a dangling address, and it clamps to the top under its own class
      rather than being honoured. Omitted is the COMMON case and means the top:
-     that is what makes every pre-`pc` link parse to what it parses to today. */
+     that is what makes every pre-`pc` link parse to what it parses to today.
+     A `pc` that is also PINNED is dangling too: `normalize`'s pin cross-filter
+     takes it off the Trail, and this is the last tier that can still SAY so —
+     past here the clamp to the top would happen with nothing reported (§3.2
+     case 2). A pinned entry elsewhere on `p` is not a drop: the id absorbs the
+     shift, which is what carrying an id rather than an index is for. */
   const cursorRaw = query.get('pc');
   if (cursorRaw !== null) {
     const cursor = dec(cursorRaw);
-    if (cursor === null || cursor.length === 0 || !panels.stack.includes(cursor)) {
+    if (
+      cursor === null ||
+      cursor.length === 0 ||
+      !panels.stack.includes(cursor) ||
+      panels.pinned.includes(cursor)
+    ) {
       drop('cursor')();
+      panels.cursor = null;
     } else {
       panels.cursor = cursor;
     }

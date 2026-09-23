@@ -9,12 +9,13 @@
  * remembered thereafter).
  *
  * EVERYTHING ELSE THIS STORE HELD MOVED TO THE ROUTE (D1, the LLD's central
- * reconciliation): region B's occupant is the centre trail (`p`, stack top
- * renders) and the drill-in is the right trail (`r`) — both `navStore`'s,
- * both in the URL, so a Home deep link reproduces the whole arrangement and
- * the back button walks it. The old `centers` map and the module-level
- * selection writes (GateApp's D11 spawn flip included) now go through
- * `navStore`; this module deliberately cannot express a selection at all.
+ * reconciliation): region B's occupant is the Trail (`p`) and the entry that
+ * renders is its cursor (`pc`; task 01a0c864 retired the right trail `r`) —
+ * both `navStore`'s, both in the URL, so a Home deep link reproduces the whole
+ * arrangement and the back button walks it. The old `centers` map and the
+ * module-level selection writes (GateApp's D11 spawn flip included) now go
+ * through `navStore`; this module deliberately cannot express a selection at
+ * all.
  *
  * Legacy stored values from the tab era ('tasks', 'sessions') still resolve
  * to the kinds they meant.

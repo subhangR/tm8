@@ -81,9 +81,11 @@ export interface NavState {
    * at the top.
    *
    * ALWAYS IN RANGE: 0 while the stack is empty, else `[0, stack.length - 1]`.
-   * `clampCursor` is the single enforcer and every `set` that touches `stack`
-   * goes through it — an out-of-range cursor would render a blank centre while
-   * the address looked perfectly well-formed.
+   * Every verb that touches `stack` writes an in-range cursor itself (`atTop`,
+   * an index it just found, or 0), and `clampCursor` guards the one READ,
+   * `selectTrailEntity` — so a raw `setState` that forgets the cursor still
+   * renders an entry of the Trail rather than a blank centre under an address
+   * that looks perfectly well-formed.
    */
   cursor: number;
   tabs: Record<EntityId, PanelTab>;
@@ -424,6 +426,16 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     /* SOMEWHERE NEW FROM MID-TRAIL DISCARDS THE FORWARD HALF (U5). This is
        the ONLY verb that shortens the Trail — `cursorTo` and `trailBack`
        deliberately do not, which is the whole of "keep forward". */
+    /* A KNOWN STORE/ADDRESS DIVERGENCE, ACCEPTED (#653 review, Q1). An entity
+       PINNED in Work is appended here like any other, so Home renders it —
+       but `normalize`'s pin cross-filter (pin outranks stack: one id, one
+       host) strips it from `p`, so the address never carries this hop and a
+       reload lands one crumb back. `openCenter` has the same edge (a reload
+       lands on the empty centre). The alternatives are worse: refusing the hop
+       fails a legitimate click for a reason the viewer cannot see, unpinning
+       lets Home mutate Work's pins (U1), and exempting `p` from the filter
+       hosts one id twice. Needs an entity pinned in Work AND reached from Home
+       in the same session. */
     const stack = [...s.stack.slice(0, s.cursor + 1), id];
     const open = new Set([...stack, ...s.pinned]);
     set({

@@ -103,6 +103,13 @@ stack [a,b,c], cursor on c (the top), pin c → [a,b]
   here would fire on every ordinary top-of-trail pin.
 ```
 
+The notice in the second case is raised by `parse`, not `normalize`: the pin
+cross-filter runs in `normalize`, which returns a route and has no drop channel
+at all, so `parse` — the last tier that can still report — treats a `pc` that
+is also in `pin` as dangling. (The first cut checked `pc` only against the raw
+`p` and clamped this case silently; caught in review, pinned by `codec.test.ts`
+"a pc naming an entity that is also PINNED".)
+
 An index is still what the store holds — `trailBack`/`trailForward` and the
 render move along an array — and the id/index conversion happens at the one
 seam that needs it: `hydrate` resolves id→index against the already-normalized
@@ -174,12 +181,19 @@ The strip still earns its row only at length ≥ 2.
 without looking, so it is the one that must not lose the forward half. Pickers
 and sheets still consume Esc first (`useDismissable`) — unchanged.
 
+At cursor 0 there is nowhere further back on the Trail, so Esc clears the
+centre (`clearStack`) and the forward half goes with it — D7 as ruled. It is
+one keystroke from recovery, not lost: `clearStack` writes a history PUSH, so
+browser Back restores the whole Trail, forward half included. Making Esc-at-0
+inert instead would be a change to D7, not a fix to it.
+
 ## 4. What retired, what survived
 
 **Retired:** `PanelState.right` and the `r` param · `openRight` / `rightTo` /
 `popRight` / `closeRight` · `NavState.right` · `'right'` in `DropClass` and
 `DROP_CLASS_COPY` · HomeView's region-C mount, its `PanelResizer` and
-`ASIDE_MIN` / `ASIDE_DEFAULT` / `ASIDE_CHROME` · R6's promote path ·
+`ASIDE_MIN` / `ASIDE_DEFAULT` / `ASIDE_CHROME` · `HomePage`'s `aside` slot and
+`data-aside` · the `.hp-aside*` rules in `home-page.css` · R6's promote path ·
 `views/home-tree.ts` · R7's "breadcrumbs on both panels".
 
 **Survived untouched:** Work and `WorkspaceView` · `PanelStack` · pinning ·
@@ -198,8 +212,27 @@ the `r` trail.
   `r` appends `r`'s top entry onto the end of `p`, and the rest of `r` is
   discarded silently. Because the fold lands that entity at the top and an
   absent `pc` means the top, the link opens on exactly the entity it named.
+  When that entity is ALREADY on `p` below its top it cannot be appended (the
+  Trail holds each entity once), so the fold SEEKS — the cursor goes to it, the
+  same rule as a live revisit. An explicit `pc` outranks the fold.
   The alternative was dropping it with a notice; folding was chosen because
   the notice tells the viewer something was lost rather than not losing it.
   **Open to reversal on review.**
 - **O2 — explicit ←/→ controls beside the strip: out of scope.** Crumbs, Esc,
   browser Back and the jump menu cover the walk.
+
+## 6. Known edges and open questions (from the #653 review)
+
+- **A hop onto an entity PINNED in Work desyncs the store from the address —
+  accepted.** `trailPush`/`openCenter` put it on the Trail and Home renders
+  it, but `normalize`'s pin cross-filter strips it from `p`, so the address
+  never carries the hop and a reload lands one crumb back (or on the empty
+  centre). Refusing the hop fails a legitimate click for a reason the viewer
+  cannot see; unpinning lets Home mutate Work's pins (U1); exempting `p` from
+  the filter hosts one id twice. Documented at the divergence in `trailPush`.
+  Needs an entity pinned in Work AND reached from Home in the same session.
+- **OPEN — Home's per-entity door into Work.** "Open in Workspace →" lived on
+  region C's header and retired with it; `HomeView`'s `onOpenInWorkspace`
+  prop survives with no call site while `GateApp` still wires a working
+  handler. §4 does not list it as retired. Awaiting a ruling (re-home it into
+  the Trail strip, or retire the prop and its handler and list it in §4).

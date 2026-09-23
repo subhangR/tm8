@@ -518,6 +518,29 @@ describe('the unified Home root and the Trail (task 01a00932, re-seated by 01a0c
     expect(dropped).not.toContain('stack');
   });
 
+  /* §3.2's case 2 AT THE SEAM THAT REPORTS. `parse` is the only tier that can
+     raise a notice, and the pin cross-filter runs after it, in `normalize` —
+     so a `pc` naming a pinned entity used to pass `parse` as a real position
+     and then clamp to the top with nothing said. Absent is absent whichever
+     filter made it so. */
+  it('a pc naming an entity that is also PINNED drops under its own class', () => {
+    const { route, dropped } = parse(
+      `#/s/${SPACE}/home?pin=${id(2)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
+    );
+    expect(route?.panels.cursor).toBeNull();
+    expect(dropped).toContain('cursor');
+    expect(dropped).not.toContain('stack');
+    expect(normalize(route!).panels.stack).toEqual([id(1), id(3)]);
+
+    // Case 1 is NOT a drop: a pinned crumb BEFORE the cursor shifts the index
+    // and the id absorbs it — nothing was lost, so nothing is announced.
+    const shifted = parse(
+      `#/s/${SPACE}/home?pin=${id(1)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
+    );
+    expect(shifted.dropped).toEqual([]);
+    expect(shifted.route?.panels.cursor).toBe(id(2));
+  });
+
   /* THE PIN CROSS-FILTER, BOTH HALVES. `normalize` strips from `stack` any id
      that is also pinned, and pins survive a Work→Home switch, so a Trail CAN
      lose an entry under the cursor's feet. An id absorbs the shift where an
@@ -598,6 +621,26 @@ describe('the unified Home root and the Trail (task 01a00932, re-seated by 01a0c
     const malformed = parse(`#/s/${SPACE}/home?p=${id(1)}&r=`);
     expect(malformed.route?.panels.stack).toEqual([id(1)]);
     expect(malformed.dropped).toEqual([]);
+  });
+
+  /* The fold's promise is "the link opens on exactly the entity it named".
+     When `r`'s top is ALREADY on `p` below its top, appending would repeat an
+     entity the Trail cannot hold twice — so the fold SEEKS, which is the same
+     rule a live revisit follows (`trailPush`). Before this, the case
+     silently opened on `p`'s top instead: the centre, not the panel. */
+  it('a folded r top already on p but BELOW its top seeks the cursor there', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}&r=${id(1)}`);
+    expect(route?.panels.stack).toEqual([id(1), id(2)]);
+    expect(route?.panels.cursor).toBe(id(1));
+    expect(dropped).toEqual([]);
+    const canonical = normalize(route!);
+    expect(canonical.panels.cursor).toBe(id(1));
+    expect(build(canonical).hash).toContain(`pc=${id(1)}`);
+
+    // `pc` is the current vocabulary and outranks a retired one: a hand-built
+    // link carrying both keeps the position it states.
+    const both = parse(`#/s/${SPACE}/home?p=${id(1)}.${id(2)}.${id(3)}&r=${id(1)}&pc=${id(2)}`);
+    expect(both.route?.panels.cursor).toBe(id(2));
   });
 
   it('build never emits r= again', () => {

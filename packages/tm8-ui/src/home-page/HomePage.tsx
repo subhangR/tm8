@@ -5,8 +5,9 @@
  *
  *   1. NEEDS YOU, only when it has rows — triage outranks everything, and an
  *      inbox-zero space stays quiet.
- *   2. The CHAT remains the full-bleed hero, with main's root list, resizer,
- *      focus mode and beside-it detail column left intact.
+ *   2. The CHAT remains the full-bleed hero, with main's root list, resizer
+ *      and focus mode left intact. (The beside-it detail column, region C,
+ *      retired with the right trail — task 01a0c864 U2.)
  *
  * WHAT IS NO LONGER HERE, AND WHY (Subhang, 2026-09-05). This page used to
  * stack two credential sections between the two altitudes above — the full
@@ -55,20 +56,8 @@ export interface HomePageProps {
   /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
   /**
-   * The entity opened FROM this page, shown BESIDE it rather than instead of
-   * it. Absent ⇒ no column at all: a host with nowhere to put a detail must
-   * not be handed a slot that draws an empty one.
-   *
-   * The column AND its chrome are the host's (`views/HomeView`), exactly as
-   * they are on the channel screen — this page only makes room. That is why
-   * the node lands here unwrapped: the separator that resizes the column has
-   * to be its SIBLING, not something inside it.
-   */
-  aside?: ReactNode;
-  /**
    * The icon rail (task 01a00932 R4) — the host builds it (its state is the
-   * host's root selection); this page only seats it leftmost in the row,
-   * exactly as it makes room for the aside.
+   * host's root selection); this page only seats it leftmost in the row.
    */
   rail?: ReactNode;
   /**
@@ -160,7 +149,6 @@ export function HomePage(props: HomePageProps) {
     <div
       className="hp-root hp-root--chat"
       data-testid="home-page"
-      data-aside={props.aside ? 'open' : undefined}
       data-focus={props.focus ? 'true' : undefined}
     >
       {props.rail ?? null}
@@ -176,8 +164,6 @@ export function HomePage(props: HomePageProps) {
           {props.listRail ?? null}
         </section>
       </div>
-
-      {props.aside ?? null}
     </div>
   );
 }
