@@ -185,6 +185,36 @@ skip_or_fail() {
   fi
 }
 
+# run_tests <pkg>: the package's suite. Without --shard this is exactly the
+# pre-flag `(cd "$pkg" && bun run test)`. With --shard, vitest exits 0 on a shard
+# that received NO test files ("Test Files  no tests") — measured on vitest
+# 2.1.9 with `--shard=8/8` over 6 files. A shard that tested nothing is not a
+# pass, so the output is also captured (in memory: this script never writes
+# outside the repo) and the run must end in a `Test Files ... (N)` summary with
+# N >= 1. A missing or unrecognised summary fails too: the check is positive.
+run_tests() {
+  local pkg="$1"
+  if [ -z "$SHARD" ]; then
+    (cd "$pkg" && bun run test)
+    return
+  fi
+  local out rc files
+  # Stream and capture. Not `tee /dev/fd/3`: opening /dev/fd/N re-opens the
+  # target through /proc, which TRUNCATES it when stdout is a regular file
+  # (`check.sh ... > log`) — caught by check-trace.sh. `>&3` duplicates instead.
+  { out="$( (cd "$pkg" && bun run test "${TEST_ARGS[@]}") 2>&1 \
+      | while IFS= read -r l || [ -n "$l" ]; do printf '%s\n' "$l"; printf '%s\n' "$l" >&3; done
+      exit "${PIPESTATUS[0]}" )"; rc=$?; } 3>&1
+  [ "$rc" -eq 0 ] || return "$rc"
+  files="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' \
+    | sed -n 's/^[[:space:]]*Test Files[[:space:]].*(\([0-9][0-9]*\))[[:space:]]*$/\1/p' | tail -n 1)"
+  if [ -z "$files" ] || [ "$files" -eq 0 ]; then
+    printf '%s    shard %s of %s ran no test files — a shard that tests nothing is not a pass%s\n' \
+      "$C_RED" "$SHARD" "$pkg" "$C_RESET"
+    return 1
+  fi
+}
+
 test_script_of() {
   node -e "const p=require('./$1/package.json');process.stdout.write(p.scripts&&p.scripts.test||'')"
 }
@@ -374,7 +404,7 @@ for pkg in "${TEST_PACKAGES[@]}"; do
   # ${TEST_ARGS[@]+...}: an empty array under `set -u` is an error on bash < 4.4.
   printf '%s    $ (cd %s && bun run test%s)%s\n' "$C_DIM" "$pkg" "${TEST_ARGS[@]+ ${TEST_ARGS[*]}}" "$C_RESET"
 
-  if (cd "$pkg" && bun run test ${TEST_ARGS[@]+"${TEST_ARGS[@]}"}); then
+  if run_tests "$pkg"; then
     pass "test $pkg"
   elif [ "$pkg" = "tools/conformance" ] && [ "$CONFORMANCE_GATE" = "advisory" ]; then
     advise "test $pkg" "$CONFORMANCE_REASON"

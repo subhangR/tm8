@@ -3,7 +3,10 @@
 # passes", that a change to check.sh leaves every no-flag path unchanged, and it
 # asserts what --only / --shard do.
 #
-#   bash tools/ci/test/check-trace.sh [<base-ref>]      (default base: FETCH_HEAD)
+#   bash tools/ci/test/check-trace.sh <base-ref>        e.g. the PR's base.sha
+#
+# The base is REQUIRED: a default such as FETCH_HEAD or origin/main is a ref that
+# other worktrees move underneath you.
 #
 # Each case runs check.sh in a `git archive <base-ref>` export whose bun, tsc
 # and migrations-check.sh are stubs. A stub logs its argv and cwd, and exits 1
@@ -24,8 +27,10 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-BASE="${1:-FETCH_HEAD}"
-NEW_CHECK="$REPO/tools/ci/check.sh"
+[ "$#" -ge 1 ] && [ -n "$1" ] || { echo "usage: $0 <base-ref>   (required: the commit whose check.sh is the reference)" >&2; exit 2; }
+BASE="$1"
+# TRACE_CHECK overrides the script under test (mutation proofs); TRACE_PARTS=2 skips part 1.
+NEW_CHECK="${TRACE_CHECK:-$REPO/tools/ci/check.sh}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 git -C "$REPO" show "$BASE:tools/ci/check.sh" > "$WORK/check.base.sh" || { echo "cannot read check.sh at $BASE" >&2; exit 2; }
 mkdir -p "$WORK/tree"
@@ -48,6 +53,13 @@ run() {
 line="$name \$* @\${PWD#$t}"
 echo "  [stub] \$line"
 if [ -n "\${TRACE_FAIL:-}" ] && [[ "\$line" =~ \$TRACE_FAIL ]]; then exit 1; fi
+# A sharded vitest prints its summary; TRACE_SHARD_FILES=0 is vitest's empty shard.
+if [ "$name" = bun ] && [[ "\$*" == *--shard=* ]]; then
+  n="\${TRACE_SHARD_FILES:-3}"
+  if [ "\$n" = none ]; then :
+  elif [ "\$n" = 0 ]; then printf ' Test Files  no tests\\n'
+  else printf ' \\033[2mTest Files \\033[22m \\033[1m\\033[32m%s passed\\033[39m\\033[22m (%s)\\n' "\$n" "\$n"; fi
+fi
 exit 0
 STUB
     chmod +x "$path"
@@ -62,6 +74,7 @@ FAILED=0
 bad() { echo "FAIL: $*"; FAILED=$((FAILED + 1)); }
 
 # --- part 1: no new flags == base ------------------------------------------
+if [ "${TRACE_PARTS:-}" != 2 ]; then
 echo "== part 1: equivalence against $BASE ($(git -C "$REPO" rev-parse --short "$BASE"))"
 FAILS=(
   ""                                   # all green
@@ -103,6 +116,7 @@ echo "   --help (the one EXPECTED difference: the header documents the new flags
 run "$WORK/check.base.sh" "$WORK/hb" - --help
 run "$NEW_CHECK" "$WORK/hn" - --help
 diff -u "$WORK/hb" "$WORK/hn" | sed 's/^/     /'
+fi
 
 # --- part 2: the new flags -------------------------------------------------
 echo "== part 2: --only / --shard"
@@ -128,6 +142,11 @@ expect 0 "W1 server shard: builds in full, shards only the test" \
   "^  \[stub\] tsc -b packages/server @$" "^  \[stub\] bun run test --shard=2/4 @/packages/server$" \
   "SKIP  install \(not selected by --only\)" "SKIP  migrations \(not selected by --only\)" "SKIP  test packages/cli \(not selected" \
   -- "tsc -b packages/contract" "@/packages/cli" "bun install" "migrations-check"
+TRACE_SHARD_FILES=0 run "$NEW_CHECK" "$WORK/o" - --only typecheck:packages/server,test:packages/server --shard 4/4
+expect 1 "an EMPTY shard (vitest: 'Test Files  no tests', exit 0) is red, not a vacuous green" \
+  "ran no test files" "FAIL  test packages/server" "PASS  typecheck packages/server"
+TRACE_SHARD_FILES=none run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 1/4
+expect 1 "a shard with no recognisable summary is red (the check is positive)" "ran no test files"
 TRACE_FAIL="^bun run test --shard=2/4 @/packages/server$" run "$NEW_CHECK" "$WORK/o" - --only typecheck:packages/server --only test:packages/server --shard=2/4
 expect 1 "a failing selected stage still fails the run (repeated --only, --shard=)" "FAIL  test packages/server"
 run "$NEW_CHECK" "$WORK/o" - --only test:packages/cli,typecheck:packages/execution,typecheck:packages/cli
