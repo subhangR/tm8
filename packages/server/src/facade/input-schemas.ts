@@ -52,6 +52,8 @@ import {
   CollectionQuerySchema,
   CredentialsDeleteInputSchema,
   CredentialsLoginSessionFinishInputSchema,
+  CredentialsServiceKeyDeleteInputSchema,
+  CredentialsServiceKeyPutInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -190,6 +192,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.delete': CredentialsDeleteInputSchema,
   'credentials.loginSessions.start': CredentialsLoginSessionStartInputSchema,
   'credentials.loginSessions.finish': CredentialsLoginSessionFinishInputSchema,
+  // The key is the put body's one field; the provider rides the path.
+  'credentials.serviceKeys.put': CredentialsServiceKeyPutInputSchema,
+  'credentials.serviceKeys.delete': CredentialsServiceKeyDeleteInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,

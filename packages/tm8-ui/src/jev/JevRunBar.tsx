@@ -1,4 +1,5 @@
-import { JEV_UNAVAILABLE_COPY, type JevSuggestions } from './useJevSuggestions';
+import { JEV_ADD_KEY_COPY, JEV_UNAVAILABLE_COPY, type JevSuggestions } from './useJevSuggestions';
+import { openJevKeySettings } from './credentials-link';
 import { JevCostLine } from './JevCostLine';
 
 /**
@@ -11,7 +12,17 @@ export function JevRunBar({ jev, inline }: { jev: JevSuggestions; /** Inside the
   return (
     <div className={inline ? 'jev-runbar jev-runbar--inline' : 'jev-runbar'} data-testid="jev-runbar" data-state={jev.state}>
       {jev.state === 'unavailable' ? (
-        <span className="jev-runbar__note" role="status" data-testid="jev-unavailable">{JEV_UNAVAILABLE_COPY}</span>
+        <span className="jev-runbar__note" role="status" data-testid="jev-unavailable">
+          {JEV_UNAVAILABLE_COPY}{' '}
+          <button
+            type="button"
+            className="jev-link"
+            data-testid="jev-add-key"
+            onClick={(e) => { e.stopPropagation(); openJevKeySettings(); }}
+          >
+            {JEV_ADD_KEY_COPY}
+          </button>
+        </span>
       ) : null}
       {jev.state === 'stale' ? (
         <span className="jev-runbar__note" role="status" data-testid="jev-stale">

@@ -21,7 +21,7 @@ export function formatRunCost(run: JevCost): string {
 }
 
 export const FAILURE_WORDS: Record<JevFailure, string> = {
-  no_key: 'Jev isn’t configured on this node',
+  no_key: 'no TypeSafe key is saved',
   timeout: 'Jev timed out',
   budget: 'Jev ran out of its time budget',
   rate_limited: 'Jev is rate limited',

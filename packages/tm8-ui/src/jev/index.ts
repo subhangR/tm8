@@ -1,5 +1,6 @@
 export type { JevPort } from './port';
 export {
+  JEV_ADD_KEY_COPY,
   JEV_UNAVAILABLE_COPY,
   JEV_UNWIRED_REASON,
   MEMORY_LIMIT_REASON,
@@ -23,3 +24,4 @@ export { JevReviewDrawer } from './JevReviewDrawer';
 export { modelApplyRefusal, modelLabel } from './model-apply';
 export { formatGroupCost, formatRunCost, formatUsd } from './format';
 import './jev.css';
+export { openJevKeySettings } from './credentials-link';

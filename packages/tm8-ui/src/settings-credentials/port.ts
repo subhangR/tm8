@@ -19,7 +19,11 @@ import type {
   CredentialsDeleteResult,
   CredentialsLoginSessionFinishResult,
   CredentialsLoginSessionStartResult,
+  CredentialsServiceKeyDeleteResult,
+  CredentialsServiceKeysStatusView,
   CredentialsStatusView,
+  ServiceKeyProviderName,
+  ServiceKeyView,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -49,6 +53,26 @@ export function credentialsPortFromSeam(
     // that is is a fact about the host, not a choice the screen offers.
     startLogin: (provider) => seam.credentials.startLogin(spaceId, provider),
     finishLogin: (workSessionId) => seam.credentials.finishLogin(workSessionId),
+  };
+}
+
+/**
+ * Service keys — keys the SERVER uses for this member (today only TypeSafe,
+ * for ✦ Ask Jev). A separate port because they are not agent credentials: no
+ * login terminal, no probe, no session to kill, and never given to an agent.
+ */
+export interface ServiceKeysPort {
+  load(): Promise<CredentialsServiceKeysStatusView>;
+  /** The key goes out once; the answer carries its last four characters only. */
+  save(provider: ServiceKeyProviderName, apiKey: string): Promise<ServiceKeyView>;
+  remove(provider: ServiceKeyProviderName): Promise<CredentialsServiceKeyDeleteResult>;
+}
+
+export function serviceKeysPortFromSeam(seam: Pick<Seam, 'credentials'>): ServiceKeysPort {
+  return {
+    load: () => seam.credentials.serviceKeys(),
+    save: (provider, apiKey) => seam.credentials.saveServiceKey(provider, apiKey),
+    remove: (provider) => seam.credentials.removeServiceKey(provider),
   };
 }
 

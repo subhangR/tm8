@@ -66,6 +66,10 @@ import {
   type CredentialsLoginSessionFinishResult,
   type CredentialsLoginSessionStartResult,
   type CredentialsStatusView,
+  type CredentialsServiceKeyDeleteResult,
+  type CredentialsServiceKeysStatusView,
+  type ServiceKeyProviderName,
+  type ServiceKeyView,
   type DurableWorkspaceEvent,
   type EdgeView,
   type EntityDetail,
@@ -435,6 +439,30 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CredentialsLoginSessionFinishResult>('credentials.loginSessions.finish', {
         params: { id: workSessionId },
         body: { clientMutationId: newId('credfin') },
+      });
+    },
+
+    /** `credentials.serviceKeys.status` — which service keys the viewer has stored (hints only). */
+    credentialsServiceKeys(): Promise<CredentialsServiceKeysStatusView> {
+      return http.call<CredentialsServiceKeysStatusView>('credentials.serviceKeys.status');
+    },
+
+    /**
+     * `credentials.serviceKeys.put` — paste or replace. The key goes out once,
+     * in this body, and the answer carries only its last four characters.
+     */
+    credentialsSaveServiceKey(provider: ServiceKeyProviderName, apiKey: string): Promise<ServiceKeyView> {
+      return http.call<ServiceKeyView>('credentials.serviceKeys.put', {
+        params: { provider },
+        body: { apiKey, clientMutationId: newId('credkey') },
+      });
+    },
+
+    /** `credentials.serviceKeys.delete` — idempotent. */
+    credentialsRemoveServiceKey(provider: ServiceKeyProviderName): Promise<CredentialsServiceKeyDeleteResult> {
+      return http.call<CredentialsServiceKeyDeleteResult>('credentials.serviceKeys.delete', {
+        params: { provider },
+        body: { clientMutationId: newId('credkeyrm') },
       });
     },
 

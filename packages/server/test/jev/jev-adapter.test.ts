@@ -10,12 +10,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const jev = vi.hoisted(() => ({
   jevClientFromEnv: vi.fn(),
+  createJevClient: vi.fn((options: { apiKey: string }) => ({ ask: vi.fn(), apiKey: options.apiKey })),
   rankByRelevance: vi.fn(),
   adviseModel: vi.fn(),
 }));
 vi.mock('@tm8/jev', () => jev);
 
-import { jevAdvisorFromEnv } from '../../src/jev/jev-adapter.js';
+import {
+  JEV_ADVISOR_CACHE_LIMIT,
+  jevAdvisorForKey,
+  jevAdvisorFromEnv,
+  resetJevAdvisorCache,
+} from '../../src/jev/jev-adapter.js';
 
 describe('jevAdvisorFromEnv', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -44,6 +50,31 @@ describe('jevAdvisorFromEnv', () => {
     expect(jev.jevClientFromEnv).toHaveBeenCalledWith({ TYPESAFE_API_KEY: 'k' });
     expect(jev.rankByRelevance).toHaveBeenNthCalledWith(1, client, { task, candidates, noun: 'memory' });
     expect(jev.adviseModel).toHaveBeenCalledWith(client, task);
+  });
+});
+
+describe('jevAdvisorForKey — one client per key (Lane K)', () => {
+  beforeEach(() => { vi.clearAllMocks(); resetJevAdvisorCache(); });
+
+  it('each key builds a client carrying exactly that key, reused on the next request', async () => {
+    const a = jevAdvisorForKey('key-a');
+    const b = jevAdvisorForKey('key-b');
+    expect(jevAdvisorForKey('key-a')).toBe(a);
+    expect(a).not.toBe(b);
+    expect(jev.createJevClient.mock.calls.map(([options]) => options)).toEqual([{ apiKey: 'key-a' }, { apiKey: 'key-b' }]);
+
+    const task = { title: 't', description: 'd' };
+    await b.model(task);
+    // Control for the line above: a's client is a different object from b's.
+    expect((jev.adviseModel.mock.calls[0]![0] as { apiKey: string }).apiKey).toBe('key-b');
+  });
+
+  it('bounds the cache and rebuilds an evicted key rather than handing out another', () => {
+    const first = jevAdvisorForKey('key-0');
+    for (let i = 1; i <= JEV_ADVISOR_CACHE_LIMIT; i += 1) jevAdvisorForKey(`key-${String(i)}`);
+    const again = jevAdvisorForKey('key-0');
+    expect(again).not.toBe(first);
+    expect(jev.createJevClient).toHaveBeenLastCalledWith({ apiKey: 'key-0' });
   });
 });
 

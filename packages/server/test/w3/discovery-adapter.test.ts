@@ -46,12 +46,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // and neither mounts a socket.
         // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
         // +1 launch.suggest (Jev lane F, 2026-09-23): one mounted v1 POST, so all four move. MEASURED.
-        total: 209,
-        v1: 207,
+        // Jev lane K: +3 credentials.serviceKeys.* rows. MEASURED.
+        total: 212,
+        v1: 210,
         reserved: 2,
-        http: 207,
+        http: 210,
         ws: 1,
-        registerableV1Http: 205,
+        registerableV1Http: 208,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

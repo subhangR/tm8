@@ -137,6 +137,9 @@ describe('W5.C generator proof', () => {
       // spaceId and provider, so {} is correctly refused.
       'credentials.delete',
       'credentials.loginSessions.finish',
+      // Jev lane K: service-key delete carries only clientMutationId; the
+      // provider rides the path. (put requires apiKey, so {} is refused.)
+      'credentials.serviceKeys.delete',
       'entityKinds.update',
       // 2026-08-12 (Git UI landing): the two git verbs whose bodies are
       // all-optional — a bare {} checkpoint takes the default label; a bare {}
@@ -216,6 +219,6 @@ describe('W5.C generator proof', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
-    expect(ENTRIES).toHaveLength(126); // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(ENTRIES).toHaveLength(128); // +2 service-key put/delete (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });

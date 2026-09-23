@@ -46,7 +46,7 @@ import {
 // line and this is that string, copied.
 // Re-measured 2026-09-23: the catalog with the nine skills.* rows (#647 + #649).
 // Re-measured 2026-09-23 (Jev lane F): + launch.suggest; the live Received value, copied.
-const CATALOG_DIGEST = 'sha256:1ebce8d21b5a346d01f90a21332e0986faf0552db1adae26f8a4a6aae50d021f';
+const CATALOG_DIGEST = 'sha256:bde021c4e34a74460a53fdf1fa9b022eaed41603b1965f959f5db62fec335d7a'; // Jev lane K: +3 service-key rows
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -122,7 +122,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage.
     // MEASURED on the merged tree.
-    expect(root.catalog.total).toBe(209); // +1 launch.suggest (Jev lane F) // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23)
+    expect(root.catalog.total).toBe(212); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F) // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23)
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

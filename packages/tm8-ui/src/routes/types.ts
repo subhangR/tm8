@@ -184,7 +184,7 @@ export type NavView =
   | { view: 'entity'; entityId: EntityId; origin: Origin | null; originView?: MenuViewRef | null }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: 'projects' | 'menu' | null }
+  | { view: 'settings'; section: 'projects' | 'menu' | 'credentials' | null }
   /*
    * The four screens that rendered from the rail with NO route line, added by
    * the 2026-08-14 amendment to WLT §2.1/§2.2.

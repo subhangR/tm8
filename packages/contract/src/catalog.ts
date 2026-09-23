@@ -433,6 +433,13 @@ export const OPERATIONS = [
   { name: 'credentials.delete',                          method: 'DELETE', path: '/v2/identity/credentials/:provider',                                 kind: 'command', status: 'v1' },
   { name: 'credentials.loginSessions.start',             method: 'POST',   path: '/v2/identity/credentials/login-sessions',                            kind: 'command', status: 'v1' },
   { name: 'credentials.loginSessions.finish',            method: 'POST',   path: '/v2/identity/credentials/login-sessions/:id/finish',                 kind: 'command', status: 'v1' },
+  // Service keys — keys tm8 uses SERVER-SIDE for this member (today only
+  // `typesafe`, Jev's key for ✦ Ask Jev). Encrypted at rest (203), never shown
+  // back beyond the last four characters, and never injected into a spawned
+  // session: they are not agent credentials, so they are not providers above.
+  { name: 'credentials.serviceKeys.status',              method: 'GET',    path: '/v2/identity/credentials/service-keys',                              kind: 'read',    status: 'v1' },
+  { name: 'credentials.serviceKeys.put',                 method: 'PUT',    path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
+  { name: 'credentials.serviceKeys.delete',              method: 'DELETE', path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native

@@ -55,6 +55,9 @@ import type {
   CredentialsDeleteResult, CredentialsLoginSessionFinishInput,
   CredentialsLoginSessionFinishResult, CredentialsLoginSessionStartInput,
   CredentialsLoginSessionStartResult, CredentialsStatusView,
+  CredentialsServiceKeyDeleteInput, CredentialsServiceKeyDeleteResult,
+  CredentialsServiceKeyPutInput, CredentialsServiceKeysStatusView,
+  ServiceKeyProviderName, ServiceKeyView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -1911,6 +1914,49 @@ export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> =
     sessionId: z.string().optional(),
     reason: z.string(),
   }).strict()),
+}).strict();
+
+// ---------------------------------------------------------------------------
+// credentials.serviceKeys.* — keys tm8 uses server-side, never agent credentials
+// ---------------------------------------------------------------------------
+
+/** Deliberately NOT a member of `CredentialProviderNameSchema`: see the DTO. */
+export const ServiceKeyProviderNameSchema: z.ZodType<ServiceKeyProviderName> = z.enum(['typesafe']);
+
+/**
+ * The longest key accepted. TypeSafe keys are far shorter; the bound only keeps
+ * a pasted essay out of the ciphertext column (093's own bound is 4096 bytes).
+ */
+export const SERVICE_KEY_MAX_LENGTH = 1024;
+
+export const ServiceKeyViewSchema: z.ZodType<ServiceKeyView> = z.object({
+  provider: ServiceKeyProviderNameSchema,
+  connected: z.boolean(),
+  // Four characters at most: a hint for recognition, never enough to use.
+  keyHint: z.string().max(4).nullable(),
+  updatedAt: z.string().nullable(),
+  nodeFallback: z.boolean(),
+}).strict();
+
+export const CredentialsServiceKeysStatusViewSchema: z.ZodType<CredentialsServiceKeysStatusView> = z.object({
+  keys: z.array(ServiceKeyViewSchema),
+  store: z.enum(['present', 'absent']),
+}).strict();
+
+export const CredentialsServiceKeyPutInputSchema: z.ZodType<CredentialsServiceKeyPutInput> = z.object({
+  // Trimmed before the bound so a trailing newline from a paste is not a key
+  // character; whitespace INSIDE a key is refused because no API key has any.
+  apiKey: z.string().trim().min(8).max(SERVICE_KEY_MAX_LENGTH).regex(/^\S+$/, 'an API key contains no whitespace'),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsServiceKeyDeleteInputSchema: z.ZodType<CredentialsServiceKeyDeleteInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServiceKeyDeleteResult> = z.object({
+  provider: ServiceKeyProviderNameSchema,
+  revoked: z.boolean(),
 }).strict();
 
 /**

@@ -14,6 +14,8 @@
  */
 import type { JevFailure, ModelSuggestion, RelevanceLevel } from '@tm8/contract';
 
+import type { DbClaims } from '../db/types.js';
+
 /** One HTTP call to Jev, as the client measured it. Nothing here is text. */
 export interface JevCallRecord {
   /** The concrete version the API echoed, never an alias; null when no response arrived. */
@@ -69,3 +71,9 @@ export interface JevAdvisorPort {
   /** The routing verdict for the subject — a suggestion only, applied by a click. */
   model(subject: JevSubject): Promise<JevModelResult>;
 }
+
+/**
+ * The advisor for ONE `launch.suggest` request, chosen from the caller's
+ * claims (`advisor.ts`): their own key, else the node's, else null → `no_key`.
+ */
+export type JevAdvisorResolver = (claims: DbClaims) => Promise<JevAdvisorPort | null>;

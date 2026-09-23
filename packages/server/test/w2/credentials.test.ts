@@ -256,6 +256,10 @@ describe('the four credential operations exist in the contract', () => {
       'DELETE /v2/identity/credentials/:provider',
       'POST /v2/identity/credentials/login-sessions',
       'POST /v2/identity/credentials/login-sessions/:id/finish',
+      // Jev lane K: the TypeSafe service key — its own resource, never a provider above.
+      'GET /v2/identity/credentials/service-keys',
+      'PUT /v2/identity/credentials/service-keys/:provider',
+      'DELETE /v2/identity/credentials/service-keys/:provider',
     ]);
   });
 
