@@ -21,6 +21,16 @@ describe('parseManifest', () => {
     ).toEqual({ tool: 'codex', permissionMode: 'readOnly', accessMode: 'plan' });
   });
 
+  it('keeps the session working directory, which is not the project root for a worktree', () => {
+    const m = parseManifest({
+      sessionId: 'ws_wt',
+      project: { id: 'p1', name: 'tm8', workingDir: '/Users/agent/tm8' },
+      session: { title: 't', workingDirectory: '/data/worktrees/p1/ws_wt', workdirMode: 'worktree' },
+    });
+    expect(m.session).toEqual({ workingDirectory: '/data/worktrees/p1/ws_wt' });
+    expect(parseManifest({ sessionId: 'ws_old' }).session).toBeUndefined();
+  });
+
   it('reads every field the CLI consumes from the sample manifest', () => {
     const m = readManifest(FIXTURE);
     expect(m.sessionId).toBe('ws_01HZPHOENIXSESSION');
