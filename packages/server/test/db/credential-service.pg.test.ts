@@ -57,6 +57,7 @@ import {
   resolveCredentialSessionCap,
   W2CredentialSessionsService,
 } from '../../src/facade/services/w2/credential-sessions.js';
+import { W2CredentialCatalogService } from '../../src/facade/services/w2/credential-catalog.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 // Real Postgres + a real pool: the default 5s test timeout is not survivable
@@ -1684,5 +1685,68 @@ describe('the credential home really is where the vendor CLI would write', () =>
     const modeA = ((await stat(join(a.configDir, '.credentials.json'))).mode & 0o777).toString(8);
     expect(modeA).toBe('600');
     expect(a.configDir).not.toBe(b.configDir);
+  });
+});
+
+// ===========================================================================
+// 206 — a login INTO a space credential is not the member's own login
+// ===========================================================================
+
+describe('206: the member-login paths do not see a space login', () => {
+  /** A live login terminal onto a new space credential, opened by `identityId`. */
+  async function spaceLogin(identityId: string, provider: 'anthropic' | 'openai'): Promise<string> {
+    const login = await db.rpc<{ workSessionId: string }>(humanClaims(identityId), 'start_space_credential_login', [
+      fixture.space, provider, `space login ${String(Date.now())}`, null, 900, 100,
+    ]);
+    return login.workSessionId;
+  }
+  const closeSpaceLogin = (identityId: string, workSessionId: string) =>
+    db.rpc(humanClaims(identityId), 'finish_space_credential_login', [workSessionId, false, null]);
+
+  it('a same-provider Connect does not supersede the member’s live space login (control: it supersedes their own)', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty);
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    const space = await spaceLogin(fixture.aliceIdentity, 'openai');
+    // Live and unexpired on this node, for the SAME provider: exactly what a
+    // Connect supersedes when the row is the member's own.
+    pty.live.add(space);
+    try {
+      const first = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+      const second = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+      expect(pty.kills).toContain(first.workSessionId);
+      expect(pty.kills).not.toContain(space);
+      expect(pty.live.has(space)).toBe(true);
+      await service.finish({ workSessionId: second.workSessionId }, principal);
+    } finally {
+      await closeSpaceLogin(fixture.aliceIdentity, space);
+    }
+  });
+
+  it('Disconnect does not kill or stamp the member’s space login (control: it ends their own login)', async () => {
+    const killed: string[] = [];
+    const catalog = new W2CredentialCatalogService({
+      db,
+      terminals: {
+        terminate: (id: string) => { killed.push(id); return 'terminated'; },
+        hasLiveTerminal: () => true,
+      },
+      dataDir,
+      removeCredentialFiles: async () => undefined,
+    });
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+    const space = await spaceLogin(fixture.bobIdentity, 'anthropic');
+    try {
+      const own = await db.rpc<{ workSessionId: string }>(principal.claims, 'start_credential_session', [
+        fixture.space, 'anthropic', 900, 100,
+      ]);
+      const result = await catalog.delete('anthropic', principal);
+      expect(result.terminatedCredentialSessionIds).toContain(own.workSessionId);
+      expect(result.terminatedCredentialSessionIds).not.toContain(space);
+      expect(killed).not.toContain(space);
+      expect(result.failures).toEqual([]);
+    } finally {
+      await closeSpaceLogin(fixture.bobIdentity, space);
+    }
   });
 });
