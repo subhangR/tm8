@@ -102,8 +102,11 @@ gitrun() { # <repo> <base> <head> [PATH prefix]
 # ---- controls (design §3; each must fire) -----------------------------------------------
 paths "$FIX" packages/contract/src/x.ts
 expect "CONTROL contract -> ALL" ALL
+# with a narrow companion, so the row cannot pass through the "nothing classified" fallback
+paths "$FIX" packages/tm8-ui/src/x.tsx some/unknown/path.ts
+expect "CONTROL unknown path (beside a ui path) -> ALL" ALL
 paths "$FIX" some/unknown/path.ts
-expect "CONTROL unknown path -> ALL" ALL
+expect "      unknown path alone -> ALL" ALL
 paths "$FIX" tools/conformance/generated/w1-conformance-manifest.json
 expect "CONTROL conformance manifest -> includes server and cli" "contains:server cli"
 expect "      conformance manifest exact set" '["typecheck","server","cli","small"]'
