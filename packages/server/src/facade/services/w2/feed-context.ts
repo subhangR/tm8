@@ -78,6 +78,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
+import { childCursorFingerprint } from './entities-commands-tracking.js';
 
 // ---------------------------------------------------------------------------
 // The versioned named-scope registry — the whole M1/M3 surface
@@ -1435,7 +1436,9 @@ function cursorsFor(
   if (sections.has('hierarchy')) {
     const last = lists.children.at(-1) as EntitySummary | undefined;
     cursors['children'] = last && (loaded.overfetched || fetched.children > lists.children.length)
-      ? encodeCursor([last.position, last.id])
+      // `entities.children` consumes this, so it carries that operation's
+      // fingerprint and keyset: `[fp, position, id]`, never a bare pair.
+      ? encodeCursor([childCursorFingerprint(id), last.position, last.id])
       : null;
   }
   if (sections.has('messages') || sections.has('activity')) {

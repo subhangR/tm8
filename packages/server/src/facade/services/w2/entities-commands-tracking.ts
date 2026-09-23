@@ -163,6 +163,15 @@ function fingerprint(scope: string, value: unknown): string {
     .slice(0, 22);
 }
 
+/**
+ * The `entities.children` cursor identity. Exported because `entities.context`
+ * emits a `cursors.children` token that this operation consumes, and a token
+ * minted under any other fingerprint is one it rejects as `invalid_cursor`.
+ */
+export function childCursorFingerprint(parentId: string): string {
+  return fingerprint('entities.children', { parentId });
+}
+
 function cursorUuid(value: unknown): string {
   const id = String(value ?? '');
   if (!UUID_RE.test(id)) throw new CollabError('invalid_cursor', 'cursor contains an invalid entity id');
@@ -630,7 +639,7 @@ async function hierarchyFor(
   const pageRows = hasMore ? childRows.slice(0, childLimit) : childRows;
   const path = await loadUniversalSummaries(q, ancestors, viewerIdentityId);
   const children = await loadUniversalSummaries(q, pageRows, viewerIdentityId);
-  const fp = fingerprint('entities.children', { parentId: row.id });
+  const fp = childCursorFingerprint(row.id);
   const last = pageRows.at(-1);
   return {
     parent: path.at(-1) ?? null,
@@ -1601,7 +1610,7 @@ export class W2EntitiesCommandsTrackingService {
       if (HIERARCHY_DISABLED_KINDS.has(parent.kind)) {
         throw new CollabError('forbidden', `children are disabled for ${parent.kind}`);
       }
-      const fp = fingerprint('entities.children', { parentId: id });
+      const fp = childCursorFingerprint(id);
       const params: unknown[] = [id];
       let keyset = '';
       const cursor = ctx.query.get('cursor');
