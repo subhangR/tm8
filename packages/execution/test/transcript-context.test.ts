@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   collectContext,
   encodeClaudeProjectDir,
+  modelSwitchedBefore,
   readSessionTranscript,
 } from '../src/transcript/read-transcript.js';
 
@@ -148,6 +149,32 @@ describe('collectContext — claude', () => {
     expect(collectContext([before, boundary, after], false, false).usedTokens).toBe(20_001);
   });
 
+  it('retires the sample at a /model switch, and stops trusting the [1m] launch after it', () => {
+    const usage = { input_tokens: 1, cache_read_input_tokens: 47_999, cache_creation_input_tokens: 0 };
+    const switched = {
+      type: 'user',
+      timestamp: LATER,
+      message: { role: 'user', content: '<local-command-stdout>Set model to `Opus 5` and saved</local-command-stdout>' },
+    };
+    const waiting = collectContext([claudeUsage(usage), switched], false, false, 'claude-opus-5-5[1m]');
+    expect(waiting.usedTokens).toBeNull();
+    expect(waiting.unavailableReason).toBe('awaiting_new_sample');
+
+    // The plain variant records the same message.model, so only the switch says 200k is no longer 1M.
+    const after = collectContext(
+      [claudeUsage(usage), switched, claudeUsage(usage, { at: LATER })],
+      false,
+      false,
+      'claude-opus-5-5[1m]',
+    );
+    expect(after.usedTokens).toBe(48_000);
+    expect(after.capacityTokens).toBeNull();
+
+    // A picker opened and cancelled is not a switch.
+    const kept = { ...switched, message: { role: 'user', content: '<local-command-stdout>Kept model as `Opus 5`</local-command-stdout>' } };
+    expect(collectContext([claudeUsage(usage), kept], false, false, 'claude-opus-5-5[1m]').capacityTokens).toBe(1_000_000);
+  });
+
   it('distinguishes a window that holds no sample from a transcript that never reported one', () => {
     expect(collectContext([], false, true).unavailableReason).toBe('sample_outside_window');
     expect(collectContext([], false, false).unavailableReason).toBe('not_reported');
@@ -249,5 +276,50 @@ describe('readSessionTranscript — context', () => {
 
     const older = await readSessionTranscript({ ...base, before: 10 });
     expect(older.context).toBeNull();
+  });
+
+  it('keeps distrusting the [1m] launch after the /model record scrolls above the window', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'tm8-context-'));
+    temps.push(home);
+    const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(CWD));
+    await mkdir(dir, { recursive: true });
+    const usage = { input_tokens: 1, cache_read_input_tokens: 47_999, cache_creation_input_tokens: 0 };
+    const switched = {
+      type: 'user',
+      timestamp: AT,
+      message: { role: 'user', content: '<local-command-stdout>Set model to `Opus 5` and saved</local-command-stdout>' },
+    };
+    // Well past the 256 KiB tail, so the switch is NOT in the window.
+    const filler = Array.from({ length: 400 }, () => ({ type: 'user', timestamp: AT, message: { role: 'user', content: 'x'.repeat(1_000) } }));
+    const write = (lines: unknown[]) => writeFile(join(dir, 'native.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
+    const base = { sessionId: 's1', agentTool: 'claude-code' as const, nativeSessionId: 'native', cwd: CWD, home, runtimeModel: 'claude-opus-5-5[1m]' };
+
+    await write([claudeUsage(usage), switched, ...filler, claudeUsage(usage, { at: LATER })]);
+    const page = await readSessionTranscript(base);
+    expect(page.windowStart).toBeGreaterThan(0);
+    expect(page.context).toMatchObject({ usedTokens: 48_000, capacityTokens: null, capacitySource: null });
+
+    // The same history without the switch still proves 1M.
+    const clean = join(home, 'clean');
+    const cleanDir = join(clean, '.claude', 'projects', encodeClaudeProjectDir(CWD));
+    await mkdir(cleanDir, { recursive: true });
+    await writeFile(join(cleanDir, 'native.jsonl'), [claudeUsage(usage), ...filler, claudeUsage(usage, { at: LATER })].map((l) => JSON.stringify(l)).join('\n'));
+    expect((await readSessionTranscript({ ...base, home: clean })).context?.capacityTokens).toBe(1_000_000);
+  });
+
+  it('scans only what it has not, and still sees a marker split across two scans', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'tm8-switch-'));
+    temps.push(home);
+    const file = join(home, 'grow.jsonl');
+    const head = '{"type":"user","message":{"role":"user",';
+    const marker = '"content":"<local-command-stdout>Set model to `x`"}}\n';
+    await writeFile(file, head + marker);
+    const cut = head.length + 12; // inside the marker
+    expect(await modelSwitchedBefore(file, cut)).toBe(false);
+    expect(await modelSwitchedBefore(file, head.length + marker.length)).toBe(true);
+    // A quoted phrase mid-message is not a switch record.
+    const quoted = join(home, 'quoted.jsonl');
+    await writeFile(quoted, '{"type":"user","message":{"content":"see <local-command-stdout>Set model to"}}\n');
+    expect(await modelSwitchedBefore(quoted, 200)).toBe(false);
   });
 });

@@ -44,8 +44,12 @@ function fitFor(width: number): Fit {
   return 'narrow';
 }
 
-/** Past this the age moves in minutes, and the per-second clock can rest. */
-const SECONDS_MATTER_MS = 60 * 60 * 1000;
+/**
+ * Past this the age reads in minutes, and the per-second clock rests; the
+ * shared 30s clock carries it from there, so a minute label can trail by up
+ * to one tick — a bounded lag, traded for no per-second render on every panel.
+ */
+const SECONDS_MATTER_MS = 60_000;
 
 export interface SessionContextNumberProps {
   seam: Pick<Seam, 'transcript'>;
@@ -62,9 +66,14 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
   const previous = useRef<{ id: EntityId; ctx: SessionTranscriptContext } | null>(null);
   const prior = previous.current?.id === sessionId ? previous.current.ctx : null;
   const current = snap.page?.available ? usableSample(snap.page.context) : null;
+  // A compaction or model switch RETIRES what came before it: the fallback
+  // must never bring that sample back once the window scrolls past the
+  // boundary and reports only "no sample here".
+  const retired = snap.page?.context?.unavailableReason === 'awaiting_new_sample';
   useEffect(() => {
     if (current) previous.current = { id: sessionId, ctx: current };
-  }, [current, sessionId]);
+    else if (retired) previous.current = null;
+  }, [current, retired, sessionId]);
 
   const coarse = useNow();
   const observed = Date.parse((current ?? prior)?.observedAt ?? '');
@@ -113,6 +122,8 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
     if (age) parts.push(age);
   }
 
+  const visible = (reading.lastKnown ? '~' : '') + parts.join(' · ');
+
   return (
     <span
       ref={root}
@@ -124,7 +135,9 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
       <button
         type="button"
         className="pn-context__num"
-        aria-label={reading.label}
+        // Label-in-name: the name OPENS with what is on screen, so a voice
+        // user can say it; the full reading follows.
+        aria-label={`${visible} — ${reading.label}`}
         title={reading.label}
         aria-expanded={open}
         aria-controls={open ? detailsId : undefined}

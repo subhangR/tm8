@@ -271,7 +271,8 @@ export function useSessionTranscript(
     const pause = older.length > 0 || olderRead.phase === 'loading';
     if (shared) {
       paused.current = pause;
-      tailSub.current?.setInterval(pause ? null : intervalMs);
+      // A pause is not an exit: no final read that `paused` would only drop.
+      tailSub.current?.setInterval(pause ? null : intervalMs, { finalRead: !pause });
       return;
     }
     if (intervalMs === null || pause) return;

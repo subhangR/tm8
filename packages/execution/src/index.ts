@@ -98,6 +98,7 @@ export {
 // journal (which holds no model output at all).
 export {
   collectContext,
+  modelSwitchedBefore,
   encodeClaudeProjectDir,
   locateTranscript,
   readSessionTranscript,

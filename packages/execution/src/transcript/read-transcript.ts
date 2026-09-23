@@ -521,6 +521,88 @@ const NO_CONTEXT: Omit<SessionTranscriptContext, 'source' | 'unavailableReason'>
 };
 
 /**
+ * Claude Code's confirmation of a `/model` switch — the record's whole content
+ * begins with it. A cancelled picker says "Kept model" instead, and a user
+ * merely quoting the phrase does not begin a message with the stdout tag.
+ */
+const MODEL_SWITCH_STDOUT = '<local-command-stdout>Set model to';
+
+function isModelSwitch(rec: Record<string, unknown>): boolean {
+  const message = asRecord(rec.message);
+  const content = rec.content ?? message?.content;
+  if (typeof content === 'string') return content.trimStart().startsWith(MODEL_SWITCH_STDOUT);
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => {
+    const text = asRecord(block)?.text;
+    return typeof text === 'string' && text.trimStart().startsWith(MODEL_SWITCH_STDOUT);
+  });
+}
+
+/**
+ * THE SWITCH MUST OUTLIVE THE WINDOW. `collectContext` sees only the tail; a
+ * `/model` record that has scrolled above it would otherwise stop counting,
+ * and the `[1m]` launch would be trusted again for a session that is no
+ * longer running it. So the bytes BEFORE the window are scanned for the same
+ * record, as raw bytes (the JSON form of the content's opening), and the
+ * answer is remembered per file: a later poll scans only what it has not.
+ *
+ * Every uncertainty lands on "switched": a prefix too large to scan, a read
+ * that fails, or a user message that happens to open with the stdout tag.
+ * That costs a percentage, never states a wrong one.
+ */
+const MODEL_SWITCH_BYTES = Buffer.from(`"content":"${MODEL_SWITCH_STDOUT}`, 'utf8');
+/** Past this much history the scan is not attempted, and capacity reads unknown. */
+export const MODEL_SWITCH_SCAN_MAX_BYTES = 256 * 1024 * 1024;
+const MODEL_SWITCH_CHUNK = 1024 * 1024;
+const MODEL_SWITCH_CACHE_MAX = 256;
+
+interface SwitchScan {
+  /** Bytes [0, scanned) are known to hold no switch record. */
+  scanned: number;
+  found: boolean;
+}
+const switchScans = new Map<string, SwitchScan>();
+
+/** Whether bytes [0, end) of `path` hold a claude `/model` switch record. */
+export async function modelSwitchedBefore(path: string, end: number): Promise<boolean> {
+  if (end <= 0) return false;
+  if (end > MODEL_SWITCH_SCAN_MAX_BYTES) return true;
+  let scan = switchScans.get(path);
+  // A shorter prefix than before means the file was replaced: start over.
+  if (!scan || scan.scanned > end) scan = { scanned: 0, found: false };
+  if (!scan.found && scan.scanned < end) {
+    try {
+      const handle = await open(path, 'r');
+      try {
+        // Re-read the marker's width behind the last stop, so a match split
+        // across two polls' boundaries is still seen.
+        let at = Math.max(0, scan.scanned - (MODEL_SWITCH_BYTES.length - 1));
+        while (at < end && !scan.found) {
+          const length = Math.min(MODEL_SWITCH_CHUNK + MODEL_SWITCH_BYTES.length - 1, end - at);
+          const buffer = Buffer.alloc(length);
+          const { bytesRead } = await handle.read(buffer, 0, length, at);
+          if (bytesRead === 0) break;
+          if (buffer.subarray(0, bytesRead).indexOf(MODEL_SWITCH_BYTES) !== -1) scan.found = true;
+          at += Math.max(1, bytesRead - (MODEL_SWITCH_BYTES.length - 1));
+        }
+      } finally {
+        await handle.close();
+      }
+      scan.scanned = end;
+    } catch {
+      return true;
+    }
+  }
+  switchScans.delete(path);
+  switchScans.set(path, scan);
+  if (switchScans.size > MODEL_SWITCH_CACHE_MAX) {
+    const oldest = switchScans.keys().next().value;
+    if (oldest !== undefined) switchScans.delete(oldest);
+  }
+  return scan.found;
+}
+
+/**
  * The context reading of the NEWEST request in the window.
  *
  * NOT DERIVED FROM `collectStats`, and that is the point. Stats SUM claude's
@@ -529,7 +611,7 @@ const NO_CONTEXT: Omit<SessionTranscriptContext, 'source' | 'unavailableReason'>
  * after a compaction. This reads exactly one request's own numbers.
  *
  * A forward pass, so the latest event wins: a sample is REPLACED by a newer
- * one and INVALIDATED by a compaction (or, on codex, a model switch) that
+ * one and INVALIDATED by a compaction or a model switch that
  * lands after it — the old number describes a context that no longer exists,
  * and showing it as current would be the one lie this reading must not tell.
  *
@@ -542,6 +624,8 @@ export function collectContext(
   codex: boolean,
   partialWindow: boolean,
   runtimeModel: string | null = null,
+  /** A claude `/model` switch lies ABOVE the window (`modelSwitchedBefore`). */
+  switchedBeforeWindow = false,
 ): SessionTranscriptContext {
   const source = codex ? 'codex_request_usage' as const : 'claude_request_usage' as const;
   let sample: SessionTranscriptContext | null = null;
@@ -550,6 +634,8 @@ export function collectContext(
   // The live sample's model, kept beside it so a turn_context can compare
   // without reading through `sample` (which narrowing pins to null here).
   let sampleModel: string | null = null;
+  // False once a claude `/model` switch is seen: the launch model is history.
+  let launchModelHolds = !switchedBeforeWindow;
 
   // Assigned inline rather than through helpers: a closure write hides the
   // assignment from control-flow narrowing, and `sample` reads as never-set.
@@ -610,6 +696,16 @@ export function collectContext(
       invalidated = true;
       continue;
     }
+    // A `/model` switch. Claude Code records the SAME message.model for a
+    // `[1m]` variant and its plain one, so the switch itself is the only
+    // evidence: it retires the sample, and from here on the launch model no
+    // longer describes the session, so it proves no capacity either.
+    if ((rec.type === 'user' || rec.type === 'system') && isModelSwitch(rec)) {
+      sample = null;
+      invalidated = true;
+      launchModelHolds = false;
+      continue;
+    }
     if (rec.type !== 'assistant') continue;
     const message = asRecord(rec.message);
     const model = message?.model;
@@ -628,6 +724,7 @@ export function collectContext(
     const used = input !== null && read !== null && created !== null ? input + read + created : null;
     const modelId = typeof model === 'string' ? model : null;
     const capacity =
+      launchModelHolds &&
       runtimeModel !== null &&
       runtimeModel.endsWith(ONE_M_SUFFIX) &&
       modelId !== null &&
@@ -1100,6 +1197,11 @@ export async function readSessionTranscript(
   }, null);
 
   const partialWindow = windowStart > 0 || tail.windowEnd < tail.size;
+  // Only a claude `[1m]` launch has a capacity a switch could invalidate.
+  const switchedBeforeWindow =
+    !pagingBack && !codex && (opts.runtimeModel ?? '').endsWith(ONE_M_SUFFIX)
+      ? await modelSwitchedBefore(path, windowStart)
+      : false;
   const page: SessionTranscriptPage = {
     sessionId: opts.sessionId,
     available: true,
@@ -1130,7 +1232,7 @@ export async function readSessionTranscript(
     // window refuses it rather than presenting an old request as the latest.
     context: pagingBack
       ? null
-      : collectContext(lines, codex, partialWindow, opts.runtimeModel ?? null),
+      : collectContext(lines, codex, partialWindow, opts.runtimeModel ?? null, switchedBeforeWindow),
   };
 
   if (opts.includeFileChanges) {

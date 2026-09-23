@@ -180,8 +180,13 @@ function entryFor(seam: TranscriptSeam, sessionId: EntityId): Entry {
 }
 
 export interface TailSubscription {
-  /** Change this subscriber's pace; `null` stops it asking for polls. */
-  setInterval: (intervalMs: number | null) => void;
+  /**
+   * Change this subscriber's pace; `null` stops it asking for polls. When that
+   * stops ALL polling, one final read captures the session's last writes —
+   * unless `finalRead: false`, for a pause (a reader paging back) rather than
+   * an exit, whose result nobody would look at.
+   */
+  setInterval: (intervalMs: number | null, opts?: { finalRead?: boolean }) => void;
   close: () => void;
 }
 
@@ -204,7 +209,7 @@ export function subscribeTail(
   else schedule(entry);
 
   return {
-    setInterval: (next) => {
+    setInterval: (next, opts) => {
       if (next === sub.intervalMs || !entry.subscribers.has(sub)) return;
       const before = pace(entry);
       sub.intervalMs = next;
@@ -214,7 +219,7 @@ export function subscribeTail(
       // captures what it wrote on the way out; after that it cannot change.
       if (after === null && before !== null) {
         clearTimer(entry);
-        if (entry.inflight === null) void read(entry);
+        if (entry.inflight === null && opts?.finalRead !== false) void read(entry);
         return;
       }
       schedule(entry);
