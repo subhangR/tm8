@@ -46,6 +46,12 @@
  */
 import {
   bindPath,
+  EVENT_CHANGES_DEFAULT_TOTAL_BYTES,
+  EVENT_CHANGES_MAX_TOTAL_BYTES,
+  EVENT_CHANGES_MIN_TOTAL_BYTES,
+  type EventChangeEntry,
+  type EventChangesView,
+  type EventChangeThinRow,
   WorkspaceControlAckSchema,
   WorkspaceControlFrameSchema,
   type WorkspaceControlAck,
@@ -68,6 +74,9 @@ import { refuseMutationId } from '../mutation.js';
 import type { Output } from '../output.js';
 import type { OptionBag } from '../args.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
+import { ApiError } from '../errors.js';
+import { resolveJournalClass } from '../journal-stats.js';
+import { assertKnownOptions } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /**
@@ -868,7 +877,215 @@ function renderPage(dto: unknown, entity?: string): string {
   return lines.join('\n');
 }
 
+// ── event changes ─────────────────────────────────────────────────────────────
+//
+// `events.changes`: "did anything I care about change since seq N?" as one
+// digest line per changed entity (spec doc 01a0cf35 §3). Unchanged means ONLY
+// `changed` empty with neither `more` nor `gap` — the footer says "unchanged"
+// in exactly that case and in no other.
+
+/** The refusals the Server sends as `details.reason` on an existing code; rendered `<reason>: <hint>`. */
+const CHANGES_REFUSALS: ReadonlySet<string> = new Set(['index_incomplete', 'scope_too_large', 'digest_group_too_large']);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface ChangesFlags {
+  after?: string;
+  entity: string[];
+  anchor: string[];
+  subtree: string[];
+  kind: string[];
+  change: string[];
+  events: boolean;
+  totalBytes?: number;
+}
+
+function idFlags(options: OptionBag, name: string): string[] {
+  const ids = options.values(name);
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) {
+      throw new CliError(`--${name} expects an <entity-id>, got ${JSON.stringify(id)}`, EXIT_USAGE);
+    }
+  }
+  return ids;
+}
+
+/**
+ * `--total-bytes`: 8192..32768. Out of range is a usage error, never an
+ * over-budget or silently clamped answer (§3.3).
+ */
+function totalBytesFlag(options: OptionBag): number | undefined {
+  const raw = options.value('total-bytes');
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!/^\d+$/.test(raw) || n < EVENT_CHANGES_MIN_TOTAL_BYTES || n > EVENT_CHANGES_MAX_TOTAL_BYTES) {
+    throw new CliError(
+      `--total-bytes expects ${String(EVENT_CHANGES_MIN_TOTAL_BYTES)}..${String(EVENT_CHANGES_MAX_TOTAL_BYTES)}, got ${JSON.stringify(raw)}`,
+      EXIT_USAGE,
+      { hint: `the default is ${String(EVENT_CHANGES_DEFAULT_TOTAL_BYTES)} minified DTO bytes; the floor holds two worst-case entities` },
+    );
+  }
+  return n;
+}
+
+export function changesFlags(options: OptionBag): ChangesFlags {
+  const bytes = totalBytesFlag(options);
+  const after = afterSeq(options);
+  return {
+    ...(after === undefined ? {} : { after }),
+    entity: idFlags(options, 'entity'),
+    anchor: idFlags(options, 'anchor'),
+    subtree: idFlags(options, 'subtree'),
+    kind: options.values('kind'),
+    change: options.values('change'),
+    events: options.has('events'),
+    ...(bytes === undefined ? {} : { totalBytes: bytes }),
+  };
+}
+
+/** The same continuation the Server spells in `next`, for the pages where it omits it (unchanged). */
+export function changesNext(flags: ChangesFlags, through: number): string {
+  const parts = ['tm8 event changes'];
+  for (const id of flags.entity) parts.push(`--entity ${id}`);
+  for (const id of flags.anchor) parts.push(`--anchor ${id}`);
+  for (const id of flags.subtree) parts.push(`--subtree ${id}`);
+  for (const k of flags.kind) parts.push(`--kind ${k}`);
+  for (const c of flags.change) parts.push(`--change ${c}`);
+  if (flags.events) parts.push('--events');
+  if (flags.totalBytes !== undefined && flags.totalBytes !== EVENT_CHANGES_DEFAULT_TOTAL_BYTES) {
+    parts.push(`--total-bytes ${String(flags.totalBytes)}`);
+  }
+  parts.push(`--after ${String(through)}`);
+  return parts.join(' ');
+}
+
+/** The GAP banner — the first stdout line of the human view, and always on stderr. */
+export function gapBanner(view: EventChangesView): string | undefined {
+  if (view.gap === null || view.gap === undefined) return undefined;
+  const { after, oldestRetained } = view.gap;
+  return `GAP: events ${String(after + 1)}..${String(oldestRetained - 1)} were pruned; ` +
+    'changes in that range are unknown, re-read with tm8 entity context <id>';
+}
+
+async function eventChanges(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('event changes', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['after', 'entity', 'anchor', 'subtree', 'kind', 'change', 'events', 'total-bytes']);
+
+  const spaceId = requireSpace(cmd.ctx);
+  const flags = changesFlags(cmd.options);
+
+  // `events.changes` is `input: none`; its selectors are query dimensions.
+  // Repeatable selectors ride one comma-joined value each.
+  const query: Record<string, string> = {};
+  if (flags.after !== undefined) query['after'] = flags.after;
+  for (const key of ['entity', 'anchor', 'subtree', 'kind', 'change'] as const) {
+    if (flags[key].length > 0) query[key] = flags[key].join(',');
+  }
+  if (flags.events) query['events'] = 'true';
+  if (flags.totalBytes !== undefined) query['totalBytes'] = String(flags.totalBytes);
+
+  let view: EventChangesView;
+  try {
+    view = await observedInvoke<EventChangesView>(clientFor(cmd.ctx), 'events.changes', {
+      params: { spaceId },
+      ...(Object.keys(query).length > 0 ? { query } : {}),
+    });
+  } catch (err) {
+    // No digest on a refusal: the caller's cursor must not move. The three
+    // feed-specific refusals ride existing codes (CommandErrorCode is closed),
+    // so they are named by their reason, with the Server's own hint.
+    if (err instanceof ApiError && err.reason !== undefined && CHANGES_REFUSALS.has(err.reason)) {
+      const details = (err.details ?? {}) as { hint?: unknown };
+      const hint = typeof details.hint === 'string' ? details.hint : err.message;
+      throw new CliError(`${err.reason}: ${hint}`, err.exitCode);
+    }
+    throw err;
+  }
+
+  const banner = gapBanner(view);
+  if (banner !== undefined) cmd.out.warn(banner);
+  const agent = resolveJournalClass(process.env, [], process.cwd()) === 'agent';
+  cmd.out.data(view, (dto) => renderChanges(dto, flags), { minify: agent });
+  return EXIT_OK;
+}
+
+function quote(text: string | null | undefined): string {
+  return JSON.stringify(text ?? '');
+}
+
+/** One entity, one line — every field of the entry appears. */
+function renderChangeEntry(entry: EventChangeEntry): string[] {
+  const parts = [
+    entry.kind,
+    entry.id,
+    entry.title === null ? '(deleted)' : quote(entry.title),
+    `parent ${entry.parentId ?? '-'}`,
+    entry.v === null ? 'v-' : `v${String(entry.v)}`,
+  ];
+  if (entry.status !== undefined) parts.push(`status:${entry.status}`);
+  const count = entry.messagesTotal !== undefined
+    ? `×${String(entry.messagesTotal)}`
+    : entry.messagesTotalAtLeast !== undefined ? `×≥${String(entry.messagesTotalAtLeast)}` : '';
+  for (const change of entry.changes) parts.push(`+${change}${change === 'message' ? count : ''}`);
+  if (entry.actors.length > 0) parts.push(`by ${entry.actors.map(quote).join(', ')}`);
+  parts.push(`@${String(entry.lastSeq)}`);
+
+  const lines = [parts.join(' ')];
+  for (const m of entry.messages ?? []) {
+    const bits = [`  msg ${m.id}`, m.author === null ? '(unknown author)' : quote(m.author)];
+    bits.push(m.replyTo === null ? 'root' : `reply ${m.replyTo}`);
+    if (m.toMe) bits.push('to-me');
+    bits.push(`${quote(m.excerpt)}${m.truncated ? ' (truncated)' : ''}`);
+    lines.push(bits.join(' '));
+  }
+  if (entry.messagesMore === true) {
+    const shown = entry.messages?.length ?? 0;
+    const rest = entry.messagesTotal !== undefined
+      ? `+${String(entry.messagesTotal - shown)} more`
+      : `+≥${String((entry.messagesTotalAtLeast ?? shown) - shown)} more`;
+    lines.push(`  … ${String(shown)} shown, ${rest} — ${entry.messagesNext ?? 'tm8 entity feed <anchor-id>'}`);
+  }
+  return lines;
+}
+
+/** One thin row, one line: every key it carries, in a stable order. */
+function renderThinRow(row: EventChangeThinRow): string {
+  const parts = [String(row.seq), row.type, String(row.id)];
+  for (const [key, value] of Object.entries(row)) {
+    if (key === 'seq' || key === 'type' || key === 'id' || value === undefined) continue;
+    parts.push(`${key}=${typeof value === 'string' && /\s/.test(value) ? quote(value) : String(value)}`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * The line view — lossless with respect to the JSON (§3.4). The footer says
+ * "unchanged" ONLY when `!more && !gap`; a GAP puts its banner FIRST.
+ */
+export function renderChanges(view: EventChangesView, flags: ChangesFlags): string {
+  const lines: string[] = [];
+  const banner = gapBanner(view);
+  if (banner !== undefined) lines.push(banner);
+  if (view.events !== undefined) {
+    for (const row of view.events) lines.push(renderThinRow(row));
+  } else {
+    for (const entry of view.changed ?? []) lines.push(...renderChangeEntry(entry));
+  }
+  if (view.unresolved.length > 0) lines.push(`unresolved: ${view.unresolved.join(' ')}`);
+
+  const next = view.next ?? changesNext(flags, view.through);
+  const empty = (view.changed ?? view.events ?? []).length === 0;
+  const state = view.more
+    ? `more — next: ${next}`
+    : view.gap !== null
+      ? `gap (see first line) — next: ${next}`
+      : `${empty ? 'unchanged in scope' : 'unchanged elsewhere in scope'} · next: ${next}`;
+  lines.push(`since ${String(view.since)} · through ${String(view.through)} · ${state}`);
+  return lines.join('\n');
+}
+
 export const EVENT_COMMANDS: CommandModule[] = [
   { path: ['event', 'list'], run: eventList },
   { path: ['event', 'watch'], run: eventWatch },
+  { path: ['event', 'changes'], run: eventChanges },
 ];

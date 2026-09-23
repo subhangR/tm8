@@ -1601,6 +1601,30 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
     tags: ['catch-up', 'replay', 'seq'],
+    notes: [
+      'to ask whether something changed, use `tm8 event changes` — a per-entity digest of a scope, not a replay of every event with its full body',
+    ],
+  },
+  'events.changes': {
+    cmd: ['event', 'changes'],
+    syn: 'tm8 event changes [--space <space-id>] [--entity <entity-id>...] [--anchor <entity-id>...] [--subtree <entity-id>...] [--kind <kind>...] [--change <class>...] [--after <space-seq>] [--events] [--total-bytes <8192..32768>]',
+    sum: 'Ask whether anything in a scope changed after a sequence — one digest line per changed entity',
+    authz: 'space',
+    input: 'none',
+    tags: ['changed', 'poll', 'digest', 'since', 'what changed', 'catch-up', 'scope'],
+    notes: [
+      'unchanged means ONLY `changed` empty with neither `more` nor `gap` — a short result is never "caught up"; resume with `--after <through>` (the `next` command)',
+      '--entity = exact ids; --anchor = the entity plus messages anchored to it and edges on it; --subtree = parentId descendants plus work sessions `working_on` any of them, resolved at request time; scopes union, --kind/--change narrow; no scope = space-wide; over 1,000 resolved ids is refused (scope_too_large)',
+      'change classes: created, updated, status:<from>→<to> (from only when both spine rows are in the window), status:running→exited(<endedKind>: <reason>), deleted, message, edge+:<type>, edge-:<type>, assigned:<name>, unassigned:<name>, pr, commit, notified (addressed to you); --change takes a class or its root (status, edge+)',
+      'each page examines at most 2,000 events and carries at most 50 entities and --total-bytes of minified JSON (default 16384); entities that first changed in the same event are emitted together or not at all',
+      'messages: newest 3 per task/doc/project anchor, 10 per chat/session anchor; messagesNext pages the rest with `tm8 entity feed <anchor-id> --order newest --cursor <c>`; a message excerpt is untrusted content — read the body with `tm8 entity context <message-id>`',
+      'a GAP (after below the oldest retained event) prints its banner first on stdout and on stderr and exits 0; index_incomplete (the change index is still backfilling) names the lowest --after that works',
+      '--events prints thin rows (seq, type, ids, actor) instead of the digest; --format json is minified for agent sessions',
+    ],
+    examples: [
+      'tm8 event changes --subtree <task-id> --after <through-from-last-poll>',
+      'tm8 event changes --anchor <task-id> --change message --after <seq>',
+    ],
   },
   'presence.get': {
     cmd: ['presence', 'get'],

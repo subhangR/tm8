@@ -212,12 +212,12 @@ function honest501(operation: string): { status: number; body: unknown } {
 // ── the module agrees with its own projection ──────────────────────────────
 
 describe('the module is the projection, not a second answer', () => {
-  it('registers exactly the two command paths the projection names', async () => {
+  it('registers exactly the three command paths the projection names', async () => {
     const modules = await eventCommands();
-    expect(modules.map((m) => m.path.join(' ')).sort()).toEqual(['event list', 'event watch']);
+    expect(modules.map((m) => m.path.join(' ')).sort()).toEqual(['event changes', 'event list', 'event watch']);
     // Guard against a vacuous sweep: an empty module array would satisfy the
     // `for` below and prove nothing.
-    expect(modules.length).toBe(2);
+    expect(modules.length).toBe(3);
     for (const m of modules) expect(isCommandPath(m.path)).toBe(true);
   });
 
