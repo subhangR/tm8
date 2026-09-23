@@ -907,6 +907,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                  as "unknown" rather than "none" — see the picker's comment. */
               memories={data.launch.memories}
           loadSkillPreview={data.launch.loadSkillPreview}
+          jev={data.launch.jev}
+          spaceId={data.spaceId}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
               onCancel={() => props.onLaunchCancel?.()}

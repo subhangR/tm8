@@ -568,6 +568,15 @@ export interface LaunchConfig {
    * viewer had already committed.
    */
   memoryIds?: readonly EntityId[];
+  /**
+   * ✦ Ask Jev's EXACT memory and skill sets (design 01a0cb80 §5.2) — what was
+   * ticked, replacing the teammate's own. Present only when a surface is in Jev
+   * mode with both sets known; `buildSpawnInput` then drops `memoryIds`, since
+   * the contract refuses the pair.
+   */
+  selection?: { readonly memoryIds: readonly EntityId[]; readonly skillIds: readonly EntityId[] };
+  /** The Ask Jev run that informed this launch, linked for cost. Never interpreted. */
+  jevRunId?: EntityId;
 }
 
 /**
@@ -875,7 +884,19 @@ export function buildSpawnInput(args: {
      same statement, and the contract types the field optional for that reason.
      Sliced at the contract's own ceiling so a caller that ignored the picker's
      cap earns a truncation here rather than a refusal at the node. */
-  if (config.memoryIds?.length) input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);
+  if (config.selection) {
+    /* EXACT, and alone: `selection` IS the working set and `memoryIds` ADDS to
+       it, so the node refuses both together. Copied, never sliced — a
+       truncated exact set would be a different set than the one ticked, and
+       the node's own limit refusal is the honest answer to an oversized one. */
+    input.selection = {
+      memoryIds: [...config.selection.memoryIds],
+      skillIds: [...config.selection.skillIds],
+    };
+  } else if (config.memoryIds?.length) {
+    input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);
+  }
+  if (config.jevRunId) input.jevRunId = config.jevRunId;
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;

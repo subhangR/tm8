@@ -13,6 +13,17 @@ import {
   type LaunchProjectOption,
   type LaunchTeammate,
 } from '../domain/launch';
+import { modelCatalog } from '../domain/model-catalog';
+import { currentNodeKey } from '../domain/launch';
+import {
+  AskJevButton,
+  JevReviewDrawer,
+  JevStrip,
+  modelApplyRefusal,
+  modelLabel,
+  useJevSuggestions,
+  type JevPort,
+} from '../jev';
 import { NewSessionComposer } from './NewSessionComposer';
 import { useLaunchComposerState } from './useLaunchComposerState';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheet itself —
@@ -92,6 +103,8 @@ export interface LaunchComposerPopupProps {
   newClientMutationId?: () => string;
   /** Compatibility injection for deterministic component tests. */
   clientMutationId?: string;
+  /** ✦ Ask Jev (design 01a0cb80 §3.2). Absent ⇒ the button is refused with the reason. */
+  jev?: JevPort;
 }
 
 export function LaunchComposerPopup({
@@ -108,6 +121,7 @@ export function LaunchComposerPopup({
   verbLabel,
   newClientMutationId,
   clientMutationId,
+  jev: jevPort,
 }: LaunchComposerPopupProps) {
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path — and the
@@ -181,6 +195,25 @@ export function LaunchComposerPopup({
   const defaultTitle = launchTitleFor(subject);
   const [title, setTitle] = useState(defaultTitle);
 
+  /* ✦ ASK JEV reads the popup's LIVE text, not the saved task (design §3.2):
+     the popup saves these edits before it spawns, so the draft is what the
+     agent will actually be briefed with. Editing either after an answer makes
+     the state stale. */
+  const jevDraft = useMemo(
+    () => ({ title: title.trim() || defaultTitle, description }),
+    [title, defaultTitle, description],
+  );
+  const jev = useJevSuggestions({
+    port: jevPort,
+    spaceId,
+    subjectId: subject.id,
+    teammateId: config.teamMemberId,
+    draft: jevDraft,
+  });
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const jevModel = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
+  const jevCatalog = jevModel ? modelCatalog(currentNodeKey()) : [];
+
   const [pending, setPending] = useState(false);
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
@@ -227,14 +260,17 @@ export function LaunchComposerPopup({
     const saved = onSaveSubject && Object.keys(edits).length > 0
       ? Promise.resolve(onSaveSubject(edits))
       : Promise.resolve();
+    /* `{}` until Ask Jev is pressed — a launch without Jev is today's, byte
+       for byte. Read at commit time: the ticks are whatever is on screen. */
+    const jevFields = jev.toSpawnFields();
     saved
       .then(() => onSpawn(
         buildSpawnInput({
           clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
           spaceId,
           config: continuing && description.trim()
-            ? { ...config, promptExtra: description.trim() }
-            : config,
+            ? { ...config, promptExtra: description.trim(), ...jevFields }
+            : { ...config, ...jevFields },
           // Still named `taskIds` on the wire; the server maps a non-task
           // subject through `derive_task_for_entity` (064).
           taskIds: [subject.id],
@@ -282,7 +318,38 @@ export function LaunchComposerPopup({
             : 'Task description — the agent reads this as its briefing…'}
           onDismissRequest={onDismiss}
           autoFocus
+          beforeLaunch={
+            <AskJevButton state={jev.state} askRefusal={jev.askRefusal} onAsk={() => jev.ask()} />
+          }
+          aboveControls={
+            <JevStrip
+              jev={jev}
+              roster={teammateRows}
+              selectedTeammateId={config.teamMemberId}
+              onSelectTeammate={(id) => bind.onPickTeammate(id)}
+              reviewOpen={reviewOpen}
+              onReview={() => setReviewOpen((open) => !open)}
+              model={{
+                label: jevModel ? modelLabel(jevModel, jevCatalog) : '',
+                refusal: jevModel ? modelApplyRefusal(jevModel, { catalog: jevCatalog }) : null,
+                applied: Boolean(jevModel)
+                  && jevModel?.model === config.model
+                  && jevModel?.agentTool === config.agentToolId
+                  && jevModel?.effort === config.reasoningEffort,
+                /* Model and effort through the card's own setters; the TOOL
+                   follows the model here (the catalog entry knows it), and
+                   the refusal above guarantees it is the tool Jev named. */
+                onApply: (suggestion) => {
+                  bind.onPickModel(suggestion.model);
+                  bind.onEffortChange(suggestion.effort);
+                },
+              }}
+            />
+          }
         />
+        {reviewOpen && jev.state !== 'idle' ? (
+          <JevReviewDrawer jev={jev} onClose={() => setReviewOpen(false)} />
+        ) : null}
       </div>
     </div>
   );
