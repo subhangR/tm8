@@ -177,6 +177,17 @@ describe('DrawingBlock', () => {
     await waitFor(() => expect(screen.queryByTestId('drawing-image-notice')).toBeNull());
   });
 
+  it('the stage tells the app keyboard it owns its keys', async () => {
+    // Without the marker the canvas sits in global chrome: `g` opens a nav
+    // chord and `/` opens the palette over it. The shell reads the attribute,
+    // never the kind.
+    const { container } = render(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+    await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+    const stage = container.querySelector('.drw__stage');
+    expect(stage?.getAttribute('data-owns-keys')).toBe('canvas');
+    expect(screen.getByTestId('excalidraw-mock').closest('[data-owns-keys]')).toBe(stage);
+  });
+
   it('the stage reserves HEIGHT in the stylesheet — invisible to every other case here', () => {
     // Excalidraw measures its container. With no height it renders at zero and
     // reads as a broken import; jsdom loads no stylesheets, so this is asserted

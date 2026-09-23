@@ -33,6 +33,12 @@ export interface KeyboardContext {
   terminalSurface: 'terminal' | 'chat';
   /** Focus sits in an input / textarea / contenteditable / inline editor. */
   textEntry: boolean;
+  /**
+   * Focus sits inside a surface that binds plain keys of its own — a drawing
+   * canvas, where `g`, `t` and `/` are tools. The shell learns this from a
+   * generic `[data-owns-keys]` marker, never from what kind the surface is.
+   */
+  surfaceOwnsKeys: boolean;
   /** A list or panel scope holds focus. */
   focusScope: boolean;
 }
@@ -41,6 +47,7 @@ export type KeyRefusal =
   | 'browser-reserved'
   | 'terminal-owns'
   | 'dead-in-text-entry'
+  | 'surface-owns-keys'
   | 'chord-open'
   | 'chord-cancelled'
   | 'no-binding';
@@ -78,6 +85,7 @@ const DEFAULT_CONTEXT: Omit<KeyboardContext, 'platform'> = {
   terminalFocused: false,
   terminalSurface: 'terminal',
   textEntry: false,
+  surfaceOwnsKeys: false,
   focusScope: false,
 };
 
@@ -186,11 +194,17 @@ export function createKeyboardController(
       return { handled: false, consumed: false, layer: 'terminal', reason: 'terminal-owns' };
     }
 
-    // -- Layer 4: text-entry controls. ---------------------------------------
-    if (context.textEntry) {
+    // -- Layer 4: text-entry controls, and surfaces that own their keys. -----
+    // Two entrances, one behaviour: plain keys are dead, Mod-chords stay live,
+    // and the open chord is cleared — which is what stops `g` then a tool key
+    // on a canvas from navigating the app away. The surface entrance does NOT
+    // take the text-entry layer's own bindings: `text.blur` means "leave this
+    // field", and consuming Esc there would take it from the surface, whose
+    // Esc (deselect, leave fullscreen) is its own.
+    if (context.textEntry || context.surfaceOwnsKeys) {
       chordOpenedAt = null;
       const binding =
-        findBinding('text-entry', input, context.platform, false) ??
+        (context.textEntry ? findBinding('text-entry', input, context.platform, false) : null) ??
         // Mod-chords stay live where receivable; plain keys do not.
         BINDINGS.find(
           (b) =>
@@ -200,7 +214,12 @@ export function createKeyboardController(
         ) ??
         null;
       if (binding) return fire(binding.layer, binding);
-      return { handled: false, consumed: false, layer: 'text-entry', reason: 'dead-in-text-entry' };
+      return {
+        handled: false,
+        consumed: false,
+        layer: 'text-entry',
+        reason: context.textEntry ? 'dead-in-text-entry' : 'surface-owns-keys',
+      };
     }
 
     // -- The `g` chord machine (layers 5–6 only). ----------------------------

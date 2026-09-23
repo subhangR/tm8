@@ -22,7 +22,12 @@ export type KeyLayer =
   | 'modal'
   /** 3. Focused terminal while contentSurface=terminal. */
   | 'terminal'
-  /** 4. Text-entry control — all PLAIN-key bindings are dead here. */
+  /**
+   * 4. Text-entry control — all PLAIN-key bindings are dead here. Also entered
+   * by a surface that owns its plain keys (`surfaceOwnsKeys`, from a
+   * `[data-owns-keys]` ancestor — a drawing canvas): same dead plain keys, same
+   * live Mod-chords, but not this layer's own `text.blur`.
+   */
   | 'text-entry'
   /** 5. Focused list / panel. */
   | 'focus'

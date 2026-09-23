@@ -1351,8 +1351,14 @@ export function GateApp(props: GateAppProps = {}) {
       const textEntry =
         !!target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      /* A surface that binds plain keys of its own marks itself, and the shell
+         asks for the MARKER, never for a kind (§15.2): a canvas's `g`, `t` and
+         `/` are tools, not chords and palette. `closest` is optional-chained
+         because a keydown can target the document itself. */
+      const surfaceOwnsKeys = !!target?.closest?.('[data-owns-keys]');
       kb.setContext({
         textEntry,
+        surfaceOwnsKeys,
         modalDepth:
           paletteOpen || promptsOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
       });

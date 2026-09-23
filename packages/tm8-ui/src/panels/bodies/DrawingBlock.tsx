@@ -166,7 +166,10 @@ export function DrawingBlock({
         </p>
       ) : null}
 
-      <div className="drw__stage">
+      {/* The canvas binds single keys to tools (`t` text, `r` rectangle, `/`…),
+          so it tells the app's keyboard to stand back: plain keys reach
+          Excalidraw, Mod-chords still reach the app. */}
+      <div className="drw__stage" data-owns-keys="canvas">
         <Suspense fallback={<p className="drw__loading" role="status">Loading the canvas…</p>}>
           <ExcalidrawCanvas
             initialData={{
