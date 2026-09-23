@@ -24,16 +24,22 @@
 # workspace dependency edges; then add exactly ONE hop of EXTRA_EDGES from every node in
 # that closure (no re-closure); then map nodes to modules.
 # The dependency graph is the UNION of the base and head package.json files, so a PR cannot
-# delete the edge that would have tested it. An edge is any dependency whose version starts
-# with `workspace:` or whose name starts with `@tm8/` (tm8-ui -> @maestro/pty-protocol is
-# workspace-only, so never filter on the prefix alone).
+# delete the edge that would have tested it. Edges, from all four dependency fields:
+#   - a dep whose version starts with `workspace:` or whose name starts with `@tm8/` MUST
+#     resolve to a workspace package, or -> ALL (tm8-ui -> @maestro/pty-protocol is
+#     workspace:-only, so never filter on the prefix alone);
+#   - any other dep whose name is a workspace package's name is an edge too, whatever its
+#     spec (link:, file:, semver); names that match nothing (react, ...) are external.
 #
 # FAIL-SAFE RULES
 #   1. global paths -> ALL: bun.lock, root package.json, root tsconfig*.json, .github/**,
 #      tools/ci/**
-#   2. a path no rule recognises -> ALL
+#   2. a path no rule recognises -> ALL; so does one with a `.` or `..` segment
 #   3. any error -> ALL (git failure, empty diff, bad package.json, missing jq, ...)
-#   4. docs/**, root *.md, packages/*/**/*.md -> typecheck only
+#   4. docs/**, root *.md -> typecheck only. WIDER than §3: packages/*/**/*.md is NOT docs,
+#      it seeds its owning package like any other file there, because tests read package
+#      .md files (tm8-ui: src/data/real/liveness.test.ts reads src/data/LLD.md,
+#      src/mobile/shell-contract.test.ts reads CONTRACT.md).
 #   (and packages/contract/** -> ALL: §3 says "contract → everything", which is wider
 #   than contract's closure)
 #   5. the workspace packages (root `workspaces` globs expanded over the tree) must equal
@@ -77,7 +83,8 @@ declare -A EXTRA_EDGES=(
   [tools/conformance]="packages/server packages/cli"  # w1-conformance-manifest.json is read by both
   [deploy]="packages/server"                          # security-gates.test.ts reads nginx config
   [db]="packages/server packages/cli"                 # scratch databases apply the migration chain
-  [db/migrations]="packages/server packages/cli"      # db/** applies here too
+  [db/migrations]="packages/server packages/cli tools/conformance"  # db/** applies here too;
+                                                    # conformance migration-inventory.ts hashes 015_w1_foundations.sql
 )
 
 exec 3>&1 1>&2   # fd 3 is the only path to stdout
@@ -145,13 +152,15 @@ src_show() { # <src> <path>: print a file's contents
   esac
 }
 src_package_dirs() { # <src> <prefix>: dirs <prefix>/<x> that hold a package.json
-  local src=$1 prefix=$2 listing d
+  local src=$1 prefix=$2 listing d pj
   case $src in
     git:*)
       listing=$(git ls-tree --name-only "${src#git:}" -- "$prefix/")
       while IFS= read -r d; do
         [[ -n $d ]] || continue
-        if git cat-file -e "${src#git:}:$d/package.json" 2>/dev/null; then echo "$d"; fi
+        # ls-tree, not `cat-file -e` in an if: a git error must reach ERR, not read as "absent"
+        pj=$(git ls-tree --name-only "${src#git:}" -- "$d/package.json")
+        if [[ -n $pj ]]; then echo "$d"; fi
       done <<<"$listing"
       ;;
     fs:*)
@@ -165,10 +174,11 @@ src_package_dirs() { # <src> <prefix>: dirs <prefix>/<x> that hold a package.jso
 declare -A WS=()          # workspace package dirs, from glob expansion
 declare -A GRAPH=()       # dirs whose package.json parsed
 declare -A DIRS_OF=()     # package name -> " dir dir"
-declare -A DEP_NAMES=()   # dir -> " depname depname"
+declare -A DEP_NAMES=()   # dir -> " depname ..."  internal-looking: must resolve
+declare -A DEP_SOFT=()    # dir -> " depname ..."  any other dep: an edge if it resolves
 
 read_source() { # <src>
-  local src=$1 root_json globs glob prefix dirs d pj name deps
+  local src=$1 root_json globs glob prefix dirs d pj name deps soft
   root_json=$(src_show "$src" package.json)
   globs=$(jq -r '.workspaces | if type == "array" then .[] elif type == "object" then .packages[] else error("no workspaces") end' <<<"$root_json")
   while IFS= read -r glob; do
@@ -185,9 +195,12 @@ read_source() { # <src>
                     | map(. // {}) | add | to_entries[]
                     | select((.value | tostring | startswith("workspace:")) or (.key | startswith("@tm8/")))
                     | .key' <<<"$pj")
+      soft=$(jq -r '[.dependencies, .devDependencies, .peerDependencies, .optionalDependencies]
+                    | map(. // {}) | add | keys[]' <<<"$pj")
       GRAPH[$d]=1
       DIRS_OF[$name]="${DIRS_OF[$name]:-} $d"
       DEP_NAMES[$d]="${DEP_NAMES[$d]:-} $deps"
+      DEP_SOFT[$d]="${DEP_SOFT[$d]:-} $soft"
     done <<<"$dirs"
   done <<<"$globs"
 }
@@ -224,6 +237,11 @@ for d in "${!DEP_NAMES[@]}"; do
     for t in ${DIRS_OF[$n]}; do DEPENDENTS[$t]="${DEPENDENTS[$t]:-} $d"; done
   done
 done
+for d in "${!DEP_SOFT[@]}"; do
+  for n in ${DEP_SOFT[$d]}; do
+    for t in ${DIRS_OF[$n]:-}; do DEPENDENTS[$t]="${DEPENDENTS[$t]:-} $d"; done
+  done
+done
 
 # ---- classify ---------------------------------------------------------------------------
 [[ -n ${CHANGED//[[:space:]]/} ]] || emit_all "empty change set"
@@ -232,10 +250,13 @@ declare -A SEEDS=()
 DOCS_ONLY=0
 while IFS= read -r p; do
   [[ -n $p ]] || continue
+  case /$p/ in
+    */./* | */../*) emit_all "path is not normalised: $p" ;;
+  esac
   case $p in
     bun.lock | package.json | tsconfig*.json | .github/* | tools/ci/*)
       emit_all "global path: $p" ;;
-    docs/* | packages/*/*.md) DOCS_ONLY=1; continue ;;
+    docs/*) DOCS_ONLY=1; continue ;;
     # §3 states "contract → everything". Its closure misses prompt, pty-protocol and
     # migrations; where the rule and the stated result differ, the wider one wins.
     packages/contract/*) emit_all "contract path: $p" ;;

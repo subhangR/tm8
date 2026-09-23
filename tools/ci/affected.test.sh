@@ -136,6 +136,23 @@ STUB1="$TMP/stub-fail"; mkdir -p "$STUB1"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$STUB1/git"; chmod +x "$STUB1/git"
 gitrun "$G2" HEAD~1 HEAD "$STUB1"
 expect "      every git call fails -> ALL" ALL
+# ls-tree fails on the BASE ref only: the base half of the union graph must not silently
+# vanish (pins -E / inherit_errexit: errors inside the function's $(...) - review P3 on #684)
+STUB2="$TMP/stub-lstree"; mkdir -p "$STUB2"
+cat >"$STUB2/git" <<EOF
+#!/usr/bin/env bash
+ls=0 hit=0
+for a in "\$@"; do
+  [[ \$a == ls-tree ]] && ls=1
+  [[ \$a == "\$STUB_FAIL_REF" ]] && hit=1
+done
+if [[ \$ls == 1 && \$hit == 1 ]]; then echo "fatal: bad tree" >&2; exit 128; fi
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x "$STUB2/git"
+BASE_SHA=$(git -C "$G2" rev-parse HEAD~1)
+OUT=$(cd "$G2" && STUB_FAIL_REF=$BASE_SHA PATH="$STUB2:$PATH" bash "$AFFECTED" --base "$BASE_SHA" --head HEAD 2>/dev/null)
+expect "CONTROL ls-tree fails on the base ref only -> ALL" ALL
 gitrun "$G2" 0123456789abcdef0123456789abcdef01234567 HEAD
 expect "      base sha not in repo (shallow miss) -> ALL" ALL
 gitrun "$G2" HEAD HEAD
@@ -155,7 +172,9 @@ paths "$FIX" packages/tm8-ui/src/x.tsx;      expect "tm8-ui -> ui only" '["typec
 paths "$FIX" tools/conformance/src/x.ts;     expect "conformance -> server, cli" '["typecheck","server","cli","small"]'
 paths "$FIX" deploy/nginx/site.conf;         expect "deploy -> server" '["typecheck","server"]'
 paths "$FIX" db/migrate.mjs;                 expect "db -> server, cli" '["typecheck","server","cli"]'
-paths "$FIX" db/migrations/300_x.sql;        expect "db/migrations -> migrations, server, cli" '["typecheck","server","cli","migrations"]'
+paths "$FIX" db/migrations/300_x.sql;        expect "db/migrations -> migrations, server, cli, conformance" '["typecheck","server","cli","small","migrations"]'
+paths "$FIX" db/migrations/015_w1_foundations.sql
+expect "db/migrations/015_w1_foundations.sql -> includes small (migration-inventory.ts hashes it)" "contains:small migrations"
 paths "$FIX" packages/server/package.json;   expect "a package's own package.json -> that package" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/tm8-ui/src/x.tsx packages/cli/src/x.ts
 expect "two paths -> union" '["typecheck","cli","execution","ui"]'
@@ -184,6 +203,10 @@ done
 paths "$FIX" docs/a.md weird/x
 expect "unknown among docs -> ALL" ALL
 
+for p in ./packages/tm8-ui/src/x.tsx packages/tm8-ui/../server/src/x.ts packages/tm8-ui/.. .. ../x packages/tm8-ui/./src/x.tsx; do
+  paths "$FIX" packages/tm8-ui/src/x.tsx "$p"; expect "unnormalised path $p -> ALL" ALL
+done
+
 # ---- rule 3: errors ---------------------------------------------------------------------
 paths "$FIX"
 expect "empty path list -> ALL" ALL
@@ -201,8 +224,12 @@ expect "jq missing -> ALL" ALL
 paths "$FIX" docs/a.md;                           expect "docs/** -> typecheck only" '["typecheck"]'
 paths "$FIX" docs/deep/x.png;                     expect "docs/** non-md -> typecheck only" '["typecheck"]'
 paths "$FIX" README.md;                           expect "root *.md -> typecheck only" '["typecheck"]'
-paths "$FIX" packages/tm8-ui/src/auth/HANDOVER-Auth.md; expect "packages/*/**/*.md -> typecheck only" '["typecheck"]'
-paths "$FIX" packages/contract/README.md;         expect "contract *.md -> typecheck only (docs rule first)" '["typecheck"]'
+# package .md files are NOT docs: tm8-ui tests read LLD.md and CONTRACT.md (review C1 on #684)
+paths "$FIX" packages/tm8-ui/src/auth/HANDOVER-Auth.md; expect "packages/*/**/*.md -> its package (was typecheck only)" '["typecheck","ui"]'
+paths "$FIX" packages/tm8-ui/src/data/LLD.md;     expect "packages/tm8-ui/src/data/LLD.md -> ui (liveness.test.ts reads it)" '["typecheck","ui"]'
+paths "$FIX" packages/tm8-ui/src/mobile/CONTRACT.md; expect "packages/tm8-ui/src/mobile/CONTRACT.md -> ui" '["typecheck","ui"]'
+paths "$FIX" packages/server/README.md;           expect "packages/*/*.md seeds its package" '["typecheck","server","cli","small"]'
+paths "$FIX" packages/contract/README.md;         expect "contract *.md -> ALL (was typecheck only; a contract path)" ALL
 paths "$FIX" docs/a.md packages/server/src/x.ts;  expect "docs + server -> server closure" '["typecheck","server","cli","small"]'
 paths "$FIX" db/README.md;                        expect "db/README.md is db, not docs" '["typecheck","server","cli"]'
 paths "$FIX" tools/conformance/README.md;         expect "tools/*/*.md is not a docs path" '["typecheck","server","cli","small"]'
@@ -221,6 +248,15 @@ paths "$B" packages/tm8-ui/src/x.tsx;        expect "unsupported workspaces glob
 B="$TMP/peer"; make_fixture "$B"
 jq '.dependencies |= del(.["@maestro/pty-protocol"]) | .peerDependencies["@maestro/pty-protocol"] = "workspace:~"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
 paths "$B" packages/pty-protocol/src/x.ts;   expect "peerDependencies workspace:~ is an edge" '["typecheck","ui","pty-protocol"]'
+B="$TMP/link"; make_fixture "$B"
+jq '.dependencies["@maestro/pty-protocol"] = "link:../pty-protocol"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
+paths "$B" packages/pty-protocol/src/x.ts;   expect "link: spec naming a workspace package is an edge" '["typecheck","ui","pty-protocol"]'
+B="$TMP/semver"; make_fixture "$B"
+jq '.dependencies["@maestro/pty-protocol"] = "^1.0.0"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
+paths "$B" packages/pty-protocol/src/x.ts;   expect "semver spec naming a workspace package is an edge" '["typecheck","ui","pty-protocol"]'
+B="$TMP/tm8ghost"; make_fixture "$B"
+jq '.dependencies["@tm8/ghost"] = "^1.0.0"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
+paths "$B" packages/tm8-ui/src/x.tsx;        expect "@tm8/ dep resolving to no package (semver spec) -> ALL" ALL
 
 # ---- base ∪ head graph (git) ------------------------------------------------------------
 G="$TMP/union"; git_repo "$G"
