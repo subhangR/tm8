@@ -66,6 +66,10 @@
 --     finish_space_credential_login(p_work_session_id uuid, p_ok boolean,
 --         p_display_login text default null)       the login's own account
 --       Locks the credential FOR UPDATE; refuses unless pending/active/stale.
+--       Exception: a REVOKED credential with p_ok = false only stamps the
+--       terminal finished (no status, default or file change); the opener,
+--       the credential's creator or a space admin may do it. This is how the
+--       delete path closes a terminal after killing its PTY.
 --     rekey_space_credential(p_credential_id uuid, p_key_hint text,
 --         p_secret_ciphertext bytea, p_secret_nonce bytea,
 --         p_display_login text default null)                 manager (D7/D11)
@@ -81,7 +85,8 @@
 --                                                          node admin (D5/D9)
 --     space_credential_live_sessions(p_credential_id uuid)          manager
 --     member_space_credential_sessions(p_space_id uuid, p_account_id uuid)
---                                      space admin, or that account itself
+--             node admin, space admin, or that account itself; a null
+--             p_space_id means every space (node admin or self only)
 --
 --   Spawn path (NOT human-only: agent children inherit, the 093 precedent):
 --     read_space_credential_for_spawn(p_launch_space_id uuid,
@@ -371,6 +376,42 @@ begin
 end
 $$;
 
+-- Called by every path that makes a credential ACTIVE again (login finish,
+-- probe, rekey). A default that went stale keeps is_default (the badge
+-- survives staleness), but while it was stale default_space_credential_if_none
+-- may have promoted another credential. Repairing the old one must then give
+-- up its flag rather than collide with the one-default index. Same advisory
+-- lock as default_space_credential_if_none, so the two cannot interleave.
+create or replace function internal.prepare_space_credential_activation(p_credential_id uuid)
+returns void
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare target public.space_credentials;
+begin
+  select * into target from public.space_credentials where id = p_credential_id;
+  perform pg_advisory_xact_lock(hashtextextended(target.space_id::text || '|' || target.provider, 206));
+  if target.is_default and exists (
+       select 1 from public.space_credentials
+        where space_id = target.space_id and provider = target.provider
+          and is_default and status = 'active' and id <> target.id) then
+    update public.space_credentials set is_default = false where id = target.id;
+  end if;
+end
+$$;
+
+-- A label is required and trimmed; answer 22023 rather than a raw CHECK.
+create or replace function internal.require_space_credential_label(p_label text)
+returns text
+language plpgsql immutable as $$
+begin
+  if p_label is null or char_length(btrim(p_label)) not between 1 and 80 then
+    raise exception 'a label of 1 to 80 characters is required' using errcode = '22023';
+  end if;
+  return btrim(p_label);
+end
+$$;
+
+revoke all on function internal.prepare_space_credential_activation(uuid) from public;
+revoke all on function internal.require_space_credential_label(text) from public;
 revoke all on function internal.can_manage_space_credential(public.space_credentials) from public;
 revoke all on function internal.lock_managed_space_credential(uuid) from public;
 revoke all on function internal.space_credential_json(public.space_credentials) from public;
@@ -491,7 +532,7 @@ begin
     created_by_account_id, created_by_identity_id, display_login,
     key_hint, secret_ciphertext, secret_nonce, last_probe_at
   ) values (
-    p_credential_id, p_space_id, p_provider, p_shape, btrim(p_label), 'active',
+    p_credential_id, p_space_id, p_provider, p_shape, internal.require_space_credential_label(p_label), 'active',
     v_account_id, internal.identity_id(), nullif(btrim(p_display_login), ''),
     p_key_hint, p_secret_ciphertext, p_secret_nonce, now()
   ) returning * into stored;
@@ -549,7 +590,7 @@ begin
       space_id, provider, shape, label, status, pending_expires_at,
       created_by_account_id, created_by_identity_id
     ) values (
-      p_space_id, p_provider, 'login', btrim(coalesce(p_label, '')), 'pending',
+      p_space_id, p_provider, 'login', internal.require_space_credential_label(p_label), 'pending',
       v_expires_at + interval '5 minutes', v_account_id, internal.identity_id()
     ) returning * into target;
   else
@@ -591,6 +632,13 @@ $$;
 -- stale: a credential deleted while its login ran must not come back to life
 -- (M3/M6). 'stale' is admitted because re-login is exactly how a stale login
 -- is repaired. Only the account that opened the terminal can finish it.
+--
+-- One exception (coordinator decision (a), SC-3): on a REVOKED credential,
+-- p_ok = false stamps the terminal finished and does nothing else — no status,
+-- no default, no file. This is how delete's second step (and anything else
+-- that has killed the PTY) closes the terminal. The opener, the credential's
+-- creator or a space admin may do it: an admin deleting a credential must be
+-- able to close another member's login (M6). p_ok = true stays refused.
 create or replace function public.finish_space_credential_login(
   p_work_session_id uuid,
   p_ok boolean,
@@ -610,18 +658,32 @@ begin
 
   select * into login from public.credential_sessions
    where work_session_id = p_work_session_id
-     and account_id = v_account_id
      and space_credential_id is not null
    for update;
-  if login.work_session_id is null then
+  if login.work_session_id is not null then
+    select * into target from public.space_credentials
+     where id = login.space_credential_id for update;
+  end if;
+  -- Someone else's terminal is visible only as the revoked-close exception
+  -- admits it; otherwise it answers exactly as a missing one.
+  if login.work_session_id is null
+     or (login.account_id is distinct from v_account_id
+         and not (target.status = 'revoked' and not coalesce(p_ok, false)
+                  and internal.can_manage_space_credential(target))) then
     raise exception 'no space login terminal of yours with that id' using errcode = 'P0002';
   end if;
 
-  select * into target from public.space_credentials
-   where id = login.space_credential_id for update;
-  if target.status not in ('pending', 'active', 'stale') then
+  if target.status = 'revoked' and not coalesce(p_ok, false) then
     update public.credential_sessions set finished_at = coalesce(finished_at, now())
      where work_session_id = p_work_session_id;
+    return jsonb_build_object(
+      'workSessionId', p_work_session_id,
+      'finished', true,
+      'connected', false,
+      'credential', internal.space_credential_json(target)
+    );
+  end if;
+  if target.status not in ('pending', 'active', 'stale') then
     raise exception 'space credential is %', target.status using errcode = '23514';
   end if;
   if not internal.is_space_member(target.space_id) then
@@ -632,6 +694,7 @@ begin
    where work_session_id = p_work_session_id;
 
   if coalesce(p_ok, false) then
+    perform internal.prepare_space_credential_activation(target.id);
     update public.space_credentials
        set status = 'active',
            pending_expires_at = null,
@@ -673,6 +736,7 @@ begin
   if stored.status not in ('active', 'stale') then
     raise exception 'space credential is %', stored.status using errcode = '23514';
   end if;
+  perform internal.prepare_space_credential_activation(stored.id);
   update public.space_credentials
      set key_hint = p_key_hint,
          secret_ciphertext = p_secret_ciphertext,
@@ -696,7 +760,7 @@ begin
   if stored.status = 'revoked' then
     raise exception 'space credential is revoked' using errcode = '23514';
   end if;
-  update public.space_credentials set label = btrim(p_label)
+  update public.space_credentials set label = internal.require_space_credential_label(p_label)
    where id = stored.id returning * into stored;
   return internal.space_credential_json(stored);
 end
@@ -733,6 +797,9 @@ begin
   if stored.status not in ('active', 'stale') then
     raise exception 'space credential is %', stored.status using errcode = '23514';
   end if;
+  if coalesce(p_ok, false) then
+    perform internal.prepare_space_credential_activation(stored.id);
+  end if;
   update public.space_credentials
      set status = case when coalesce(p_ok, false) then 'active' else 'stale' end,
          last_probe_at = now()
@@ -765,10 +832,11 @@ begin
            secret_ciphertext = null,
            secret_nonce = null
      where id = stored.id returning * into stored;
-    -- A login still open onto it can no longer finish (see finish above);
-    -- stamp it so it frees its index slot.
-    update public.credential_sessions set finished_at = now()
-     where space_credential_id = stored.id and finished_at is null;
+    -- An open login terminal onto it is NOT stamped here: it would vanish
+    -- from space_credential_live_sessions while its PTY still runs, and a
+    -- retried delete could never find it. The caller kills the PTY, then
+    -- calls finish_space_credential_login(ws, false), which on a revoked
+    -- credential only stamps the terminal (the member Disconnect's order).
   end if;
   return internal.space_credential_json(stored) || jsonb_build_object('revoked', not was_revoked);
 end
@@ -884,19 +952,23 @@ declare sessions jsonb;
 begin
   perform internal.require_human_auth_kind();
   perform internal.require_identity();
-  if not (internal.is_space_admin(p_space_id)
+  -- A node admin may ask across every space (SC-6's account disable); a
+  -- space admin about their space; anyone about themselves.
+  if not (internal.is_node_admin()
+          or (p_space_id is not null and internal.is_space_admin(p_space_id))
           or (p_account_id is not null and p_account_id = internal.current_account_id())) then
     raise exception 'space admin required' using errcode = '42501';
   end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'workSessionId', ssc.work_session_id, 'provider', ssc.provider,
+           'spaceId', ssc.space_id,
            'spaceCredentialId', ssc.space_credential_id, 'status', ws.status)
            order by ssc.work_session_id, ssc.provider), '[]'::jsonb)
     into sessions
     from public.session_space_credentials ssc
     join public.work_sessions ws on ws.entity_id = ssc.work_session_id
-   where ssc.space_id = p_space_id
+   where (p_space_id is null or ssc.space_id = p_space_id)
      and ssc.launcher_account_id = p_account_id
      and ws.status in ('spawning', 'running', 'idle');
 
@@ -988,6 +1060,15 @@ begin
     raise exception 'no active account for this identity' using errcode = 'P0002';
   end if;
 
+  -- A2: a retried manifest write (a timed-out write may have committed)
+  -- must not fail a spawn that succeeded. The identical row is a no-op;
+  -- a DIFFERENT credential for the provider is refused below.
+  if exists (select 1 from public.session_space_credentials
+              where work_session_id = p_work_session_id and provider = p_provider
+                and space_credential_id = p_credential_id) then
+    return;
+  end if;
+
   begin
     insert into public.session_space_credentials(
       work_session_id, provider, space_credential_id, space_id, launcher_account_id)
@@ -1006,7 +1087,7 @@ begin
        for share of sc;
     get diagnostics inserted = row_count;
   exception when unique_violation then
-    raise exception 'session already records a % space credential', p_provider
+    raise exception 'session already records a different % space credential', p_provider
       using errcode = '23505';
   end;
 
@@ -1109,7 +1190,9 @@ $$;
 
 -- The pending-expiry sweep (M3). Removes login credentials whose login never
 -- finished and whose deadline has passed, unless a login terminal onto them is
--- somehow still open and unexpired. Touches nothing else; safe to call from
+-- still unfinished — its PTY may be alive past expires_at, and the delete
+-- would cascade its row away. The terminal is closed first (its opener's
+-- finish_space_credential_login(ws, false)); the next sweep then removes it. Touches nothing else; safe to call from
 -- the credential-sessions interval sweep under any claims.
 create or replace function public.expire_pending_space_credentials()
 returns jsonb
@@ -1121,7 +1204,7 @@ begin
      and sc.pending_expires_at < now()
      and not exists (select 1 from public.credential_sessions cs
                       where cs.space_credential_id = sc.id
-                        and cs.finished_at is null and cs.expires_at > now());
+                        and cs.finished_at is null);
   get diagnostics removed = row_count;
   return jsonb_build_object('expired', removed);
 end
@@ -1232,6 +1315,10 @@ begin
     for v_provider in select key from jsonb_each(v_ids) order by key loop
       if v_sources is null or (v_sources ->> v_provider) is distinct from 'space' then
         raise exception 'manifest carries a space credential id for %, whose source is not space', v_provider
+          using errcode = '22023';
+      end if;
+      if (v_ids ->> v_provider) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        raise exception 'manifest launch.spaceCredentialIds.% is not a credential id', v_provider
           using errcode = '22023';
       end if;
       perform internal.record_session_space_credential(
