@@ -645,7 +645,9 @@ export class W2CredentialCatalogService {
    *     credential.
    *
    * `session_kind = 'agent'` keeps this from killing login terminals a second
-   * time, which step 2 has already handled.
+   * time, which step 2 has already handled. A session recorded against a
+   * space credential for this provider is left alone: it never held the
+   * member's own credential.
    */
   private async terminateAgentSessions(
     provider: CredentialProviderName,
@@ -668,8 +670,15 @@ export class W2CredentialCatalogService {
           where ws.session_kind = 'agent'
             and ws.status = any($1)
             and coalesce(m.identity_id, owner.identity_id) = $2
-            and ($3::text[] is null or ws.agent_tool = any($3::text[]))`,
-        [[...LIVE_SESSION_STATUSES], principal.identityId, tools ? [...tools] : null],
+            and ($3::text[] is null or ws.agent_tool = any($3::text[]))
+            -- A session that ran this provider on a SPACE credential (206)
+            -- never held the member's own: disconnecting it must not kill it
+            -- (A5). Deleting the space credential is what kills those.
+            and not exists (
+              select 1 from public.session_space_credentials ssc
+               where ssc.work_session_id = ws.entity_id and ssc.provider = $4
+            )`,
+        [[...LIVE_SESSION_STATUSES], principal.identityId, tools ? [...tools] : null, provider],
       );
     } catch (error) {
       failures.push({ step: 'agentSession', reason: errorMessage(error) });

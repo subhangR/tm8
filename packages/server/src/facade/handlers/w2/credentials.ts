@@ -60,7 +60,13 @@ import {
   CollabError,
   CredentialProviderNameSchema,
   CredentialsServiceKeyPutInputSchema,
+  CredentialsSpaceCreateInputSchema,
+  CredentialsSpacePolicySetInputSchema,
+  CredentialsSpaceRekeyInputSchema,
+  CredentialsSpaceRenameInputSchema,
+  NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
+  SpaceCredentialProviderNameSchema,
 } from '@tm8/contract';
 import type {
   CredentialProviderName,
@@ -69,6 +75,7 @@ import type {
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
+  SpaceCredentialProviderName,
 } from '@tm8/contract';
 import { OPERATIONS } from '@tm8/contract';
 import type { OperationName } from '@tm8/contract';
@@ -88,6 +95,12 @@ import {
   type CredentialPrincipal,
 } from '../../services/w2/credential-sessions.js';
 import { W2CredentialCatalogService } from '../../services/w2/credential-catalog.js';
+import { DbSpaceCredentialStore } from '../../../credentials/space-credential-store.js';
+import {
+  createVendorProbe,
+  type SpaceCredentialProbe,
+} from '../../../credentials/space-credential-probe.js';
+import { SpaceCredentialCatalogService } from '../../services/w2/space-credential-catalog.js';
 
 /**
  * The session kinds that may reach `credentials.*`.
@@ -171,6 +184,38 @@ function providerParam(ctx: RequestContext): CredentialProviderName {
   return parsed.data;
 }
 
+/** `:provider` for the space and node credential operations. */
+function spaceProviderParam(ctx: RequestContext): SpaceCredentialProviderName {
+  const parsed = SpaceCredentialProviderNameSchema.safeParse(ctx.params.provider);
+  if (!parsed.success) {
+    throw new CollabError(
+      'invalid_input',
+      `unsupported space credential provider: ${String(ctx.params.provider)}`,
+    );
+  }
+  return parsed.data;
+}
+
+/** A required path id. Its shape is the RPC's to refuse (22023). */
+function pathParam(ctx: RequestContext, name: 'spaceId' | 'credentialId'): string {
+  const value = ctx.params[name];
+  if (!value) throw new CollabError('invalid_input', `${name} is required`);
+  return value;
+}
+
+/**
+ * The node-admin gate for `node.credentials.*`, layer 1: the bearer's
+ * server-resolved `nodeAdmin`. Layer 2 is `internal.require_node_admin()`
+ * inside `set_node_credential_policy`.
+ */
+function requireNodeAdmin(claims: { nodeAdmin?: boolean | undefined }): void {
+  if (claims.nodeAdmin !== true) {
+    throw new CollabError('forbidden', 'node credential settings are available to node admins only', {
+      details: { reason: 'node_admin_required' },
+    });
+  }
+}
+
 /** `:provider` for the service-key operations — its own set, never an agent provider. */
 function serviceKeyProviderParam(ctx: RequestContext): ServiceKeyProviderName {
   const parsed = ServiceKeyProviderNameSchema.safeParse(ctx.params.provider);
@@ -194,6 +239,8 @@ export interface CredentialHandlerDeps {
    * `process.env`.
    */
   env?: Readonly<Record<string, string | undefined>>;
+  /** The vendor probe for pasted space keys (I6). Defaults to the real vendors. */
+  probeSpaceCredential?: SpaceCredentialProbe;
 }
 
 /** Structural alias so this module does not import `@tm8/execution` for a type. */
@@ -342,6 +389,68 @@ export function registerCredentialHandlers(
     return { provider, revoked: true };
   };
 
+  // -- space credentials (SC-3): shared by a space, managed per D11 in SQL.
+  const spaceCatalog = new SpaceCredentialCatalogService({
+    db: deps.db,
+    store: new DbSpaceCredentialStore({ db: deps.db, dataDir: credentials.dataDir }),
+    probe: credentials.probeSpaceCredential ?? createVendorProbe(),
+    terminals: credentials.launcher,
+    env,
+  });
+  const claimsOf = async (ctx: RequestContext) => (await principalFor(deps, ctx)).claims;
+
+  const spaceList: OperationHandler = async (ctx) =>
+    spaceCatalog.list(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
+
+  const spaceCreate: OperationHandler = async (ctx) => {
+    // Re-parsed for the TRIMMED secret and label; the facade already refused a bad body.
+    const { provider, shape, label, secret } = CredentialsSpaceCreateInputSchema.parse(ctx.body);
+    return spaceCatalog.create(await claimsOf(ctx), pathParam(ctx, 'spaceId'), { provider, shape, label, secret });
+  };
+
+  const spaceRekey: OperationHandler = async (ctx) => {
+    const { secret } = CredentialsSpaceRekeyInputSchema.parse(ctx.body);
+    return spaceCatalog.rekey(await claimsOf(ctx), pathParam(ctx, 'credentialId'), secret);
+  };
+
+  const spaceSetDefault: OperationHandler = async (ctx) =>
+    spaceCatalog.setDefault(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  const spaceRename: OperationHandler = async (ctx) => {
+    const { label } = CredentialsSpaceRenameInputSchema.parse(ctx.body);
+    return spaceCatalog.rename(await claimsOf(ctx), pathParam(ctx, 'credentialId'), label);
+  };
+
+  const spaceDelete: OperationHandler = async (ctx) =>
+    spaceCatalog.delete(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  const spacePolicyGet: OperationHandler = async (ctx) =>
+    spaceCatalog.policy(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
+
+  const spacePolicySet: OperationHandler = async (ctx) => {
+    const { allowedSources } = CredentialsSpacePolicySetInputSchema.parse(ctx.body);
+    return spaceCatalog.setPolicy(
+      await claimsOf(ctx),
+      pathParam(ctx, 'spaceId'),
+      spaceProviderParam(ctx),
+      allowedSources,
+    );
+  };
+
+  const nodeStatus: OperationHandler = async (ctx) => {
+    const claims = await claimsOf(ctx);
+    requireNodeAdmin(claims);
+    return spaceCatalog.nodeStatus(claims);
+  };
+
+  const nodePolicySet: OperationHandler = async (ctx) => {
+    const provider = spaceProviderParam(ctx);
+    const { allowNode } = NodeCredentialsPolicySetInputSchema.parse(ctx.body);
+    const claims = await claimsOf(ctx);
+    requireNodeAdmin(claims);
+    return spaceCatalog.setNodePolicy(claims, provider, allowNode);
+  };
+
   // EVERY VALUE HERE IS `requireHumanSession(...)`. An entry that is not is a
   // credential operation reachable by an agent holding its owner's identity.
   // `credentials-registration` in the test suite asserts this over the catalog,
@@ -354,11 +463,22 @@ export function registerCredentialHandlers(
     'credentials.serviceKeys.status': requireHumanSession(serviceKeyStatus),
     'credentials.serviceKeys.put': requireHumanSession(serviceKeyPut),
     'credentials.serviceKeys.delete': requireHumanSession(serviceKeyDelete),
+    'credentials.space.list': requireHumanSession(spaceList),
+    'credentials.space.create': requireHumanSession(spaceCreate),
+    'credentials.space.rekey': requireHumanSession(spaceRekey),
+    'credentials.space.setDefault': requireHumanSession(spaceSetDefault),
+    'credentials.space.rename': requireHumanSession(spaceRename),
+    'credentials.space.delete': requireHumanSession(spaceDelete),
+    'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
+    'credentials.space.policy.set': requireHumanSession(spacePolicySet),
+    'node.credentials.status': requireHumanSession(nodeStatus),
+    'node.credentials.policy.set': requireHumanSession(nodePolicySet),
   });
 }
 
 /**
- * Every `credentials.*` operation IN THE CATALOG — derived, never listed.
+ * Every `credentials.*` and `node.credentials.*` operation IN THE CATALOG —
+ * derived, never listed.
  *
  * This is the load-bearing half of the "a fifth operation cannot be born
  * unguarded" guarantee. A hand-written constant would have to be updated by the
@@ -370,4 +490,5 @@ export function registerCredentialHandlers(
  */
 export const CREDENTIAL_OPERATIONS: readonly OperationName[] = OPERATIONS
   .map((op) => op.name)
-  .filter((name): name is OperationName => name.startsWith('credentials.'));
+  .filter((name): name is OperationName =>
+    name.startsWith('credentials.') || name.startsWith('node.credentials.'));

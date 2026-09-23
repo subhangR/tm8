@@ -111,8 +111,8 @@ describe('W1 adopted catalog target', () => {
     // MEASURED on the merged tree from this assertion's own failing run.
     // 203 -> 208 (2026-09-23): skills.roots/create/edit/equip/unequip (F4, #648), all v1. MEASURED on the merged tree.
     // 208 -> 209 (2026-09-23, Jev lane F): launch.suggest, a v1 POST command. MEASURED from this assertion's own failing run.
-    expect(OPERATIONS).toHaveLength(212); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
-    expect(V1_OPERATIONS).toHaveLength(210); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // launch.suggest is v1: 206 -> 207. MEASURED.
+    expect(OPERATIONS).toHaveLength(222); // +10 credentials.space.* and node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
+    expect(V1_OPERATIONS).toHaveLength(220); // +10 (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // launch.suggest is v1: 206 -> 207. MEASURED.
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -156,7 +156,7 @@ describe('W1 adopted catalog target', () => {
     // skills.show, skills.preview), POST 100->101 (skills.scan). MEASURED on the merged tree.
     // 2026-09-23 F4: GET 68->69 (roots), POST 101->104 (create/equip/unequip), PATCH 12->13 (edit). MEASURED.
     // 2026-09-23 Jev lane F: POST 104->105 (launch.suggest). MEASURED.
-    }).toEqual({ GET: 70, POST: 105, PATCH: 13, DELETE: 13, PUT: 9, WS: 2 });
+    }).toEqual({ GET: 73, POST: 107, PATCH: 14, DELETE: 14, PUT: 12, WS: 2 }); // SC-3. MEASURED.
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -174,7 +174,7 @@ describe('W1 adopted catalog target', () => {
     // MEASURED on the merged tree.
     // 2026-09-23 F4: read 72->73, command 129->133. MEASURED.
     // 2026-09-23 Jev lane F: command 133->134 (launch.suggest). MEASURED.
-    }).toEqual({ read: 74, command: 136, stream: 2 });
+    }).toEqual({ read: 77, command: 143, stream: 2 }); // SC-3. MEASURED.
   });
 });
 

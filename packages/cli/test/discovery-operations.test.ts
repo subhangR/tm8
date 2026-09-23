@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 212; // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 222; // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 208, composite: 1, internal: 1, reserved: 2 }); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 218, composite: 1, internal: 1, reserved: 2 }); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
 
@@ -235,6 +235,15 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.serviceKeys.delete',
       'credentials.serviceKeys.put',
       'credentials.serviceKeys.status',
+      // SC-3: the space credential rows are settings-screen operations too.
+      'credentials.space.create',
+      'credentials.space.delete',
+      'credentials.space.list',
+      'credentials.space.policy.get',
+      'credentials.space.policy.set',
+      'credentials.space.rekey',
+      'credentials.space.rename',
+      'credentials.space.setDefault',
       'credentials.status',
       // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
@@ -256,6 +265,9 @@ const COMMANDLESS_OPERATIONS = [
       'execution.terminal.start',
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
+      // SC-3: node admin settings, commandless for the same reason.
+      'node.credentials.policy.set',
+      'node.credentials.status',
       'projects.directories.list',
       'projects.files.archive',
       'projects.files.attach',

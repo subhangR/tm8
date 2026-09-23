@@ -52,12 +52,12 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. Non-reserved too, so it moves BOTH counts a
     // second time. MEASURED from this file's own failing run on the MERGED tree.
-    expect(rows).toHaveLength(212); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills.* rows (2026-09-23, #647 + #649); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(rows).toHaveLength(222); // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills.* rows (2026-09-23, #647 + #649); +1 launch.suggest (Jev lane F). MEASURED.
     expect(unavailable.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     // 170 -> 195 -> 196 -> 197: all 25 containers.* rows, 187's, and
     // execution.gitStage are non-reserved. MEASURED.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): nothing is optimistically available, gitStage included. MEASURED.
-    expect(unknown).toHaveLength(210); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills (2026-09-23); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(unknown).toHaveLength(220); // +10 (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills (2026-09-23); +1 launch.suggest (Jev lane F). MEASURED.
     // The point of the field: NOTHING is optimistically available.
     expect(rows.filter((r) => r.availability === 'available')).toHaveLength(0);
   });
@@ -184,7 +184,7 @@ describe('/health is a cache-invalidation EPOCH, never a per-operation claim', (
     // 195 -> 196 (Changes screen Phase 1): execution.gitStage is a v1,
     // non-reserved row, so it joins this population too. MEASURED.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is v1 and non-reserved. MEASURED.
-    expect(rows).toHaveLength(210); // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills.* rows (2026-09-23, #647 + #649); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(rows).toHaveLength(220); // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +9 skills.* rows (2026-09-23, #647 + #649); +1 launch.suggest (Jev lane F). MEASURED.
   });
 
   it('the implementation epoch key is distinctly prefixed and cannot read as a capabilityEpoch', () => {
