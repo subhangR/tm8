@@ -23,11 +23,26 @@
  *    that cannot be saved — the refusal is loud here precisely because the
  *    database's is a sentence the user would otherwise never see.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 
 import { entityPatchInput, type AuthoringCommands } from '../../authoring/commands';
-import { drawingPatch, hasEmbeddedImages, sceneOf, sceneSignature } from './drawing-scene';
+import {
+  canvasClaimsEscape,
+  drawingPatch,
+  hasEmbeddedImages,
+  sceneOf,
+  sceneSignature,
+} from './drawing-scene';
 
 /* The block's own sheet travels WITH the component, the way `MachineBody`'s
    does. Leaving it to the `panels/` barrel would mean a deep-path import of
@@ -88,6 +103,21 @@ export function DrawingBlock({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [save, setSave] = useState<SaveState>({ phase: 'clean' });
   const [images, setImages] = useState(false);
+  /*
+   * FULLSCREEN IS A CSS STATE, the artifact viewer's exactly: the same element,
+   * pinned over the app with its own bar. Not `requestFullscreen` — that is
+   * the browser's exit path, drops out on a tab switch, and needs a user
+   * gesture.
+   *
+   * AN EMPTY CANVAS OPENS FULLSCREEN — "+ New drawing" lands where drawing
+   * happens, not in a 440px strip. Only the INITIAL value: once the block is
+   * mounted the user decides, so leaving fullscreen on a still-empty canvas,
+   * or the save that follows the first stroke, never bounces it back. A
+   * read-only empty scene has nothing to draw, so it stays in the panel.
+   */
+  const [fullscreen, setFullscreen] = useState(() => editable && scene.elements.length === 0);
+  /** The canvas's state as of its last render — what Escape is judged against. */
+  const appStateRef = useRef<unknown>(null);
 
   /*
    * Re-point at a DIFFERENT entity. Not at every `detail` change: a save
@@ -138,6 +168,7 @@ export function DrawingBlock({
   }, [commands, detail.id, onSaved]);
 
   const onChange = useCallback((elements: readonly unknown[], appState: unknown) => {
+    appStateRef.current = appState;
     const embedded = hasEmbeddedImages(elements, {});
     setImages((was) => (was === embedded ? was : embedded));
     // Phase 1: an image cannot be saved, so do not schedule a write that is
@@ -151,12 +182,55 @@ export function DrawingBlock({
     timerRef.current = setTimeout(() => { void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
   }, [commit, editable]);
 
+  /*
+   * ESC LEAVES FULLSCREEN — unless the canvas has a use for it. Three handlers
+   * want Esc: Excalidraw's (leave text editing, drop a tool, close a popup),
+   * this one, and the host's document-level panel-stack pop (EntityView). One
+   * press does one thing:
+   *
+   * - CAPTURE phase, on the section. Excalidraw claims every Escape pressed in
+   *   its container — idle ones too — and stops it there, so a listener that
+   *   waits for the bubble never hears it (see `canvasClaimsEscape`). Capture
+   *   runs first, so it asks instead of waiting.
+   * - the canvas keeps a press it has a use for: pressed inside Excalidraw
+   *   while it is drawing, typing or showing a popup, this handler stands back.
+   *   Pressed anywhere else in the block — the bar, the notice — it is ours.
+   * - a press something above already consumed (`defaultPrevented`: the
+   *   app's modal layer) is not ours.
+   * - a press that exits calls `preventDefault`, which is exactly what the
+   *   host's handler checks — so one Esc never also pops the panel.
+   */
+  const onKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!fullscreen || event.key !== 'Escape' || event.defaultPrevented) return;
+    const inCanvas = event.target instanceof Element && event.target.closest('.excalidraw') !== null;
+    if (inCanvas && canvasClaimsEscape(appStateRef.current)) return;
+    event.preventDefault();
+    setFullscreen(false);
+  }, [fullscreen]);
+
   return (
-    <section className="drw" data-testid="drawing-block" aria-label={`Drawing ${detail.title ?? ''}`}>
+    <section
+      className={`drw${fullscreen ? ' drw--fullscreen' : ''}`}
+      data-testid="drawing-block"
+      aria-label={`Drawing ${detail.title ?? ''}`}
+      onKeyDownCapture={onKeyDownCapture}
+    >
       <header className="drw__bar">
         <span className="drw__status" role="status" data-testid="drawing-status">
           {statusText(save, editable)}
         </span>
+        {/* Rides into fullscreen with the element that goes fullscreen, and
+            stays visible there: Esc is the fast way out, this is the sure one. */}
+        <button
+          type="button"
+          className="pn-btn pn-btn--mark"
+          aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          aria-pressed={fullscreen}
+          onClick={() => setFullscreen((f) => !f)}
+        >
+          <span aria-hidden>{fullscreen ? '⛶̸' : '⛶'}</span>
+        </button>
       </header>
 
       {images ? (
@@ -166,7 +240,10 @@ export function DrawingBlock({
         </p>
       ) : null}
 
-      <div className="drw__stage">
+      {/* The canvas binds single keys to tools (`t` text, `r` rectangle, `/`…),
+          so it tells the app's keyboard to stand back: plain keys reach
+          Excalidraw, Mod-chords still reach the app. */}
+      <div className="drw__stage" data-owns-keys="canvas">
         <Suspense fallback={<p className="drw__loading" role="status">Loading the canvas…</p>}>
           <ExcalidrawCanvas
             initialData={{

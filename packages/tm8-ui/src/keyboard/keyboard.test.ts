@@ -161,6 +161,71 @@ describe('layer 4 — text entry kills every plain key', () => {
   });
 });
 
+/*
+ * The SECOND ENTRANCE to layer 4: a surface that binds plain keys of its own
+ * (a drawing canvas, marked `[data-owns-keys]`). Each case names the defect it
+ * stops — on a canvas `g` then `t` was Excalidraw's text tool AND tm8's Tasks
+ * chord at once, and the chord won by navigating away from the drawing.
+ */
+describe('layer 4 — a surface that owns its keys', () => {
+  it('does not consume `g` and opens no chord', () => {
+    const { c, commands } = controller({ surfaceOwnsKeys: true });
+    const result = c.handle(key({ key: CHORD_LEAD }));
+    expect(result.consumed).toBe(false);
+    expect(result.reason).toBe('surface-owns-keys');
+    expect(c.chordLead()).toBeNull();
+    expect(commands).toEqual([]);
+  });
+
+  it('`g` then `t` emits no navigation — the canvas gets its text tool', () => {
+    const { c, commands } = controller({ surfaceOwnsKeys: true });
+    c.handle(key({ key: CHORD_LEAD }));
+    const result = c.handle(key({ key: 't' }));
+    expect(result.consumed).toBe(false);
+    expect(commands.filter((x) => x.command.startsWith('nav.'))).toEqual([]);
+  });
+
+  it('closes a chord opened OUTSIDE the canvas before its second key lands inside', () => {
+    const { c, commands } = controller();
+    c.handle(key({ key: CHORD_LEAD }));
+    expect(c.chordLead()).toBe(CHORD_LEAD);
+    c.setContext({ surfaceOwnsKeys: true });
+    c.handle(key({ key: 't' }));
+    expect(commands).toEqual([]);
+    expect(c.chordLead()).toBeNull();
+  });
+
+  it('plain `/` does not open the palette over the canvas', () => {
+    const { c, commands } = controller({ surfaceOwnsKeys: true });
+    expect(c.handle(key({ key: '/', code: 'Slash' })).consumed).toBe(false);
+    expect(commands).toEqual([]);
+  });
+
+  it('Mod+K still opens the palette', () => {
+    const { c, commands } = controller({ surfaceOwnsKeys: true });
+    expect(c.handle(key({ key: 'k', metaKey: true })).consumed).toBe(true);
+    expect(commands).toEqual([{ command: 'palette.open', ref: undefined }]);
+  });
+
+  it('leaves Esc to the surface — no `text.blur`, not consumed', () => {
+    // A canvas's Esc is its own (deselect, then leave fullscreen). Consuming
+    // it here would stop both from ever seeing it.
+    const { c, commands } = controller({ surfaceOwnsKeys: true, focusScope: true });
+    const result = c.handle(key({ key: 'Escape', code: 'Escape' }));
+    expect(result.consumed).toBe(false);
+    expect(commands).toEqual([]);
+  });
+
+  it('a text field inside such a surface is still a text field', () => {
+    // Excalidraw's own text editor is a textarea inside the stage.
+    const { c, commands } = controller({ surfaceOwnsKeys: true, textEntry: true });
+    const result = c.handle(key({ key: 'Escape', code: 'Escape' }));
+    expect(result.consumed).toBe(true);
+    expect(commands).toEqual([{ command: 'text.blur', ref: undefined }]);
+    expect(c.handle(key({ key: 'j' })).reason).toBe('dead-in-text-entry');
+  });
+});
+
 describe('layer 5 — list and panel bindings', () => {
   const rows: [string, KeyInput, string][] = [
     ['j', key({ key: 'j' }), 'list.next'],

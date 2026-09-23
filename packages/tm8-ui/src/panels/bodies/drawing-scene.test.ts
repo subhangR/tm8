@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PERSISTED_APP_STATE_KEYS,
+  canvasClaimsEscape,
   drawingPatch,
   hasEmbeddedImages,
   persistableAppState,
@@ -202,5 +203,43 @@ describe('sceneOf — reading a drawing out of entity content', () => {
 
   it('keeps a FORMAT it does not know — a second canvas format costs no UI change', () => {
     expect(sceneOf({ format: 'tldraw-ish' }).format).toBe('tldraw-ish');
+  });
+});
+
+describe('canvasClaimsEscape — whose Escape a press is', () => {
+  const idle = { activeTool: { type: 'selection' }, selectedElementIds: {}, editingTextElement: null, openPopup: null };
+
+  it('an idle canvas has no use for Escape — the block may spend it', () => {
+    expect(canvasClaimsEscape(idle)).toBe(false);
+  });
+
+  it('a SELECTION does not claim it — Excalidraw 0.18.1 does not deselect on Escape', () => {
+    // Claiming it would make fullscreen impossible to leave by key with
+    // anything selected, since no number of presses clears the selection.
+    expect(canvasClaimsEscape({ ...idle, selectedElementIds: { a: true } })).toBe(false);
+  });
+
+  it('a non-selection tool claims it — Escape drops the tool', () => {
+    expect(canvasClaimsEscape({ ...idle, activeTool: { type: 'rectangle' } })).toBe(true);
+  });
+
+  it.each([
+    ['editingTextElement', { id: 't' }],
+    ['newElement', { id: 'n' }],
+    ['multiElement', { id: 'm' }],
+    ['editingLinearElement', { elementId: 'l' }],
+    ['croppingElementId', 'img'],
+    ['contextMenu', { items: [] }],
+    ['openMenu', 'canvas'],
+    ['openPopup', 'elementStroke'],
+    ['openDialog', { name: 'help' }],
+    ['openSidebar', { name: 'default' }],
+  ])('%s claims it — Escape finishes or closes it', (key, value) => {
+    expect(canvasClaimsEscape({ ...idle, [key]: value })).toBe(true);
+  });
+
+  it('knows nothing before the first onChange, and claims nothing', () => {
+    expect(canvasClaimsEscape(null)).toBe(false);
+    expect(canvasClaimsEscape(undefined)).toBe(false);
   });
 });

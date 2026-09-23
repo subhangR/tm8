@@ -157,6 +157,48 @@ export function drawingPatch(
   };
 }
 
+/**
+ * The appState members that mean an Escape press is the CANVAS'S to spend:
+ * Excalidraw's Escape finishes or closes each of these. Each is `null`/`false`
+ * when idle.
+ */
+const ESCAPE_OWNERS: readonly string[] = Object.freeze([
+  'editingTextElement',
+  'newElement',
+  'multiElement',
+  'editingLinearElement',
+  'croppingElementId',
+  'contextMenu',
+  'openMenu',
+  'openPopup',
+  'openDialog',
+  'openSidebar',
+]);
+
+/**
+ * True when Escape, pressed on the canvas now, would change something IN the
+ * canvas — so the block must not spend that press leaving fullscreen.
+ *
+ * WHY THE BLOCK HAS TO ASK. Excalidraw 0.18.1 claims every Escape pressed in
+ * its container, including an idle one: its `finalize` action's key test
+ * matches Escape whenever nothing is being drawn, and the action manager then
+ * calls `preventDefault` and `stopPropagation`. So `defaultPrevented` cannot
+ * tell "Excalidraw used this press" from "Excalidraw had nothing to do", and a
+ * listener behind it never sees the press at all. The block asks first, in
+ * the capture phase, from the last appState `onChange` delivered.
+ *
+ * A SELECTION IS NOT HERE. Measured in the browser: Escape does not deselect
+ * in 0.18.1 (the selection survives any number of presses), so holding one
+ * back would make fullscreen impossible to leave by key with anything
+ * selected. A non-selection TOOL is here: Escape drops it back to selection.
+ */
+export function canvasClaimsEscape(appState: unknown): boolean {
+  if (!isRecord(appState)) return false;
+  const tool = appState.activeTool;
+  if (isRecord(tool) && tool.type !== undefined && tool.type !== 'selection') return true;
+  return ESCAPE_OWNERS.some((key) => Boolean(appState[key]));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
