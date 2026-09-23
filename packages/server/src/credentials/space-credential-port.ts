@@ -16,6 +16,7 @@
 import { join } from 'node:path';
 
 import { CollabError } from '@tm8/contract';
+import { SpawnError } from '@tm8/execution';
 import type {
   GraphAuth,
   SpaceCredentialPolicies,
@@ -64,11 +65,25 @@ export class DbSpaceCredentialPort implements SpaceCredentialPort {
 
   async readPolicies(auth: GraphAuth, spaceId: string): Promise<SpaceCredentialPolicies> {
     const claims = auth as DbClaims;
-    const [space, node] = await Promise.all([
-      this.store.readSpacePolicy(claims, spaceId),
-      this.store.readNodePolicy(claims),
-    ]);
-    return { space, node };
+    try {
+      const [space, node] = await Promise.all([
+        this.store.readSpacePolicy(claims, spaceId),
+        this.store.readNodePolicy(claims),
+      ]);
+      return { space, node };
+    } catch (error) {
+      // 206 reads the space policy only for a member. A non-member is a
+      // refusal with a reason, not an unanswerable question to retry.
+      if (error instanceof CollabError && error.details?.sqlstate === '42501') {
+        throw new SpawnError(
+          'you are not a member of this space, so you cannot launch or resume a session on its ' +
+            'credentials — ask a space admin to add you',
+          'forbidden',
+          { spaceId },
+        );
+      }
+      throw error;
+    }
   }
 
   async read(

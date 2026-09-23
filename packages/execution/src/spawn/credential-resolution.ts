@@ -143,6 +143,8 @@ async function readPolicies(
   try {
     return await deps.spaceCredentials.readPolicies(auth, spaceId);
   } catch (error) {
+    // A refusal the port already phrased (the caller is not a member).
+    if (error instanceof SpawnError) throw error;
     // M8c. A policy that cannot be read is not a permissive policy.
     throw new SpawnError(
       "could not read this space's credential policy, so the launch is refused rather than " +

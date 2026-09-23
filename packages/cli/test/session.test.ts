@@ -333,6 +333,53 @@ describe('session spawn', () => {
     expect(seen).toEqual([]);
   });
 
+  it('carries --credential-source provider=space and provider=space:<id> (SC-2 t2-5)', async () => {
+    const PIN = 'cccccccc-0000-4000-8000-000000000001';
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE,
+      '--credential-source', 'anthropic=space',
+      '--credential-source', `github=space:${PIN}`,
+      '--credential-source', 'openai=node',
+    ]);
+    expect(r.code).toBe(0);
+    const b = body();
+    expect(b.credentialSources).toEqual({ anthropic: 'space', github: 'space', openai: 'node' });
+    expect(b.spaceCredentialIds).toEqual({ github: PIN });
+    expect(b.credentialSource).toBeUndefined();
+  });
+
+  it('carries a bare --credential-source space as the all-provider scalar', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--credential-source', 'space',
+    ]);
+    expect(r.code).toBe(0);
+    expect(body().credentialSource).toBe('space');
+    expect(body().spaceCredentialIds).toBeUndefined();
+  });
+
+  it('refuses a malformed --credential-source before any request', async () => {
+    const ACCOUNT = 'dddddddd-0000-4000-8000-000000000001';
+    for (const [raw, says] of [
+      [`anthropic=member:${ACCOUNT}`, 'only a space credential can be pinned'],
+      [`anthropic=node:${ACCOUNT}`, 'only a space credential can be pinned'],
+      ['anthropic=space:not-an-id', 'not a space credential id'],
+      [`gemini=space:${ACCOUNT}`, 'unknown provider'],
+      [ACCOUNT, 'got'],
+      ['anthropic=another-member', 'got'],
+    ] as const) {
+      const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--credential-source', raw]);
+      expect(r.code, raw).toBe(2);
+      expect(r.stderr, raw).toContain(says);
+    }
+    const twice = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE,
+      '--credential-source', 'anthropic=space', '--credential-source', 'anthropic=node',
+    ]);
+    expect(twice.code).toBe(2);
+    expect(twice.stderr).toContain('names anthropic twice');
+    expect(seen).toEqual([]);
+  });
+
   it('refuses an access mode outside the closed set', async () => {
     const r = await drive([
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--access-mode', 'yolo',
