@@ -816,6 +816,10 @@ describe('linkCreatedInSession — the best-effort created_in claim', () => {
     return (detail.connections?.outgoing ?? []).map((g) => g.type);
   };
 
+  // These probes read `.entity.id` off the FULL result, so they pass `--full`
+  // (receipts spec 01a0cf2e §8.4): a non-agent json caller otherwise also gets
+  // the one-line receipt deprecation notice on stderr, which is not this
+  // suite's subject.
   const createdId = (stdout: string): string => {
     const dto = JSON.parse(stdout) as { entity?: { id?: string } };
     const id = dto.entity?.id ?? '';
@@ -825,7 +829,7 @@ describe('linkCreatedInSession — the best-effort created_in claim', () => {
 
   it('a leaked session id (valid UUID, unknown here) is swallowed: exit 0, EMPTY stderr, no edge', async () => {
     const made = await cli(
-      ['entity', 'create', 'doc', 'silent link probe', '--space', spaceId, '--format', 'json'],
+      ['entity', 'create', 'doc', 'silent link probe', '--space', spaceId, '--format', 'json', '--full'],
       server,
       { TM8_SESSION_ID: FOREIGN_SESSION },
     );
@@ -839,7 +843,7 @@ describe('linkCreatedInSession — the best-effort created_in claim', () => {
     // Without the client-side shape check the server answers 22P02 → the same
     // not_found the benign case swallows, and the misconfiguration is invisible.
     const made = await cli(
-      ['entity', 'create', 'doc', 'malformed link probe', '--space', spaceId, '--format', 'json'],
+      ['entity', 'create', 'doc', 'malformed link probe', '--space', spaceId, '--format', 'json', '--full'],
       server,
       { TM8_SESSION_ID: 'not-a-uuid' },
     );
@@ -850,7 +854,7 @@ describe('linkCreatedInSession — the best-effort created_in claim', () => {
 
   it('--no-session-link skips the claim: exit 0, empty stderr, no edge', async () => {
     const made = await cli(
-      ['entity', 'create', 'doc', 'opt-out probe', '--space', spaceId, '--no-session-link', '--format', 'json'],
+      ['entity', 'create', 'doc', 'opt-out probe', '--space', spaceId, '--no-session-link', '--format', 'json', '--full'],
       server,
       { TM8_SESSION_ID: FOREIGN_SESSION },
     );

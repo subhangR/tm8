@@ -95,8 +95,10 @@ async function tm8(argv: readonly string[]): Promise<{ code: number; stdout: str
   return await cli([...argv], server, { TM8_SPACE_ID: spaceId });
 }
 
+// `--full`: this reads full results (`.entity.id` off `entity create`), which
+// the receipts change (spec 01a0cf2e §8.4) keeps behind that one flag.
 async function tm8Json<T>(argv: readonly string[]): Promise<{ code: number; data: T; stderr: string }> {
-  const r = await tm8([...argv, '--format', 'json']);
+  const r = await tm8([...argv, '--format', 'json', '--full']);
   return {
     code: r.code,
     stderr: r.stderr,

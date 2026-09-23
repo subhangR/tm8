@@ -236,7 +236,8 @@ const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--quiet', summary: 'silence notes on stderr; warnings and errors are never silenced' },
   { option: '--fresh', summary: 'bypass the session read-cache and re-fetch from the Server' },
   { option: '--terse', summary: 'project entity summaries to their work fields under json/jsonl; full envelope stays one flag away' },
-  { option: '--full', summary: 'render complete envelopes; defeats --terse wherever it came from' },
+  // The one place `tm8 help` documents receipt expansion (spec 01a0cf2e §6).
+  { option: '--full', summary: 'render complete envelopes; defeats --terse; on write receipts prints the full result (state after a write: tm8 entity context <id>)' },
 ];
 
 export function rootHelp(opts: ShardOptions = {}): RootHelp {

@@ -352,7 +352,7 @@ describe('message send and message list against the real Server', () => {
     const mutationId = uuidv7();
     const r = await drive([
       'message', 'send', '--to', anchorId, 'first durable message',
-      '--mutation-id', mutationId, '--format', 'json',
+      '--mutation-id', mutationId, '--format', 'json', '--full',
     ]);
     // eslint-disable-next-line no-console
     console.log(`[g5] message send -> ${r.code} (${commandMode})\n${r.stderr}`);
@@ -570,7 +570,7 @@ describe('message send and message list against the real Server', () => {
     const expected: string[] = [];
     for (const body of ['p1', 'p2', 'p3', 'p4', 'p5']) {
       const sent = await drive([
-        'message', 'send', '--to', pagingAnchor, body, '--mutation-id', uuidv7(), '--format', 'json',
+        'message', 'send', '--to', pagingAnchor, body, '--mutation-id', uuidv7(), '--format', 'json', '--full',
       ]);
       expect(sent.code).toBe(0);
       expected.push(String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id));
@@ -630,7 +630,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
     const mutationId = uuidv7();
     const argv = [
       'message', 'send', '--to', anchorId, 'settled probe',
-      '--wait', 'settled', '--timeout', '5', '--mutation-id', mutationId, '--format', 'json',
+      '--wait', 'settled', '--timeout', '5', '--mutation-id', mutationId, '--format', 'json', '--full',
     ];
     const r = await drive(argv);
     // eslint-disable-next-line no-console
@@ -679,7 +679,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
    */
   it('reads the real delivery DTO with the exact fields the settle loop consumes', async () => {
     const sent = await drive([
-      'message', 'send', '--to', anchorId, 'delivery dto probe', '--mutation-id', uuidv7(), '--format', 'json',
+      'message', 'send', '--to', anchorId, 'delivery dto probe', '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const messageId = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
@@ -746,7 +746,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
    */
   it('a real failed_retryable delivery arrives SETTLED on the wire, stamp and all', async () => {
     const sent = await drive([
-      'message', 'send', '--to', anchorId, 'retryable settlement probe', '--mutation-id', uuidv7(), '--format', 'json',
+      'message', 'send', '--to', anchorId, 'retryable settlement probe', '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const messageId = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
@@ -812,7 +812,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
     const mutationId = uuidv7();
     const r = await drive([
       'message', 'send', '--to', workSessionId, 'wake probe',
-      '--wait', 'settled', '--timeout', '5', '--mutation-id', mutationId, '--format', 'json',
+      '--wait', 'settled', '--timeout', '5', '--mutation-id', mutationId, '--format', 'json', '--full',
     ]);
     // eslint-disable-next-line no-console
     console.log(`[g5][O1-trigger] exit=${r.code} mode=${commandMode}\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
@@ -864,7 +864,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
 describe('the remaining owned rows answer for real', () => {
   it('edits and then redacts a message under a version guard', async () => {
     const sent = await drive([
-      'message', 'send', '--to', anchorId, 'to be edited', '--mutation-id', uuidv7(), '--format', 'json',
+      'message', 'send', '--to', anchorId, 'to be edited', '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const id = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
@@ -917,7 +917,7 @@ describe('the remaining owned rows answer for real', () => {
 describe('coverage closure for the rows that were otherwise unit-only', () => {
   it('messages.delete: redacts a real message under a real version guard', async () => {
     const sent = await drive([
-      'message', 'send', '--to', anchorId, 'to be redacted', '--mutation-id', uuidv7(), '--format', 'json',
+      'message', 'send', '--to', anchorId, 'to be redacted', '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const id = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
@@ -969,7 +969,7 @@ describe('coverage closure for the rows that were otherwise unit-only', () => {
 
     const sent = await drive([
       'message', 'send', '--to', anchorId, 'mentions @owner', '--mention', mentionId,
-      '--mutation-id', uuidv7(), '--format', 'json',
+      '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const id = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
@@ -1009,7 +1009,7 @@ describe('coverage closure for the rows that were otherwise unit-only', () => {
 
   it('messages.attachments.add: records what the Server says about a non-finalized file', async () => {
     const sent = await drive([
-      'message', 'send', '--to', anchorId, 'attachment probe', '--mutation-id', uuidv7(), '--format', 'json',
+      'message', 'send', '--to', anchorId, 'attachment probe', '--mutation-id', uuidv7(), '--format', 'json', '--full',
     ]);
     expect(sent.code).toBe(0);
     const id = String((JSON.parse(sent.stdout) as { messages: { id: string }[] }).messages[0]?.id);
