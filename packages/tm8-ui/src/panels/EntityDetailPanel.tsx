@@ -1297,6 +1297,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                       anchorId={detail.id}
                       rows={paletteRows}
                       linkedIds={new Set(allLinks.map((link) => link.peer.id))}
+                      links={allLinks}
                       search={(kind, text) => port!.search!(kind, text)}
                       link={(row, peer) => port!.link!(
                         row.direction === 'outgoing'

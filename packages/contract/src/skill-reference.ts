@@ -46,6 +46,8 @@ export interface SkippedSkill {
    * - `byte-budget` — the index would have exceeded its byte budget.
    * - `not-selected` — equipped, but left unticked in an `execution.spawn`
    *   `selection` (design 01a0cb80 §5.2).
+   * - `task-name-collision` — equipped on a spawn task, but an earlier task
+   *   skill has the same name (or path); the first in task order won.
    * - `relevance` — legacy: spawn-time Jev trimmed it. No longer written.
    */
   reason: string;

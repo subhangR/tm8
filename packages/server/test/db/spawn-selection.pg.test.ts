@@ -134,6 +134,15 @@ beforeAll(async () => {
     await c.query(`insert into public.documents(entity_id, title) values ($1, 'Gone')`, [ids.deletedDoc]);
     await edge(c, s, ids.deletedDoc, ids.paletteTask, 'attached_to');
     await c.query(`update public.entities set deleted_at = now() where id = $1`, [ids.deletedDoc]);
+
+    // Two DIFFERENT skills sharing one name, both equipped on one task: the
+    // palette can write this, and it must not fail the task's spawns.
+    ids.twinTask = await entity(c, s, 'task');
+    await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Twin task')`, [ids.twinTask]);
+    ids.sTwinA = await skill(c, s, 'twin-skill');
+    ids.sTwinB = await skill(c, s, 'twin-skill');
+    await edge(c, s, ids.twinTask, ids.sTwinA, 'equips');
+    await edge(c, s, ids.twinTask, ids.sTwinB, 'equips');
   });
 }, 300_000);
 
@@ -271,5 +280,30 @@ describe('a task dressed by the attach palette', () => {
     expect(prompt).toContain('Design notes');
     expect(prompt).not.toContain('private run title');
     expect(prompt).not.toContain(ids.mPalette);
+  });
+  it('two same-name skills on the spawn task still spawn: one equipped, the other declared', async () => {
+    const context = await port.loadSpawnContext(claims(), {
+      spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.twinTask!],
+    });
+    const twins = new Set([ids.sTwinA, ids.sTwinB]);
+    const equipped = (context.skillEquips ?? []).filter((row) => twins.has(row.entityId));
+    const skipped = (context.skippedSkills ?? []).filter((row) => twins.has(row.entityId));
+    expect(equipped).toHaveLength(1);
+    expect(skipped).toEqual([expect.objectContaining({ name: 'twin-skill', reason: 'task-name-collision' })]);
+    expect(skipped[0]!.entityId).not.toBe(equipped[0]!.entityId);
+    // The manifest resolves without the ambiguous-skill throw, and says so.
+    const manifest = manifestOf(context);
+    expect(manifest.effectiveSkills!.skipped).toContainEqual(expect.objectContaining({ reason: 'task-name-collision' }));
+
+    // A selection naming BOTH still spawns: the collision is applied after it.
+    const selected = await port.loadSpawnContext(claims(), {
+      spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.twinTask!],
+      selection: { memoryIds: [], skillIds: [ids.sTwinA!, ids.sTwinB!] },
+    });
+    expect(selected.skillEquips?.map((row) => row.entityId)).toEqual([ids.sTwinA]);
+    // (The persona's own skills, left out of this selection, are not-selected as usual.)
+    expect(selected.skippedSkills?.filter((row) => twins.has(row.entityId)))
+      .toEqual([expect.objectContaining({ entityId: ids.sTwinB, reason: 'task-name-collision' })]);
+    expect(() => manifestOf(selected)).not.toThrow();
   });
 });

@@ -24,12 +24,18 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind, type AttachPaletteRow } from '../domain';
+import { titleKey, type PaletteLink } from './palette';
 
 export interface AttachPaletteProps {
   anchorId: string;
   rows: readonly AttachPaletteRow[];
   /** Peers already linked through any row; the picker hides them. */
   linkedIds: ReadonlySet<string>;
+  /**
+   * The links themselves, for a row that declares `titleCollision`: a
+   * candidate titled like one already linked through that row is marked.
+   */
+  links?: readonly PaletteLink[];
   /** Server search: the row's kind, the typed text ('' ⇒ most recent). */
   search(kind: string, text: string): Promise<EntitySummary[]>;
   /** Writes the row's edge between the anchor and `peer`. */
@@ -55,6 +61,7 @@ export function AttachPalette({
   anchorId,
   rows,
   linkedIds,
+  links = [],
   search,
   link,
   createFor,
@@ -92,6 +99,9 @@ export function AttachPalette({
               anchorId={anchorId}
               row={row}
               linkedIds={linkedIds}
+              takenTitles={row.titleCollision
+                ? new Set(links.filter((l) => l.row.kind === row.kind).map((l) => titleKey(l.peer.title)))
+                : undefined}
               search={search}
               link={link}
               create={row.create ? createFor?.(row) : undefined}
@@ -111,6 +121,7 @@ function PalettePicker({
   anchorId,
   row,
   linkedIds,
+  takenTitles,
   search,
   link,
   create,
@@ -119,6 +130,7 @@ function PalettePicker({
   anchorId: string;
   row: AttachPaletteRow;
   linkedIds: ReadonlySet<string>;
+  takenTitles: ReadonlySet<string> | undefined;
   search: AttachPaletteProps['search'];
   link: AttachPaletteProps['link'];
   create: ((title: string) => void | Promise<void>) | undefined;
@@ -251,7 +263,9 @@ function PalettePicker({
         onChange={(event) => setText(event.target.value)}
       />
       <div className="fn-picker__list" id={listId} role="listbox" aria-busy={loading || busy}>
-        {options.map((option, index) => (
+        {options.map((option, index) => {
+          const collides = Boolean(takenTitles?.has(titleKey(option.title)));
+          return (
           <button
             type="button"
             key={option.id}
@@ -260,14 +274,22 @@ function PalettePicker({
             aria-selected={index === active}
             className={index === active ? 'fn-picker__option fn-picker__option--active' : 'fn-picker__option'}
             data-testid="attach-palette-option"
+            data-collides={collides ? 'true' : undefined}
+            title={collides ? row.titleCollision : undefined}
             disabled={busy}
             onMouseEnter={() => setActive(index)}
             onClick={() => pick(option)}
           >
             <KindIcon kind={option.kind} />
             <span className="fn-picker__title">{option.title}</span>
+            {collides ? (
+              <span className="fn-picker__warn" data-testid="attach-palette-collision">
+                {row.titleCollision}
+              </span>
+            ) : null}
           </button>
-        ))}
+          );
+        })}
         {!loading && options.length === 0 && !error ? (
           <p className="fn-picker__empty" data-testid="attach-palette-empty">
             {text.trim() ? `No ${kindWord} titled “${text.trim()}” to link.` : `No ${kindWord} to link yet.`}

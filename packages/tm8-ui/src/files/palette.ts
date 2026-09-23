@@ -16,6 +16,15 @@ export interface PaletteLink {
   peer: EntitySummary;
 }
 
+/**
+ * The title as a collision key: NFC, trimmed, lower-cased. This is the same
+ * name key a spawn uses for skills (execution `skillIdentityKey`, when a skill
+ * has no file path).
+ */
+export function titleKey(title: string): string {
+  return title.normalize('NFC').trim().toLowerCase();
+}
+
 /** Every existing link that matches a palette row: edge type, direction and peer kind. */
 export function paletteLinks(
   detail: EntityDetail,

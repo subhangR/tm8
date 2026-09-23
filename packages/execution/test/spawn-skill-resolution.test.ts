@@ -7,7 +7,7 @@
 // equipped twice, and when there is genuinely nothing to prefer.
 
 import { describe, expect, it } from 'vitest';
-import { resolveSkills, type ResolvedSkillRow } from '../src/spawn/skills.js';
+import { resolveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '../src/spawn/skills.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
@@ -163,5 +163,36 @@ describe('composeManifest — skills', () => {
       ...manifestFixtures(),
     });
     expect(manifest.skills).toEqual([]);
+  });
+});
+
+describe('splitTaskSkillCollisions', () => {
+  it('keeps the first task skill of a name and returns the rest, so resolve never throws', () => {
+    const rows = [
+      row({ entityId: 'task-a', name: 'Review', depth: -1, viaTaskId: 't1' }),
+      row({ entityId: 'task-b', name: ' review ', depth: -1, viaTaskId: 't1' }),
+      row({ entityId: 'task-c', name: 'Deploy', depth: -1, viaTaskId: 't2' }),
+      row({ entityId: 'own', name: 'Own', depth: 0 }),
+    ];
+    const { kept, collided } = splitTaskSkillCollisions(rows);
+    expect(kept.map((r) => r.entityId)).toEqual(['task-a', 'task-c', 'own']);
+    expect(collided.map((r) => r.entityId)).toEqual(['task-b']);
+    expect(() => resolveSkills(kept)).not.toThrow();
+  });
+
+  it('leaves persona rows alone, including the collision the persona path refuses', () => {
+    const persona = [row({ entityId: 'p1', name: 'Review', depth: 0 }), row({ entityId: 'p2', name: 'Review', depth: 0 })];
+    const { kept, collided } = splitTaskSkillCollisions(persona);
+    expect(collided).toEqual([]);
+    expect(() => resolveSkills(kept)).toThrow(/ambiguous skill "Review"/);
+  });
+
+  it('treats a shared file path as one identity, and different paths as two', () => {
+    const { collided } = splitTaskSkillCollisions([
+      row({ entityId: 'a', name: 'Review', depth: -1, sourcePath: '/s/review/SKILL.md' }),
+      row({ entityId: 'b', name: 'Review', depth: -1, sourcePath: '/t/review/SKILL.md' }),
+      row({ entityId: 'c', name: 'Other', depth: -1, sourcePath: '/s/review/SKILL.md' }),
+    ]);
+    expect(collided.map((r) => r.entityId)).toEqual(['c']);
   });
 });

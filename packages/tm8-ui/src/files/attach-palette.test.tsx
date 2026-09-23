@@ -165,6 +165,26 @@ describe('the picker', () => {
     expect(screen.getByTestId('attach-palette-picker')).toBeTruthy();
   });
 
+  it('marks a skill titled like one already equipped, before the pick', async () => {
+    // Different skill, same name key (NFC, trimmed, lower-cased): a Run would
+    // load only the first, so the picker says so here rather than at Run.
+    const search = vi.fn(async (kind: string) => kind === 'skill'
+      ? [summary('sk-2', 'skill', ' Refactor '), summary('sk-3', 'skill', 'deploy')]
+      : [summary('doc-9', kind, 'refactor')]);
+    const links = [{ edgeId: 'e-sk', row: rowOf('skill'), peer: summary('sk-1', 'skill', 'refactor') }];
+    // A doc linked with the same title: a row with no collision rule never marks.
+    const docLink = { edgeId: 'e-doc', row: rowOf('doc'), peer: summary('doc-1', 'doc', 'refactor') };
+    renderPalette({ search, links: [...links, docLink], linkedIds: new Set(['sk-1', 'doc-1']) });
+    fireEvent.click(chip('skill'));
+    const options = await screen.findAllByTestId('attach-palette-option');
+    expect(options.map((o) => o.dataset.collides ?? null)).toEqual(['true', null]);
+    expect(screen.getByTestId('attach-palette-collision').textContent).toBe(rowOf('skill').titleCollision);
+
+    fireEvent.click(chip('doc'));
+    await screen.findAllByTestId('attach-palette-option');
+    expect(screen.queryByTestId('attach-palette-collision')).toBeNull();
+  });
+
   it('offers ＋ New only where the row allows it and the host can do it', async () => {
     const create = vi.fn(async (_title: string) => {});
     const createFor = vi.fn((row: AttachPaletteRow) => (row.kind === 'skill' || row.kind === 'doc' ? create : undefined));

@@ -571,3 +571,13 @@
   cursor: pointer;
 }
 .fn-tile__remove:hover { color: var(--pn-ink); border-color: var(--pn-line-2); }
+/* A candidate whose title collides with one already linked: still pickable,
+   but it says, before the pick, what a Run will do with it. */
+.fn-picker__option[data-collides='true'] { flex-wrap: wrap; }
+.fn-picker__warn {
+  flex: 1 0 100%;
+  padding-left: calc(18px + var(--pn-space-2));
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-wait);
+  white-space: normal;
+}

@@ -811,7 +811,15 @@ const ROWS: readonly KindConfig[] = [
         { kind: 'drawing', label: 'Drawings', edgeType: 'attached_to', direction: 'incoming', create: 'attached' },
         { kind: 'doc', label: 'Docs', edgeType: 'attached_to', direction: 'incoming', create: 'attached' },
         { kind: 'artifact', label: 'Artifacts', edgeType: 'attached_to', direction: 'incoming' },
-        { kind: 'skill', label: 'Skills', edgeType: 'equips', direction: 'outgoing' },
+        {
+          kind: 'skill',
+          label: 'Skills',
+          edgeType: 'equips',
+          direction: 'outgoing',
+          /* A spawn keeps the first of two same-name task skills (name key as
+             in execution's `skillIdentityKey`) and skips the other. */
+          titleCollision: 'A skill with this name is already equipped here. A Run loads only the first one.',
+        },
         // Links, never assigns: an assignee is a task field, not an edge.
         { kind: 'team_member', label: 'Teammates', edgeType: 'relates_to', direction: 'outgoing' },
         // Context for a spawned session, by id only (never a transcript).

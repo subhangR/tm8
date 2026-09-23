@@ -1,7 +1,7 @@
 import { loadSkillEquipment, loadTaskSkillEquipment } from '../skills/equipment.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
-import { computeEffectiveSkills, type ResolvedSkillRow } from '@tm8/execution';
+import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
@@ -517,6 +517,23 @@ export class DbGraphPort implements GraphPort {
           ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
           reason: 'not-selected',
         }));
+      }
+      // Two task skills with one name never fail the spawn: the first in task
+      // order (then name, as the loader sorts) wins and the rest are declared.
+      // Applied AFTER `selection`, so a selection naming both still spawns.
+      const collisions = splitTaskSkillCollisions(skillEquips);
+      if (collisions.collided.length > 0) {
+        skillEquips = collisions.kept;
+        skippedSkills = [
+          ...(skippedSkills ?? []),
+          ...collisions.collided.map((row) => ({
+            entityId: row.entityId,
+            name: row.name,
+            ...(row.contentHash ? { hash: row.contentHash } : {}),
+            ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
+            reason: 'task-name-collision',
+          })),
+        ];
       }
       // Candidates stay untruncated; native scope is resolved with the actual launch later.
       const candidates = computeEffectiveSkills({ agentTool: '', workdir: '/', projectRoot: null, equips: skillEquips });

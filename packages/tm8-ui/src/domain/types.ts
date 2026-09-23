@@ -1254,6 +1254,14 @@ export interface AttachPaletteRow {
    * Absent ⇒ pick-only.
    */
   create?: 'composer' | 'attached';
+  /**
+   * Set when two linked peers of this kind with the same title COLLIDE
+   * downstream. Skills do: a spawn loads only the first of two same-name task
+   * skills and declares the other skipped. The picker marks a candidate whose
+   * normalized title matches one already linked through this row, with this
+   * sentence, so the collision shows at attach time, not only at Run.
+   */
+  titleCollision?: string;
 }
 
 // ---------------------------------------------------------------------------
