@@ -67,6 +67,16 @@ import {
   type CredentialsLoginSessionStartResult,
   type CredentialsStatusView,
   type CredentialsServiceKeyDeleteResult,
+  type CredentialPolicySource,
+  type CredentialsSpaceCreateInput,
+  type CredentialsSpaceDeleteResult,
+  type CredentialsSpaceListView,
+  type CredentialsSpacePolicySetResult,
+  type CredentialsSpacePolicyView,
+  type NodeCredentialPolicyEntry,
+  type NodeCredentialsStatusView,
+  type SpaceCredentialProviderName,
+  type SpaceCredentialView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -463,6 +473,80 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CredentialsServiceKeyDeleteResult>('credentials.serviceKeys.delete', {
         params: { provider },
         body: { clientMutationId: newId('credkeyrm') },
+      });
+    },
+
+    // -- space credentials (`credentials.space.*`, SC-3) ------------------------
+    // The secret travels in exactly two bodies (create, rekey) and in no answer.
+
+    spaceCredentialsList(spaceId: SpaceId): Promise<CredentialsSpaceListView> {
+      return http.call<CredentialsSpaceListView>('credentials.space.list', { params: { spaceId } });
+    },
+
+    spaceCredentialsCreate(
+      spaceId: SpaceId,
+      input: Omit<CredentialsSpaceCreateInput, 'clientMutationId'>,
+    ): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.create', {
+        params: { spaceId },
+        body: { ...input, clientMutationId: newId('spcred') },
+      });
+    },
+
+    spaceCredentialsRekey(credentialId: string, secret: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.rekey', {
+        params: { credentialId },
+        body: { secret, clientMutationId: newId('spcredkey') },
+      });
+    },
+
+    spaceCredentialsRename(credentialId: string, label: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.rename', {
+        params: { credentialId },
+        body: { label, clientMutationId: newId('spcredname') },
+      });
+    },
+
+    spaceCredentialsSetDefault(credentialId: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.setDefault', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcreddef') },
+      });
+    },
+
+    spaceCredentialsDelete(credentialId: string): Promise<CredentialsSpaceDeleteResult> {
+      return http.call<CredentialsSpaceDeleteResult>('credentials.space.delete', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredrm') },
+      });
+    },
+
+    spaceCredentialsPolicy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView> {
+      return http.call<CredentialsSpacePolicyView>('credentials.space.policy.get', { params: { spaceId } });
+    },
+
+    spaceCredentialsSetPolicy(
+      spaceId: SpaceId,
+      provider: SpaceCredentialProviderName,
+      allowedSources: CredentialPolicySource[] | null,
+    ): Promise<CredentialsSpacePolicySetResult> {
+      return http.call<CredentialsSpacePolicySetResult>('credentials.space.policy.set', {
+        params: { spaceId, provider },
+        body: { allowedSources, clientMutationId: newId('spcredpol') },
+      });
+    },
+
+    nodeCredentialsStatus(): Promise<NodeCredentialsStatusView> {
+      return http.call<NodeCredentialsStatusView>('node.credentials.status');
+    },
+
+    nodeCredentialsSetPolicy(
+      provider: SpaceCredentialProviderName,
+      allowNode: boolean | null,
+    ): Promise<NodeCredentialPolicyEntry> {
+      return http.call<NodeCredentialPolicyEntry>('node.credentials.policy.set', {
+        params: { provider },
+        body: { allowNode, clientMutationId: newId('nodecredpol') },
       });
     },
 

@@ -83,7 +83,7 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
@@ -91,8 +91,11 @@ import { nodeKeyOf } from '../data/launch-cache';
 import {
   CredentialsSection,
   CredentialsSetupDialog,
+  NodeCredentialsSection,
+  SpaceCredentialsSection,
   credentialSetupState,
   credentialsPortFromSeam,
+  spaceCredentialsPortFromSeam,
   serviceKeysPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
@@ -1520,6 +1523,12 @@ export function GateApp(props: GateAppProps = {}) {
   // Service keys (TypeSafe, for ✦ Ask Jev) ride the same section; account-
   // scoped, so no space is bound.
   const serviceKeysPort = useMemo(() => serviceKeysPortFromSeam(data.seam), [data.seam]);
+  // SC-5: the space's own credentials and the node's fallback policy. One
+  // port for both sections, bound to the same (seam, space) pair.
+  const spaceCredentialsPort = useMemo(
+    () => (data.spaceId ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef()) : null),
+    [data.seam, data.spaceId],
+  );
 
   /* SHOULD THE FLOW OPEN ITSELF? Read ONCE PER `GateApp` MOUNT — which is
      keyed on `activeServer.id`, so a server switch re-asks and a SPACE switch
@@ -2456,8 +2465,14 @@ export function GateApp(props: GateAppProps = {}) {
                  event will do it. */
               onAxesChanged={data.refreshTaskAxes}
               sections={
-                credentialsPort || branchesPort
+                credentialsPort || branchesPort || spaceCredentialsPort
                   ? {
+                      ...(spaceCredentialsPort
+                        ? {
+                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} />,
+                            'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
+                          }
+                        : {}),
                       ...(branchesPort
                         ? { projects: <ProjectBranchesSection port={branchesPort} /> }
                         : {}),

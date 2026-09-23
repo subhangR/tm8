@@ -255,6 +255,13 @@ const LIVE_VERBS = [
   // Members & roles: the live role select, one per editable row. Named for the
   // person it acts on, so an offender in this sweep says whose row it was.
   /^role for /,
+  // Space credentials and Node credentials (SC-5): the NAV ROWS only, for the
+  // `Agent credentials` reason — `credentials.space.*` and
+  // `node.credentials.*` are real executors on the seam. Both bodies are
+  // owned by `settings-credentials/` and are not injected in this file's
+  // renders; their own controls are held in space-credentials.test.tsx.
+  /^Space credentials$/,
+  /^Node credentials$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

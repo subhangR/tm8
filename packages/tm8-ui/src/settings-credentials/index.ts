@@ -46,3 +46,20 @@ export {
   type DisconnectVerdict,
   type ServiceKeysPort,
 } from './port';
+export {
+  SpaceCredentialsSection,
+  SPACE_LOGIN_STUB_REASON,
+  type SpaceCredentialsSectionProps,
+} from './SpaceCredentialsSection';
+export {
+  NodeCredentialsSection,
+  NODE_POLICY_ADMIN_ONLY,
+  type NodeCredentialsSectionProps,
+} from './NodeCredentialsSection';
+export {
+  spaceCredentialsPortFromSeam,
+  isSpaceAdminRole,
+  type SpaceCredentialsPort,
+  type SpaceCredentialsViewer,
+} from './space-port';
+export * from './space-credentials-model';
