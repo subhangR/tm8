@@ -413,3 +413,21 @@ describe('ops: paged reads carry cursor + limit', () => {
     );
   });
 });
+
+describe('ops: launch.suggest (Jev lane U)', () => {
+  it('POSTs the input as the body to the catalog path, space bound in the URL', async () => {
+    const reply = { runId: 'r', groups: {}, run: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 } };
+    const { ops, f } = harness(reply);
+    const input = {
+      runId: '11111111-1111-4111-8111-111111111111',
+      requestId: '22222222-2222-4222-8222-222222222222',
+      subjectId: '33333333-3333-4333-8333-333333333333',
+      groups: ['model' as const, 'skills' as const],
+    };
+    await expect(ops.jev.suggest('sp-1', input)).resolves.toEqual(reply);
+    expect(f.last().method).toBe('POST');
+    expect(f.last().url).toBe(bindPath('launch.suggest', { spaceId: 'sp-1' }));
+    expect(f.last().url).toBe('/v2/spaces/sp-1/launch/suggest');
+    expect(f.last().body).toMatchObject(input);
+  });
+});
