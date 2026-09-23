@@ -54,6 +54,7 @@ import type { RequestContext } from '../../src/http/types.js';
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
 const SESSION_ID = '00000000-0000-7000-8000-0000000000a1';
 const AGENT_SESSION_ID = '00000000-0000-7000-8000-0000000000b1';
+const SPACE_CREDENTIAL_ID = '00000000-0000-7000-8000-0000000000c1';
 
 // Handler composition intentionally uses the process environment, just like
 // production. Give every existing status/start positive control an executable
@@ -214,6 +215,8 @@ function registryFor(
     // Structurally a launcher for the two seams that use it here.
     launcher: terminals as never,
     dataDir: '/tmp/tm8-credentials-test',
+    // SC-3: never reach a real vendor from a unit suite.
+    probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
   });
   return registry;
 }
@@ -234,12 +237,28 @@ function bodyFor(opName: OperationName): unknown {
   if (opName === 'credentials.loginSessions.start') {
     return { spaceId: SPACE_ID, provider: 'anthropic' };
   }
+  // SC-3: the space-credential commands re-parse their bodies, so each gets
+  // one that its schema accepts — the positive control must reach the service.
+  if (opName === 'credentials.space.create') {
+    return { provider: 'anthropic', shape: 'api_key', label: 'Team key', secret: 'sk-test-positive-control' };
+  }
+  if (opName === 'credentials.space.rekey') return { secret: 'sk-test-positive-control' };
+  if (opName === 'credentials.space.rename') return { label: 'Renamed' };
+  if (opName === 'credentials.space.policy.set') return { allowedSources: ['space'] };
+  if (opName === 'node.credentials.policy.set') return { allowNode: false };
   return {};
 }
 
 function paramsFor(opName: OperationName): Record<string, string> {
   if (opName === 'credentials.delete') return { provider: 'anthropic' };
   if (opName === 'credentials.loginSessions.finish') return { id: SESSION_ID };
+  if (opName.startsWith('credentials.serviceKeys.')) return { provider: 'anthropic' };
+  if (opName === 'credentials.space.policy.set' || opName === 'node.credentials.policy.set') {
+    return { spaceId: SPACE_ID, provider: 'anthropic' };
+  }
+  if (opName.startsWith('credentials.space.')) {
+    return { spaceId: SPACE_ID, credentialId: SPACE_CREDENTIAL_ID };
+  }
   return {};
 }
 
@@ -260,6 +279,16 @@ describe('the four credential operations exist in the contract', () => {
       'GET /v2/identity/credentials/service-keys',
       'PUT /v2/identity/credentials/service-keys/:provider',
       'DELETE /v2/identity/credentials/service-keys/:provider',
+      // SC-3: space credentials — keyed by space for list/create/policy, by
+      // credential id for the per-credential commands.
+      'GET /v2/spaces/:spaceId/credentials',
+      'POST /v2/spaces/:spaceId/credentials',
+      'PUT /v2/space-credentials/:credentialId/secret',
+      'POST /v2/space-credentials/:credentialId/default',
+      'PATCH /v2/space-credentials/:credentialId',
+      'DELETE /v2/space-credentials/:credentialId',
+      'GET /v2/spaces/:spaceId/credential-policy',
+      'PUT /v2/spaces/:spaceId/credential-policy/:provider',
     ]);
   });
 
@@ -279,7 +308,9 @@ describe('the four credential operations exist in the contract', () => {
    */
   it('EVERY credentials.* operation in the catalog is mounted — no row left behind', () => {
     const registry = registryFor(new FakeDb());
-    const inCatalog = OPERATIONS.map((op) => op.name).filter((n) => n.startsWith('credentials.'));
+    // SC-3: `node.credentials.*` (node admin) mounts in the same guarded seam.
+    const inCatalog = OPERATIONS.map((op) => op.name)
+      .filter((n) => n.startsWith('credentials.') || n.startsWith('node.credentials.'));
 
     expect(CREDENTIAL_OPERATIONS).toEqual(inCatalog);
     for (const name of inCatalog) {

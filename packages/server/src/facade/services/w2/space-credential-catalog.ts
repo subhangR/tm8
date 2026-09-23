@@ -104,15 +104,18 @@ export class SpaceCredentialCatalogService {
     input: { provider: SpaceCredentialProviderName; shape: 'api_key' | 'token'; label: string; secret: string },
   ): Promise<SpaceCredentialView> {
     const displayLogin = await this.probeOrRefuse(input.provider, input.secret);
-    const created = await this.store.create(claims, {
-      spaceId,
-      provider: input.provider,
-      shape: input.shape,
-      label: input.label,
-      secret: input.secret,
-      displayLogin,
-    });
-    return viewOf(created);
+    try {
+      return viewOf(await this.store.create(claims, {
+        spaceId,
+        provider: input.provider,
+        shape: input.shape,
+        label: input.label,
+        secret: input.secret,
+        displayLogin,
+      }));
+    } catch (error) {
+      throw storeError(error);
+    }
   }
 
   /**
@@ -331,6 +334,10 @@ function notFound(): CollabError {
 function storeError(error: unknown): unknown {
   if (error instanceof CollabError) return error;
   if (error instanceof Error && error.message === 'space credential not found') return notFound();
+  // Neither the value nor its length is in the store's message; none here.
+  if (error instanceof Error && error.message === 'credential is too short') {
+    return new CollabError('invalid_input', 'the key is too short to be a credential; nothing was stored');
+  }
   return error;
 }
 

@@ -38,6 +38,7 @@ import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/ser
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { jevAdvisorForKey } from './jev/jev-adapter.js';
 import { createJevAdvisorResolver } from './jev/advisor.js';
+import type { SpaceCredentialProbe } from './credentials/space-credential-probe.js';
 import { DbServiceKeyStore } from './credentials/service-key-store.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
@@ -127,6 +128,12 @@ export interface BootstrapOptions {
    * empty registry is the current acceptance criterion rather than a gap.
    */
   readonly registry?: HandlerRegistry;
+  /**
+   * The vendor probe `credentials.space.create`/`rekey` run before storing a
+   * pasted key (SC-3, I6). Absent means the real vendor probe. A harness passes
+   * a deterministic one so a test run never calls a vendor over the network.
+   */
+  readonly spaceCredentialProbe?: SpaceCredentialProbe;
 }
 
 export interface BootstrappedServer {
@@ -329,7 +336,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * Absent, they are simply not mounted — the honest degraded mode.
    */
   const credentials = execution
-    ? { launcher: new CredentialSessionLauncher({ pty: execution.pty }), dataDir }
+    ? {
+        launcher: new CredentialSessionLauncher({ pty: execution.pty }),
+        dataDir,
+        ...(opts.spaceCredentialProbe ? { probeSpaceCredential: opts.spaceCredentialProbe } : {}),
+      }
     : undefined;
 
   if (db) {
