@@ -27,7 +27,8 @@ export function JevModelHint({ state, label, refusal, applied, onApply, onRetry,
   return (
     <div className="jev-hint" data-testid="jev-model-hint">
       <span className="jev-hint__line">
-        <span className="jev-mark">✦ Jev:</span>{' '}
+        {/* The strip already leads with ✦ Jev; saying it twice in one line is noise. */}
+        {compact ? null : <><span className="jev-mark">✦ Jev:</span>{' '}</>}
         <span className="jev-hint__value">{label} · {s.effort} · {s.tier}</span>
         <button
           type="button"

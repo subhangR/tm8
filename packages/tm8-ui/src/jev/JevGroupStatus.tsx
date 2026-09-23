@@ -22,16 +22,17 @@ export function JevGroupStatus({ group, state, onRetry }: {
       </p>
     );
   }
+  /* No key is a NODE fact, not a group's: the run bar says it once, inline
+     (design §3.3, "Nothing else changes"), rather than every section at once. */
+  if (state.status === 'failed' && state.reason === 'no_key') return null;
   if (state.status === 'failed') {
     return (
       <p className="jev-status jev-status--failed" role="status" data-testid={`jev-${group}-status`} data-status="failed">
         <span>✦ {FAILURE_WORDS[state.reason]}</span>
         {state.cost.calls > 0 ? <JevCostLine cost={state.cost} /> : null}
-        {state.reason === 'no_key' ? null : (
-          <button type="button" className="jev-link" data-testid={`jev-${group}-retry`} onClick={() => onRetry(group)}>
-            Retry
-          </button>
-        )}
+        <button type="button" className="jev-link" data-testid={`jev-${group}-retry`} onClick={() => onRetry(group)}>
+          Retry
+        </button>
       </p>
     );
   }

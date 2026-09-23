@@ -274,3 +274,14 @@
   letter-spacing: var(--pn-track-label);
   color: var(--pn-ink-3);
 }
+
+/* -- LaunchSheet's footer, now four buttons wide ---------------------------
+
+   Cancel · ✦ Ask Jev · Dispatch · Launch fill a 420px footer on their own, so
+   the capacity statement takes its own line ABOVE them (the order T5-5 asks
+   for: capacity before commitment) instead of being squeezed into a column,
+   and no label is allowed to break mid-word. The phone arrangement already
+   does exactly this in `launch-sheet-mobile.css`. */
+.cv2-root .ls__foot { flex-wrap: wrap; }
+.cv2-root .ls__foot .ls__capacity { flex: 1 0 100%; }
+.cv2-root .ls__foot > button { white-space: nowrap; }

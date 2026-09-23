@@ -32,6 +32,14 @@ export function JevStrip({ jev, roster, selectedTeammateId, onSelectTeammate, mo
   onReview(): void;
 }) {
   if (jev.state === 'idle') return null;
+  if (jev.state === 'unavailable') {
+    return (
+      <div className="jev-strip" data-testid="jev-strip" onClick={(event) => event.stopPropagation()}>
+        <span className="jev-mark">✦ Jev</span>
+        <JevRunBar jev={jev} inline />
+      </div>
+    );
+  }
   const teammates = jev.groups.teammates;
   const top = teammates.status === 'ok'
     ? [...teammates.value.items].sort((a, b) => b.score - a.score)[0]
@@ -85,7 +93,7 @@ export function JevStrip({ jev, roster, selectedTeammateId, onSelectTeammate, mo
           Review
         </button>
       </span>
-      {jev.run ? <JevCostLine run={jev.run} /> : null}
+      {jev.run && jev.run.calls > 0 ? <JevCostLine run={jev.run} /> : null}
       <JevRunBar jev={jev} inline />
     </div>
   );

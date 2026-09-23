@@ -25,7 +25,8 @@ export function JevRunBar({ jev, inline }: { jev: JevSuggestions; /** Inside the
         <span className="jev-runbar__note jev-runbar__note--warn" role="status" data-testid="jev-launch-note">{jev.launchNote}</span>
       ) : null}
       <span className="jev-runbar__spacer" />
-      {jev.run && !inline ? <JevCostLine run={jev.run} /> : null}
+      {/* Zero calls is nothing to report (e.g. no key: nothing was asked). */}
+      {jev.run && jev.run.calls > 0 && !inline ? <JevCostLine run={jev.run} /> : null}
       {jev.jevMode ? (
         <button type="button" className="jev-link" data-testid="jev-reset" onClick={(e) => { e.stopPropagation(); jev.reset(); }}>
           Reset to defaults

@@ -134,6 +134,8 @@ describe('each group lands inside its own section', () => {
     const view = renderSheet({ jev: port });
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
     expect(view.getByTestId('jev-unavailable').textContent).toBe(JEV_UNAVAILABLE_COPY);
+    // Said ONCE, inline — a node fact, not four section failures.
+    expect(view.getAllByText(new RegExp(JEV_UNAVAILABLE_COPY))).toHaveLength(1);
     const config = view.launch();
     expect(config.selection).toBeUndefined();
     expect(config.model).toBe('claude-sonnet-5');

@@ -567,7 +567,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </select>
             </span>
           </label>
-          {jev.groups.model.status !== 'idle' ? (
+          {jev.groups.model.status !== 'idle'
+            && !(jev.groups.model.status === 'failed' && jev.groups.model.reason === 'no_key') ? (
             <div className="ls__row ls__row--inert">
               <span className="ls__rowtext">
                 <JevModelHint
