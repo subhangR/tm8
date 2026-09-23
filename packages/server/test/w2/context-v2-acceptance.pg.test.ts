@@ -9,7 +9,8 @@
  * It runs the REAL `entities.context` handler (the production facade registry)
  * over a REAL PostgreSQL scratch database, as `tm8_app` with claim-bound RLS,
  * against the pinned fixtures in `context-v2/fixtures.ts`. Database work is
- * measured by `context-v2/statement-counter.ts`, never inferred from output.
+ * measured by S2's `context-statement-counter.ts` (the one counter the module
+ * shares), never inferred from output.
  *
  * v2 is requested explicitly with `schema=v2` (the module plan keeps v2 behind
  * `--schema v2` / `schema=v2` until S5 flips the defaults). Tests the product
@@ -41,7 +42,12 @@ import type { ServerConfig } from '../../src/http/config.js';
 import type { RequestContext } from '../../src/http/types.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 import { BODIES, F, IDENTITY, T_ACCEPTANCE, seedContextV2Fixtures } from './context-v2/fixtures.js';
-import { StatementCounter } from './context-v2/statement-counter.js';
+import {
+  UNTAGGED,
+  contextTagOf,
+  countStatements,
+  type StatementCounter,
+} from './context-statement-counter.js';
 
 // ---------------------------------------------------------------------------
 // The v2 contract, as the specs define it (S3 adds the real contract schema)
@@ -124,13 +130,15 @@ const SECTION_KEYS: Record<string, string[]> = {
   assignment: ['assignment', 'acceptance', 'outline'],
 };
 /**
- * Which `entities.context:<tag>`s load which section. S2 names the tags; if it
- * picks different spellings, this map is the one place to change.
+ * Which `entities.context:<tag>`s load which section. S2 (#673) tags: root,
+ * summary, parents, children, edges, messages, activity, seq, actions. The
+ * v2-only tags (assignment, acceptance, blockers, connections) are S3's to add;
+ * if it spells them differently, this map is the one place to change.
  */
 const SECTION_TAGS: Record<string, string[]> = {
   assignment: ['assignment', 'acceptance'],
-  hierarchy: ['hierarchy', 'parents', 'children'],
-  children: ['hierarchy', 'children'],
+  hierarchy: ['parents', 'children'],
+  children: ['children'],
   connections: ['connections', 'edges'],
   messages: ['messages'],
   actions: ['actions'],
@@ -139,13 +147,22 @@ const SECTION_TAGS: Record<string, string[]> = {
 };
 /** c761 §3.2/§5: default row limits. */
 const LIMIT = { children: 10, blockers: 10, connections: 10, taskMessages: 3, coreMessages: 10 };
+/** Code points, the ellipsis INCLUDED (coordinator ruling on #674). */
 const TEXT_CAP = { task: 280, core: 500, title: 80, from: 80 };
 /** c761 §10.1 / Q28 = A. */
 const FIXED_CORE_MAX = 1_500;
 const ROW_OVERHEAD_MAX = 200;
 const DEFAULT_TOTAL = 16_384;
-/** Lists stripped when measuring the fixed core (c761 §10.1). */
-const ROW_LISTS = ['acceptance', 'children', 'blockers', 'tasks', 'connections', 'messages', 'outline'];
+/**
+ * Lists stripped when measuring the fixed core (c761 §10.1, Q28 = A): the
+ * minified DTO minus assignment text, acceptance text and EVERY list row —
+ * taken literally, so assignees, omitted, notLoaded and errors are emptied too
+ * (coordinator ruling on #674).
+ */
+const ROW_LISTS = [
+  'acceptance', 'assignees', 'children', 'blockers', 'tasks', 'connections', 'messages', 'outline',
+  'omitted', 'notLoaded', 'errors',
+];
 
 const bytes = (value: unknown): number =>
   Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value), 'utf8');
@@ -170,18 +187,20 @@ const OWNER = {
 let database: W1ScratchDatabase;
 let pgDb: Db;
 let registry: HandlerRegistry;
-const counter = new StatementCounter()
-  // G09's action discoverer serves the `actions` section; its SQL has no tag.
-  .attributeSql(/internal\.current_member_id\(e\.space_id\)::text actor_id/, 'actions');
+let counter: StatementCounter;
+/** Statements with no `entities.context:<section>` tag (S2 made this zero). */
+const untagged = (): string[] => counter.statements.filter((sql) => contextTagOf(sql) === UNTAGGED);
 
 beforeAll(async () => {
   database = await createW1ScratchDatabase('ctx_v2');
   database.apply(migrationFiles());
   await seedContextV2Fixtures(database);
   pgDb = createDb(database.url);
+  // Patches `pgDb` in place; the actions palette is tagged by S2's `taggedDb`.
+  counter = countStatements(pgDb);
   registry = new HandlerRegistry();
   registerFacadeHandlers(registry, {
-    db: counter.wrapDb(pgDb),
+    db: pgDb,
     config: { host: '127.0.0.1', port: 0, databaseUrl: database.url } as unknown as ServerConfig,
     owner: async () => OWNER,
   });
@@ -415,22 +434,22 @@ describe('v1 baseline and compatibility (must stay green through S5)', () => {
 // ===========================================================================
 
 describe('S2 select-before-load', () => {
-  // Flips at S2: every statement the context read issues is tagged with the
-  // section it loads (root/summary/ancestors/actors included), so the counter
-  // can attribute ALL database work, not only the list loaders.
-  it.fails('[c904 §5.8 · c761 §10.5] every statement entities.context issues carries a section tag (S2)', async () => {
+  // Flipped by S2 (#673): every statement the context read issues is tagged
+  // with the section it loads (root/summary/ancestors/actors/actions included),
+  // so the counter attributes ALL database work, not only the list loaders.
+  it('[c904 §5.8 · c761 §10.5] every statement entities.context issues carries a section tag (S2)', async () => {
     for (const fixture of FIXTURES) {
       const r = await v1(fixture.id);
-      expect(counter.untagged().map((s) => s.sql.slice(0, 80)), fixture.name).toEqual([]);
+      expect(untagged().map((sql) => sql.slice(0, 80)), fixture.name).toEqual([]);
       expect(r.statements).toBeGreaterThan(0);
     }
   });
 
-  // Flips at S2: a v1 read with an explicit selection loads ONLY that
+  // Flipped by S2 (#673): a v1 read with an explicit selection loads ONLY that
   // selection — no ancestor or summary work for sections that were not asked.
-  it.fails('[c761 §10.5] v1 `sections=messages` loads no hierarchy, edges, activity or actions (S2)', async () => {
+  it('[c761 §10.5] v1 `sections=messages` loads no hierarchy, edges, activity or actions (S2)', async () => {
     const r = await v1(F.C, 'sections=messages');
-    expect(counter.untagged()).toEqual([]);
+    expect(untagged()).toEqual([]);
     for (const section of ['hierarchy', 'connections', 'activity', 'actions']) {
       for (const tag of SECTION_TAGS[section]!) expect(r.byTag[tag] ?? 0, tag).toBe(0);
     }
@@ -543,7 +562,7 @@ describe('S3 the v2 DTO', () => {
     const times = messages.map((m) => Date.parse(m.at));
     expect(times).toEqual([...times].sort((a, b) => a - b));
     for (const m of messages) {
-      expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.core + 1);
+      expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.core);
       if (m.truncated) expect(m.text?.length).toBeGreaterThan(0);
     }
     expect(messages.some((m) => m.truncated === true)).toBe(true);
@@ -555,10 +574,10 @@ describe('S3 the v2 DTO', () => {
   it.fails('[c761 §3.2] per-kind messages: a task keeps the latest 3 at ≤280 chars (S3)', async () => {
     const { view } = await v2(F.P);
     expect((view.messages ?? []).map((m) => m.id)).toEqual([F.pMessage]);
-    for (const m of view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.task + 1);
+    for (const m of view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.task);
     const ws = await v2(F.WS);
     expect((ws.view.messages ?? []).map((m) => m.id)).toEqual(F.wsMessages);
-    for (const m of ws.view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.core + 1);
+    for (const m of ws.view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.core);
   });
 
   it.fails('[c761 §3.2] a project is a card: children and edges notLoaded, no count query (S3)', async () => {
@@ -567,7 +586,7 @@ describe('S3 the v2 DTO', () => {
     expect(r.view.children).toBeUndefined();
     expect(r.view.notLoaded.map((n) => n.section)).toEqual(expect.arrayContaining(['hierarchy', 'connections']));
     for (const tag of [...SECTION_TAGS['hierarchy']!, ...SECTION_TAGS['connections']!]) {
-      if (tag === 'parents' || tag === 'hierarchy') continue; // the nearest parent ref is core
+      if (tag === 'parents') continue; // the nearest parent ref is core
       expect(r.byTag[tag] ?? 0, tag).toBe(0);
     }
   });
@@ -647,7 +666,8 @@ describe('S3 the v2 DTO', () => {
     const control = await v2(F.G);
     expect(control.view.errors).toEqual([]);
     try {
-      counter.failOn('blockers').failOn('messages');
+      counter.failOn('blockers');
+      counter.failOn('messages');
       const { view } = await v2(F.G);
       const sections = view.errors.map((e) => e.section).sort();
       expect(sections).toEqual(expect.arrayContaining(['blockers']));
@@ -672,7 +692,7 @@ describe('S3 the v2 DTO', () => {
         // the fault never fires and the root case below covers them; if they
         // have their own statement, its failure must fail the read.
         await v2(F.T).then(
-          () => expect(counter.statements.some((s) => s.tag === tag), `${tag} loaded, failed, yet the read succeeded`).toBe(false),
+          () => expect(counter.statements.some((sql) => contextTagOf(sql) === tag), `${tag} loaded, failed, yet the read succeeded`).toBe(false),
           (error: Error) => expect(error.message).toContain(`injected fault: entities.context:${tag}`),
         );
       } finally {
@@ -705,7 +725,7 @@ describe('S3 the v2 DTO', () => {
   it.fails('[c904 §5.8] under the v2 default, no statement runs for a section left in notLoaded[] (S3)', async () => {
     for (const fixture of [...FIXTURES, { name: 'G', id: F.G }]) {
       const r = await v2(fixture.id);
-      expect(counter.untagged(), fixture.name).toEqual([]);
+      expect(untagged(), fixture.name).toEqual([]);
       for (const { section } of r.view.notLoaded) {
         for (const tag of SECTION_TAGS[section] ?? [section]) {
           if (section === 'hierarchy' && tag === 'parents') continue; // nearest parent is core
