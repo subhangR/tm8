@@ -144,7 +144,7 @@ async function eventList(cmd: CommandContext): Promise<ExitCode> {
     ...(Object.keys(query).length > 0 ? { query } : {}),
   });
 
-  cmd.out.data(page, renderPage);
+  cmd.out.data(page, (dto) => renderPage(dto, entity));
   return EXIT_OK;
 }
 
@@ -848,9 +848,10 @@ function renderEvent(raw: unknown): string {
  * Human is a rendering of the SAME DTO json emits, never a second shape and
  * never a subset that drops an id. `nextCursor` is printed as the literal flag
  * the next invocation takes, because that is the one value a caller must not
- * have to reconstruct.
+ * have to reconstruct. A `--entity` filter is repeated on that line: following
+ * it without the filter would silently widen the read to the whole stream.
  */
-function renderPage(dto: unknown): string {
+function renderPage(dto: unknown, entity?: string): string {
   const page = (dto ?? {}) as Page;
   const items = Array.isArray(page.items) ? page.items : [];
   const lines = items.map((raw) => renderEvent(raw));
@@ -861,7 +862,7 @@ function renderPage(dto: unknown): string {
   if (page.hasMore === true) lines.push('more: the page examined its full limit; page on with the next cursor');
   lines.push(
     typeof page.nextCursor === 'string' || typeof page.nextCursor === 'number'
-      ? `next: tm8 event list --after ${String(page.nextCursor)}`
+      ? `next: tm8 event list --after ${String(page.nextCursor)}${entity === undefined ? '' : ` --entity ${entity}`}`
       : 'next: the Server returned no cursor',
   );
   return lines.join('\n');

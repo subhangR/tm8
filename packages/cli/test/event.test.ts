@@ -1237,4 +1237,18 @@ describe('tm8 event list --entity — the server-side subject filter', () => {
     expect(r.stdout).toMatch(/more:/);
     expect(r.stdout).toMatch(/--after 240/);
   });
+
+  it('the human next: line repeats --entity, so following it keeps the filter', async () => {
+    reply = {
+      status: 200,
+      body: { data: { items: [], nextCursor: '240', hasMore: true, examinedThrough: 240 }, requestId: 'r' },
+    };
+    const r = await drive(['event', 'list', '--entity', ENTITY]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`next: tm8 event list --after 240 --entity ${ENTITY}`);
+
+    // And an unfiltered list never invents one.
+    const plain = await drive(['event', 'list']);
+    expect(plain.stdout).toMatch(/next: tm8 event list --after 240$/m);
+  });
 });
