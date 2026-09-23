@@ -1,5 +1,7 @@
 import { loadSkillEquipment } from '../skills/equipment.js';
-import { computeEffectiveSkills } from '@tm8/execution';
+import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
+import { linkSession } from '../jev/store.js';
+import { computeEffectiveSkills, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
@@ -80,13 +82,15 @@ import type {
   SessionJournalPage,
   SessionJournalRecord,
   SessionLaunchRecord,
+  SkippedSkill,
+  SpawnSelection,
 } from '@tm8/contract';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
-import type { Db, DbClaims } from '../db/types.js';
+import type { Db, DbClaims, Querier } from '../db/types.js';
 import { PgDurableSeqSource } from '../events/seq.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
@@ -224,6 +228,57 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   return out;
 }
 
+/**
+ * `execution.spawn.selection` names only live memories and skills of THIS
+ * space that the caller can read (design 01a0cb80 §5.2, §8). Anything else is
+ * refused with `invalid_input` NAMING every bad id — a selected entity deleted
+ * before launch is surfaced, never silently dropped.
+ */
+export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
+  const ids = [...selection.memoryIds, ...selection.skillIds];
+  const rows = ids.length === 0 ? [] : await q.query<{ id: string; kind: string }>(
+    `select e.id, e.kind from public.entities e
+      where e.id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
+    [ids, spaceId],
+  );
+  const kinds = new Map(rows.map((row) => [row.id, row.kind]));
+  const memoryIds = [...new Set(selection.memoryIds.filter((id) => kinds.get(id) !== 'memory'))];
+  const skillIds = [...new Set(selection.skillIds.filter((id) => kinds.get(id) !== 'skill'))];
+  if (memoryIds.length === 0 && skillIds.length === 0) return;
+  const named = [
+    ...(memoryIds.length ? [`memoryIds ${memoryIds.join(', ')}`] : []),
+    ...(skillIds.length ? [`skillIds ${skillIds.join(', ')}`] : []),
+  ].join('; ');
+  throw fail(
+    'invalid_input',
+    `selection names entities that are not live memories/skills in this space: ${named}`,
+    { invalidMemoryIds: memoryIds, invalidSkillIds: skillIds },
+  );
+}
+
+/**
+ * Selected skills the teammate is NOT equipped with, read by id with the same
+ * metadata projection as `loadSkillEquipment` (never the body). Read only: no
+ * equip edge is written — the skill rides this one session (#646's rule).
+ * Depth 0, as if the teammate itself equipped it: a same-name clash with
+ * another selected skill then refuses loudly in `resolveSkills` instead of one
+ * of them vanishing.
+ */
+async function loadSkillsById(q: Querier, spaceId: string, ids: readonly string[]): Promise<ResolvedSkillRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await q.query<{ entity_id: string; version: number; name: string; description: string; reference: Record<string, unknown> }>(
+    `select sk.entity_id, se.version, sk.name, sk.description, ${SKILL_REFERENCE_SQL} as reference
+       from public.skills sk
+       join public.entities se on se.id = sk.entity_id and se.kind = 'skill' and se.space_id = $2 and se.deleted_at is null
+      where sk.entity_id = any($1::uuid[])`,
+    [ids, spaceId],
+  );
+  return rows.map((row) => ({
+    ...skillReferenceOf(row.reference),
+    entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: 0,
+  }));
+}
+
 export class DbGraphPort implements GraphPort {
   constructor(
     private readonly db: Db,
@@ -293,9 +348,32 @@ export class DbGraphPort implements GraphPort {
       // `memoryIds` (D3a) are validated hard — a spawn that names a memory the
       // caller cannot read, or that is not a memory, must refuse rather than
       // quietly inject less than was asked.
-      const requestedIds = input.memoryIds ?? [];
+      //
+      // `selection` (design 01a0cb80 §5.2) REPLACES all of that: the session
+      // carries exactly the selected memories, in the selected order, and
+      // nothing else — not the working set, not the task sets, not the legacy
+      // jsonb remainder. Validated first, so a bad id refuses by name.
+      const selection = input.selection;
+      if (selection) await assertSelectionIds(q, input.spaceId, selection);
+      const requestedIds = selection ? selection.memoryIds : input.memoryIds ?? [];
       const spawnTaskIds = input.taskIds ?? [];
-      const memoryRows = await q.query<MemoryRow>(
+      const memoryRows = selection ? await q.query<MemoryRow>(
+        `select m.entity_id, m.statement, e.version,
+                false as remembered, false as task_remembered,
+                exists (select 1 from public.edges s
+                         where s.type = 'supersedes' and s.dst_id = m.entity_id) as superseded,
+                exists (select 1 from public.edges d
+                         where d.type = 'disputes' and d.dst_id = m.entity_id
+                           and (d.props ->> 'pinnedVersion')::int = e.version) as disputed,
+                exists (select 1 from public.edges v
+                         where v.type = 'verifies' and v.dst_id = m.entity_id
+                           and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
+                m.created_at
+           from public.memories m
+           join public.entities e on e.id = m.entity_id and e.deleted_at is null
+          where e.space_id = $2 and m.entity_id = any($1::uuid[])`,
+        [requestedIds, input.spaceId],
+      ) : await q.query<MemoryRow>(
         `select m.entity_id, m.statement, e.version,
                 (r.dst_id is not null) as remembered,
                 exists (select 1 from public.edges t
@@ -327,8 +405,8 @@ export class DbGraphPort implements GraphPort {
       const missing = requestedIds.filter((id) => !foundIds.has(id));
       if (missing.length > 0) {
         throw fail(
-          'not_found',
-          `memoryIds not found in this space (or not memory entities): ${missing.join(', ')}`,
+          selection ? 'invalid_input' : 'not_found',
+          `${selection ? 'selection.memoryIds' : 'memoryIds'} not found in this space (or not memory entities): ${missing.join(', ')}`,
         );
       }
       const injectedMemories = renderMemories(memoryRows, requestedIds);
@@ -393,7 +471,32 @@ export class DbGraphPort implements GraphPort {
       // acyclic: 001_core_graph.sql's trigger does enforce acyclicity, but a
       // recursive CTE that meets a cycle anyway spins until it exhausts memory,
       // and this query runs on the spawn path.
-      const skillEquips = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      const equipped = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
+      // `selection`: exactly the selected skills, in the selected order. An
+      // equipped skill keeps its equipment row (and depth); an unequipped one
+      // is read by id for this session only. Equipped skills left out are
+      // audited as `not-selected`, so a smaller index is explained, not silent.
+      let skillEquips = equipped;
+      let skippedSkills: SkippedSkill[] | undefined;
+      if (selection) {
+        const wanted = [...new Set(selection.skillIds)];
+        const byId = new Map(equipped.map((row) => [row.entityId, row]));
+        for (const row of await loadSkillsById(q, input.spaceId, wanted.filter((id) => !byId.has(id)))) {
+          byId.set(row.entityId, row);
+        }
+        skillEquips = wanted.flatMap((id) => {
+          const row = byId.get(id);
+          return row ? [row] : [];
+        });
+        const kept = new Set(wanted);
+        skippedSkills = equipped.filter((row) => !kept.has(row.entityId)).map((row) => ({
+          entityId: row.entityId,
+          name: row.name,
+          ...(row.contentHash ? { hash: row.contentHash } : {}),
+          ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
+          reason: 'not-selected',
+        }));
+      }
       // Candidates stay untruncated; native scope is resolved with the actual launch later.
       const candidates = computeEffectiveSkills({ agentTool: '', workdir: '/', projectRoot: null, equips: skillEquips });
 
@@ -457,7 +560,7 @@ export class DbGraphPort implements GraphPort {
           // writers) rides along so no entry silently vanishes mid-cutover.
           memories: [
             ...injectedMemories,
-            ...(Array.isArray(member.memories) ? member.memories : []),
+            ...(!selection && Array.isArray(member.memories) ? member.memories : []),
           ],
           model: member.model,
           agentTool: member.agent_tool,
@@ -499,6 +602,7 @@ export class DbGraphPort implements GraphPort {
           })),
         skills: candidates.indexed,
         skillEquips,
+        ...(skippedSkills ? { skippedSkills } : {}),
         skillsScannedAt,
         droppedSkills: [],
       };
@@ -2583,6 +2687,16 @@ function registerHandlers(
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
 
+    // `selection` names exact memories and skills (design 01a0cb80 §5.2).
+    // Refused by name BEFORE anything is written — resolving the anchors
+    // below may mint a derived task, and a launch that is going to be refused
+    // must not leave one behind. loadSpawnContext re-checks inside its own
+    // transaction, for an id deleted in between.
+    if (input.selection) {
+      const selection = input.selection;
+      await db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection));
+    }
+
     // Any entity may be launched; the anchor is always a task. See
     // `resolveAssignmentAnchors` — a task passes through untouched.
     const taskIds = input.taskIds?.length
@@ -2634,6 +2748,8 @@ function registerHandlers(
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
+      ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
       // Spread rather than `?? undefined` so an absent geometry stays ABSENT:
       // PtyHostService's clampDim falls back to 80x24 on any falsy value, and
       // an explicit `cols: undefined` would read the same way — but only the
@@ -2645,6 +2761,22 @@ function registerHandlers(
     };
 
     const result = await rethrowing(() => spawnService.spawn(claims, request));
+
+    // The Ask Jev run this launch came from (§6: per-launch cost). Only after
+    // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
+    // run that is absent, in another space or someone else's is logged, not
+    // turned into a failed launch.
+    if (input.jevRunId) {
+      const runId = input.jevRunId;
+      try {
+        const linked = await db.tx(claims, (q) => linkSession(q, runId, result.sessionId, input.spaceId));
+        if (!linked) {
+          console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: no such run of this caller in space ${input.spaceId}`);
+        }
+      } catch (error) {
+        console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
 
     /**
      * `dispatched_by` provenance (§4.3), written by the SERVER rather than
