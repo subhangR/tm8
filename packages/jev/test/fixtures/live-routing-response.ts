@@ -10,7 +10,7 @@
 // The `legend` on scores and the `type` on every answer are also real, and also
 // absent from every hand-written fixture.
 
-import type { JevResponse } from '../../src/primitives.js';
+import type { JevResponse } from '../../src/wire.js';
 
 export const LIVE_ROUTING_RESPONSE = {
   "model": "jev-1.13.0",
