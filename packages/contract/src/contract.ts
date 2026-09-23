@@ -4505,7 +4505,13 @@ export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' 
  * a client that wants the posture on the record rather than inherited says so).
  */
 export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
-export type LaunchCredentialSource = 'member' | 'node';
+/**
+ * `space` (design 01a0cfa8 §4) launches on a credential the SPACE holds, which
+ * any member may use (D3). It is resolved server-side against the caller's own
+ * membership at spawn and again at resume. A client names at most a space
+ * credential's id (`spaceCredentialIds`), never an account (I1).
+ */
+export type LaunchCredentialSource = 'member' | 'space' | 'node';
 /**
  * Which credentials a launch may pick a SOURCE for (member's vs the node's).
  *
@@ -4517,6 +4523,14 @@ export type LaunchCredentialSource = 'member' | 'node';
  */
 export type LaunchCredentialProvider = CredentialProviderName;
 export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, LaunchCredentialSource>>;
+/** Providers a SPACE can hold a credential for (206 `space_credentials.provider`). */
+export type SpaceCredentialProvider = 'anthropic' | 'openai' | 'github';
+/**
+ * A pinned space credential per provider (D6a). Meaningful only where the SAME
+ * request sets that provider's source to `space`; an id with any other source
+ * is refused rather than ignored. Absent means the space's current default.
+ */
+export type LaunchSpaceCredentialIds = Partial<Record<SpaceCredentialProvider, EntityId>>;
 
 // --- execution.* operation family (R16) ------------------------------------
 
@@ -4590,6 +4604,8 @@ export interface ExecutionSpawnInput extends CommandContext {
    * @deprecated
    */
   credentialSource?: LaunchCredentialSource;
+  /** Pin a specific space credential per provider; see `LaunchSpaceCredentialIds`. */
+  spaceCredentialIds?: LaunchSpaceCredentialIds;
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;

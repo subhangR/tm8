@@ -34,15 +34,19 @@ import type {
   SessionLaunchPosture,
   ManifestSkillContext,
   SpawnContext,
+  SpaceCredentialProvider,
   SpawnRequest,
   Tm8Manifest,
   WorkdirMode,
 } from './types.js';
-import { SpawnError } from './types.js';
+import { SpawnError, isSpaceCredentialProvider } from './types.js';
 import {
   AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
+  SPACE_CREDENTIAL_API_KEY_ENV,
+  SPACE_CREDENTIAL_SUPPRESSED_ENV_KEYS,
   agentCredentialEnv,
+  agentCredentialProviderFor,
   type AgentCredentialHome,
   type AgentCredentialProvider,
 } from './agent-credentials.js';
@@ -208,6 +212,14 @@ export interface ResolvedLaunchConfig {
   credentialSource: CredentialSource | null;
   /** Independent launch-time choice for every credential provider. */
   credentialSources: ResolvedCredentialSources;
+  /**
+   * Space credential ids known BEFORE the spawn reads the space: the request's
+   * own pins, and the exact id an inherited or resumed `space` source carries.
+   * A `space` source with no entry here takes the space default at spawn.
+   */
+  spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>>;
+  /** D9: set by the spawn path once it has resolved auto; absent before that. */
+  effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
 }
 
 /**
@@ -370,11 +382,12 @@ export function resolveLaunchConfig(
   // deprecated global carrier; inherited provider keys then outrank an older
   // manifest's global value. Every read is narrowed because inherited posture
   // comes from stored JSON written by arbitrary older builds.
-  const credentialSources = resolveCredentialSources(request, inherited);
-  const commonSources = new Set(Object.values(credentialSources));
-  const credentialSource = commonSources.size === 1
-    ? ([...commonSources][0] ?? null)
-    : null;
+  const { credentialSources, spaceCredentialIds } = resolveCredentialSources(
+    request,
+    inherited,
+    agentTool,
+  );
+  const credentialSource = commonCredentialSource(credentialSources);
 
   return {
     mode,
@@ -385,13 +398,84 @@ export function resolveLaunchConfig(
     reasoningEffort,
     credentialSource,
     credentialSources,
+    spaceCredentialIds,
   };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The deprecated common value: one source shared by every provider, else null. */
+export function commonCredentialSource(
+  credentialSources: ResolvedCredentialSources,
+): CredentialSource | null {
+  const commonSources = new Set(Object.values(credentialSources));
+  return commonSources.size === 1 ? ([...commonSources][0] ?? null) : null;
+}
+
+/** Whether THIS request (not an inherited posture) states `space` for `provider`. */
+function requestStatesSpace(request: SpawnRequest, provider: SpaceCredentialProvider): boolean {
+  const own = request.credentialSources?.[provider];
+  return own === 'space' || (own == null && request.credentialSource === 'space');
 }
 
 function resolveCredentialSources(
   request: SpawnRequest,
   inherited: SessionLaunchPosture | null | undefined,
-): ResolvedCredentialSources {
+  agentTool: string,
+): {
+  credentialSources: ResolvedCredentialSources;
+  spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>>;
+} {
+  // A4: a pin is the request's own statement about a provider it sets to
+  // `space`. An id riding beside `member`, `node`, auto or an inherited
+  // source is refused, never ignored: ignoring it would launch on something
+  // other than what the caller named while reporting success.
+  for (const [provider, id] of Object.entries(request.spaceCredentialIds ?? {})) {
+    if (id == null) continue;
+    if (!isSpaceCredentialProvider(provider)) {
+      throw new SpawnError(
+        `spaceCredentialIds.${provider} names a provider a space cannot hold a credential for — ` +
+          'only anthropic, openai and github have space credentials',
+        'invalid_input',
+        { provider },
+      );
+    }
+    if (!requestStatesSpace(request, provider)) {
+      throw new SpawnError(
+        `spaceCredentialIds.${provider} pins a space credential, but this request does not set ` +
+          `credentialSources.${provider} to 'space' — set it to 'space' to use that credential, ` +
+          'or drop the id',
+        'invalid_input',
+        { provider },
+      );
+    }
+    if (typeof id !== 'string' || !UUID_RE.test(id)) {
+      throw new SpawnError(
+        `spaceCredentialIds.${provider} is not a space credential id`,
+        'invalid_input',
+        { provider },
+      );
+    }
+  }
+  // Scalar `space` covers the tool's own provider (and github). A tool whose
+  // provider a space cannot hold is refused by name rather than quietly run on
+  // some other source — the caller asked for the space and would not get it.
+  const toolProvider = agentCredentialProviderFor(agentTool);
+  if (
+    request.credentialSource === 'space' &&
+    toolProvider !== null &&
+    !isSpaceCredentialProvider(toolProvider) &&
+    request.credentialSources?.[toolProvider] == null
+  ) {
+    throw new SpawnError(
+      `credentialSource 'space' was requested for ${agentTool}, but a space cannot hold a ` +
+        `${toolProvider} credential — launch with 'member' or 'node' for ${toolProvider}`,
+      'invalid_input',
+      { agentTool, provider: toolProvider },
+    );
+  }
+
+
   // The exhaustive FILE-provider table is the runtime provider source here;
   // GitHub is the one string-shaped exception. This avoids another hand-kept
   // list at the manifest seam: a seventh file provider added to the table is
@@ -399,29 +483,90 @@ function resolveCredentialSources(
   const agentProviders = Object.keys(
     AGENT_CREDENTIAL_CONFIG_DIR_VAR,
   ) as AgentCredentialProvider[];
-  return Object.fromEntries([
-    ...agentProviders.map((provider) => [
-      provider,
-      resolveCredentialSource(provider, request, inherited),
-    ] as const),
-    ['github', resolveCredentialSource('github', request, inherited)] as const,
-  ]) as ResolvedCredentialSources;
+  const spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>> = {};
+  const credentialSources = Object.fromEntries(
+    [...agentProviders, 'github' as const].map((provider) => {
+      const { source, spaceCredentialId } = resolveCredentialSource(provider, request, inherited);
+      if (spaceCredentialId !== undefined && isSpaceCredentialProvider(provider)) {
+        spaceCredentialIds[provider] = spaceCredentialId;
+      }
+      return [provider, source] as const;
+    }),
+  ) as ResolvedCredentialSources;
+  return { credentialSources, spaceCredentialIds };
 }
 
+/**
+ * One provider's source: request key > request scalar > inherited key >
+ * inherited scalar > auto. `space` carries an id — the request's pin, or the
+ * EXACT id an inherited or resumed posture recorded (A4, D6a).
+ *
+ * THE INHERITED HALF FAILS CLOSED (M8a). It is stored JSON, possibly written
+ * by another build, and it names the credential a child or a resume will run
+ * on. A value this build does not understand, or a `space` with no usable id,
+ * is refused rather than narrowed to auto: auto could land on the node key or
+ * on the launcher's own account, which is not what the parent ran on.
+ */
 function resolveCredentialSource(
   provider: keyof ResolvedCredentialSources,
   request: SpawnRequest,
   inherited: SessionLaunchPosture | null | undefined,
-): CredentialSource | null {
-  return asCredentialSource(request.credentialSources?.[provider]) ??
-    asCredentialSource(request.credentialSource) ??
-    asCredentialSource(inherited?.credentialSources?.[provider]) ??
-    asCredentialSource(inherited?.credentialSource) ??
-    null;
+): { source: CredentialSource | null; spaceCredentialId?: string } {
+  const spaceCapable = isSpaceCredentialProvider(provider);
+  const own = asRequestedSource(request.credentialSources?.[provider]);
+  if (own === 'space' && !spaceCapable) {
+    throw new SpawnError(
+      `credentialSources.${provider} 'space' was requested, but a space cannot hold a ` +
+        `${provider} credential — launch with 'member' or 'node'`,
+      'invalid_input',
+      { provider },
+    );
+  }
+  // A scalar `space` means nothing for a provider a space cannot hold, so it
+  // leaves that provider on auto (the tool's own provider was refused above).
+  const scalar = asRequestedSource(request.credentialSource);
+  const requested = own ?? (scalar === 'space' && !spaceCapable ? undefined : scalar);
+  if (requested !== undefined) {
+    if (requested !== 'space') return { source: requested };
+    const pin = spaceCapable ? request.spaceCredentialIds?.[provider] : undefined;
+    return pin ? { source: 'space', spaceCredentialId: pin } : { source: 'space' };
+  }
+  if (own === undefined && scalar === 'space') return { source: null };
+
+  const storedOwn = inherited?.credentialSources?.[provider];
+  const stored = storedOwn != null ? storedOwn : inherited?.credentialSource;
+  if (stored == null) return { source: null };
+  if (stored === 'member' || stored === 'node') return { source: stored };
+  if (stored === 'space') {
+    if (!spaceCapable) {
+      // Only a scalar can reach here for these providers; it never named them.
+      if (storedOwn == null) return { source: null };
+      throw inheritedRefusal(provider, `records 'space' for ${provider}, which a space cannot hold`);
+    }
+    const id = inherited?.spaceCredentialIds?.[provider];
+    if (typeof id !== 'string' || !UUID_RE.test(id)) {
+      throw inheritedRefusal(provider, `records 'space' for ${provider} with no space credential id`);
+    }
+    return { source: 'space', spaceCredentialId: id };
+  }
+  throw inheritedRefusal(
+    provider,
+    `records a ${provider} credential source this build does not understand`,
+  );
 }
 
-function asCredentialSource(value: unknown): CredentialSource | null {
-  return value === 'member' || value === 'node' ? value : null;
+function inheritedRefusal(provider: string, what: string): SpawnError {
+  return new SpawnError(
+    `the parent or resumed session's launch ${what} — refusing rather than launching on a ` +
+      `different credential; name the source explicitly with credentialSources.${provider}`,
+    'conflict',
+    { provider },
+  );
+}
+
+/** Request values are schema-checked upstream; this only narrows the type. */
+function asRequestedSource(value: unknown): CredentialSource | undefined {
+  return value === 'member' || value === 'space' || value === 'node' ? value : undefined;
 }
 
 /**
@@ -1129,12 +1274,32 @@ export function composeEnv(
     if (isApiKeyCredentialProvider(credentialHome.provider) && credentialHome.apiKey) {
       Object.assign(env, apiKeyBackendEnv(credentialHome.provider, credentialHome.apiKey));
     }
+
+    // A SPACE credential (design 01a0cfa8 §4), under the same law: every node
+    // value for the provider is deleted FIRST and the space's key set LAST
+    // (I4). For both providers the deleted name and the set name coincide, so
+    // reversing the two steps would delete the space key and leave the session
+    // keyless — or, with the order right but a node ANTHROPIC_AUTH_TOKEN left
+    // in place, running on the node's bearer under the space's name.
+    if (credentialHome.space) {
+      for (const key of SPACE_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider] ?? []) {
+        delete env[key];
+      }
+      const keyVar = SPACE_CREDENTIAL_API_KEY_ENV[credentialHome.provider];
+      if (keyVar && credentialHome.space.apiKey) env[keyVar] = credentialHome.space.apiKey;
+    }
   }
 
   // GitHub is universal rather than agent-tool-specific. Apply after the env
   // copy loops and after XDG_CONFIG_HOME is redirected into the identity home,
   // so neither a parent token nor a machine helper/config can win precedence.
-  isolateGitHubCredential(env, gitHubCredential, githubCredentialSource === 'member');
+  // `space` is as strict as `member`: an explicit space token that is absent
+  // must fail authentication, never reach the node's machine gh (M8b).
+  isolateGitHubCredential(
+    env,
+    gitHubCredential,
+    githubCredentialSource === 'member' || githubCredentialSource === 'space',
+  );
 
   // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';
@@ -1390,6 +1555,16 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       reasoningEffort: launch.reasoningEffort,
       credentialSource: launch.credentialSource,
       credentialSources: launch.credentialSources,
+      // Absent, not `{}`, when nothing ran on a space credential: 206's writer
+      // checks every key against a `space` source, and a launch that never
+      // touched the space writes the manifest it always wrote.
+      ...(Object.keys(launch.spaceCredentialIds).length > 0
+        ? { spaceCredentialIds: { ...launch.spaceCredentialIds } }
+        : {}),
+      ...(launch.effectiveCredentialSources &&
+      Object.keys(launch.effectiveCredentialSources).length > 0
+        ? { effectiveCredentialSources: { ...launch.effectiveCredentialSources } }
+        : {}),
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
       command,

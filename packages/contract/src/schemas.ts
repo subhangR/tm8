@@ -3041,11 +3041,16 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 
 const SpawnUuidSchema = z.string().uuid();
 
-const CredentialSourceSchema = z.enum(['member', 'node']);
+const CredentialSourceSchema = z.enum(['member', 'space', 'node']);
 const CredentialSourcesSchema = z.object({
   anthropic: CredentialSourceSchema.optional(),
   openai: CredentialSourceSchema.optional(),
   github: CredentialSourceSchema.optional(),
+}).strict();
+const SpaceCredentialIdsSchema = z.object({
+  anthropic: SpawnUuidSchema.optional(),
+  openai: SpawnUuidSchema.optional(),
+  github: SpawnUuidSchema.optional(),
 }).strict();
 
 /** `selection` (design 01a0cb80 §5.2): the exact sets, bounded like `memoryIds` and the skill index. */
@@ -3074,6 +3079,7 @@ const executionSpawnInputObject = z.object({
   credentialSources: CredentialSourcesSchema.optional(),
   // Deprecated compatibility carrier. Provider-specific keys above win.
   credentialSource: CredentialSourceSchema.optional(),
+  spaceCredentialIds: SpaceCredentialIdsSchema.optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
