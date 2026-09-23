@@ -380,7 +380,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // merge kept 198 silently and only the comments conflicted. MEASURED on the
   // merged tree from this generator's own drift report.
   // 208 -> 209 (2026-09-23, Jev lane F): launch.suggest, one POST command. MEASURED.
-  assertEqual(names.length, 209, 'catalog total');
+  // 209 -> 212 (2026-09-23, Jev lane K): credentials.serviceKeys.{status,put,delete}. MEASURED.
+  assertEqual(names.length, 212, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -391,7 +392,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 195 -> 196: execution.gitStage is v1. MEASURED.
   // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows ship v1. MEASURED.
   // 206 -> 207 (Jev lane F): launch.suggest ships v1. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 207, 'v1 total');
+  // 207 -> 210 (Jev lane K): the three service-key rows ship v1. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 210, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -422,14 +424,16 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // POST 99 -> 100 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing AND gitStage are both POST
   // commands, so this moves twice from 98. MEASURED.
   // POST 104 -> 105 (Jev lane F): launch.suggest. MEASURED.
-  assertEqual(methods, { GET: 69, POST: 105, PATCH: 13, DELETE: 12, PUT: 8, WS: 2 }, 'method accounting');
+  // GET 69 -> 70, DELETE 12 -> 13, PUT 8 -> 9 (Jev lane K): the service-key status/delete/put. MEASURED.
+  assertEqual(methods, { GET: 70, POST: 105, PATCH: 13, DELETE: 13, PUT: 9, WS: 2 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
   // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
   // 187: command 126->127.
   // command 127 -> 128 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new rows are commands. MEASURED.
   // command 133 -> 134 (Jev lane F): launch.suggest. MEASURED.
-  assertEqual(kinds, { read: 73, command: 134, stream: 2 }, 'kind accounting');
+  // read 73 -> 74, command 134 -> 136 (Jev lane K): service-key status is a read, put/delete commands. MEASURED.
+  assertEqual(kinds, { read: 74, command: 136, stream: 2 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
@@ -439,7 +443,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 195 -> 196 (2026-09-19): execution.gitStage mounts one POST route.
   // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): each new command mounts one POST route. MEASURED.
   // 206 -> 207 (Jev lane F): launch.suggest mounts one POST route (an honest 501 until its handler lands). MEASURED.
-  assertEqual(router.http.length, 207, 'server router HTTP total');
+  // 207 -> 210 (Jev lane K): the three service-key routes. MEASURED.
+  assertEqual(router.http.length, 210, 'server router HTTP total');
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

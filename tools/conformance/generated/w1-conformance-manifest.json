@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:1ebce8d21b5a346d01f90a21332e0986faf0552db1adae26f8a4a6aae50d021f",
+  "catalogDigest": "sha256:bde021c4e34a74460a53fdf1fa9b022eaed41603b1965f959f5db62fec335d7a",
   "catalog": {
-    "total": 209,
-    "v1": 207,
+    "total": 212,
+    "v1": 210,
     "reserved": 2,
-    "http": 207,
+    "http": 210,
     "ws": 1,
-    "registerableV1Http": 205,
+    "registerableV1Http": 208,
     "methods": {
-      "GET": 69,
+      "GET": 70,
       "POST": 105,
       "PATCH": 13,
-      "DELETE": 12,
-      "PUT": 8,
+      "DELETE": 13,
+      "PUT": 9,
       "WS": 2
     },
     "kinds": {
-      "read": 73,
-      "command": 134,
+      "read": 74,
+      "command": 136,
       "stream": 2
     },
-    "uniqueNames": 209,
-    "uniqueBindings": 208
+    "uniqueNames": 212,
+    "uniqueBindings": 211
   },
   "reservedOperations": [
     "search.query",
@@ -1468,6 +1468,27 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.serviceKeys.status",
+        "method": "GET",
+        "path": "/v2/identity/credentials/service-keys",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.serviceKeys.put",
+        "method": "PUT",
+        "path": "/v2/identity/credentials/service-keys/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.serviceKeys.delete",
+        "method": "DELETE",
+        "path": "/v2/identity/credentials/service-keys/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.transcript",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/transcript",
@@ -1867,7 +1888,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 177
+    "unimplementedV1Http": 180
   },
   "schemas": {
     "additive": {
@@ -5060,6 +5081,60 @@
           "login",
           "sessions",
           "finish"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.serviceKeys.status",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.serviceKeys.status",
+        "intentTags": [
+          "credentials",
+          "service",
+          "keys",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.serviceKeys.put",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.serviceKeys.put",
+        "intentTags": [
+          "credentials",
+          "service",
+          "keys",
+          "put"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.serviceKeys.delete",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.serviceKeys.delete",
+        "intentTags": [
+          "credentials",
+          "service",
+          "keys",
+          "delete"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

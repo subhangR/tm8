@@ -2597,7 +2597,7 @@ export const CATALOG_DIGEST =
   // Re-measured 2026-09-23 with F4 (#648): skills.roots/create/edit/equip/unequip.
   // Re-measured 2026-09-23, Jev lane F: + launch.suggest. Matched to the
   // regenerated conformance manifest's catalogDigest.
-  'sha256:1ebce8d21b5a346d01f90a21332e0986faf0552db1adae26f8a4a6aae50d021f';
+  'sha256:bde021c4e34a74460a53fdf1fa9b022eaed41603b1965f959f5db62fec335d7a';
 
 export const GRAMMAR_VERSION = '2';
 
