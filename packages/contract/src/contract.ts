@@ -6455,3 +6455,135 @@ export interface EntityKindUpdateInput extends CommandContext {
   capabilities?: Record<string, boolean>;
   allowTightening?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// events.changes — the scoped change feed (spec doc 01a0cf35 §3)
+// ---------------------------------------------------------------------------
+//
+// "Did anything I care about change since seq N?" answered as ONE line per
+// changed entity rather than a replay of every event with its hydrated body.
+// The digest names WHAT moved (`changes[]`) and WHO moved it (`actors[]`); the
+// current state is one `tm8 entity context <id>` away, and exactly what happened
+// is `--events` (thin rows) or `tm8 event list --entity <id>`.
+
+/** The fewest bytes a caller may budget. 2 × the worst single entity + envelope headroom (§3.3). */
+export const EVENT_CHANGES_MIN_TOTAL_BYTES = 8_192;
+/** The most bytes a caller may budget — the same ceiling as `entities.context`. */
+export const EVENT_CHANGES_MAX_TOTAL_BYTES = 32_768;
+/** The default budget, measured as minified DTO bytes. */
+export const EVENT_CHANGES_DEFAULT_TOTAL_BYTES = 16_384;
+/** Rows one request examines before it stops with `more: true`. */
+export const EVENT_CHANGES_MAX_EXAMINED = 2_000;
+/** Entities one digest page carries before it stops with `more: true`. */
+export const EVENT_CHANGES_MAX_ENTITIES = 50;
+/** A scope that resolves to more ids than this is refused (`scope_too_large`), never truncated. */
+export const EVENT_CHANGES_MAX_SCOPE_IDS = 1_000;
+/** Newest messages listed per task / doc / project (and any other) anchor. */
+export const EVENT_CHANGES_MESSAGE_CAP = 3;
+/** Newest messages listed per chat or session anchor. */
+export const EVENT_CHANGES_CHAT_MESSAGE_CAP = 10;
+/** Title and excerpt bounds. */
+export const EVENT_CHANGES_TITLE_CHARS = 80;
+export const EVENT_CHANGES_EXCERPT_CHARS = 120;
+
+/**
+ * `details.reason` values an `events.changes` refusal carries. `CommandErrorCode`
+ * is a closed union, so these ride an existing code (`invalid_cursor`,
+ * `invalid_input`, `payload_too_large`) and the CLI renders `<reason>: <hint>`.
+ */
+export type EventChangesRefusal = 'index_incomplete' | 'scope_too_large' | 'digest_group_too_large';
+
+/** The selectors, echoed back as the request resolved them. Absent keys were not given. */
+export interface EventChangesScope {
+  entity?: EntityId[];
+  anchor?: EntityId[];
+  subtree?: EntityId[];
+  kind?: string[];
+  change?: string[];
+}
+
+/** Set when `after` reached below the oldest retained event: that range is unknown, not unchanged. */
+export interface EventChangesGap {
+  after: number;
+  oldestRetained: number;
+}
+
+/** One new message, rolled up under its anchor. The excerpt is untrusted content. */
+export interface EventChangeMessage {
+  id: EntityId;
+  author: string | null;
+  /** The thread root this message replies under, or null for a root message. */
+  replyTo: EntityId | null;
+  /** The message mentions the caller. */
+  toMe: boolean;
+  excerpt: string;
+  truncated: boolean;
+}
+
+/**
+ * One changed entity. `v` is the current version, read in the same snapshot as
+ * the scan: valid as `--expect-version` for a mutation, and it may be newer than
+ * `through` when `more` is set.
+ */
+export interface EventChangeEntry {
+  id: EntityId;
+  kind: string;
+  /** Null only for a hard-deleted entity reported from its captured spine. */
+  title: string | null;
+  parentId: EntityId | null;
+  v: number | null;
+  /** Tasks and work sessions only. */
+  status?: string;
+  /** The last examined seq that changed this entity. */
+  lastSeq: number;
+  /** Closed vocabulary — see `tm8 help event changes`. */
+  changes: string[];
+  actors: string[];
+  /** Present when new messages rolled up under this entity. Newest first. */
+  messages?: EventChangeMessage[];
+  /** Exact count of new messages examined; absent (see `messagesTotalAtLeast`) when `more` is set. */
+  messagesTotal?: number;
+  /** A lower bound, when the page stopped early (`more: true`). */
+  messagesTotalAtLeast?: number;
+  /** Rows were trimmed to the per-anchor cap; `messagesNext` pages the rest. */
+  messagesMore?: boolean;
+  messagesNext?: string;
+}
+
+/** One `--events` row: exactly what happened, with ids instead of bodies. */
+export interface EventChangeThinRow {
+  seq: number;
+  type: string;
+  id: EntityId | string;
+  kind?: string;
+  v?: number;
+  edge?: string;
+  src?: EntityId;
+  dst?: EntityId;
+  anchor?: EntityId;
+  entity?: EntityId;
+  verb?: string;
+  status?: string;
+  actor?: string | null;
+}
+
+/**
+ * The digest. "Unchanged" means ONLY `changed.length === 0 && !more && !gap`:
+ * a short result is never "caught up". `through` is the cursor to resume from
+ * (`--after <through>`), and `next` is that command spelled out.
+ *
+ * `scope` and `next` are omitted on an unchanged poll so that the answer a
+ * poller sees most often stays under 100 bytes.
+ */
+export interface EventChangesView {
+  scope?: EventChangesScope;
+  since: number;
+  through: number;
+  more: boolean;
+  gap: EventChangesGap | null;
+  unresolved: EntityId[];
+  changed?: EventChangeEntry[];
+  /** `--events` only, in place of `changed`. */
+  events?: EventChangeThinRow[];
+  next?: string;
+}

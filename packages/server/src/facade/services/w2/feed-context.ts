@@ -1440,6 +1440,27 @@ function boundedView(
 }
 
 /**
+ * The `entities.feed --order newest` cursor that continues AFTER one message on
+ * `anchorId` — the same token `cursorsFor` mints for `cursors.messages`, for a
+ * caller (the change feed's `messagesNext`) that listed that message itself.
+ *
+ * `cursorCreatedAt` MUST be the `MICROS(created_at)` text of the message row,
+ * never a DTO timestamp — see LoadedContext.messageCursors.
+ */
+export function newestFeedCursorAfter(
+  anchorId: string,
+  anchorKind: string,
+  cursorCreatedAt: string,
+  messageId: string,
+): Cursor {
+  const scope = defaultScopeFor(anchorKind);
+  const fingerprint = feedCursorFingerprint({
+    entityId: anchorId, scope, order: 'newest', predicates: FEED_SCOPE_PREDICATES[scope],
+  });
+  return encodeCursor([fingerprint, cursorCreatedAt, messageId]);
+}
+
+/**
  * Continuation tokens, keyed by the operation that consumes them.
  *
  * `edges` is deliberately absent: `entities.connections` owns its own cursor
