@@ -54,6 +54,12 @@ import {
   CredentialsLoginSessionFinishInputSchema,
   CredentialsServiceKeyDeleteInputSchema,
   CredentialsServiceKeyPutInputSchema,
+  CredentialsSpaceCommandInputSchema,
+  CredentialsSpaceCreateInputSchema,
+  CredentialsSpacePolicySetInputSchema,
+  CredentialsSpaceRekeyInputSchema,
+  CredentialsSpaceRenameInputSchema,
+  NodeCredentialsPolicySetInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -195,6 +201,13 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // The key is the put body's one field; the provider rides the path.
   'credentials.serviceKeys.put': CredentialsServiceKeyPutInputSchema,
   'credentials.serviceKeys.delete': CredentialsServiceKeyDeleteInputSchema,
+  'credentials.space.create': CredentialsSpaceCreateInputSchema,
+  'credentials.space.rekey': CredentialsSpaceRekeyInputSchema,
+  'credentials.space.setDefault': CredentialsSpaceCommandInputSchema,
+  'credentials.space.rename': CredentialsSpaceRenameInputSchema,
+  'credentials.space.delete': CredentialsSpaceCommandInputSchema,
+  'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
+  'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,

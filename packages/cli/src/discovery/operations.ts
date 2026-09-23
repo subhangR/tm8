@@ -412,6 +412,118 @@ const ROWS: Record<OperationName, Row> = {
       'idempotent; Ask Jev then falls back to the node key, if the node has one',
     ],
   },
+  'credentials.space.list': {
+    cmd: null,
+    sum: 'List a space\'s shared agent credentials (metadata only) — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'answers the last four characters of a stored key at most — never the key',
+      'any member of the space may list; revoked credentials are not listed',
+    ],
+  },
+  'credentials.space.create': {
+    cmd: null,
+    sum: 'Add a space API key or GitHub token after the vendor accepts it — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'paste', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the vendor is asked first; a key it refuses is never stored',
+      'the key is sealed with the node credential key and never echoed back',
+    ],
+  },
+  'credentials.space.rekey': {
+    cmd: null,
+    sum: 'Replace a space credential\'s key — its creator or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'rotate', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the new key is probed first; live sessions keep the old key and the next spawn uses the new one',
+    ],
+  },
+  'credentials.space.setDefault': {
+    cmd: null,
+    sum: 'Make a space credential its provider\'s default — its creator or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the default is what a launch uses when it names the space source without an id',
+    ],
+  },
+  'credentials.space.rename': {
+    cmd: null,
+    sum: 'Rename a space credential — its creator or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the label is unique per space and provider',
+    ],
+  },
+  'credentials.space.delete': {
+    cmd: null,
+    sum: 'Delete a space credential and kill every live session using it — its creator or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'disconnect', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the row is revoked first; every live session and login terminal on it is then killed, whoever launched it',
+    ],
+  },
+  'credentials.space.policy.get': {
+    cmd: null,
+    sum: 'Read a space\'s credential source policy and the node\'s — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'policy', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'null means no policy: every source is allowed',
+    ],
+  },
+  'credentials.space.policy.set': {
+    cmd: null,
+    sum: 'Set which credential sources a space allows for one provider — space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'policy', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'null removes the policy',
+    ],
+  },
+  'node.credentials.status': {
+    cmd: null,
+    sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'node', 'policy', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'answers whether the node environment carries a key — never the key',
+    ],
+  },
+  'node.credentials.policy.set': {
+    cmd: null,
+    sum: 'Allow or forbid the node credential fallback for one provider — node admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'node', 'policy', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'null removes the policy: node fallback is allowed',
+    ],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
@@ -2525,6 +2637,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
   credentials: 'credential',
+  // `node.credentials.*` (SC-3, node admin, `cmd: null`) groups with the
+  // credential rows it bounds; the conformance generator says the same.
+  node: 'credential',
   // `launch.suggest` groups under `session`: it advises the launch of one, and
   // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
   // would name no command. `tools/conformance`'s generator holds the same map.
@@ -2601,7 +2716,9 @@ export const CATALOG_DIGEST =
   // Re-measured 2026-09-23 with F4 (#648): skills.roots/create/edit/equip/unequip.
   // Re-measured 2026-09-23, Jev lane F: + launch.suggest. Matched to the
   // regenerated conformance manifest's catalogDigest.
-  'sha256:bde021c4e34a74460a53fdf1fa9b022eaed41603b1965f959f5db62fec335d7a';
+  // Re-measured 2026-09-23, SC-3: + credentials.space.* and node.credentials.*.
+  // Read out of the failing digest test and matched to the regenerated manifest.
+  'sha256:5144c9bcc5d0cff45a03ee3c0c86219c489953bab58156e54d8b474856288bc0';
 
 export const GRAMMAR_VERSION = '2';
 

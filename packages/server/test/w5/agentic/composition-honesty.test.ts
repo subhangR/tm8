@@ -73,6 +73,17 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.serviceKeys.status',
   'credentials.serviceKeys.put',
   'credentials.serviceKeys.delete',
+  // SC-3: the space and node credential ops mount in the same registration.
+  'credentials.space.list',
+  'credentials.space.create',
+  'credentials.space.rekey',
+  'credentials.space.setDefault',
+  'credentials.space.rename',
+  'credentials.space.delete',
+  'credentials.space.policy.get',
+  'credentials.space.policy.set',
+  'node.credentials.status',
+  'node.credentials.policy.set',
 ]);
 
 class StubDb implements Db {
