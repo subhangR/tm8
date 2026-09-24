@@ -62,6 +62,9 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   TFL01: 'form_response_limit',
   TFR01: 'form_respondent_not_allowed',
   TFD01: 'conflict',
+  // 211: a form question/section key or position already taken, or an
+  // illegal lifecycle transition; details.reason says which.
+  TFC01: 'conflict',
 };
 
 /** Translate a driver error carrying a SQLSTATE into the taxonomy. */

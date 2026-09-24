@@ -1440,6 +1440,13 @@
         "source": "server-router"
       },
       {
+        "operation": "forms.responses.discard",
+        "method": "DELETE",
+        "path": "/v2/forms/:formId/responses/mine",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "forms.responses.submit",
         "method": "POST",
         "path": "/v2/forms/:formId/responses/submit",
@@ -5187,6 +5194,23 @@
           "forms",
           "responses",
           "save"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.discard",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.discard",
+        "intentTags": [
+          "forms",
+          "responses",
+          "discard"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

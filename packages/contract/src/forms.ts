@@ -799,6 +799,16 @@ export const FormsResponsesSaveInputSchema = z.object({
 }).strict();
 export type FormsResponsesSaveInput = z.infer<typeof FormsResponsesSaveInputSchema>;
 
+/**
+ * forms.responses.discard — delete the caller's own draft on the form.
+ * Idempotent: no draft answers {discarded: false}.
+ */
+export const FormsResponsesDiscardInputSchema = z.object({
+  ...formCommandShape,
+  responseVersion: z.number().int().positive().optional(),
+}).strict();
+export type FormsResponsesDiscardInput = z.infer<typeof FormsResponsesDiscardInputSchema>;
+
 /** forms.responses.submit — full validation, store, message, delivery row. */
 export const FormsResponsesSubmitInputSchema = z.object({
   ...formCommandShape,

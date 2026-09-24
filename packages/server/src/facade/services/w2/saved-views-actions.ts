@@ -46,6 +46,16 @@ interface ActionContextRow {
   message_author_id: string | null;
   actor_id: string;
   is_space_admin: boolean;
+  /** Forms (211): null for every other kind. */
+  form_status?: string | null;
+  /** The 211 doors' author-or-space-admin rule, for THIS caller. */
+  form_can_edit?: boolean | null;
+  /** A submitted response exists: questions and sections are frozen. */
+  form_frozen?: boolean | null;
+  /** The caller may respond (a member, or a teammate on an `anyone` form). */
+  form_can_respond?: boolean | null;
+  /** The caller holds a draft on this form (RLS: only their own is visible). */
+  form_has_draft?: boolean | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -280,6 +290,26 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.is_space_admin && row.kind === 'interaction_profile';
     case 'teamMembers.interactionProfile.setDefault':
       return live && row.is_space_admin && row.kind === 'team_member';
+    // Forms (211): the SAME rules the doors enforce, read off the form's
+    // status so an agent discovers submit/close/reopen/cancel from state.
+    case 'forms.update':
+      return live && row.kind === 'form' && row.form_can_edit === true && row.form_status !== 'cancelled';
+    case 'forms.questions.add':
+    case 'forms.questions.update':
+    case 'forms.questions.remove':
+    case 'forms.questions.move':
+      return live && row.kind === 'form' && row.form_can_edit === true
+        && row.form_status !== 'cancelled' && row.form_frozen !== true;
+    case 'forms.transition':
+      // draft -> open|cancelled, open -> closed|cancelled, closed -> open.
+      return live && row.kind === 'form' && row.form_can_edit === true && row.form_status !== 'cancelled';
+    case 'forms.responses.save':
+    case 'forms.responses.submit':
+      return live && row.kind === 'form' && row.form_status === 'open' && row.form_can_respond === true;
+    case 'forms.responses.discard':
+      return live && row.kind === 'form' && row.form_has_draft === true;
+    case 'forms.responses.list':
+      return live && row.kind === 'form';
     default:
       return false;
   }
@@ -458,6 +488,23 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
       ];
     case 'member':
       return ['messages.post', 'entities.points.add'];
+    case 'form':
+      switch (row.form_status) {
+        case 'open':
+          return [
+            'forms.responses.submit', 'forms.responses.save', 'forms.responses.discard',
+            'messages.post', 'forms.responses.list', 'forms.transition', 'entities.context',
+          ];
+        case 'draft':
+          return [
+            'forms.transition', 'forms.questions.add', 'forms.update', 'forms.questions.update',
+            'forms.questions.move', 'forms.questions.remove', 'messages.post', 'entities.context',
+          ];
+        case 'closed':
+          return ['forms.responses.list', 'forms.transition', 'messages.post', 'entities.context'];
+        default:
+          return ['forms.responses.list', 'messages.post', 'entities.context'];
+      }
     case 'interaction_profile':
       return [
         'interactionProfiles.updateDraft',
@@ -545,7 +592,10 @@ function capabilityEpoch(
       kind: row.kind,
       version: row.version,
       admin: row.is_space_admin,
-      status: row.work_status,
+      status: row.work_status ?? row.form_status ?? null,
+      form: row.kind === 'form'
+        ? [row.form_can_edit, row.form_frozen, row.form_can_respond, row.form_has_draft]
+        : null,
     } : null,
     operations,
   })).digest('hex');
@@ -557,10 +607,30 @@ async function actionContext(q: Querier, entityId: string): Promise<ActionContex
     `select e.id, e.space_id, e.kind, e.version, e.deleted_at,
             t.work_status, m.author_id message_author_id,
             internal.current_member_id(e.space_id)::text actor_id,
-            internal.is_space_admin(e.space_id) is_space_admin
+            internal.is_space_admin(e.space_id) is_space_admin,
+            f.status form_status,
+            case when f.entity_id is not null then
+              e.created_by = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
+              or internal.is_space_admin(e.space_id)
+            end form_can_edit,
+            case when f.entity_id is not null then
+              exists (select 1 from public.form_responses r where r.form_id = e.id and r.is_current)
+            end form_frozen,
+            case when f.entity_id is not null then
+              coalesce(who.kind = 'member'
+                       or (who.kind = 'team_member' and f.settings->>'respondents' = 'anyone'), false)
+            end form_can_respond,
+            case when f.entity_id is not null then
+              exists (select 1 from public.form_responses r
+                       where r.form_id = e.id and r.status = 'draft'
+                         and internal.form_is_caller(r.respondent_id))
+            end form_has_draft
        from public.entities e
        left join public.tasks t on t.entity_id = e.id
        left join public.messages m on m.entity_id = e.id
+       left join public.forms f on f.entity_id = e.id
+       left join public.entities who
+         on who.id = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
       where e.id = $1 and e.deleted_at is null`,
     [entityId],
   );

@@ -340,7 +340,8 @@ export const OPERATIONS = [
   { name: 'artifacts.export',                            method: 'GET',    path: '/v2/artifacts/:artifactId/revisions/:revisionNumber/export',         kind: 'read',    status: 'v1' },
   { name: 'artifacts.restore',                           method: 'POST',   path: '/v2/artifacts/:artifactId/commands/restore-revision',                kind: 'command', status: 'v1' },
 
-  // forms — an agent asks, a human answers, the answer comes back to the
+  // forms — thirteen rows (§6's twelve plus responses.discard, coordinator
+  // ruling on W1-R3). An agent asks, a human answers, the answer comes back to the
   // requesting session (FORMS-DESIGN §6; migrations 209 + 211). The form
   // itself reads through the universal entity reads (a `form` arm in
   // entity_content); responses are side rows, so they page here.
@@ -352,6 +353,7 @@ export const OPERATIONS = [
   { name: 'forms.questions.move',                        method: 'POST',   path: '/v2/forms/:formId/questions/:questionKey/move',                      kind: 'command', status: 'v1' },
   { name: 'forms.transition',                            method: 'POST',   path: '/v2/forms/:formId/transition',                                       kind: 'command', status: 'v1' },
   { name: 'forms.responses.save',                        method: 'PUT',    path: '/v2/forms/:formId/responses/mine',                                   kind: 'command', status: 'v1' },
+  { name: 'forms.responses.discard',                     method: 'DELETE', path: '/v2/forms/:formId/responses/mine',                                   kind: 'command', status: 'v1' },
   { name: 'forms.responses.submit',                      method: 'POST',   path: '/v2/forms/:formId/responses/submit',                                 kind: 'command', status: 'v1' },
   { name: 'forms.responses.list',                        method: 'GET',    path: '/v2/forms/:formId/responses',                                        kind: 'read',    status: 'v1' },
   { name: 'forms.responses.get',                         method: 'GET',    path: '/v2/form-responses/:responseId',                                     kind: 'read',    status: 'v1' },
