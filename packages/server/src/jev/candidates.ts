@@ -206,6 +206,9 @@ export async function loadTeammates(q: Querier, spaceId: string): Promise<Candid
   const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
     if (!header) return [];
     const text = jevText(header, { limit: TEXT_LIMIT, equippedSkills: equipped.get(row.id) ?? [] });
     return [{ entityId: row.id, kind: 'team_member', title: header.name, text, sources: ['space'] }];
@@ -251,6 +254,9 @@ export async function loadMemories(
   const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
     if (!header) return [];
     return [{
       entityId: row.id,
@@ -296,6 +302,9 @@ export async function loadSkills(q: Querier, spaceId: string, teamMemberId: stri
   const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
     if (!header) return [];
     const source = direct.get(row.id);
     return [{

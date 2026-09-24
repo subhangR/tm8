@@ -64,7 +64,8 @@ const HEADER_SQL = `
          left(nullif(sk.description, ''), ${L}) as skill_description,
          left(sk.frontmatter ->> 'when_to_use', ${L}) as skill_when_to_use,
          coalesce(sk.body_bytes, octet_length(sk.content)) as skill_bytes,
-         memo.statement as memory_statement,
+         -- 600 covers both the summary cut and titleOf's 120-character title.
+         left(memo.statement, ${L}) as memory_statement,
          left(memo.subject_scope, ${L}) as memory_subject_scope,
          octet_length(memo.statement) as memory_bytes,
          tm.name as team_member_name,
