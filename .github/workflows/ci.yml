@@ -156,7 +156,7 @@ jobs:
       - name: Typecheck
         run: >-
           bash tools/ci/check.sh --only
-          typecheck:packages/contract,typecheck:packages/prompt,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,typecheck:packages/execution,typecheck:packages/cli,typecheck:tools/conformance,typecheck:packages/tm8-ui
+          typecheck:packages/contract,typecheck:packages/prompt,typecheck:packages/pty-protocol,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,typecheck:packages/execution,typecheck:packages/cli,typecheck:tools/conformance,typecheck:packages/tm8-ui
 
   test-server:
     name: test-server (${{ matrix.shard }}/4)
@@ -311,13 +311,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tm8-setup
-      # Builds: packages/contract, packages/jev, tools/conformance. mcp and prompt are
-      # src-only suites (CI split W3): mcp's tests need only the contract dist built here,
-      # prompt's import no workspace package. Both are typechecked in the typecheck job.
+      # Builds: packages/contract, packages/jev, tools/conformance. mcp, prompt and
+      # pty-protocol are src-only suites (CI split W3): mcp's tests need only the contract
+      # dist built here; prompt's and pty-protocol's import no workspace package. All three
+      # are typechecked in the typecheck job.
       - name: Gate
         run: >-
           bash tools/ci/check.sh --only
-          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance,test:packages/mcp,test:packages/prompt
+          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance,test:packages/mcp,test:packages/prompt,test:packages/pty-protocol
       - uses: actions/upload-artifact@v4
         if: always()
         with:
