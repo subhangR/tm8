@@ -5,7 +5,7 @@
  * rejections asserted against the DEV-8 taxonomy.
  */
 import {
-  bindPath, CollabError, WireErrorBodySchema,
+  bindPath, WireErrorBodySchema,
   type CommandErrorCode, type OperationName,
 } from '@tm8/contract';
 
@@ -118,5 +118,3 @@ export async function expectError(p: Promise<unknown>, code: CommandErrorCode): 
   }
   throw new Error(`expected ${code}, but the call succeeded`);
 }
-
-export { CollabError };
