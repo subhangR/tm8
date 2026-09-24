@@ -127,9 +127,11 @@ export interface StartCredentialSessionInput {
    * A login into a SPACE credential (206, SC-4) instead of the member's own:
    * `label` opens a new pending credential (any member, D1), `credentialId`
    * logs in again onto an existing one (its creator or a space admin, M4).
-   * Exactly one of the two.
+   * Exactly one of the two. `share: true` with a `label` (SC-8, 210) opens it
+   * as the caller's SHARE of their own login instead: a re-sign-in into its
+   * own home, flagged `personal_login`, never the space default.
    */
-  spaceCredential?: { label?: string; credentialId?: string };
+  spaceCredential?: { label?: string; credentialId?: string; share?: true };
 }
 
 export interface StartedCredentialSession {
@@ -275,7 +277,8 @@ export interface W2CredentialSessionsServiceOptions {
 export type SpaceLoginStorePort = Pick<
   DbSpaceCredentialStore,
   'startLogin' | 'finishLogin' | 'liveSessions' | 'expirePending' | 'recordProbe'
->;
+> &
+  Partial<Pick<DbSpaceCredentialStore, 'startShareLogin'>>;
 
 /** What `closeSpaceLogin` did for a caller outside this service (delete). */
 export type SpaceLoginCloseResult = 'closed' | 'kill_failed';
@@ -1103,7 +1106,7 @@ export class W2CredentialSessionsService {
    */
   private async startSpace(
     input: StartCredentialSessionInput,
-    target: { label?: string; credentialId?: string },
+    target: { label?: string; credentialId?: string; share?: true },
     principal: CredentialPrincipal,
   ): Promise<StartedCredentialSession> {
     const { provider } = input;
@@ -1123,12 +1126,29 @@ export class W2CredentialSessionsService {
         'a space login names exactly one of a label (a new credential) or a credentialId (log in again)',
       );
     }
+    if (target.share && !hasLabel) {
+      throw new CollabError('invalid_input', 'a share login opens a new credential: it names a label');
+    }
 
     await this.reclaimExpiredSpaceLogins(principal, input.spaceId, provider, target);
 
     let started: Awaited<ReturnType<SpaceLoginStorePort['startLogin']>>;
     try {
-      started = await this.spaceStore.startLogin(principal.claims, {
+      if (target.share) {
+        // SC-8: the SQL checks the caller has a personal login of this
+        // provider and does not already share one here (option A: the share
+        // is a re-sign-in into a home of its own, never the member's home).
+        if (!this.spaceStore.startShareLogin) {
+          throw new CollabError('not_implemented', 'sharing a login is not composed on this node');
+        }
+        started = await this.spaceStore.startShareLogin(principal.claims, {
+          spaceId: input.spaceId,
+          provider,
+          label: target.label as string,
+          ttlSeconds: DEFAULT_CREDENTIAL_TTL_SECONDS,
+          sessionCap: resolveCredentialSessionCap(this.env),
+        });
+      } else started = await this.spaceStore.startLogin(principal.claims, {
         spaceId: input.spaceId,
         provider,
         label: target.label ?? null,
@@ -1555,6 +1575,16 @@ function assertHumanSpaceLogin(claims: DbClaims): void {
 function spaceStartRefusal(error: unknown, target: { label?: string; credentialId?: string }): unknown {
   if (!(error instanceof CollabError) || error.code !== 'invariant_violation') return error;
   const details = error.details ?? {};
+  if (details.reason === 'not_connected') {
+    return new CollabError('invalid_input', 'connect this provider under your own credentials before sharing it', {
+      details: { reason: 'not_connected' },
+    });
+  }
+  if (details.reason === 'already_shared') {
+    return new CollabError('conflict', 'you already share this provider to this space', {
+      details: { reason: 'already_shared' },
+    });
+  }
   if (details.reason === 'login_open') {
     return new CollabError('conflict', 'a login onto this space credential is already open', {
       details: {

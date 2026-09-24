@@ -151,6 +151,8 @@ export interface IdentityServiceOptions {
  */
 export interface AccountSpaceCredentialContainment {
   killSessionsLaunchedBy(accountId: AccountId): Promise<unknown>;
+  /** SC-8: revoke the account's shares in every space and kill what runs on them. */
+  killSharesOf?(accountId: AccountId): Promise<unknown>;
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -347,6 +349,11 @@ export class IdentityServiceImpl implements IdentityService {
     // so a session it launched and another member has since resumed is the
     // resumer's, and survives (C3).
     await this.spaceCredentialContainment?.killSessionsLaunchedBy(accountId);
+    // SC-8, a separate step on purpose: the sessions on this account's SHARES,
+    // whoever launched or resumed them. 210's accounts trigger has already
+    // revoked the shares with the status change; this kills what still runs
+    // on them. Keyed on the sharer, so it cannot bend C3 above.
+    await this.spaceCredentialContainment?.killSharesOf?.(accountId);
     return account;
   }
 

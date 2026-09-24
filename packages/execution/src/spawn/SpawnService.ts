@@ -109,11 +109,14 @@ import { SpawnError } from './types.js';
  *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
  *   - `member_credential_disconnected`: the member Disconnect of their own credential.
  *   - `member_removed`: SC-6 — the launching member was removed or disabled.
+ *   - `space_credential_unshared`: SC-8 — the member who shared the credential
+ *     stopped sharing it, disconnected it, left the space or was disabled.
  */
 export type CredentialContainmentCause =
   | 'space_credential_deleted'
   | 'member_credential_disconnected'
-  | 'member_removed';
+  | 'member_removed'
+  | 'space_credential_unshared';
 
 /**
  * What a containment kill did. `outcome` is the PTY host's own answer;
@@ -153,6 +156,13 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
       'Stopped because the member who launched it no longer has access to the space credential it was running on.',
     error:
       'credential containment: the launching member was removed or disabled — ' +
+      'PTY killed, exit code not observed',
+  },
+  space_credential_unshared: {
+    endedReason:
+      'Stopped because the member who shared the credential it was running on no longer shares it.',
+    error:
+      'credential containment: the shared credential this session ran on was un-shared or its sharer lost access — ' +
       'PTY killed, exit code not observed',
   },
 };

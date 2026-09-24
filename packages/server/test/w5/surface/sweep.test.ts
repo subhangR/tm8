@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(SURFACE).toHaveLength(236); /* +2 credentials.space.share + credentials.shares.list (SC-8). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(rows).toHaveLength(236); /* +2 credentials.space.share + credentials.shares.list (SC-8). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(new Set(rows.map((r) => r.op)).size).toBe(236); /* +2 credentials.space.share + credentials.shares.list (SC-8). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
   });
 
   /**
@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(196); // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
+    expect(server.appliedMigrations.length).toBe(197); // 196 -> 197: 210_space_credential_shares (SC-8), merged after 216 at the merge position; the ledger keys by filename, so on a DB that already has 211-216, 210 applies after them. MEASURED: ls db/migrations/*.sql | wc -l -> 197, duplicate prefixes -> 0. // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1363,6 +1363,10 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // credentials.space.create is NOT here: it refuses a non-member of the
   // synthetic space (403) before the vendor probe, so it never reaches a 400.
   'credentials.space.policy.set',
+  // SC-8: credentials.space.share passes the :166 gate (the sweep's body is
+  // schema-valid) and is refused in-handler — the sweep's owner has no GitHub
+  // token connected, so the share answers not_connected. Handler-reached.
+  'credentials.space.share',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',

@@ -21,9 +21,12 @@ import type {
   CredentialsLoginSessionStartResult,
   CredentialsServiceKeyDeleteResult,
   CredentialsServiceKeysStatusView,
+  CredentialsSharesView,
+  CredentialsSpaceDeleteResult,
   CredentialsStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
+  SpaceCredentialView,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -73,6 +76,31 @@ export function serviceKeysPortFromSeam(seam: Pick<Seam, 'credentials'>): Servic
     load: () => seam.credentials.serviceKeys(),
     save: (provider, apiKey) => seam.credentials.saveServiceKey(provider, apiKey),
     remove: (provider) => seam.credentials.removeServiceKey(provider),
+  };
+}
+
+/**
+ * SC-8 — sharing the member's OWN credential into a space. Human-only like the
+ * rest (I2, facade and SQL). Only the GitHub token is shared from here, by
+ * reference: no secret leaves this screen or the server for it. A Claude or
+ * Codex login is shared from Space credentials ("+ Share my login"), because
+ * it is a fresh sign-in with its own terminal (option A). Stop sharing is the
+ * space credential delete, which revokes and kills the sessions on it.
+ */
+export interface SharesPort {
+  /** The space a share from here lands in: the one this screen is hosted in. */
+  spaceId: SpaceId;
+  load(): Promise<CredentialsSharesView>;
+  shareToken(label: string): Promise<SpaceCredentialView>;
+  unshare(credentialId: string): Promise<CredentialsSpaceDeleteResult>;
+}
+
+export function sharesPortFromSeam(seam: Pick<Seam, 'credentials'>, spaceId: SpaceId): SharesPort {
+  return {
+    spaceId,
+    load: () => seam.credentials.space.shares(),
+    shareToken: (label) => seam.credentials.space.share(spaceId, { provider: 'github', label }),
+    unshare: (credentialId) => seam.credentials.space.remove(credentialId),
   };
 }
 

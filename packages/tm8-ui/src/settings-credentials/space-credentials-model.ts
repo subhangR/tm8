@@ -56,11 +56,37 @@ export function groupByProvider(
   return groups;
 }
 
-/** D11: the creator and space admins edit, rotate and delete. Everyone else uses. */
+/** SC-8: a member's personal credential shared into the space (210). */
+export function isShare(row: SpaceCredentialView): boolean {
+  return row.shareKind != null;
+}
+
+/** SC-8: the viewer is the member who shared this row. */
+export function isSharer(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return isShare(row) && viewer?.accountId != null && row.sharedBy?.accountId === viewer.accountId;
+}
+
+/**
+ * D11: the creator and space admins edit, rotate and delete. Everyone else uses.
+ * Amended by SC-8: a SHARE is edited by its sharer alone; an admin may only
+ * remove it (`canRemove`).
+ */
 export function canManage(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
   if (!viewer) return false;
+  if (isShare(row)) return isSharer(row, viewer);
   if (viewer.isSpaceAdmin) return true;
   return row.createdByAccountId !== null && viewer.accountId !== null && row.createdByAccountId === viewer.accountId;
+}
+
+/** Who may delete it: a manager, or — for a share — also a space admin (amended D11). */
+export function canRemove(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return canManage(row, viewer) || (isShare(row) && viewer?.isSpaceAdmin === true);
+}
+
+/** "Shared by …": the sharer's name in this space, or "you". */
+export function sharedByLabel(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): string {
+  if (isSharer(row, viewer)) return 'you';
+  return row.sharedBy?.displayName ?? 'a member';
 }
 
 /**

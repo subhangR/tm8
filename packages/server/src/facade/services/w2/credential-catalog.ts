@@ -89,6 +89,7 @@ import {
   containmentFailureOf,
   type AgentSessionContainmentPort,
 } from '../../../credentials/agent-session-containment.js';
+import type { SpaceCredentialMemberContainment } from '../../../credentials/space-credential-containment.js';
 import type { CredentialPrincipal } from './credential-sessions.js';
 import {
   measureCredentialBinary,
@@ -212,6 +213,12 @@ export interface W2CredentialCatalogServiceOptions {
   revokeGitCredential?: (input: {
     principal: CredentialPrincipal;
   }) => Promise<void>;
+  /**
+   * SC-8: kills the sessions running on this member's SHARES of the
+   * disconnected provider, in every space (210's disconnect triggers have
+   * already revoked the shares). Absent, those sessions run until they end.
+   */
+  shareContainment?: Pick<SpaceCredentialMemberContainment, 'killSharesOf'>;
 }
 
 export class W2CredentialCatalogService {
@@ -228,6 +235,7 @@ export class W2CredentialCatalogService {
   private readonly revokeGitCredential:
     | W2CredentialCatalogServiceOptions['revokeGitCredential']
     | undefined;
+  private readonly shareContainment: W2CredentialCatalogServiceOptions['shareContainment'] | undefined;
 
   constructor(options: W2CredentialCatalogServiceOptions) {
     this.db = options.db;
@@ -239,6 +247,7 @@ export class W2CredentialCatalogService {
     this.binaryResolver = options.binaryResolver;
     this.removeCredentialFiles = options.removeCredentialFiles ?? removeCredentialDirectory;
     this.revokeGitCredential = options.revokeGitCredential;
+    this.shareContainment = options.shareContainment;
   }
 
   // -------------------------------------------------------------------------
@@ -437,6 +446,10 @@ export class W2CredentialCatalogService {
       failures,
     );
 
+    // ---- 4. SC-8: sessions on this member's shares of the provider. -------
+    // Whoever launched them: a share dies with its sharer's credential.
+    terminatedAgentSessionIds.push(...(await this.terminateShareSessions(provider, principal, failures)));
+
     return {
       provider,
       revoked,
@@ -590,6 +603,42 @@ export class W2CredentialCatalogService {
       terminated.push(row.work_session_id);
     }
     return terminated;
+  }
+
+  /**
+   * Step 4 (SC-8). 210's triggers revoked this member's shares of the
+   * provider when step 1 removed the personal row; this kills every live
+   * session on them. Only providers a share can carry.
+   */
+  private async terminateShareSessions(
+    provider: CredentialProviderName,
+    principal: CredentialPrincipal,
+    failures: CredentialsDeleteResult['failures'],
+  ): Promise<string[]> {
+    if (!this.shareContainment) return [];
+    if (provider !== 'github' && provider !== 'anthropic' && provider !== 'openai') return [];
+    let accountId: string | null;
+    try {
+      const [row] = await this.db.query<{ account_id: string | null }>(
+        principal.claims,
+        'select internal.current_account_id()::text as account_id',
+      );
+      accountId = row?.account_id ?? null;
+    } catch (error) {
+      failures.push({ step: 'agentSession', reason: `shares: ${errorMessage(error)}` });
+      return [];
+    }
+    if (!accountId) return [];
+    const result = await this.shareContainment.killSharesOf(principal.claims, accountId, null, provider);
+    for (const failure of result.failures) {
+      failures.push({
+        step: 'agentSession',
+        ...(failure.sessionId ? { sessionId: failure.sessionId } : {}),
+        reason: `shares: ${failure.reason}`,
+      });
+    }
+    // `not_found` is terminated here, as step 3 counts it: no PTY on this node.
+    return [...result.terminatedSessionIds, ...result.notOnThisNodeSessionIds];
   }
 
   /**

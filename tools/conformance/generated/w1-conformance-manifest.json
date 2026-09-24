@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942",
+  "catalogDigest": "sha256:bd1db763eec8d7474035aa13f71c166e9078790783dd6510c9556bb8cbe28898",
   "catalog": {
-    "total": 238,
-    "v1": 236,
+    "total": 240,
+    "v1": 238,
     "reserved": 2,
-    "http": 236,
+    "http": 238,
     "ws": 1,
-    "registerableV1Http": 234,
+    "registerableV1Http": 236,
     "methods": {
-      "GET": 78,
-      "POST": 113,
+      "GET": 79,
+      "POST": 114,
       "PATCH": 16,
       "DELETE": 16,
       "PUT": 13,
       "WS": 2
     },
     "kinds": {
-      "read": 82,
-      "command": 154,
+      "read": 83,
+      "command": 155,
       "stream": 2
     },
-    "uniqueNames": 238,
-    "uniqueBindings": 237
+    "uniqueNames": 240,
+    "uniqueBindings": 239
   },
   "reservedOperations": [
     "search.query",
@@ -1643,6 +1643,20 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.share",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/credential-shares",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.shares.list",
+        "method": "GET",
+        "path": "/v2/identity/credentials/shares",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.space.policy.get",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/credential-policy",
@@ -2070,7 +2084,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 206
+    "unimplementedV1Http": 208
   },
   "schemas": {
     "additive": {
@@ -5687,6 +5701,40 @@
           "credentials",
           "space",
           "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.share",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.share",
+        "intentTags": [
+          "credentials",
+          "space",
+          "share"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.shares.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.shares.list",
+        "intentTags": [
+          "credentials",
+          "shares",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

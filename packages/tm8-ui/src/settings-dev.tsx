@@ -9,7 +9,7 @@ import './panels/panels.css';
 import { createFixtureSeam, FIXTURE_SPACE_ID } from './data/fixtures/seam-fixture';
 import { SettingsShell, settingsPortFromSeam } from './settings-space';
 import type { SettingsSectionId } from './settings-space';
-import { CredentialsSection, credentialsPortFromSeam, serviceKeysPortFromSeam } from './settings-credentials';
+import { CredentialsSection, credentialsPortFromSeam, serviceKeysPortFromSeam, sharesPortFromSeam } from './settings-credentials';
 
 /**
  * SETTINGS SHELL SCRATCH HARNESS — same spirit as `artifact-dev.tsx`: a
@@ -34,6 +34,7 @@ const credentials = (
   <CredentialsSection
     port={credentialsPortFromSeam(seam, FIXTURE_SPACE_ID)}
     serviceKeysPort={serviceKeysPortFromSeam(seam)}
+    sharesPort={sharesPortFromSeam(seam, FIXTURE_SPACE_ID)}
   />
 );
 

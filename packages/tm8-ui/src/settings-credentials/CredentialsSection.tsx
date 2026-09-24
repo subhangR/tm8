@@ -13,12 +13,14 @@ import type {
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import { CredentialsProviderBlock } from './CredentialsProviderBlock';
 import { ServiceKeysBlock } from './ServiceKeysBlock';
+import { SharesBlock } from './SharesBlock';
 import { presentationOf } from './provider-presentation';
 import {
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
   type ServiceKeysPort,
+  type SharesPort,
 } from './port';
 import './credentials.css';
 
@@ -50,6 +52,8 @@ export interface CredentialsSectionProps {
    * logins when the host wires it; absent, the block is simply not shown.
    */
   serviceKeysPort?: ServiceKeysPort;
+  /** SC-8: share your own credential into this space. Absent, not shown. */
+  sharesPort?: SharesPort;
 }
 
 interface ObservedStatus {
@@ -125,6 +129,7 @@ export function CredentialsSection({
   serverBaseUrl,
   onStatusRead,
   serviceKeysPort,
+  sharesPort,
 }: CredentialsSectionProps) {
   const [observed, setObserved] = useState<ObservedStatus | null>(null);
 
@@ -175,6 +180,8 @@ export function CredentialsSection({
       <div className="set-cred__shared">
         <CredentialsProviderBlock port={observedPort} serverBaseUrl={serverBaseUrl} />
       </div>
+
+      {sharesPort ? <SharesBlock port={sharesPort} /> : null}
 
       {serviceKeysPort ? <ServiceKeysBlock port={serviceKeysPort} /> : null}
     </SectionFrame>

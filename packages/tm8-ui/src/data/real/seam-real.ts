@@ -502,6 +502,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
+        share: (spaceId, input) => ops.spaceCredentialsShare(spaceId, input),
+        shares: () => ops.credentialsSharesList(),
       },
       node: {
         status: () => ops.nodeCredentialsStatus(),

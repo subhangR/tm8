@@ -82,6 +82,9 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.delete',
   'credentials.space.policy.get',
   'credentials.space.policy.set',
+  // SC-8: sharing a personal credential mounts in the same registration.
+  'credentials.space.share',
+  'credentials.shares.list',
   'node.credentials.status',
   'node.credentials.policy.set',
 ]);

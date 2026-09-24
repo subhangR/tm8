@@ -203,7 +203,12 @@ export type SpaceCredentialRefusalReason =
   | 'pending'
   | 'stale'
   | 'revoked'
-  | 'unreadable';
+  | 'unreadable'
+  // SC-8 (210): a share whose sharer left the space or was disabled, whose
+  // personal source was disconnected, or whose token is not fine-grained.
+  | 'share_owner_gone'
+  | 'share_source_disconnected'
+  | 'share_token_kind';
 
 export type SpaceCredentialRepoint =
   | { ok: true; credentials: ReadonlyArray<{ provider: SpaceCredentialProvider; spaceCredentialId: string }> }

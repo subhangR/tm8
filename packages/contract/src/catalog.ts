@@ -478,6 +478,10 @@ export const OPERATIONS = [
   { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  // SC-8 (210): share YOUR personal credential into a space (by reference).
+  // Stop sharing, or a space admin's remove, is `credentials.space.delete`.
+  { name: 'credentials.space.share',                     method: 'POST',   path: '/v2/spaces/:spaceId/credential-shares',                              kind: 'command', status: 'v1' },
+  { name: 'credentials.shares.list',                     method: 'GET',    path: '/v2/identity/credentials/shares',                                    kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.

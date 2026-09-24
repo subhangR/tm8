@@ -64,6 +64,7 @@ import {
   CredentialsSpacePolicySetInputSchema,
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
+  CredentialsSpaceShareInputSchema,
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
@@ -96,6 +97,7 @@ import {
 } from '../../services/w2/credential-sessions.js';
 import { W2CredentialCatalogService } from '../../services/w2/credential-catalog.js';
 import { DbSpaceCredentialStore } from '../../../credentials/space-credential-store.js';
+import { SpaceCredentialMemberContainment } from '../../../credentials/space-credential-containment.js';
 import type { AgentSessionContainmentPort } from '../../../credentials/agent-session-containment.js';
 import {
   createVendorProbe,
@@ -311,12 +313,21 @@ export function registerCredentialHandlers(
     storeGitCredential: ({ claims, login, token }) =>
       gitHubStore.store(claims, { login, token }),
   });
+  // SC-8: a share dies with its sharer's credential. The personal Disconnect
+  // kills what runs on the member's shares, closing a share's login terminal
+  // through the same login registry SC-3's delete uses.
+  const shareContainment = new SpaceCredentialMemberContainment({
+    store: spaceStore,
+    agentSessions: credentials.agentSessions,
+    closeLogin: (claims, workSessionId) => sessions.closeSpaceLogin(claims, workSessionId),
+  });
   const catalog = new W2CredentialCatalogService({
     db: deps.db,
     terminals: credentials.launcher,
     agentSessions: credentials.agentSessions,
     dataDir: credentials.dataDir,
     revokeGitCredential: ({ principal }) => gitHubStore.delete(principal.claims),
+    shareContainment,
   });
 
   // The node's own registry sweep (R10 element 1): expired or PTY-less login
@@ -449,6 +460,13 @@ export function registerCredentialHandlers(
     return spaceCatalog.rename(await claimsOf(ctx), pathParam(ctx, 'credentialId'), label);
   };
 
+  const spaceShare: OperationHandler = async (ctx) => {
+    const { provider, label } = CredentialsSpaceShareInputSchema.parse(ctx.body);
+    return spaceCatalog.share(await claimsOf(ctx), pathParam(ctx, 'spaceId'), { provider, label });
+  };
+
+  const sharesList: OperationHandler = async (ctx) => spaceCatalog.shares(await claimsOf(ctx));
+
   const spaceDelete: OperationHandler = async (ctx) =>
     spaceCatalog.delete(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
 
@@ -497,6 +515,8 @@ export function registerCredentialHandlers(
     'credentials.space.setDefault': requireHumanSession(spaceSetDefault),
     'credentials.space.rename': requireHumanSession(spaceRename),
     'credentials.space.delete': requireHumanSession(spaceDelete),
+    'credentials.space.share': requireHumanSession(spaceShare),
+    'credentials.shares.list': requireHumanSession(sharesList),
     'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
     'credentials.space.policy.set': requireHumanSession(spacePolicySet),
     'node.credentials.status': requireHumanSession(nodeStatus),

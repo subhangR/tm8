@@ -28,7 +28,11 @@ import type {
 } from '@tm8/execution';
 
 import type { Db, DbClaims } from '../db/types.js';
-import { DbSpaceCredentialStore, type DbSpaceCredentialStoreOptions } from './space-credential-store.js';
+import {
+  DbSpaceCredentialStore,
+  SHARE_TOKEN_KIND_MESSAGE,
+  type DbSpaceCredentialStoreOptions,
+} from './space-credential-store.js';
 
 const UNREADABLE_MESSAGE = 'stored space credential is unreadable';
 const REFUSAL_REASONS: ReadonlySet<string> = new Set<SpaceCredentialRefusalReason>([
@@ -37,6 +41,8 @@ const REFUSAL_REASONS: ReadonlySet<string> = new Set<SpaceCredentialRefusalReaso
   'pending',
   'stale',
   'revoked',
+  'share_owner_gone',
+  'share_source_disconnected',
 ]);
 
 /** A login credential's file home (design §3); the provider dir sits under it. */
@@ -98,6 +104,9 @@ export class DbSpaceCredentialPort implements SpaceCredentialPort {
     } catch (error) {
       if (error instanceof Error && error.message === UNREADABLE_MESSAGE) {
         return { ok: false, reason: 'unreadable' };
+      }
+      if (error instanceof Error && error.message === SHARE_TOKEN_KIND_MESSAGE) {
+        return { ok: false, reason: 'share_token_kind' };
       }
       const reason = refusalReason(error);
       if (reason) return { ok: false, reason };
