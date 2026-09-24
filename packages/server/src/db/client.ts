@@ -264,6 +264,9 @@ const TX_WATCHDOG_MILLIS = 10_000;
  * the error text: a connect that failed WITHOUT queueing (database down, auth)
  * is a different fault and is rethrown untouched.
  */
+/** Timer rounding allowance when deciding a checkout ran out its deadline. */
+const POOL_TIMER_SLACK_MILLIS = 10;
+
 export class DbPoolExhaustedError extends CollabError {
   constructor(waitedMs: number, inUse: number, max: number, waiting: number) {
     super(
@@ -317,9 +320,17 @@ export class PgDb implements Db {
     try {
       return await this.pool.connect();
     } catch (err) {
-      if (!queued) throw err;
+      // Queued is necessary, not sufficient. pg-pool serves a queued waiter
+      // with a NEW client when a slot frees (_pulseQueue -> newClient), so a
+      // Postgres restart or backend kill rejects a queued checkout quickly
+      // with ECONNREFUSED / 57P03 / 53300 — a different fault that must pass
+      // through untouched. Only a wait that ran out the acquire deadline is
+      // exhaustion. The slack absorbs timer rounding (a timer may fire a
+      // millisecond early against Date.now()).
+      const waitedMs = Date.now() - startedAt;
+      if (!queued || waitedMs < this.connectionTimeoutMillis - POOL_TIMER_SLACK_MILLIS) throw err;
       const exhausted = new DbPoolExhaustedError(
-        Date.now() - startedAt,
+        waitedMs,
         this.pool.totalCount - this.pool.idleCount,
         this.max,
         this.pool.waitingCount,

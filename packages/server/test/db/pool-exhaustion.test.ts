@@ -19,16 +19,20 @@ import { DbPoolExhaustedError, PgDb } from '../../src/db/client.js';
 
 interface PoolState { totalCount: number; idleCount: number; waitingCount: number }
 
-function dbOverPool(state: PoolState, max: number, connectError: Error): PgDb {
+/** Deadline for these fakes; the queue-timeout fake rejects just after it, as pg-pool does. */
+const TIMEOUT_MS = 40;
+
+function dbOverPool(state: PoolState, max: number, connectError: Error, rejectAfterMs = 0): PgDb {
   const pool = Object.assign(new EventEmitter(), state, {
-    connect: () => Promise.reject(connectError),
+    connect: () =>
+      new Promise<never>((_, reject) => setTimeout(() => reject(connectError), rejectAfterMs)),
     end: () => Promise.resolve(),
   });
   const db = Object.create(PgDb.prototype) as PgDb & Record<string, unknown>;
   db.pool = pool;
   db.role = 'tm8_app';
   db.max = max;
-  db.connectionTimeoutMillis = 5_000;
+  db.connectionTimeoutMillis = TIMEOUT_MS;
   return db;
 }
 
@@ -38,7 +42,7 @@ const QUEUE_TIMEOUT = new Error('timeout exceeded when trying to connect');
 
 describe('pool exhaustion is named, not reported as internal server error', () => {
   it('a checkout that found the pool full and then failed is db_pool_exhausted', async () => {
-    const db = dbOverPool({ totalCount: 32, idleCount: 0, waitingCount: 7 }, 32, QUEUE_TIMEOUT);
+    const db = dbOverPool({ totalCount: 32, idleCount: 0, waitingCount: 7 }, 32, QUEUE_TIMEOUT, TIMEOUT_MS + 5);
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const err = await db.tx(CLAIMS, async () => 'unreachable').catch((e: unknown) => e);
     const lines = logged.mock.calls.map((c) => String(c[0]));
@@ -67,5 +71,14 @@ describe('pool exhaustion is named, not reported as internal server error', () =
     const db = dbOverPool({ totalCount: 32, idleCount: 1, waitingCount: 0 }, 32, QUEUE_TIMEOUT);
     const err = await db.tx(CLAIMS, async () => 'unreachable').catch((e: unknown) => e);
     expect(err).toBe(QUEUE_TIMEOUT);
+  });
+
+  it('control: a queued checkout that failed FAST (Postgres restarting) is not exhaustion', async () => {
+    // pg-pool hands a queued waiter a NEW client when a slot frees; if the
+    // server is down that connect fails long before the acquire deadline.
+    const restarting = Object.assign(new Error('the database system is starting up'), { code: '57P03' });
+    const db = dbOverPool({ totalCount: 32, idleCount: 0, waitingCount: 4 }, 32, restarting, 1);
+    const err = await db.tx(CLAIMS, async () => 'unreachable').catch((e: unknown) => e);
+    expect(err).toBe(restarting);
   });
 });
