@@ -51,12 +51,11 @@
  * never sees a secret (I5): it reads ids and statuses only.
  */
 import type { DbClaims } from '../db/types.js';
+import {
+  containmentFailureOf,
+  type AgentSessionContainmentPort,
+} from './agent-session-containment.js';
 import type { DbSpaceCredentialStore } from './space-credential-store.js';
-
-/** The PTY host's kill, as `CredentialSessionLauncher.terminate` answers it. */
-export interface SessionTerminator {
-  terminate(sessionId: string): string;
-}
 
 export interface MemberContainmentResult {
   accountId: string;
@@ -71,16 +70,17 @@ export interface MemberContainmentResult {
 
 export interface SpaceCredentialMemberContainmentOptions {
   store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
-  terminals: SessionTerminator;
+  /** Kills the session and records its ending (`SpawnService.containCredentialSession`). */
+  agentSessions: AgentSessionContainmentPort;
 }
 
 export class SpaceCredentialMemberContainment {
   private readonly store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
-  private readonly terminals: SessionTerminator;
+  private readonly agentSessions: AgentSessionContainmentPort;
 
   constructor(options: SpaceCredentialMemberContainmentOptions) {
     this.store = options.store;
-    this.terminals = options.terminals;
+    this.agentSessions = options.agentSessions;
   }
 
   /**
@@ -114,10 +114,14 @@ export class SpaceCredentialMemberContainment {
     }
 
     for (const sessionId of sessionIds) {
-      const outcome = this.terminals.terminate(sessionId);
-      if (outcome === 'error') {
-        result.failures.push({ sessionId, reason: 'the PTY host could not kill this agent session' });
-      } else if (outcome === 'not_found') {
+      // Kill, then record the ending — the stop path `terminate` uses. A
+      // failed kill leaves the row as it was.
+      const contained = await this.agentSessions.containCredentialSession(sessionId, 'member_removed');
+      const failure = containmentFailureOf(contained);
+      if (failure !== null) result.failures.push({ sessionId, reason: failure });
+      if (contained.outcome === 'error') {
+        continue;
+      } else if (contained.outcome === 'not_found') {
         result.notOnThisNodeSessionIds.push(sessionId);
       } else {
         result.terminatedSessionIds.push(sessionId);

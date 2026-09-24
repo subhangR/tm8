@@ -1731,6 +1731,9 @@ describe('206: the member-login paths do not see a space login', () => {
         terminate: (id: string) => { killed.push(id); return 'terminated'; },
         hasLiveTerminal: () => true,
       },
+      agentSessions: {
+        containCredentialSession: async (id: string) => { killed.push(id); return { outcome: 'killed', recorded: true }; },
+      },
       dataDir,
       removeCredentialFiles: async () => undefined,
     });

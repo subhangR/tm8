@@ -15,7 +15,7 @@ import type {
   PromptSettlementResult,
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
-import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
+import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
@@ -94,6 +94,59 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
+
+/**
+ * Why a credential containment killed a session (`containCredentialSession`).
+ *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
+ *   - `member_credential_disconnected`: the member Disconnect of their own credential.
+ *   - `member_removed`: SC-6 — the launching member was removed or disabled.
+ */
+export type CredentialContainmentCause =
+  | 'space_credential_deleted'
+  | 'member_credential_disconnected'
+  | 'member_removed';
+
+/**
+ * What a containment kill did. `outcome` is the PTY host's own answer;
+ * `recorded` is whether the row's ending was written. `killed` with
+ * `recorded: false` is a dead process whose row still reads live — `reason`
+ * says why, for the caller's `failures`.
+ */
+export interface CredentialContainmentResult {
+  outcome: PtyKillOutcome;
+  recorded: boolean;
+  reason?: string;
+}
+
+/**
+ * The ending each containment records. `endedReason` is read by a person (one
+ * plain sentence, per 171); `error` stays technical. Fixed strings: nothing
+ * about the credential — its label, id or secret — is interpolated (I5).
+ */
+const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
+  CredentialContainmentCause,
+  { endedReason: string; error: string }
+> = {
+  space_credential_deleted: {
+    endedReason: 'Stopped because the space credential it was running on was deleted.',
+    error:
+      'credential containment: the space credential this session launched on was deleted — ' +
+      'PTY killed, exit code not observed',
+  },
+  member_credential_disconnected: {
+    endedReason: 'Stopped because the credential it was running on was disconnected.',
+    error:
+      'credential containment: the member credential this session ran on was disconnected — ' +
+      'PTY killed, exit code not observed',
+  },
+  member_removed: {
+    endedReason:
+      'Stopped because the member who launched it no longer has access to the space credential it was running on.',
+    error:
+      'credential containment: the launching member was removed or disabled — ' +
+      'PTY killed, exit code not observed',
+  },
+};
 
 export interface SpawnServiceOptions {
   graph: GraphPort;
@@ -2338,11 +2391,6 @@ export class SpawnService {
       clientMutationId: opts.clientMutationId ?? null,
     });
 
-    const outcome = this.pty.kill(sessionId, true);
-    this.sessionAuth.delete(sessionId);
-    // Even a failed kill must lose graph authority: a process whose lifecycle
-    // is no longer under control is the least safe process to leave credentialed.
-
     // Phase 1b — a genuine kill FAILURE must not be reported as a successful
     // exit. Ported from old maestro's own discrimination
     // (sessionRoutes.ts:576-580: `if (killOutcome === 'error') return
@@ -2361,6 +2409,27 @@ export class SpawnService {
     // non-terminal status here is more honest than a false 'exited': Phase 1's
     // `reconcileNodeGhosts` will retire it with an accurate reason at the next
     // restart if it is never resolved another way.
+    //
+    // 'not_found' is not an error: terminating an already-dead session is the
+    // user cancelling something that just finished. The graph still needs to
+    // reflect the terminal state, and the RPC tolerates same→same.
+    const status = opts.terminalStatus ?? 'exited';
+    const { outcome } = await this.killThenRecordEnding(auth, sessionId, {
+      onNotFound: 'record',
+      status,
+      error: (killed) =>
+        opts.reason ??
+        (killed === 'not_found'
+          ? 'terminate requested, but no live PTY was found (already exited)'
+          : opts.force
+            ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
+            : 'terminated by request — exit code not observed, kill does not wait for the real exit event'),
+      // The default reads as a cancellation because that is what an
+      // unqualified terminate IS; a caller who knows better (ghost
+      // reconciliation, the shutdown sweep) passes its own.
+      endedKind: opts.endedKind ?? 'stopped_by_operator',
+      endedReason: opts.endedReason ?? 'Stopped by request.',
+    });
     if (outcome === 'error') {
       throw new SpawnError(
         `failed to terminate work session ${sessionId}: the kill signal itself failed`,
@@ -2369,35 +2438,141 @@ export class SpawnService {
       );
     }
 
+    this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
+    return { outcome, commandResult };
+  }
+
+  /**
+   * CREDENTIAL CONTAINMENT — kill a session because the credential it runs on
+   * was taken away, and record that it ended.
+   *
+   * The three containment callers (a space-credential delete, the member
+   * Disconnect, SC-6's member removal) used to call `PtyHostService.kill`
+   * directly. `kill()` finalizes the PTY entry synchronously, so the late
+   * node-pty `onExit` for that process returns at its identity check and
+   * `handlePtyExit` never runs: nothing wrote the row, and it read `running`
+   * forever — counted against the concurrency cap, and refusing a resume as
+   * "is 'running'" rather than for the revoked credential.
+   *
+   * This goes through `killThenRecordEnding`, the same kill-then-transition
+   * `terminate` uses, so there is one ending writer for a stop, not two:
+   *
+   *   - KILL BEFORE STAMP. The row is written only after `kill()` reports
+   *     `killed`. A kill `error` leaves the row at its prior status and is
+   *     returned for the caller to surface; `not_found` (no PTY here) writes
+   *     nothing, because nothing was confirmed dead — on a single node the boot
+   *     reconciliation retires such a row, and on another node its own host
+   *     still owns it.
+   *   - EXACTLY ONE TRANSITION. `kill()` removes the entry before this writes,
+   *     so the late `onExit` returns at `sessions.get(id) !== entry`
+   *     (PtyHostService `onExit`) and `handlePtyExit` never runs for it. The
+   *     reverse order — the process exits on its own first — makes `kill()`
+   *     answer `not_found`, so this writes nothing and the exit's own ending
+   *     stands.
+   *   - THE LAUNCHER'S CLAIMS. The transition is written under the claims the
+   *     session was spawned with (`sessionAuth`), exactly as its exit would
+   *     have been. The containing caller may not be a member of the session's
+   *     space at all (a node admin disabling an account), and
+   *     `work_session_transition` has no bypass for that.
+   *
+   * The ending is `stopped_by_operator` — a person took the credential away —
+   * with an `ended_reason` naming the containment, so the row says why it
+   * stopped and a plain "Stopped by request." still means a terminate. The
+   * texts are fixed strings: no credential label, id or secret reaches them (I5).
+   *
+   * The space key's per-session copy is scrubbed here too: the exit path that
+   * would have scrubbed it is the one `kill()` skips.
+   *
+   * Never throws. A transition that fails after a successful kill is returned
+   * as `recorded: false` with a reason, for the caller's `failures`.
+   */
+  async containCredentialSession(
+    sessionId: string,
+    cause: CredentialContainmentCause,
+  ): Promise<CredentialContainmentResult> {
+    const auth = this.sessionAuth.get(sessionId);
+    const ending = CREDENTIAL_CONTAINMENT_ENDINGS[cause];
+    let result: { outcome: PtyKillOutcome; recorded: boolean };
+    try {
+      result = await this.killThenRecordEnding(auth, sessionId, {
+        onNotFound: 'skip',
+        status: 'exited',
+        error: () => ending.error,
+        endedKind: 'stopped_by_operator',
+        endedReason: ending.endedReason,
+      });
+    } catch (error) {
+      // Killed, but the ending could not be written: the row is a ghost until
+      // the boot reconciliation retires it, so say so loudly.
+      const sqlState = (error as { code?: string } | null)?.code ?? '(no sqlstate)';
+      this.loud(
+        `credential containment killed session ${sessionId} but FAILED to record its ending — ` +
+          `sqlstate=${sqlState}. Expect a ghost session until the next boot reconciliation.`,
+      );
+      await this.scrubSpaceSecrets(sessionId);
+      return { outcome: 'killed', recorded: false, reason: `transition_failed: ${sqlState}` };
+    }
+    if (result.outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
+    if (result.outcome === 'killed' && !result.recorded) {
+      // A live PTY with no captured claims: not a session this service
+      // spawned. Nothing can authorise its row's write from here.
+      this.loud(
+        `credential containment killed session ${sessionId}, which had no captured claims — ` +
+          `its ending was not recorded. Expect a ghost session.`,
+      );
+      return { outcome: 'killed', recorded: false, reason: 'no_captured_claims' };
+    }
+    this.logger?.info('SpawnService: session contained', { sessionId, cause, outcome: result.outcome });
+    return { outcome: result.outcome, recorded: result.recorded };
+  }
+
+  /**
+   * THE STOP PATH's kill and ending, shared by `terminate` and
+   * `containCredentialSession` so a stop has one writer.
+   *
+   * `kill(notify=true)` finalizes the PTY entry synchronously, which means
+   * onExit will NOT fire for it and the exit sink will not run. So the
+   * transition is written here explicitly rather than left to the exit path.
+   *
+   * Returns without writing when the kill failed (`error`), when there was
+   * nothing to kill and the caller asked to `skip` that, or when there are no
+   * claims to write under. A transition that throws propagates.
+   */
+  private async killThenRecordEnding(
+    auth: GraphAuth | undefined,
+    sessionId: string,
+    ending: {
+      onNotFound: 'record' | 'skip';
+      status: 'exited' | 'failed';
+      error: (outcome: 'killed' | 'not_found') => string;
+      endedKind: WorkSessionEndedKind;
+      endedReason: string;
+    },
+  ): Promise<{ outcome: PtyKillOutcome; recorded: boolean }> {
+    const outcome = this.pty.kill(sessionId, true);
+    this.sessionAuth.delete(sessionId);
+    // Even a failed kill must lose graph authority: a process whose lifecycle
+    // is no longer under control is the least safe process to leave credentialed.
+    if (outcome === 'error') return { outcome, recorded: false };
+    if (outcome === 'not_found' && ending.onNotFound === 'skip') return { outcome, recorded: false };
+    if (auth === undefined) return { outcome, recorded: false };
+
     // `kill()` sends a signal and finalizes the tracked entry synchronously —
     // it does not, and structurally cannot, wait for node-pty's own async exit
     // event, so there is no real exit code available here to report. That is
     // a fact about this path, not a gap: `error` says so explicitly instead of
     // leaving `exit_code`/`error` both NULL, which used to be indistinguishable
     // from every OTHER unrecorded death this whole fix exists to end.
-    // 'not_found' is not an error: terminating an already-dead session is the
-    // user cancelling something that just finished. The graph still needs to
-    // reflect the terminal state, and the RPC tolerates same→same.
-    const error =
-      opts.reason ??
-      (outcome === 'not_found'
-        ? 'terminate requested, but no live PTY was found (already exited)'
-        : opts.force
-          ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
-          : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
-    const status = opts.terminalStatus ?? 'exited';
+    //
     // The ending facts (171). `endedReason` is the sentence a person reads, so
     // it never mentions PTYs, kill outcomes or exit events — all of which are
-    // already in `error` above, which is unchanged and stays technical. The
-    // default reads as a cancellation because that is what an unqualified
-    // terminate IS; a caller who knows better (ghost reconciliation, the
-    // shutdown sweep) passes its own.
+    // already in `error`, which stays technical.
     await this.graph.transition(auth, {
       sessionId,
-      status,
-      error,
-      endedKind: opts.endedKind ?? 'stopped_by_operator',
-      endedReason: opts.endedReason ?? 'Stopped by request.',
+      status: ending.status,
+      error: ending.error(outcome),
+      endedKind: ending.endedKind,
+      endedReason: ending.endedReason,
     });
 
     // The instrument, AFTER the ending is on record. A kill does not wait for
@@ -2408,9 +2583,7 @@ export class SpawnService {
     // more. Ghost reconciliation reuses this path, so a session killed with a
     // previous instance of the node is measured here too.
     await this.recordUsageAfterExit(auth, sessionId);
-
-    this.logger?.info('SpawnService: session terminated', { sessionId, outcome, status });
-    return { outcome, commandResult };
+    return { outcome, recorded: true };
   }
 
   /**

@@ -1,5 +1,10 @@
 // @tm8/execution — the spawn block's public surface.
-export { SpawnService, type SpawnServiceOptions } from './SpawnService.js';
+export {
+  SpawnService,
+  type CredentialContainmentCause,
+  type CredentialContainmentResult,
+  type SpawnServiceOptions,
+} from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
   DEFAULT_MODEL,

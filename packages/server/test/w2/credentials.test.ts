@@ -38,7 +38,7 @@ import {
   CredentialsStatusViewSchema,
   OPERATIONS,
 } from '@tm8/contract';
-import { CREDENTIAL_LOGIN_COMMANDS } from '@tm8/execution';
+import { CREDENTIAL_LOGIN_COMMANDS, type CredentialContainmentCause } from '@tm8/execution';
 
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -151,6 +151,18 @@ class FakeTerminals {
   hasLiveTerminal(): boolean {
     return true;
   }
+  /**
+   * An agent session goes through the containment port
+   * (`SpawnService.containCredentialSession` in production), which kills and
+   * records the ending. Same order sink, so the revoke-first property still
+   * reads off `sink`.
+   */
+  readonly causes: string[] = [];
+  async containCredentialSession(sessionId: string, cause: CredentialContainmentCause) {
+    this.causes.push(`${sessionId}:${cause}`);
+    const outcome = this.terminate(sessionId) as 'killed' | 'not_found' | 'error';
+    return { outcome, recorded: outcome === 'killed' };
+  }
   // `launch` is never reached in this suite: nothing here calls
   // `loginSessions.start` through to the PTY without stubbing the RPC first.
   launch(): never {
@@ -216,6 +228,7 @@ function registryFor(
   registerCredentialHandlers(registry, deps(db), {
     // Structurally a launcher for the two seams that use it here.
     launcher: terminals as never,
+    agentSessions: terminals,
     dataDir: '/tmp/tm8-credentials-test',
     // SC-3: never reach a real vendor from a unit suite.
     probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
@@ -608,6 +621,7 @@ describe('credentials.status merges two stores and degrades honestly', () => {
     const catalog = new W2CredentialCatalogService({
       db: new FakeDb(serviceQueries),
       terminals: new FakeTerminals([]),
+      agentSessions: new FakeTerminals([]),
       dataDir: '/tmp/tm8-credentials-test',
       env: { HOME: '/server-home', PATH: '/server-path' },
       binaryResolver: ({ binary }) =>
@@ -728,6 +742,7 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     const catalog = new W2CredentialCatalogService({
       db,
       terminals,
+      agentSessions: terminals,
       dataDir: '/tmp/tm8-credentials-test',
       removeCredentialFiles: async () => undefined,
     });
@@ -803,6 +818,7 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     const agentQuery = db.queryCalls.find((call) => call.sql.includes('work_sessions'));
     expect(agentQuery?.params[2]).toEqual(expected);
     expect(terminals.terminated).toContain(AGENT_SESSION_ID);
+    expect(terminals.causes).toEqual([`${AGENT_SESSION_ID}:member_credential_disconnected`]);
     expect(result.terminatedAgentSessionIds).toEqual([AGENT_SESSION_ID]);
   });
 
@@ -827,6 +843,7 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     const catalog = new W2CredentialCatalogService({
       db,
       terminals: new FakeTerminals([]),
+      agentSessions: new FakeTerminals([]),
       dataDir: '/tmp/tm8-credentials-test',
       revokeGitCredential: async () => undefined,
       removeCredentialFiles: async () => {
@@ -971,6 +988,7 @@ describe('the login session operations answer their contract shapes', () => {
     const registry = new HandlerRegistry();
     registerCredentialHandlers(registry, deps(db), {
       launcher: launcher as never,
+      agentSessions: new FakeTerminals([]),
       dataDir: '/tmp/tm8-credentials-test',
     });
 
@@ -1014,6 +1032,7 @@ describe('the login session operations answer their contract shapes', () => {
     const registry = new HandlerRegistry();
     registerCredentialHandlers(registry, deps(db), {
       launcher: launcher as never,
+      agentSessions: new FakeTerminals([]),
       dataDir: '/tmp/tm8-credentials-test',
     });
 

@@ -131,9 +131,12 @@ function fakeTerminals(answers: Record<string, 'killed' | 'not_found' | 'error'>
   const asked: string[] = [];
   return {
     asked,
-    terminate(sessionId: string): string {
+    // The containment port (`SpawnService.containCredentialSession`); the real
+    // kill-and-record is proven in credential-containment-ending.pg.test.ts.
+    async containCredentialSession(sessionId: string) {
       asked.push(sessionId);
-      return answers[sessionId] ?? 'killed';
+      const outcome = answers[sessionId] ?? 'killed';
+      return { outcome, recorded: outcome === 'killed' };
     },
   };
 }
@@ -148,7 +151,7 @@ function fakeTerminals(answers: Record<string, 'killed' | 'not_found' | 'error'>
 function disableService(terminals: ReturnType<typeof fakeTerminals>) {
   const results: MemberContainmentResult[] = [];
   const containment = accountDisableContainment(
-    new SpaceCredentialMemberContainment({ store, terminals }),
+    new SpaceCredentialMemberContainment({ store, agentSessions: terminals }),
     nodeAdmin,
   );
   const repository = {
@@ -291,7 +294,7 @@ describe('t6-3 / t6-4 — disabling an account kills what it launched on space c
     await launchOn(claims(A), inT, { anthropic: (await anthropicKey('T')).id });
 
     const terminals = fakeTerminals();
-    const containment = new SpaceCredentialMemberContainment({ store, terminals });
+    const containment = new SpaceCredentialMemberContainment({ store, agentSessions: terminals });
     // A space admin (here the owner, without the node-admin claim) about their space.
     const result = await containment.killSessionsLaunchedBy(claims(OWN), accounts[A]!, ids.T!);
     expect(result.terminatedSessionIds).toEqual([inT]);
@@ -381,7 +384,7 @@ describe('#681 C — single node: what the PTY host answers is reported, never r
     const s = await session('S');
     await launchOn(claims(A), s, { anthropic: ids.KEY_S! });
     const terminals = fakeTerminals();
-    const containment = new SpaceCredentialMemberContainment({ store, terminals });
+    const containment = new SpaceCredentialMemberContainment({ store, agentSessions: terminals });
     // I2: human-only in SQL — an agent token, even a node admin's, is refused.
     const refused = await containment.killSessionsLaunchedBy({ ...agent(OWN), nodeAdmin: true } as DbClaims, accounts[A]!);
     expect(refused.failures).toHaveLength(1);
@@ -401,6 +404,7 @@ describe('t6-2 / I5 — the picker reads the GitHub token’s account, never its
       store,
       probe: async ({ provider }) => ({ ok: true, displayLogin: provider === 'github' ? 'octo-space-bot' : null }),
       terminals: { terminate: () => 'killed', hasLiveTerminal: () => false },
+      agentSessions: { containCredentialSession: async () => ({ outcome: 'killed', recorded: true }) },
       env: {},
     });
     const created = await catalog.create(claims(A), ids.S!, { provider: 'github', shape: 'token', label: 'CI bot', secret });
