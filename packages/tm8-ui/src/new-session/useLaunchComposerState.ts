@@ -13,7 +13,9 @@ import {
   type LaunchMode,
   type LaunchProject,
   type LaunchProjectOption,
+  type LaunchPluginFacts,
   type LaunchTeammate,
+  type LoadInstalledPlugins,
   type WorkdirMode,
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
@@ -55,7 +57,7 @@ export interface LaunchComposerState {
     | 'accessMode' | 'onAccessModeChange'
     | 'credentialProviderLabel' | 'credential' | 'onCredentialChange'
     | 'harnessApplies' | 'harnessSurface' | 'onHarnessChange'
-    | 'installedPlugins' | 'installedPluginsNote' | 'plugins' | 'onPluginsChange'
+    | 'installedPlugins' | 'installedPluginsNote' | 'pluginSkillCounts' | 'plugins' | 'onPluginsChange'
     | 'mode' | 'onModeChange'>;
 }
 
@@ -69,9 +71,12 @@ export function useLaunchComposerState(args: {
       over the seed, but never over a mode the viewer explicitly picked. */
   launchMode?: LaunchMode;
   /** The Claude plugins a launch could load (the ··· Plugins row). */
-  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
+  loadInstalledPlugins?: LoadInstalledPlugins;
+  /** The launch's tasks, so a plugin tick keeps their equipped skills (F3). */
+  taskIds?: readonly string[];
 }): LaunchComposerState {
   const { teammates, projects, launchMode, loadInstalledPlugins } = args;
+  const taskKey = (args.taskIds ?? []).join(',');
 
   const [teammateId, setTeammateId] = useState<string | null>(null);
   const [modelOverride, setModelOverride] = useState<string | null>(null);
@@ -205,30 +210,41 @@ export function useLaunchComposerState(args: {
   /* THE HARNESS ROWS APPLY TO CLAUDE CODE ONLY — the lean surface is a
      claude-code launch shape, and every other tool ignores it at the node. */
   const harnessApplies = toolId === 'claude-code';
-  const [installed, setInstalled] = useState<{ forId: string; ids: readonly string[] | null } | null>(null);
+  const [installed, setInstalled] = useState<{ forId: string; facts: LaunchPluginFacts | null } | null>(null);
   const teammateKey = teammate?.id ?? null;
   /* THE LOADER RIDES A REF — the host rebuilds it on every graph event, and
      keying the effect on it re-read the plugins once per event. */
   const loadPluginsRef = useRef(loadInstalledPlugins);
   loadPluginsRef.current = loadInstalledPlugins;
   const canLoadPlugins = loadInstalledPlugins !== undefined;
+  /* Keyed on teammate AND tasks: the facts carry the launch's skill defaults,
+     which a plugin tick must keep (F3). */
+  const factsKey = teammateKey ? `${teammateKey}|${taskKey}` : null;
   useEffect(() => {
     const load = loadPluginsRef.current;
-    if (!harnessApplies || !teammateKey || !load) return;
+    if (!harnessApplies || !teammateKey || !factsKey || !load) return;
     let live = true;
-    load(teammateKey)
-      .then((ids) => { if (live) setInstalled({ forId: teammateKey, ids }); })
-      .catch(() => { if (live) setInstalled({ forId: teammateKey, ids: null }); });
+    load(teammateKey, taskKey ? taskKey.split(',') : [])
+      .then((facts) => { if (live) setInstalled({ forId: factsKey, facts }); })
+      .catch(() => { if (live) setInstalled({ forId: factsKey, facts: null }); });
     return () => { live = false; };
-  }, [harnessApplies, teammateKey, canLoadPlugins]);
-  const installedPlugins = installed && installed.forId === teammateKey ? installed.ids : null;
+  }, [harnessApplies, teammateKey, taskKey, factsKey, canLoadPlugins]);
+  const facts = installed && installed.forId === factsKey ? installed.facts : null;
+  const installedPlugins = facts?.installed ?? null;
+  const pluginSkills = facts?.pluginSkills ?? null;
+  const pluginSkillCounts = useMemo(
+    () => (pluginSkills
+      ? Object.fromEntries(Object.entries(pluginSkills.byPlugin).map(([id, ids]) => [id, ids.length]))
+      : null),
+    [pluginSkills],
+  );
   const installedPluginsNote = !loadInstalledPlugins
     ? PLUGINS_UNAVAILABLE
-    : installed === null || installed.forId !== teammateKey
+    : installed === null || installed.forId !== factsKey
       ? 'Reading the installed plugins…'
-      : installed.ids === null
+      : installed.facts === null
         ? PLUGINS_UNAVAILABLE
-        : installed.ids.length === 0
+        : installed.facts.installed.length === 0
           ? 'No Claude plugins are installed for this launch.'
           : null;
 
@@ -257,13 +273,15 @@ export function useLaunchComposerState(args: {
       }
       : {}),
     ...(harnessApplies && harnessSurface ? { harnessSurface } : {}),
-    ...(harnessApplies && plugins !== null && harnessSurface !== 'inherit' ? { plugins } : {}),
+    ...(harnessApplies && plugins !== null && harnessSurface !== 'inherit'
+      ? { plugins, ...(pluginSkills ? { pluginSkills } : {}) }
+      : {}),
     mode,
     target: workdirId === SCRATCH_OPTION.id
       ? { kind: 'scratch' as const }
       : { kind: 'project' as const, projectId: workdirId as ProjectId },
     workdirMode,
-  }), [teammate, toolId, model, effortPinned, accessMode, credential, credentialKey, harnessApplies, harnessSurface, plugins, mode, workdirId, workdirMode]);
+  }), [teammate, toolId, model, effortPinned, accessMode, credential, credentialKey, harnessApplies, harnessSurface, plugins, pluginSkills, mode, workdirId, workdirMode]);
 
   return {
     config,
@@ -294,6 +312,7 @@ export function useLaunchComposerState(args: {
       onHarnessChange: setHarnessSurface,
       installedPlugins,
       installedPluginsNote,
+      pluginSkillCounts,
       plugins,
       onPluginsChange: setPlugins,
       mode,

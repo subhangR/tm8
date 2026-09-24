@@ -44,3 +44,19 @@ export async function loadTaskSkillEquipment(q: Querier, spaceId: string, taskId
     .sort((a, b) => Number(a.task_rank) - Number(b.task_rank) || a.name.localeCompare(b.name) || a.entity_id.localeCompare(b.entity_id))
     .map(row => ({ ...skillReferenceOf(row.reference), entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: -1, viaTaskId: row.task_id }));
 }
+
+/**
+ * Every live Claude PLUGIN skill in the space (`level = 'plugin'`), for the
+ * launch composer's plugin → skill mapping (design 01a0d348 §3.5, F3). Not
+ * equipment: it names what a plugin tick could select, and writes nothing.
+ * Same projection as above, no body column; RLS and the Space predicate apply.
+ */
+export async function loadPluginSkills(q: Querier, spaceId: string): Promise<ResolvedSkillRow[]> {
+  const rows = await q.query<{ entity_id: string; version: number; name: string; description: string; reference: Record<string, unknown> }>(
+    `select sk.entity_id, se.version, sk.name, sk.description, ${SKILL_REFERENCE_SQL} as reference
+       from public.skills sk
+       join public.entities se on se.id = sk.entity_id and se.kind = 'skill' and se.space_id = $1 and se.deleted_at is null
+      where sk.provider = 'claude' and sk.level = 'plugin' and sk.missing is not true
+      order by sk.name, sk.entity_id`, [spaceId]);
+  return rows.map(row => ({ ...skillReferenceOf(row.reference), entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: 0 }));
+}

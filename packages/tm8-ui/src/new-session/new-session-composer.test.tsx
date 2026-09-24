@@ -293,6 +293,14 @@ describe('the ··· harness rows', () => {
     expect(props.onPluginsChange).toHaveBeenCalledWith(['sales@synced']);
   });
 
+  it('says which plugins ride their skills (F3) — a count only where the node named some', () => {
+    const { getByTestId } = renderComposer({ ...HARNESS, pluginSkillCounts: { 'sales@synced': 2 } });
+    fireEvent.click(getByTestId('nsx-dots'));
+    fireEvent.click(getByTestId('nsx-plugins-row'));
+    expect(getByTestId('nsx-plugin-sales@synced').textContent).toContain('synced · 2 skills');
+    expect(getByTestId('nsx-plugin-marketing@synced').textContent).not.toContain('skill');
+  });
+
   it('an explicit pick unticks and states its count', () => {
     const { getByTestId, props } = renderComposer({ ...HARNESS, plugins: ['sales@synced'] });
     fireEvent.click(getByTestId('nsx-dots'));

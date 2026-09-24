@@ -17,6 +17,7 @@ import {
   asMcpServers,
   equippedClaudePlugins,
   harnessSurfaceEnv,
+  pluginSkillIds,
   laneSkillOverrides,
   pluginDecisions,
   pluginSettings,
@@ -345,5 +346,23 @@ describe('claudePluginConfigDir', () => {
     expect(claudePluginConfigDir('/cred/anthropic', { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/cred/anthropic');
     expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/node');
     expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: ' ', HOME: '/h' })).toBe('/h/.claude');
+  });
+});
+
+describe('pluginSkillIds (F3)', () => {
+  const row = (entityId: string, pluginName: string, extra: Record<string, unknown> = {}) => ({
+    entityId, provider: 'claude', level: 'plugin', loaderMetadata: { pluginName }, ...extra,
+  });
+  it('maps each installed plugin to the skills that would turn it on, by the allowlist rule', () => {
+    expect(pluginSkillIds(
+      ['mcp-only@x', 'sales@synced', 'superpowers@official'],
+      [
+        row('sales-a', 'sales@synced'),
+        row('sp-x', 'superpowers'),
+        row('gone', 'sales@synced', { missing: true }),
+        row('codex', 'sales@synced', { provider: 'codex' }),
+        row('user', 'sales@synced', { level: 'user' }),
+      ],
+    )).toEqual({ 'sales@synced': ['sales-a'], 'superpowers@official': ['sp-x'] });
   });
 });

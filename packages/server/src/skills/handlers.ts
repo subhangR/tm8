@@ -1,9 +1,9 @@
-import { claudePluginConfigDir, computeEffectiveSkills, readInstalledClaudePlugins } from '@tm8/execution';
+import { claudePluginConfigDir, computeEffectiveSkills, pluginSkillIds, readInstalledClaudePlugins } from '@tm8/execution';
 import { existsSync } from 'node:fs';
 import { credentialConfigDir } from '../credentials/agent-credential-home.js';
 import { serializeSkillIndexEntry } from '@tm8/prompt';
 import type { SkillPreviewResult } from '@tm8/contract';
-import { loadSkillEquipment } from './equipment.js';
+import { loadPluginSkills, loadSkillEquipment, loadTaskSkillEquipment } from './equipment.js';
 import { z } from 'zod';
 import { CollabError, decodeCursor, encodeCursor } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
@@ -60,6 +60,16 @@ export function registerSkillHandlers(
       agentTool: z.enum(['claude-code', 'codex']).optional(),
       workdir: z.string().startsWith('/').optional(),
       agentConfigDir: z.string().startsWith('/').optional(),
+      // The launch's spawn tasks, comma-separated: their `equips` join
+      // `defaultSkillIds` exactly as spawn joins them to the persona's.
+      taskIds: z.string().optional().transform((raw, tx) => {
+        const ids = (raw ?? '').split(',').map(id => id.trim()).filter(Boolean);
+        if (ids.length > 64 || ids.some(id => !z.string().uuid().safeParse(id).success)) {
+          tx.addIssue({ code: z.ZodIssueCode.custom, message: 'taskIds must be at most 64 comma-separated uuids' });
+          return z.NEVER;
+        }
+        return ids;
+      }),
     }).strict().parse(Object.fromEntries(ctx.query));
     return deps.db.tx(claimsFor(owner, ctx), async q => {
       const member = (await q.query<{ agent_tool: string | null }>(
@@ -96,10 +106,23 @@ export function registerSkillHandlers(
         };
       });
       const identityId = claimsFor(owner, ctx).identityId;
+      // F3 (design 01a0d348 §3.5): what a composer plugin tick adds, and the
+      // defaults it must keep. Spawn's order: task equips the persona lacks,
+      // then the persona's own, so an exact set built from these narrows to
+      // exactly the launch's defaults plus the ticked plugin's skills.
+      const personaIds = new Set(equips.map(row => row.entityId));
+      const defaultSkillIds = [
+        ...(await loadTaskSkillEquipment(q, spaceId, input.taskIds)).map(row => row.entityId).filter(id => !personaIds.has(id)),
+        ...equips.map(row => row.entityId),
+      ];
+      const installedPlugins = options.installedPluginsFor && identityId ? options.installedPluginsFor(identityId) : null;
       return {
         ...effective,
         rows,
-        ...(options.installedPluginsFor && identityId ? { installedPlugins: options.installedPluginsFor(identityId) } : {}),
+        defaultSkillIds,
+        ...(installedPlugins
+          ? { installedPlugins, pluginSkillIds: pluginSkillIds(installedPlugins, await loadPluginSkills(q, spaceId)) }
+          : {}),
       } satisfies SkillPreviewResult;
     });
   });

@@ -12,6 +12,7 @@ import {
   type LaunchProject,
   type LaunchProjectOption,
   type LaunchTeammate,
+  type LoadInstalledPlugins,
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
@@ -106,7 +107,7 @@ export interface LaunchComposerPopupProps {
   /** ✦ Ask Jev (design 01a0cb80 §3.2). Absent ⇒ the button is refused with the reason. */
   jev?: JevPort;
   /** The ··· menu's Plugins list. Absent ⇒ the row says the node cannot list them. */
-  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
+  loadInstalledPlugins?: LoadInstalledPlugins;
 }
 
 export function LaunchComposerPopup({
@@ -151,11 +152,15 @@ export function LaunchComposerPopup({
     [projects],
   );
 
+  /* The spawn's `taskIds`, so a plugin tick's exact skill set keeps what the
+     subject equips (F3). Memoized: the hook keys its read on it. */
+  const subjectTaskIds = useMemo(() => [subject.id], [subject.id]);
   const { config, projectOptions, bind } = useLaunchComposerState({
     teammates: teammateRows,
     projects: projectRows,
     launchMode: mode,
     ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
+    taskIds: subjectTaskIds,
   });
 
   /* THE DESCRIPTION, autofilled. `null` means "not answered yet": the load
@@ -277,7 +282,7 @@ export function LaunchComposerPopup({
             : { ...config, ...jevFields },
           // Still named `taskIds` on the wire; the server maps a non-task
           // subject through `derive_task_for_entity` (064).
-          taskIds: [subject.id],
+          taskIds: subjectTaskIds,
           title: sessionTitle,
         }),
       ))

@@ -167,6 +167,11 @@ export interface NewSessionComposerProps {
   installedPlugins?: readonly string[] | null;
   /** Why the Plugins list is empty or absent, in words; null when it has rows. */
   installedPluginsNote?: string | null;
+  /**
+   * Per installed plugin, how many skill entities it has. A tick on one of
+   * those is sent as its skills in `selection.skillIds` (F3); null: unknown.
+   */
+  pluginSkillCounts?: Readonly<Record<string, number>> | null;
   /** `null` is the teammate's list; an array is this launch's exact pick. */
   plugins?: readonly string[] | null;
   onPluginsChange?(next: readonly string[] | null): void;
@@ -294,6 +299,7 @@ export function NewSessionComposer({
   onHarnessChange,
   installedPlugins = null,
   installedPluginsNote = null,
+  pluginSkillCounts = null,
   plugins = null,
   onPluginsChange,
   mode,
@@ -611,6 +617,9 @@ export function NewSessionComposer({
                     {(installedPlugins ?? []).map((id) => {
                       const [name, marketplace] = id.split('@');
                       const on = plugins?.includes(id) === true;
+                      const skills = pluginSkillCounts?.[id] ?? 0;
+                      const sub = [marketplace, skills > 0 ? `${skills} skill${skills === 1 ? '' : 's'}` : null]
+                        .filter(Boolean).join(' · ');
                       return (
                         <button
                           key={id}
@@ -623,7 +632,7 @@ export function NewSessionComposer({
                         >
                           <span className="nsx-menu__body">
                             <span className="nsx-menu__name nsx-menu__name--plain">{name}</span>
-                            {marketplace ? <span className="nsx-menu__sub">{marketplace}</span> : null}
+                            {sub ? <span className="nsx-menu__sub">{sub}</span> : null}
                           </span>
                           <span className="nsx-menu__check" aria-hidden="true">{on ? '✓' : ''}</span>
                         </button>

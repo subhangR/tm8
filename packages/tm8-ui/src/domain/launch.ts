@@ -27,7 +27,7 @@ import type {
   ProjectId,
   SpawnWorkdir,
 } from '@tm8/contract';
-import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
+import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT } from '@tm8/contract';
 import { catalogModelsFor } from './model-catalog';
 import { MEMORY_IDS_MAX } from './memory';
 
@@ -529,6 +529,12 @@ export interface LaunchConfig {
    * teammate's list; an array — even empty — is an explicit pick and is sent.
    */
   plugins?: readonly string[] | null;
+  /**
+   * What routes a plugin pick through skills (design 01a0d348 §3.5, F3), read
+   * from `skills.preview`. Absent: the pick rides `plugins` as it always has.
+   * See `routePluginPick`.
+   */
+  pluginSkills?: LaunchPluginSkills | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**
@@ -596,6 +602,80 @@ export interface LaunchConfig {
   };
   /** The Ask Jev run that informed this launch, linked for cost. Never interpreted. */
   jevRunId?: EntityId;
+}
+
+/** `skills.preview`'s plugin → skill facts for one teammate and task set. */
+export interface LaunchPluginSkills {
+  /** The launch's edge-driven skill defaults, in spawn order. */
+  readonly defaults: readonly string[];
+  /** Per installed plugin id, its skill entities; a plugin with none is MCP-only. */
+  readonly byPlugin: Readonly<Record<string, readonly string[]>>;
+}
+
+/** What the ··· Plugins row reads for one teammate (and the launch's tasks). */
+export interface LaunchPluginFacts {
+  /** Installed plugin ids a launch by this viewer could load. */
+  readonly installed: readonly string[];
+  /** Absent when the node did not say; the pick then rides `plugins`. */
+  readonly pluginSkills?: LaunchPluginSkills;
+}
+
+export type LoadInstalledPlugins = (
+  teamMemberId: string,
+  taskIds?: readonly string[],
+) => Promise<LaunchPluginFacts | null>;
+
+/** `skills.preview`'s answer, as the ··· Plugins row reads it. */
+export function pluginFactsOf(preview: {
+  installedPlugins?: readonly string[];
+  pluginSkillIds?: Readonly<Record<string, readonly string[]>>;
+  defaultSkillIds?: readonly string[];
+}): LaunchPluginFacts | null {
+  if (!preview.installedPlugins) return null;
+  return {
+    installed: preview.installedPlugins,
+    ...(preview.pluginSkillIds && preview.defaultSkillIds
+      ? { pluginSkills: { defaults: preview.defaultSkillIds, byPlugin: preview.pluginSkillIds } }
+      : {}),
+  };
+}
+
+/**
+ * A plugin pick, split the way it reaches the node (design 01a0d348 §3.5, F3).
+ *
+ * A picked plugin that HAS skill entities is selected through them: its skill
+ * ids join `selection.skillIds`, and spawn turns the plugin on because an
+ * effective skill belongs to it (recorded `effective-skill`). Only plugins
+ * with no skill entity (MCP-only) stay on `plugins`, which is still sent — even
+ * empty — because a pick replaces the teammate's list.
+ *
+ * A present `skillIds` is an EXACT set: spawn narrows the skills to it and
+ * records every default it leaves out as `not-selected`. So the whole set is
+ * sent, seeded as the launch sheet seeds it: the sheet's own `skillIds` when it
+ * sent some, else the launch's defaults — then ∪ the picked plugins' skills.
+ * Ticking a plugin therefore never drops an unrelated equipped skill.
+ *
+ * Falls back to the whole pick on `plugins` (the #731 path, still recorded in
+ * `harnessChoice`) rather than send a set that would drop something: when the
+ * facts are unknown, when `memoryIds` is set (the node refuses it beside
+ * `selection`), or when the union would pass the group ceiling.
+ */
+export function routePluginPick(config: Pick<LaunchConfig, 'plugins' | 'pluginSkills' | 'selection' | 'memoryIds'>): {
+  plugins: string[];
+  skillIds: EntityId[] | null;
+} {
+  const pick = [...(config.plugins ?? [])];
+  const facts = config.pluginSkills;
+  const whole = { plugins: pick, skillIds: null };
+  if (!facts || (!config.selection && config.memoryIds?.length)) return whole;
+  const viaSkills = pick.filter((id) => (facts.byPlugin[id]?.length ?? 0) > 0);
+  if (viaSkills.length === 0) return whole;
+  const skillIds = [...new Set([
+    ...(config.selection?.skillIds ?? facts.defaults),
+    ...viaSkills.flatMap((id) => facts.byPlugin[id] ?? []),
+  ])] as EntityId[];
+  if (skillIds.length > SPAWN_SELECTION_GROUP_LIMIT) return whole;
+  return { plugins: pick.filter((id) => !viaSkills.includes(id)), skillIds };
 }
 
 /**
@@ -901,7 +981,8 @@ export function buildSpawnInput(args: {
   if (config.harnessSurface) input.harnessSurface = config.harnessSurface;
   /* An empty array IS sent: "no plugins" is a pick, distinct from "the
      teammate's list" (null). Meaningless under `inherit`, so not sent there. */
-  if (config.plugins && config.harnessSurface !== 'inherit') input.plugins = [...config.plugins];
+  const routed = config.plugins && config.harnessSurface !== 'inherit' ? routePluginPick(config) : null;
+  if (routed) input.plugins = routed.plugins;
   if (args.taskIds?.length) input.taskIds = [...args.taskIds];
   if (args.title) input.title = args.title;
   if (config.interactionProfileId) input.interactionProfileId = config.interactionProfileId;
@@ -910,12 +991,17 @@ export function buildSpawnInput(args: {
      same statement, and the contract types the field optional for that reason.
      Sliced at the contract's own ceiling so a caller that ignored the picker's
      cap earns a truncation here rather than a refusal at the node. */
-  if (config.selection) {
+  /* A plugin pick routed through skills (F3) is the skills group's whole
+     exact set — already seeded from the sheet's own `skillIds` or defaults. */
+  const selection = routed?.skillIds
+    ? { ...config.selection, skillIds: routed.skillIds }
+    : config.selection;
+  if (selection) {
     /* EXACT, and alone: `selection` IS the working set and `memoryIds` ADDS to
        it, so the node refuses both together. Copied, never sliced — a
        truncated exact set would be a different set than the one ticked, and
        the node's own limit refusal is the honest answer to an oversized one. */
-    const { memoryIds, skillIds, referenceIds } = config.selection;
+    const { memoryIds, skillIds, referenceIds } = selection;
     input.selection = {
       ...(memoryIds ? { memoryIds: [...memoryIds] } : {}),
       ...(skillIds ? { skillIds: [...skillIds] } : {}),

@@ -29,7 +29,7 @@
  */
 import { useCallback, useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
-import { newLaunchMutationId, type ProfileResolution } from '../domain';
+import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../domain';
 import { entityPatchInput } from '../authoring';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
@@ -165,7 +165,9 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
      reads, so there is one read of "what this launch could load", not two. */
   const loadInstalledPlugins = useMemo(
     () => loadSkillPreview
-      ? async (teamMemberId: string) => (await loadSkillPreview({ teamMemberId })).installedPlugins ?? null
+      ? async (teamMemberId: string, taskIds?: readonly string[]) => pluginFactsOf(
+        await loadSkillPreview({ teamMemberId, ...(taskIds?.length ? { taskIds: taskIds.join(',') } : {}) }),
+      )
       : undefined,
     [loadSkillPreview],
   );
