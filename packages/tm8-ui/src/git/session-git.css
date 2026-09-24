@@ -392,3 +392,11 @@
 }
 .pn-git__change-counts { display: inline-flex; gap: var(--pn-space-2); flex-shrink: 0; align-items: baseline; }
 .pn-git__change-file[open] .pn-git__change-summary { margin-bottom: 4px; }
+
+/* The worktree mark as a relation DOOR on the list tile (user ruling
+   2026-09-24): it borrows the count-chip button (hit area, hover, open
+   state) and starts in the lane's own ink, so the mark reads exactly as
+   loud as it did when it was only a badge. Inside the door the mark follows
+   the button's colour so hover and open actually show on it. */
+.cv2-root .pn-lane__door { color: var(--pn-ink-2); }
+.cv2-root .pn-lane__door .pn-lane__worktree-mark { color: inherit; }
