@@ -5665,7 +5665,13 @@ export interface SessionLaunchContext {
   /**
    * Memories the manifest recorded only as text: every memory of a launch
    * that predates `manifest.context.memoryIds`, and the legacy id-less
-   * remainder of one that does not.
+   * remainder of one that does not. Shown only to a viewer who can read the
+   * launch's teammate, and counted in `hiddenCount` otherwise. That gate is
+   * exact for the legacy remainder, which lives on the teammate row, but on a
+   * pre-`memoryIds` launch it is coarse: those strings also include
+   * task-remembered and requested memories, and ones since deleted, which
+   * cannot be checked one by one without ids. The raw `manifest` on the same
+   * record carries the same text.
    */
   unlinkedMemories: string[];
 }
