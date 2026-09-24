@@ -102,7 +102,13 @@ export type NotLiveOutcome =
    * records the outcome. `resume` answers `left_pending` after a successful
    * resume instead: the drain-on-live hook then injects the row normally.
    */
-  | { readonly kind: 'spawned'; readonly spawnedSessionId: string };
+  | { readonly kind: 'spawned'; readonly spawnedSessionId: string }
+  /**
+   * The handler already wrote the row's next state itself (a backoff, or a
+   * resume that released the row before resuming so drain-on-live could claim
+   * it). The drain writes nothing, which a release here would overwrite.
+   */
+  | { readonly kind: 'handled'; readonly reason: string };
 
 export interface NotLiveContext {
   readonly db: Db;
@@ -199,9 +205,16 @@ export class FormDeliveryDrain {
   }
 
   /** Post-commit submit hook. Replays re-fire it; the claim makes that safe. */
+  /**
+   * NOT awaited by the submit: a spawn-mode row resumes or spawns a session
+   * (first-prompt settlement can take minutes), and the respondent's submit
+   * must not wait on it. No `workSessionId` still drains: a session deleted
+   * before submit has none, yet a spawn-mode row for it is pending (214 C).
+   */
   readonly onResponseSubmitted = async (event: { responseId: string; workSessionId: string | null }): Promise<void> => {
-    if (!event.workSessionId) return;
-    await this.drain({ responseId: event.responseId });
+    void this.drain({ responseId: event.responseId }).catch((error: unknown) => {
+      console.error('[forms] delivery drain after submit failed', error);
+    });
   };
 
   /** Post-commit cancel hook: the notice (and anything else pending) for the requester. */
@@ -345,6 +358,9 @@ export class FormDeliveryDrain {
         return;
       case 'left_pending':
         await this.release(claims, item, outcome.reason, false);
+        result.leftPending += 1;
+        return;
+      case 'handled':
         result.leftPending += 1;
         return;
     }
