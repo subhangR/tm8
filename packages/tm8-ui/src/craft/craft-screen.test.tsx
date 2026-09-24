@@ -121,9 +121,11 @@ describe('the craft studio', () => {
     const canvas = view.getByTestId('crf-canvas');
     expect(canvas.textContent).toContain('Ship API');
     expect(canvas.textContent).toContain('Ship UI');
-    /* Specs are flagged as intent; the relation label is humanised. */
+    /* Specs are flagged as intent; the relation label comes from the vocabulary
+       and reads along the drawn arrow — a `depends_on` is drawn prerequisite
+       first, so it reads "blocks". */
     expect(canvas.textContent).toContain('REST');
-    expect(canvas.textContent?.toLowerCase()).toContain('depends');
+    expect(canvas.textContent?.toLowerCase()).toContain('blocks');
     /* The edge naming a key no node carries is COUNTED, never silently gone. */
     await waitFor(() => view.getByTestId('crf-dangling'));
     expect(view.getByTestId('crf-dangling').textContent).toContain('1 edge');
