@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942",
+  "catalogDigest": "sha256:8bbaf9591423a0881001d6b45c74c7cbf1e4d4885ed251e5572d17b5253a2fc4",
   "catalog": {
-    "total": 238,
-    "v1": 236,
+    "total": 240,
+    "v1": 238,
     "reserved": 2,
-    "http": 236,
+    "http": 238,
     "ws": 1,
-    "registerableV1Http": 234,
+    "registerableV1Http": 236,
     "methods": {
-      "GET": 78,
-      "POST": 113,
+      "GET": 79,
+      "POST": 114,
       "PATCH": 16,
       "DELETE": 16,
       "PUT": 13,
       "WS": 2
     },
     "kinds": {
-      "read": 82,
-      "command": 154,
+      "read": 83,
+      "command": 155,
       "stream": 2
     },
-    "uniqueNames": 238,
-    "uniqueBindings": 237
+    "uniqueNames": 240,
+    "uniqueBindings": 239
   },
   "reservedOperations": [
     "search.query",
@@ -1475,6 +1475,20 @@
         "source": "server-router"
       },
       {
+        "operation": "forms.responses.redeliver",
+        "method": "POST",
+        "path": "/v2/form-responses/:responseId/redeliver",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.pendingForSessions",
+        "method": "GET",
+        "path": "/v2/forms-pending",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "identity.profile.update",
         "method": "POST",
         "path": "/v2/identity/profile",
@@ -2070,7 +2084,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 206
+    "unimplementedV1Http": 208
   },
   "schemas": {
     "additive": {
@@ -5279,6 +5293,41 @@
           "forms",
           "responses",
           "mine"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.redeliver",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.redeliver",
+        "intentTags": [
+          "forms",
+          "responses",
+          "redeliver"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.pendingForSessions",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.pendingForSessions",
+        "intentTags": [
+          "forms",
+          "pending",
+          "for",
+          "sessions"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

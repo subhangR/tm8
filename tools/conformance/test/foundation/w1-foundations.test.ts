@@ -79,16 +79,16 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 2026-09-23 Jev lane F: launch.suggest, one mounted v1 POST command. MEASURED from the regenerated manifest.
       // Jev lane K: credentials.serviceKeys.{status,put,delete}, three mounted v1 rows. MEASURED.
       // SC-3: credentials.space.* (8) and node.credentials.* (2), ten mounted v1 rows. MEASURED.
-      total: 238, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). // +1 entities.commands.tick (bug 01a0d2f1). +1 events.changes (change feed step 3).
-      v1: 236, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
+      total: 240, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). // +1 entities.commands.tick (bug 01a0d2f1). +1 events.changes (change feed step 3).
+      v1: 238, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
       reserved: 2,
-      http: 236, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
+      http: 238, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
       ws: 1,
-      registerableV1Http: 234, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
-      methods: { GET: 78, /* +13 forms.* (Forms W1). MEASURED. */ POST: 113, PATCH: 16, DELETE: 16, PUT: 13, WS: 2 }, // +1 events.changes (change feed step 3).
-      kinds: { read: 82, /* +13 forms.* (Forms W1). MEASURED. */ command: 154, stream: 2 }, // +1 events.changes (change feed step 3).
-      uniqueNames: 238, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
-      uniqueBindings: 237, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
+      registerableV1Http: 236, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
+      methods: { GET: 79, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ POST: 114, PATCH: 16, DELETE: 16, PUT: 13, WS: 2 }, // +1 events.changes (change feed step 3).
+      kinds: { read: 83, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ command: 155, stream: 2 }, // +1 events.changes (change feed step 3).
+      uniqueNames: 240, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
+      uniqueBindings: 239, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs. // +1 entities.commands.tick. +1 events.changes (change feed step 3).
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
@@ -99,7 +99,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // 196 -> 197 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 206 -> 207 (Jev lane F): launch.suggest. MEASURED.
-    expect(manifest.routes.http).toHaveLength(236); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED.
+    expect(manifest.routes.http).toHaveLength(238); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED.
     // BOTH WS rows are LISTED here even though only one is MOUNTED. `routes`
     // is what a discovering client reads to learn an operation's transport,
     // and `containers.stream` has one — the same socket, dispatched on the
@@ -154,7 +154,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 176 -> 177 (Jev lane F): registerableV1Http 205 minus the frozen 28. MEASURED.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(206); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // 180 -> 190 (SC-3). 177 -> 180 (Jev lane K).
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(208); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // 180 -> 190 (SC-3). 177 -> 180 (Jev lane K).
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -187,7 +187,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 167 -> 171 (2026-09-23): the four skills.* rows; registerableV1Http 199 minus 28.
       // 171 -> 176 (2026-09-23 F4): registerableV1Http 204 minus 28.
       // 176 -> 177 (Jev lane F, launch.suggest): registerableV1Http 205 minus 28.
-      unimplementedV1Http: 206, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). // +1 entities.commands.tick (bug 01a0d2f1). 180 -> 190 (SC-3): registerableV1Http 218 minus 28. 177 -> 180 (Jev lane K). // +1 events.changes (change feed step 3).
+      unimplementedV1Http: 208, /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). // +1 entities.commands.tick (bug 01a0d2f1). 180 -> 190 (SC-3): registerableV1Http 218 minus 28. 177 -> 180 (Jev lane K). // +1 events.changes (change feed step 3).
     });
   });
 
@@ -242,7 +242,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // +25 (177) containers; 197 -> 198 (187): execution.sessions.share.
     // 198 -> 199 (2026-09-19): execution.gitStage. MEASURED on the merged tree.
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
-    expect(manifest.help.operations).toHaveLength(238); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). // +3 service keys (Jev lane K). // +1 launch.suggest (Jev lane F). MEASURED.
+    expect(manifest.help.operations).toHaveLength(240); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). // +3 service keys (Jev lane K). // +1 launch.suggest (Jev lane F). MEASURED.
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -473,7 +473,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 181 -> 185 (2026-09-23): the four skills.* handlers. MEASURED on the merged tree.
     // 185 -> 190 (2026-09-23 F4): five skills.* handlers. MEASURED.
     // 190 -> 191 (Jev lane F): the launch.suggest placeholder (jev/handlers.ts). MEASURED.
-    expect(handlers.facade).toHaveLength(219); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +10 space/node credentials (SC-3). +3 service keys (Jev lane K). MEASURED.
+    expect(handlers.facade).toHaveLength(221); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +10 space/node credentials (SC-3). +3 service keys (Jev lane K). MEASURED.
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -503,7 +503,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 195 -> 199 (2026-09-23): the four skills.* facade handlers. MEASURED on the merged tree.
     // 199 -> 204 (2026-09-23 F4). MEASURED.
     // 204 -> 205 (Jev lane F): launch.suggest. MEASURED.
-    expect(handlers.all).toHaveLength(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED.
+    expect(handlers.all).toHaveLength(236); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED.
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -535,7 +535,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       // Re-measured (change feed step 3): events.changes joins the events module. Read from the failing run.
       // Re-measured (bug 01a0d2f1): entities.commands.tick joins. Read from the failing run.
       // Re-measured (task 01a0d350): spaces.configs joins. Read from the failing run.
-      .toBe('a94ca1da4c76b7f31203f4c2008b9805683cfa2f324b9e3e6b198854974f8d98'); // Re-measured (Forms W1): the thirteen forms.* handlers join; read from the failing run's Received line.
+      .toBe('56cf10b4b5363700dba906d25fb6e5425e11c94dfcc57f8390ae31560ea97ac3'); // Re-measured (Forms W3): redeliver and pendingForSessions join; read from the failing run's Received line.
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -559,7 +559,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 120 -> 121 (2026-09-23): skills.scan binds SkillScanInputSchema. MEASURED on the merged tree.
     // 121 -> 125 (2026-09-23 F4): create/edit/equip/unequip bind local schemas. MEASURED.
     // 125 -> 126 (Jev lane F): launch.suggest binds LaunchSuggestInputSchema. MEASURED.
-    expect(inputSchemas.bound).toHaveLength(146) /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +1: entities.commands.tick binds TickCriteriaInputSchema (bug 01a0d2f1). +7: the SC-3 space/node credential commands bind. +2: service-key put and delete bind (Jev lane K).
+    expect(inputSchemas.bound).toHaveLength(147) /* +1 forms.responses.redeliver (Forms W3). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +1: entities.commands.tick binds TickCriteriaInputSchema (bug 01a0d2f1). +7: the SC-3 space/node credential commands bind. +2: service-key put and delete bind (Jev lane K).
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -596,7 +596,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 195 -> 199 (2026-09-23): the four skills.* rows, all mounted v1 HTTP. MEASURED on the merged tree.
     // 199 -> 204 (2026-09-23 F4). MEASURED.
     // 204 -> 205 (Jev lane F): launch.suggest, mounted (placeholder). MEASURED.
-    expect(registerableV1Http).toHaveLength(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(registerableV1Http).toHaveLength(236); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). +3 (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);
