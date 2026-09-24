@@ -31,6 +31,7 @@ export {
   HARNESS_SURFACES,
   harnessSurfaceEnv,
   readInstalledClaudePlugins,
+  readHintHookPath,
   type HarnessSurface,
 } from './harness-surface.js';
 export {

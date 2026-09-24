@@ -452,7 +452,9 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'do not re-check it by grepping: it is an AST index of the same files, not a ' +
   'guess. One or two queries settle a structural question; if three have not, ' +
   'the question is not structural. Read the files themselves when you need to ' +
-  'understand or change code — the graph answers structure, not intent.';
+  'understand or change code — the graph answers structure, not intent. ' +
+  'Then read the range you need (`sed -n X,Yp`, Read offset/limit), not the ' +
+  'whole file: every result is re-sent on each later turn.';
 
 /**
  * Codex's legacy read-only sandbox cannot enable command networking. A tm8

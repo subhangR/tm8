@@ -1,7 +1,9 @@
 import { computeEffectiveSkills } from './effective-skills.js';
 import {
   asHarnessSurface,
+  asReadHints,
   disabledPluginSettings,
+  readHintHookSettings,
   MINIMAL_MCP_CONFIG,
   type HarnessSurface,
 } from './harness-surface.js';
@@ -239,6 +241,14 @@ export interface ResolvedLaunchConfig {
    * Absent means none.
    */
   plugins?: string[];
+  /**
+   * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
+   * after a large repository read. OFF by default — the hook ships dark until
+   * the A/B in doc 01a0d2e9 has run, and `TM8_READ_HINTS=on` (node) or
+   * `capabilities.launch.readHints: true` (persona) is how an arm is turned
+   * on. Absent here means off. Independent of `harnessSurface`.
+   */
+  readHints?: boolean;
 }
 
 /**
@@ -249,6 +259,7 @@ export interface ResolvedLaunchConfig {
 function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
   harnessSurface: HarnessSurface | null;
   plugins: string[] | null;
+  readHints: boolean | null;
 } {
   const raw = capabilities?.launch;
   const launch = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
@@ -257,7 +268,11 @@ function memberLaunchPreferences(capabilities: Record<string, unknown> | null | 
   const plugins = Array.isArray(launch.plugins)
     ? launch.plugins.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
     : null;
-  return { harnessSurface: asHarnessSurface(launch.harnessSurface), plugins };
+  return {
+    harnessSurface: asHarnessSurface(launch.harnessSurface),
+    plugins,
+    readHints: asReadHints(launch.readHints),
+  };
 }
 
 /**
@@ -432,6 +447,13 @@ export function resolveLaunchConfig(
   const preferences = memberLaunchPreferences(member.capabilities);
   const harnessSurface =
     asHarnessSurface(env.TM8_HARNESS_SURFACE) ?? preferences.harnessSurface ?? 'minimal';
+  // Same precedence, but the default is OFF: this hook is an experiment that
+  // has not been through its A/B yet, so merging it changes no lane. Turning
+  // an arm on is `TM8_READ_HINTS=on` node-wide, or the persona's
+  // `capabilities.launch.readHints`.
+  const readHints =
+    agentTool === 'claude-code' &&
+    (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
 
   return {
     mode,
@@ -445,6 +467,7 @@ export function resolveLaunchConfig(
     spaceCredentialIds,
     harnessSurface,
     plugins: preferences.plugins ?? [],
+    readHints,
   };
 }
 
@@ -838,14 +861,20 @@ export function buildAgentCommand(
   if (launch.model) args.push('--model', shellQuote(launch.model));
   if (launch.reasoningEffort) args.push('--effort', launch.reasoningEffort);
   if (opts.claudeSessionId) args.push('--session-id', shellQuote(opts.claudeSessionId));
+  // ONE flag-level settings object for everything tm8 layers onto a lane
+  // (Claude Code takes a single `--settings`); each feature adds its own key.
+  const settings: Record<string, unknown> = {};
   if (launch.harnessSurface !== 'inherit') {
     // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
     // builds on this same base command, so these flags survive `--resume`.
     args.push('--strict-mcp-config', '--mcp-config', shellQuote(MINIMAL_MCP_CONFIG));
     const disabled = disabledPluginSettings(opts.installedClaudePlugins ?? [], launch.plugins ?? []);
-    if (Object.keys(disabled).length > 0) {
-      args.push('--settings', shellQuote(JSON.stringify({ enabledPlugins: disabled })));
-    }
+    if (Object.keys(disabled).length > 0) settings.enabledPlugins = disabled;
+  }
+  // Flag-level hooks merge with the user's own hooks rather than replace them.
+  if (launch.readHints === true) settings.hooks = readHintHookSettings();
+  if (Object.keys(settings).length > 0) {
+    args.push('--settings', shellQuote(JSON.stringify(settings)));
   }
   return ['claude', ...args].join(' ');
 }
