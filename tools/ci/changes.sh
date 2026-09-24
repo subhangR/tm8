@@ -91,7 +91,7 @@ validate() {
 
 command -v jq >/dev/null || fallback "jq not found"
 
-if [[ ${EVENT_NAME:-} == pull_request && ${FORCE_ALL:-} != true ]]; then
+if [[ ${EVENT_NAME:-} == pull_request ]]; then  # W2 CONTROL (iv): force_all ignored
   PATH_TAKEN="diff HEAD^1..HEAD"
   [[ -n ${EXPECTED_SHA:-} && -n ${PR_HEAD_SHA:-} ]] || fallback "pull_request without EXPECTED_SHA/PR_HEAD_SHA"
   head=$(git rev-parse HEAD)
