@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // tm8 lane PostToolUse hook: nudge large repository reads toward ranges and
 // the code graph. Installed through the lane's `--settings` (see
-// `laneHookSettings` in src/spawn/harness-surface.ts), never for humans.
+// `readHintHookSettings` in src/spawn/harness-surface.ts), never for humans.
 //
 // Why: repository reads through Bash (sed/cat/grep) are ~15% of the
 // re-read-weighted context of a lane, because every tool result is re-sent on

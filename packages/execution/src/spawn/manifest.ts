@@ -243,8 +243,10 @@ export interface ResolvedLaunchConfig {
   plugins?: string[];
   /**
    * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
-   * after a large repository read. `resolveLaunchConfig` defaults it on for
-   * Claude lanes; absent here means off. Independent of `harnessSurface`.
+   * after a large repository read. OFF by default — the hook ships dark until
+   * the A/B in doc 01a0d2e9 has run, and `TM8_READ_HINTS=on` (node) or
+   * `capabilities.launch.readHints: true` (persona) is how an arm is turned
+   * on. Absent here means off. Independent of `harnessSurface`.
    */
   readHints?: boolean;
 }
@@ -445,10 +447,13 @@ export function resolveLaunchConfig(
   const preferences = memberLaunchPreferences(member.capabilities);
   const harnessSurface =
     asHarnessSurface(env.TM8_HARNESS_SURFACE) ?? preferences.harnessSurface ?? 'minimal';
-  // Same precedence; `TM8_READ_HINTS=off` is the node-wide A/B switch.
+  // Same precedence, but the default is OFF: this hook is an experiment that
+  // has not been through its A/B yet, so merging it changes no lane. Turning
+  // an arm on is `TM8_READ_HINTS=on` node-wide, or the persona's
+  // `capabilities.launch.readHints`.
   const readHints =
     agentTool === 'claude-code' &&
-    (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? true);
+    (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
 
   return {
     mode,

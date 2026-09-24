@@ -156,16 +156,24 @@ function context(capabilities: Record<string, unknown> = {}): SpawnContext {
 const REQUEST: SpawnRequest = { spaceId: 'space-1', teamMemberId: 'tm-1' };
 
 describe('read-hint spawn settings', () => {
-  it('resolveLaunchConfig turns read hints on for Claude lanes by default', () => {
-    expect(resolveLaunchConfig(REQUEST, context(), {}).readHints).toBe(true);
+  it('resolveLaunchConfig leaves read hints OFF by default — the hook ships dark', () => {
+    expect(resolveLaunchConfig(REQUEST, context(), {}).readHints).toBe(false);
+    // Not a Claude lane at all: off however loudly it is asked for.
+    expect(
+      resolveLaunchConfig(
+        { ...REQUEST, agentTool: 'codex' },
+        context({ launch: { readHints: true } }),
+        { TM8_READ_HINTS: 'on' },
+      ).readHints,
+    ).toBe(false);
   });
 
-  it('persona and the node-wide A/B switch turn them off, env first', () => {
-    expect(resolveLaunchConfig(REQUEST, context({ launch: { readHints: false } }), {}).readHints).toBe(false);
-    expect(resolveLaunchConfig(REQUEST, context(), { TM8_READ_HINTS: 'off' }).readHints).toBe(false);
+  it('persona and the node-wide A/B switch turn them on, env first', () => {
+    expect(resolveLaunchConfig(REQUEST, context({ launch: { readHints: true } }), {}).readHints).toBe(true);
+    expect(resolveLaunchConfig(REQUEST, context(), { TM8_READ_HINTS: 'on' }).readHints).toBe(true);
     expect(
-      resolveLaunchConfig(REQUEST, context({ launch: { readHints: false } }), { TM8_READ_HINTS: 'on' }).readHints,
-    ).toBe(true);
+      resolveLaunchConfig(REQUEST, context({ launch: { readHints: true } }), { TM8_READ_HINTS: 'off' }).readHints,
+    ).toBe(false);
   });
 
   it('pins the full lane argv: ONE --settings carrying plugins and the hook', () => {
