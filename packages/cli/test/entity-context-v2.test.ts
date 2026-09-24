@@ -212,7 +212,7 @@ describe('v1 stays reachable and unchanged', () => {
 // ============================================================================
 
 describe('S3 --schema and section paging flags', () => {
-  it.fails('[c761 §9] `--schema v2` requests v2 and `--schema v1` requests v1 (S3)', async () => {
+  it('[c761 §9] `--schema v2` requests v2 and `--schema v1` requests v1 (S3a)', async () => {
     const two = await drive(['entity', 'context', ENT, '--schema', 'v2', '--format', 'json']);
     expect(two.code).toBe(0);
     expect(seen.at(-1)?.query.get('schema')).toBe('v2');
@@ -222,7 +222,7 @@ describe('S3 --schema and section paging flags', () => {
     expect(seen.at(-1)?.query.get('schema') ?? 'v1').toBe('v1');
   });
 
-  it.fails('[c904 §5.9] `--schema v1` still accepts --section-bytes (S3)', async () => {
+  it('[c904 §5.9] `--schema v1` still accepts --section-bytes (S3a)', async () => {
     reply = ok({ schemaVersion: 'tm8.entity-context.v1' });
     const r = await drive(['entity', 'context', ENT, '--schema', 'v1', '--section-bytes', '1024']);
     expect(r.code).toBe(0);
@@ -248,7 +248,7 @@ describe('S3 --schema and section paging flags', () => {
     }
   });
 
-  it.fails('[c761 §9] --sections accepts the v2 names: assignment (alias summary), blockers (S3)', async () => {
+  it('[c761 §9] --sections accepts the v2 names: assignment (alias summary), blockers (S3a)', async () => {
     for (const section of ['assignment', 'blockers', 'summary']) {
       seen = [];
       const r = await drive(['entity', 'context', ENT, '--schema', 'v2', '--sections', section]);
@@ -296,7 +296,7 @@ describe('S4 body pages and caller budget', () => {
     expect(r.stderr).toContain('4698');
   });
 
-  it.fails('[c904 §5.9] v2 rejects --section-bytes locally as usage, before any request (S4)', async () => {
+  it('[c904 §5.9] v2 rejects --section-bytes locally as usage, before any request (S3a, ahead of S4)', async () => {
     const control = await drive(['entity', 'context', ENT, '--schema', 'v2', '--total-bytes', '4096']);
     expect(control.code).toBe(0);
     expect(seen).toHaveLength(1);

@@ -84,6 +84,8 @@ import {
 } from '../../entity-read.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
 import { childCursor } from './entities-commands-tracking.js';
+import { taggedQuerier } from './context-tags.js';
+import { V2_DEFAULT_TOTAL_BYTES, loadContextV2, parseV2Sections } from './feed-context-v2.js';
 
 // ---------------------------------------------------------------------------
 // The versioned named-scope registry — the whole M1/M3 surface
@@ -368,6 +370,13 @@ function parseFeedQuery(query: URLSearchParams): EntityFeedQuery {
 }
 
 function parseContextQuery(query: URLSearchParams): EntityContextQuery {
+  // c904 Q17: removing a knob beats changing what it means. Refused by name,
+  // before the schema, so the caller reads the reason rather than a zod issue.
+  if (query.get('schema') === 'v2' && query.has('sectionBytes')) {
+    throw new CollabError('invalid_input', 'v2 budgets are total-only; see --total-bytes', {
+      details: { reason: 'section_bytes_not_in_v2' },
+    });
+  }
   return parseQuery<EntityContextQuery>(query, EntityContextQuerySchema, (raw) => {
     if (typeof raw['sections'] === 'string') {
       raw['sections'] = raw['sections'].split(',').filter((value) => value.length > 0);
@@ -865,52 +874,10 @@ const DROP_ORDER = ['actions', 'edges', 'children', 'parents', 'messages', 'cont
 type Droppable = (typeof DROP_ORDER)[number];
 type ListName = Exclude<Droppable, 'content'>;
 
-/**
- * The tag every `entities.context` statement carries, by the loader it serves.
- *
- * c904 §2.6 / §5 test 8: "select before load" is asserted by COUNTING tagged
- * statements, not by reading the output — a section that is loaded and then
- * dropped looks identical to one never loaded. So the tag has to reach every
- * statement, including those issued inside shared helpers (`assembleSummaries`,
- * `loadActors`, `loadMessageViewsByIds`) and the actions palette's own
- * transaction; `taggedQuerier` / `taggedDb` put it there. It is a leading SQL
- * comment so the same attribution shows up in `pg_stat_statements` and logs.
- */
-export const CONTEXT_LOAD_TAGS = [
-  'root', 'summary', 'parents', 'children', 'edges', 'messages', 'activity', 'seq', 'actions',
-] as const;
-export type ContextLoadTag = (typeof CONTEXT_LOAD_TAGS)[number];
-
-function contextTag(tag: ContextLoadTag): string {
-  return `/* entities.context:${tag} */`;
-}
-
-function tagSql(tag: ContextLoadTag, sql: string): string {
-  const prefix = contextTag(tag);
-  return sql.startsWith(prefix) ? sql : `${prefix}\n${sql}`;
-}
-
-/** `q`, with every statement it issues led by `tag`. */
-export function taggedQuerier(q: Querier, tag: ContextLoadTag): Querier {
-  return {
-    query: <R = Record<string, unknown>>(sql: string, params?: readonly unknown[]) =>
-      q.query<R>(tagSql(tag, sql), params),
-    rpc: <T = unknown>(fn: string, args?: readonly unknown[]) => q.rpc<T>(fn, args),
-  };
-}
-
-/** `db`, with every statement it issues — in any transaction — led by `tag`. */
-export function taggedDb(db: Db, tag: ContextLoadTag): Db {
-  return {
-    tx: <T>(claims: DbClaims, fn: (q: Querier) => Promise<T>) =>
-      db.tx(claims, (q) => fn(taggedQuerier(q, tag))),
-    rpc: <T = unknown>(claims: DbClaims, fn: string, args?: readonly unknown[]) =>
-      db.rpc<T>(claims, fn, args),
-    query: <R = Record<string, unknown>>(claims: DbClaims, sql: string, params?: readonly unknown[]) =>
-      db.query<R>(claims, tagSql(tag, sql), params),
-    end: () => db.end(),
-  };
-}
+// The section tags (`/* entities.context:<tag> */`) live in `context-tags.ts`
+// so the v2 projection can share them without an import cycle; re-exported
+// here because this module is where S2's tests and callers find them.
+export { CONTEXT_LOAD_TAGS, taggedDb, taggedQuerier, type ContextLoadTag } from './context-tags.js';
 
 /**
  * Which optional loaders a read runs. `root`, `summary` and `seq` are not
@@ -1149,7 +1116,16 @@ export class W2FeedContextService {
   readonly context: OperationHandler = async (ctx) => {
     const id = requireUuidParam(ctx, 'id');
     const input = parseContextQuery(ctx.query);
-    const sections = new Set(input.sections ?? ALL_SECTIONS);
+    if (input.schema === 'v2') {
+      // M2/S3a: v2 only when asked for, until S5 flips the default.
+      const { claims } = await accessFor(this.deps, ctx);
+      return this.deps.db.tx(claims, (q) => loadContextV2(q, id, {
+        sections: parseV2Sections(input.sections),
+        totalBytes: input.totalBytes ?? V2_DEFAULT_TOTAL_BYTES,
+      }));
+    }
+    // The schema admits only v1 section names when `schema` is not v2.
+    const sections = new Set((input.sections as EntityContextSection[] | undefined) ?? ALL_SECTIONS);
     const totalBytes = input.totalBytes ?? DEFAULT_TOTAL_BYTES;
     const sectionBytes = input.sectionBytes ?? DEFAULT_SECTION_BYTES;
     const { claims, viewerIdentityId } = await accessFor(this.deps, ctx);

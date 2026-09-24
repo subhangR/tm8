@@ -2050,14 +2050,15 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--actions-schema v1|v2]',
+    syn: 'tm8 entity context <entity-id> [--schema v1|v2] [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--actions-schema v1|v2]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'exactly four flags bind — --sections, --total-bytes, --section-bytes, --actions-schema (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'exactly five flags bind — --schema, --sections, --total-bytes, --section-bytes, --actions-schema (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
       'actions under v2 (agent default) are tm8.actions.v2 rows; cursors.actions continues in `tm8 action list --for <id> --cursor <c>`',
+      '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy, blockers, connections, messages, actions; v2 refuses --section-bytes. Without --schema the read is still v1',
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
