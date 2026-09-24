@@ -1,7 +1,7 @@
 # Forms — design (v1, decisions settled)
 
 **Status:** APPROVED for implementation (2026-09-24). §3–§8 reflect the code as merged:
-W0 #725, and W1 #730/#734/#736. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
+W0 #725, W1 #730/#734/#736, and W2 #749/#751/#756. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
 Section 11 records the owner's decisions. Where this doc and §11 disagree, §11 wins.
 Nothing here is built yet.
 
@@ -105,9 +105,13 @@ create table public.form_deliveries (         -- outbox: response → requesting
   attempts int not null default 0, last_error text,
   delivery_id uuid,                             -- session_message_deliveries row
   spawned_session_id uuid references public.entities(id),  -- new_session / spawn_new
+  claimed_at timestamptz, claimed_by text,      -- drain lease (214)
+  spawn_mutation_id uuid,                       -- idempotent spawn (215)
   created_at timestamptz not null default now(),
   primary key (response_id, work_session_id)
 );
+
+-- form_notices (214): the cancel-notice outbox, queue-only (§5)
 ```
 
 Why questions and responses are side rows rather than entities: a single question or
@@ -268,8 +272,11 @@ draft ──open──▶ open ──submit (closeOnSubmit)──▶ closed
   - a responses-mode change re-keys existing drafts.
 - **Draft responses** autosave, so a human can leave and come back. A structure edit
   keeps draft answers whose keys still validate and drops the others.
-- **Cancel:** the requester gets a `form_cancelled` message, so an agent that is
-  waiting never hangs forever.
+- **Cancel:** the requester gets a `form_cancelled` notice, so an agent that is waiting
+  never hangs forever.
+  - Notices go through `form_notices` to the **requesting session only**. They don't go
+    to sessions spawned for earlier responses.
+  - They are **queue-only**: a session is never resumed just to be told.
 - **Opening** raises an attention request on the form (`reason = "Form: <title>"`).
   Submitting resolves it.
   As merged, the **first** submit resolves it, even under `per_member`. Whether it
@@ -375,9 +382,14 @@ Steps:
 4. Insert `form_deliveries(pending)` for the requesting session.
 5. `closeOnSubmit` → `closed`. Resolve the form's attention requests.
 
-After commit, `dispatchSessionMessages` injects the message into the live PTY using
-the new `form_response` envelope (§7.2), and settles `form_deliveries` from the
+After commit, the drain (§7.3) injects the message into the live PTY using the
+`form_response` envelope (§7.2), and settles `form_deliveries` from the
 `session_message_deliveries` outcome.
+
+The session copy is routed by `internal.form_delivery_route`, which writes the
+anchor-target reply route directly. It does **not** use
+`w2_record_session_message_routes`: that door's author check (42501) refuses a
+server-run drain.
 
 ### 7.2 What the agent receives
 
@@ -399,6 +411,15 @@ Form: Pick the migration strategy
 ```
 
 Each answer shows both the key and the value, so the agent can use it directly.
+
+Size and transport (as merged in #751):
+- The envelope is cut by UTF-8 **bytes** to `min(profile, 16384)` and marked
+  `truncated="true"` with the fetch pointer. The door's 10k-character message cut is
+  flagged the same way.
+- The delivery line depends on the session:
+  - live PTY: `transport="pty"`, `status_source="session_message_deliveries"`;
+  - spawned session: `transport="spawn_initial_turn"`, `status_source="form_deliveries"`.
+    Its first turn carries the envelope, addressed to the real new session id.
 
 A resubmission carries `<response id=… revision="2" supersedes=…>`. The body comes
 from `renderFormResponseText({title, questions, answers, previousAnswers?})`. It
@@ -430,17 +451,45 @@ replayed; `form_deliveries` closes that gap.
 Whatever the mode, the message on the session and form timelines is the durable
 record, and the delivery status is shown on the response.
 
-If the session was deleted, a `resume`/`queue` delivery goes to `cancelled`, the
-response is still stored, and the respondent is shown **Send to a new session**.
-
 A spawned delivery ends as `form_deliveries.status = 'spawned'`, with
 `spawned_session_id` set.
 
+Delivery rules (as merged in W2, #751 and #756):
+- **Deleted session:**
+  - cancels only `resume` and `queue` deliveries. The response is still stored, and
+    the respondent is shown **Send to a new session**;
+  - `spawn_new` and `target = new_session` still spawn, even for a session deleted
+    **before** submit.
+- **Unresumable session:** the delivery ends `cancelled` with `resume_unavailable`. It
+  is never silently spawned instead.
+- **Ambiguous PTY outcome** (`unknown`) is **at-most-once**: the delivery is marked
+  `delivered`, with `last_error = 'delivery_unverified'`.
+- **Authority and posture:**
+  - Resume and spawn act under the server's owner claims.
+  - A spawned session inherits the **requester's** recorded posture, never more.
+  - It also keeps the requester's recorded harness pick (the plugin allow set). That
+    differs from a parent→child spawn, which strips it under #741's
+    `childLaunchPosture`; dropping it here could widen the posture.
+- **Retries:** backoff is `30s·2^(n-1)`, capped at 300s, plus the lease. After 10
+  attempts the delivery goes to `cancelled`.
+- **Drain triggers:**
+  - `SpawnService.onSessionLive`: resume success, a spawn's first turn, and
+    `running`/`idle` activity;
+  - the submit and cancel post-commit hooks (submit's is fire-and-forget);
+  - a 15s backstop job, `forms.deliveries`.
+
 ### 7.4 Agents that want to block
 
-`tm8 form wait <form-id> [--timeout 600]` blocks until a response is submitted or the
-form reaches a terminal state, then prints the response. It is a CLI loop over the
-change feed and `forms.responses.list`, not a new operation. The primary path stays
+`tm8 form wait <form-id> [--timeout S] [--since <response-id|ISO>]` blocks until a
+response is submitted or the form reaches a terminal state, then prints the response.
+It was merged in #749.
+- `--timeout` defaults to 600 seconds, max 3600.
+- Exit codes: `0` answered, `15` closed or cancelled, `13` timeout.
+- It is a CLI loop, not a new operation. It wakes on `events.changes` **thin** rows
+  (`--events`), because the digest folds a submit to `changed: []`. It then reads
+  `forms.responses.list`.
+- A transient read counts as no news. On a slow server the wait may overrun
+  `--timeout` by a few seconds. The primary path stays
 PTY injection. The agent keeps working or idles, and the answer arrives as a turn.
 
 ## 8. CLI (`tm8 form …`) — merged in #736
@@ -456,7 +505,7 @@ tm8 form open|close|reopen|cancel <form-id> [--expect-version N]
 tm8 form submit <form-id> --answers answers.json|-
 tm8 form response save|discard <form-id> …
 tm8 form response list <form-id> | get <response-id> | mine
-tm8 form wait <form-id> [--timeout S]            # W2
+tm8 form wait <form-id> [--timeout S] [--since <response-id|ISO>]   # exit 0/15/13, §7.4
 ```
 
 The `--question` shorthand is `key:type:title[:options]`. Its fourth segment is always
