@@ -141,6 +141,33 @@ describe('tool curation', () => {
     ]);
   });
 
+  it('entity writes ask for a tm8.receipt.v1 by default, and full:true returns the full result (spec 01a0d044 §9.12)', async () => {
+    const transport = new RecordingTransport();
+    const router = new Tm8ToolRouter(transport, { mode: 'build' });
+    const id = '019fa297-64e3-7000-8000-000000000001';
+    await router.call('tm8_act', { operation: 'entities.patch', params: { id }, body: { expectedVersion: 2, title: 't' } });
+    await router.call('tm8_act', { operation: 'entities.commands.complete', params: { id }, body: { expectedVersion: 2, completerIds: [id] } });
+    await router.call('tm8_act', { operation: 'entities.patch', params: { id }, body: { expectedVersion: 2, title: 't' }, full: true });
+    // A non-receipt write is untouched.
+    await router.call('tm8_act', { operation: 'entities.delete', params: { id }, body: { expectedVersion: 2 } });
+
+    expect(transport.calls.map((call) => call.options.query)).toEqual([
+      { return: 'receipt' },
+      { return: 'receipt' },
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('full must be a boolean', async () => {
+    const transport = new RecordingTransport();
+    const result = await new Tm8ToolRouter(transport, { mode: 'build' }).call('tm8_act', {
+      operation: 'entities.patch', params: { id: '019fa297-64e3-7000-8000-000000000001' }, body: {}, full: 'yes',
+    });
+    expect(result.isError).toBe(true);
+    expect(transport.calls).toEqual([]);
+  });
+
   it('mints a mutation id for operations whose frozen body requires one', async () => {
     const transport = new RecordingTransport();
     await new Tm8ToolRouter(transport, { mode: 'build' }).call('tm8_messages', {

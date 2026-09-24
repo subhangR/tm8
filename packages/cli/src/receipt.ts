@@ -113,6 +113,8 @@ export interface ReceiptRef {
   type?: string;
   url?: string;
   to?: string;
+  /** An incoming edge: the row it comes from. */
+  from?: string;
 }
 
 /** A warning the receipt carries: the Server's verbatim, or one the CLI verified. */
@@ -394,11 +396,58 @@ function terminateReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Rec
   return tail(receipt, dto, input, undefined);
 }
 
-/** Project one server success result into its receipt. Pure. */
+/**
+ * The ops whose Server honours `?return=receipt` (phase 2). A Server that
+ * predates it ignores the query and answers with the full result, which
+ * `successReceipt` then projects exactly as phase 1 did.
+ */
+export const SERVER_RECEIPT_OPS: ReadonlySet<ReceiptOp> = new Set<ReceiptOp>([
+  'task.complete',
+  'task.tick',
+  'task.transition',
+  'task.link-pr',
+  'task.link-commit',
+  'entity.create',
+  'entity.update',
+]);
+
+/** The query that asks the Server for a receipt, when this invocation prints one. */
+export function receiptQuery(op: ReceiptOp, mode: ReceiptMode): { return?: 'receipt' } {
+  return mode === 'receipt' && SERVER_RECEIPT_OPS.has(op) ? { return: 'receipt' } : {};
+}
+
+/** Whether a response is already a receipt the Server built. */
+export function isServerReceipt(dto: unknown): dto is Receipt {
+  return isRecord(dto) && dto.schemaVersion === SCHEMA_VERSION && dto.ok === true && typeof dto.op === 'string';
+}
+
+/**
+ * Project one server success result into its receipt. Pure.
+ *
+ * A receipt the Server built is taken as it stands — its `version.from`,
+ * `status.from` and `changed` come from a before/after read only the Server
+ * can make — and only the CLI's own facts are added: chained refs, warnings it
+ * verified, and the caller's `--mutation-id`.
+ */
 export function successReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput = {}): Receipt {
-  const receipt = projectSuccess(op, dto, input);
+  const receipt = isServerReceipt(dto) ? fromServer(dto, input) : projectSuccess(op, dto, input);
   if (input.mutationId !== undefined) receipt.mutationId = input.mutationId;
   return receipt;
+}
+
+function fromServer(dto: Receipt, input: ReceiptInput): Receipt {
+  const receipt: Receipt = { ...dto };
+  const refs = Array.isArray(dto.refs) ? (dto.refs as ReceiptRef[]) : [];
+  receipt.refs = [...refs, ...(input.refs ?? [])];
+  receipt.warnings = warningsOf(dto, input);
+  return receipt;
+}
+
+/** The id of the `kind` row a server receipt names in its refs (link-pr's pull_request). */
+export function receiptRefId(dto: unknown, kind: string): string | undefined {
+  if (!isServerReceipt(dto) || !Array.isArray(dto.refs)) return undefined;
+  const ref = (dto.refs as ReceiptRef[]).find((r) => r.kind === kind);
+  return ref?.id;
 }
 
 function projectSuccess(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receipt {
@@ -433,7 +482,8 @@ function versionText(v: unknown): string | undefined {
 
 function refText(ref: ReceiptRef): string {
   const label = ref.type ?? ref.kind;
-  return [label, ref.id, ref.url, ref.to === undefined ? undefined : `→${ref.to}`]
+  return [label, ref.id, ref.url, ref.to === undefined ? undefined : `→${ref.to}`,
+    ref.from === undefined ? undefined : `←${ref.from}`]
     .filter((p) => p !== undefined)
     .join(' ');
 }
@@ -467,8 +517,10 @@ export function renderReceiptHuman(receipt: Receipt): string {
     if (typeof receipt.title === 'string') head.push(JSON.stringify(receipt.title));
     const version = versionText(receipt.version);
     if (version !== undefined) head.push(version);
-    const status = rec(receipt.status).to;
-    if (typeof status === 'string') head.push(status);
+    const status = rec(receipt.status);
+    if (typeof status.to === 'string') {
+      head.push(typeof status.from === 'string' ? `${status.from}→${status.to}` : status.to);
+    }
     const gate = rec(receipt.gate);
     if (typeof gate.kind === 'string') head.push(`gate:${gate.kind}`);
     if (typeof receipt.ended === 'string') head.push(`ended:${receipt.ended}`);
@@ -487,6 +539,13 @@ export function renderReceiptHuman(receipt: Receipt): string {
     }
   }
   if (receipt.truncated === true) clauses.push('truncated');
-  for (const w of (receipt.warnings as ReceiptWarning[] | undefined) ?? []) clauses.push(warningText(w));
+  const warnings = (receipt.warnings as ReceiptWarning[] | undefined) ?? [];
+  // `changed: []` exists only when the Server verified the no-op (D1.2); the
+  // projection never emits it, so this line cannot be printed on a guess.
+  if (Array.isArray(receipt.changed) && receipt.changed.length === 0) {
+    const reason = str(warnings.find((w) => w.code === 'no_change')?.message);
+    clauses.unshift(reason === undefined ? 'NO CHANGE' : `NO CHANGE (${reason})`);
+  }
+  for (const w of warnings) if (w.code !== 'no_change') clauses.push(warningText(w));
   return [head.join(' '), ...clauses].join(' · ');
 }
