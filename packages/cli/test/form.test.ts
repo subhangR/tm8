@@ -401,7 +401,7 @@ describe('`tm8 help form` — the generated authoring guide (decision 12)', () =
 
   it('carries the spec shape, the shorthand, the lifecycle and the `form wait` pointer', async () => {
     const r = await tm8(['help', 'form']);
-    for (const s of ['"questions"', '"sections"', '"attachTo"', '"forSession"', 'key:type:Title', 'form_structure_frozen', 'tm8 form wait <form-id>', 'W2']) {
+    for (const s of ['"questions"', '"sections"', '"attachTo"', '"forSession"', 'key:type:Title', 'form_structure_frozen', 'tm8 form wait <form-id> --timeout 600', 'exit 0 answered', '--since <response-id>']) {
       expect(r.stdout).toContain(s);
     }
   });

@@ -3366,6 +3366,21 @@ const COMMAND_ALIASES = new Map<string, {
     notes: ['sugar over forms.transition with to=open — the same move as `form open`, named for a closed form'],
     examples: ['tm8 form reopen <form-id> --expect-version <n>'],
   }],
+  // `form wait` (Forms W2, §7.4) is a CLI loop over reads the catalog already
+  // has; like `node mode` it adds a command path and NO catalog operation.
+  ['form wait', {
+    path: ['form', 'wait'],
+    syntax: 'tm8 form wait <form-id> [--timeout <seconds>] [--since <response-id>|<iso-timestamp>]',
+    summary: 'Block until a NEW response is submitted to a form, or it closes or is cancelled; print the response',
+    notes: [
+      'a CLI loop, not an operation: events.changes scoped to the form wakes it; forms.responses.list and the form\'s status decide; it falls back to polling (1s -> 10s) when the feed refuses',
+      'exit 0: answered — prints the FormResponseView (`--format json` passes it through) · exit 15: the form closed or was cancelled first — prints {formId, status, reason} (reason is the canceller\'s untrusted text, or null) · exit 13: --timeout expired',
+      '--timeout defaults to 600 seconds, capped at 3600; on 13 stderr prints the exact command to resume without a gap',
+      '"new" = submitted after the newest response when the wait started (Server time), or after --since; an amend (a new revision) counts. The OLDEST new one is printed, so `--since <printed-id>` chains waits',
+      'agent flow: `tm8 form create --title "<title>" --question \'<key>:single_choice:<question>:<a>*,<b>\'` prints the form id, then `tm8 form wait <form-id> --timeout 600`; the answer also arrives in your session as a message, so waiting is optional',
+    ],
+    examples: ['tm8 form wait <form-id> --timeout 600', 'tm8 form wait <form-id> --since <response-id> --format json'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -3436,6 +3451,12 @@ COMMAND_ORDER.splice(
 COMMAND_OPS.set('form close', ['forms.transition']);
 COMMAND_OPS.set('form cancel', ['forms.transition']);
 COMMAND_OPS.set('form reopen', ['forms.transition']);
+// `form wait` reads what `form response list|get` read, plus the change feed, the
+// form's status and its messages (the cancel reason): as available as its weakest read.
+// `forms.responses.get` leads: its FormResponseView is what the command prints.
+COMMAND_OPS.set('form wait', ['forms.responses.get', 'forms.responses.list', 'entities.get', 'events.changes', 'messages.list']);
+const formMineIndex = COMMAND_ORDER.indexOf('form response mine');
+COMMAND_ORDER.splice(formMineIndex < 0 ? COMMAND_ORDER.length : formMineIndex + 1, 0, 'form wait');
 const formOpenIndex = COMMAND_ORDER.indexOf('form open');
 COMMAND_ORDER.splice(formOpenIndex < 0 ? COMMAND_ORDER.length : formOpenIndex + 1, 0, 'form close', 'form cancel', 'form reopen');
 COMMAND_OPS.set('container screenshot', ['containers.computer']);

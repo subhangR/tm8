@@ -9,6 +9,8 @@
  *   form submit                    forms.responses.submit
  *   form response save|discard     forms.responses.save|discard
  *   form response list|get|mine    forms.responses.list|get|mine
+ *   form wait                      a CLI loop over events.changes + the reads
+ *                                  (W2, §7.4) — see `./form-wait.ts`
  *
  * EVERY WRITE IS VALIDATED HERE FIRST. The wire schemas carry questions raw and
  * the Server validates config and answers only in SQL, so the contract's Zod
@@ -19,8 +21,6 @@
  * the FORM (`--expect-version`, required); draft save, submit and discard guard
  * the caller's RESPONSE (`--response-version`, optional). A respondent is never
  * asked for the form's version.
- *
- * `tm8 form wait` is W2 and is NOT registered: `tm8 help form` says so.
  */
 import type { FormQuestionRef, FormResponsePage, FormResponseView } from '@tm8/contract';
 import { FORM_TRANSITIONS, renderFormResponseText } from '@tm8/contract';
@@ -39,6 +39,7 @@ import {
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
+import { formWait } from './form-wait.js';
 
 // ── argument helpers ───────────────────────────────────────────────────────
 
@@ -506,4 +507,5 @@ export const FORM_COMMANDS: CommandModule[] = [
   { path: ['form', 'response', 'list'], run: responseList },
   { path: ['form', 'response', 'get'], run: responseGet },
   { path: ['form', 'response', 'mine'], run: responseMine },
+  { path: ['form', 'wait'], run: formWait },
 ];

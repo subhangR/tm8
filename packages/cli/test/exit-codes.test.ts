@@ -50,7 +50,9 @@ describe('frozen exit-code table §7.6', () => {
     // 13 and 14 joined 2026-08-02 for `event watch --until-match` (F7), by the
     // same scoped-extension route 11 took for `--wait settled`. 12 stays
     // skipped: Node itself can exit 12, so this table cannot own it.
-    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 130]);
+    // 15 joined for `form wait` (Forms W2): the form closed or was cancelled
+    // first; that wait's timeout reuses 13.
+    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 130]);
     expect(EXIT_MEANING[3]).toBe('unauthenticated');
     expect(EXIT_MEANING[4]).toBe('forbidden');
     expect(EXIT_MEANING[8]).toBe('not implemented');
@@ -70,6 +72,12 @@ describe('frozen exit-code table §7.6', () => {
     expect(reserved).toHaveLength(0);
     expect(EXIT_MEANING[13]).toMatch(/no matching event arrived/);
     expect(EXIT_MEANING[14]).toMatch(/events\.poll fallback/);
+  });
+
+  it('15 is reserved for `form wait` reaching a terminal form, and 13 also names its timeout', () => {
+    expect(Object.values(EXIT_BY_COMMAND_ERROR).filter((c) => c === 15)).toHaveLength(0);
+    expect(EXIT_MEANING[15]).toMatch(/closed or was cancelled.*form wait only/);
+    expect(EXIT_MEANING[13]).toMatch(/form wait/);
   });
 });
 
