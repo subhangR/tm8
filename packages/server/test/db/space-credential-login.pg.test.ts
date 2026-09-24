@@ -348,6 +348,37 @@ describe('t4-1 — start and a probed finish; the state is the row’s (I6)', ()
   });
 });
 
+describe('I2 — a space login is opened and closed by humans only', () => {
+  it('agent claims are refused at start and at finish; the human’s terminal stays open and unstamped', async () => {
+    const service = newService();
+    const agent = (identityId: string): CredentialPrincipal => ({
+      claims: { ...claims(identityId), authKind: 'agent' } as DbClaims,
+      identityId,
+    });
+    const spawned = spawns.length;
+    const started = await refusal(() =>
+      service.start({ spaceId: ids.S!, provider: 'anthropic', spaceCredential: { label: label('agent') } }, agent(A)),
+    );
+    expect(started.code).toBe('forbidden');
+    expect(spawns.length).toBe(spawned);
+
+    const open = await startSpace(service, A, { label: label('A human') });
+    await logInInsideTerminal(open.workSessionId);
+    events = [];
+    // Through the registry, and on a restarted node that holds no entry:
+    // refused BEFORE the kill, so the human's terminal is still running.
+    for (const node of [service, newService()]) {
+      const refused = await refusal(() => node.finish({ workSessionId: open.workSessionId }, agent(A)));
+      expect(refused.code).toBe('forbidden');
+    }
+    expect(events).toEqual([]);
+    expect(live.has(open.workSessionId)).toBe(true);
+    expect((await row(open.workSessionId))!.finished_at).toBeNull();
+    expect(await credentialStatus(open.spaceCredential!.id)).toBe('pending');
+    await service.finish({ workSessionId: open.workSessionId }, principal(A));
+  });
+});
+
 describe('M4 — logging in again is the creator’s or a space admin’s', () => {
   it('another member is refused and nothing is spawned; an admin may', async () => {
     const service = newService();
@@ -587,5 +618,71 @@ describe('t4-6 / M6 — a login finished after its credential was deleted refuse
     expect(events).toContain(`finish:${relogin.workSessionId}:false`);
     expect((await row(relogin.workSessionId))!.finished_at).not.toBeNull();
     await expect(stat(spaceLoginCredentialDir(dataDir, ids.S!, credential.id))).rejects.toThrow(/ENOENT/);
+  });
+});
+
+describe('kill-before-stamp on the paths with NO registry entry (after a restart)', () => {
+  it('a manager’s reclaim of an expired, unkillable terminal it does not hold: no stamp, and login_open', async () => {
+    const first = newService();
+    const credential = await activeLoginCredential(first, A);
+    const stale = await startSpace(first, A, { credentialId: credential.id });
+    await expire(stale.workSessionId);
+    unkillable.add(stale.workSessionId);
+    events = [];
+
+    const restarted = newService();
+    expect(await restarted.closeSpaceLogin(claims(ADM), stale.workSessionId)).toBe('kill_failed');
+    const refused = await refusal(() => startSpace(restarted, ADM, { credentialId: credential.id }));
+    expect(refused.details).toMatchObject({ reason: 'login_open' });
+    expect(events).toContain(`kill:${stale.workSessionId}`);
+    expect(events.filter((e) => e.startsWith(`finish:${stale.workSessionId}`))).toEqual([]);
+    expect((await row(stale.workSessionId))!.finished_at).toBeNull();
+    unkillable.clear();
+    await first.finish({ workSessionId: stale.workSessionId }, principal(A));
+  });
+
+  it('the opener’s finish of an unkillable terminal the node does not hold refuses and stamps nothing', async () => {
+    const first = newService();
+    const started = await startSpace(first, A, { label: label('A unkillable') });
+    unkillable.add(started.workSessionId);
+    events = [];
+
+    const refused = await refusal(() => newService().finish({ workSessionId: started.workSessionId }, principal(A)));
+    expect(refused.code).toBe('upstream_unavailable');
+    expect(events).toEqual([`kill:${started.workSessionId}`]);
+    expect((await row(started.workSessionId))!.finished_at).toBeNull();
+    unkillable.clear();
+    await first.finish({ workSessionId: started.workSessionId }, principal(A));
+  });
+});
+
+describe('I6 — a connected finish whose promote fails marks the credential stale', () => {
+  it('stored:false, connected:false, and the row the answer carries is not active', async () => {
+    const credential = await activeLoginCredential(newService(), A);
+    const failingHomes = Object.assign(Object.create(homes) as SpaceLoginHomes, {
+      promote: async () => {
+        throw new Error('disk full');
+      },
+    });
+    const service = new W2CredentialSessionsService({
+      db,
+      launcher: new CredentialSessionLauncher({ pty, env: {} }),
+      dataDir,
+      env: { PATH: '/usr/bin:/bin', HOME: '/home/tm8', [CREDENTIAL_SESSION_CAP_ENV]: '50' },
+      binaryResolver: BINARY_PRESENT,
+      probeRunner,
+      spaceStore: spyStore as never,
+      spaceHomes: failingHomes,
+    });
+    const relogin = await startSpace(service, A, { credentialId: credential.id });
+    await logInInsideTerminal(relogin.workSessionId);
+    events = [];
+
+    const outcome = await service.finish({ workSessionId: relogin.workSessionId }, principal(A));
+    // The finish RPC committed `connected`; only the promote failed after it.
+    expect(events).toContain(`finish:${relogin.workSessionId}:true`);
+    expect(await credentialStatus(credential.id)).toBe('stale');
+    expect(outcome).toMatchObject({ stored: false, probe: { connected: false, status: 'stale' } });
+    expect(outcome.spaceCredential?.status).toBe('stale');
   });
 });

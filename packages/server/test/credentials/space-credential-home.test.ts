@@ -237,6 +237,17 @@ describe('M6 — a promote that lost the race to a delete writes nothing', () =>
     await expect(stat(spaceLoginCredentialDir(dataDir, k.spaceId, k.credentialId))).rejects.toThrow(/ENOENT/);
   });
 
+  it('a revoke the row shows before remove() has run: the staged login is there, and still nothing is written', async () => {
+    // The test above cannot see a missing re-check on its own — remove()
+    // takes the staging dir with it. Here the staging survives, so only the
+    // re-asked row stands between the promote and the live home.
+    const k = key();
+    const ws = randomUUID();
+    await stageLogin(k, ws, 'revoked');
+    expect(await homes.promote(k, ws, async () => false)).toBe(false);
+    await expect(stat(spaceLoginConfigDir(dataDir, k))).rejects.toThrow(/ENOENT/);
+  });
+
   it('remove() deletes the whole credential home, staging included', async () => {
     const k = key();
     const ws = randomUUID();

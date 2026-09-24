@@ -547,6 +547,7 @@ export class W2CredentialSessionsService {
     // and returns its real outcome, rather than sending this call to read a row
     // that has not been written yet.)
     if (!entry) return this.reportClosedSession(input.workSessionId, principal);
+    if (entry.space) assertHumanSpaceLogin(principal.claims);
 
     // WHOSE TERMINAL IS THIS. The registry is keyed by work-session id alone,
     // so without this any authenticated member holding an id could terminate
@@ -1107,6 +1108,7 @@ export class W2CredentialSessionsService {
   ): Promise<StartedCredentialSession> {
     const { provider } = input;
     assertSpaceLoginProvider(provider);
+    assertHumanSpaceLogin(principal.claims);
     if (principal.claims.actorId) {
       throw new CollabError(
         'forbidden',
@@ -1358,6 +1360,7 @@ export class W2CredentialSessionsService {
     if (!row) {
       throw new CollabError('not_found', 'no live credential session on this node for that work session');
     }
+    assertHumanSpaceLogin(principal.claims);
     const provider = row.provider as CredentialProvider;
 
     let credential: SpaceCredential | undefined;
@@ -1427,7 +1430,9 @@ export class W2CredentialSessionsService {
     const expired = new Map<string, string>(); // workSessionId -> credentialId
 
     // The caller's own expired space terminals, visible through RLS: they
-    // hold the credential cap and, for a re-login, the credential.
+    // hold the credential cap and, for a re-login, the credential. Not
+    // filtered to `spaceId` on purpose: every row closed here is the caller's
+    // own and already past its expiry, in whichever space it was opened.
     const own = await this.db.query<OwnSpaceLoginRow>(
       principal.claims,
       `select work_session_id, space_credential_id, provider, expires_at, finished_at
@@ -1525,6 +1530,20 @@ export class W2CredentialSessionsService {
   /** Test/diagnostic view of what this node believes it is running. */
   liveSessionIds(): string[] {
     return [...this.registry.keys()];
+  }
+}
+
+/**
+ * I2 inside the service, not only at the handler: a space login is opened
+ * and closed by a human. SQL refuses an agent too, but only at the RPC, and
+ * a close KILLS the terminal before its RPC runs — an agent-claims finish
+ * would end the human's login first and be refused after.
+ */
+function assertHumanSpaceLogin(claims: DbClaims): void {
+  if (claims.authKind !== 'browser' && claims.authKind !== 'cli') {
+    throw new CollabError('forbidden', 'a space login is opened and closed by a human session only', {
+      details: { reason: 'credentials_human_only' },
+    });
   }
 }
 
