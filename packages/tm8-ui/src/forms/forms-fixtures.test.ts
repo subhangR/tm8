@@ -36,8 +36,13 @@ describe('forms fixtures', () => {
   });
 
   it('covers every type, several sections, every lifecycle state and every responses mode', () => {
+    // Every fixture type is a contract type, and the five v1 types are all
+    // here. Deliberately NOT "every contract type": a new type must not have
+    // to touch fixtures (its example config/answer is rendered by the registry
+    // totality test in question-types.test.tsx instead).
     const types = new Set(FORM_FIXTURE_FORMS.flatMap((f) => f.content.questions.map((q) => q.type)));
-    expect([...types].sort()).toEqual([...FORM_QUESTION_TYPE_NAMES].sort());
+    expect([...types].every((t) => (FORM_QUESTION_TYPE_NAMES as readonly string[]).includes(t))).toBe(true);
+    expect(types.size).toBeGreaterThanOrEqual(5);
     expect(Math.max(...FORM_FIXTURE_FORMS.map((f) => f.content.sections.length))).toBeGreaterThan(1);
     expect(new Set(FORM_FIXTURE_FORMS.map((f) => f.content.status))).toEqual(new Set(['draft', 'open', 'closed', 'cancelled']));
     expect(new Set(FORM_FIXTURE_FORMS.map((f) => f.content.settings.responses))).toEqual(new Set(['per_member', 'single', 'unlimited']));
