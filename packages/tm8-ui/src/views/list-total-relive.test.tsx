@@ -23,7 +23,7 @@ import { useGateData } from './useGateData';
 
 const RUNNING = { sessionStatus: ['running'] };
 
-/** COUNTS_DEBOUNCE_MS is 400; give the trailing timer room without racing it. */
+/** The event re-read waits out a burst (event-refresh.ts: 600ms quiet, 2s ceiling); give it room without racing it. */
 const AFTER_DEBOUNCE = { timeout: 4000 };
 
 describe('a list total follows the durable stream', () => {

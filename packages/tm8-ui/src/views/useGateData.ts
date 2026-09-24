@@ -63,6 +63,13 @@ import {
   createRecencyLedger,
   evictRowKeys,
 } from './row-cache';
+import {
+  EVENT_REFRESH_CONCURRENCY,
+  EVENT_REFRESH_MAX_WAIT_MS,
+  EVENT_REFRESH_QUIET_MS,
+  createCoalescedTrigger,
+  runLimited,
+} from './event-refresh';
 import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveGraphEdges } from '../data/project/graph-edges';
 import {
@@ -99,14 +106,6 @@ import {
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
 const EMPTY_LINKED_PULL_REQUESTS: readonly LinkedPullRequestFacts[] = Object.freeze([]);
 
-/**
- * How long the rail's counters wait out an event burst before re-reading.
- *
- * Long enough that a spawn or an agent's run of writes costs ONE query rather
- * than dozens; short enough that a number the user just caused to change has
- * settled by the time they look back at the rail.
- */
-const COUNTS_DEBOUNCE_MS = 400;
 
 /**
  * How many times one entity's detail or thread may be re-read after a FAILED
@@ -2037,19 +2036,17 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    */
   useEffect(() => {
     if (!spaceId) return undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = seam.onEvent(() => {
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        void Promise.resolve()
-          .then(() => seam.counts(spaceId))
-          .then(setKindCounts)
-          .catch(() => undefined);
-      }, COUNTS_DEBOUNCE_MS);
+    const trigger = createCoalescedTrigger({
+      quietMs: EVENT_REFRESH_QUIET_MS,
+      maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
+      run: () => Promise.resolve()
+        .then(() => seam.counts(spaceId))
+        .then(setKindCounts)
+        .catch(() => undefined),
     });
+    const unsubscribe = seam.onEvent(() => trigger.note());
     return () => {
-      if (timer) clearTimeout(timer);
+      trigger.dispose();
       unsubscribe();
     };
   }, [seam, spaceId]);
@@ -2668,17 +2665,17 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    */
   useEffect(() => {
     if (!spaceId) return undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = seam.onEvent(() => {
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
+    const trigger = createCoalescedTrigger({
+      quietMs: EVENT_REFRESH_QUIET_MS,
+      maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
+      run: async () => {
         const generation = spaceGeneration.current;
+        const probes: (() => Promise<unknown>)[] = [];
         // Only keys that actually HOLD a page. A key still in flight has no
         // total to correct, and its own response is about to write a fresh one.
         for (const [key, read] of rowReads.current) {
           if (rowsRef.current[key] === undefined) continue;
-          void seam
+          probes.push(() => seam
             .query({ ...queryFor(spaceId, read), limit: 1 } as CollectionQuery)
             .then((result) => {
               if (generation !== spaceGeneration.current) return;
@@ -2693,12 +2690,16 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
                 return { ...current, [key]: { ...live, total } };
               });
             })
-            .catch(() => undefined);
+            .catch(() => undefined));
         }
-      }, COUNTS_DEBOUNCE_MS);
+        // Bounded: one tab with a full row cache must not hold 64 pooled
+        // connections at once (see event-refresh.ts for the measurement).
+        await runLimited(probes, EVENT_REFRESH_CONCURRENCY);
+      },
     });
+    const unsubscribe = seam.onEvent(() => trigger.note());
     return () => {
-      if (timer) clearTimeout(timer);
+      trigger.dispose();
       unsubscribe();
     };
   }, [seam, spaceId]);
@@ -2785,18 +2786,18 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   // skeletons over a board someone is dragging on.
   useEffect(() => {
     if (!spaceId) return undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = seam.onEvent(() => {
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
+    const trigger = createCoalescedTrigger({
+      quietMs: EVENT_REFRESH_QUIET_MS,
+      maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
+      run: () => {
         if (boardKeys.current.length === 0) return;
         for (const key of boardKeys.current) pendingBoards.current.add(key);
         setBoardTick((n) => n + 1);
-      }, COUNTS_DEBOUNCE_MS);
+      },
     });
+    const unsubscribe = seam.onEvent(() => trigger.note());
     return () => {
-      if (timer) clearTimeout(timer);
+      trigger.dispose();
       unsubscribe();
     };
   }, [seam, spaceId]);
