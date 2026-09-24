@@ -3,6 +3,8 @@ export {
   SpawnService,
   type CredentialContainmentCause,
   type CredentialContainmentResult,
+  type SessionLiveCause,
+  type SessionLiveListener,
   type SpawnServiceOptions,
 } from './SpawnService.js';
 export {

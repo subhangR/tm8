@@ -59,6 +59,7 @@ import { registerW2FeedContextHandlers } from './handlers/w2/feed-context.js';
 import { registerW2FileHandlers } from './handlers/w2/files.js';
 import { registerW2ArtifactHandlers } from './handlers/w2/artifacts.js';
 import { registerW2FormHandlers } from './handlers/w2/forms.js';
+import type { W2FormsServiceOptions } from './services/w2/forms.js';
 import { registerW2CollectionsGraphUndoHandlers } from './handlers/w2/graph-undo.js';
 import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.js';
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
@@ -116,6 +117,11 @@ export interface RegisterFacadeHandlersDeps {
    * not be reached from inside the tree, so it had to be decided here.
    */
   readonly messageDelivery?: W2MessagesHandoffsServiceOptions['messageDelivery'];
+  /**
+   * Forms W2's post-commit delivery hooks (214). Built at the composition root
+   * with the delivery seam above, so that seam still reaches no handler here.
+   */
+  readonly formDelivery?: W2FormsServiceOptions;
   /**
    * Server-owned message provenance resolver. Optional because the default
    * below covers the token-pinned case; `main.ts` overrides it with the
@@ -211,8 +217,8 @@ export function registerFacadeHandlers(
   if (deps.folderUploads) registerW2ProjectFolderUploadHandlers(registry, facade, deps.folderUploads);
   if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
   // Forms (211): unconditional — every op is SQL doors and RLS reads. W2's
-  // delivery drain plugs into the service's onResponseSubmitted hook.
-  registerW2FormHandlers(registry, facade);
+  // delivery drain (214) plugs into its post-commit hooks when main.ts built one.
+  registerW2FormHandlers(registry, facade, deps.formDelivery ?? {});
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);
 
