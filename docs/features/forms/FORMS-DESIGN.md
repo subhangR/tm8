@@ -78,8 +78,7 @@ create table public.form_responses (          -- one row per respondent attempt
   questions_snapshot jsonb,                     -- frozen copy at submit (audit/rendering)
   revision        int not null default 1,       -- 1 = first submit; amend → next revision
   supersedes_id   uuid references public.form_responses(id),          -- previous revision
-  lineage_id      uuid not null,                -- id of revision 1; shared by every revision
-  slot_key        text,                         -- response-limit slot, set at submit (below)
+  lineage_key     uuid not null,                -- response slot; set on first draft save (below)
   is_current      boolean not null default false, -- latest SUBMITTED revision; drafts never current
   message_id      uuid references public.messages(id),                 -- the delivery message
   created_at timestamptz not null default now(),
@@ -105,25 +104,28 @@ answer fails the T-L3 entity test (nobody discusses, links or reacts to one ques
 The *form* passes: it gets discussed, linked to tasks, badged for attention, and it
 needs a panel.
 
-Amend model (W0 advisor ruling, 2026-09-24):
-- Every submission is an immutable row. Every revision of one response shares a
-  `lineage_id` (the id of revision 1).
-- An edit-and-resubmit starts as a draft with `supersedes_id` pointing at the current
-  revision.
+Amend model (W0 advisor final ruling, 2026-09-24):
+- Every submission is an immutable row. An edit-and-resubmit starts as a draft with
+  `supersedes_id` pointing at the current revision.
+- **`lineage_key uuid not null`** is the response's slot. It is derived from
+  `settings.responses` and set when the draft is **first saved**:
+  - `per_member`: `respondent_id`
+  - `single`: `form_id`
+  - `unlimited`: the id of revision 1
+
+  If the mode changes before the first submit, existing drafts' `lineage_key` is
+  rewritten.
 - On submit, one transaction:
   1. locks the form row;
   2. flips the old row's `is_current` to false;
   3. promotes the draft to `submitted`, revision N+1, `is_current = true`.
-- Drafts never hold `is_current`.
-- The response limit is one index for all three modes:
-  `unique (form_id, slot_key) where is_current`. The submit RPC denormalises
-  `slot_key` from `settings.responses`:
-  - `per_member`: `respondent_id`
-  - `single`: `'form'`
-  - `unlimited`: `lineage_id`
-- A violation of that index maps to `409 form_response_limit`.
-- A second index, `unique (form_id, respondent_id) where status = 'draft'`, allows
-  one open draft per member.
+- `is_current` defaults to false, and drafts are never current.
+- Indexes:
+  - `form_responses_one_current`: `unique (form_id, lineage_key) where is_current`.
+    One index enforces the response limit for all three modes; a violation maps to
+    `409 form_response_limit`.
+  - `unique (form_id, respondent_id) where status = 'draft'`: one open draft per
+    member.
 - `settings.responses` freezes at the first submission, together with the questions
   (decision 7).
 - The full history stays queryable, which is what "check what I submitted" reads.
