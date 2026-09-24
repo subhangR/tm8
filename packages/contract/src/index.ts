@@ -19,5 +19,6 @@ export * from './pty-protocol.js';
 export * from './skill-reference.js';
 export * from './launch-suggest.js';
 export * from './forms.js';
+export * from './kind-info.js';
 export * from './orchestration.js';
 export * from './selection-header.js';
