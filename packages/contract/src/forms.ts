@@ -349,6 +349,26 @@ const scale = defineQuestionType({
   example: { config: { min: 1, max: 5, minLabel: 'Low', maxLabel: 'High' }, answer: { number: 4 } },
 });
 
+const yesNo = defineQuestionType({
+  type: 'yes_no',
+  label: 'Yes / no',
+  configSchema: z.object({
+    yesLabel: cpString(1, 100).optional(),
+    noLabel: cpString(1, 100).optional(),
+  }).strict(),
+  answerSchema: z.object({ bool: z.boolean() }).strict(),
+  // A boolean always says something: no `empty`, no semantic issues.
+  validate() {
+    return [];
+  },
+  renderAnswerText(config, answer) {
+    const label = answer.bool ? config.yesLabel : config.noLabel;
+    const word = answer.bool ? 'yes' : 'no';
+    return label === undefined ? word : `${word} ("${label}")`;
+  },
+  example: { config: { yesLabel: 'Ship it', noLabel: 'Hold' }, answer: { bool: true } },
+});
+
 /**
  * THE registry. v1 ships exactly these five (decision 4). Keyed by type; the
  * key and the entry's `type` are the same string.
@@ -359,6 +379,7 @@ export const FORM_QUESTION_TYPES = {
   short_text: shortText,
   long_text: longText,
   scale,
+  yes_no: yesNo,
 } as const satisfies Record<string, FormQuestionTypeDef>;
 
 export type FormQuestionType = keyof typeof FORM_QUESTION_TYPES;

@@ -52,6 +52,8 @@ export const PARITY_QUESTIONS: FormParityQuestion[] = [
   { key: 'lt', type: 'long_text', title: 'Long', required: false, config: { minLength: 3, maxLength: 10 } },
   { key: 'sc5', type: 'scale', title: 'Rate', config: {} },
   { key: 'sc0', type: 'scale', title: 'Rate 0-10', required: false, config: { min: 0, max: 10, minLabel: 'No', maxLabel: 'Yes' } },
+  { key: 'yn', type: 'yes_no', title: 'Ship it?', required: false, config: {} },
+  { key: 'ynl', type: 'yes_no', title: 'Proceed?', required: false, config: { yesLabel: 'Go', noLabel: 'Hold' } },
 ];
 
 const BASE = {
@@ -140,6 +142,16 @@ export const ANSWER_CASES: FormAnswerParityCase[] = [
   final('scale: top of 0-10', withAnswer({ sc0: { number: 10 } }), []),
   final('scale: not an integer', withAnswer({ sc5: { number: 2.5 } }), ['sc5:invalid_shape']),
   final('scale: a string', withAnswer({ sc5: { number: '3' } }), ['sc5:invalid_shape']),
+
+  // yes_no
+  final('yes_no: yes', withAnswer({ yn: { bool: true } }), []),
+  final('yes_no: no is an answer, not empty', withAnswer({ yn: { bool: false }, ynl: { bool: false } }), []),
+  final('yes_no: unanswered, optional', withAnswer({ yn: null }), []),
+  final('yes_no: a string', withAnswer({ yn: { bool: 'true' } }), ['yn:invalid_shape']),
+  final('yes_no: a number', withAnswer({ yn: { bool: 1 } }), ['yn:invalid_shape']),
+  final('yes_no: null inside', withAnswer({ yn: { bool: null } }), ['yn:invalid_shape']),
+  final('yes_no: empty object', withAnswer({ yn: {} }), ['yn:invalid_shape']),
+  final('yes_no: extra key', withAnswer({ ynl: { bool: true, why: 'x' } }), ['ynl:invalid_shape']),
 ];
 
 const OPTS = [{ value: 'x', label: 'X' }, { value: 'y', label: 'Y' }];
@@ -190,6 +202,14 @@ export const CONFIG_CASES: FormConfigParityCase[] = [
   bad('scale: max 11', 'scale', { max: 11 }),
   bad('scale: max 1', 'scale', { max: 1 }),
   bad('scale: label too long', 'scale', { minLabel: 'l'.repeat(101) }),
+  ok('yes_no: minimal', 'yes_no', {}),
+  ok('yes_no: labels at the limit', 'yes_no', { yesLabel: 'y'.repeat(100), noLabel: '😀'.repeat(100) }),
+  bad('yes_no: label too long', 'yes_no', { yesLabel: 'y'.repeat(101) }),
+  bad('yes_no: empty label', 'yes_no', { noLabel: '' }),
+  bad('yes_no: label not a string', 'yes_no', { yesLabel: true }),
+  bad('yes_no: label null', 'yes_no', { noLabel: null }),
+  bad('yes_no: unknown key', 'yes_no', { default: true }),
+  bad('yes_no: config not an object', 'yes_no', []),
   { name: 'unknown type', type: 'nope', config: {}, expect: ['unknown_type'] },
 ];
 

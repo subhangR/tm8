@@ -28,7 +28,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe('FORM_QUESTION_TYPES', () => {
   it('ships exactly the five v1 types (decision 4)', () => {
-    expect(FORM_QUESTION_TYPE_NAMES).toEqual(['single_choice', 'multi_choice', 'short_text', 'long_text', 'scale']);
+    expect(FORM_QUESTION_TYPE_NAMES).toEqual(['single_choice', 'multi_choice', 'short_text', 'long_text', 'scale', 'yes_no']);
   });
 
   it('keys each entry by its own type, and every example is valid', () => {
@@ -76,7 +76,7 @@ describe('FormQuestionSchema', () => {
   });
 
   it('refuses an unknown type, naming the known ones', () => {
-    const r = FormQuestionSchema.safeParse({ key: 'q', type: 'yes_no', title: 'Q' });
+    const r = FormQuestionSchema.safeParse({ key: 'q', type: 'not_a_type', title: 'Q' });
     expect(r.success).toBe(false);
     expect(r.error?.issues[0]?.message).toContain('single_choice');
     expect(r.error?.issues[0]?.path).toEqual(['type']);
