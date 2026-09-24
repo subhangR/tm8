@@ -73,6 +73,10 @@ done
 # before anything runs. Their comments stay with the loops that use them below.
 TSC_PROJECTS=(
   packages/contract
+  # prompt is named for the same reason as jev below: it was typechecked only through
+  # the server/cli/execution project references. It references nothing, so it sits
+  # ahead of every project that could use it.
+  packages/prompt
   # packages/jev is the Launch Advisor's pure Jev client. Named here rather
   # than left to the server's project reference, so a lane that drops that
   # reference cannot silently stop typechecking it.
@@ -125,6 +129,10 @@ TEST_PACKAGES=(
   # behind — if this one is red, the gate is red.
   packages/tm8-ui
   tools/conformance
+  # mcp (7 files) and prompt (6) had suites CI never ran until CI split Wave 3; both are
+  # src-only and need at most the contract dist. They run in CI's test-small job.
+  packages/mcp
+  packages/prompt
 )
 
 # --- --only / --shard ---------------------------------------------------------
