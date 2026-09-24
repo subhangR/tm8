@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { EntityDetail, EntitySummary, ProjectResource } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionDef } from '../../domain';
-import { KindIcon, allActions, getKind } from '../../domain';
+import { KindIcon, allActions } from '../../domain';
 import { Eyebrow, Pill } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts` — the ProfileBody precedent,
@@ -81,8 +81,6 @@ export const GOVERNED_BLOCKS = [
   'unlink-footer',
   'notice',
 ] as const;
-
-export type GovernedBlockName = (typeof GOVERNED_BLOCKS)[number];
 
 /**
  * The registry's `ContentBlockRef` shape, widened at `block` to `string`.

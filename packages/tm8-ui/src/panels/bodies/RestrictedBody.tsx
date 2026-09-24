@@ -72,8 +72,6 @@ export const RESTRICTED_BLOCKS = [
   'notice',
 ] as const;
 
-export type RestrictedBlockName = (typeof RESTRICTED_BLOCKS)[number];
-
 /**
  * The registry's `ContentBlockRef` shape, widened at `block` to `string` —
  * these names are additions to `domain/types.ts`'s closed `ContentBlockKind`

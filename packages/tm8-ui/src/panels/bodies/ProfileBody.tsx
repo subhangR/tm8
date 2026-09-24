@@ -1,10 +1,8 @@
-import type { EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
+import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon } from '../../domain';
 import {
   MEMORY_MARK_COPY,
-  memoryEpistemics,
-  memoryScopeOf,
   VERIFIED_NOT_READABLE,
   type MemoryMarkKind,
 } from '../../domain/memory';
@@ -82,8 +80,6 @@ export const PROFILE_BLOCKS = [
   'epistemics',
   'peer-rows',
 ] as const;
-
-export type ProfileBlockName = (typeof PROFILE_BLOCKS)[number];
 
 /**
  * The registry's `ContentBlockRef` shape, widened at `block` to `string`.
