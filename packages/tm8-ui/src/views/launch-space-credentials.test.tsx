@@ -108,6 +108,15 @@ describe('SC-5 launch picker: sources per provider', () => {
     expect(node.disabled).toBe(true);
     expect(node.text).toContain('off: this space allows only Space');
     expect(optionsOf(agent).find((o) => o.value === 'space:c-batch')?.disabled).toBe(false);
+    // A native option clips at the sheet's width: the reason is ALSO drawn in full.
+    expect(view.getByTestId('launch-agent-sources-note').textContent)
+      .toBe('Unavailable: Yours (this space allows only Space) · Node (this space allows only Space)');
+  });
+
+  it('draws no unavailable-note when nothing is off', async () => {
+    const view = renderSheet();
+    await waitFor(() => expect(view.getByTestId('launch-agent-credential-source').textContent).toContain('Team Claude'));
+    expect(view.queryByTestId('launch-agent-sources-note')).toBeNull();
   });
 
   it('greys out Node when the node admin has turned node fallback off', async () => {

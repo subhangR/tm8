@@ -92,6 +92,7 @@ import {
   type LaunchTeammate,
 } from '../domain/launch';
 import {
+  disabledSourcesNote,
   githubAuthorshipLine,
   launchSourceOptions,
   parseLaunchSourceChoice,
@@ -744,6 +745,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               >
                 {agentIdentityCopy}
               </span>
+              <SourcesNote options={agentSourceOptions} testId="launch-agent-sources-note" />
             </span>
           </label>
           <label className="ls__row ls__row--inert">
@@ -768,6 +770,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               >
                 {githubIdentityCopy}
               </span>
+              <SourcesNote options={githubSourceOptions} testId="launch-github-sources-note" />
               <span className="ls__rowsub" data-testid="launch-github-authorship">
                 {githubAuthorship}
               </span>
@@ -1341,4 +1344,9 @@ function SourceOptions({ options }: { options: readonly LaunchSourceOption[] }) 
       ))}
     </>
   );
+}
+
+function SourcesNote({ options, testId }: { options: readonly LaunchSourceOption[]; testId: string }) {
+  const note = disabledSourcesNote(options);
+  return note ? <span className="ls__rowsub" data-testid={testId}>{note}</span> : null;
 }

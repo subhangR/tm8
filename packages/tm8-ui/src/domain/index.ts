@@ -206,6 +206,7 @@ export type { Landing } from './nav-targets';
 
 /* SC-5: the launch picker's credential source options (D4/D5/D6a/D10). */
 export {
+  disabledSourcesNote,
   githubAuthorshipLine,
   isSpaceCredentialProvider,
   launchSourceOptions,

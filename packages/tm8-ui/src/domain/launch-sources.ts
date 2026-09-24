@@ -167,3 +167,24 @@ export function githubAuthorshipLine(input: {
   if (allows('node')) return `${asNode} · Auto`;
   return 'Commits and pull requests: no GitHub source this space allows is available, so this launch will be refused';
 }
+
+/**
+ * One line naming every disabled option and why. A native option's text is
+ * clipped at the sheet's width, so the reason is also drawn in full here —
+ * "greyed out with the reason shown" must not depend on a hover.
+ */
+export function disabledSourcesNote(options: readonly LaunchSourceOption[]): string | null {
+  const seen = new Map<string, string>();
+  for (const o of options) {
+    if (!o.disabled || !o.reason) continue;
+    const word = o.value === 'member' ? 'Yours'
+      : o.value === 'node' ? 'Node'
+      : o.value === 'space' ? 'Space default'
+      : 'Space';
+    // Every pinned space row shares the space policy's reason: say it once.
+    if (o.value.startsWith('space:') && [...seen.values()].includes(o.reason.replace(/^off: /, ''))) continue;
+    if (!seen.has(word)) seen.set(word, o.reason.replace(/^off: /, ''));
+  }
+  if (seen.size === 0) return null;
+  return `Unavailable: ${[...seen].map(([word, why]) => `${word} (${why})`).join(' · ')}`;
+}

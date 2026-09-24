@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CredentialsSpacePolicyView, SpaceCredentialView } from '@tm8/contract';
 import {
+  disabledSourcesNote,
   githubAuthorshipLine,
   launchSourceOptions,
   parseLaunchSourceChoice,
@@ -67,5 +68,15 @@ describe('launch source choices', () => {
     expect(githubAuthorshipLine({
       choice: 'space', memberHandle: null, spaceCredentials: [row({ isDefault: true, label: 'Bot' })], policy: null,
     })).toBe('Commits and pull requests are authored by the account behind the space token “Bot” (its login was not recorded)');
+  });
+
+  it('names the space policy once, not once per pinned credential', () => {
+    const opts = launchSourceOptions({
+      provider: 'github', memberText: 'm', nodeText: 'n', autoText: 'a',
+      spaceCredentials: [row({ id: 'a', label: 'A', isDefault: true }), row({ id: 'b', label: 'B' })],
+      policy: policy({ providers: [{ provider: 'github', allowedSources: ['member'] }] }),
+    });
+    expect(disabledSourcesNote(opts))
+      .toBe('Unavailable: Space default (this space allows only Yours) · Node (this space allows only Yours)');
   });
 });
