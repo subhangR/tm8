@@ -976,6 +976,12 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     // every edge per entity row; the in-direction skips a self-loop so it is
     // listed once, as `out`, exactly as the OR join listed it. The limit
     // applies after the join, so a hidden endpoint never shortens a page.
+    // The endpoint's ref row is a LATERAL probe per edge, in page order: a
+    // plain join let the planner build the whole ref join (every entity in
+    // the space, hash-joined to every detail table) before picking 11 rows —
+    // ~30k buffers for a one-row page (EXPLAIN evidence on PR for step C).
+    // `limit 1` (one ref row per id) keeps the planner from pulling the
+    // subquery back up into that same flat join.
     const page = after?.section === 'connections' ? after : null;
     const params: unknown[] = [id];
     const typeFilter = edgeType === null ? `g.type <> 'anchored_to'` : `g.type = $${params.push(edgeType)}`;
@@ -989,8 +995,8 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
               case when c.edge_type = 'depends_on' and c.outgoing
                    then internal.is_resolved(c.other_id) end edge_resolved,
               c.edge_id, ${MICROS('c.edge_at')} edge_key,
-              ${REF_COLUMNS} ${REF_FROM}
-         join (
+              r.*
+         from (
            (select g.id edge_id, g.type edge_type, g.created_at edge_at, true outgoing, g.dst_id other_id
               from public.edges g
              where g.src_id = $1 and ${typeFilter} ${keyset})
@@ -998,7 +1004,9 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
            (select g.id, g.type, g.created_at, false, g.src_id
               from public.edges g
              where g.dst_id = $1 and g.src_id <> $1 and ${typeFilter} ${keyset})
-         ) c on c.other_id = e.id
+           order by edge_at desc, edge_id desc
+         ) c
+         cross join lateral (select ${REF_COLUMNS} ${REF_FROM} where e.id = c.other_id limit 1) r
         order by c.edge_at desc, c.edge_id desc
         limit ${ROW_LIMIT + 1}`,
       params,
