@@ -1125,6 +1125,10 @@ export type ContentBlockKind =
   // Scheduled-work management. The block owns enable/disable and queue-now;
   // its presence is registry data, so GenericBody never asks for a kind.
   | 'loop-controls'
+  // Forms (209, FORMS-DESIGN §10): the questionnaire — Fill / Build /
+  // Responses over the forms seam (`src/forms`). Named for what it draws, not
+  // for the kind, for the same §15.2 reason `canvas` is.
+  | 'questionnaire'
   // Collection membership over the `contains` edge, both directions: a
   // collection's ITEMS (outgoing) and an entity's COLLECTIONS (incoming).
   // Edge-typed like `memory-set`; which side it is on is registry params.

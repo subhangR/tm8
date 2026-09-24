@@ -18,6 +18,7 @@ import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
+import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
@@ -178,6 +179,13 @@ function ContentBlock({
             onSaved={onSaved}
           />
         );
+      /* A form's Fill / Build / Responses. It reads the question set off the
+         row and everything else through the forms seam (`src/forms/seam.ts`),
+         so it needs nothing from the host. Keyed by entity id: re-pointing the
+         panel at another form must drop the previous one's unsaved answers
+         rather than autosave them under the new id. */
+      case 'questionnaire':
+        return <QuestionnaireBlock key={detail.id} detail={detail} />;
       case 'artifact-preview':
         /* Keyed by entity id: a panel that re-points to another artifact must
            reset the viewer's whole run state (selected revision, mint timer,

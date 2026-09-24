@@ -12,6 +12,7 @@ import type {
   StatusCategory,
 } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
+import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS } from '../forms/fixtures';
 
 /**
  * Contract-shaped fixture dataset (A0). Shaped by EntitySummary/EntityDetail
@@ -1090,17 +1091,23 @@ export const drawingLoginFlow = summary({
 });
 
 /**
- * Form — a question set an agent asked a human (migration 209, Forms W0).
- * Open, with two questions: the smallest form whose list row says anything.
+ * Forms — question sets an agent asked a human (migration 209). The five
+ * fixture forms live in `forms/fixtures.ts` with their responses (the forms
+ * seam serves those); here they become rows, so every state the questionnaire
+ * draws — open with a revision chain, a draft answer, a draft form, closed,
+ * cancelled — is one click away in the fixture app.
  */
-export const formMigrationStrategy = summary({
-  id: 'form-migration-strategy',
+const formSummaries: EntitySummary[] = FORM_FIXTURE_FORMS.map((f) => summary({
+  id: f.id,
   kind: 'form',
-  title: 'Pick the migration strategy',
-  excerpt: 'Which approach? · Anything to watch for?',
-  createdBy: ada,
-  state: { kind: 'form', status: 'open', questionCount: 2 },
-});
+  title: f.title,
+  version: f.version,
+  excerpt: f.content.questions.map((q) => q.title).join(' · '),
+  createdBy: f.id === FORM_FIXTURE_IDS.onboarding ? ada : forge,
+  state: { kind: 'form', status: f.content.status, questionCount: f.content.questions.length },
+}));
+
+export const formMigrationStrategy = formSummaries.find((s) => s.id === FORM_FIXTURE_IDS.migration)!;
 
 export const artifactPulseBoard = summary({
   id: 'artifact-pulse-board',
@@ -1322,7 +1329,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual, artifactPulseBoard, drawingLoginFlow,
-  formMigrationStrategy,
+  ...formSummaries,
   ...containerFixtures,
 ];
 
@@ -1848,34 +1855,11 @@ export const fixtureDetails: Record<string, EntityDetail> = {
    * them, and including them would put raw hex in `src/` for no gain (§14).
    */
   // A form's content is its whole question set, in order, with settings at
-  // their defaults except the ones this form chose (FORMS-DESIGN §3).
-  [formMigrationStrategy.id]: detail(formMigrationStrategy, {
-    content: {
-      kind: 'form',
-      status: 'open',
-      description: 'The billing table needs a new column before Friday.',
-      settings: {
-        responses: 'single', respondents: 'humans', closeOnSubmit: true, allowAmend: true,
-        delivery: { target: 'requesting_session', onSessionNotLive: 'resume' }, attentionPoints: 60,
-      },
-      structureVersion: 1,
-      sections: [],
-      questions: [
-        {
-          key: 'strategy', type: 'single_choice', title: 'Which approach?', required: true, position: 0,
-          config: {
-            options: [
-              { value: 'online_backfill', label: 'Online backfill', recommended: true },
-              { value: 'dual_write', label: 'Dual write' },
-            ],
-          },
-        },
-        { key: 'risks', type: 'long_text', title: 'Anything to watch for?', required: false, position: 1, config: {} },
-      ],
-      openedAt: '2026-09-24T10:00:00.000Z',
-      closedAt: null,
-    },
-  }),
+  // their defaults except the ones the form chose (FORMS-DESIGN §3).
+  ...Object.fromEntries(FORM_FIXTURE_FORMS.map((f) => [
+    f.id,
+    detail(formSummaries.find((s) => s.id === f.id)!, { content: { kind: 'form', ...f.content } }),
+  ])),
   [drawingLoginFlow.id]: detail(drawingLoginFlow, {
     content: {
       kind: 'drawing',

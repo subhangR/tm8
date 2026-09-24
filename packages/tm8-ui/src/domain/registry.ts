@@ -1865,11 +1865,17 @@ const ROWS: readonly KindConfig[] = [
   /*
    * -- form (migration 209: a question set an agent asks a human) --
    *
-   * THE HONEST MINIMUM, the way `chat` shipped its Wave 1 row: Forms W0 lands
-   * the data model and `registry.test.ts` asserts totality over
-   * `CoreEntityKindSchema`, so a kind with no row is a build failure. Forms W1
-   * (frontend) replaces this with the `questionnaire` body and its Fill /
-   * Build / Responses tabs.
+   * THE QUESTIONNAIRE IS THE BODY (Forms W1, FORMS-DESIGN §10). One block
+   * carries the three things a form is for: Fill (the respondent's answers,
+   * autosaved, amendable), Build (the author's questions, sections and
+   * settings, frozen at the first submitted response) and Responses (the
+   * current answers and their delivery). The block reads the question set off
+   * the row and everything else through the forms seam, so W3 swaps fixtures
+   * for the real `forms.*` ops without touching this row.
+   *
+   * No FIELDS block: every setting a fields dump would show is in Build, where
+   * it can also be changed, and a second rendering of the same facts would be
+   * one more place to disagree.
    *
    * `quickCreate` is off: a form is born from `forms.create` with its whole
    * question set, never from a bare title.
@@ -1892,7 +1898,7 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'FORM' }, COLLECTIONS_BLOCK],
+      blocks: [{ block: 'questionnaire' }, COLLECTIONS_BLOCK],
     },
   },
 
