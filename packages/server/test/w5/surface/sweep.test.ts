@@ -1063,7 +1063,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 186 -> 187 (space credentials SC-1, #678): 206_space_credentials, on top
     //   of #676's 204. MEASURED: ls db/migrations/*.sql | wc -l -> 187,
     //   duplicate prefixes -> 0. 205 is held by open #671 and re-bumps at its merge.
-    expect(server.appliedMigrations.length).toBe(187);
+    // 187 -> 188 (change feed step 2, PR #671): 205_workspace_event_subject_ids,
+    //   rebased onto main AFTER #678 took 206, so 205 fills the one gap the SC-1
+    //   comment above reserved and the chain is contiguous 1..206 again.
+    //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
+    expect(server.appliedMigrations.length).toBe(188);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
