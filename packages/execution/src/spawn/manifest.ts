@@ -7,7 +7,7 @@ import {
   MINIMAL_MCP_CONFIG,
   type HarnessSurface,
 } from './harness-surface.js';
-import { composePrompt, BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
+import { composePrompt, BYTE_BUDGETS, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -1638,7 +1638,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
   const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
-    promptVersion: DEFAULT_PROMPT_VERSION,
+    // v1 unless the pinned profile opts a worker into v2 (spec ca8d Q14).
+    promptVersion: promptVersionFor({ mode: launch.mode, profileSnapshot: interactionProfile.snapshot }),
     sessionId,
     spaceId: context.spaceId,
     generatedAt: (input.now ?? new Date()).toISOString(),

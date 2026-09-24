@@ -44,6 +44,10 @@ export interface FakeGraphOptions {
   memories?: unknown[];
   /** Skills already resolved across the ancestor chain. Default: none. */
   skills?: SpawnContext['skills'];
+  /** Replaces the resolved profile snapshot, e.g. to opt into prompt v2. */
+  profileSnapshot?: Record<string, unknown>;
+  /** What `loadTaskContextSnapshot` answers; an Error makes it reject. */
+  taskContext?: Record<string, unknown> | Error;
 }
 
 export class FakeGraph implements GraphPort {
@@ -204,7 +208,7 @@ export class FakeGraph implements GraphPort {
           templateVersion: 1,
           source: 'spawn_override',
           resolvedHash: 'fixture-profile-hash',
-          snapshot: { profile: { source: 'spawn_override' } },
+          snapshot: this.options.profileSnapshot ?? { profile: { source: 'spawn_override' } },
         }
       : {
           profileId: null,
@@ -213,8 +217,21 @@ export class FakeGraph implements GraphPort {
           templateVersion: 1,
           source: 'core_default',
           resolvedHash: 'fixture-core-profile-hash',
-          snapshot: { profile: { source: 'core_default' } },
+          snapshot: this.options.profileSnapshot ?? { profile: { source: 'core_default' } },
         };
+  }
+
+  /** Every prompt-v2 context render this fake was asked for, with the auth it ran under. */
+  readonly taskContextReads: Array<{ auth: GraphAuth; sessionId: string; taskId: string; totalBytes: number }> = [];
+
+  async loadTaskContextSnapshot(
+    auth: GraphAuth,
+    input: { sessionId: string; taskId: string; totalBytes: number },
+  ): Promise<Record<string, unknown>> {
+    this.taskContextReads.push({ auth, ...input });
+    const answer = this.options.taskContext;
+    if (answer instanceof Error) throw answer;
+    return answer ?? { schemaVersion: 'tm8.entity-context.v2', id: input.taskId, kind: 'task', version: 1, asOfSeq: 1 };
   }
 
   async recordInteractionProfilePin(

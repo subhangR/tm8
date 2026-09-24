@@ -667,6 +667,18 @@ export interface GraphPort {
     sessionId: string,
     profile: ResolvedInteractionProfileContext,
   ): Promise<InteractionProfilePinContext>;
+  /**
+   * Prompt v2 (spec ca8d §2.2): the task's `tm8.entity-context.v2` view, read
+   * through the same bounded projection `tm8 entity context <task>` serves and
+   * rendered AS THE SPAWNED SESSION'S ACTOR, so `you:true` and every
+   * caller-relative field match the agent's own first read. Optional: a graph
+   * without it (test fakes, older embedders) degrades the v2 header to "run
+   * `tm8 entity context` first" rather than failing the launch.
+   */
+  loadTaskContextSnapshot?(
+    auth: GraphAuth,
+    input: { sessionId: string; taskId: string; totalBytes: number },
+  ): Promise<Record<string, unknown>>;
   /** Mint a credential bound to this exact work-session/persona pair. */
   issueWorkSessionAgentToken(
     auth: GraphAuth,
