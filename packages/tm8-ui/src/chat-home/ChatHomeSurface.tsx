@@ -31,6 +31,10 @@ export interface ChatHomeSurfaceProps {
   aboutId?: EntityId;
   /** Pass-through to the screen (Craft P1): pins new threads to one mode. */
   pinnedMode?: ChatHomeScreenProps['pinnedMode'];
+  /** Pass-through: a host seeding the composer draft (Craft's "Ask about this"). */
+  composerSeed?: ChatHomeScreenProps['composerSeed'];
+  /** Pass-through: the host's own new-conversation intro. */
+  newThreadIntro?: ChatHomeScreenProps['newThreadIntro'];
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;
