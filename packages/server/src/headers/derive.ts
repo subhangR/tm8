@@ -4,8 +4,8 @@
  *
  * Each field resolves in the order authored → native → derived, and falls
  * back separately: an authored `whenToUse` with no `summary` still gets the
- * native or derived `summary`. Authored headers arrive with `entity_headers`
- * (integrated plan I3); until then `authored` is always absent.
+ * native or derived `summary`. Authored headers are `entity_headers` rows
+ * (migration 213), read by `resolveHeaders` in the same statement.
  *
  * Text cuts count characters (code points), the same unit Postgres `left()`
  * counts, so a cut made in SQL and a cut made here agree.
@@ -33,7 +33,7 @@ export function loadPointerFor(_kind: SelectionHeaderKind, id: string): string {
   return `tm8 entity context ${id}`;
 }
 
-/** An `entity_headers` row, once it exists (I3). */
+/** An `entity_headers` row, with its staleness computed at read. */
 export interface AuthoredHeader {
   whenToUse: string | null;
   summary: string | null;
