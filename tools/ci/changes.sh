@@ -42,7 +42,13 @@ summary() { # <line>
   if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n\n' "$1" >>"$GITHUB_STEP_SUMMARY" || true; fi
 }
 PATH_TAKEN=""
+MAIN_PID=$BASHPID
 fallback() { # <reason>: our OWN ALL block, loudly, and stop. W4 counts these reasons.
+  # set -E hands the ERR trap to every $(...) subshell. A fallback there would print its
+  # block into the substitution and the caller would fall back AGAIN with that block as its
+  # reason: two warnings, a garbled reason. Only the main shell falls back; a subshell just
+  # fails, and the main shell's own ERR trap names the command that failed.
+  [[ $BASHPID == "$MAIN_PID" ]] || exit 1
   local why=${1//$'\n'/ }
   echo "::warning title=changes fallback::filtering is OFF for this run — $why" >&2
   summary "**changes: FALLBACK to ALL** — event=\`${EVENT_NAME:-}\` force_all=\`${FORCE_ALL:-}\` path=\`${PATH_TAKEN:-none}\` — $why"

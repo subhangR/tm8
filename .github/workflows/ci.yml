@@ -76,6 +76,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ inputs.force_all && 'full' || 'filtered' }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only token: no job here writes to the repo (artifacts use the runtime token).
+# A caller (ci-shadow.yml) can only narrow this, never widen it.
+permissions:
+  contents: read
+
 # node / bun versions live in ONE place: the tm8-setup composite's input defaults.
 
 env:
@@ -115,7 +120,11 @@ jobs:
           FORCE_ALL: ${{ inputs.force_all }}
           EXPECTED_SHA: ${{ github.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # logged so the concurrency comment above is checkable from a run: inside
+          # ci-shadow's call this prints the CALLER's name, "ci-shadow"
+          WORKFLOW: ${{ github.workflow }}
         run: |
+          echo "github.workflow=$WORKFLOW force_all=$FORCE_ALL event=$EVENT_NAME"
           bash tools/ci/changes.sh > "$RUNNER_TEMP/affected"
           cat "$RUNNER_TEMP/affected"
           cat "$RUNNER_TEMP/affected" >> "$GITHUB_OUTPUT"
