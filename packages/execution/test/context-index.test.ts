@@ -397,3 +397,37 @@ describe('I5b: memory collapse (§10 Q1)', () => {
     expect(contextIndexCaps('dispatcher')[2]).toEqual({ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex });
   });
 });
+
+describe('entries × dropped (index on): an id is shown with a header or body drop, never with any other', () => {
+  it('holds for a collapsed memory, a header-dropped reference and an entry-dropped skill in one launch', () => {
+    const texts = Array.from({ length: 12 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
+    const linked = Array.from({ length: 40 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
+    const { manifest } = compose(ctx({
+      teamMember: { ...member, memories: texts, memoryIds: texts.map((_, i) => `mem-${i}`) },
+      contextAudit: { selected: false, memoryVia: texts.map(() => 'teammate' as const), dropped: [] },
+      tasks: [task({ linked, linkedTotal: linked.length })],
+      headers: linked.map((l) => docHeader(l.entityId)),
+      skillEquips: Array.from({ length: 300 }, (_, i) => skillRow(i)),
+    }), { on: true });
+    const entries = manifest.context!.entries!;
+    const dropped = manifest.context!.dropped!;
+    const shown = new Set(entries.map((e) => `${e.group}:${e.entityId}`));
+    const key = (d: { group: string; entityId: string }): string => `${d.group}:${d.entityId}`;
+
+    // Each case is present in this launch.
+    const collapsedMemory = dropped.find((d) => d.group === 'memories' && d.level === 'body');
+    expect(collapsedMemory && shown.has(key(collapsedMemory))).toBe(true);
+    const headerRef = dropped.find((d) => d.group === 'references' && d.level === 'header');
+    expect(headerRef && shown.has(key(headerRef))).toBe(true);
+    const entrySkill = dropped.find((d) => d.group === 'skills' && d.level === 'entry');
+    expect(entrySkill && !shown.has(key(entrySkill))).toBe(true);
+
+    // The invariant, over every drop.
+    for (const drop of dropped) {
+      if (shown.has(key(drop))) expect(['header', 'body']).toContain(drop.level);
+    }
+    // No id is dropped twice at the same level.
+    const seen = new Set(dropped.map((d) => `${key(d)}:${d.reason}:${d.level ?? ''}`));
+    expect(seen.size).toBe(dropped.length);
+  });
+});
