@@ -362,10 +362,26 @@ describe('events.poll paging — exactly-once, not merely duplicate-free', () =>
 
     const walked: number[] = [];
     let cursor = '0';
+    // DIAG (EV lane, never merge): per-step trace straight to fd 2 so a CI timeout still shows it.
+    const { writeSync } = await import('node:fs');
+    const t0 = Date.now();
+    const tr = (m: string): void => { try { writeSync(2, `[EVTRACE ${new Date().toISOString()} +${Date.now() - t0}ms] ${m}\n`); } catch { /* */ } };
+    tr(`full=${fullSeqs.join(',')}`);
+    let step = -1; let stepStart = Date.now();
+    const { loadavg } = await import('node:os');
+    const hb = setInterval(() => {
+      const h0 = Date.now();
+      void fetch(new URL('/health', server.baseUrl), { signal: AbortSignal.timeout(8_000) })
+        .then((x) => `${x.status}`, (e: unknown) => `ERR ${String(e)}`)
+        .then((st) => tr(`HEARTBEAT step=${step} inStepMs=${Date.now() - stepStart} health=${st} healthMs=${Date.now() - h0} load=${loadavg().join('/')}`));
+    }, 10_000);
+    try {
     for (let guard = 0; guard < 200; guard++) {
+      step = guard; stepStart = Date.now();
       const r = await cli(
         ['event', 'list', '--space', spaceId!, '--after', cursor, '--limit', '1', '--format', 'json'],
         server);
+      tr(`g=${guard} after=${cursor} ms=${Date.now() - stepStart} code=${r.code} out=${r.stdout.replace(/\s+/g, '').slice(0, 160)} err=${r.stderr.slice(0, 300)}`);
       expect(r.code, r.stderr).toBe(0);
       const page = JSON.parse(r.stdout) as { items: Array<{ seq: number }>; nextCursor: string };
       if (page.items.length === 0) break;
@@ -375,6 +391,7 @@ describe('events.poll paging — exactly-once, not merely duplicate-free', () =>
       if (page.nextCursor === cursor) break;
       cursor = page.nextCursor;
     }
+    } finally { clearInterval(hb); tr(`END walked=${walked.length}`); }
     measured['events.poll.walkedSize'] = walked.length;
 
     // EXACTLY ONCE: same members, same order, nothing repeated, nothing skipped.
