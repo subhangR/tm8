@@ -1,0 +1,54 @@
+# ci-shadow — the FULL gate on every PR, running beside ci.yml's path-filtered one
+# (CI split, Wave 2; design §5 step 2).
+#
+# WHY IT EXISTS. ci.yml runs only the jobs `tools/ci/affected.sh` says a PR affects. This
+# workflow runs every job on the same PR, so an edge the filter does not know about
+# shows up as a red here that ci.yml skipped. That signal is only useful if it is read:
+#   a job that is red here, was SKIPPED by ci.yml on the same PR, and is green on the base
+#   commit  =>  a missed edge. Add it to EXTRA_EDGES in tools/ci/affected.sh (with a table
+#   row in affected.test.sh) before this workflow is removed.
+#
+# LIFETIME. Planned for 2 weeks after Wave 2 merges. Wave 4 removes it once it has run that
+# long with no missed edge.
+#
+# IT IS NOT INVISIBLE. main has no required checks, so GitHub blocks nothing on a red here.
+# But tm8's own PR rollup (migration 103:471) reads EVERY check on the commit: a red
+# "shadow / …" check turns the tm8 CI chip red and holds any task gated on green CI or
+# pr_merged. That is deliberate — this is the full gate, the same set every PR ran before
+# the split — so do not dismiss a shadow red as noise; triage it as above.
+#
+# HOW. It calls ci.yml as a reusable workflow with force_all: true. ci.yml's `changes` job
+# then emits ALL (and ci-ok requires all=true when force_all is set), so this is the same
+# job graph, the same build lists and the same ci-ok verdict, with no copy to drift. Check
+# names appear as "shadow / <job>".
+#
+# CONCURRENCY. Groups are repo-wide. Inside a called workflow `github.workflow` is the
+# CALLER's name, so the three groups on one PR are:
+#   this caller            ci-shadow-<ref>
+#   ci.yml called from here ci-shadow-full-<ref>
+#   ci.yml's own PR run     ci-filtered-<ref>
+# All distinct: the shadow never cancels (or deadlocks with) the real run, and a new push
+# cancels only the older run of the same kind.
+#
+# The changes job logs github.workflow, so these names can be read off a run.
+#
+# Secrets/permissions: ci.yml reads no secrets, so no `secrets: inherit`. contents: read
+# here and in ci.yml; a called workflow can only narrow its caller's token, never widen it.
+
+name: ci-shadow
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadow:
+    uses: ./.github/workflows/ci.yml
+    with:
+      force_all: true
