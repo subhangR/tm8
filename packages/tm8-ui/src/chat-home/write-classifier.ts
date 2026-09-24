@@ -71,6 +71,7 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'entities.points.add',
   'entities.commands.work',
   'entities.commands.complete',
+  'entities.commands.tick',
   'entities.commands.pull',
   'entities.commands.linkPr',
   'entities.commands.linkCommit',

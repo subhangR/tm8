@@ -27,6 +27,7 @@ import {
   type MoveEntityInput,
   type Page,
   type PatchEntityInput,
+  type TickCriteriaInput,
   type PullInput,
   type ReactionInput,
   type ResolveEntityAttentionInput,
@@ -1523,19 +1524,93 @@ export class W2EntitiesCommandsTrackingService {
         return commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
-      if (isCollabError(error) && error.code === 'version_conflict') {
-        try {
-          const current = await this.deps.db.tx(claimsFor(owner, ctx), (q) =>
-            buildUniversalDetail(q, id, owner.identityId));
-          throw new CollabError('version_conflict', error.message, {
-            current,
-            details: { ...(error.details ?? {}), current },
-          });
-        } catch (decorated) {
-          if (isCollabError(decorated) && decorated.code === 'version_conflict') throw decorated;
+      throw await this.withCurrent(error, owner, ctx, id);
+    }
+  };
+
+  /** A version conflict owes the caller the `current` it lost to; anything else passes through. */
+  private async withCurrent(
+    error: unknown,
+    owner: Awaited<ReturnType<FacadeDeps['owner']>>,
+    ctx: RequestContext,
+    id: string,
+  ): Promise<unknown> {
+    if (!isCollabError(error) || error.code !== 'version_conflict') return error;
+    try {
+      const current = await this.deps.db.tx(claimsFor(owner, ctx), (q) =>
+        buildUniversalDetail(q, id, owner.identityId));
+      return new CollabError('version_conflict', error.message, {
+        current,
+        details: { ...(error.details ?? {}), current },
+      });
+    } catch {
+      return error;
+    }
+  }
+
+  /**
+   * `entities.commands.tick` — set `done` on named acceptance criteria, MERGED
+   * BY ID into the stored list.
+   *
+   * WHY AN OPERATION AND NOT PATCH SUGAR. The patch door takes the WHOLE
+   * `acceptanceCriteria` array (`update_task_content` replaces the column), so
+   * ticking one criterion through it means reading the task, learning the
+   * member's name, and restating every criterion — measured live at 29.5 KB of
+   * `entity get` per agent just to find the key. Here the caller names ids;
+   * the read and the merge happen server-side, in the transaction that writes.
+   *
+   * ONE WRITE PATH. The merged list goes through the same `update_task_content`
+   * RPC and the same `acceptanceCriteria` normaliser as a patch, so the
+   * version guard, the `doneBy`/`doneAt` stamping and the activity row are the
+   * patch door's own, not a second copy. A ticked criterion loses any stale
+   * stamp so the normaliser stamps the actor making THIS call.
+   *
+   * An id the task does not carry is refused BY NAME with the ids it does
+   * carry — never dropped — so a typo cannot read as a tick that landed.
+   */
+  readonly tickCriteria = async (ctx: RequestContext): Promise<CommandResult> => {
+    const owner = await this.deps.owner();
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as TickCriteriaInput;
+    const envelope = commandEnvelope(ctx);
+    const done = input.done ?? true;
+    try {
+      return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const kind = await kindFor(q, id);
+        if (kind !== 'task') {
+          throw new CollabError('invalid_input', `only a task carries acceptance criteria; ${id} is a ${kind}`);
         }
-      }
-      throw error;
+        const rows = await q.query<{ acceptance_criteria: unknown }>(
+          'select acceptance_criteria from public.tasks where entity_id = $1',
+          [id],
+        );
+        const stored = Array.isArray(rows[0]?.acceptance_criteria)
+          ? rows[0]!.acceptance_criteria as Array<Record<string, unknown>>
+          : [];
+        const known = stored.map((c) => String(c?.id ?? ''));
+        const unknown = [...new Set(input.criterionIds)].filter((cid) => !known.includes(cid));
+        if (unknown.length > 0) {
+          throw new CollabError('invalid_input',
+            `task ${id} has no acceptance ${unknown.length === 1 ? 'criterion' : 'criteria'} `
+              + `${unknown.join(', ')}; its criteria: ${known.length > 0 ? known.join(', ') : 'none'}`,
+            { details: { reason: 'unknown_criterion', unknown, known } });
+        }
+        const named = new Set(input.criterionIds);
+        const merged = stored.map((c) => {
+          if (!named.has(String(c?.id ?? ''))) return c;
+          const { doneBy: _by, doneAt: _at, ...rest } = c;
+          // Already in the asked state: keep its stamp, it is still true.
+          return c?.done === done ? c : { ...rest, done };
+        });
+        const raw = await q.rpc<RpcCommandResult>('update_task_content', [id, input.expectedVersion,
+          envelope.actorId ?? null, null, null, null, null, null,
+          JSON.stringify(acceptanceCriteria({ acceptanceCriteria: merged }, envelope.actorId ?? null)),
+          null, null, false, null, false,
+          envelope.clientMutationId ?? null]);
+        return commandResult(q, raw, owner.identityId);
+      });
+    } catch (error) {
+      throw await this.withCurrent(error, owner, ctx, id);
     }
   };
 

@@ -387,7 +387,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 212 -> 222 (2026-09-23, SC-3): credentials.space.{list,create,rekey,setDefault,rename,delete,policy.get,policy.set}
   // and node.credentials.{status,policy.set}. MEASURED.
   // 222 -> 223 (change feed step 3): events.changes, one GET read. MEASURED.
-  assertEqual(names.length, 223, 'catalog total');
+  // 223 -> 224 (bug 01a0d2f1): entities.commands.tick, one POST command. MEASURED.
+  assertEqual(names.length, 224, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -401,7 +402,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 207 -> 210 (Jev lane K): the three service-key rows ship v1. MEASURED.
   // 210 -> 220 (SC-3): the ten space/node credential rows ship v1. MEASURED.
   // 220 -> 221 (change feed step 3): events.changes ships v1. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 221, 'v1 total');
+  // 221 -> 222 (bug 01a0d2f1): entities.commands.tick ships v1. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 222, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -436,7 +438,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // GET 70 -> 73, POST 105 -> 107, PATCH 13 -> 14, DELETE 13 -> 14, PUT 9 -> 12 (SC-3): the ten space/node
   // credential rows. MEASURED.
   // GET 73 -> 74 (change feed step 3): events.changes. MEASURED.
-  assertEqual(methods, { GET: 74, POST: 107, PATCH: 14, DELETE: 14, PUT: 12, WS: 2 }, 'method accounting');
+  // POST 107 -> 108 (bug 01a0d2f1): entities.commands.tick. MEASURED.
+  assertEqual(methods, { GET: 74, POST: 108, PATCH: 14, DELETE: 14, PUT: 12, WS: 2 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
   // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
@@ -446,7 +449,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // read 73 -> 74, command 134 -> 136 (Jev lane K): service-key status is a read, put/delete commands. MEASURED.
   // read 74 -> 77, command 136 -> 143 (SC-3): list, policy.get and node status read; seven commands. MEASURED.
   // read 77 -> 78 (change feed step 3): events.changes. MEASURED.
-  assertEqual(kinds, { read: 78, command: 143, stream: 2 }, 'kind accounting');
+  // command 143 -> 144 (bug 01a0d2f1): entities.commands.tick. MEASURED.
+  assertEqual(kinds, { read: 78, command: 144, stream: 2 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
@@ -459,7 +463,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 207 -> 210 (Jev lane K): the three service-key routes. MEASURED.
   // 210 -> 220 (SC-3): the ten space/node credential routes. MEASURED.
   // 220 -> 221 (change feed step 3): events.changes mounts one GET route. MEASURED.
-  assertEqual(router.http.length, 221, 'server router HTTP total');
+  // 221 -> 222 (bug 01a0d2f1): entities.commands.tick is mounted. MEASURED.
+  assertEqual(router.http.length, 222, 'server router HTTP total');
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

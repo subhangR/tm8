@@ -1,7 +1,7 @@
 /**
  * `tm8 task …` — the closed kind-command namespace for tasks (§4.5).
  *
- * SEVEN commands: `transition`, `complete`, `gate`, `axis`, `link-pr`,
+ * EIGHT commands: `transition`, `complete`, `tick`, `gate`, `axis`, `link-pr`,
  * `link-commit`, `import-issue`. There is deliberately no `task create`,
  * `task get` or
  * `task list`: a task is an entity, so it is created, read and queried through
@@ -125,6 +125,50 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
   );
   cmd.out.mutation('task.complete', data, renderCommandResult, () =>
     successReceipt('task.complete', data, { expectedVersion, completerIds, ...callerMutationId(cmd.options) }));
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 task tick <task-id> <criterion-id>... [--untick] --expect-version <n>`
+ * — the write `task complete`'s criteria gate asks for.
+ *
+ * A FLAT TASK VERB, like `complete` and `gate`, over its own operation
+ * (`entities.commands.tick`), not `entity update` sugar. The Server merges the
+ * named ids into the stored list, so the caller never restates the whole
+ * `acceptanceCriteria` array — and never has to learn that member name, which
+ * is what sent agents to a 29.5 KB `entity get`. Ids come from the
+ * `acceptance` section of `tm8 entity context`, whose `acceptanceWrite` and
+ * the complete refusal's `next` both print this command filled in.
+ */
+async function taskTick(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['expect-version', 'untick', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const criterionIds = cmd.args.slice(1);
+  if (criterionIds.length === 0) {
+    throw new CliError('`tm8 task tick` needs at least one <criterion-id>', EXIT_USAGE, {
+      hint: `the ids are in the acceptance section of \`tm8 entity context ${id}\``,
+    });
+  }
+  const expectedVersion = cmd.options.integer('expect-version');
+  if (expectedVersion === undefined) {
+    throw new CliError('`tm8 task tick` requires --expect-version <n>', EXIT_USAGE, {
+      hint: `read the current version with \`tm8 entity context ${id}\``,
+    });
+  }
+  const done = !cmd.options.bool('untick');
+
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await withErrorReceipt(
+    cmd,
+    errorInput(cmd, 'task.tick', { id, mutationId, expectedVersion }),
+    () =>
+      observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.tick', {
+        params: { id },
+        body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, criterionIds, done }),
+      }),
+  );
+  cmd.out.mutation('task.tick', data, renderCommandResult, () =>
+    successReceipt('task.tick', data, { expectedVersion, ...callerMutationId(cmd.options) }));
   return EXIT_OK;
 }
 
@@ -525,6 +569,7 @@ async function taskAxis(cmd: CommandContext): Promise<ExitCode> {
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
   { path: ['task', 'complete'], run: taskComplete },
+  { path: ['task', 'tick'], run: taskTick },
   { path: ['task', 'gate'], run: taskGate },
   { path: ['task', 'axis'], run: taskAxis },
   { path: ['task', 'link-pr'], run: linker('entities.commands.linkPr') },

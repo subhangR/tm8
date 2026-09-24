@@ -553,6 +553,30 @@ function acceptanceOf(row: EntityRow): Array<{ id: string; done: boolean; text: 
   return criteria.map((c) => ({ id: String(c?.id ?? ''), done: c?.done === true, text: String(c?.text ?? '') }));
 }
 
+/**
+ * `acceptance` plus, while any criterion is unticked, its WRITE: the read name
+ * (`acceptance`) is not the stored member (`acceptanceCriteria`), so the list
+ * alone never told an agent how to tick one — measured live, it fell back to a
+ * 29.5 KB `entity get` to find the key. The command is exact (c904 §2.8): the
+ * unticked ids and the version this read saw, filled in.
+ */
+function acceptanceFields(root: EntityRow): Record<string, unknown> {
+  const acceptance = acceptanceOf(root);
+  const open = acceptance.filter((c) => !c.done).map((c) => c.id);
+  if (open.length === 0) return { acceptance };
+  const version = Number(root.version);
+  return {
+    acceptance,
+    acceptanceWrite: {
+      write: `tm8 task tick ${root.id} ${open.join(' ')} --expect-version ${version}`,
+      writeOp: {
+        operation: 'entities.commands.tick',
+        params: { id: root.id, expectedVersion: version, criterionIds: open },
+      },
+    } satisfies EntityContextV2View['acceptanceWrite'],
+  };
+}
+
 function bodyOf(row: EntityRow): string {
   switch (row.kind) {
     case 'task': return row.task_description ?? '';
@@ -1032,7 +1056,7 @@ function assignmentOf(root: EntityRow, offset: number | undefined): Record<strin
   if (offset === undefined) {
     return {
       assignment: { text: body, bytes: whole.length, complete: true } satisfies EntityContextAssignment,
-      ...(root.kind === 'task' ? { acceptance: acceptanceOf(root) } : {}),
+      ...(root.kind === 'task' ? acceptanceFields(root) : {}),
     };
   }
   if (offset > whole.length) {
@@ -1240,7 +1264,7 @@ function cutAtCeiling(view: View, id: string, messagesAreCore: boolean, pagers: 
 /** The never-drop sections a view carries, for the 422's `details.core`. */
 function coreSections(view: View, messagesAreCore: boolean): string[] {
   const core = ['root'];
-  for (const key of ['assignment', 'acceptance', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
+  for (const key of ['assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
     if (view[key] !== undefined) core.push(key);
   }
   if (messagesAreCore && view.messages !== undefined) core.push('messages');

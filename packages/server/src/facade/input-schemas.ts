@@ -93,6 +93,7 @@ import {
   FileUploadCompleteInputSchema,
   FileUploadInitInputSchema,
   GateTaskInputSchema,
+  TickCriteriaInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
   IdentityProfileUpdateInputSchema,
@@ -255,6 +256,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'entities.commands.linkPr': LinkPrInputSchema,
   'entities.commands.linkCommit': LinkCommitInputSchema,
   'entities.commands.gate': GateTaskInputSchema,
+  'entities.commands.tick': TickCriteriaInputSchema,
   'tracking.refresh': TrackingRefreshInputSchema,
   'tracking.pr.merge': TrackingPrMergeInputSchema,
 

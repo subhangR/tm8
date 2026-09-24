@@ -22,7 +22,11 @@
  *    (`tm8 entity context <id>`) for `entity update`, never a retry (D4.2):
  *    a stale content write must be re-derived, not re-sent.
  *  - gate failures — `reason`, `incomplete[]`/`incompleteCount`, `prs[]`,
- *    fetched with EXACTLY ONE extra read on the failure path (D4.3).
+ *    fetched with EXACTLY ONE extra read on the failure path (D4.3). For
+ *    unticked criteria `next` is the WRITE that clears the refusal —
+ *    `tm8 task tick <id> <criterion-id>... --expect-version <v>`, every
+ *    unticked id and the version that read saw filled in — not a read that
+ *    leaves the caller to discover how to tick.
  *  - forbidden / not_found — code, reason, requestId, actor. No entity data
  *    (D4.4): a caller refused a row learns nothing about it here.
  *  - ambiguous outcome — a transport failure or a retryable 5xx means the
@@ -65,13 +69,16 @@ const TEXT_FLOOR = 24;
 /** Ops whose conflict `next` is a filled-in retry rather than a read (D4.2). */
 const RETRY_ON_CONFLICT: ReadonlySet<ReceiptOp> = new Set([
   'task.complete',
+  // A tick merges by criterion id, so re-sending it at the version it lost
+  // to cannot clobber the write that won.
+  'task.tick',
   'task.transition',
   'task.link-pr',
   'task.link-commit',
 ]);
 
 /** Ops that take `--expect-version`: the retry fills it with the current version. */
-const TAKES_EXPECT_VERSION: ReadonlySet<ReceiptOp> = new Set(['task.complete', 'entity.update']);
+const TAKES_EXPECT_VERSION: ReadonlySet<ReceiptOp> = new Set(['task.complete', 'task.tick', 'entity.update']);
 
 type Rec = Record<string, unknown>;
 
@@ -119,6 +126,8 @@ export interface ErrorReceiptInput {
 /** The gate facts the failure-path read supplies. */
 export interface GateFacts {
   criteria?: unknown;
+  /** The task's version as the failure-path read saw it — `next`'s guard. */
+  version?: number;
   pullRequests?: unknown;
   /** The Server's own cap on `badges.pullRequests` dropped links. */
   pullRequestsTruncated?: boolean;
@@ -184,6 +193,21 @@ export function retryCommand(op: ReceiptOp, argv: readonly string[], currentVers
 
 function contextCommand(id: string): string {
   return commandLine(['entity', 'context', id]);
+}
+
+/**
+ * The write that clears an `acceptance_criteria_incomplete` refusal: tick
+ * every unticked criterion, guarded by the version the gate read saw.
+ * `undefined` when the read did not return the criteria or a version — a
+ * command with a guessed id or version would be a confident wrong answer.
+ */
+export function tickCommand(id: string, gate: GateFacts | undefined): string | undefined {
+  if (!Array.isArray(gate?.criteria) || gate.version === undefined) return undefined;
+  const open = gate.criteria
+    .filter((c): c is Rec => isRecord(c) && c.done !== true && typeof c.id === 'string' && c.id !== '')
+    .map((c) => c.id as string);
+  if (open.length === 0) return undefined;
+  return commandLine(['task', 'tick', id, ...open, '--expect-version', String(gate.version)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -286,19 +310,23 @@ function currentOf(err: ApiError): Rec | undefined {
 }
 
 /**
- * The unchecked criteria, by their position in `acceptanceCriteria` (0-based
- * — the index an `entity update --content` of that array addresses).
+ * The unchecked criteria: `id` (what `tm8 task tick` takes) and their
+ * position in `acceptanceCriteria` (0-based).
  */
 function incompleteOf(criteria: unknown): { rows: Rec[]; texts: string[]; count: number } | undefined {
   if (!Array.isArray(criteria)) return undefined;
-  const all: { index: number; text: string }[] = [];
+  const all: { id: string | undefined; index: number; text: string }[] = [];
   criteria.forEach((c, index) => {
     if (!isRecord(c) || c.done === true) return;
-    all.push({ index, text: typeof c.text === 'string' ? c.text : '' });
+    all.push({ id: str(c.id), index, text: typeof c.text === 'string' ? c.text : '' });
   });
   const kept = all.slice(0, INCOMPLETE_CAP);
   return {
-    rows: kept.map((c) => ({ index: c.index, text: clampText(c.text, TEXT_MAX) })),
+    rows: kept.map((c) => ({
+      ...(c.id !== undefined ? { id: c.id } : {}),
+      index: c.index,
+      text: clampText(c.text, TEXT_MAX),
+    })),
     texts: kept.map((c) => c.text),
     count: all.length,
   };
@@ -409,7 +437,10 @@ export function errorReceipt(err: unknown, input: ErrorReceiptInput, gate?: Gate
     error.retryable = err.retryable;
     const receipt = base(input, error);
     if (cut) receipt.truncated = true;
-    if (input.id !== undefined) receipt.next = contextCommand(input.id);
+    if (input.id !== undefined) {
+      const tick = gateReason === 'acceptance_criteria_incomplete' ? tickCommand(input.id, gate) : undefined;
+      receipt.next = tick ?? contextCommand(input.id);
+    }
     fitBudget(receipt, texts);
     return withCallerMutationId(receipt, input);
   }
@@ -456,6 +487,7 @@ async function readGateFacts(client: Tm8Client, id: string): Promise<GateFacts> 
     const badges = isRecord(detail?.badges) ? detail.badges : {};
     return {
       criteria: content.acceptanceCriteria,
+      ...(typeof detail?.version === 'number' ? { version: detail.version } : {}),
       pullRequests: badges.pullRequests,
       pullRequestsTruncated: badges.pullRequestsTruncated === true,
     };
@@ -504,6 +536,14 @@ export async function withErrorReceipt<T>(
         : undefined;
       const receipt = errorReceipt(err, input, gate);
       if (receipt !== undefined) cmd.out.errorReceipt(receipt);
+    }
+    // The stderr diagnostic names the tick verb in EVERY mode. It is static —
+    // no read, so `--full` still pays for none and stderr stays identical
+    // across modes (D4.1); the filled-in form is the receipt's `next`.
+    if (err instanceof ApiError && err.hint === undefined && input.id !== undefined
+      && gateReasonOf(err) === 'acceptance_criteria_incomplete') {
+      err.hint = `tick them first: tm8 task tick ${input.id} <criterion-id>... --expect-version <n>`
+        + ` (ids: tm8 entity context ${input.id})`;
     }
     throw err;
   }

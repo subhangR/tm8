@@ -2745,6 +2745,18 @@ export interface ContentionReport {
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
+/**
+ * POST /v2/entities/:id/commands/tick — set `done` on the named acceptance
+ * criteria, merged by `id` into the stored list. Criteria not named are left
+ * exactly as stored; an id the task does not carry is refused, never ignored.
+ * `done` defaults to true (tick); `false` unticks.
+ */
+export interface TickCriteriaInput extends CommandContext {
+  expectedVersion: number;
+  criterionIds: string[];
+  done?: boolean;
+}
+
 export interface TaskAxisInput extends CommandContext {
   name: string;
   axisValues: string[];
@@ -6220,6 +6232,14 @@ export interface EntityContextV2View {
   assignees?: EntityContextAssignee[];
   assignment?: EntityContextAssignment;
   acceptance?: Array<{ id: string; done: boolean; text: string }>;
+  /**
+   * The write for `acceptance`: `acceptance` is the READ name, and the stored
+   * member is `acceptanceCriteria`, so the list alone does not say how to
+   * change it. Present while any criterion is unticked; `write` is the exact
+   * command (unticked ids and current version filled in), `writeOp` its
+   * operation call.
+   */
+  acceptanceWrite?: { write: string; writeOp: EntityContextExpandOp };
   blockers?: EntityContextBlocker[];
   children?: EntityContextRef[];
   // doc

@@ -170,6 +170,10 @@ const V2_TASK = {
     { id: 'a1', done: false, text: 'Current output measured on real entities' },
     { id: 'a2', done: true, text: 'Alternatives proposed with example responses' },
   ],
+  acceptanceWrite: {
+    write: `tm8 task tick ${ENT} a1 --expect-version 7`,
+    writeOp: { operation: 'entities.commands.tick', params: { id: ENT, expectedVersion: 7, criterionIds: ['a1'] } },
+  },
   blockers: [{ id: PARENT, title: 'Upstream dependency', status: 'open', resolved: false }],
   children: [
     { id: CHILD, kind: 'task', title: 'Align: a narrow default', status: 'working' },
@@ -390,6 +394,8 @@ describe('S5 rendering and rollout', () => {
     // acceptance, with done state
     expect(text).toContain('[ ] a1');
     expect(text).toContain('[x] a2');
+    // bug 01a0d2f1: the acceptance section names its write, filled in.
+    expect(text).toContain(`  tick: tm8 task tick ${ENT} a1 --expect-version 7`);
     // blockers, parent unreadable, deleted child
     expect(text).toContain(PARENT);
     expect(text).toContain(UNREADABLE);

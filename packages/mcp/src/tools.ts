@@ -138,8 +138,11 @@ const ACT_GUIDES = [
   guide('entities.commands.work', 'Move a task to an allowed work status.', {
     params: { id: '<task-id>' }, body: { status: 'working', note: '<optional-note>' },
   }),
-  guide('entities.commands.complete', 'Complete a task at its current version.', {
+  guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },
+  }),
+  guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id; the Server merges them into the stored list.', {
+    params: { id: '<task-id>' }, body: { expectedVersion: 1, criterionIds: ['<criterion-id>'] },
   }),
   guide('entities.commands.pull', 'Pull a task under a pinned-version guard.', {
     params: { id: '<task-id>' }, body: { pinnedVersion: 1 },

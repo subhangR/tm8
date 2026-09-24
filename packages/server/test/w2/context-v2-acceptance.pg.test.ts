@@ -546,6 +546,15 @@ describe('S3 the v2 DTO', () => {
     }
     const t = await v2(F.T);
     expect(t.view.acceptance).toEqual(T_ACCEPTANCE.map(({ id, done, text }) => ({ id, done, text })));
+    // Bug 01a0d2f1: `acceptance` is the read name, `acceptanceCriteria` the
+    // stored member — so the section carries its WRITE, exact and filled in.
+    expect(t.view['acceptanceWrite']).toEqual({
+      write: `tm8 task tick ${F.T} a1 a3 a4 --expect-version ${t.view.version}`,
+      writeOp: {
+        operation: 'entities.commands.tick',
+        params: { id: F.T, expectedVersion: t.view.version, criterionIds: ['a1', 'a3', 'a4'] },
+      },
+    });
     // P: v1 cut this body at 4,096 B; v2 carries all 8,004 B.
     const p = await v2(F.P);
     expect(p.view.assignment?.bytes).toBe(8_004);

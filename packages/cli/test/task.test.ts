@@ -174,10 +174,10 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 
 // ── registration ────────────────────────────────────────────────────────────
 
-describe('the seven rows this slot owns here', () => {
-  it('task.ts registers exactly the seven task commands', async () => {
+describe('the eight rows this slot owns here', () => {
+  it('task.ts registers exactly the eight task commands', async () => {
     const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task transition']);
+    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task tick', 'task transition']);
   });
 
   it('tracking.ts registers exactly `tracking refresh` and `pr merge`', async () => {
@@ -213,6 +213,12 @@ const ROWS: readonly RowCase[] = [
   {
     op: 'entities.commands.complete',
     argv: ['task', 'complete', TASK, '--expect-version', '7', '--by', ACTOR],
+    method: 'POST',
+    params: { id: TASK },
+  },
+  {
+    op: 'entities.commands.tick',
+    argv: ['task', 'tick', TASK, 'f1', '--expect-version', '7'],
     method: 'POST',
     params: { id: TASK },
   },
@@ -425,6 +431,31 @@ describe('task complete', () => {
   it('carries --as as the acting actorId, distinct from the completers', async () => {
     await drive(['task', 'complete', TASK, '--expect-version', '7', '--by', OTHER, '--as', ACTOR]);
     expect(seen[0]?.body).toMatchObject({ actorId: ACTOR, completerIds: [OTHER] });
+  });
+});
+
+// ── task tick (bug 01a0d2f1) ────────────────────────────────────────────────
+
+describe('task tick', () => {
+  it('sends the named criterion ids, merged by id on the Server — never the whole list', async () => {
+    await drive(['task', 'tick', TASK, 'f1', 'f3', '--expect-version', '7']);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ method: 'POST', pathname: `/v2/entities/${TASK}/commands/tick` });
+    expect(seen[0]?.body).toMatchObject({ expectedVersion: 7, criterionIds: ['f1', 'f3'], done: true });
+    expect(seen[0]?.body).not.toHaveProperty('content');
+  });
+
+  it('--untick sends done:false', async () => {
+    await drive(['task', 'tick', TASK, 'f2', '--untick', '--expect-version', '7']);
+    expect(seen[0]?.body).toMatchObject({ criterionIds: ['f2'], done: false });
+  });
+
+  it('refuses locally without a criterion id or --expect-version, and names where the ids live', async () => {
+    const noIds = await drive(['task', 'tick', TASK, '--expect-version', '7']);
+    expect(noIds.code).toBe(2);
+    expect(noIds.stderr).toContain(`tm8 entity context ${TASK}`);
+    expect((await drive(['task', 'tick', TASK, 'f1'])).code).toBe(2);
+    expect(seen).toHaveLength(0);
   });
 });
 
