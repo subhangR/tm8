@@ -286,8 +286,6 @@ function defaultMutationId(prefix: string): string {
   return `${prefix}_${mutationSeq.toString(36)}_${entropy}`;
 }
 
-export type Ops = ReturnType<typeof createOps>;
-
 /** Not in every build's catalog yet (agent-guidance PR); feature-detected by name. */
 const REDELIVER_OP = 'forms.responses.redeliver';
 
