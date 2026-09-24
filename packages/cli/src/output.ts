@@ -129,6 +129,27 @@ export class Output {
   }
 
   /**
+   * Whether a failed receipt command prints an error receipt (spec 01a0cf2e
+   * §4.3, D4.1): receipt mode under json/jsonl only. Human format stays
+   * stderr-only, and every other mode keeps today's empty stdout.
+   */
+  get errorReceipts(): boolean {
+    return this.receipts === 'receipt' && this.format !== 'human';
+  }
+
+  /**
+   * An error receipt: ONE MINIFIED LINE on stdout, alongside — never instead
+   * of — the stderr diagnostic and the exit code, which the run funnel still
+   * writes. Printed only when nothing else reached stdout first: a command
+   * that already printed its result has no error receipt to add.
+   */
+  errorReceipt(receipt: Record<string, unknown>): void {
+    if (!this.errorReceipts || this.wroteBytes || this.wroteStructured) return;
+    this.wroteStructured = true;
+    this.streams.stdout(`${JSON.stringify(receipt)}\n`);
+  }
+
+  /**
    * One item of a long-lived or explicitly paged stream: one event per line
    * under `jsonl`, one rendered line under `human`. Under `json` this is a
    * usage error rather than a silently concatenated stream of objects —

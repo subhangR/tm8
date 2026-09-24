@@ -43,7 +43,8 @@ import { plainExcerpt } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { successReceipt, type ReceiptOp } from '../receipt.js';
+import { callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
+import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { Tm8Client } from '../client.js';
@@ -395,15 +396,18 @@ export async function postMessage(
   op?: Extract<ReceiptOp, 'message.send' | 'message.reply'>,
 ): Promise<ExitCode> {
   const client = clientFor(cmd.ctx);
-  const batch = await observedInvoke<{ messages?: unknown }>(client, 'messages.post', {
-    body: request,
-  });
+  const post = () => observedInvoke<{ messages?: unknown }>(client, 'messages.post', { body: request });
+  const mutationId = typeof request.clientMutationId === 'string' ? request.clientMutationId : undefined;
+  const replyTo = typeof request.replyToMessageId === 'string' ? request.replyToMessageId : undefined;
+  const batch = op === undefined
+    ? await post()
+    : await withErrorReceipt(cmd, errorInput(cmd, op, { mutationId, ...(replyTo ? { id: replyTo } : {}) }), post);
 
   // The batch is the command's DATA and is written BEFORE any settle
   // observation, so a caller who reads stdout gets the stored result whatever
   // the delivery outcome turns out to be.
   if (op === undefined) cmd.out.data(batch, renderBatch);
-  else cmd.out.mutation(op, batch, renderBatch, () => successReceipt(op, batch));
+  else cmd.out.mutation(op, batch, renderBatch, () => successReceipt(op, batch, callerMutationId(cmd.options)));
   if (wait === 'stored') return EXIT_OK;
 
   const messageIds = (Array.isArray(batch?.messages) ? batch.messages : [])

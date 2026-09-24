@@ -58,7 +58,8 @@ import {
   type SessionTranscriptPage,
 } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
-import { spawnedWorktreeId, successReceipt } from '../receipt.js';
+import { callerMutationId, spawnedWorktreeId, successReceipt } from '../receipt.js';
+import { errorInput, withErrorReceipt } from '../receipt-error.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
 const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
@@ -471,8 +472,9 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   const title = cmd.options.value('title');
   const contextSource = cmd.options.value('context');
 
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
   const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    clientMutationId: mutationId,
     spaceId,
     teamMemberId,
   };
@@ -538,11 +540,15 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (memoryIds.length > 0) body.memoryIds = memoryIds;
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body });
+  const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.spawn', { mutationId }), () =>
+    observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body }));
   const workdirPath =
     cmd.out.receipts === 'receipt' ? await spawnedWorktreePath(cmd, data) : undefined;
   cmd.out.mutation('session.spawn', data, renderSpawned, () =>
-    successReceipt('session.spawn', data, workdirPath === undefined ? {} : { workdirPath }));
+    successReceipt('session.spawn', data, {
+      ...callerMutationId(cmd.options),
+      ...(workdirPath === undefined ? {} : { workdirPath }),
+    }));
   return EXIT_OK;
 }
 
@@ -629,20 +635,20 @@ async function sessionTerminate(cmd: CommandContext): Promise<ExitCode> {
   const id = requireSessionId('session terminate', cmd.args[0]);
   requireConfirmation('session terminate', cmd);
 
-  const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-  };
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const body: Record<string, unknown> = { clientMutationId: mutationId };
   // Sent only when asked: `ExecutionTerminateInput` is strict and a `false`
   // here would be a caller asserting something they did not ask for.
   if (cmd.options.bool('force')) body.force = true;
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.terminate', {
-    params: { id },
-    body,
-  });
+  const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.terminate', { id, mutationId }), () =>
+    observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.terminate', {
+      params: { id },
+      body,
+    }));
   cmd.out.mutation('session.terminate', data, renderTerminated, () =>
-    successReceipt('session.terminate', data));
+    successReceipt('session.terminate', data, callerMutationId(cmd.options)));
   return EXIT_OK;
 }
 
