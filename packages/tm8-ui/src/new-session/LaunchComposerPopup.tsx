@@ -105,6 +105,8 @@ export interface LaunchComposerPopupProps {
   clientMutationId?: string;
   /** ✦ Ask Jev (design 01a0cb80 §3.2). Absent ⇒ the button is refused with the reason. */
   jev?: JevPort;
+  /** The ··· menu's Plugins list. Absent ⇒ the row says the node cannot list them. */
+  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
 }
 
 export function LaunchComposerPopup({
@@ -122,6 +124,7 @@ export function LaunchComposerPopup({
   newClientMutationId,
   clientMutationId,
   jev: jevPort,
+  loadInstalledPlugins,
 }: LaunchComposerPopupProps) {
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path — and the
@@ -152,6 +155,7 @@ export function LaunchComposerPopup({
     teammates: teammateRows,
     projects: projectRows,
     launchMode: mode,
+    ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
   });
 
   /* THE DESCRIPTION, autofilled. `null` means "not answered yet": the load

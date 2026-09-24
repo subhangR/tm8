@@ -510,6 +510,11 @@ export interface LaunchSources {
   mutationId: (entityId: string) => string;
   /** ✦ Ask Jev in the Run popup. Absent ⇒ the button renders refused with the reason. */
   jev?: JevPort;
+  /**
+   * The Claude plugins a launch by this viewer could load — the launch ···
+   * menu's Plugins row. Resolves null when the node cannot say.
+   */
+  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
 }
 
 /**
@@ -3578,6 +3583,7 @@ export function Tile({
               projects={props.launch?.projects ?? []}
               capacity={props.launch?.capacity}
               jev={props.launch?.jev}
+              loadInstalledPlugins={props.launch?.loadInstalledPlugins}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
@@ -3833,6 +3839,7 @@ export function Tile({
             projects={props.launch?.projects ?? []}
             capacity={props.launch?.capacity}
             jev={props.launch?.jev}
+              loadInstalledPlugins={props.launch?.loadInstalledPlugins}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf

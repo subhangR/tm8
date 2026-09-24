@@ -97,6 +97,51 @@ describe('resolveLaunchConfig harness surface', () => {
   });
 });
 
+describe('resolveLaunchConfig per-launch harness pick', () => {
+  const persona = context({ launch: { harnessSurface: 'minimal', plugins: ['marketing'] } });
+
+  it('the request outranks the node env and the persona, and is recorded', () => {
+    const launch = resolveLaunchConfig(
+      { ...REQUEST, harnessSurface: 'inherit' },
+      persona,
+      { TM8_HARNESS_SURFACE: 'minimal' },
+    );
+    expect(launch.harnessSurface).toBe('inherit');
+    expect(launch.harnessChoice).toEqual({ surface: 'inherit' });
+  });
+
+  it('a plugin pick REPLACES the persona list; an empty pick means none', () => {
+    expect(resolveLaunchConfig({ ...REQUEST, plugins: ['sales'] }, persona, {}).plugins).toEqual(['sales']);
+    const none = resolveLaunchConfig({ ...REQUEST, plugins: [] }, persona, {});
+    expect(none.plugins).toEqual([]);
+    expect(none.harnessChoice).toEqual({ plugins: [] });
+  });
+
+  it('no pick: persona as before, and nothing recorded', () => {
+    const launch = resolveLaunchConfig(REQUEST, persona, {});
+    expect(launch.plugins).toEqual(['marketing']);
+    expect('harnessChoice' in launch).toBe(false);
+  });
+
+  it('resume inherits the recorded pick, below the node env', () => {
+    const inherited = {
+      accessMode: null,
+      permissionMode: null,
+      harnessChoice: { surface: 'inherit', plugins: ['sales', 3] } as Record<string, unknown>,
+    };
+    const resumed = resolveLaunchConfig(REQUEST, persona, {}, inherited);
+    expect(resumed.harnessSurface).toBe('inherit');
+    expect(resumed.plugins).toEqual(['sales']);
+    expect(resumed.harnessChoice).toEqual({ surface: 'inherit', plugins: ['sales'] });
+    expect(resolveLaunchConfig(REQUEST, persona, { TM8_HARNESS_SURFACE: 'minimal' }, inherited).harnessSurface)
+      .toBe('minimal');
+    // Junk in the stored document falls through to the ordinary chain.
+    expect('harnessChoice' in resolveLaunchConfig(REQUEST, persona, {}, {
+      accessMode: null, permissionMode: null, harnessChoice: { surface: 'everything' },
+    })).toBe(false);
+  });
+});
+
 describe('buildAgentCommand harness surface', () => {
   it('minimal: strict empty MCP config and every installed plugin disabled', () => {
     const cmd = buildAgentCommand(LAUNCH, {}, {

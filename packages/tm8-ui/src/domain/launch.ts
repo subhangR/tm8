@@ -516,6 +516,17 @@ export interface LaunchConfig {
   spaceCredentialIds?: NonNullable<ExecutionSpawnInput['spaceCredentialIds']> | null;
   /** Compatibility for cached configs created before provider splitting. */
   credentialSource?: NonNullable<ExecutionSpawnInput['credentialSource']> | null;
+  /**
+   * The ··· menu's harness pick for a claude-code lane: lean (`minimal`) or
+   * everything the account has (`inherit`). Absent/null means the teammate's
+   * default, and nothing is sent.
+   */
+  harnessSurface?: NonNullable<ExecutionSpawnInput['harnessSurface']> | null;
+  /**
+   * The ··· menu's plugin pick for a lean launch. Absent/null means the
+   * teammate's list; an array — even empty — is an explicit pick and is sent.
+   */
+  plugins?: readonly string[] | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**
@@ -881,6 +892,10 @@ export function buildSpawnInput(args: {
   } else if (config.credentialSource) {
     input.credentialSource = config.credentialSource;
   }
+  if (config.harnessSurface) input.harnessSurface = config.harnessSurface;
+  /* An empty array IS sent: "no plugins" is a pick, distinct from "the
+     teammate's list" (null). Meaningless under `inherit`, so not sent there. */
+  if (config.plugins && config.harnessSurface !== 'inherit') input.plugins = [...config.plugins];
   if (args.taskIds?.length) input.taskIds = [...args.taskIds];
   if (args.title) input.title = args.title;
   if (config.interactionProfileId) input.interactionProfileId = config.interactionProfileId;

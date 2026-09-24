@@ -467,6 +467,15 @@
 .nsx-menu__val { color: var(--pn-ink-3); font-size: var(--pn-fs-label); white-space: nowrap; }
 
 .nsx-menu__subsec { padding: 2px 0 6px 8px; }
+/* A long plugin list scrolls inside the ··· menu instead of growing past the card. */
+.nsx-menu__subsec[data-testid="nsx-plugins-menu"] { max-height: 260px; overflow-y: auto; }
+
+/* Why a sub-list is empty — words in place of rows, never a blank. */
+.nsx-menu__note {
+  padding: 6px 10px;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label)/1.4 var(--pn-ui);
+}
 
 .nsx-refusal {
   margin: 6px 2px 0;

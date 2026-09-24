@@ -3105,6 +3105,8 @@ const executionSpawnInputObject = z.object({
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   selection: SpawnSelectionSchema.optional(),
   jevRunId: SpawnUuidSchema.optional(),
+  harnessSurface: z.enum(['minimal', 'inherit']).optional(),
+  plugins: z.array(z.string().trim().min(1).max(200)).max(64).optional(),
   cols: TerminalDimSchema,
   rows: TerminalDimSchema,
 }).strict();

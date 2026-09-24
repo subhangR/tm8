@@ -51,7 +51,7 @@ export type LaunchPort = LaunchSources & {
 };
 
 export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): LaunchPort {
-  const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev } = data.launch;
+  const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev, loadSkillPreview } = data.launch;
   const { onSpawn, onFullOptions } = options;
 
   /**
@@ -161,6 +161,15 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [data],
   );
 
+  /* The ··· menu's plugin list rides on the skill preview the sheet already
+     reads, so there is one read of "what this launch could load", not two. */
+  const loadInstalledPlugins = useMemo(
+    () => loadSkillPreview
+      ? async (teamMemberId: string) => (await loadSkillPreview({ teamMemberId })).installedPlugins ?? null
+      : undefined,
+    [loadSkillPreview],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
@@ -172,9 +181,10 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       onUpdateEntity,
       ...(capacity ? { capacity } : {}),
       ...(jev ? { jev } : {}),
+      ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
     }),
-    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, onSpawn, onFullOptions],
+    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions],
   );
 }

@@ -96,6 +96,8 @@ export interface NewSessionScreenProps {
     teammates: readonly LaunchTeammate[];
     projects: readonly LaunchProject[];
     capacity?: LaunchCapacity;
+    /** The skill preview; its `installedPlugins` feeds the ··· Plugins row. */
+    loadSkillPreview?: (input: { teamMemberId: string }) => Promise<{ installedPlugins?: string[] }>;
   };
   /** Where the session opens once it is live. */
   onSessionReady: (sessionId: EntityId) => void;
@@ -132,9 +134,17 @@ export function NewSessionScreen({
    * is now a visible one-click control on the card — the viewer sees and owns
    * the escalation instead of inheriting it.
    */
+  const { loadSkillPreview } = launch;
+  const loadInstalledPlugins = useMemo(
+    () => loadSkillPreview
+      ? async (teamMemberId: string) => (await loadSkillPreview({ teamMemberId })).installedPlugins ?? null
+      : undefined,
+    [loadSkillPreview],
+  );
   const { config, projectOptions, bind } = useLaunchComposerState({
     teammates: launch.teammates,
     projects: launch.projects,
+    ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
   });
 
   const refusal = useMemo(() => {

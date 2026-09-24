@@ -687,6 +687,17 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(input).not.toHaveProperty('memoryIds');
   });
 
+  it('carries the ··· harness pick only when made; an empty plugin pick is sent, none under Full', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    const build = (over: Partial<typeof config>) =>
+      buildSpawnInput({ clientMutationId: 'cmid-h', spaceId: 'space-1', config: { ...config, ...over } });
+    expect(build({})).not.toHaveProperty('harnessSurface');
+    expect(build({})).not.toHaveProperty('plugins');
+    expect(build({ harnessSurface: 'minimal', plugins: [] })).toMatchObject({ harnessSurface: 'minimal', plugins: [] });
+    expect(build({ plugins: ['sales@synced'] })).toMatchObject({ plugins: ['sales@synced'] });
+    expect(build({ harnessSurface: 'inherit', plugins: ['sales@synced'] })).not.toHaveProperty('plugins');
+  });
+
   it('carries picked memoryIds and truncates at the CONTRACT ceiling, not a UI one', () => {
     /*
      * `memoryIds` is `z.array(SpawnUuidSchema).max(32)` (schemas.ts:1662). The

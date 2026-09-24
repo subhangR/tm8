@@ -1,4 +1,8 @@
-import { computeEffectiveSkills } from '@tm8/execution';
+import { computeEffectiveSkills, readInstalledClaudePlugins } from '@tm8/execution';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { credentialConfigDir } from '../credentials/agent-credential-home.js';
 import { serializeSkillIndexEntry } from '@tm8/prompt';
 import type { SkillPreviewResult } from '@tm8/contract';
 import { loadSkillEquipment } from './equipment.js';
@@ -11,7 +15,26 @@ import { assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, type EntityRow } from '
 import { W2EntitiesCommandsTrackingService } from '../facade/services/w2/entities-commands-tracking.js';
 import { scanSpaceSkills } from './service.js';
 export const SkillScanInputSchema = z.object({ root: z.string().uuid().optional(), all: z.boolean().optional(), clientMutationId: z.string().optional(), actorId: z.string().uuid().optional() }).strict().refine(value => !(value.root && value.all), { message: 'root and all are mutually exclusive' });
-export function registerSkillHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+/**
+ * The Claude plugins a claude-code launch by `identityId` could load: the
+ * caller's own credential home (used when they connected Anthropic) plus the
+ * node's config home (`CLAUDE_CONFIG_DIR`, else `~/.claude`). The same reader
+ * spawn uses for the lean lane's deny-list, so the menu and the launch agree.
+ */
+export function installedPluginsFor(dataDir: string, identityId: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const ids = new Set<string>();
+  const member = credentialConfigDir(dataDir, identityId, 'anthropic');
+  if (existsSync(member)) for (const id of readInstalledClaudePlugins(member)) ids.add(id);
+  const node = env.CLAUDE_CONFIG_DIR?.trim() || join(env.HOME ?? homedir(), '.claude');
+  for (const id of readInstalledClaudePlugins(node)) ids.add(id);
+  return [...ids].sort();
+}
+
+export function registerSkillHandlers(
+  registry: HandlerRegistry,
+  deps: FacadeDeps,
+  options: { installedPluginsFor?: (identityId: string) => string[] } = {},
+): void {
   registry.register('skills.scan', async ctx => {
     const input = SkillScanInputSchema.parse(ctx.body);
     const owner = await deps.owner();
@@ -77,7 +100,12 @@ export function registerSkillHandlers(registry: HandlerRegistry, deps: FacadeDep
           ...(skipped ? { reason: skipped.reason } : {}),
         };
       });
-      return { ...effective, rows } satisfies SkillPreviewResult;
+      const identityId = claimsFor(owner, ctx).identityId;
+      return {
+        ...effective,
+        rows,
+        ...(options.installedPluginsFor && identityId ? { installedPlugins: options.installedPluginsFor(identityId) } : {}),
+      } satisfies SkillPreviewResult;
     });
   });
   const entities = new W2EntitiesCommandsTrackingService(deps);

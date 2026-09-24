@@ -1161,6 +1161,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     projects={props.launch.projects}
                     capacity={props.launch.capacity}
                     jev={props.launch.jev}
+                    loadInstalledPlugins={props.launch.loadInstalledPlugins}
                     onSpawn={props.launch.onSpawn}
                     loadDescription={
                       props.launch.descriptionOf

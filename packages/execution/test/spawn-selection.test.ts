@@ -72,6 +72,15 @@ describe('manifest', () => {
   });
 });
 
+describe('manifest harnessChoice', () => {
+  const base: SpawnRequest = { spaceId: 'space', teamMemberId: 'persona' };
+  it('is written only when the launch picked a harness', () => {
+    expect('harnessChoice' in compose(base).launch).toBe(false);
+    expect((compose({ ...base, harnessSurface: 'inherit', plugins: ['sales'] }).launch as Record<string, unknown>).harnessChoice)
+      .toEqual({ surface: 'inherit', plugins: ['sales'] });
+  });
+});
+
 describe('SpawnService', () => {
   let dataDir: string;
   let projectDir: string;

@@ -43,3 +43,29 @@ describe('DbGraphPort.loadSessionLaunchPosture credential sources', () => {
     expect(sql).not.toContain('{launch,credentialSources,');
   });
 });
+
+describe('DbGraphPort.loadSessionLaunchPosture harness choice', () => {
+  const load = async (row: Record<string, unknown>) => {
+    const db = {
+      query: vi.fn(async () => [{
+        access_mode: null, permission_mode: null, credential_source: null, credential_sources: null,
+        space_credential_ids: null, ...row,
+      }]),
+      rpc: vi.fn(), tx: vi.fn(), end: vi.fn(),
+    } as unknown as Db;
+    return new DbGraphPort(db).loadSessionLaunchPosture(
+      { identityId: 'identity-1' },
+      '11111111-1111-4111-8111-111111111111',
+    );
+  };
+
+  it('carries a recorded launch.harnessChoice so resume keeps the pick', async () => {
+    const posture = await load({ harness_choice: { surface: 'inherit', plugins: ['sales'] } });
+    expect(posture!.harnessChoice).toEqual({ surface: 'inherit', plugins: ['sales'] });
+  });
+
+  it('omits it when the launch made no pick (or the stored value is not an object)', async () => {
+    expect(await load({ harness_choice: null })).not.toHaveProperty('harnessChoice');
+    expect(await load({ harness_choice: ['inherit'] })).not.toHaveProperty('harnessChoice');
+  });
+});

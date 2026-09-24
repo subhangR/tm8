@@ -76,4 +76,13 @@ export interface SkillPreviewRow {
   allowImplicitInvocation: boolean;
   reason?: string;
 }
-export interface SkillPreviewResult extends EffectiveSkills { rows: SkillPreviewRow[] }
+export interface SkillPreviewResult extends EffectiveSkills {
+  rows: SkillPreviewRow[];
+  /**
+   * Claude plugin ids (`<name>@<marketplace>`) a claude-code launch by this
+   * caller could load — the caller's credential home plus the node's config
+   * home. What the launch UI's Plugins menu offers. Absent when the node has
+   * no credential root to read.
+   */
+  installedPlugins?: string[];
+}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EntityId, LaunchModelEffort, ProjectId } from '@tm8/contract';
 
 import {
@@ -54,8 +54,13 @@ export interface LaunchComposerState {
     | 'effortStops' | 'effort' | 'onEffortChange'
     | 'accessMode' | 'onAccessModeChange'
     | 'credentialProviderLabel' | 'credential' | 'onCredentialChange'
+    | 'harnessApplies' | 'harnessSurface' | 'onHarnessChange'
+    | 'installedPlugins' | 'installedPluginsNote' | 'plugins' | 'onPluginsChange'
     | 'mode' | 'onModeChange'>;
 }
+
+/** Why the Plugins row has nothing to offer, when it does not. */
+const PLUGINS_UNAVAILABLE = 'This node cannot list its installed plugins here.';
 
 export function useLaunchComposerState(args: {
   teammates: readonly LaunchTeammate[];
@@ -63,8 +68,10 @@ export function useLaunchComposerState(args: {
   /** The opening verb's session mode. Live: a re-render with a new verb wins
       over the seed, but never over a mode the viewer explicitly picked. */
   launchMode?: LaunchMode;
+  /** The Claude plugins a launch could load (the ··· Plugins row). */
+  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
 }): LaunchComposerState {
-  const { teammates, projects, launchMode } = args;
+  const { teammates, projects, launchMode, loadInstalledPlugins } = args;
 
   const [teammateId, setTeammateId] = useState<string | null>(null);
   const [modelOverride, setModelOverride] = useState<string | null>(null);
@@ -74,6 +81,11 @@ export function useLaunchComposerState(args: {
   const [modeOverride, setModeOverride] = useState<LaunchMode | null>(null);
   const [workdirPick, setWorkdirPick] = useState<string | null>(null);
   const [workdirMode, setWorkdirMode] = useState<WorkdirMode>('worktree');
+  /* The ··· harness pick. `null` is the teammate's default and sends nothing —
+     the credential row's Auto, for the same reason: an unpicked control must
+     not overwrite what the persona says. */
+  const [harnessSurface, setHarnessSurface] = useState<'minimal' | 'inherit' | null>(null);
+  const [plugins, setPlugins] = useState<readonly string[] | null>(null);
 
   const mode: LaunchMode = modeOverride ?? launchMode ?? 'worker';
 
@@ -190,12 +202,39 @@ export function useLaunchComposerState(args: {
     : null;
   const credentialProviderLabel = credentialKey ? CREDENTIAL_PROVIDER_LABEL[credentialKey] : null;
 
+  /* THE HARNESS ROWS APPLY TO CLAUDE CODE ONLY — the lean surface is a
+     claude-code launch shape, and every other tool ignores it at the node. */
+  const harnessApplies = toolId === 'claude-code';
+  const [installed, setInstalled] = useState<{ forId: string; ids: readonly string[] | null } | null>(null);
+  const teammateKey = teammate?.id ?? null;
+  useEffect(() => {
+    if (!harnessApplies || !teammateKey || !loadInstalledPlugins) return;
+    let live = true;
+    loadInstalledPlugins(teammateKey)
+      .then((ids) => { if (live) setInstalled({ forId: teammateKey, ids }); })
+      .catch(() => { if (live) setInstalled({ forId: teammateKey, ids: null }); });
+    return () => { live = false; };
+  }, [harnessApplies, teammateKey, loadInstalledPlugins]);
+  const installedPlugins = installed && installed.forId === teammateKey ? installed.ids : null;
+  const installedPluginsNote = !loadInstalledPlugins
+    ? PLUGINS_UNAVAILABLE
+    : installed === null || installed.forId !== teammateKey
+      ? 'Reading the installed plugins…'
+      : installed.ids === null
+        ? PLUGINS_UNAVAILABLE
+        : installed.ids.length === 0
+          ? 'No Claude plugins are installed for this launch.'
+          : null;
+
   const pickTeammate = useCallback((id: string | null) => {
     setTeammateId(id);
     /* Re-seed WHOLE: the new persona's recorded tool and model win, so the
        override is dropped and the effort returns to the High seed. */
     setModelOverride(null);
     setEffort('high');
+    /* The plugin pick is about the OLD teammate's defaults; the harness pick
+       is a launch-shape choice and survives the switch. */
+    setPlugins(null);
   }, []);
 
   const config: LaunchConfig = useMemo(() => ({
@@ -211,12 +250,14 @@ export function useLaunchComposerState(args: {
           : { openai: credential }) satisfies LaunchConfig['credentialSources'],
       }
       : {}),
+    ...(harnessApplies && harnessSurface ? { harnessSurface } : {}),
+    ...(harnessApplies && plugins !== null && harnessSurface !== 'inherit' ? { plugins } : {}),
     mode,
     target: workdirId === SCRATCH_OPTION.id
       ? { kind: 'scratch' as const }
       : { kind: 'project' as const, projectId: workdirId as ProjectId },
     workdirMode,
-  }), [teammate, toolId, model, effortPinned, accessMode, credential, credentialKey, mode, workdirId, workdirMode]);
+  }), [teammate, toolId, model, effortPinned, accessMode, credential, credentialKey, harnessApplies, harnessSurface, plugins, mode, workdirId, workdirMode]);
 
   return {
     config,
@@ -242,6 +283,13 @@ export function useLaunchComposerState(args: {
       credentialProviderLabel,
       credential,
       onCredentialChange: setCredential,
+      harnessApplies,
+      harnessSurface,
+      onHarnessChange: setHarnessSurface,
+      installedPlugins,
+      installedPluginsNote,
+      plugins,
+      onPluginsChange: setPlugins,
       mode,
       onModeChange: setModeOverride,
     },

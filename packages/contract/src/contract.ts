@@ -4592,6 +4592,9 @@ export interface SpawnSelection {
   skillIds: EntityId[];
 }
 
+/** A claude-code lane's harness surface — see `ExecutionSpawnInput.harnessSurface`. */
+export type LaunchHarnessSurface = 'minimal' | 'inherit';
+
 export interface ExecutionSpawnInput extends CommandContext {
   clientMutationId: string;
   spaceId: SpaceId;
@@ -4668,6 +4671,23 @@ export interface ExecutionSpawnInput extends CommandContext {
    * interprets it; spawn never calls Jev.
    */
   jevRunId?: EntityId;
+  /**
+   * This launch's harness surface for a claude-code lane, chosen in the launch
+   * UI's ··· menu: `minimal` (lean — no claude.ai connectors, only chosen
+   * plugins) or `inherit` (everything the account has installed). Outranks the
+   * teammate's `capabilities.launch.harnessSurface` and the node's
+   * `TM8_HARNESS_SURFACE`; absent means the teammate/node default. Recorded as
+   * `launch.harnessChoice`, so resume and child sessions keep it. Ignored for
+   * every other tool.
+   */
+  harnessSurface?: LaunchHarnessSurface;
+  /**
+   * The plugins a lean launch keeps, `<name>@<marketplace>` or a bare name —
+   * REPLACES the teammate's `capabilities.launch.plugins` for this launch
+   * (plugins of equipped plugin skills stay on regardless). Absent means the
+   * teammate's list.
+   */
+  plugins?: string[];
   /**
    * The terminal geometry the client has measured for the pane this session
    * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
