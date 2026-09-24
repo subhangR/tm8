@@ -370,36 +370,46 @@ grant execute on function public.redeliver_form_response(uuid, text, uuid, uuid,
 --    no submitted row. A draft does not stop a form waiting.
 -- -----------------------------------------------------------------------------
 create or replace function public.forms_pending_for_sessions(p_space_id uuid, p_session_ids uuid[])
-returns jsonb language sql stable set search_path = public, internal, pg_temp as $$
-  with viewer as (
-    select v.id, ve.kind
-      from (select coalesce(internal.actor_id(), internal.current_member_id(p_space_id)) as id) v
-      left join public.entities ve on ve.id = v.id
-  ),
-  sessions as (
-    select s.id, s.ord
-      from unnest(p_session_ids) with ordinality as s(id, ord)
-  ),
-  waiting as (
-    select s.id as session_id, f.entity_id as form_id, f.title, fe.version, f.structure_version,
+returns jsonb language plpgsql stable set search_path = public, internal, pg_temp as $$
+declare
+  -- Resolved ONCE, as plpgsql constants: the claim readers are not
+  -- immutable, so inside the statement they would defeat every index on the
+  -- entities and form_responses lookups keyed by the viewer.
+  viewer uuid := coalesce(internal.actor_id(), internal.current_member_id(p_space_id));
+  viewer_kind text;
+  out jsonb;
+begin
+  if viewer is null then
+    return jsonb_build_object('sessions', '[]'::jsonb);
+  end if;
+  select e.kind into viewer_kind from public.entities e where e.id = viewer;
+
+  with waiting as (
+    -- Driven by the session ids, one (type, dst_id) index probe each: the
+    -- authored_from set as a whole also holds every message authored from a
+    -- session, so it must never be scanned by source. `offset 0` fences the
+    -- lateral so the planner cannot flatten it into such a scan when its
+    -- statistics are small (a fresh node, a test database).
+    select sid.id as session_id, f.entity_id as form_id, f.title, fe.version, f.structure_version,
            f.opened_at, fe.created_at
-      from sessions s
-      join public.edges ed on ed.dst_id = s.id and ed.type = 'authored_from'
+      from unnest(p_session_ids) as sid(id)
+      cross join lateral (
+        select e.src_id from public.edges e
+         where e.dst_id = sid.id and e.type = 'authored_from'
+        offset 0) ed
       join public.entities fe on fe.id = ed.src_id and fe.kind = 'form' and fe.deleted_at is null
                              and fe.space_id = p_space_id
       join public.forms f on f.entity_id = fe.id and f.status = 'open'
-      cross join viewer
-     where viewer.id is not null
-       and (viewer.kind = 'member'
-            or (viewer.kind = 'team_member'
+     where (viewer_kind = 'member'
+            or (viewer_kind = 'team_member'
                 and internal.form_settings_effective(f.settings) ->> 'respondents' = 'anyone'))
        and not exists (
          select 1 from public.form_responses r
           where r.form_id = f.entity_id and r.status = 'submitted'
             and case internal.form_settings_effective(f.settings) ->> 'responses'
                   when 'single' then r.is_current
-                  when 'unlimited' then r.respondent_id = viewer.id
-                  else r.is_current and r.respondent_id = viewer.id
+                  when 'unlimited' then r.respondent_id = viewer
+                  else r.is_current and r.respondent_id = viewer
                 end)
   ),
   ranked as (
@@ -408,36 +418,42 @@ returns jsonb language sql stable set search_path = public, internal, pg_temp as
            count(*) over (partition by w.session_id) as total
       from waiting w
   ),
-  per_session as (
-    select s.id, s.ord,
-           coalesce(t.total, 0) as total,
-           (select count(*) from public.form_deliveries fd
-             where fd.work_session_id = s.id and fd.status = 'pending') as queued,
-           coalesce(t.forms, '[]'::jsonb) as forms
-      from sessions s
-      left join lateral (
-        select max(r.total) as total,
-               jsonb_agg(jsonb_build_object(
-                 'formId', r.form_id,
-                 'title', r.title,
-                 'version', r.version,
-                 'structureVersion', r.structure_version,
-                 'questionCount', (select count(*) from public.form_questions q where q.form_id = r.form_id),
-                 'openedAt', to_char(r.opened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-                 'draft', (select jsonb_build_object('id', dr.id, 'version', dr.version)
-                             from public.form_responses dr, viewer
-                            where dr.form_id = r.form_id and dr.status = 'draft'
-                              and dr.respondent_id = viewer.id
-                            limit 1))
-                 order by r.rn) as forms
-          from ranked r
-         where r.session_id = s.id and r.rn <= 20
-      ) t on true
+  listed as (
+    select r.session_id, max(r.total) as total,
+           jsonb_agg(jsonb_build_object(
+             'formId', r.form_id,
+             'title', r.title,
+             'version', r.version,
+             'structureVersion', r.structure_version,
+             'questionCount', (select count(*) from public.form_questions q where q.form_id = r.form_id),
+             'openedAt', to_char(r.opened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+             'draft', (select jsonb_build_object('id', dr.id, 'version', dr.version)
+                         from public.form_responses dr
+                        where dr.form_id = r.form_id and dr.status = 'draft' and dr.respondent_id = viewer
+                        limit 1))
+             order by r.rn) as forms
+      from ranked r
+     where r.rn <= 20
+     group by r.session_id
+  ),
+  queued as (
+    select fd.work_session_id as session_id, count(*) as queued
+      from public.form_deliveries fd
+     where fd.work_session_id = any(p_session_ids) and fd.status = 'pending'
+     group by fd.work_session_id
   )
   select jsonb_build_object('sessions', coalesce(jsonb_agg(jsonb_build_object(
-           'workSessionId', p.id, 'total', p.total, 'queued', p.queued, 'forms', p.forms)
-           order by p.ord) filter (where p.total > 0 or p.queued > 0), '[]'::jsonb))
-    from per_session p
+           'workSessionId', s.id,
+           'total', coalesce(l.total, 0),
+           'queued', coalesce(qd.queued, 0),
+           'forms', coalesce(l.forms, '[]'::jsonb)) order by s.ord), '[]'::jsonb))
+    into out
+    from unnest(p_session_ids) with ordinality as s(id, ord)
+    left join listed l on l.session_id = s.id
+    left join queued qd on qd.session_id = s.id
+   where l.session_id is not null or qd.session_id is not null;
+  return out;
+end
 $$;
 revoke all on function public.forms_pending_for_sessions(uuid, uuid[]) from public;
 grant execute on function public.forms_pending_for_sessions(uuid, uuid[]) to tm8_app;

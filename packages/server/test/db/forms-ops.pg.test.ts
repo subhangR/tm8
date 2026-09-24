@@ -221,11 +221,11 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('registration', () => {
-  it('registers all thirteen forms.* operations, and the catalog has exactly those', () => {
+  it('registers all fifteen forms.* operations (thirteen W1, two W3), and the catalog has exactly those', () => {
     const registry = new HandlerRegistry();
     registerW2FormHandlers(registry, {} as FacadeDeps);
     const names = OPERATIONS.filter((o) => o.name.startsWith('forms.')).map((o) => o.name);
-    expect(names).toHaveLength(13);
+    expect(names).toHaveLength(15);
     for (const name of names) expect(registry.get(name), name).toBeTypeOf('function');
   });
 });
