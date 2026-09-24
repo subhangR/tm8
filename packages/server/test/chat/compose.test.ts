@@ -191,6 +191,8 @@ describe('chat launch composition', () => {
     // Composition rules, the worked example, passes and the self-check.
     expect(craft).toContain('every task has exactly one assigned_to owner');
     expect(craft).toContain('ref what exists instead of duplicating it');
+    expect(craft).toContain('list the Space’s existing ones of that kind (tm8_read collections.query by kinds)');
+    expect(craft).toContain('says it is pending');
     expect(craft).toContain('Example, “add CSV export”');
     expect(craft).toContain('the first patch sketches the skeleton');
     expect(craft).toContain('One guarded patch per turn');
