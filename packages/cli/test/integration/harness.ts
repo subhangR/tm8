@@ -460,11 +460,24 @@ function scrubAmbientAgentIdentity(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 for (const name of AMBIENT_AGENT_IDENTITY) delete process.env[name];
 
+/**
+ * How long one `cli()` child may run before the harness kills it. Well under
+ * the suites' 120s test timeout ON PURPOSE: a child that never exits used to
+ * surface only as "Test timed out in 120000ms", naming no command, no step and
+ * no output. Killed here, the caller's own `expect(r.code, r.stderr)` fails
+ * with the argv and the elapsed time in the message instead.
+ */
+export const CLI_KILL_AFTER_MS = 60_000;
+
+/** The exit code a killed `cli()` child reports (timeout(1)'s convention). */
+export const CLI_KILLED_CODE = 124;
+
 /** Run the built CLI as a child process — the way an agent actually invokes it. */
 export async function cli(
   argv: readonly string[],
-  server: RealServer,
+  server: Pick<RealServer, 'env'>,
   extraEnv: Record<string, string> = {},
+  opts: { killAfterMs?: number } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const entry = join(REPO_ROOT, 'packages/cli/dist/index.js');
   // THE 91% LEAK, closed at the source (F8): when this suite runs inside a
@@ -489,9 +502,23 @@ export async function cli(
     });
     let stdout = '';
     let stderr = '';
+    const killAfterMs = opts.killAfterMs ?? CLI_KILL_AFTER_MS;
+    const started = Date.now();
+    let killed = false;
+    const killer = setTimeout(() => { killed = true; child.kill('SIGKILL'); }, killAfterMs);
     child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
     child.stderr.on('data', (c: Buffer) => { stderr += c.toString(); });
-    child.once('close', (code) => resolve({ stdout, stderr, code: code ?? -1 }));
+    child.once('close', (code) => {
+      clearTimeout(killer);
+      if (killed) {
+        stderr =
+          `[harness] KILLED: \`tm8 ${argv.join(' ')}\` did not exit within ${killAfterMs}ms ` +
+          `(ran ${Date.now() - started}ms); stderr so far follows\n${stderr}`;
+        resolve({ stdout, stderr, code: CLI_KILLED_CODE });
+        return;
+      }
+      resolve({ stdout, stderr, code: code ?? -1 });
+    });
   });
 }
 
