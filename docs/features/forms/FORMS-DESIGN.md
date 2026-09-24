@@ -1,8 +1,8 @@
-# Forms — design draft (v0, awaiting decisions)
+# Forms — design (v1, decisions settled)
 
-**Status:** DRAFT for review. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`. Section 11 has the
-open questions. Every question has a recommended default, and the rest of this doc
-assumes those defaults. Nothing here is built yet.
+**Status:** APPROVED for implementation (2026-09-24). Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
+Section 11 records the owner's decisions. Where this doc and §11 disagree, §11 wins.
+Nothing here is built yet.
 
 ## 1. Problem
 
@@ -47,10 +47,10 @@ create table public.forms (
   title         text not null check (char_length(title) between 1 and 300),
   description   text check (char_length(description) <= 8000),        -- markdown
   status        text not null default 'draft'
-                check (status in ('draft','open','closed','cancelled','expired')),
+                check (status in ('draft','open','closed','cancelled')),
   settings      jsonb not null default '{}'::jsonb,                    -- §3.3, validated
   structure_version int not null default 1,                            -- bumps on question edits
-  opened_at timestamptz, closed_at timestamptz, expires_at timestamptz,
+  opened_at timestamptz, closed_at timestamptz,
   updated_at timestamptz not null default now()
 );
 
@@ -87,9 +87,10 @@ create table public.form_deliveries (         -- outbox: response → requesting
   response_id     uuid not null references public.form_responses(id) on delete cascade,
   work_session_id uuid not null references public.entities(id) on delete cascade,
   status text not null default 'pending'
-         check (status in ('pending','delivered','stored_only','cancelled')),
+         check (status in ('pending','delivered','spawned','cancelled')),
   attempts int not null default 0, last_error text,
   delivery_id uuid,                             -- session_message_deliveries row
+  spawned_session_id uuid references public.entities(id),  -- new_session / spawn_new
   primary key (response_id, work_session_id)
 );
 ```
@@ -120,15 +121,19 @@ allowed to message that session.
 
 ```ts
 type FormSettings = {
-  responses: 'single' | 'per_member' | 'unlimited'; // default 'single'
+  responses: 'per_member' | 'single' | 'unlimited'; // default 'per_member' (one per member, many members)
   respondents: 'humans' | 'anyone';                 // default 'humans' (agents refused)
-  closeOnSubmit: boolean;          // default true when responses='single'
+  closeOnSubmit: boolean;          // default false (true only makes sense with 'single')
   allowAmend: boolean;             // default false: submitted answers are immutable
-  expiresAt?: string;              // ISO. On expiry, status → 'expired' and the requester is told
-  onSessionNotLive: 'queue' | 'resume' | 'store'; // §7.3, default 'queue'
+  delivery: {                      // §7.3, where each submitted response goes
+    target: 'requesting_session' | 'new_session';   // default 'requesting_session'
+    onSessionNotLive: 'resume' | 'queue' | 'spawn_new'; // default 'resume'
+  };
   attentionPoints: number;         // 1–100, default 60. Raised on open, resolved on submit
 };
 ```
+There is no expiry in v1 (decision 9). Add an `expired` status and an `expires_at`
+column when expiry is designed.
 
 ## 4. Question types (modular)
 
@@ -144,14 +149,26 @@ else.
 | `multi_choice` | `options`, `allowOther`, `minSelected?`, `maxSelected?` | `{values[], other?}` | ✓ |
 | `short_text` | `placeholder?`, `maxLength≤500`, `pattern?` | `{text}` | ✓ |
 | `long_text` (descriptive) | `placeholder?`, `minLength?`, `maxLength≤20000` | `{text}` (markdown) | ✓ |
-| `number` | `min?`, `max?`, `step?`, `unit?` | `{number}` | ✓ |
-| `yes_no` | `yesLabel?`, `noLabel?` | `{bool}` | ✓ |
 | `scale` | `min(0\|1)`, `max≤10`, `minLabel?`, `maxLabel?` | `{number}` | ✓ |
-| `date` | `min?`, `max?`, `withTime` | `{date}` | ✓ |
-| `ranking` | `options` | `{order[]}` | v1.1 |
-| `entity_pick` | `kinds[]`, `multiple` | `{ids[]}` (stored as data; see Q9) | v1.1 |
-| `file` | `maxFiles`, `mime[]` | `{fileIds[]}` + `attached_to` edges | v1.1 |
-| `statement` | markdown only, no answer (explanatory text between questions) | — | ✓ |
+| `yes_no` | `yesLabel?`, `noLabel?` | `{bool}` | next |
+| `number` | `min?`, `max?`, `step?`, `unit?` | `{number}` | next |
+| `date` | `min?`, `max?`, `withTime` | `{date}` | next |
+| `ranking` | `options` | `{order[]}` | later |
+| `entity_pick` | `kinds[]`, `multiple` | `{ids[]}` | later |
+| `file` | `maxFiles`, `mime[]` | `{fileIds[]}` + `attached_to` edges | later |
+
+**v1 ships exactly five types** (decision 4). The modularity is the requirement, not
+the count. A question type is one registry entry that owns its
+- config schema,
+- answer schema,
+- validator (TS and a SQL arm),
+- UI input renderer,
+- UI answer renderer,
+- plain-text PTY renderer.
+
+Nothing outside the registry switches on the question type. The acceptance test for
+the foundation: adding `yes_no` touches only the registry entry, one SQL validator
+arm, and one input component.
 
 Options come from agents, so they borrow two things from Claude's `AskUserQuestion`:
 - `recommended: true`, which the UI renders as a badge and pre-selects in "accept
@@ -159,14 +176,13 @@ Options come from agents, so they borrow two things from Claude's `AskUserQuesti
 - a per-option `help`, which the UI shows when the option is focused.
 
 Sections: optional `sections[{key,title,help?}]` on the form. Questions reference them
-by key, and the UI renders one heading per section (or one page per section, Q5).
+by key, and the UI renders one heading per section (decision 5).
 
 ## 5. Lifecycle
 
 ```
 draft ──open──▶ open ──submit (closeOnSubmit)──▶ closed
   │               │ ──close──▶ closed ──reopen──▶ open
-  │               │ ──expiresAt passes──▶ expired
   └──cancel───────┴──cancel──▶ cancelled
 ```
 
@@ -178,8 +194,8 @@ draft ──open──▶ open ──submit (closeOnSubmit)──▶ closed
   response records the version it answered.
 - **Draft responses** autosave, so a human can leave and come back. A structure edit
   keeps draft answers whose keys still validate and drops the others.
-- **Cancel/expire:** the requester gets a `form_cancelled` / `form_expired` message,
-  so an agent that is waiting never hangs forever.
+- **Cancel:** the requester gets a `form_cancelled` message, so an agent that is
+  waiting never hangs forever.
 - **Opening** raises an attention request on the form (`reason = "Form: <title>"`).
   Submitting resolves it.
 
@@ -257,24 +273,36 @@ Form: Pick the migration strategy
 Each answer shows both the key and the value, so the agent can use it directly. For
 the full shape, the agent fetches the JSON.
 
-### 7.3 Requesting session not live
+### 7.3 Where a response goes
 
-Today a message to an exited session is stored, but the delivery fails permanently and
-is never replayed. `form_deliveries` closes that gap. The behaviour is set per form
-(`onSessionNotLive`):
+Every submitted response is delivered on its own; with `per_member`, N members produce
+N deliveries. Two settings control delivery (decisions 1 and 3).
 
-- **`queue` (default):** the outbox row stays `pending`. A drain hook fires when the
-  session becomes live again: `SpawnService.resume` success, plus a status transition
-  to `running`/`idle`. The same pattern as the nudge outbox in `207`. The drain
-  delivers the pending form responses in order. The UI shows "Answer saved; will be
-  delivered when the session resumes", with a **Resume now** button.
-- **`resume`:** the session is resumed automatically (`--resume`), and the form
-  response becomes its first turn.
-- **`store`:** the outbox row goes to `stored_only`. The message on the session is the
-  record, and nothing is pushed.
+**`delivery.target`**
+- `requesting_session` (default): the session on the form's `authored_from` edge.
+- `new_session`: spawn a fresh session for the same teammate, `working_on` the same
+  task(s) as the requesting session. The response is its first turn (a
+  `form_response` envelope in the spawn's initial prompt).
 
-If the session was deleted, the delivery goes to `cancelled`, the response is still
-stored, and the respondent is told.
+**`delivery.onSessionNotLive`**, when the target session exists but isn't running.
+Today such a message is stored, but its delivery fails permanently and is never
+replayed; `form_deliveries` closes that gap.
+- `resume` (default): resume the session automatically (`--resume`) and deliver the
+  response as its first turn after resume.
+- `queue`: the outbox row stays `pending`. It is drained when the session is live
+  again, on `SpawnService.resume` success or a status transition to `running`/`idle`
+  (same pattern as the nudge outbox in `207`). The UI shows "Answer saved; will be
+  delivered when the session resumes" with a **Resume now** button.
+- `spawn_new`: spawn a fresh session, as with `target: new_session`.
+
+Whatever the mode, the message on the session and form timelines is the durable
+record, and the delivery status is shown on the response.
+
+If the session was deleted, a `resume`/`queue` delivery goes to `cancelled`, the
+response is still stored, and the respondent is shown **Send to a new session**.
+
+A spawned delivery ends as `form_deliveries.status = 'spawned'`, with
+`spawned_session_id` set.
 
 ### 7.4 Agents that want to block
 
@@ -292,7 +320,7 @@ tm8 form create --title "…" \
     --question 'risks:long_text:Anything to watch for?' --optional risks
 tm8 form question add|update|remove|move <form-id> …
 tm8 form open|close|cancel <form-id> [--expect-version N]
-tm8 form fill <form-id>                          # interactive TTY fill for humans
+tm8 form fill <form-id>                          # optional interactive TTY fill (not a v1 requirement)
 tm8 form submit <form-id> --answers answers.json|-
 tm8 form wait <form-id> [--timeout S]
 tm8 form response list <form-id> | get <response-id> | mine
@@ -305,8 +333,12 @@ contract Zod schema before any call is made.
 
 - MCP: add `forms.create`, `forms.responses.get` and `forms.transition` to
   `ACT_GUIDES`/`READ_GUIDES`, and a typed direct tool `form_create`.
-- Prompt: one line in the worker `command_surface` telling agents to ask via
-  `tm8 form create` instead of prose questions (Q12).
+- Prompt: a few lines in the worker `command_surface` telling agents to ask humans via
+  `tm8 form` instead of prose questions, and to run `tm8 help form` for the rest
+  (decision 12).
+- CLI help is the teaching surface: the `form` noun help has to be rich enough to
+  author a form from alone. That means the full spec shape, one example per question
+  type, the delivery modes, and `tm8 form wait`.
 
 ## 10. UI
 
@@ -315,26 +347,43 @@ contract Zod schema before any call is made.
     recommended";
   - **Build** tab: author view, add/reorder/edit questions with live preview;
   - **Responses** tab: table view plus a per-response detail with the delivery status
-    chip (`delivered` / `queued` / `stored`).
-- **Entry points:**
-  - the attention inbox row (opens **Fill**);
+    chip (`delivered` / `queued` / `spawned` / `cancelled`).
+- **Entry points (decision 11), all required in v1:**
+  - the form panel;
   - a chip on the session tile ("1 form waiting");
-  - an inline form card in the session and task message feeds (the answer message
-    links back);
-  - a home rail "Forms" list, with open forms for me and my submissions.
+  - a pending-forms banner at the top of the session panel, which opens Fill inline.
+
+  The attention request still gets raised because it costs nothing, but the inbox
+  surface is not a v1 requirement. Feed cards and a home rail list are later.
 - **Live updates:** the entity-upsert and message events that already exist. No new
   socket traffic.
 
-## 11. Open questions (defaults assumed in this doc)
+## 11. Decisions (owner, 2026-09-24)
 
-See the task thread for the numbered list. Answers update this section and remove the
-DRAFT status.
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Responses | One per member, many members (`per_member` default). Each response can go to the requesting session **or to a fresh session**. |
+| 2 | Respondents | Humans by default; a per-form switch allows agents. |
+| 3 | Session not live | Three modes: auto-**resume** (default), **queue** for the session, **spawn a new session**. |
+| 4 | Types | Five types in v1: single_choice, multi_choice, short_text, long_text, scale. Question and answer structure must be fully modular (registry), so more types are purely additive. |
+| 5 | Layout | (default) Optional sections on one page; no conditional logic. |
+| 6 | Choices | (default) `allowOther` write-in, `recommended` options, "accept recommended". |
+| 7 | Editing | Questions editable until the first submitted response, then frozen. |
+| 8 | Amend | (default) Submitted responses are immutable unless `allowAmend`. |
+| 9 | Expiry | Not needed for now. |
+| 10 | Visibility | Space-visible. |
+| 11 | UI surfaces | Form panel, session tile chip, pending-forms banner at the top of the session panel. |
+| 12 | Agent guidance | Rich `tm8 help form` plus a few prompt lines pointing to it; add `tm8 form wait`. |
+| 13 | Templates | (default) v2. |
+| 14 | Execution | One coordinator runs it in waves: data-model foundation, then backend and frontend waves, integration, testing. Each wave has an advisor. |
 
-## 12. Delivery plan (proposed)
+## 12. Delivery plan (waves; a coordinator runs them)
 
-| PR | Scope |
-|---|---|
-| 1 | Migration (kind, tables, RPCs, validator, edges, content arm), contract types, `forms.*` ops, server services, CLI `tm8 form`, count pins, conformance. |
-| 2 | Delivery: `form_response` envelope, `form_deliveries` outbox with drain-on-live, `resume` mode, expiry sweeper, `tm8 form wait`. |
-| 3 | UI: panel (Fill/Build/Responses), attention and session-tile entry points, feed card, home rail. |
-| 4 | MCP tools, prompt guidance, v1.1 types (`ranking`, `entity_pick`, `file`), drop `session_modals`. |
+| Wave | Scope | Gate to the next wave |
+|---|---|---|
+| 0 Foundation | Final data model and the **question-type registry** contract. Covers: migration (kind row, `forms`/`form_questions`/`form_responses`/`form_deliveries`, RLS, SQL validator with per-type arms, `entity_content` arm, `authored_from`/`attached_to` src_kinds), and contract types and Zod schemas. The advisor reviews the model for efficiency (indexes, keyset paging, lock scope on submit) and extensibility (adding a type is additive). | Model merged; `yes_no` dry-run proves additivity (not shipped). |
+| 1 Backend | `forms.*` ops (catalog, RPCs, services, handlers, `actions.list` cases, entity-context), the CLI `tm8 form` noun with rich help, and count pins. | API complete; CLI integration tests green. |
+| 1 Frontend (parallel, against contract fixtures) | `KindConfig` `form`, the `questionnaire` body with Fill/Build/Responses tabs, and the five type renderers from the UI registry. | Renders against fixtures. |
+| 2 Delivery | `form_response` envelope, the `form_deliveries` outbox, resume / queue / spawn_new / new_session, drain-on-live hook, `tm8 form wait`. | Live, exited and deleted session paths are covered by tests. |
+| 3 Integration | UI wired to the real ops and events; session tile chip; session panel banner; prompt lines; MCP guides. | End-to-end: an agent creates a form, a human fills it in the UI, and the answer lands in the PTY. The same flow is verified with the session exited, for each mode. |
+| 4 Hardening | Tests across layers, conformance, docs, cleanup of `session_modals`. | CI green; PRs merged. |
