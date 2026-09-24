@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 209 — Forms W0: the `form` core kind, its data model, and the question-type
--- validator (task 01a0d32e; design docs/features/forms/FORMS-DESIGN.md v3,
--- commit 5d25d0ed; amend-model ruling by the W0 advisor, 2026-09-24).
+-- validator (task 01a0d32e; design docs/features/forms/FORMS-DESIGN.md v5,
+-- commit 61b3efcb; amend-model ruling by the W0 advisor, 2026-09-24).
 --
 -- WHAT IS HERE
 --   1. `form` core kind (icon clipboard-list); `authored_from` and
@@ -73,6 +73,10 @@
 --   lineage_key in the same transaction (they are all revision 1).
 --
 -- -----------------------------------------------------------------------------
+-- VISIBILITY (decision 10): a form and its SUBMITTED responses are
+-- space-visible. A draft is private work in progress: only its respondent
+-- reads it (form_responses_select), and so for its deliveries.
+--
 -- SUBMIT LOCK SCOPE (§7.1)
 --   The forms row, FOR NO KEY UPDATE, and nothing table-wide.
 --   * Not FOR SHARE: closeOnSubmit writes the form, so two submitters holding
@@ -751,8 +755,10 @@ create index form_responses_mine_page
 -- A chain's history in order.
 create index form_responses_lineage_history
   on public.form_responses(form_id, lineage_key, revision);
--- FK support for hard-deleting a respondent entity.
+-- FK support for hard-deleting a respondent entity, and for the message
+-- hard-delete's `set null` (otherwise a seq scan per deleted message).
 create index form_responses_respondent_idx on public.form_responses(respondent_id);
+create index form_responses_message_idx on public.form_responses(message_id) where message_id is not null;
 
 -- Outbox: response -> requesting session (W2 drains it). One row per
 -- (revision, session): a resubmission is a new response row, so a new delivery.
@@ -773,8 +779,11 @@ create table public.form_deliveries (
 -- W2 drain-on-live: the pending rows of one session, oldest first.
 create index form_deliveries_pending_by_session
   on public.form_deliveries(work_session_id, created_at) where status = 'pending';
--- FK support for the work_session cascade (all statuses).
+-- FK support for the work_session cascade (all statuses) and the spawned
+-- session's `set null`.
 create index form_deliveries_session_idx on public.form_deliveries(work_session_id);
+create index form_deliveries_spawned_idx on public.form_deliveries(spawned_session_id)
+  where spawned_session_id is not null;
 
 -- -----------------------------------------------------------------------------
 -- 7. Structure: JSON projections used by the snapshot, the validator and
@@ -1039,11 +1048,25 @@ $$;
 create trigger form_responses_before_delete before delete on public.form_responses
 for each row execute function internal.form_responses_before_delete();
 
--- Space-visible (decision 10): a member who can read the form reads its
--- responses.
+-- Is this respondent entity the caller? The acting actor claim when one is
+-- bound (an agent's teammate), else the caller identity's member row — a
+-- browser read binds an identity, not always an actor.
+create or replace function internal.form_is_caller(p_respondent_id uuid)
+returns boolean language sql stable security definer set search_path = public, internal, pg_temp as $$
+  select p_respondent_id = internal.actor_id()
+      or exists (select 1 from public.members m
+                  where m.entity_id = p_respondent_id
+                    and m.identity_id = internal.identity_id())
+$$;
+revoke all on function internal.form_is_caller(uuid) from public;
+grant execute on function internal.form_is_caller(uuid) to tm8_app;
+
+-- Space-visible (decision 10) for SUBMITTED responses; a draft is private to
+-- its respondent.
 alter table public.form_responses enable row level security;
 create policy form_responses_select on public.form_responses for select to tm8_app
-  using (internal.entity_readable(form_id));
+  using (internal.entity_readable(form_id)
+         and (status = 'submitted' or internal.form_is_caller(respondent_id)));
 grant select on public.form_responses to tm8_app;
 
 create trigger form_deliveries_touch_updated_at before update on public.form_deliveries
@@ -1052,7 +1075,8 @@ for each row execute function internal.touch_updated_at();
 alter table public.form_deliveries enable row level security;
 create policy form_deliveries_select on public.form_deliveries for select to tm8_app
   using (exists (select 1 from public.form_responses r
-                  where r.id = response_id and internal.entity_readable(r.form_id)));
+                  where r.id = response_id and internal.entity_readable(r.form_id)
+                    and (r.status = 'submitted' or internal.form_is_caller(r.respondent_id))));
 grant select on public.form_deliveries to tm8_app;
 
 -- -----------------------------------------------------------------------------
@@ -1192,7 +1216,22 @@ begin
     returning * into d;
   exception when unique_violation then
     get stacked diagnostics c = constraint_name, m = message_text;
-    perform internal.form_raise_unique(c, m);
+    if c <> 'form_responses_one_draft_per_member' then
+      perform internal.form_raise_unique(c, m);
+    end if;
+    -- Two tabs racing their FIRST save: the winner's draft now exists. If it
+    -- has the same target this is the same draft — save into it, once.
+    select * into d from public.form_responses
+     where form_id = p_form_id and respondent_id = p_respondent_id and status = 'draft'
+     for update;
+    if d.id is null or d.supersedes_id is distinct from target.id then
+      raise exception 'a draft response is already in flight for another target' using errcode = 'TFD01',
+        detail = jsonb_build_object('reason', 'form_draft_in_flight', 'draftId', d.id,
+                                    'supersedesId', d.supersedes_id)::text;
+    end if;
+    update public.form_responses
+       set answers = p_answers, structure_version = f.structure_version
+     where id = d.id returning * into d;
   end;
   return d;
 end
@@ -1258,9 +1297,18 @@ begin
 
   begin
     if d.id is not null then
+      -- A first-revision draft's key is RE-DERIVED here, under the form lock:
+      -- a draft saved while a responses-mode change was in flight committed
+      -- the old mode's key, and the re-key trigger never saw it. The update
+      -- trigger accepts exactly this value.
       update public.form_responses
          set status = 'submitted', is_current = true, submitted_at = now(), answers = v_answers,
-             questions_snapshot = internal.form_snapshot(p_form_id), structure_version = f.structure_version
+             questions_snapshot = internal.form_snapshot(p_form_id), structure_version = f.structure_version,
+             lineage_key = case when d.revision = 1
+                                then internal.form_lineage_key(
+                                       internal.form_settings_effective(f.settings)->>'responses',
+                                       p_form_id, p_respondent_id, d.id)
+                                else lineage_key end
        where id = d.id returning * into result;
     else
       insert into public.form_responses(form_id, respondent_id, status, is_current, answers,
