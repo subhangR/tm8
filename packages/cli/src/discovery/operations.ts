@@ -785,8 +785,10 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
     notes: [
-      'returns the full entity unbounded — no limit or projection flags exist; for orientation prefer entity context (bounded, cursors)',
+      'json is BOUNDED by default: identity, version, state, content (long strings capped at 1000 chars, named in `truncated`), and edge/child COUNTS instead of connections and hierarchy; `--full` returns the old unbounded envelope',
+      'for relationships, messages, and acceptance ids read `tm8 entity context <entity-id>` (bounded, cursors) — a closeout never needs entity get',
     ],
+    examples: ['tm8 entity get <entity-id> --format json', 'tm8 entity get <entity-id> --format json --full'],
   },
   'entities.create': {
     cmd: ['entity', 'create'],
