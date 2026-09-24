@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, symlink, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, symlink, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { skillDestination, writeSkillFile, renderSkillFile } from '../../src/skills/authoring.js';
@@ -7,7 +7,9 @@ import { discoverSkillFiles } from '../../src/skills/discovery.js';
 import { parseSkillFile } from '../../src/skills/parse.js';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
-async function temp() { const dir = await mkdtemp(join(tmpdir(), 'tm8-author-')); dirs.push(dir); return dir; }
+// realpath: on macOS tmpdir() is under /var, a symlink to /private/var, and the
+// symlink guard in writeSkillFile rightly refuses any path that crosses one.
+async function temp() { const dir = await realpath(await mkdtemp(join(tmpdir(), 'tm8-author-'))); dirs.push(dir); return dir; }
 it('writes a discoverable skill and refreshes metadata after editing', async () => {
  const root = await temp(); const path = skillDestination(root, 'agents', 'demo');
  await writeSkillFile(root, path, { name: 'demo', description: 'before', body: 'First body' }, true);

@@ -81,12 +81,21 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
       // sees it, advancing the cursor to a fresh row and defeating the whole
       // point of this fixture (verification would then find the token gone,
       // same as a real, working submit).
-      command: `node -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d))"`,
+      //
+      // READY ONLY ONCE RAW. The fixture prints `ready> ` AFTER setRawMode, and
+      // the delivery requires ready output, so the body cannot be written while
+      // the PTY is still cooked. It used to rely on node starting inside the
+      // 1500ms cold-idle gate; on a loaded CI runner it did not, the first
+      // Enters were echoed as real newlines by the cooked line discipline, the
+      // token scrolled out of the cursor band after ~4 presses, and the verifier
+      // correctly read that as "submitted": `delivered` at ~8.7s. Reproduced
+      // exactly (8788ms, `delivered`) by delaying setRawMode by 7s.
+      command: `node -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d)); process.stdout.write('ready> ')"`,
       cwd: '/tmp',
       env: {},
     });
 
-    const admitted = await host.deliverPrompt(sessionId, 'stuck-token', 'send', 'delivery-2');
+    const admitted = await host.deliverPrompt(sessionId, 'stuck-token', 'send', 'delivery-2', true);
     expect(admitted).toBe(true);
 
     await waitFor(() => settled.length === 1, 60000);

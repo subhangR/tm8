@@ -46,6 +46,8 @@ import { randomUUID } from 'node:crypto';
 import { createServer as createProbeServer } from 'node:net';
 import { promisify } from 'node:util';
 
+import { createFromMigratedTemplate } from '../../../../db/scratch-template.mjs';
+
 const run = promisify(execFile);
 
 /** Absolute repository root, derived from this file rather than from cwd. */
@@ -63,7 +65,7 @@ export const REPO_ROOT = new URL('../../../../', import.meta.url).pathname.repla
  * inside a test runner: nothing, silently, until the hook times out. See
  * `PSQL` below for the guard.
  */
-function adminUrl(): string {
+export function adminUrl(): string {
   const explicit = process.env.TM8_W4_ADMIN_DATABASE_URL ?? process.env.TM8_MIGRATION_DATABASE_URL;
   if (explicit) return explicit;
   const port = process.env.TM8_PG_PORT ?? '5442';
@@ -205,6 +207,55 @@ export interface HealthBody {
 }
 
 /**
+ * Scratch databases (and the server child using each) this process has not torn
+ * down yet. `teardown` is the normal path; this is the fallback for a fork that
+ * never reaches it. When an `afterAll` times out, vitest moves on and tinypool
+ * ends the fork with SIGTERM, which runs no `exit` listeners by default. That
+ * orphaned the server child and leaked its database: 141 `tm8_w1_*`/`tm8_w4_*`
+ * databases on the shared local cluster on 2026-09-24. SIGKILL is out of reach;
+ * `scripts/pg-scratch-gc.mjs` collects those.
+ */
+const undropped = new Map<string, { admin: string; child: () => ChildProcess | undefined }>();
+let exitHookInstalled = false;
+
+function dropUndropped(): void {
+  for (const [database, { admin, child }] of undropped) {
+    const running = child();
+    if (running && running.exitCode === null) running.kill('SIGKILL');
+    // Detached and unawaited: tinypool SIGKILLs the fork 1s after SIGTERM, and
+    // a synchronous psql under the load that caused the hook timeout did not
+    // finish in that second (6 of 12 leaked when this was spawnSync).
+    spawn('psql', [...PSQL, admin, '-c', `drop database if exists ${database} with (force)`], {
+      env: PG_ENV,
+      stdio: 'ignore',
+      detached: true,
+    }).unref();
+  }
+  undropped.clear();
+}
+
+function trackUntilDropped(database: string, admin: string, child: () => ChildProcess | undefined): void {
+  undropped.set(database, { admin, child });
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', dropUndropped);
+  // The fork's parent went away (vitest's main process exited or was killed):
+  // nobody will SIGTERM us, and nobody will run our teardown.
+  process.once('disconnect', dropUndropped);
+  // SIGTERM is tinypool ending a fork after a hook timeout; SIGINT and SIGHUP
+  // are a Ctrl-C or a closed terminal, which reach the whole process group.
+  // Measured: a mid-suite SIGINT left its database behind before this.
+  for (const [signal, code] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]] as const) {
+    process.once(signal, () => {
+      dropUndropped();
+      // Listening replaced the default action; restore its outcome unless
+      // someone else also listens and owns the exit.
+      if (process.listenerCount(signal) === 0) process.exit(128 + code);
+    });
+  }
+}
+
+/**
  * Start a real production Server on an isolated, freshly migrated database.
  *
  * The caller must have run `bun run build:server` first; this deliberately does
@@ -217,10 +268,24 @@ export async function startRealServer(label: string): Promise<RealServer> {
   const dbUrl = new URL(admin);
   dbUrl.pathname = `/${database}`;
 
-  await run('psql', [...PSQL, admin, '-c', `create database ${database}`], { env: PG_ENV });
+  // Cloned from a template the OFFICIAL runner migrated once per chain, not
+  // migrated here per suite: 185 migrations took 285s on a loaded box, more
+  // than this whole `beforeAll` budget, and a clone took 16-35s. See
+  // db/scratch-template.mjs.
+  await createFromMigratedTemplate(admin, database, PG_ENV);
+  let child: ChildProcess | undefined;
+  trackUntilDropped(database, admin, () => child);
+  // Opt-in slow-statement logging, scoped to this database (see w1-pg.ts
+  // slowStatementLoggingSql, which this mirrors).
+  const logMsRaw = process.env.TM8_TEST_PG_LOG_MIN_DURATION_MS;
+  const logMs = Number(logMsRaw);
+  if (logMsRaw && Number.isInteger(logMs) && logMs >= 0) {
+    await run('psql', [...PSQL, admin, '-c',
+      `alter database ${database} set log_min_duration_statement = ${logMs}; alter database ${database} set log_lock_waits = on`,
+    ], { env: PG_ENV });
+  }
 
   let dataDir = '';
-  let child: ChildProcess | undefined;
 
   const teardown = async (): Promise<void> => {
     if (child && child.exitCode === null) {
@@ -232,8 +297,25 @@ export async function startRealServer(label: string): Promise<RealServer> {
     }
     // Guarded: only ever removes a directory this harness created.
     if (dataDir && dataDir.includes('tm8-w4-')) await rm(dataDir, { recursive: true, force: true });
-    await run('psql', [...PSQL, admin, '-c', `drop database if exists ${database}`], { env: PG_ENV })
-      .catch(() => undefined);
+    // The child is gone by now, so every session this suite opened is ending.
+    // `with (force)` covers backends that have not noticed their client went
+    // away yet: a plain drop failed with "is being accessed by other users" in
+    // exactly that window, and the old `.catch(() => undefined)` turned each
+    // such failure into a silent leak. Scoped to the name this call created.
+    //
+    // A failure is logged, not thrown: teardown runs after the assertions, the
+    // database is garbage the GC script will collect, and a forced drop that
+    // still fails means the cluster is unreachable, which is not what the suite
+    // under test is about.
+    try {
+      await run('psql', [...PSQL, admin, '-c', `drop database if exists ${database} with (force)`], { env: PG_ENV });
+      undropped.delete(database);
+    } catch (err) {
+      console.error(
+        `[w4 harness] LEAKED scratch database ${database}: drop failed: ${(err as Error).message}\n` +
+          '  collect it later with: node scripts/pg-scratch-gc.mjs --apply',
+      );
+    }
   };
 
   try {
@@ -242,7 +324,9 @@ export async function startRealServer(label: string): Promise<RealServer> {
 
     // The OFFICIAL runner, not a hand-rolled apply loop: it enforces lexical
     // order, one transaction per file, and the content-checksum ledger. Using
-    // anything else here would test a migration path nobody ships.
+    // anything else here would test a migration path nobody ships. It already
+    // ran on the template; on a clone it verifies the ledger and applies
+    // nothing, which also proves the template matches this checkout's chain.
     await run('node', [join(REPO_ROOT, 'db/migrate.mjs'), 'up'], {
       env: { ...PG_ENV, TM8_DATABASE_URL: dbUrl.href },
       cwd: REPO_ROOT,
@@ -537,4 +621,18 @@ export async function assertBuilt(): Promise<void> {
         'because a harness that silently rebuilds can mask a broken build.',
     );
   }
+}
+
+/**
+ * Skip a test whose fixture an EARLIER test in the same describe failed to
+ * build, so that earlier failure is the only red in the report.
+ *
+ * Without it one setup error cascades: a 57014 inside the fixture test left
+ * `versionBefore` undefined, and three later tests failed on
+ * `--expect-version "undefined"`, four reds for one cause, the first real
+ * error buried under three misleading ones. The file stays red because the
+ * fixture test itself failed; nothing is hidden.
+ */
+export function needs(ctx: { skip: () => void }, fixtures: Record<string, unknown>): void {
+  if (Object.values(fixtures).some((value) => value === undefined || value === '')) ctx.skip();
 }

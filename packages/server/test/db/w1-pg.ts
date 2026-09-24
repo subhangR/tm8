@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
@@ -56,6 +56,76 @@ export interface W1ScratchDatabase {
   destroy(): Promise<void>;
 }
 
+/**
+ * Scratch databases this process created and has not dropped yet, by name.
+ *
+ * `destroy()` is the normal path. This map is the fallback for the two ways a
+ * suite never reaches it, both measured as leaks on the shared local cluster
+ * (141 `tm8_w1_*`/`tm8_w4_*` databases on 2026-09-24):
+ *
+ *   - an `afterAll` that times out: vitest moves on and tinypool ends the fork
+ *     with SIGTERM (then SIGKILL), which runs no `exit` listeners by default;
+ *   - an ordinary exit with a suite that forgot its teardown.
+ *
+ * On either, the remaining databases are dropped by a detached psql. SIGKILL is out
+ * of reach by definition; `scripts/pg-scratch-gc.mjs` collects those.
+ */
+const undropped = new Map<string, string>();
+let exitHookInstalled = false;
+
+// Detached and unawaited: tinypool SIGKILLs a fork 1s after its SIGTERM, and
+// under the load that causes the hook timeouts in the first place a
+// synchronous psql did not finish inside that second. Measured: 6 of 12
+// databases leaked with spawnSync here. A detached child outlives the fork.
+function dropDetached(adminUrl: string, name: string): void {
+  spawn(
+    psqlPath(),
+    ['--no-psqlrc', '-q', adminUrl, '-c', `drop database if exists ${name} with (force)`],
+    { stdio: 'ignore', detached: true },
+  ).unref();
+}
+
+function dropUndropped(): void {
+  for (const [name, adminUrl] of undropped) dropDetached(adminUrl, name);
+  undropped.clear();
+}
+
+function trackUntilDropped(name: string, adminUrl: string): void {
+  undropped.set(name, adminUrl);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', dropUndropped);
+  // The fork's parent went away (vitest's main process exited or was killed):
+  // nobody will SIGTERM us, and nobody will run our teardown.
+  process.once('disconnect', dropUndropped);
+  // SIGTERM is tinypool ending a fork after a hook timeout; SIGINT and SIGHUP
+  // are a Ctrl-C or a closed terminal, which reach the whole process group.
+  // Measured: a mid-suite SIGINT left its database behind before this.
+  for (const [signal, code] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]] as const) {
+    process.once(signal, () => {
+      dropUndropped();
+      // Listening replaced the default action; restore its outcome unless
+      // someone else also listens and owns the exit.
+      if (process.listenerCount(signal) === 0) process.exit(128 + code);
+    });
+  }
+}
+
+/**
+ * Opt-in measurement for statement timeouts (57014) on a loaded local cluster:
+ * `TM8_TEST_PG_LOG_MIN_DURATION_MS=500` makes Postgres log every statement in
+ * THIS scratch database that runs longer than that, plus every lock wait past
+ * `deadlock_timeout`. Scoped to the database, so the cluster and `tm8_stable`
+ * are untouched. Needs a superuser admin URL, as the harness already does.
+ */
+export function slowStatementLoggingSql(database: string): string {
+  const raw = process.env['TM8_TEST_PG_LOG_MIN_DURATION_MS'];
+  const ms = Number(raw);
+  if (!raw || !Number.isInteger(ms) || ms < 0) return 'select 1';
+  return `alter database ${database} set log_min_duration_statement = ${ms}; ` +
+    `alter database ${database} set log_lock_waits = on`;
+}
+
 export async function createW1ScratchDatabase(label: string): Promise<W1ScratchDatabase> {
   const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 20);
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
@@ -64,8 +134,13 @@ export async function createW1ScratchDatabase(label: string): Promise<W1ScratchD
 
   const adminUrl = configuredAdminUrl();
   const admin = new Pool({ connectionString: adminUrl, max: 1 });
-  await admin.query(`create database ${name}`);
-  await admin.end();
+  try {
+    await admin.query(`create database ${name}`);
+    trackUntilDropped(name, adminUrl);
+    await admin.query(slowStatementLoggingSql(name));
+  } finally {
+    await admin.end();
+  }
 
   const url = databaseUrl(adminUrl, name);
   const pool = new Pool({ connectionString: url, max: 24 });
@@ -111,7 +186,12 @@ export async function createW1ScratchDatabase(label: string): Promise<W1ScratchD
       await pool.end();
       const cleanup = new Pool({ connectionString: adminUrl, max: 1 });
       try {
-        await cleanup.query(`drop database if exists ${name}`);
+        // `with (force)`: this database is ours alone, and a plain drop fails
+        // with "is being accessed by other users" whenever anything the suite
+        // booted (a server's own pool, a delivery worker) still holds a
+        // session. The server log showed 61 such failures, each one a leak.
+        await cleanup.query(`drop database if exists ${name} with (force)`);
+        undropped.delete(name);
       } finally {
         await cleanup.end();
       }
