@@ -7,15 +7,16 @@
 // overflow the `integer` parameter it has to pass through.
 
 import { describe, expect, it } from 'vitest';
-import { resolveSessionCap } from '../src/facade/execution-handlers.js';
+import { DEFAULT_SESSION_CAP, resolveSessionCap } from '../src/facade/execution-handlers.js';
 
 const INT4_MAX = 2_147_483_647;
 
 describe('resolveSessionCap', () => {
-  it('keeps the historical default when unset, so upgrading changes nothing', () => {
-    expect(resolveSessionCap({})).toBe(8);
-    expect(resolveSessionCap({ TM8_SESSION_CAP: '' })).toBe(8);
-    expect(resolveSessionCap({ TM8_SESSION_CAP: '   ' })).toBe(8);
+  it('defaults to 64 when unset', () => {
+    expect(DEFAULT_SESSION_CAP).toBe(64);
+    expect(resolveSessionCap({})).toBe(64);
+    expect(resolveSessionCap({ TM8_SESSION_CAP: '' })).toBe(64);
+    expect(resolveSessionCap({ TM8_SESSION_CAP: '   ' })).toBe(64);
   });
 
   it('honours an explicit number', () => {
@@ -43,7 +44,7 @@ describe('resolveSessionCap', () => {
   it('falls back to the default on garbage rather than to a smaller cap', () => {
     // A typo must not quietly throttle a node to one session.
     for (const value of ['abc', '-5', '0.5x', 'NaN']) {
-      expect(resolveSessionCap({ TM8_SESSION_CAP: value })).toBe(8);
+      expect(resolveSessionCap({ TM8_SESSION_CAP: value })).toBe(DEFAULT_SESSION_CAP);
     }
   });
 });

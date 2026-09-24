@@ -587,7 +587,7 @@ describe('W1 honest W2-only skeletons', () => {
     if (parsed.success) {
       expect(parsed.data.liveEntityIds).toEqual([SOURCE]);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
-      expect(parsed.data.capacity).toEqual({ used: 1, total: 8 });
+      expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
       // Carried so a client can open a space at the tail of the log instead of
       // paging the whole retained log to discover the same number.
       expect(parsed.data.eventHwm).toBe(108477);
