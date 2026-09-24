@@ -570,7 +570,7 @@ export interface CommandDoc {
  * else.
  *
  * This used to be a verb menu (`whoami`, `task report *`, `session report *`).
- * It is now deliberately five or six lines, for two independent reasons:
+ * It is now deliberately a handful of lines, for two independent reasons:
  *
  *  - every one of those verbs is REJECTED VOCABULARY under the frozen grammar,
  *    and the kernel already answers them with a discovery hint;
@@ -622,6 +622,14 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
     {
       usage: 'tm8 artifact publish <dir> --name "<name>"',
       what: 'publish a directory of HTML/JS/CSS AS A TM8 ARTIFACT — the only way a built page becomes an entity in this space; your harness\'s own artifact/canvas tool publishes elsewhere and leaves nothing in tm8',
+    },
+    // The third, for the same reason as the two above (FORMS-DESIGN §9,
+    // decision 12): an agent with a question for a human already "has the
+    // verb" — it writes the question in prose — so it never looks one up.
+    // One row pointing at `tm8 help form`, not the form grammar.
+    {
+      usage: 'tm8 form create --title "<title>" --question \'key:type:title[:options]\'',
+      what: 'to ask a human a question, create a form instead of asking in prose; the answer arrives as a form_response turn (or `tm8 form wait <form-id>`); `tm8 help form` has the rest',
     },
   ];
   if (hasSession) {
