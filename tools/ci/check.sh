@@ -19,8 +19,15 @@
 #                                           forward `--shard=2/4` to vitest. Needs --only, and every
 #                                           selected test stage's script must be exactly `vitest run`.
 #
-# With none of --only/--shard the script behaves exactly as it did before they existed:
-# the pre-push hook depends on that.
+#   TM8_VITEST_JSON_DIR=<dir> bash tools/ci/check.sh ...
+#                                           ALSO write each suite's vitest JSON report to
+#                                           <dir>/<pkg-with-dashes>[.shard-i-n].json. <dir> must be
+#                                           inside the repo; a relative one resolves against its root.
+#                                           The console output stays vitest's default reporter.
+#                                           CI sets it so a run's test-ID/status set can be diffed.
+#
+# With none of --only/--shard/TM8_VITEST_JSON_DIR the script behaves exactly as it did
+# before they existed: the pre-push hook depends on that.
 #
 # Rules this script enforces structurally:
 #   * per-package SCOPED `tsc -b`, run sequentially — never a parallel vite build
@@ -56,7 +63,7 @@ while [ "$#" -gt 0 ]; do
       shift ;;
     --only=*) ONLY+=("${arg#--only=}") ;;
     --shard=*) SHARD="${arg#--shard=}" ;;
-    -h|--help) sed -n '2,33p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -198,15 +205,27 @@ skip_or_fail() {
 # Under --shard vitest's stderr is merged into stdout (same order, same log).
 run_tests() {
   local pkg="$1"
+  # TM8_VITEST_JSON_DIR: the extra reporter args ride on the same command line.
+  # bun appends script args to the script's LAST command, so tools/conformance's
+  # `check:generated && vitest run ...` hands them to vitest, not check:generated.
+  local args=("${TEST_ARGS[@]+"${TEST_ARGS[@]}"}")
+  if [ -n "${VITEST_JSON_DIR:-}" ]; then
+    local report="$VITEST_JSON_DIR/${pkg//\//-}${SHARD:+.shard-${SHARD/\//-}}.json"
+    args+=(--reporter=default --reporter=json "--outputFile.json=$report")
+  fi
   if [ -z "$SHARD" ]; then
-    (cd "$pkg" && bun run test)
+    if [ "${#args[@]}" -eq 0 ]; then
+      (cd "$pkg" && bun run test)
+    else
+      (cd "$pkg" && bun run test "${args[@]}")
+    fi
     return
   fi
   local out rc summary files
   # Stream and capture. Not `tee /dev/fd/3`: opening /dev/fd/N re-opens the
   # target through /proc, which TRUNCATES it when stdout is a regular file
   # (`check.sh ... > log`) — caught by check-trace.sh. `>&3` duplicates instead.
-  { out="$( (cd "$pkg" && bun run test "${TEST_ARGS[@]}") 2>&1 \
+  { out="$( (cd "$pkg" && bun run test "${args[@]}") 2>&1 \
       | while IFS= read -r l || [ -n "$l" ]; do printf '%s\n' "$l"; printf '%s\n' "$l" >&3; done
       exit "${PIPESTATUS[0]}" )"; rc=$?; } 3>&1
   [ "$rc" -eq 0 ] || return "$rc"
@@ -250,6 +269,23 @@ if [ -n "$SHARD" ]; then
   done
   [ "$sharded" -eq 1 ] || { echo "--shard: no test stage selected to shard" >&2; exit 2; }
   TEST_ARGS=("--shard=$SHARD")
+fi
+# Resolved to an absolute path once, here: run_tests cd's into each package.
+VITEST_JSON_DIR=""
+if [ -n "${TM8_VITEST_JSON_DIR:-}" ]; then
+  case "$TM8_VITEST_JSON_DIR" in
+    /*) VITEST_JSON_DIR="$TM8_VITEST_JSON_DIR" ;;
+    *) VITEST_JSON_DIR="$REPO_ROOT/$TM8_VITEST_JSON_DIR" ;;
+  esac
+  # This script never writes outside the repo; the report dir is no exception.
+  case "$VITEST_JSON_DIR/" in
+    "$REPO_ROOT"/*/) ;;
+    *) echo "TM8_VITEST_JSON_DIR must be a directory inside the repo, got '$TM8_VITEST_JSON_DIR'" >&2; exit 2 ;;
+  esac
+  case "/$TM8_VITEST_JSON_DIR/" in
+    */../*) echo "TM8_VITEST_JSON_DIR must not contain '..', got '$TM8_VITEST_JSON_DIR'" >&2; exit 2 ;;
+  esac
+  mkdir -p "$VITEST_JSON_DIR" || { echo "TM8_VITEST_JSON_DIR: cannot create $VITEST_JSON_DIR" >&2; exit 2; }
 fi
 if [ "$ONLY_SET" -eq 1 ]; then
   selected install && DO_INSTALL=1 || DO_INSTALL=0
