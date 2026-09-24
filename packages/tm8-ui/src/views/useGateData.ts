@@ -2761,7 +2761,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         })
         .catch((error: unknown) => {
           if (generation !== spaceGeneration.current) return;
-          setBoards((current) => ({
+          // A failed REFRESH keeps the last good board: the next round retries,
+          // and an incident (a queue-full 503 lands exactly when the node is
+          // busy) must not turn every open board into an error panel. Only a
+          // key with nothing good to show gets the error snapshot.
+          setBoards((current) => current[key] !== undefined && current[key].error === undefined ? current : ({
             ...current,
             [key]: {
               groups: [],
@@ -2816,7 +2820,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         if (keys.length === 0) return;
         const generation = spaceGeneration.current;
         await runLimited(
-          keys.map((key) => () => fetchBoard(spaceId, key, generation)),
+          // Checked as each task STARTS: disposing the trigger does not cancel
+          // a running round, and a space switch would otherwise still send the
+          // old space's queued reads only to discard their answers.
+          keys.map((key) => () =>
+            generation === spaceGeneration.current ? fetchBoard(spaceId, key, generation) : Promise.resolve()),
           EVENT_REFRESH_CONCURRENCY,
         );
       },
