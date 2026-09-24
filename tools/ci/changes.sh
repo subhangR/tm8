@@ -28,7 +28,7 @@ shopt -s inherit_errexit
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AFFECTED="${AFFECTED:-$HERE/affected.sh}"
-MODULES=(typecheck server cli execution ui small migrations mcp prompt pty-protocol)
+MODULES=(typecheck server cli execution ui small migrations)
 
 all_block() { # <reason>
   local m json="" sep=""

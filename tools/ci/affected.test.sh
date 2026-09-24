@@ -13,8 +13,8 @@ AFFECTED="${AFFECTED:-$HERE/affected.sh}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-ALL_MODULES='["typecheck","server","cli","execution","ui","small","migrations","mcp","prompt","pty-protocol"]'
-KEYS=(all modules typecheck server cli execution ui small migrations mcp prompt pty-protocol reason)
+ALL_MODULES='["typecheck","server","cli","execution","ui","small","migrations"]'
+KEYS=(all modules typecheck server cli execution ui small migrations reason)
 PASS=0 FAIL=0
 
 # ---- fixtures ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ check_shape() { # every key exactly once, nothing else; all=true => every flag t
   fi
   local m mods
   mods=$(sed -n 's/^modules=//p' <<<"$OUT")
-  for m in typecheck server cli execution ui small migrations mcp prompt pty-protocol; do
+  for m in typecheck server cli execution ui small migrations; do
     if jq -e --arg m "$m" 'index($m) != null' <<<"$mods" >/dev/null; then
       grep -qx "$m=true" <<<"$OUT" || { echo "$m listed but flag not true"; return 1; }
     else
@@ -163,11 +163,11 @@ expect "      same repo, working git -> server closure (the stubs are what fail)
 # ---- §3 table ---------------------------------------------------------------------------
 paths "$FIX" packages/server/src/x.ts;       expect "server -> cli, conformance" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/jev/src/x.ts;          expect "jev -> server, cli, conformance" '["typecheck","server","cli","small"]'
-paths "$FIX" packages/mcp/src/x.ts;          expect "mcp -> server, cli, conformance" '["typecheck","server","cli","small","mcp"]'
+paths "$FIX" packages/mcp/src/x.ts;          expect "mcp -> server, cli, conformance (mcp runs in small)" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/cli/src/x.ts;          expect "cli -> execution, ui" '["typecheck","cli","execution","ui"]'
 paths "$FIX" packages/execution/src/x.ts;    expect "execution -> server, cli, ui (+conformance via server)" '["typecheck","server","cli","execution","ui","small"]'
-paths "$FIX" packages/prompt/src/x.ts;       expect "prompt -> execution, cli, server, ui (+conformance via server)" '["typecheck","server","cli","execution","ui","small","prompt"]'
-paths "$FIX" packages/pty-protocol/src/x.ts; expect "pty-protocol -> ui (workspace: edge, not @tm8/)" '["typecheck","ui","pty-protocol"]'
+paths "$FIX" packages/prompt/src/x.ts;       expect "prompt -> execution, cli, server, ui (+conformance via server)" '["typecheck","server","cli","execution","ui","small"]'
+paths "$FIX" packages/pty-protocol/src/x.ts; expect "pty-protocol -> ui (workspace: edge, not @tm8/; runs in small)" '["typecheck","ui","small"]'
 paths "$FIX" packages/tm8-ui/src/x.tsx;      expect "tm8-ui -> ui only" '["typecheck","ui"]'
 paths "$FIX" tools/conformance/src/x.ts;     expect "conformance -> server, cli" '["typecheck","server","cli","small"]'
 paths "$FIX" deploy/nginx/site.conf;         expect "deploy -> server" '["typecheck","server"]'
@@ -186,7 +186,47 @@ if cmp -s "$AFFECTED" "$TMP/no-override.sh"; then
   OUT=""; report "contract closure without the override" 1 "override line not found in $AFFECTED"
 else
   OUT=$(printf 'packages/contract/src/x.ts\n' | bash "$TMP/no-override.sh" --paths-from - --root "$FIX" 2>/dev/null)
-  expect "contract closure without the override" '["typecheck","server","cli","execution","ui","small","mcp"]'
+  expect "contract closure without the override" '["typecheck","server","cli","execution","ui","small"]'
+fi
+
+# ---- W3: mcp, prompt, pty-protocol run in test-small --------------------------------------
+# The label collapses at EMISSION only: the closure still runs over package dirs, so prompt
+# keeps its execution and ui dependents (edges from package deps, not from module names).
+paths "$FIX" packages/prompt/test/x.test.ts;      expect "prompt test file -> prompt closure" '["typecheck","server","cli","execution","ui","small"]'
+paths "$FIX" packages/mcp/test/x.test.ts;         expect "mcp test file -> mcp closure" '["typecheck","server","cli","small"]'
+paths "$FIX" packages/pty-protocol/test/golden-frames.json; expect "pty-protocol fixture -> ui, small" '["typecheck","ui","small"]'
+paths "$FIX" packages/pty-protocol/package.json;  expect "pty-protocol package.json -> ui, small" '["typecheck","ui","small"]'
+paths "$FIX" packages/prompt/README.md;           expect "prompt *.md seeds prompt" '["typecheck","server","cli","execution","ui","small"]'
+# One tracked file per packages/<pkg>/<entry> selects small: no path under them can run no job.
+# (Classification depends only on the path's prefix, so one file per entry covers the rest.)
+W3_FILES=$(git -C "$REPO" ls-files -- packages/mcp packages/prompt packages/pty-protocol 2>/dev/null \
+  | awk -F/ '!seen[$1 "/" $2 "/" $3]++' || true)
+if [[ -z $W3_FILES ]]; then
+  OUT=""; report "a tracked file per mcp/prompt/pty-protocol entry selects small" 1 "git ls-files listed nothing (fail closed)"
+else
+  bad="" n=0
+  while IFS= read -r f; do
+    n=$((n + 1))
+    OUT=$(printf '%s\n' "$f" | bash "$AFFECTED" --paths-from - --root "$FIX" 2>/dev/null)
+    grep -qx 'small=true' <<<"$OUT" || bad+=" $f"
+  done <<<"$W3_FILES"
+  OUT=""; [[ -z $bad ]]; report "a tracked file per mcp/prompt/pty-protocol entry selects small ($n files)" $? "no small for:$bad"
+fi
+# Mutation: collapse BEFORE the closure (seed a small node in place of the package). The
+# rows above must see it: prompt loses execution/ui, pty-protocol gains server/cli.
+sed 's/^  SEEDS\[\$node\]=1$/  case $node in packages\/mcp|packages\/prompt|packages\/pty-protocol) node=tools\/conformance ;; esac; SEEDS[$node]=1/' \
+  "$AFFECTED" >"$TMP/early-collapse.sh"
+if cmp -s "$AFFECTED" "$TMP/early-collapse.sh"; then
+  OUT=""; report "MUTATION collapse-before-closure is caught" 1 "SEEDS line not found in $AFFECTED"
+else
+  caught=0
+  for row in 'packages/prompt/src/x.ts|["typecheck","server","cli","execution","ui","small"]' \
+             'packages/mcp/src/x.ts|["typecheck","server","cli","small"]' \
+             'packages/pty-protocol/src/x.ts|["typecheck","ui","small"]'; do
+    OUT=$(printf '%s\n' "${row%%|*}" | bash "$TMP/early-collapse.sh" --paths-from - --root "$FIX" 2>/dev/null)
+    [[ $(sed -n 's/^modules=//p' <<<"$OUT") == "${row#*|}" ]] || caught=$((caught + 1))
+  done
+  OUT=""; [[ $caught -ge 1 ]]; report "MUTATION collapse-before-closure is caught ($caught of 3 rows red)" $? "no row saw the mutation"
 fi
 
 # ---- rule 1: global paths ---------------------------------------------------------------
@@ -249,13 +289,13 @@ B="$TMP/glob"; make_fixture "$B"; jq '.workspaces += ["packages/**"]' "$B/packag
 paths "$B" packages/tm8-ui/src/x.tsx;        expect "unsupported workspaces glob -> ALL" ALL
 B="$TMP/peer"; make_fixture "$B"
 jq '.dependencies |= del(.["@maestro/pty-protocol"]) | .peerDependencies["@maestro/pty-protocol"] = "workspace:~"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
-paths "$B" packages/pty-protocol/src/x.ts;   expect "peerDependencies workspace:~ is an edge" '["typecheck","ui","pty-protocol"]'
+paths "$B" packages/pty-protocol/src/x.ts;   expect "peerDependencies workspace:~ is an edge" '["typecheck","ui","small"]'
 B="$TMP/link"; make_fixture "$B"
 jq '.dependencies["@maestro/pty-protocol"] = "link:../pty-protocol"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
-paths "$B" packages/pty-protocol/src/x.ts;   expect "link: spec naming a workspace package is an edge" '["typecheck","ui","pty-protocol"]'
+paths "$B" packages/pty-protocol/src/x.ts;   expect "link: spec naming a workspace package is an edge" '["typecheck","ui","small"]'
 B="$TMP/semver"; make_fixture "$B"
 jq '.dependencies["@maestro/pty-protocol"] = "^1.0.0"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
-paths "$B" packages/pty-protocol/src/x.ts;   expect "semver spec naming a workspace package is an edge" '["typecheck","ui","pty-protocol"]'
+paths "$B" packages/pty-protocol/src/x.ts;   expect "semver spec naming a workspace package is an edge" '["typecheck","ui","small"]'
 B="$TMP/tm8ghost"; make_fixture "$B"
 jq '.dependencies["@tm8/ghost"] = "^1.0.0"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
 paths "$B" packages/tm8-ui/src/x.tsx;        expect "@tm8/ dep resolving to no package (semver spec) -> ALL" ALL
@@ -266,7 +306,7 @@ mkdir -p "$G/packages/pty-protocol/src"; echo 'x' >"$G/packages/pty-protocol/src
 jq 'del(.dependencies["@maestro/pty-protocol"], .devDependencies["@maestro/pty-protocol"])' "$G/packages/tm8-ui/package.json" >"$G/x" && mv "$G/x" "$G/packages/tm8-ui/package.json"
 git -C "$G" add -A; git -C "$G" commit -q -m "drop the ui edge and change pty-protocol"
 gitrun "$G" HEAD~1 HEAD
-expect "head deletes tm8-ui -> pty-protocol edge: base edge still counts" '["typecheck","ui","pty-protocol"]'
+expect "head deletes tm8-ui -> pty-protocol edge: base edge still counts" '["typecheck","ui","small"]'
 
 G="$TMP/newhead"; git_repo "$G"
 git -C "$G" rm -rq packages/pty-protocol
@@ -275,7 +315,7 @@ git -C "$G" add -A; git -C "$G" commit -q -m "base without pty-protocol"
 git -C "$G" checkout -q HEAD~1 -- packages/pty-protocol packages/tm8-ui/package.json
 git -C "$G" commit -q -m "head adds pty-protocol back"
 gitrun "$G" HEAD~1 HEAD
-expect "package new in head (absent at base) -> its closure, not ALL" '["typecheck","ui","pty-protocol"]'
+expect "package new in head (absent at base) -> its closure, not ALL" '["typecheck","ui","small"]'
 
 # ---- output ------------------------------------------------------------------------------
 paths "$FIX" packages/tm8-ui/src/x.tsx

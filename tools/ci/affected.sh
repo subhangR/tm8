@@ -12,10 +12,12 @@
 #   all=true|false
 #   modules=["typecheck","server",...]        compact JSON array, canonical order
 #   typecheck=true|false                      one line per module, in this order:
-#   server= cli= execution= ui= small= migrations= mcp= prompt= pty-protocol=
+#   server= cli= execution= ui= small= migrations=
 #   reason=<one line>                         why the set is what it is
 # The block is printed exactly once, at the end. Diagnostics go to stderr.
-# Modules: small = contract + jev + conformance. typecheck is in every set.
+# Modules: small = contract + jev + conformance + mcp + prompt + pty-protocol (the test-small
+# job). typecheck is in every set. Every module is exactly one ci.yml job, so a gate never needs
+# an alias table; affected.test.sh parses ci.yml and fails if a module has no job.
 # The exit status is 0 whenever the block was printed, including ALL-on-error: rule 3
 # means an error widens the set, it does not fail the `changes` job.
 #
@@ -54,7 +56,7 @@
 set -Eeuo pipefail
 shopt -s inherit_errexit
 
-MODULES=(typecheck server cli execution ui small migrations mcp prompt pty-protocol)
+MODULES=(typecheck server cli execution ui small migrations)
 
 # Workspace package dir -> module. Every workspace package must appear here (rule 5).
 declare -A MODULE_OF=(
@@ -65,9 +67,11 @@ declare -A MODULE_OF=(
   [packages/contract]=small
   [packages/jev]=small
   [tools/conformance]=small
-  [packages/mcp]=mcp
-  [packages/prompt]=prompt
-  [packages/pty-protocol]=pty-protocol
+  # mcp, prompt, pty-protocol: src-only suites, run inside test-small (CI split W3). The
+  # closure still runs over the PACKAGE, so their dependents are unchanged by this label.
+  [packages/mcp]=small
+  [packages/prompt]=small
+  [packages/pty-protocol]=small
   [deploy]=
   [db]=
   [db/migrations]=migrations
