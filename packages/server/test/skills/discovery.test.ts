@@ -54,4 +54,21 @@ describe('filesystem skill discovery', () => {
     expect(parsed.find(c => c.legacy)?.name).toBe('old');
     expect(parsed.find(c => c.name === 'broken')?.warnings.length).toBeGreaterThan(0);
   });
+  it('discovers claude.ai-synced plugin skills keyed <name>@synced, on unless settings turn the id off', async () => {
+    const { dir, put, roots } = await fixture();
+    const bucket = 'home/.claude/plugins/synced/org_user';
+    await put(`${bucket}/manifest.json`, JSON.stringify({ plugins: [{ name: 'sales', marketplaceName: 'knowledge-work-plugins' }, { name: 'ops' }, { name: '../escape' }] }));
+    await put(`${bucket}/sales/skills/forecast/SKILL.md`);
+    await put(`${bucket}/ops/skills/runbook/SKILL.md`);
+    await put(`${bucket}/unlisted/skills/stray/SKILL.md`);
+    await put('home/.claude/plugins/synced/no-manifest/x/skills/y/SKILL.md');
+    await put('home/.claude/settings.json', JSON.stringify({ enabledPlugins: { 'ops@synced': false } }));
+    const found = await discoverSkillFiles(roots);
+    const plugins = found.candidates.filter(c => c.level === 'plugin');
+    expect(plugins.map(c => ({ path: c.path.slice(dir.length + 1), pluginName: c.pluginName, root: c.root, enabled: c.enabled, provider: c.provider }))).toEqual([
+      { path: `${bucket}/sales/skills/forecast/SKILL.md`, pluginName: 'sales@synced', root: 'sales@synced', enabled: true, provider: 'claude' },
+      { path: `${bucket}/ops/skills/runbook/SKILL.md`, pluginName: 'ops@synced', root: 'ops@synced', enabled: false, provider: 'claude' },
+    ]);
+    expect(found.scanRoots).toContain(join(dir, 'home/.claude/plugins/synced'));
+  });
 });

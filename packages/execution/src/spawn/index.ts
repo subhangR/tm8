@@ -37,6 +37,7 @@ export {
   MINIMAL_MCP_CONFIG,
   asHarnessSurface,
   asReadHints,
+  claudePluginConfigDir,
   harnessSurfaceEnv,
   readInstalledClaudePlugins,
   readHintHookPath,

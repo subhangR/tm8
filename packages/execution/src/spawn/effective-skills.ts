@@ -50,7 +50,10 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
     let qualifier = '';
     if (path && compatible && isAbsolute(path)) {
       if (level === 'admin') native = true;
-      if (level === 'user' || level === 'system' || level === 'synced') {
+      // Claude Code never loads ~/.agents/skills (probed: the binary reads
+      // .agents/skills only at project scope), so a `/name` pointer there
+      // would be dead. Those rows stay indexed: the agent reads the file.
+      if ((level === 'user' || level === 'system' || level === 'synced') && !(provider === 'agents' && input.agentTool === 'claude-code')) {
         native = within(path, provider === 'agents' ? resolve(home, '.agents/skills') : resolve(config, 'skills'));
         if (level === 'synced') qualifier = 'anthropic-skills:';
       }
@@ -70,7 +73,9 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
           ? typeof pluginName === 'string' && input.launchEnabledPlugins.some((id) => isPluginAllowed(id, [pluginName]))
           : metadata.enabled === true;
         native = enabled && within(path, resolve(config, 'plugins')) && typeof pluginName === 'string';
-        qualifier = `${metadata.pluginName ?? row.root?.ref ?? 'plugin'}:`;
+        // A synced plugin is keyed `<name>@synced` (the enabledPlugins id), but
+        // the CLI namespaces its skills by bare name: `/<name>:<skill>`.
+        qualifier = `${String(metadata.pluginName ?? row.root?.ref ?? 'plugin').split('@')[0]}:`;
       }
     }
     const implicit = input.agentTool === 'codex'
