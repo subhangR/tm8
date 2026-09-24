@@ -609,6 +609,13 @@ export interface FormSessionInputFacts {
    * envelope fits under both this and the incomingMessageInjection budget.
    */
   maxBytes?: number;
+  /**
+   * How it arrives. `pty` (default): injected into a live session, settled by
+   * session_message_deliveries. `spawn_initial_turn`: the first turn of a
+   * session spawned to receive it (§7.3 spawn_new / new_session), settled by
+   * form_deliveries itself.
+   */
+  transport?: 'pty' | 'spawn_initial_turn';
 }
 
 /** The fetch pointer an agent follows for the full, structured answer. */
@@ -637,7 +644,9 @@ function formEnvelope(f: FormSessionInputFacts, body: string, truncated: boolean
       : []),
     `  <fetch command="${attr(fetch)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.formId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
-    `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
+    f.transport === 'spawn_initial_turn'
+      ? `  <delivery transport="spawn_initial_turn" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="form_deliveries" />`
+      : `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
     '</trusted_control>',
   ].join('\n');
   const data = untrustedData({
