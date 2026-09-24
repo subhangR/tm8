@@ -246,16 +246,54 @@ export interface PgDbOptions {
  */
 const TX_WATCHDOG_MILLIS = 10_000;
 
+/**
+ * A checkout that had to QUEUE because every pooled client was in use, and
+ * then gave up at `connectionTimeoutMillis`.
+ *
+ * pg-pool reports this as a bare `Error('timeout exceeded when trying to
+ * connect')` — no SQLSTATE, so `translateDbError` passes it through and
+ * `sendWireError` turns it into the generic `internal server error` 503. That
+ * is the text the UI showed for a launch while the pool sat at 32/32 behind
+ * list reads (prod 2026-09-24: 145 of 362 half-second samples had >=31 of 32
+ * backends active; `/health`'s `select 1`, same pool, went from 3ms to ~0.6s
+ * p50 at saturation while a non-DB path stayed at ~1ms). A spawn opens ~20
+ * transactions in sequence, so it is the request most likely to lose one of
+ * these races — and the one whose failure said least about why.
+ *
+ * Decided by the pool's own state at checkout (full, nothing idle), never by
+ * the error text: a connect that failed WITHOUT queueing (database down, auth)
+ * is a different fault and is rethrown untouched.
+ */
+/** Timer rounding allowance when deciding a checkout ran out its deadline. */
+const POOL_TIMER_SLACK_MILLIS = 10;
+
+export class DbPoolExhaustedError extends CollabError {
+  constructor(waitedMs: number, inUse: number, max: number, waiting: number) {
+    super(
+      'upstream_unavailable',
+      `database busy: no connection became free within ${waitedMs}ms (${inUse}/${max} in use, ${waiting} waiting)`,
+      {
+        retryable: true,
+        details: { reason: 'db_pool_exhausted', waitedMs, inUse, max, waiting, retryAfterSeconds: 1 },
+      },
+    );
+  }
+}
+
 export class PgDb implements Db {
   private readonly pool: pg.Pool;
   private readonly role: string;
+  private readonly max: number;
+  private readonly connectionTimeoutMillis: number;
 
   constructor(options: PgDbOptions) {
     this.role = options.role ?? 'tm8_app';
+    this.max = options.max ?? 8;
+    this.connectionTimeoutMillis = options.connectionTimeoutMillis ?? 5_000;
     this.pool = new pg.Pool({
       connectionString: options.databaseUrl,
-      max: options.max ?? 8,
-      connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5_000,
+      max: this.max,
+      connectionTimeoutMillis: this.connectionTimeoutMillis,
       idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
       // Startup parameters, applied by the server per connection — a stuck
       // statement or an abandoned transaction is killed by Postgres itself,
@@ -273,8 +311,37 @@ export class PgDb implements Db {
     });
   }
 
+  /** `pool.connect()`, with a queued-then-timed-out checkout named for what it is. */
+  private async checkout(): Promise<pg.PoolClient> {
+    // Sampled BEFORE connecting: only a checkout that found the pool full had
+    // to wait in its queue, and only that wait can end in pool exhaustion.
+    const queued = this.pool.totalCount >= this.max && this.pool.idleCount === 0;
+    const startedAt = Date.now();
+    try {
+      return await this.pool.connect();
+    } catch (err) {
+      // Queued is necessary, not sufficient. pg-pool serves a queued waiter
+      // with a NEW client when a slot frees (_pulseQueue -> newClient), so a
+      // Postgres restart or backend kill rejects a queued checkout quickly
+      // with ECONNREFUSED / 57P03 / 53300 — a different fault that must pass
+      // through untouched. Only a wait that ran out the acquire deadline is
+      // exhaustion. The slack absorbs timer rounding (a timer may fire a
+      // millisecond early against Date.now()).
+      const waitedMs = Date.now() - startedAt;
+      if (!queued || waitedMs < this.connectionTimeoutMillis - POOL_TIMER_SLACK_MILLIS) throw err;
+      const exhausted = new DbPoolExhaustedError(
+        waitedMs,
+        this.pool.totalCount - this.pool.idleCount,
+        this.max,
+        this.pool.waitingCount,
+      );
+      console.error(`[db] ${exhausted.message} (${err instanceof Error ? err.message : String(err)})`);
+      throw exhausted;
+    }
+  }
+
   async tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect();
+    const client = await this.checkout();
     // THE POOL GUARD IN THE CONSTRUCTOR DOES NOT COVER THIS CLIENT.
     //
     // `pool.on('error')` is only consulted for clients sitting IDLE in the pool.

@@ -5,14 +5,14 @@
  * no fetch is asserted to REFUSE rather than reach for a global, which is the
  * positive control for that claim.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CollabError,
   TM8_CLIENT_HEADER,
   TM8_CLIENT_HEADER_VALUE,
   bindPath,
 } from '@tm8/contract';
-import { createHttpClient } from './http';
+import { DEFAULT_REQUEST_TIMEOUT_MS, SLOW_OPERATION_TIMEOUT_MS, createHttpClient } from './http';
 import { fakeFetch } from './test-support';
 
 describe('http: catalog-derived URLs', () => {
@@ -284,5 +284,66 @@ describe('http: zero-network by construction', () => {
     const err = await http.call('identity.get').catch((e: unknown) => e) as CollabError;
     expect(err).toBeInstanceOf(CollabError);
     expect(err.message).toContain('no fetch implementation');
+  });
+});
+
+describe('http: per-operation deadlines', () => {
+  /** A node that accepts the request and never answers, until aborted. */
+  function hangingFetch(): (url: string, init?: RequestInit) => Promise<Response> {
+    return (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+  }
+
+  async function settlesBy(p: Promise<unknown>, ms: number): Promise<boolean> {
+    let settled = false;
+    p.then(() => { settled = true; }, () => { settled = true; });
+    await vi.advanceTimersByTimeAsync(ms);
+    return settled;
+  }
+
+  it('execution.spawn outlives the 15s read deadline (spawn waits for the first turn)', async () => {
+    vi.useFakeTimers();
+    try {
+      const http = createHttpClient({ fetch: hangingFetch() });
+      const spawn = http.call('execution.spawn', { body: {} });
+      spawn.catch(() => undefined);
+      expect(await settlesBy(spawn, DEFAULT_REQUEST_TIMEOUT_MS + 1_000)).toBe(false);
+      expect(await settlesBy(spawn, 180_000)).toBe(true);
+      await expect(spawn).rejects.toThrow('did not answer within 180000ms');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('control: a graph read still dies at the 15s default', async () => {
+    vi.useFakeTimers();
+    try {
+      const http = createHttpClient({ fetch: hangingFetch() });
+      const read = http.call('identity.get');
+      read.catch(() => undefined);
+      expect(await settlesBy(read, DEFAULT_REQUEST_TIMEOUT_MS + 1_000)).toBe(true);
+      await expect(read).rejects.toThrow(`did not answer within ${DEFAULT_REQUEST_TIMEOUT_MS}ms`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an explicit client timeout wins over the per-operation floor', async () => {
+    vi.useFakeTimers();
+    try {
+      const http = createHttpClient({ fetch: hangingFetch(), timeoutMs: 2_000 });
+      const spawn = http.call('execution.spawn', { body: {} });
+      spawn.catch(() => undefined);
+      expect(await settlesBy(spawn, 2_500)).toBe(true);
+      await expect(spawn).rejects.toThrow('did not answer within 2000ms');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the floor table matches the CLI: spawn and resume only', () => {
+    expect(SLOW_OPERATION_TIMEOUT_MS).toEqual({ 'execution.spawn': 180_000, 'execution.resume': 180_000 });
   });
 });
