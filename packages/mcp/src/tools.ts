@@ -98,6 +98,18 @@ const READ_GUIDES = [
   guide('actions.list', 'Discover currently allowed actions for an entity, most relevant first, as tm8.actions.v2 rows (page with limit and the returned nextCursor).', {
     query: { contextEntityId: '<entity-id>', limit: '20' },
   }),
+  guide('forms.responses.get', 'Read one form response: its answers, the questions as answered, and delivery status per target.', {
+    params: { responseId: '<response-id>' },
+  }),
+  guide('forms.responses.list', 'Page a form\'s current submitted responses, newest first.', {
+    params: { formId: '<form-id>' }, query: { limit: '50' },
+  }),
+  guide('forms.responses.mine', 'Page every response the caller has submitted in a space.', {
+    query: { spaceId: '<space-id>', limit: '50' },
+  }),
+  guide('forms.pendingForSessions', 'The open forms each session is waiting on the caller to answer, and its queued answers.', {
+    query: { spaceId: '<space-id>', sessionIds: '<work-session-id>,<work-session-id>' },
+  }),
   guide('events.poll', 'Page durable space events after a sequence.', {
     params: { spaceId: '<space-id>' }, query: { since: '0', limit: '50' },
   }),
@@ -170,6 +182,50 @@ const ACT_GUIDES = [
   }),
   guide('attentionRequests.resolveEntity', 'Resolve every pending attention request on an entity.', {
     params: { entityId: '<entity-id>' }, body: { resolutionNote: '<optional-note>' },
+  }),
+  /* Forms (FORMS-DESIGN §9): ask a human instead of asking in prose. The
+     form_create direct tool is the typed way in; this row is how a model
+     finds the operation at all, and the lifecycle and delivery rows are the
+     verbs actions.list advertises on a form. */
+  guide('forms.create', 'Ask a human a question with a form (prefer the form_create tool: it checks the spec first). '
+    + 'Agents create it open; each answer comes back to the requesting session as a form_response turn.', {
+    body: {
+      spaceId: '<space-id>', title: '<title>',
+      questions: [{ key: 'pick', type: 'single_choice', title: '<question>',
+        config: { options: [{ value: 'a', label: 'A', recommended: true }, { value: 'b', label: 'B' }] } }],
+    },
+  }),
+  guide('forms.update', 'Change a form\'s title, description, settings or sections, under the FORM\'s version.', {
+    params: { formId: '<form-id>' }, body: { expectedVersion: 1, title: '<title>' },
+  }),
+  guide('forms.questions.add', 'Add a question (before the first submitted response freezes the structure).', {
+    params: { formId: '<form-id>' },
+    body: { expectedVersion: 1, question: { key: 'why', type: 'long_text', title: '<question>' }, after: '<optional-key>' },
+  }),
+  guide('forms.questions.update', 'Change one question (partial), under the FORM\'s version.', {
+    params: { formId: '<form-id>', questionKey: '<key>' }, body: { expectedVersion: 1, title: '<question>' },
+  }),
+  guide('forms.questions.remove', 'Remove one question, under the FORM\'s version.', {
+    params: { formId: '<form-id>', questionKey: '<key>' }, body: { expectedVersion: 1 },
+  }),
+  guide('forms.questions.move', 'Move one question after another (after: null moves it first).', {
+    params: { formId: '<form-id>', questionKey: '<key>' }, body: { expectedVersion: 1, after: '<key-or-null>' },
+  }),
+  guide('forms.transition', 'Open, close, reopen (to: open) or cancel a form, under the FORM\'s version.', {
+    params: { formId: '<form-id>' }, body: { expectedVersion: 1, to: 'closed' },
+  }),
+  guide('forms.responses.submit', 'Submit the caller\'s answers to an open form (the respondent side).', {
+    params: { formId: '<form-id>' }, body: { answers: { pick: { value: 'a' } } },
+  }),
+  guide('forms.responses.save', 'Save the caller\'s draft answers (partial answers are fine).', {
+    params: { formId: '<form-id>' }, body: { answers: { pick: { value: 'a' } } },
+  }),
+  guide('forms.responses.discard', 'Discard the caller\'s own draft on a form.', {
+    params: { formId: '<form-id>' }, body: {},
+  }),
+  guide('forms.responses.redeliver', 'Send a CANCELLED delivery to a new session (to: new_session), or resume the '
+    + 'session a queued one waits for (to: resume).', {
+    params: { responseId: '<response-id>' }, body: { to: 'new_session' },
   }),
   guide('collections.addItem', 'Add or reposition an entity in a collection.', {
     params: { id: '<collection-id>' }, body: { entityId: '<entity-id>' },
@@ -633,6 +689,18 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'execution.spawn',
   'execution.dispatch',
   'execution.resume',
+  // Forms: every mutation is ledgered (clientMutationId is required).
+  'forms.create',
+  'forms.update',
+  'forms.questions.add',
+  'forms.questions.update',
+  'forms.questions.remove',
+  'forms.questions.move',
+  'forms.transition',
+  'forms.responses.save',
+  'forms.responses.submit',
+  'forms.responses.discard',
+  'forms.responses.redeliver',
   // Containers: every one of these is a ledgered command, and a replayed
   // create must return the FIRST machine rather than provision a second.
   'containers.create',

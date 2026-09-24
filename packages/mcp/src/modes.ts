@@ -9,7 +9,10 @@ export const DIRECT_TOOL_NAMES = [
   'repo_write', 'repo_edit', 'repo_multi_edit',
   'session_transcript', 'session_tail', 'session_followup', 'session_stop',
   'explain_diagram', 'explain_graph', 'explain_code', 'explain_asset',
-  'doc_create', 'doc_update', 'artifact_create',
+  // form_create (FORMS-DESIGN §9) is direct so the question list is a TYPED
+  // schema the model fills in, checked against the contract registry before
+  // any call, rather than a free-form `tm8_act` body it learns by rejection.
+  'form_create', 'doc_create', 'doc_update', 'artifact_create',
   'web_fetch', 'web_search',
   'memory_write', 'memory_search',
   'git_branch', 'git_status', 'git_diff', 'git_pr',

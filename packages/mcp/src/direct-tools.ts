@@ -18,6 +18,8 @@ import {
   ARTIFACT_MEDIA_TYPES,
   ARTIFACT_RUNTIME_ID,
   artifactPathError,
+  FORM_QUESTION_TYPE_NAMES,
+  FormSpecSchema,
   type ArtifactMediaType,
 } from '@tm8/contract';
 
@@ -182,6 +184,42 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
       alt: stringProp('Accessible alternative text; defaults to the stored filename.'),
     }, ['fileEntityId']),
     annotations: annotations(true),
+  },
+  {
+    name: 'form_create',
+    description: 'Ask a human a question with a form instead of asking in prose. The form opens at once; '
+      + 'each answer is delivered back to THIS session as a form_response turn. '
+      + 'Question config per type: single_choice/multi_choice {options:[{value,label,recommended?}], allowOther?}, '
+      + 'short_text/long_text {maxLength?, placeholder?}, scale {min, max, minLabel?, maxLabel?}.',
+    inputSchema: objectSchema({
+      spaceId: stringProp('Space id.'),
+      title: stringProp('Form title (1..300 chars).'),
+      description: stringProp('Optional Markdown shown above the questions.'),
+      questions: {
+        type: 'array', minItems: 1, maxItems: 200,
+        items: objectSchema({
+          key: stringProp('lowercase snake_case key, unique in the form; answers are keyed by it.'),
+          type: { type: 'string', enum: [...FORM_QUESTION_TYPE_NAMES] },
+          title: stringProp('The question.'),
+          help: stringProp('Optional help text.'),
+          required: { type: 'boolean', description: 'Default true.' },
+          section: stringProp('Optional section key.'),
+          config: { type: 'object', description: 'Type-specific config (see the tool description).', additionalProperties: true },
+        }, ['key', 'type', 'title']),
+      },
+      sections: {
+        type: 'array', maxItems: 50,
+        items: objectSchema({ key: stringProp('Section key.'), title: stringProp('Section title.'), help: stringProp('Optional help.') }, ['key', 'title']),
+      },
+      settings: {
+        type: 'object',
+        description: 'Optional: responses per_member|single|unlimited, respondents humans|anyone, closeOnSubmit, allowAmend, '
+          + 'delivery {target requesting_session|new_session, onSessionNotLive resume|queue|spawn_new}, attentionPoints 1..100.',
+        additionalProperties: true,
+      },
+      attachTo: { type: 'array', maxItems: 20, items: stringProp('Task id to attach the form to.') },
+    }, ['spaceId', 'title', 'questions']),
+    annotations: annotations(false),
   },
   { name: 'doc_create', description: 'Create a first-class Markdown doc graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), title: stringProp('Document title.'), body: stringProp('Markdown body.'), attachTo: stringProp('Optional entity id to attach the doc to.') }, ['spaceId', 'title', 'body']), annotations: annotations(false) },
   { name: 'doc_update', description: 'Update a first-class Markdown doc under a version guard.', inputSchema: objectSchema({ docId: stringProp('Doc entity id.'), expectedVersion: integerProp('Current entity version.', 1, 1_000_000), title: stringProp('Optional replacement title.'), body: stringProp('Replacement Markdown body.') }, ['docId', 'expectedVersion', 'body']), annotations: annotations(false) },
@@ -358,6 +396,7 @@ export async function callDirectTool(
     case 'explain_code': return explainCode(args, context);
     case 'explain_asset': return explainAsset(args, context);
     case 'doc_create': return docCreate(args, context);
+    case 'form_create': return formCreate(args, context);
     case 'doc_update': return docUpdate(args, context);
     case 'artifact_create': return artifactCreate(args, context);
     case 'web_fetch': return webFetch(args, context);
@@ -988,6 +1027,42 @@ async function docCreate(args: Record<string, unknown>, context: DirectToolConte
     body.attachTo = { entityId: attachTo, edgeType: 'attached_to' };
   }
   return result('doc_create', { data: await context.transport.invoke('entities.create', { body }) });
+}
+
+/**
+ * `form_create` — forms.create with the spec checked against the contract's
+ * question-type registry FIRST, as the CLI does: a bad option list or an
+ * unknown type comes back as one invalid_input naming every issue, and nothing
+ * is sent. The raw spec (not the parsed one) goes on the wire: the Server
+ * applies its own defaults and validates again in SQL.
+ */
+async function formCreate(args: Record<string, unknown>, context: DirectToolContext) {
+  const spaceId = requiredString(args.spaceId, 'spaceId');
+  assertThreadSpace(context, spaceId);
+  const spec: Record<string, unknown> = { title: args.title, questions: args.questions };
+  for (const key of ['description', 'sections', 'settings', 'attachTo'] as const) {
+    if (args[key] !== undefined) spec[key] = args[key];
+  }
+  const checked = FormSpecSchema.safeParse(spec);
+  if (!checked.success) {
+    throw new DirectToolError('invalid_input', `form spec is invalid: ${checked.error.issues
+      .map((i) => `${i.path.join('.') || '(spec)'}: ${i.message}`).join('; ')}`, false, { issues: checked.error.issues });
+  }
+  for (const taskId of checked.data.attachTo ?? []) await confinedEntity(context, taskId);
+  const data = await context.transport.invoke('forms.create', {
+    body: { ...spec, spaceId, open: true, clientMutationId: randomUUID() },
+  }) as Record<string, unknown>;
+  const entity = (data.entity ?? {}) as Record<string, unknown>;
+  const content = (entity.content ?? {}) as Record<string, unknown>;
+  return result('form_create', {
+    formId: entity.id ?? null,
+    version: entity.version ?? null,
+    status: content.status ?? null,
+    url: data.url ?? null,
+    requestingSessionId: data.requestingSessionId ?? null,
+    attachedTo: data.attachedTo ?? [],
+    next: 'The answer arrives as a form_response turn. Read one with forms.responses.get (tm8_read).',
+  });
 }
 
 async function docUpdate(args: Record<string, unknown>, context: DirectToolContext) {

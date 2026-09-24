@@ -298,3 +298,27 @@ describe('chat addressing in the tool surface', () => {
     expect(purpose('tm8_messages')).toContain('chat');
   });
 });
+
+describe('forms through MCP (FORMS-DESIGN §9)', () => {
+  const forms = OPERATIONS.filter((operation) => operation.name.startsWith('forms.'));
+
+  it('routes every forms.* verb: reads through tm8_read, commands through tm8_act', async () => {
+    expect(forms.length).toBeGreaterThan(0);
+    for (const operation of forms) {
+      const transport = new RecordingTransport();
+      const router = new Tm8ToolRouter(transport);
+      const tool = operation.kind === 'read' ? 'tm8_read' : 'tm8_act';
+      const result = await router.call(tool, { operation: operation.name, params: {}, body: {} });
+      expect(result.isError, `${tool} refused ${operation.name}: ${JSON.stringify(result.structuredContent)}`).not.toBe(true);
+      expect(transport.calls.map((c) => c.operation)).toEqual([operation.name]);
+    }
+  });
+
+  it('mints a clientMutationId for every forms.* command, which the contract requires', async () => {
+    for (const operation of forms.filter((o) => o.kind === 'command')) {
+      const transport = new RecordingTransport();
+      await new Tm8ToolRouter(transport).call('tm8_act', { operation: operation.name, params: {}, body: {} });
+      expect(transport.calls[0]?.options.body, operation.name).toMatchObject({ clientMutationId: expect.any(String) });
+    }
+  });
+});
