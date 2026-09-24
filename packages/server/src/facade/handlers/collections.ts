@@ -311,8 +311,13 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     // Descendants, NOT the root: "the subtree of X" is the things under X.
     // `entity_tree` is depth-capped so a pathological hierarchy cannot turn
     // one list request into an unbounded scan.
+    // `= any(array(...))`, not `in (select ...)`: the semi-join form let the
+    // planner walk the whole space in activity order through every detail
+    // join and only then probe the tree (11s on an 18k-entity space, 57014).
+    // The array is an InitPlan computed once, so the outer scan is a pkey
+    // lookup of just the descendants (~5ms).
     where.push(
-      `e.id in (select id from public.entity_tree(${p.add(assertUuid(query.subtreeOf, 'subtreeOf'))}, 32) where depth > 0)`,
+      `e.id = any(array(select id from public.entity_tree(${p.add(assertUuid(query.subtreeOf, 'subtreeOf'))}, 32) where depth > 0))`,
     );
   }
 
