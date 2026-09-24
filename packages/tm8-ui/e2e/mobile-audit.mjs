@@ -52,9 +52,43 @@
  *    shell the viewport profile expects, and refuses to record a row that
  *    disagrees. A wrong number is worse than a missing one.
  */
-import { chromium } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chromium, firefox } from '@playwright/test';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+/*
+ * SELF-IDENTIFICATION — so "was this artifact produced by the current tool?" is
+ * a MECHANICAL COMPARISON rather than a question you ask a person.
+ *
+ * Three separate provenance failures happened before these two fields existed,
+ * and all three were the same failure: a report that could describe its PRODUCT
+ * (git ref) but not the INSTRUMENT that measured it. Those are two axes. A file
+ * can name a current product sha and have been produced by a tool eight schema
+ * changes old, and nothing in it says so.
+ *
+ * `instrument` is the git blob hash of THIS FILE, computed from its own bytes:
+ * identical to `git hash-object e2e/mobile-audit.mjs`, but content-addressed
+ * rather than tree-addressed, so it is correct on a dirty tree, on a detached
+ * HEAD, and outside a repo entirely. Two artifacts with the same value were
+ * produced by byte-identical instruments; different values mean CHECK BEFORE
+ * COMPARING, not cannot-compare.
+ *
+ * `schemaVersion` is bumped BY HAND whenever a row field is added, removed or
+ * has its meaning changed. It answers the coarser question the hash cannot: two
+ * different hashes may still emit the same row shape (a comment edit moves the
+ * hash and nothing else), and a reader diffing rows cares about the shape.
+ */
+const SCHEMA_VERSION = 3;
+function blobHash(path) {
+  try {
+    const buf = readFileSync(path);
+    return createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * THE REF THE NUMBERS WERE TAKEN AT — captured by this script, never passed in.
@@ -169,6 +203,210 @@ const ROUTES = [
   { name: 'board', path: 'board', phone: 'refusal', note: '' },
   { name: 'craft', path: 'craft', phone: 'refusal', note: '' },
   { name: 'settings', path: 'settings', phone: 'refusal', note: '' },
+
+  /* ── AFFORDANCE DESTINATIONS (shell-contract request, DEF-042/043/035) ────
+     Real shareable addresses that no run had ever opened at phone width. They
+     are added to the ROUTE SET rather than measured off to one side, because a
+     destination a refusal card points at is part of the phone's surface whether
+     or not anyone had captured it. Their arrival is a SCOPE CHANGE against the
+     earlier baseline — `basis.routes` is what makes that reconcilable. */
+  {
+    name: 'tasks-board', path: 'k/tasks?mode=board', phone: 'screen',
+    /* POSITIVE WITNESS, and this row is the reason the mechanism exists.
+       Three independent paths let this capture come back looking clean without
+       ever rendering a board: MobileShell's kind arm passes no `mode` prop at
+       all (MobileShell.tsx:289-300), a null board CONFIG degrades to list
+       (EntityView.tsx:302), and absent board DATA never renders BoardBody
+       (EntityListPanel.tsx:688). In all three you measure A LIST, report a low
+       offender count, and the number reads as "board is fine on a phone" —
+       absence measuring as health, which is the same pathology as photographing
+       a "Loading…" screen and calling it zero-defect.
+       `data-layout="board"` (EntityView.tsx:836) is the only proof a board
+       actually rendered. No witness, no verdict: the row is recorded VOID. */
+    witness: '[data-testid="entity-view"][data-layout="board"]',
+    note: 'DEF-042 — tasks in BOARD mode; VOID unless data-layout=board is present',
+  },
+  { name: 'files-kind', path: 'k/files', phone: 'screen', note: "DEF-043 — the `file` kind list. Its slug is `files`, NOT `file`" },
+  {
+    /* The address the request actually named. `kindOfSlug('file')` is null —
+       the registry slug for kind `file` is `files` (registry.ts:1204) — so
+       `landingOfRoute` returns null and this is the unrouted card. Captured
+       because a card that points somewhere must point at a slug that RESOLVES,
+       and this documents what a viewer following the wrong one gets. */
+    name: 'file-kind-badslug', path: 'k/file', phone: 'refusal',
+    note: 'the `k/file` address as named in the request — slug does not resolve',
+  },
+  {
+    /* DEF-035. `MobileShell`'s `entity` branch renders ChannelView for ANY
+       entity target, and `nav-targets.ts` emits entity targets for voice rooms
+       as well as channels. This is the address that proves what a phone does
+       with one. `vc-standup` is the OCCUPIED room (participantCount 3).
+       NO WITNESS DECLARED ON PURPOSE: on main this renders ChannelView and on a
+       branch that guards it, the unbuilt-voice card. Asserting either would make
+       the row pass on one tree and void on the other, so what rendered is
+       reported as a FACT (`voiceGuard`) rather than graded. */
+    name: 'voice-room', path: 'voice/vc-standup', phone: 'screen',
+    note: 'DEF-035 — voice room target; reports which screen the phone chose',
+  },
+  {
+    /* DEF-002 — the BARE deep link, no `?origin=`. On main `landingOfRoute`
+       returns null for this and it lands on mobile-unrouted; a fix should
+       resolve it to the entity's own collection with the entity open, WITHOUT
+       rewriting the address. `phone: 'refusal'` so the negative-witness check
+       does not void the row on main, where the refusal IS the result. */
+    name: 'entity-bare-link', path: 'e/task-4f8c2a9e', phone: 'refusal',
+    note: 'DEF-002 — bare entity link, no origin param',
+  },
+  {
+    /* THE CONTROL CASE. `voice_channel` has no `k/` view by design, so the
+       bare-link rule must correctly yield NOTHING here. If this one also
+       resolves, the fix over-reached. */
+    name: 'voice-bare-link', path: 'e/vc-standup', phone: 'refusal',
+    note: 'DEF-002 control — bare voice link MUST still refuse',
+  },
+
+  /* ── LANE A cases (DEF-025/026/027/028/039) ────────────────────────────── */
+  {
+    name: 'chat-home', path: 'home', phone: 'screen',
+    /* CLASS-BASED, not the testid. A testid witness is unfalsifiable from the
+       row JSON, and the usual failure is a FALSE ALARM: a non-colliding testid
+       returns zero hits and reads as "witness absent" on a capture that was
+       fine. `.tch-root` is the same element (ChatHomeScreen.tsx:1027). */
+    witness: '.tch-root',
+    note: 'Lane A cases A + C — composer foot, root bar, thinking summary',
+  },
+  {
+    /* The channel SCREEN, not the channel LIST. The category partition empties
+       the tabbed list; this route opens the channel directly, so `.chv-tab` and
+       the `.chs-*` feed rows are reachable regardless of that bug. */
+    name: 'chat-channel', path: 'channel/ch-design', phone: 'screen',
+    /* Same reasoning — `.chv-root` is the same element (ChannelView.tsx:319). */
+    witness: '.chv-root',
+    note: 'Lane A cases B + D — chv-tab strip and the threaded feed',
+  },
+];
+
+/**
+ * OPENED STATES — the screens you only reach by DOING something.
+ *
+ * ROUTES above are all screen ROOTS. A baseline made only of roots has a hole
+ * exactly where two of the four target surfaces live: entity DETAIL and the
+ * launch/run surface are reached by tapping, never by an address the shell can
+ * land on. With no before-state for them, "never worse than before" is
+ * unenforceable for those lanes — there is no before.
+ *
+ * Each state is a route plus an ordered click chain, and an `expect` selector
+ * that PROVES the state was actually reached. If `expect` never appears the row
+ * is recorded as a PROBLEM rather than measured: a state that silently failed
+ * to open measures the screen underneath it, which is fiction of exactly the
+ * kind trap 2 exists to refuse.
+ *
+ * `steps` entries are tried in order; a step whose selector is absent is a
+ * failure of the state, not something to skip past quietly.
+ *
+ * ON THE TAB CLICKS: the fixture's sessions and channels lists open on a "To
+ * Do" tier that holds NO rows — the rows live under "In Progress". Landing on
+ * the empty tier and clicking nothing would have produced a perfectly clean,
+ * perfectly meaningless row.
+ */
+/*
+ * NOT A STATE, AND THAT IS THE FINDING: no `MobileSheet` proved reachable from
+ * any of these surfaces in the fixture. `.msheet-host` stays EMPTY throughout —
+ * the list filter opens `div.lp__filtermenu`, a desktop-style dropdown, and the
+ * one genuine sheet (EntityView's aux column, `entity-view-aux-sheet`) is
+ * reached only by opening a RELATED entity from inside a detail screen, for
+ * which the task detail offers no affordance here. A state that can never be
+ * reached was NOT left in this table: a permanent failure line in every run
+ * trains readers to skim the problem list, which is how a real failure gets
+ * missed. It is reported as a gap for Lane B instead.
+ */
+const STATES = [
+  {
+    name: 'tasks-detail',
+    path: 'k/tasks',
+    /*
+     * DRIVE TO THE POPULATED TIER FIRST — otherwise this opens the wrong task.
+     * The default "To Do" tier holds ONE row, "Name the empty states", whose
+     * `acceptance.total` is 0. So the detail it opens has NO criterion rows,
+     * and any row scoped to `sb-criterion__box` would verify its absence
+     * against a task that never had one — an absence acceptance checked on a
+     * surface too thin to contain the thing, which is the DEF-016/018 shape.
+     * "In Progress" holds taskUuidTitle (acceptance 4) and taskGuideLines (3).
+     */
+    steps: [{ click: 'button.lp__tab', text: 'In Progress' }, { click: 'button.pn-tt__title' }],
+    /* `data-mode="detail"` on the EntityView root, not merely a back chevron:
+       the chevron proves SOMETHING was pushed, this proves the DETAIL rendered. */
+    expect: '[data-testid="entity-view"][data-mode="detail"]',
+    note: 'Lane B — entity detail, pushed onto the phone screen stack',
+  },
+  {
+    /* Session rows are `div.pn-st[data-testid=list-tile]` — a DIV, not the
+       `button.pn-tt__title` a task row uses. `list-tile` is the one selector
+       both kinds share. */
+    name: 'sessions-run',
+    path: 'k/sessions',
+    steps: [{ click: 'button.lp__tab', text: 'In Progress' }, { click: '[data-testid="list-tile"]' }],
+    /* The run surface is only real once the session's own panel is on screen —
+       a pushed screen alone would also satisfy a back chevron. */
+    expect: '[data-testid="entity-view"][data-mode="detail"]',
+    note: 'Lane C — the run / session surface',
+  },
+  {
+    /* NAMED FOR WHAT IT ACTUALLY OPENS. `filter-trigger` does NOT open a
+       MobileSheet on the phone — it opens `div.lp__filtermenu`, a dropdown, and
+       `.msheet-host` stays empty. That is worth measuring precisely because a
+       desktop-style dropdown on a phone is the kind of thing this program
+       exists to find; calling the row `-sheet` would have hidden it. */
+    name: 'tasks-filter-menu',
+    path: 'k/tasks',
+    steps: [{ click: '[data-testid="filter-trigger"]' }],
+    expect: '[data-testid="filter-menu"]',
+    note: 'the list filter surface — a dropdown menu on phone, NOT a mobile sheet',
+  },
+  {
+    name: 'sessions-launch',
+    path: 'k/sessions',
+    steps: [{ click: '[data-testid="list-quick-start"]' }],
+    /*
+     * STRICT, AND IT USED TO BE A DISJUNCTION THAT INCLUDED
+     * `.mobile-header__back` — which ANY pushed screen satisfies. So this row
+     * passed by landing on the RUN surface and photographed it twice under a
+     * launch label, with complete arrays, shellOk true and every quality check
+     * in the program green. A clean result from a state that was never reached.
+     * An `expect` that accepts a weaker alternative is not a witness; it is a
+     * way for the label to do the witness's work.
+     */
+    expect: '[data-testid="launch-sheet"]',
+    note: 'Lane C — the launch affordance',
+  },
+  {
+    name: 'home-composer-focused',
+    path: 'home',
+    steps: [{ focus: '.tch-composer textarea, .tch-composer [contenteditable="true"], textarea' }],
+    /*
+     * TWO WITNESSES, BECAUSE THIS ROW PROXIES AN ENVIRONMENTAL CONDITION AND
+     * NOT A USER ACTION — and they answer different questions:
+     *
+     *   DID THE DRIVER ACT?    the composer is `document.activeElement`
+     *   DOES THE STATE OBTAIN? the keyboard is actually up
+     *
+     * The driver DID act — focus lands correctly — so an acted-witness alone
+     * would flip this row to `stateOpened: true` and it would still measure
+     * nothing about a keyboard. Headless Firefox has no soft keyboard, so
+     * `visualViewport` never shrinks, the inset stays 0px and `MobileFrame`
+     * never sets `data-keyboard="up"`. Certifying that would be worse than the
+     * silent nothing it replaced: the same failure one level up, wearing a tick.
+     *
+     * So the environmental half is declared and CANNOT be produced here. The
+     * row reports UNPRODUCIBLE ON THIS ENGINE rather than measured, and the
+     * keyboard-up case stays open against a real device.
+     */
+    expect: null,
+    actedWitness: () => document.activeElement && document.activeElement.matches('textarea, input[type="text"], [contenteditable="true"]'),
+    stateWitness: '.mobile-frame[data-keyboard="up"]',
+    unproducibleReason: 'headless Firefox has no soft keyboard: visualViewport never shrinks, so --mobile-keyboard-inset stays 0px and data-keyboard is never set',
+    note: 'Lane A — composer focused (keyboard-up proxy)',
+  },
 ];
 
 /**
@@ -278,12 +516,176 @@ function measureInPage({ MIN_TAP, EPS }) {
     const s = getComputedStyle(el);
     return s.visibility !== 'hidden' && s.pointerEvents !== 'none' && Number(s.opacity) !== 0;
   };
-  const targets = [...document.querySelectorAll(INTERACTIVE)]
+
+  /*
+   * THE VISUALLY-HIDDEN PATTERN, which the three checks above CANNOT see.
+   *
+   * The docblock on `tappable` says the 1x1 `input.tch-attach__input` behind the
+   * attach button is excluded. It was not. It survived every run and kept
+   * reporting itself as the smallest target on Home, because it is not hidden by
+   * `visibility`, `opacity` or `pointer-events` — it is hidden by the standard
+   * screen-reader-only recipe:
+   *
+   *     position:absolute; width:1px; height:1px; overflow:hidden;
+   *     clip-path: inset(50%);            (.tch-attach__input)
+   *     clip: rect(0,0,0,0);              (.chs-visually-hidden)
+   *
+   * Such an element is deliberately reachable by assistive tech and deliberately
+   * un-hittable by a thumb. Counting it makes the headline worse for a control
+   * that is fine, and NO LANE CAN EVER CLOSE IT — the fix would be to break the
+   * accessible name. That is the signature of a bad metric.
+   */
+  const visuallyHidden = (el, r) => {
+    const s = getComputedStyle(el);
+    const clipped = s.clipPath !== 'none' || (s.clip !== 'auto' && s.clip !== '');
+    return clipped && s.position === 'absolute' && r.width <= 1 && r.height <= 1;
+  };
+
+  /*
+   * INERT vs SMALL. A `disabled` control or one with `pointer-events:none` does
+   * nothing when tapped at ANY size, so failing it for being under 44px answers
+   * the wrong question. These are LEDGERED SEPARATELY rather than dropped: "a
+   * big button that does nothing" is a real defect, just not this threshold's.
+   */
+  const inertOf = (el) => {
+    const s = getComputedStyle(el);
+    if (s.pointerEvents === 'none') return 'pointer-events:none';
+    if (el.hasAttribute('disabled')) return 'disabled';
+    if (el.getAttribute('aria-disabled') === 'true') return 'aria-disabled';
+    return null;
+  };
+
+  const candidates = [...document.querySelectorAll(INTERACTIVE)]
     .map((el) => ({ el, r: el.getBoundingClientRect() }))
-    .filter(({ el, r }) => rendered(r) && tappable(el));
+    .filter(({ r }) => rendered(r));
+
+  const hidden = candidates.filter(({ el, r }) => visuallyHidden(el, r));
+  const hiddenSet = new Set(hidden.map(({ el }) => el));
+  const inert = candidates.filter(({ el }) => !hiddenSet.has(el) && inertOf(el));
+  const inertSet = new Set(inert.map(({ el }) => el));
+
+  /* The headline population: rendered, not screen-reader-only, not inert. */
+  const targets = candidates.filter(({ el }) => !hiddenSet.has(el) && !inertSet.has(el) && tappable(el));
+
+  const describeTap = ({ el, r }) => ({
+    w: Math.round(r.width), h: Math.round(r.height),
+    /* VERTICAL COORDINATES. The rows carried no vertical position of any kind —
+       every numeric field was a width, a horizontal edge or a count — so no
+       vertical defect was auditable after the fact by anyone. That is where
+       DEF-037's blindness actually begins. */
+    top: Math.round(r.top), bottom: Math.round(r.bottom),
+    /* THE TESTID, so a testid-based acceptance is checkable by anyone holding
+       this file rather than only by the session that produced it. Without it
+       every R10 testid witness is unfalsifiable post hoc — and the failure is
+       usually a FALSE ALARM (a non-colliding testid returns zero hits and reads
+       as "witness absent"), with `terminal-body` vs the class `pn-terminal-body`
+       the rarer false-confidence case. */
+    testid: el.getAttribute('data-testid') || undefined,
+    path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30),
+  });
+
   const small = targets
     .filter(({ r }) => Math.min(r.width, r.height) < MIN_TAP)
-    .map(({ el, r }) => ({ w: Math.round(r.width), h: Math.round(r.height), path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) }));
+    .map(describeTap);
+
+  /*
+   * REAL HIT-TESTING. ">=44px" is necessary, not sufficient: an overlay or a
+   * full-width sibling can swallow the tap while the geometry looks perfect.
+   * `elementFromPoint` at the target's own centre is the only thing that knows.
+   * LEDGERED, NOT FAILED — an occluded target is a different defect from a small
+   * one, and silently excluding it would hide a real bug rather than report it.
+   */
+  const occluded = [];
+  for (const t of targets) {
+    const cx = t.r.left + t.r.width / 2;
+    const cy = t.r.top + t.r.height / 2;
+    if (cx < 0 || cy < 0 || cx > vw || cy > document.documentElement.clientHeight) continue;
+    const hit = document.elementFromPoint(cx, cy);
+    if (hit && hit !== t.el && !t.el.contains(hit) && !hit.contains(t.el)) {
+      occluded.push({ ...describeTap(t), blockedBy: pathOf(hit) });
+    }
+  }
+
+      /*
+   * CLIPPED vs SCROLLED — content that exceeds its own box, split by what the
+   * box does about it.
+   *
+   * `bleed` is `scrollWidth - clientWidth` ON THE ELEMENT ITSELF: how far its
+   * own content overruns its own padding box. It is NOT the viewport
+   * comparison — that is `overflowCount`, the threshold. Different questions; a
+   * row can fail one and pass the other.
+   *
+   *   clipped[] — overflow-x hidden|clip. Content DESTROYED, no gesture reaches
+   *               it. This is the one that matters.
+   *   hscroll[] — overflow-x auto|scroll. Reachable by scrolling, which may be
+   *               a deliberate strip or a desktop affordance nobody finds on a
+   *               phone. Reported, never failed.
+   *
+   * KNOWN FALSE-POSITIVE SHAPE, stated so nobody builds a threshold on it:
+   * `text-overflow: ellipsis` REQUIRES `overflow: hidden`, so every ellipsised
+   * label bleeds by construction — the ellipsis IS the design. Same for 1x1
+   * screen-reader spans. `clippedCount` is a POINTER TO LOOK, never a verdict;
+   * read the entries, not the number.
+   */
+  const clipped = [];
+  const hscroll = [];
+  for (const el of all) {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const bleed = el.scrollWidth - el.clientWidth;
+    if (bleed <= 1) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const ox = cs.overflowX;
+    const entry = { bleed: Math.round(bleed), box: `${Math.round(r.width)}x${Math.round(r.height)}`, path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) };
+    if (ox === 'hidden' || ox === 'clip') clipped.push(entry);
+    else if (ox === 'auto' || ox === 'scroll') hscroll.push(entry);
+  }
+  clipped.sort((a, b) => b.bleed - a.bleed);
+  hscroll.sort((a, b) => b.bleed - a.bleed);
+
+  /*
+   * REACHABLE, NOT MERELY LARGE — the VERTICAL twin of "measures 44 and draws 16".
+   *
+   * `tapTargetsUnderMin` counts rects smaller than the floor. **A control that
+   * is 44x44 and sits BELOW THE FOLD passes that census exactly as well as one
+   * you can reach**, so "0 under 44" is consistent with two very different
+   * screens and the number cannot tell them apart. That is the same shape as
+   * every other trap in this program, on the one axis DEF-037 says nothing here
+   * can see.
+   *
+   * So: is the target's box inside the frame's visible content area, and is it
+   * clear of the fixed tab bar that overlays the bottom of it? Reported, NOT
+   * failed — `.mobile-frame__content` is `overflow-y: auto`, so a control below
+   * the fold is reachable by scrolling and may be perfectly intended. What is
+   * not acceptable is not KNOWING. Anything at rest below the fold is named
+   * here so a reader can decide, instead of reading a clean count and assuming.
+   */
+  const frameEl = document.querySelector('.mobile-frame') || document.documentElement;
+  const tabbarEl = document.querySelector('.mobile-frame__tabbar, .mobile-tabs');
+  const frameBox = frameEl.getBoundingClientRect();
+  const tabbarTop = tabbarEl ? tabbarEl.getBoundingClientRect().top : frameBox.bottom;
+  const belowFold = [];
+  for (const t of targets) {
+    /* THE TAB BAR'S OWN BUTTONS ARE NOT BELOW THE TAB BAR. Every element inside
+       it trivially sits past its own top edge, so without this the check
+       reports the five nav tabs on every single screen — a constant five that
+       means nothing and would train a reader to skip the field. Caught by
+       reading the entries instead of the count, which is the whole rule. */
+    if (tabbarEl && tabbarEl.contains(t.el)) continue;
+    const r = t.r;
+    const underTabbar = r.bottom > tabbarTop + 0.5;
+    const pastFrame = r.top > frameBox.bottom + 0.5 || r.bottom > frameBox.bottom + 0.5;
+    if (underTabbar || pastFrame) {
+      belowFold.push({
+        ...describeTap(t),
+        bottom: Math.round(r.bottom),
+        tabbarTop: Math.round(tabbarTop),
+        frameBottom: Math.round(frameBox.bottom),
+        why: underTabbar ? 'occluded by / below the tab bar' : 'past the frame bottom',
+      });
+    }
+  }
 
   return {
     /** The reference every right edge below is compared against. */
@@ -304,7 +706,288 @@ function measureInPage({ MIN_TAP, EPS }) {
     overflowRoots: roots,
     tapTargetsTotal: targets.length,
     tapTargetsUnderMin: small.length,
-    tapTargetsSmallest: small.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h)).slice(0, 12),
+    /* THE FULL CENSUS, not a top-12. The gate lane enumerates its selector list
+       from this file; a truncated list means it guesses the tail, and the
+       guessed part is exactly where a missed control hides. 64 is a ceiling
+       against pathology, not a summary — no phone row is near it. */
+    tapTargetsSmallest: small.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h)).slice(0, 64),
+    /* Ledgered, never counted against MIN_TAP — see the predicates above. Each
+       is a separate question a reader may want to ask, and a zero here is as
+       meaningful as a zero in the headline. */
+    tapTargetsHiddenCount: hidden.length,
+    tapTargetsHidden: hidden.map(describeTap).slice(0, 8),
+    tapTargetsInertCount: inert.length,
+    tapTargetsInert: inert.map((t) => ({ ...describeTap(t), reason: inertOf(t.el) })).slice(0, 8),
+    tapTargetsOccludedCount: occluded.length,
+    tapTargetsOccluded: occluded.slice(0, 8),
+    /*
+     * THE MEASUREMENT SUBSTRATE. `.cv2-root[data-shell='mobile'] { zoom: 1 }`
+     * (mobile-chrome.css) scopes off a `zoom: 1.1` that app.css puts on
+     * `.cv2-root`. CSS zoom MULTIPLIES when nested, and this codebase already
+     * lost weeks to a terminal rendering at 1.21x behind a counter-scale that
+     * looked right in isolation; the run surface nests FOUR `.cv2-root`s, which
+     * compound to ~1.46x. A broken gate inflates every tap target ~10%, so
+     * controls cross 44px WITH NO FIX and the diff reports improvements that
+     * are pure artifact. Every value must be "1" or the row is not comparable.
+     */
+    zooms: [...document.querySelectorAll('.cv2-root')].map((el) => getComputedStyle(el).zoom),
+    /*
+     * UNIVERSAL NEGATIVE WITNESSES. Each names a screen that is NOT the one the
+     * capture asked for; any hit voids the row. Cheap, and they catch the
+     * failure mode by machine instead of by someone noticing a screenshot looks
+     * under-hydrated.
+     */
+    negatives: {
+      unrouted: !!document.querySelector('[data-testid="mobile-unrouted"]'),
+      notOnPhone: !!document.querySelector('[data-testid="mobile-not-on-phone"]'),
+      loading: [...document.querySelectorAll('.mobile-empty')].some((n) => /loading|hydrating/i.test(n.textContent || '')),
+      chatInFlight: !!document.querySelector('[data-testid="chat-detail-loading"], [data-testid="chat-thinking"]'),
+    },
+    /*
+     * CONTENT VOLUME. A screen that resolved has a body; one that refused has a
+     * sentence. Reported so "it landed somewhere" and "it landed on the right
+     * thing" stay two separate questions.
+     */
+    contentChars: (() => {
+      const frame = document.querySelector('.mobile-frame') || document.querySelector('.shell-root') || document.body;
+      const clone = frame.cloneNode(true);
+      for (const sel of ['.mobile-header', '.mobile-tabs']) for (const n of clone.querySelectorAll(sel)) n.remove();
+      return (clone.innerText || '').trim().length;
+    })(),
+    /*
+     * TEXT FLOORS. <12px body text is unreadable on a phone; <16px on an INPUT
+     * makes iOS zoom the whole page on focus. Reported as lists, not counts, so
+     * a reader can see WHICH strings are involved.
+     */
+    /*
+     * COUNT AND SAMPLE, TOGETHER. This array is capped at 24 and shipped with
+     * NO count for most of tonight — the one array whose truncation a reader
+     * could not detect. I claimed to have fixed that in an earlier commit and
+     * did not run it; the edit never applied and the claim stood for hours.
+     */
+    tinyText: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('*')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        const tag = el.tagName.toLowerCase();
+        const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+        if ((tag === 'input' || tag === 'textarea' || tag === 'select') && size < 16) {
+          out.push({ px: size, kind: 'input-zoom-risk', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.getAttribute('aria-label') || '').slice(0, 24) });
+        } else if (ownText && size < 12) {
+          out.push({ px: size, kind: 'unreadable', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.textContent || '').trim().slice(0, 24) });
+        }
+      }
+      return out.slice(0, 24);
+    })(),
+    /* The count beside the capped sample — see the tinyText docblock. */
+    tinyTextCount: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('*')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        const tag = el.tagName.toLowerCase();
+        const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+        if ((tag === 'input' || tag === 'textarea' || tag === 'select') && size < 16) {
+          out.push({ px: size, kind: 'input-zoom-risk', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.getAttribute('aria-label') || '').slice(0, 24) });
+        } else if (ownText && size < 12) {
+          out.push({ px: size, kind: 'unreadable', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.textContent || '').trim().slice(0, 24) });
+        }
+      }
+      return out.length;
+    })(),
+    /*
+     * FORM CONTROLS UNDER THE 16px iOS FOCUS-ZOOM FLOOR, counted separately.
+     *
+     * `tinyText` folded two different defects into one array. Readability on
+     * text nodes and the input floor have different thresholds and different
+     * consequences — an input under 16px makes iOS zoom the WHOLE PAGE on
+     * focus, which is a navigation event, not a legibility complaint. A row
+     * written against the input floor therefore had no field to name, and
+     * `undefined === 0` is false: a grader treating the miss as a failure
+     * fails a correct fix, one treating it as absent passes an unmeasured one.
+     */
+    tinyInputs: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('input, textarea, select')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        if (size < 16) out.push({ px: size, cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').slice(0, 30) });
+      }
+      return { count: out.length, items: out.slice(0, 10) };
+    })(),
+    /*
+     * LIST POPULATION (R14). A row-scoped defect cannot be closed on an empty
+     * list: "selector absent" on zero rows is VACUOUS, not a pass — it is the
+     * trap that took three of the gate's own rows. `listRows` is the count of
+     * real row tiles, and `kindTotal` is what the collection believes it holds,
+     * because those two disagreeing tells you WHICH kind of empty you have:
+     * kindTotal 0 means the collection is genuinely empty, while kindTotal > 0
+     * with listRows 0 means rows exist but the active tier hides them.
+     */
+    listRows: document.querySelectorAll('[data-testid="list-tile"]').length,
+    kindTotal: (document.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
+    activeTier: (document.querySelector('.lp__tab--active')?.textContent || '').trim().slice(0, 24),
+    /*
+     * LANE A's CASE WITNESSES, recorded as FACTS rather than graded. An
+     * ABSENCE acceptance ("this selector must not appear in the census") is
+     * only meaningful if the thing could have appeared at all — the DEF-016 /
+     * DEF-018 shape. So the presence of the thing itself is reported next to
+     * the census, and a case whose witness is absent is VOID, not PASS.
+     */
+    laneA: {
+      chatHomeScreen: !!document.querySelector('[data-testid="chat-home-screen"]'),
+      channelView: !!document.querySelector('[data-testid="channel-view"]'),
+      chvTabs: document.querySelectorAll('.chv-tab').length,
+      thinkingSummary: document.querySelectorAll('details.tch-thinking > summary').length,
+      threadFooterOpen: document.querySelectorAll('.chs-thread-footer__open').length,
+      feedRows: document.querySelectorAll('.chs-msg, [data-testid="channel-message"]').length,
+      /* The EntityListPanel embedded in chat-home — Lane A restores the type
+         scale across it deliberately. If it renders nothing, that boundary is
+         untested and must be reported NOT COVERED rather than verified. */
+      panelHost: (() => {
+        const host = document.querySelector('.tch-panel-host');
+        if (!host) return { present: false };
+        return {
+          present: true,
+          listRows: host.querySelectorAll('[data-testid="list-tile"]').length,
+          kindTotal: (host.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
+        };
+      })(),
+    },
+    /*
+     * CONTENT WITNESSES — siblings of the offender, never the offender.
+     * An ABSENCE acceptance is only meaningful if the content that renders the
+     * thing is on screen. Reported as counts so a row can be marked VOID rather
+     * than passed on an empty surface.
+     */
+    contentWitness: {
+      acceptanceRows: document.querySelectorAll('[data-testid="acceptance-row"], .sb-criterion').length,
+      runChips: document.querySelectorAll('.sb-runchip').length,
+      descriptionBlock: !!document.querySelector('.sb-description, [data-testid="description"]'),
+      detailPanel: !!document.querySelector('[data-testid="entity-detail-panel"]'),
+      panelTabs: !!document.querySelector('[data-testid="panel-tabs"]'),
+    },
+    /*
+     * LANE A — AT-REST COMPOSER REACHABILITY. No keyboard involved.
+     *
+     * The keyboard-up case is ruled unverifiable on this engine and is not
+     * measured here. This is ordinary resting geometry on a route already
+     * driven, and it is a DIFFERENT question: is the composer on screen at all
+     * before anything is focused.
+     *
+     * (c) is what decides what (a) and (b) MEAN. `.mobile-frame__content` is
+     * `overflow-y: auto` while `.tch-root` inside it is `overflow: hidden`, so
+     * which of the two absorbs the excess is the open question — and below the
+     * fold on a SCROLLING surface is reachable, while below the fold on one
+     * that does not scroll is not. A rect alone cannot tell them apart.
+     */
+    composerAtRest: (() => {
+      const box = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height) }; };
+      const wrap = box('.tch-composer-wrap');
+      const send = box('.tch-send');
+      const frame = box('.mobile-frame');
+      const tabbar = box('.mobile-frame__tabbar') || box('.mobile-tabs');
+      const content = document.querySelector('.mobile-frame__content');
+      const tchRoot = document.querySelector('.tch-root');
+      return {
+        composerWrap: wrap, send, frame, tabbar,
+        // (a) composer bottom vs frame bottom
+        composerBottomVsFrameBottom: wrap && frame ? wrap.bottom - frame.bottom : null,
+        // (b) Send bottom vs tab-bar top  — positive means Send is BELOW the bar's top edge
+        sendBottomVsTabbarTop: send && tabbar ? send.bottom - tabbar.top : null,
+        // (c) does the surface scroll at all, and where does the excess live
+        frameContentScroll: content ? { scrollHeight: content.scrollHeight, clientHeight: content.clientHeight, overflowBy: Math.max(0, content.scrollHeight - content.clientHeight) } : null,
+        tchRootScroll: tchRoot ? { scrollHeight: tchRoot.scrollHeight, clientHeight: tchRoot.clientHeight, overflowBy: Math.max(0, tchRoot.scrollHeight - tchRoot.clientHeight), overflowY: getComputedStyle(tchRoot).overflowY } : null,
+      };
+    })(),
+    /* Which screen a voice target actually got. A FACT, not a grade — see the
+       voice-room route note. */
+    voiceGuard: {
+      unbuiltCard: !!document.querySelector('[data-testid="mobile-unbuilt-voice-view"]'),
+      channelView: !!document.querySelector('.chv-main, .chv-tabs'),
+    },
+    /* The phone chrome's own controls, for the cheap machine floors. */
+    chrome: (() => {
+      const pick = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), text: (el.textContent || '').trim().slice(0, 40) };
+      };
+  return {
+        accountMenu: pick('[data-testid="mobile-account-menu"]'),
+        refusalOut: pick('[data-testid="mobile-refusal-out"]'),
+        headerTitle: (document.querySelector('.mobile-header__title')?.textContent || '').trim().slice(0, 60),
+      };
+    })(),
+    /*
+     * WHICH ARRAYS IN THIS ROW WERE CUT — the field that makes a sample
+     * self-describing.
+     *
+     * Every list above is a capped sample with a `…Count` beside it, and that
+     * pairing was stated three separate times in this program, each filed
+     * against the one array that prompted it, and rediscovered at full cost
+     * anyway. A rule that lives where it was found does not generalise.
+     *
+     * The hazard is not only under-counting a total from a short array. It is
+     * the MIRROR: a UNIVERSAL NEGATIVE asserted from a truncated sample —
+     * "nothing in here is over 12px" — which reads as a proof and is what a
+     * threshold gets built against. Under-counting looks like a small number;
+     * a false universal negative looks like evidence.
+     *
+     * So the data now answers "is this array complete?" itself. An EMPTY object
+     * means nothing was cut and the arrays in this row ARE the population — the
+     * only condition under which a claim about "every finding" is admissible.
+     * A non-empty entry names the array, what it holds, and what you can see.
+     */
+    /* Vertical reachability at REST — see the belowFold docblock. A count of 0
+       is what licenses reading `tapTargetsUnderMin: 0` as "the controls are on
+       the touch floor AND on the screen". */
+    /*
+     * THE PAIR THAT MUST BE READ TOGETHER. `tapTargetsUnderMin: 0` alone is not
+     * "the controls are usable" — it is "the controls that exist are big
+     * enough". Reachability is the other half, and until this field existed a
+     * reader had to supply it from a screenshot, which does not scale and is
+     * unfalsifiable. tapReachable === tapCounted is what licenses the usable
+     * reading; anything less and the surface passes with controls off screen.
+     */
+    tapReachable: targets.length - belowFold.length,
+    tapCounted: targets.length,
+    tapTargetsBelowFoldCount: belowFold.length,
+    tapTargetsBelowFold: belowFold.slice(0, 10),
+    /* Is the screen scrolled at all, and by how much — context for the above. */
+    contentScroll: (() => {
+      const c = document.querySelector('.mobile-frame__content');
+      if (!c) return null;
+      return { scrollHeight: c.scrollHeight, clientHeight: c.clientHeight, overflowBy: Math.max(0, c.scrollHeight - c.clientHeight) };
+    })(),
+    clippedCount: clipped.length,
+    clipped: clipped.slice(0, 10),
+    hscrollCount: hscroll.length,
+    hscroll: hscroll.slice(0, 10),
+    truncatedArrays: (() => {
+      const cut = {};
+      const note = (name, total, shown) => { if (total > shown) cut[name] = { count: total, shown }; };
+      note('overflowRoots', over.length, Math.min(over.length, 12));
+      note('tapTargetsSmallest', small.length, Math.min(small.length, 64));
+      note('tapTargetsHidden', hidden.length, Math.min(hidden.length, 8));
+      note('tapTargetsInert', inert.length, Math.min(inert.length, 8));
+      note('tapTargetsOccluded', occluded.length, Math.min(occluded.length, 8));
+      note('clipped', clipped.length, Math.min(clipped.length, 10));
+      note('hscroll', hscroll.length, Math.min(hscroll.length, 10));
+      note('tapTargetsBelowFold', belowFold.length, Math.min(belowFold.length, 10));
+      return cut;
+    })(),
     /* What the page believes about itself, so a reader can tell a real 0 from a
        0 taken off a boot error or the wrong shell. */
     shell: document.querySelector('.mobile-frame') ? 'mobile' : document.querySelector('.shell-root') ? 'desktop' : 'none',
@@ -378,22 +1061,113 @@ async function startVite() {
 }
 
 const ref = gitRef(outDir);
-console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}\n`);
+console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}`);
+console.log(`instrument: ${String(blobHash(fileURLToPath(import.meta.url))).slice(0, 12)}  schema: v${SCHEMA_VERSION}  engine: ${ENGINE}\n`);
 
 const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
 if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome' });
+/**
+ * THE ENGINE — system Chrome by default, Firefox where Chrome does not exist.
+ *
+ * Trap 1 above says "do not run `playwright install` to make this go away",
+ * and that still stands: a different browser build is a different set of
+ * numbers. This does NOT relax that rule — it names the engine, records it in
+ * the report, and leaves the default exactly where it was.
+ *
+ * It exists because on some hosts there IS no system Chrome and the bundled
+ * chromium cannot run at all: nine missing system libs, and once those are
+ * staged into a userspace prefix the process still SIGSEGVs immediately after
+ * its DRM probe, with no root available to install the real packages. On such
+ * a host the choice is not "Chrome or Firefox", it is "Firefox or no
+ * measurement", and no measurement is how a program starts trusting jsdom
+ * again.
+ *
+ * WHAT A READER MUST NOT DO WITH THIS: compare a Firefox row to a Chrome row.
+ * Font metrics differ, so tap-target heights and right edges differ by a pixel
+ * or two, and a before/after diff across engines would report that noise as
+ * movement. `engine` is in the report so that comparison is refused by
+ * inspection. Before and after must be taken on the SAME engine.
+ *
+ * Firefox reports `(pointer: coarse)` truthfully under `hasTouch: true`
+ * (measured on this host, with and without the Gecko RDM prefs below), so
+ * trap 2's shell assertion keeps its teeth — a wrong-shell row is still
+ * refused rather than recorded.
+ */
+const ENGINE = process.env.AUDIT_BROWSER === 'firefox' ? 'firefox' : 'chrome';
+/*
+ * NO `firefoxUserPrefs` HERE, AND THAT IS A CORRECTION.
+ *
+ * The Gecko RDM prefs (`ui.primaryPointerCapabilities` / `ui.allPointerCapabilities`)
+ * are set at LAUNCH, so they are BROWSER-WIDE — they leak into every context,
+ * including the desktop profiles that must report a FINE pointer. Measured:
+ *
+ *   prefs + hasTouch    -> coarse TRUE   (correct for a phone)
+ *   prefs + NO hasTouch -> coarse TRUE   (WRONG — this is the desktop profile)
+ *   no prefs + hasTouch -> coarse TRUE   (correct, and sufficient)
+ *   no prefs + no touch -> coarse FALSE  (correct for a desktop)
+ *
+ * `hasTouch` on the CONTEXT is per-context and is enough on its own, so the
+ * prefs bought nothing and cost desktop fidelity: every desktop-1440 and
+ * tablet-768 row was rendered with a coarse pointer, which means any
+ * `@media (pointer: coarse)` CSS was applying on a shell that should never see
+ * it. The shell assertion still passed, because `shellFor` also requires
+ * width < 500 — so the fault was invisible in every check the run performs.
+ */
+const browser = ENGINE === 'firefox'
+  ? await firefox.launch()
+  : await chromium.launch({ channel: 'chrome' });
+/**
+ * SETTLE — wait for the screen to EXIST, never for a fixed number of ms.
+ *
+ * `screenFor` renders a `.mobile-empty` "Loading…" node until `data.ready`, so
+ * a fixed wait is a coin flip: too short and you photograph that node and
+ * measure a screen that never rendered — which cannot overflow and cannot have
+ * a small button, so it scores PERFECT. That exact failure produced a full set
+ * of clean-looking dead screens earlier in this program.
+ *
+ * So: wait for the pending node to be GONE and for the frame to hold real
+ * content. `networkidle` says the seam answered; it says nothing about React
+ * having committed. Fonts are awaited last because a font swap moves every text
+ * box, which is precisely what gets measured.
+ */
+async function settle(page, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const state = await page.evaluate(() => {
+      const frame = document.querySelector('.mobile-frame') || document.querySelector('.shell-root');
+      if (!frame) return { ready: false, why: 'no shell root yet' };
+      const pending = [...frame.querySelectorAll('.mobile-empty')]
+        .some((n) => /loading|hydrating/i.test(n.textContent || ''));
+      if (pending) return { ready: false, why: 'mobile-empty still says Loading' };
+      return { ready: true };
+    });
+    if (state.ready || Date.now() > deadline) {
+      if (!state.ready) return state.why;
+      break;
+    }
+    await page.waitForTimeout(250);
+  }
+  try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
+  await page.waitForTimeout(300);
+  return null;
+}
+
 const rows = [];
 const problems = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
+  /* `isMobile` is a Chromium-only option — Firefox throws on it outright. It
+     drives the mobile viewport-meta emulation, NOT the pointer type, so
+     dropping it on Firefox does not weaken trap 2: `hasTouch` is what makes
+     `(pointer: coarse)` true, and the shell assertion below still refuses any
+     row that landed in the wrong shell. */
   const ctx = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.deviceScaleFactor,
-    isMobile: vp.isMobile,
+    ...(ENGINE === 'firefox' ? {} : { isMobile: vp.isMobile }),
     hasTouch: vp.hasTouch,
   });
   const page = await ctx.newPage();
@@ -411,14 +1185,70 @@ for (const vp of VIEWPORTS) {
        and the only way each row is independent of the row before it. */
     await page.goto('about:blank');
     await page.goto(url, { waitUntil: 'networkidle' });
-    /* Settle. `networkidle` says the fixture seam has answered; it says nothing
-       about React having committed the screen and fonts having swapped in — and
-       a font swap moves every text box, which is exactly what we measure. */
-    await page.waitForTimeout(1200);
-    try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
-    await page.waitForTimeout(300);
+    await settle(page);
 
     const m = await page.evaluate(measureInPage, { MIN_TAP, EPS });
+
+    /*
+     * THE POSITIVE WITNESS. A capture meant to exercise a SPECIFIC state must
+     * prove that state rendered — "it did not crash" is not evidence. Where a
+     * route declares one and it is absent, the numbers describe some OTHER
+     * screen that silently stood in, so they are not reported as a threshold
+     * result at all: the row is VOID.
+     */
+    /*
+     * NULL, NOT TRUE, WHEN NOTHING WAS CHECKED.
+     *
+     * `witnessOk: true` on a row with `witness: null` reads as "verified" and
+     * means "nobody asked" — 76 rows of 90 in a contract file were exactly
+     * that pair, because only `tasks-board` had a witness anyone demanded. A
+     * field that cannot say "I did not check" will say "pass", which is the
+     * same shape as `stateOpened` one field over.
+     */
+    let witnessOk = route.witness ? true : null;
+    if (route.witness) {
+      witnessOk = await page.locator(route.witness).first().isVisible().catch(() => false);
+      if (!witnessOk) {
+        problems.push(`${vp.name}/${route.name}: VOID — witness ${route.witness} absent; this row measured a different screen, not ${route.name}`);
+      }
+    }
+
+    /* NEGATIVE WITNESSES. A refusal card is a legitimate SUBJECT when the row
+       is declared `phone: 'refusal'`; anywhere else it means some other screen
+       stood in. `loading` and `chatInFlight` are never legitimate. */
+    const negHits = [];
+    if (m.negatives.loading) negHits.push('mobile-empty says Loading');
+    if (m.negatives.chatInFlight) negHits.push('chat still in flight (chat-detail-loading / chat-thinking)');
+    if (route.phone !== 'refusal') {
+      if (m.negatives.unrouted) negHits.push('mobile-unrouted — the link named no screen');
+      if (m.negatives.notOnPhone) negHits.push('mobile-not-on-phone refusal card, not the surface');
+    }
+    if (negHits.length) problems.push(`${vp.name}/${route.name}: VOID — ${negHits.join('; ')}`);
+
+    /*
+     * THE SUBSTRATE. Not a threshold — an ADMISSIBILITY test.
+     *
+     * SCOPED TO THE SHELL, and that scoping is load-bearing. The hazard is a
+     * CHANGED zoom, not a non-unit one: `.cv2-root[data-shell='mobile'] { zoom: 1 }`
+     * scopes off a `zoom: 1.1` that app.css puts on `.cv2-root` as a DESKTOP
+     * experiment. So 1.1 is the correct, intended value on the desktop shell and
+     * 1 is the correct value on the phone. A flat "every value must be 1" would
+     * void every desktop and tablet row — which is the evidence R11 exists to
+     * require — while a flat "must be 1.1" would miss the gate failing open on a
+     * phone. Either way the check would be worse than none, because it would
+     * fire constantly and get ignored.
+     *
+     * Deviation from the shell's expected value is what voids the row, and it
+     * catches the gate breaking in BOTH directions: mobile leaking 1.1 (tap
+     * targets inflate ~10% and cross 44px with no fix), or desktop losing its
+     * 1.1. A nested root reading '1' inside the desktop shell is the mobile gate
+     * legitimately scoping a descendant, so it is allowed there.
+     */
+    const expectedZoom = m.shell === 'mobile' ? '1' : '1.1';
+    const zoomOk = m.zooms.every((z) => String(z) === expectedZoom || (m.shell !== 'mobile' && String(z) === '1'));
+    if (!zoomOk) {
+      problems.push(`${vp.name}/${route.name}: VOID for comparison — zooms=${JSON.stringify(m.zooms)}, expected every value "${expectedZoom}" in the ${m.shell} shell`);
+    }
 
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
@@ -445,19 +1275,124 @@ for (const vp of VIEWPORTS) {
       expectShell: vp.expectShell,
       shellOk,
       phoneRole: route.phone,
+      witness: route.witness ?? null,
+      witnessOk,
+      negativeHits: negHits,
+      zoomOk,
+      void: (route.witness ? !witnessOk : false) || negHits.length > 0 || !zoomOk,
       note: route.note,
       screenshot: shot,
       pageErrors: pageErrors.slice(0, 3),
       ...m,
     });
 
-    const flag = shellOk ? '' : '  ⚠ WRONG SHELL';
+    const flag = !shellOk ? '  ⚠ WRONG SHELL'
+      : (route.witness && !witnessOk) ? '  ⚠ VOID — WITNESS ABSENT'
+      : !zoomOk ? `  ⚠ VOID — ZOOM ${JSON.stringify(m.zooms)}`
+      : negHits.length ? `  ⚠ VOID — ${negHits[0]}` : '';
     console.log(
       `${vp.name.padEnd(13)} ${route.name.padEnd(10)} overflow=${String(m.overflowCount).padStart(4)}` +
       `  worstRight=${String(m.worstRightEdge).padStart(5)}  scrollW=${String(m.scrollWidth).padStart(5)}/${m.viewportWidth}` +
       `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}  [${m.shell}]${flag}`,
     );
   }
+
+  /* ── THE OPENED STATES ────────────────────────────────────────────────────
+     Phones only. A pushed detail screen or a portalled sheet is a phone
+     arrangement; driving the same chain on desktop would exercise the panel
+     stack, which is a different lane's surface and a different set of numbers. */
+  if (vp.expectShell === 'mobile') {
+    for (const st of STATES) {
+      if (onlyRoute && st.name !== onlyRoute) continue;
+      pageErrors.length = 0;
+      const url = `${base}/mobile-audit.html#/s/${SPACE}/${st.path}`;
+      await page.goto('about:blank');
+      await page.goto(url, { waitUntil: 'networkidle' });
+      const stall = await settle(page);
+      if (stall) problems.push(`${vp.name}/${st.name}: never settled — ${stall}`);
+
+      let failed = null;
+      for (const step of st.steps) {
+        try {
+          if (step.focus) {
+            const el = page.locator(step.focus).first();
+            await el.waitFor({ state: 'visible', timeout: 8000 });
+            await el.focus();
+          } else {
+            /* `text` narrows a repeated selector to the one that matters — the
+               fixture's row-bearing tier, not the empty one it opens on. */
+            const loc = step.text
+              ? page.locator(step.click).filter({ hasText: step.text }).first()
+              : page.locator(step.click).first();
+            await loc.waitFor({ state: 'visible', timeout: 8000 });
+            await loc.click({ timeout: 8000 });
+          }
+          await page.waitForTimeout(600);
+        } catch (e) {
+          failed = `step ${JSON.stringify(step)} — ${String(e).split('\n')[0].slice(0, 120)}`;
+          break;
+        }
+      }
+
+      /* THE PROOF THE STATE OPENED — a STATE's `expect` is its positive
+         witness, the same contract the ROUTES table spells out under
+         `witness`. Without it this row measures the screen underneath, which
+         looks exactly like a real row and is fiction. */
+      /* An environmental state that cannot be produced on this engine is
+         reported as UNPRODUCIBLE, never as measured — see the composer row. */
+      let unproducible = null;
+      if (st.stateWitness) {
+        const obtains = await page.locator(st.stateWitness).first().isVisible().catch(() => false);
+        if (!obtains) {
+          unproducible = st.unproducibleReason || `state witness ${st.stateWitness} absent`;
+          problems.push(`${vp.name}/${st.name}: UNPRODUCIBLE ON THIS ENGINE — ${unproducible}`);
+        }
+      }
+
+      let opened = failed === null;
+      if (opened && st.expect) {
+        opened = await page.locator(st.expect).first().isVisible().catch(() => false);
+        if (!opened) failed = `expected ${st.expect} to be visible after the chain`;
+      }
+      if (failed) problems.push(`${vp.name}/${st.name}: state NOT reached — ${failed}`);
+
+      await settle(page);
+      const m = await page.evaluate(measureInPage, { MIN_TAP, EPS });
+      const shellOk = m.shell === vp.expectShell;
+      if (!shellOk) problems.push(`${vp.name}/${st.name}: expected ${vp.expectShell} shell, got '${m.shell}'`);
+      if (pageErrors.length) problems.push(`${vp.name}/${st.name}: page error — ${pageErrors[0]}`);
+
+      let shot = null;
+      if (!noShots) {
+        shot = `screens/${vp.name}__state-${st.name}.png`;
+        await page.screenshot({ path: `${outDir}/${shot}`, fullPage: false });
+      }
+
+      rows.push({
+        viewport: vp.name,
+        route: `state:${st.name}`,
+        url: `#/s/${SPACE}/${st.path}`,
+        expectShell: vp.expectShell,
+        shellOk,
+        phoneRole: 'state',
+        stateOpened: opened,
+        stateFailure: failed,
+        stateUnproducible: unproducible,
+        note: st.note,
+        screenshot: shot,
+        pageErrors: pageErrors.slice(0, 3),
+        ...m,
+      });
+
+      console.log(
+        `${vp.name.padEnd(13)} ${('state:' + st.name).padEnd(24)} overflow=${String(m.overflowCount).padStart(4)}` +
+        `  worstRight=${String(m.worstRightEdge).padStart(5)}` +
+        `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}` +
+        `  [${m.shell}]${opened ? '' : '  ⚠ STATE NOT REACHED'}`,
+      );
+    }
+  }
+
   await ctx.close();
 }
 
@@ -470,6 +1405,10 @@ if (ref.dirty) problems.push(`working tree is DIRTY at ${ref.headShort} — this
 if (ref.behindMain > 50) problems.push(`HEAD is ${ref.behindMain} commits behind origin/main — measuring code main has moved past`);
 
 const report = {
+  /* Read these two FIRST. They say which tool produced the file; `ref` below
+     says which product it measured. See the SELF-IDENTIFICATION docblock. */
+  schemaVersion: SCHEMA_VERSION,
+  instrument: blobHash(fileURLToPath(import.meta.url)),
   label,
   /* Captured by this script, never passed in — see `gitRef`. No timestamp: it
      would change the file on every run and make `git diff` on the committed
@@ -478,6 +1417,38 @@ const report = {
   minTapPx: MIN_TAP,
   epsilonPx: EPS,
   space: SPACE,
+  /* Which rendering engine produced these numbers. Rows from different engines
+     are NOT comparable — see the ENGINE docblock. */
+  engine: ENGINE,
+  /*
+   * THE BASIS, so a later run can be RECONCILED rather than naively subtracted.
+   *
+   * The route set and the census rules WILL move between before and after — a
+   * route that is a refusal card today becomes a real screen the moment one is
+   * approved, and it arrives carrying elements, some of them under 44px. Diffed
+   * blind, that improvement reads as a regression and the after-run cries wolf
+   * at exactly the work that was ordered.
+   *
+   * So both are recorded. A route present in one run and absent in the other is
+   * a SCOPE CHANGE. A census rule that differs makes the two counts
+   * incomparable outright and the run must be retaken, not reconciled.
+   */
+  basis: {
+    routes: ROUTES.map((r) => ({ name: r.name, path: r.path, phone: r.phone })),
+    states: STATES.map((r) => ({ name: r.name, path: r.path, note: r.note })),
+    viewports: VIEWPORTS.map((v) => v.name),
+    census: {
+      interactiveSelector: 'button, a[href], input, select, textarea, summary, [role=button|tab|link|menuitem|checkbox|switch], [tabindex]:not([tabindex="-1"])',
+      excluded: [
+        'not rendered (zero box / off-page)',
+        'visibility:hidden, opacity:0, pointer-events:none',
+        'visually-hidden (position:absolute + clip/clip-path + <=1px) — screen-reader-only inputs',
+        'inert: disabled / aria-disabled / pointer-events:none (ledgered separately, never failed)',
+      ],
+      ledgeredNotFailed: ['tapTargetsHidden', 'tapTargetsInert', 'tapTargetsOccluded'],
+      overflowMeasure: 'per-element getBoundingClientRect().right > innerWidth + EPS — scrollWidth is context, never proof',
+    },
+  },
   problems,
   rows,
 };
