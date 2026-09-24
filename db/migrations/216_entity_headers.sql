@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 216 — entity_headers: authored selection headers (headers design 01a0d31e
--- §2.2 / §3 / §8.3; integrated design 01a0d348 v17 §8 M2 I3 = headers T2).
+-- §2.2 / §3 / §8.3; integrated design 01a0d348 v18 §8 M2 I3 = headers T2).
 --
 -- WHAT IS HERE
 --   1. `public.entity_headers`, 1:1 with `entities`: the text a person or
@@ -116,7 +116,10 @@ $$;
 -- The write prologue both doors share: live entity of an allowed kind, the
 -- caller a member of its space and able to read it (a restricted entity's
 -- header is as closed as the entity), the actor resolved and bound. The edit
--- right is the one patching the entity needs, no more and no less.
+-- right is the one patching the entity needs, no more and no less: for most
+-- kinds that is space membership; for a team_member it is also update_team_member's
+-- rule (007/038), the owning member or a space admin. Otherwise any member or
+-- agent could rewrite another person's teammate header and steer Jev's picks.
 create or replace function internal.header_target(p_entity_id uuid, p_actor_id uuid)
 returns table (entity public.entities, actor uuid)
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -134,6 +137,13 @@ begin
   end if;
   who := internal.resolve_actor(p_actor_id, e.space_id);
   perform internal.bind_actor(who);
+  if e.kind = 'team_member'
+     and not internal.is_space_admin(e.space_id)
+     and (select tm.owner_member_id from public.team_members tm where tm.entity_id = e.id)
+         is distinct from internal.current_member_id(e.space_id) then
+    raise exception 'only the owning member or a space admin may change this teammate''s header'
+      using errcode = '42501';
+  end if;
   return query select e, who;
 end
 $$;

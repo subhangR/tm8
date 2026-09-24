@@ -27,6 +27,8 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 300_000 });
 const OWNER = 'eh-owner';
 const STRANGER = 'eh-stranger';
 const NOBODY = 'eh-nobody';
+/** A plain member of the space: neither admin nor the teammate's owner. */
+const PEER = 'eh-peer';
 
 let database: W1ScratchDatabase;
 let db: Db;
@@ -125,17 +127,23 @@ beforeAll(async () => {
   db = createDb(database.url);
   await asOwner(async (c) => {
     await c.query(
-      `insert into public.user_profiles(identity_id, display_name) values ($1, 'Owner'), ($2, 'Stranger'), ($3, 'Nobody')`,
-      [OWNER, STRANGER, NOBODY],
+      `insert into public.user_profiles(identity_id, display_name) values ($1, 'Owner'), ($2, 'Stranger'), ($3, 'Nobody'), ($4, 'Peer')`,
+      [OWNER, STRANGER, NOBODY, PEER],
     );
     await c.query(
       `insert into public.accounts(identity_id, username, display_name, is_node_admin, is_owner)
        values ($1, 'eh-owner', 'Owner', false, true), ($2, 'eh-stranger', 'Stranger', false, false),
-              ($3, 'eh-nobody', 'Nobody', false, false)`,
-      [OWNER, STRANGER, NOBODY],
+              ($3, 'eh-nobody', 'Nobody', false, false), ($4, 'eh-peer', 'Peer', false, false)`,
+      [OWNER, STRANGER, NOBODY, PEER],
     );
     const s = ids.space = await space(c, 'Headers', OWNER);
     const other = ids.otherSpace = await space(c, 'Elsewhere', STRANGER);
+    ids.peer = await newId(c);
+    await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [ids.peer, s]);
+    await c.query(
+      `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $3)`,
+      [ids.peer, s, PEER],
+    );
 
     ids.doc = await doc(c, s, 'Design');
     ids.staleDoc = await doc(c, s, 'Living doc');
@@ -148,6 +156,12 @@ beforeAll(async () => {
     await c.query(
       `insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Draco', 'PTY engineer', 'Persona text.')`,
       [ids.teammate, ids[`member:${s}`]],
+    );
+    // A teammate the peer owns: the admin may still edit its header.
+    ids.peerTeammate = await entity(c, s, 'team_member');
+    await c.query(
+      `insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Pip', 'Helper', 'Peer persona.')`,
+      [ids.peerTeammate, ids.peer],
     );
     ids.file = await entity(c, s, 'file');
     await c.query(
@@ -301,6 +315,18 @@ describe('RLS', () => {
     await refused(clearHeader(ids.doc!, 2, STRANGER), '42501');
     await refused(setHeader(ids.restricted!, { summary: 'restricted' }), 'P0002');
     await refused(setHeader(ids.deleted!, { summary: 'deleted' }), 'P0002');
+  });
+
+  it("a teammate's header needs its owner or a space admin, like update_team_member", async () => {
+    await refused(setHeader(ids.teammate!, { summary: 'hijack' }, PEER), '42501');
+    await refused(clearHeader(ids.teammate!, 1, PEER), '42501');
+    // The peer may write headers on ordinary kinds, and on the teammate it owns.
+    expect((await setHeader(ids.peerTeammate!, { whenToUse: 'Pick Pip for small chores' }, PEER)).header.version).toBe(1);
+    await setHeader(ids.task!, { summary: 'Peer-written task summary' }, PEER);
+    // A space admin who does not own the teammate may still edit it.
+    expect((await setHeader(ids.peerTeammate!, { expected: 1, whenToUse: 'Pick Pip for chores' })).header.version).toBe(2);
+    // The refused writes left nothing behind.
+    expect((await resolve([ids.teammate!])).get(ids.teammate!)).toMatchObject({ source: 'derived' });
   });
 
   it('tm8_app has no direct write', async () => {

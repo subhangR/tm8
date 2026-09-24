@@ -5,7 +5,7 @@
  * Each field resolves in the order authored → native → derived, and falls
  * back separately: an authored `whenToUse` with no `summary` still gets the
  * native or derived `summary`. Authored headers are `entity_headers` rows
- * (migration 213), read by `resolveHeaders` in the same statement.
+ * (migration 216), read by `resolveHeaders` in the same statement.
  *
  * Text cuts count characters (code points), the same unit Postgres `left()`
  * counts, so a cut made in SQL and a cut made here agree.
