@@ -22,6 +22,7 @@ import {
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
+import { DEFAULT_PROMPT_VERSION } from '@tm8/prompt';
 
 function context(overrides: Partial<SpawnContext['teamMember']> = {}): SpawnContext {
   return {
@@ -1101,6 +1102,9 @@ describe('composeManifest', () => {
     });
 
     expect(manifest.manifestVersion).toBe('1');
+    // §6.3: the analytics tag, from @tm8/prompt's single source of truth.
+    expect(manifest.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
+    expect(manifest.promptVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
     expect(manifest.coordinator).toEqual({
       sessionId: 'coord-session-1',

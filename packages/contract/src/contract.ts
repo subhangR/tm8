@@ -5373,6 +5373,15 @@ export interface SessionJournalRecord {
   };
   /** One entry per HTTP call this invocation made. Often 1, sometimes 0 or N. */
   calls: SessionJournalCall[];
+  /**
+   * Present only on an `entity context` read: the `schemaVersion` the Server
+   * returned (e.g. `tm8.entity-context.v1`), or `null` when the response
+   * carried none. Joined with the manifest's `promptVersion`, it lets
+   * first-read metrics tell a v2 context read from the c761 snapshot (spec
+   * ca8d §6.3, c761 Q27). OPTIONAL: every other command, and every record
+   * written before the field, omits it.
+   */
+  contextRead?: { schemaVersion: string | null };
   result: { exitCode: number; error: string | null };
   tokens: {
     /** Names how the estimate was derived. Never omit it. */

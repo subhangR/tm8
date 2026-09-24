@@ -57,6 +57,7 @@
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { ApiError } from '../errors.js';
+import { journal } from '../journal.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -534,8 +535,16 @@ async function entityContext(cmd: CommandContext): Promise<ExitCode> {
     params: { id },
     query: contextQuery(cmd),
   });
+  journal.noteContextRead(contextSchemaVersion(data));
   cmd.out.data(data, renderContext);
   return EXIT_OK;
+}
+
+/** The response's `schemaVersion`, or `null` — a journal field, never a gate. */
+function contextSchemaVersion(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const version = (data as { schemaVersion?: unknown }).schemaVersion;
+  return typeof version === 'string' ? version : null;
 }
 
 // ── entity query (collections.query) ───────────────────────────────────────

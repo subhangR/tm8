@@ -67,6 +67,7 @@ function launched(over: Partial<SessionLaunchRecord> = {}): SessionLaunchRecord 
     unavailableReason: null,
     manifest: {
       manifestVersion: '1',
+      promptVersion: '1',
       sessionId: SESSION,
       spaceId: '019fb748-0068-76dc-9869-1bb36133c554',
       generatedAt: '2026-08-01T14:20:00.000Z',
@@ -245,6 +246,8 @@ describe('spawn configuration', () => {
     ]) {
       expect(fields).toContain(fact);
     }
+    // §6.3: the prompt frame the launch was stamped with is a first-class fact.
+    expect(fields).toContain('Prompt version');
     // …and the whole document is still reachable, so a field this grid does not
     // know about is visible rather than swallowed.
     expect(screen.getByTestId('session-debug-raw-manifest').textContent).toContain('manifestVersion');

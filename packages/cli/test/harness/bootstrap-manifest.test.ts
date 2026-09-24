@@ -18,7 +18,7 @@ import {
   serializeBootstrapManifest,
   type BootstrapManifestInput,
 } from '../../src/harness/index.js';
-import { BYTE_BUDGETS, BudgetExceededError, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, BudgetExceededError, DEFAULT_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
 
 const INPUT: BootstrapManifestInput = {
   server: {
@@ -57,11 +57,12 @@ const INPUT: BootstrapManifestInput = {
 };
 
 describe('shape', () => {
-  it('has exactly the nine §5.1 top-level keys, in order', () => {
+  it('has exactly the nine §5.1 top-level keys plus promptVersion, in order', () => {
     const manifest = composeBootstrapManifest(INPUT);
     expect(Object.keys(manifest)).toEqual([...BOOTSTRAP_MANIFEST_KEYS]);
     expect([...BOOTSTRAP_MANIFEST_KEYS]).toEqual([
       'manifestVersion',
+      'promptVersion',
       'server',
       'credential',
       'identity',
@@ -71,6 +72,16 @@ describe('shape', () => {
       'routing',
       'discovery',
     ]);
+  });
+
+  it('stamps promptVersion from @tm8/prompt, and keeps a stamped value on re-parse (§6.3)', () => {
+    const manifest = composeBootstrapManifest(INPUT);
+    expect(manifest.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
+    expect(manifest.promptVersion).toBe('1');
+    expect(parseBootstrapManifest(JSON.parse(JSON.stringify(manifest)))?.promptVersion).toBe('1');
+    expect(() => composeBootstrapManifest({ ...INPUT, promptVersion: '9' as never })).toThrow(
+      InvalidBootstrapManifestError,
+    );
   });
 
   it('pins manifestVersion 2 and grammarVersion 2', () => {

@@ -15,7 +15,7 @@
 //      makes that mistake impossible to make here.
 
 import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName, SpawnSelection } from '@tm8/contract';
-import type { CoordinatorKind } from '@tm8/prompt';
+import type { CoordinatorKind, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind };
@@ -875,6 +875,13 @@ export interface GraphPort {
  */
 export interface Tm8Manifest {
   manifestVersion: '1';
+  /**
+   * Which prompt frame this launch was booted with — the analytics tag that
+   * splits journals and first-read metrics by version (spec ca8d §6.3). Not
+   * the document shape; that is `manifestVersion`. The value comes from
+   * `@tm8/prompt`'s `prompt-version.ts`, never a literal here.
+   */
+  promptVersion: PromptVersion;
   sessionId: string;
   spaceId: string;
   /** RFC3339. Stamped by the composer. */

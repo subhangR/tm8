@@ -41,6 +41,7 @@ import {
   type BootstrapControlFacts,
   type CoordinatorKind,
 } from './templates.js';
+import { DEFAULT_PROMPT_VERSION } from './prompt-version.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -50,6 +51,7 @@ import {
 export * from './budgets.js';
 export * from './escape.js';
 export * from './kernel.js';
+export * from './prompt-version.js';
 export * from './templates.js';
 
 export type AgentMode =
@@ -77,6 +79,8 @@ export const AGENT_MODES: readonly AgentMode[] = [
  * stays in `@tm8/execution`.
  */
 export interface PromptManifest {
+  /** The analytics tag the launch was stamped with (`prompt-version.ts`). */
+  promptVersion?: string | undefined;
   sessionId?: string | undefined;
   spaceId?: string | undefined;
   mode?: AgentMode | undefined;
@@ -173,10 +177,13 @@ export interface PromptEnvelope {
     spaceId: string | null;
     taskCount: number;
     commandCount: number;
+    /** The manifest's `promptVersion`, or the default when it predates the stamp. */
+    promptVersion: string;
   };
 }
 
-const PROMPT_VERSION = '1.0';
+/** The frame attribute the agent reads — not the analytics tag (`promptVersion`). */
+const FRAME_VERSION = '1.0';
 
 function esc(v: string): string {
   return v
@@ -751,6 +758,7 @@ function composeBootstrapEnvelope(
   view: BootstrapView,
   manifestPath: string,
   mode: AgentMode,
+  promptVersion: string,
 ): PromptEnvelope {
   const system = composeBootstrapSystem(view, manifestPath);
   const taskIds = view.assignment?.taskIds ?? [];
@@ -777,6 +785,7 @@ function composeBootstrapEnvelope(
       taskCount: taskIds.length,
       // The three discovery roots — the only commands a v2 bootstrap names.
       commandCount: 3,
+      promptVersion,
     },
   };
 }
@@ -793,6 +802,9 @@ export function composePrompt(
   const commands = commandSurface(sessionId !== null);
   const coordinatorSessionId = manifest.coordinator?.sessionId?.trim() || null;
   const coordinatorKind = coordinatorKindOf(manifest.coordinator?.kind);
+  // A manifest written before the stamp existed was, by definition, booted on
+  // today's frame — so absent reads as the default rather than as unknown.
+  const promptVersion = manifest.promptVersion ?? DEFAULT_PROMPT_VERSION;
 
   // A `manifestVersion: "2"` bootstrap manifest takes the harness path: the
   // §5.2 kernel and one §14 control block, with no persona/skill/memory frame
@@ -807,7 +819,7 @@ export function composePrompt(
     ) {
       throw new Error(`${mode} prompt requires a coordinator session id`);
     }
-    return composeBootstrapEnvelope(bootstrap.view, bootstrap.path, mode);
+    return composeBootstrapEnvelope(bootstrap.view, bootstrap.path, mode, promptVersion);
   }
   if (
     (mode === 'coordinated-worker' || mode === 'coordinated-coordinator')
@@ -818,7 +830,7 @@ export function composePrompt(
 
   // ---- system (v1 manifest) ----------------------------------------------
   const s: string[] = [];
-  s.push(`<tm8_system_prompt version="${PROMPT_VERSION}" mode="${esc(mode)}">`);
+  s.push(`<tm8_system_prompt version="${FRAME_VERSION}" mode="${esc(mode)}">`);
 
   s.push('  <identity>');
   s.push(`    <profile>${esc(profileFor(mode))}</profile>`);
@@ -1044,6 +1056,7 @@ export function composePrompt(
       spaceId,
       taskCount: tasks.length,
       commandCount: commands.length,
+      promptVersion,
     },
   };
 }

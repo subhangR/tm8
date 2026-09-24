@@ -1,5 +1,6 @@
 {
   "manifestVersion": "1",
+  "promptVersion": "1",
   "sessionId": "ws_01HZPHOENIXSESSION",
   "spaceId": "sp_01HZDEMOSPACE",
   "mode": "coordinated-worker",
