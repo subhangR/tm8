@@ -102,6 +102,20 @@ export interface ChatHomeScreenProps {
    * thread's pin holds it. Absent ⇒ the composer's own choice, default 'ask'.
    */
   pinnedMode?: ChatMode;
+  /**
+   * COMPOSER SEED — a host putting text into the draft (Craft's "Ask about
+   * this" and its example prompts). Applied once per `nonce`: appended to the
+   * CURRENT draft with one separating space, never replacing what the viewer
+   * already typed, then the caret lands at the end. Absent ⇒ nothing happens;
+   * no other host passes it.
+   */
+  composerSeed?: { text: string; nonce: number } | undefined;
+  /**
+   * What the NEW-CONVERSATION state says above the composer, when the host
+   * knows better than the generic greeting (Craft explains what the craft
+   * agent will do with the blueprint). Absent ⇒ the greeting, unchanged.
+   */
+  newThreadIntro?: ReactNode;
   models: readonly ChatModelOption[];
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
@@ -326,6 +340,8 @@ export function ChatHomeScreen({
   spaceId,
   aboutId,
   pinnedMode,
+  composerSeed,
+  newThreadIntro,
   models,
   newMutationId = defaultMutationId,
   onOpenEntity,
@@ -1199,6 +1215,30 @@ export function ChatHomeScreen({
       }
     },
   });
+  /* The seed lands once per nonce (see `composerSeed`). The ref keeps the
+     latest text without making the text itself a trigger. */
+  const seedRef = useRef(composerSeed);
+  seedRef.current = composerSeed;
+  const seedNonce = composerSeed?.nonce;
+  useEffect(() => {
+    const seed = seedRef.current;
+    if (seedNonce === undefined || !seed) return;
+    let end = 0;
+    setDraft((current) => {
+      const sep = current === '' || /\s$/.test(current) ? '' : ' ';
+      const next = `${current}${sep}${seed.text}`;
+      end = next.length;
+      return next;
+    });
+    const area = composer.current;
+    if (!area) return;
+    area.focus();
+    /* After React writes the new value: a caret set before that commit is
+       set on the old text and then reset by the value write. */
+    const frame = requestAnimationFrame(() => area.setSelectionRange(end, end));
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedNonce]);
   const attachments = rich.attachments!;
   /* Read at SEND time through a ref, not closed over: `send` is memoised on
      the facts of the conversation, and the staged list changes with every
@@ -1889,6 +1929,9 @@ export function ChatHomeScreen({
               {startingThread ? 'Starting this conversation…' : 'Reading your conversations…'}
             </div>
           ) : (
+            newThreadIntro != null ? (
+              <div className="tch-welcome tch-welcome--host">{newThreadIntro}</div>
+            ) : (
             <div className="tch-welcome">
               {/* THE BRAND, NOT A BOLT. This slot held a `⌁` glyph in a bordered
                   card — a placeholder that read as a status icon on the one
@@ -1901,6 +1944,7 @@ export function ChatHomeScreen({
               <h1>{greetingLine(viewerName)}</h1>
               <p>New conversation — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the thread.</p>
             </div>
+            )
           )}
         </div>
 
@@ -2032,17 +2076,23 @@ export function ChatHomeScreen({
                     (quiet) · one fixed ⚙ slot. Nothing here appears or
                     disappears when the mode changes (ac_12). */}
                 <span className="tch-picks">
-                  <ComposerSelect
-                    label="Chat mode"
-                    testId="tch-mode"
-                    options={modeSelectOptions}
-                    emphasisGroups={['Act']}
-                    tall
-                    value={shownMode}
-                    onChange={(id) => setChatMode(id as ChatMode)}
-                    disabled={pinned || pinnedMode !== undefined}
-                    emptyNote="No chat mode is available."
-                  />
+                  {/* A HOST-PINNED mode has no chip: the host IS the mode
+                      (Craft is craft), so a held select that can never change
+                      is noise on the row. A thread's own pin still shows it —
+                      there the mode is a fact about the thread worth seeing. */}
+                  {pinnedMode === undefined ? (
+                    <ComposerSelect
+                      label="Chat mode"
+                      testId="tch-mode"
+                      options={modeSelectOptions}
+                      emphasisGroups={['Act']}
+                      tall
+                      value={shownMode}
+                      onChange={(id) => setChatMode(id as ChatMode)}
+                      disabled={pinned}
+                      emptyNote="No chat mode is available."
+                    />
+                  ) : null}
                   <ComposerSelect
                     label="Chat teammate"
                     testId="tch-teammate"

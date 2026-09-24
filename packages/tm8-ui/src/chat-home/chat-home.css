@@ -182,6 +182,13 @@
   text-align: center;
 }
 
+/* A HOST's intro (Craft's "Craft a plan") brings its own layout; the berth
+   only centres it and lets its rows stretch to the column. */
+.tch-welcome--host {
+  align-items: stretch;
+  text-align: left;
+}
+
 /* THE MARK IS THE MARK, NOT A CARD AROUND ONE. This was a bordered 42px tile
    holding a `⌁` glyph — chrome that read as a status chip on the product's
    front door. It now sizes `kit/RibbonMark` (design box 560x700, so the width
