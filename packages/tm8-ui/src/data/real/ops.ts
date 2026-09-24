@@ -30,6 +30,7 @@ import type { JevPort } from '../../jev/port';
  *      so this adapter stamps the request id onto the snapshot.
  */
 import {
+  type FormsPendingForSessionsResult,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -682,6 +683,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {
       await http.call('projects.link', { params: { spaceId }, body: input });
+    },
+
+    /** Forms waiting on these sessions for the caller (decision 11); `sessionIds` travels as a comma list. */
+    formsPendingForSessions(input: { spaceId: SpaceId; sessionIds: EntityId[] }): Promise<FormsPendingForSessionsResult> {
+      return http.call<FormsPendingForSessionsResult>('forms.pendingForSessions', {
+        query: { spaceId: input.spaceId, sessionIds: input.sessionIds.join(',') },
+      });
     },
 
     entity(id: EntityId): Promise<EntityDetail> {

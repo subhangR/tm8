@@ -431,3 +431,14 @@ describe('ops: launch.suggest (Jev lane U)', () => {
     expect(f.last().body).toMatchObject(input);
   });
 });
+
+describe('ops: forms.pendingForSessions (decision 11)', () => {
+  it('reads every session in ONE GET, the ids as a comma list', async () => {
+    const reply = { sessions: [{ workSessionId: 'ws-1', total: 1, queued: 0, forms: [] }] };
+    const { ops, f } = harness(reply);
+    await expect(ops.formsPendingForSessions({ spaceId: 'space-1', sessionIds: ['ws-1', 'ws-2'] })).resolves.toEqual(reply);
+    expect(f.calls).toHaveLength(1);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/forms-pending?spaceId=space-1&sessionIds=ws-1%2Cws-2');
+  });
+});
