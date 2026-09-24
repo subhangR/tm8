@@ -96,6 +96,7 @@ export function formGuide(): GuideSection[] {
       lines: [
         "tm8 form create --title '…' --spec <json-source>   (inline JSON, @file, or - for stdin)",
         `tm8 form create --title '…' --question '${QUESTION_SHORTHAND}' … [--optional <key>]`,
+        "e.g. tm8 form create --title 'Migration plan' --question 'strategy:single_choice:Which approach?:online_backfill*,dual_write,big_bang' --question 'risks:long_text:Anything to watch for?' --optional risks",
         'the spec, shorthand and answers are validated locally first: an invalid one exits 2, one `key code message` line per issue, nothing sent',
         'the create receipt prints the form id, version and url; answers arrive in YOUR session as a message',
       ],
