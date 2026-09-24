@@ -132,6 +132,8 @@ import type {
   CredentialsServiceKeyDeleteResult,
   CredentialPolicySource,
   CredentialsSpaceCreateInput,
+  CredentialsSpaceShareInput,
+  CredentialsSharesView,
   CredentialsSpaceDeleteResult,
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
@@ -1248,6 +1250,13 @@ export interface Seam {
         provider: SpaceCredentialProviderName,
         allowedSources: CredentialPolicySource[] | null,
       ): Promise<CredentialsSpacePolicySetResult>;
+      /**
+       * SC-8: share the viewer's OWN GitHub token into a space, by reference
+       * (no secret travels). Un-share is `remove`.
+       */
+      share(spaceId: SpaceId, input: Omit<CredentialsSpaceShareInput, 'clientMutationId'>): Promise<SpaceCredentialView>;
+      /** SC-8: the viewer's own live shares, and whether their GitHub token can be shared. */
+      shares(): Promise<CredentialsSharesView>;
     };
     /** The node's own fallback credentials (D9) — node admin only. */
     node: {

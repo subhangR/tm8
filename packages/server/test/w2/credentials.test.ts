@@ -259,6 +259,7 @@ function bodyFor(opName: OperationName): unknown {
   }
   if (opName === 'credentials.space.rekey') return { secret: 'sk-test-positive-control' };
   if (opName === 'credentials.space.rename') return { label: 'Renamed' };
+  if (opName === 'credentials.space.share') return { provider: 'github', label: 'Shared' };
   if (opName === 'credentials.space.policy.set') return { allowedSources: ['space'] };
   if (opName === 'node.credentials.policy.set') return { allowNode: false };
   return {};
@@ -302,6 +303,9 @@ describe('the four credential operations exist in the contract', () => {
       'POST /v2/space-credentials/:credentialId/default',
       'PATCH /v2/space-credentials/:credentialId',
       'DELETE /v2/space-credentials/:credentialId',
+      // SC-8: share one's own credential into a space, and list one's shares.
+      'POST /v2/spaces/:spaceId/credential-shares',
+      'GET /v2/identity/credentials/shares',
       'GET /v2/spaces/:spaceId/credential-policy',
       'PUT /v2/spaces/:spaceId/credential-policy/:provider',
     ]);

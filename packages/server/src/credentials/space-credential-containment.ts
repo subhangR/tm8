@@ -49,13 +49,38 @@
  * are: the caller has already revoked what it was revoking (the account's
  * tokens), so a failed kill is named in `failures`, never thrown. This module
  * never sees a secret (I5): it reads ids and statuses only.
+ *
+ * SC-8 — SHARES (`killSharesOf`, migration 210). A SEPARATE question from the
+ * one above, and deliberately not folded into it: `killSessionsLaunchedBy`
+ * keys on who LAUNCHED (C3 must keep holding), while a share dies with its
+ * SHARER — every live session on any of the sharer's revoked shares is
+ * killed, whoever launched or resumed it. `revoke_member_shares` revokes the
+ * shares and answers those sessions in one call; its authority (node admin,
+ * space admin of that space, or the account itself) is in SQL. The SQL
+ * lifecycle triggers revoke on disable, member delete, account delete and
+ * personal disconnect, so a path that reaches here after them still finds
+ * the sessions: the lookup reads every REVOKED share of the account.
+ *
+ * Callers today: `disableAccount` (every space, a second named step after
+ * killSessionsLaunchedBy) and the member Disconnect of a GitHub token or a
+ * login (every space, that provider). Un-share and admin remove go through
+ * SC-3's delete, which kills by credential.
+ *
+ *   - Any FUTURE member-removal op MUST call killSharesOf(claims, account,
+ *     space) BEFORE it deletes the members row (the members trigger only
+ *     revokes; SQL cannot kill a PTY).
+ *   - Any FUTURE account-delete op MUST call killSharesOf(claims, account,
+ *     null) BEFORE it deletes the account (the FK + orphan trigger only
+ *     revoke). No account-delete op exists today.
  */
+import type { CredentialContainmentCause } from '@tm8/execution';
+
 import type { DbClaims } from '../db/types.js';
 import {
   containmentFailureOf,
   type AgentSessionContainmentPort,
 } from './agent-session-containment.js';
-import type { DbSpaceCredentialStore } from './space-credential-store.js';
+import type { DbSpaceCredentialStore, SpaceCredentialProvider } from './space-credential-store.js';
 
 export interface MemberContainmentResult {
   accountId: string;
@@ -68,19 +93,99 @@ export interface MemberContainmentResult {
   failures: Array<{ sessionId?: string; reason: string }>;
 }
 
+/** SC-8: what `killSharesOf` revoked and killed. */
+export interface ShareContainmentResult extends MemberContainmentResult {
+  provider: SpaceCredentialProvider | null;
+  /** Shares this call revoked; ones a trigger already revoked are not listed. */
+  revokedCredentialIds: string[];
+  /** Share login terminals closed (killed, then stamped finished). */
+  closedLoginSessionIds: string[];
+}
+
+type ContainmentStore = Pick<DbSpaceCredentialStore, 'memberSessions'> &
+  Partial<Pick<DbSpaceCredentialStore, 'revokeMemberShares'>>;
+
 export interface SpaceCredentialMemberContainmentOptions {
-  store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
+  store: ContainmentStore;
   /** Kills the session and records its ending (`SpawnService.containCredentialSession`). */
   agentSessions: AgentSessionContainmentPort;
+  /**
+   * Closes one login terminal onto a revoked share: kill, then stamp it
+   * finished (SC-4's login registry). Absent, open share terminals are
+   * reported in `failures` and the pending sweep closes them.
+   */
+  closeLogin?: (claims: DbClaims, workSessionId: string) => Promise<'closed' | 'kill_failed'>;
 }
 
 export class SpaceCredentialMemberContainment {
-  private readonly store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
+  private readonly store: ContainmentStore;
   private readonly agentSessions: AgentSessionContainmentPort;
+  private readonly closeLogin: SpaceCredentialMemberContainmentOptions['closeLogin'] | null;
 
   constructor(options: SpaceCredentialMemberContainmentOptions) {
     this.store = options.store;
     this.agentSessions = options.agentSessions;
+    this.closeLogin = options.closeLogin ?? null;
+  }
+
+  /**
+   * SC-8: revoke `accountId`'s shares — in `spaceId`, or every space when it
+   * is null; of `provider`, or every provider — and kill every live session
+   * and login terminal on them, WHOEVER launched it. `claims` authorise it in
+   * SQL: a node admin, a space admin of `spaceId`, or the account itself.
+   */
+  async killSharesOf(
+    claims: DbClaims,
+    accountId: string,
+    spaceId: string | null = null,
+    provider: SpaceCredentialProvider | null = null,
+  ): Promise<ShareContainmentResult> {
+    const result: ShareContainmentResult = {
+      accountId,
+      spaceId,
+      provider,
+      revokedCredentialIds: [],
+      terminatedSessionIds: [],
+      notOnThisNodeSessionIds: [],
+      closedLoginSessionIds: [],
+      failures: [],
+    };
+    if (!this.store.revokeMemberShares) {
+      result.failures.push({ reason: 'lookup_failed: share store not composed' });
+      return result;
+    }
+    let found;
+    try {
+      found = await this.store.revokeMemberShares(claims, spaceId, accountId, provider);
+    } catch (error) {
+      // Nothing was revoked by this call: a retry finishes it.
+      result.failures.push({ reason: `lookup_failed: ${reasonOf(error)}` });
+      return result;
+    }
+    result.revokedCredentialIds = found.revokedCredentialIds;
+
+    for (const login of found.loginTerminals) {
+      if (!this.closeLogin) {
+        result.failures.push({ sessionId: login.workSessionId, reason: 'login_terminal_left_to_sweep' });
+        continue;
+      }
+      try {
+        if ((await this.closeLogin(claims, login.workSessionId)) === 'kill_failed') {
+          result.failures.push({ sessionId: login.workSessionId, reason: 'kill_failed' });
+          continue;
+        }
+        result.closedLoginSessionIds.push(login.workSessionId);
+      } catch (error) {
+        result.failures.push({ sessionId: login.workSessionId, reason: reasonOf(error) });
+      }
+    }
+
+    await this.kill(
+      [...new Set(found.sessions.map((s) => s.workSessionId))],
+      'space_credential_unshared',
+      result,
+    );
+    return result;
   }
 
   /**
@@ -113,10 +218,19 @@ export class SpaceCredentialMemberContainment {
       return result;
     }
 
+    await this.kill(sessionIds, 'member_removed', result);
+    return result;
+  }
+
+  private async kill(
+    sessionIds: readonly string[],
+    cause: CredentialContainmentCause,
+    result: MemberContainmentResult,
+  ): Promise<void> {
     for (const sessionId of sessionIds) {
       // Kill, then record the ending — the stop path `terminate` uses. A
       // failed kill leaves the row as it was.
-      const contained = await this.agentSessions.containCredentialSession(sessionId, 'member_removed');
+      const contained = await this.agentSessions.containCredentialSession(sessionId, cause);
       const failure = containmentFailureOf(contained);
       if (failure !== null) result.failures.push({ sessionId, reason: failure });
       if (contained.outcome === 'error') {
@@ -127,7 +241,6 @@ export class SpaceCredentialMemberContainment {
         result.terminatedSessionIds.push(sessionId);
       }
     }
-    return result;
   }
 }
 
@@ -140,9 +253,13 @@ export class SpaceCredentialMemberContainment {
 export function accountDisableContainment(
   containment: SpaceCredentialMemberContainment,
   claims: () => DbClaims,
-): { killSessionsLaunchedBy(accountId: string): Promise<MemberContainmentResult> } {
+): {
+  killSessionsLaunchedBy(accountId: string): Promise<MemberContainmentResult>;
+  killSharesOf(accountId: string): Promise<ShareContainmentResult>;
+} {
   return {
     killSessionsLaunchedBy: (accountId) => containment.killSessionsLaunchedBy(claims(), accountId, null),
+    killSharesOf: (accountId) => containment.killSharesOf(claims(), accountId, null),
   };
 }
 

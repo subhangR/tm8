@@ -436,6 +436,30 @@ const ROWS: Record<OperationName, Row> = {
       'the key is sealed with the node credential key and never echoed back',
     ],
   },
+  'credentials.space.share': {
+    cmd: null,
+    sum: 'Share your own fine-grained GitHub token into a space you belong to — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'share', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'by reference: the space row holds no secret, and your rotation or disconnect follows it',
+      'only a fine-grained token (github_pat_) can be shared; a share is never the space default',
+      'stop sharing with credentials.space.delete; it also ends when you leave the space or are disabled',
+    ],
+  },
+  'credentials.shares.list': {
+    cmd: null,
+    sum: 'List the personal credentials you share into spaces — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'share', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'also answers whether your GitHub token can be shared: its kind and login, never the token',
+    ],
+  },
   'credentials.space.rekey': {
     cmd: null,
     sum: 'Replace a space credential\'s key — its creator or a space admin, human sessions only',
@@ -2948,7 +2972,8 @@ export const CATALOG_DIGEST =
   // Read out of the failing digest test and matched to the regenerated manifest.
   // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
   // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942';
+  // Re-measured 2026-09-24 (SC-8, on Forms W1): + credentials.space.share, credentials.shares.list; matched to the regenerated manifest.
+  'sha256:bd1db763eec8d7474035aa13f71c166e9078790783dd6510c9556bb8cbe28898';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -1225,24 +1225,36 @@ export function createFixtureSeam(): FixtureSeam {
       shape: 'api_key', label: 'Team Claude', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: null, keyHint: 'x9Qa',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      shareKind: null, sharedBy: null,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000a02', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
       shape: 'api_key', label: 'Research budget', isDefault: false, status: 'stale',
       createdByAccountId: 'acct-other', displayLogin: null, keyHint: '7fPk',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      shareKind: null, sharedBy: null,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000b01', spaceId: FIXTURE_SPACE_ID, provider: 'openai',
       shape: 'api_key', label: 'Codex shared', isDefault: false, status: 'active',
       createdByAccountId: null, displayLogin: null, keyHint: 'Zt2m',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      shareKind: null, sharedBy: null,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000c01', spaceId: FIXTURE_SPACE_ID, provider: 'github',
       shape: 'token', label: 'tm8-bot', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: 'tm8-bot', keyHint: 'k3Jd',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      shareKind: null, sharedBy: null,
+    },
+    // SC-8: another member's Claude login, shared into the space.
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000a03', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
+      shape: 'login', label: 'Grace’s Max', isDefault: false, status: 'active',
+      createdByAccountId: 'acct-other', displayLogin: 'grace@example.com', keyHint: null,
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      shareKind: 'personal_login', sharedBy: { accountId: 'acct-other', displayName: 'Grace' },
     },
   ];
   const spacePolicyState: CredentialsSpacePolicyView = {
@@ -5201,6 +5213,7 @@ export function createFixtureSeam(): FixtureSeam {
             displayLogin: input.provider === 'github' ? 'ada' : null,
             keyHint: input.secret.trim().slice(-4),
             createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            shareKind: null, sharedBy: null,
           };
           spaceCredentialsState.push(row);
           return clone(row);
@@ -5238,6 +5251,29 @@ export function createFixtureSeam(): FixtureSeam {
           const entry = spacePolicyState.providers.find((p) => p.provider === provider);
           if (entry) entry.allowedSources = allowedSources ? [...allowedSources] : null;
           return { spaceId, provider, allowedSources };
+        },
+        async share(spaceId, input) {
+          // SC-8: by reference — the fixture's GitHub login is a fine-grained token.
+          const row: SpaceCredentialView = {
+            id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
+            spaceId, provider: 'github', shape: 'token', label: input.label.trim(),
+            isDefault: false, status: 'active', createdByAccountId: 'acct-ada',
+            displayLogin: 'ada', keyHint: null,
+            createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            shareKind: 'personal_token', sharedBy: { accountId: 'acct-ada', displayName: 'Ada' },
+          };
+          spaceCredentialsState.push(row);
+          return clone(row);
+        },
+        async shares() {
+          return {
+            shares: clone(
+              spaceCredentialsState
+                .filter((c) => c.sharedBy?.accountId === 'acct-ada' && c.status !== 'revoked')
+                .map((c) => ({ ...c, spaceName: 'Fixture space' })),
+            ),
+            github: { connected: true, login: 'ada', tokenKind: 'fine_grained', shareable: true },
+          };
         },
       },
 

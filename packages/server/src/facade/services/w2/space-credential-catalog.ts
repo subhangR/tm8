@@ -16,6 +16,7 @@
 import { CollabError } from '@tm8/contract';
 import type {
   CredentialPolicySource,
+  CredentialsSharesView,
   CredentialsSpaceDeleteResult,
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
@@ -30,6 +31,7 @@ import type { Db, DbClaims } from '../../../db/types.js';
 import type { SpaceCredentialProbe } from '../../../credentials/space-credential-probe.js';
 import {
   SPACE_CREDENTIAL_PROVIDERS,
+  ShareRefusal,
   type DbSpaceCredentialStore,
   type SpaceCredential,
   type SpaceCredentialHomeKey,
@@ -61,7 +63,8 @@ type SpaceCredentialStorePort = Pick<
   | 'setSpacePolicy'
   | 'readNodePolicy'
   | 'setNodePolicy'
->;
+> &
+  Partial<Pick<DbSpaceCredentialStore, 'sharePersonalToken' | 'listMyShares' | 'personalTokenShareability'>>;
 
 export interface SpaceCredentialCatalogOptions {
   db: Pick<Db, 'query'>;
@@ -149,6 +152,40 @@ export class SpaceCredentialCatalogService {
   }
 
   /**
+   * SC-8: share the caller's own GitHub token into a space, by reference. A
+   * member of the space only (the RPC decides); a token that is not
+   * fine-grained is refused before anything is written (T1).
+   */
+  async share(claims: DbClaims, spaceId: string, input: { provider: 'github'; label: string }): Promise<SpaceCredentialView> {
+    requireHumanClaims(claims);
+    if (!this.store.sharePersonalToken) throw new CollabError('not_implemented', 'sharing is not composed on this node');
+    try {
+      return spaceCredentialViewOf(await this.store.sharePersonalToken(claims, { spaceId, label: input.label }));
+    } catch (error) {
+      if (error instanceof ShareRefusal) {
+        throw new CollabError('invalid_input', error.message, { details: { reason: error.reason } });
+      }
+      throw storeError(error);
+    }
+  }
+
+  /** SC-8: the caller's own shares, and whether their GitHub token can be shared. */
+  async shares(claims: DbClaims): Promise<CredentialsSharesView> {
+    requireHumanClaims(claims);
+    if (!this.store.listMyShares || !this.store.personalTokenShareability) {
+      throw new CollabError('not_implemented', 'sharing is not composed on this node');
+    }
+    const [shares, github] = await Promise.all([
+      this.store.listMyShares(claims),
+      this.store.personalTokenShareability(claims),
+    ]);
+    return {
+      shares: shares.map((row) => ({ ...spaceCredentialViewOf(row), spaceName: row.spaceName })),
+      github,
+    };
+  }
+
+  /**
    * D11: creator or space admin — the RPC decides. The new key is probed
    * before it replaces the old one; the old one stays if the vendor refuses.
    * D7: the next spawn reads the new sealed bytes; live sessions keep theirs.
@@ -166,10 +203,11 @@ export class SpaceCredentialCatalogService {
       provider: SpaceCredentialProviderName;
       shape: string;
       status: string;
+      share_kind: string | null;
       can_manage: boolean;
     }>(
       claims,
-      `select provider, shape, status,
+      `select provider, shape, status, share_kind,
               internal.is_space_member(space_id)
                 and (internal.is_space_admin(space_id)
                      or (created_by_account_id is not null
@@ -180,6 +218,13 @@ export class SpaceCredentialCatalogService {
     if (!current) throw notFound();
     if (current.can_manage !== true) {
       throw new CollabError('forbidden', 'only the credential\'s creator or a space admin can change it');
+    }
+    if (current.share_kind != null) {
+      // SC-8: a share has no key of its own; it follows its sharer's personal one.
+      throw new CollabError(
+        'invalid_input',
+        'a shared credential follows its owner\'s personal credential — the owner rotates it under their own credentials',
+      );
     }
     if (current.shape === 'login') {
       throw new CollabError('invalid_input', 'a login credential is renewed by logging in again, not by pasting a key');
@@ -200,6 +245,16 @@ export class SpaceCredentialCatalogService {
   }
 
   async setDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredentialView> {
+    // SC-8: a share is never the default (210's CHECK is the backstop), so
+    // auto never lands a launch on a member's personal account.
+    const [row] = await this.db.query<{ share_kind: string | null }>(
+      claims,
+      'select share_kind from public.space_credentials where id = $1',
+      [credentialId],
+    );
+    if (row?.share_kind) {
+      throw new CollabError('invalid_input', 'a shared credential is never the space default — launches pick it by id');
+    }
     return spaceCredentialViewOf(await this.store.setDefault(claims, credentialId));
   }
 
@@ -393,6 +448,10 @@ export function spaceCredentialViewOf(row: SpaceCredential): SpaceCredentialView
     updatedAt: row.updatedAt,
     lastUsedAt: row.lastUsedAt,
     lastProbeAt: row.lastProbeAt,
+    shareKind: row.shareKind ?? null,
+    sharedBy: row.sharedBy
+      ? { accountId: row.sharedBy.accountId, displayName: row.sharedBy.displayName ?? null }
+      : null,
   };
 }
 

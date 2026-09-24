@@ -39,13 +39,16 @@ export {
 export {
   credentialsPortFromSeam,
   serviceKeysPortFromSeam,
+  sharesPortFromSeam,
   disconnectVerdictOf,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
   type DisconnectVerdict,
   type ServiceKeysPort,
+  type SharesPort,
 } from './port';
+export { SharesBlock, shareTokenSentence, type SharesBlockProps } from './SharesBlock';
 export {
   SpaceCredentialsSection,
   type SpaceCredentialsSectionProps,

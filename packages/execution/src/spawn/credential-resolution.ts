@@ -131,6 +131,16 @@ function refusalSentence(
     case 'unreadable':
       return `the stored secret of ${which} could not be decrypted on this node — its creator ` +
         'or a space admin must re-enter it under Space settings → Credentials';
+    case 'share_owner_gone':
+      return `${which} was shared by a member who is no longer in this space — pick another ` +
+        'space credential, or omit the id to use the space default';
+    case 'share_source_disconnected':
+      return `${which} was disconnected by the member who shared it — ask them to reconnect ` +
+        'and share it again, or pick another space credential';
+    case 'share_token_kind':
+      return `${which} points at a GitHub token that is not fine-grained — the member who ` +
+        'shared it must replace their personal token with a fine-grained one (github_pat_…), ' +
+        'or pick another space credential';
   }
 }
 

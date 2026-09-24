@@ -69,6 +69,7 @@ import {
   CredentialsSpacePolicySetInputSchema,
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
+  CredentialsSpaceShareInputSchema,
   NodeCredentialsPolicySetInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
@@ -217,6 +218,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.setDefault': CredentialsSpaceCommandInputSchema,
   'credentials.space.rename': CredentialsSpaceRenameInputSchema,
   'credentials.space.delete': CredentialsSpaceCommandInputSchema,
+  'credentials.space.share': CredentialsSpaceShareInputSchema,
   'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
 

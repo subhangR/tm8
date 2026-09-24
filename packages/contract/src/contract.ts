@@ -2332,6 +2332,15 @@ export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
 /** `pending` is a login that has not finished; `stale` failed its last probe. */
 export type SpaceCredentialStatus = 'pending' | 'active' | 'stale' | 'revoked';
 
+/**
+ * SC-8 (210): a member's personal credential shared into a space. A
+ * `personal_token` share points at the member's own GitHub token (by
+ * reference: no secret on the space row); a `personal_login` share is a login
+ * the member signed in again for the space. A share is never the default,
+ * only its sharer edits it, and a space admin may only remove it.
+ */
+export type SpaceCredentialShareKind = 'personal_token' | 'personal_login';
+
 /** A launch source as a policy names it (D4/D5). */
 export type CredentialPolicySource = 'member' | 'space' | 'node';
 
@@ -2357,6 +2366,40 @@ export interface SpaceCredentialView {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /** SC-8: null on a space-owned credential. */
+  shareKind: SpaceCredentialShareKind | null;
+  /** SC-8: who shared it, by their name in this space; null on a space-owned credential. */
+  sharedBy: { accountId: string; displayName: string | null } | null;
+}
+
+/** SC-8: one of the caller's own live shares, with the space it is in. */
+export interface SpaceCredentialShareView extends SpaceCredentialView {
+  spaceName: string;
+}
+
+/** A GitHub token's kind by its prefix. Only `fine_grained` can be shared (SC-8). */
+export type GitHubTokenKind = 'fine_grained' | 'classic' | 'oauth' | 'other';
+
+/**
+ * `credentials.shares.list` — the caller's own shares, and whether their
+ * personal GitHub token can be shared (its kind and login; never the token).
+ */
+export interface CredentialsSharesView {
+  shares: SpaceCredentialShareView[];
+  github: { connected: boolean; login: string | null; tokenKind: GitHubTokenKind | null; shareable: boolean };
+}
+
+/**
+ * `credentials.space.share` — share your personal GitHub token into a space
+ * you belong to, by reference. Refused (`invalid_input`, `details.reason`
+ * `token_kind`) unless it is a fine-grained token; `conflict` with
+ * `already_shared` when you already share one there. Stop sharing is
+ * `credentials.space.delete`.
+ */
+export interface CredentialsSpaceShareInput {
+  provider: 'github';
+  label: string;
+  clientMutationId?: string;
 }
 
 /** `credentials.space.list`. Revoked tombstones are not listed. */

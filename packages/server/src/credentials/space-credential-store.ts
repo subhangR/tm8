@@ -13,6 +13,14 @@
  * and never returned by anything but `readForSpawn` (I5). Management methods
  * are human-only in SQL (`internal.require_human_auth_kind`, I2); callers add
  * the facade gate on top.
+ *
+ * SHARES (SC-8, migration 210). A member's personal credential shared into a
+ * space is a row here with `shareKind` set. A `personal_token` share holds no
+ * secret: the spawn reader hands back 093's sealed bytes and the sharer's
+ * account id, and `readForSpawn` opens them under 093's own binding
+ * (`<account>|github`), then refuses anything but a fine-grained token (T1) —
+ * checked again at every spawn because the owner may rotate their personal
+ * token to a classic one after sharing.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -27,6 +35,27 @@ export const SPACE_CREDENTIAL_SHAPES = ['login', 'api_key', 'token'] as const;
 export type SpaceCredentialShape = (typeof SPACE_CREDENTIAL_SHAPES)[number];
 
 export type SpaceCredentialStatus = 'pending' | 'active' | 'stale' | 'revoked';
+
+/** SC-8: what a share points at. Absent on a space-owned credential. */
+export type SpaceCredentialShareKind = 'personal_token' | 'personal_login';
+
+/**
+ * A GitHub token's kind by its documented prefix. Only a fine-grained token
+ * (`github_pat_`) can be scoped to chosen repositories, so only it may be
+ * shared (addendum §5, T1). The value is never echoed; only the kind leaves.
+ */
+export type GitHubTokenKind = 'fine_grained' | 'classic' | 'oauth' | 'other';
+
+export function githubTokenKind(token: string): GitHubTokenKind {
+  const value = token.trim();
+  if (value.startsWith('github_pat_')) return 'fine_grained';
+  if (value.startsWith('ghp_')) return 'classic';
+  if (value.startsWith('gho_') || value.startsWith('ghu_')) return 'oauth';
+  return 'other';
+}
+
+/** The spawn refusal a non-fine-grained shared token maps to (`share_token_kind`). */
+export const SHARE_TOKEN_KIND_MESSAGE = 'shared GitHub token is not a fine-grained token';
 
 /** A launch source as a space policy names it (D5). */
 export type SpaceCredentialSource = 'member' | 'space' | 'node';
@@ -51,6 +80,36 @@ export interface SpaceCredential {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /** SC-8: null on a space-owned credential. */
+  shareKind: SpaceCredentialShareKind | null;
+  /** The sharer and their name in this space; null on a space-owned credential. */
+  sharedBy: { accountId: string; displayName: string | null } | null;
+}
+
+/** One of the caller's own shares, for the personal card. */
+export type SpaceCredentialShare = SpaceCredential & { spaceName: string };
+
+/** What the Share dialog shows before a GitHub token is shared: never the token. */
+export interface PersonalTokenShareability {
+  connected: boolean;
+  login: string | null;
+  tokenKind: GitHubTokenKind | null;
+  shareable: boolean;
+}
+
+export interface MemberShareRevocation {
+  spaceId: string | null;
+  accountId: string;
+  revokedCredentialIds: string[];
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProvider;
+    spaceId: string;
+    spaceCredentialId: string;
+    launcherAccountId: string | null;
+    status: string;
+  }>;
+  loginTerminals: Array<{ workSessionId: string; spaceCredentialId: string; accountId: string; expiresAt: string }>;
 }
 
 export interface SpaceCredentialLogin {
@@ -137,6 +196,18 @@ interface SpawnRow {
   displayLogin: string | null;
   secretCiphertext: string | null;
   secretNonce: string | null;
+  /** 210: set on a share. */
+  shareKind?: SpaceCredentialShareKind | null;
+  /** 210: a personal_token share's bytes are 093's, bound to this account. */
+  aadAccountId?: string | null;
+}
+
+interface PersonalGitRow {
+  accountId: string;
+  provider: string;
+  login: string;
+  tokenCiphertext: string;
+  tokenNonce: string;
 }
 
 interface MetadataRow {
@@ -191,8 +262,14 @@ export class DbSpaceCredentialStore {
                 'displayLogin', display_login, 'keyHint', key_hint,
                 'pendingExpiresAt', pending_expires_at,
                 'createdAt', created_at, 'updatedAt', updated_at,
-                'lastUsedAt', last_used_at, 'lastProbeAt', last_probe_at) as credential
-         from public.space_credentials
+                'lastUsedAt', last_used_at, 'lastProbeAt', last_probe_at,
+                'shareKind', share_kind,
+                'sharedBy', case when shared_by_account_id is null then null else jsonb_build_object(
+                  'accountId', shared_by_account_id,
+                  'displayName', (select coalesce(m.display_name, m.identity_id) from public.members m
+                                   where m.space_id = sc.space_id
+                                     and m.identity_id = sc.created_by_identity_id)) end) as credential
+         from public.space_credentials sc
         where space_id = $1 and ($2 or status <> 'revoked')
         order by provider, is_default desc, label`,
       [spaceId, options.includeRevoked === true],
@@ -341,6 +418,54 @@ export class DbSpaceCredentialStore {
     return this.db.rpc<SpaceCredential & { revoked: boolean }>(claims, 'delete_space_credential', [credentialId]);
   }
 
+  /**
+   * SC-8: can the caller's personal GitHub token be shared? Opens it under
+   * 093's binding to read its KIND only; the token never leaves this method.
+   */
+  async personalTokenShareability(claims: DbClaims): Promise<PersonalTokenShareability> {
+    const opened = await this.openPersonalToken(claims);
+    if (!opened) return { connected: false, login: null, tokenKind: null, shareable: false };
+    const tokenKind = githubTokenKind(opened.token);
+    return { connected: true, login: opened.login, tokenKind, shareable: tokenKind === 'fine_grained' };
+  }
+
+  /**
+   * SC-8: share the caller's personal GitHub token into a space they belong
+   * to, by reference (210 `share_personal_token`). Refused unless the token
+   * is fine-grained (T1); SQL cannot see the prefix, so the check is here.
+   */
+  async sharePersonalToken(claims: DbClaims, input: { spaceId: string; label: string }): Promise<SpaceCredential> {
+    const opened = await this.openPersonalToken(claims);
+    if (!opened) throw new ShareRefusal('not_connected', 'connect a GitHub token under your credentials before sharing it');
+    const kind = githubTokenKind(opened.token);
+    if (kind !== 'fine_grained') {
+      throw new ShareRefusal(
+        'token_kind',
+        `only a fine-grained GitHub token (github_pat_…) can be shared; yours is ${kind === 'other' ? 'not recognised' : `a ${kind === 'oauth' ? 'GitHub sign-in (OAuth)' : 'classic'} token`} — replace it with a fine-grained token scoped to this space's repositories`,
+      );
+    }
+    return this.db.rpc<SpaceCredential>(claims, 'share_personal_token', [input.spaceId, input.label]);
+  }
+
+  /** SC-8: the caller's live shares across every space it belongs to. */
+  async listMyShares(claims: DbClaims): Promise<SpaceCredentialShare[]> {
+    return this.db.rpc<SpaceCredentialShare[]>(claims, 'list_my_credential_shares', []);
+  }
+
+  /**
+   * SC-8: revoke an account's shares (one space, or every space when
+   * `spaceId` is null) and list the live sessions and login terminals on
+   * them. Authority is in SQL: a node admin, a space admin, or the account.
+   */
+  async revokeMemberShares(
+    claims: DbClaims,
+    spaceId: string | null,
+    accountId: string,
+    provider: SpaceCredentialProvider | null = null,
+  ): Promise<MemberShareRevocation> {
+    return this.db.rpc<MemberShareRevocation>(claims, 'revoke_member_shares', [spaceId, accountId, provider]);
+  }
+
   /** Live agent sessions and open login terminals on a credential, whoever launched them. */
   async liveSessions(claims: DbClaims, credentialId: string): Promise<SpaceCredentialLiveSessions> {
     return this.db.rpc<SpaceCredentialLiveSessions>(claims, 'space_credential_live_sessions', [credentialId]);
@@ -389,13 +514,17 @@ export class DbSpaceCredentialStore {
       };
     }
     if (!row.secretCiphertext || !row.secretNonce) throw new Error('stored space credential is unreadable');
+    let secret: string;
     try {
-      const secret = openSecret(
+      // A personal_token share carries 093's bytes, bound to the sharer's
+      // account; anything else is bound to this space row.
+      secret = openSecret(
         await this.key(),
         { ciphertext: Buffer.from(row.secretCiphertext, 'base64'), nonce: Buffer.from(row.secretNonce, 'base64') },
-        { spaceId: row.spaceId, credentialId: row.credentialId, provider: row.provider },
+        row.shareKind === 'personal_token'
+          ? { accountId: row.aadAccountId ?? '', provider: 'github' }
+          : { spaceId: row.spaceId, credentialId: row.credentialId, provider: row.provider },
       );
-      return { ...base, kind: 'secret', shape: row.shape, secret };
     } catch (error) {
       this.logger?.warn?.('space credential could not be decrypted', {
         credentialId: row.credentialId,
@@ -404,6 +533,12 @@ export class DbSpaceCredentialStore {
       });
       throw new Error('stored space credential is unreadable');
     }
+    // T1, at spawn: the owner may have rotated their personal token to a
+    // classic or OAuth one since sharing. Only the kind is reported.
+    if (row.shareKind === 'personal_token' && githubTokenKind(secret) !== 'fine_grained') {
+      throw new Error(SHARE_TOKEN_KIND_MESSAGE);
+    }
+    return { ...base, kind: 'secret', shape: row.shape, secret };
   }
 
   /** Resume (C3): the resumer becomes the launcher, if every recorded credential is still active. */
@@ -444,7 +579,38 @@ export class DbSpaceCredentialStore {
     return result.expired;
   }
 
+  /** The caller's own 093 GitHub token, opened; null when none is connected. */
+  private async openPersonalToken(claims: DbClaims): Promise<{ login: string; token: string } | null> {
+    const row = await this.db.rpc<PersonalGitRow | null>(claims, 'read_account_git_credential', ['github']);
+    if (!row) return null;
+    try {
+      const token = openSecret(
+        await this.key(),
+        { ciphertext: Buffer.from(row.tokenCiphertext, 'base64'), nonce: Buffer.from(row.tokenNonce, 'base64') },
+        { accountId: row.accountId, provider: row.provider },
+      );
+      return { login: row.login, token };
+    } catch (error) {
+      this.logger?.warn?.('GitHub credential could not be decrypted', {
+        provider: row.provider,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+      throw new Error('stored GitHub credential is unreadable');
+    }
+  }
+
   private key(): Promise<Buffer> {
     return loadOrCreateCredentialKey(this.dataDir);
+  }
+}
+
+/** A share the caller asked for that cannot be made; the message names the fix, never a secret. */
+export class ShareRefusal extends Error {
+  constructor(
+    readonly reason: 'not_connected' | 'token_kind',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ShareRefusal';
   }
 }

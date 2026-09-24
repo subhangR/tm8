@@ -62,7 +62,7 @@ import type {
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
-  CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
+  CredentialsSpaceRenameInput, CredentialsSharesView, CredentialsSpaceShareInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
@@ -2029,6 +2029,42 @@ export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.objec
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
   lastProbeAt: z.string().nullable(),
+  shareKind: z.enum(['personal_token', 'personal_login']).nullable(),
+  sharedBy: z.object({ accountId: z.string(), displayName: z.string().nullable() }).strict().nullable(),
+}).strict();
+
+export const CredentialsSharesViewSchema: z.ZodType<CredentialsSharesView> = z.object({
+  shares: z.array(z.object({
+    id: z.string(),
+    spaceId: z.string(),
+    spaceName: z.string(),
+    provider: SpaceCredentialProviderNameSchema,
+    shape: SpaceCredentialShapeSchema,
+    label: z.string(),
+    isDefault: z.boolean(),
+    status: SpaceCredentialStatusSchema,
+    createdByAccountId: z.string().nullable(),
+    displayLogin: z.string().nullable(),
+    keyHint: z.string().max(4).nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lastUsedAt: z.string().nullable(),
+    lastProbeAt: z.string().nullable(),
+    shareKind: z.enum(['personal_token', 'personal_login']).nullable(),
+    sharedBy: z.object({ accountId: z.string(), displayName: z.string().nullable() }).strict().nullable(),
+  }).strict()),
+  github: z.object({
+    connected: z.boolean(),
+    login: z.string().nullable(),
+    tokenKind: z.enum(['fine_grained', 'classic', 'oauth', 'other']).nullable(),
+    shareable: z.boolean(),
+  }).strict(),
+}).strict();
+
+export const CredentialsSpaceShareInputSchema: z.ZodType<CredentialsSpaceShareInput> = z.object({
+  provider: z.literal('github'),
+  label: SpaceCredentialLabelSchema,
+  clientMutationId: z.string().min(1).optional(),
 }).strict();
 
 export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView> = z.object({

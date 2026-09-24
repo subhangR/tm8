@@ -70,6 +70,8 @@ import {
   type CredentialsServiceKeyDeleteResult,
   type CredentialPolicySource,
   type CredentialsSpaceCreateInput,
+  type CredentialsSpaceShareInput,
+  type CredentialsSharesView,
   type CredentialsSpaceDeleteResult,
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
@@ -523,6 +525,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { credentialId },
         body: { clientMutationId: newId('spcredrm') },
       });
+    },
+
+    /** `credentials.space.share` — SC-8, the viewer's own GitHub token, by reference. */
+    spaceCredentialsShare(
+      spaceId: SpaceId,
+      input: Omit<CredentialsSpaceShareInput, 'clientMutationId'>,
+    ): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.share', {
+        params: { spaceId },
+        body: { ...input, clientMutationId: newId('spcredshare') },
+      });
+    },
+
+    /** `credentials.shares.list` — SC-8, the viewer's own live shares. */
+    credentialsSharesList(): Promise<CredentialsSharesView> {
+      return http.call<CredentialsSharesView>('credentials.shares.list');
     },
 
     spaceCredentialsPolicy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView> {

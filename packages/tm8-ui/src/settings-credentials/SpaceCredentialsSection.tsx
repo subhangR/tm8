@@ -27,6 +27,11 @@
  * credential, which the server turns into kill-then-stamp-failed before it
  * opens the new terminal. It is never a finish-as-success and never a delete.
  * Abandoning a pending login is Delete, which stays on the row.
+ *
+ * SHARES (SC-8, 210): a member's own credential shared into the space reads
+ * "Shared by <name>". Only its sharer renames it, logs in again or stops
+ * sharing it; a space admin may only remove it; nobody makes it the default
+ * or replaces its token (a shared token IS the sharer's personal one).
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type {
@@ -45,7 +50,9 @@ import {
   afterDeleteNotice,
   allowedSourcesOf,
   canManage,
+  canRemove,
   creatorLabel,
+  isShare,
   failureOf,
   formatWhen,
   groupByProvider,
@@ -53,6 +60,7 @@ import {
   nodeAllowedOf,
   noDefaultNotice,
   pasteShapeOf,
+  sharedByLabel,
   toggleSource,
   spaceLoginOutcome,
   spaceLoginStartFailureOf,
@@ -298,6 +306,8 @@ function CredentialRow({
   login: LoginControls | null;
 }) {
   const manage = canManage(row, viewer);
+  const share = isShare(row);
+  const removable = canRemove(row, viewer);
   const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete'>('idle');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'probe' | 'plain'>(null);
@@ -323,7 +333,9 @@ function CredentialRow({
 
   const renameClash = mode === 'rename' ? labelTakenReason(row.provider, draft, allRows, row.id) : null;
   const secretProblem = mode === 'rekey' ? validateSecret(draft) : null;
-  const pasted = row.shape !== 'login';
+  // A shared token is the sharer's personal one: it is replaced there, not here.
+  const pasted = row.shape !== 'login' && !share;
+  const removeWord = share ? (manage ? 'Stop sharing' : 'Remove') : 'Delete';
   const statusWord = row.status === 'stale' ? 'failed its last check' : row.status === 'pending' ? 'login not finished' : 'active';
 
   return (
@@ -331,19 +343,24 @@ function CredentialRow({
       <div className="set-spc__row-head">
         <span className="set-spc__label">{row.label}</span>
         {row.isDefault ? <span className="set-spc__badge set-spc__badge--default">default</span> : null}
+        {share ? (
+          <span className="set-spc__badge set-spc__badge--shared" data-testid={`space-cred-shared-by-${row.id}`}>
+            Shared by {sharedByLabel(row, viewer)}
+          </span>
+        ) : null}
         <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
       </div>
       <div className="set-spc__meta">
         <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
         {row.keyHint ? <span data-testid={`space-cred-hint-${row.id}`}>ends …{row.keyHint}</span> : null}
         {row.displayLogin ? <span>as {row.displayLogin}</span> : null}
-        <span>added by {creatorLabel(row, viewer)}</span>
+        {share ? null : <span>added by {creatorLabel(row, viewer)}</span>}
         <span>last used {formatWhen(row.lastUsedAt)}</span>
       </div>
 
-      {manage ? (
+      {removable ? (
         <div className="cred-card__actions set-spc__actions">
-          {!row.isDefault && row.status === 'active' ? (
+          {manage && !share && !row.isDefault && row.status === 'active' ? (
             <button
               type="button"
               className="cred-action"
@@ -354,18 +371,20 @@ function CredentialRow({
               Make default
             </button>
           ) : null}
-          <button type="button" className="cred-action" aria-label={`Rename ${row.label}`} disabled={busy !== null}
-            onClick={() => { setDraft(row.label); setFailure(null); setMode(mode === 'rename' ? 'idle' : 'rename'); }}>
-            Rename
-          </button>
-          {!pasted && login ? (
+          {manage ? (
+            <button type="button" className="cred-action" aria-label={`Rename ${row.label}`} disabled={busy !== null}
+              onClick={() => { setDraft(row.label); setFailure(null); setMode(mode === 'rename' ? 'idle' : 'rename'); }}>
+              Rename
+            </button>
+          ) : null}
+          {manage && row.shape === 'login' && login ? (
             <button type="button" className="cred-action" aria-label={`Log in again ${row.label}`}
               disabled={busy !== null || login.busy}
               onClick={() => void login.start({ credentialId: row.id })}>
               Log in again
             </button>
           ) : null}
-          {pasted ? (
+          {manage && pasted ? (
             <button type="button" className="cred-action" aria-label={`Replace ${SPACE_SECRET_NOUN[row.provider]} ${row.label}`} disabled={busy !== null}
               onClick={() => { setDraft(''); setFailure(null); setMode(mode === 'rekey' ? 'idle' : 'rekey'); }}>
               Replace {SPACE_SECRET_NOUN[row.provider]}
@@ -373,31 +392,38 @@ function CredentialRow({
           ) : null}
           {mode === 'confirm-delete' ? (
             <>
-              <button type="button" className="cred-action set-spc__danger" aria-label={`Confirm delete ${row.label}`} disabled={busy !== null}
+              <button type="button" className="cred-action set-spc__danger" aria-label={`Confirm ${removeWord.toLowerCase()} ${row.label}`} disabled={busy !== null}
                 onClick={() => void run('plain', async () => {
                   const result = await port.remove(row.id);
                   return afterDeleteNotice(row, result.terminatedAgentSessionIds.length + result.terminatedLoginSessionIds.length);
                 })}>
-                Delete, and end sessions using it
+                {removeWord}, and end sessions using it
               </button>
               <button type="button" className="cred-action" aria-label={`Keep ${row.label}`} onClick={() => setMode('idle')}>Keep</button>
             </>
           ) : (
-            <button type="button" className="cred-action set-spc__danger" aria-label={`Delete ${row.label}`} disabled={busy !== null}
+            <button type="button" className="cred-action set-spc__danger" aria-label={`${removeWord} ${row.label}`} disabled={busy !== null}
               onClick={() => { setFailure(null); setMode('confirm-delete'); }}>
-              Delete
+              {removeWord}
             </button>
           )}
         </div>
       ) : (
         <p className="set-spc__muted" data-testid={`space-cred-readonly-${row.id}`}>
-          You can launch with it. Only its creator or a space admin can change it.
+          {share
+            ? `You can launch with it by naming it; it is never the default. It runs on ${sharedByLabel(row, viewer)}’s account, and only they can change it.`
+            : 'You can launch with it. Only its creator or a space admin can change it.'}
         </p>
       )}
+      {removable && !manage ? (
+        <p className="set-spc__muted" data-testid={`space-cred-admin-share-${row.id}`}>
+          Shared by {sharedByLabel(row, viewer)}. As a space admin you can remove it; only they can change it.
+        </p>
+      ) : null}
 
-      {manage && mode === 'confirm-delete' ? (
+      {removable && mode === 'confirm-delete' ? (
         <p className="set-spc__warn">
-          Deleting ends every live session using this credential.
+          {share ? 'Removing this share' : 'Deleting'} ends every live session using this credential.
           {row.isDefault ? ' It is the default, and no other credential becomes the default in its place.' : ''}
         </p>
       ) : null}
