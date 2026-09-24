@@ -126,6 +126,30 @@ export function slowStatementLoggingSql(database: string): string {
     `alter database ${database} set log_lock_waits = on`;
 }
 
+/**
+ * Drop a database this process created: plainly first, forced only if that is
+ * refused.
+ *
+ * Plain first because our own just-ended pool's backends may still be exiting.
+ * Postgres waits up to 5s for them, and a FORCE would instead send each a FATAL
+ * 57P01 mid-close, which pg surfaces as an uncaught exception on a client whose
+ * pool has already dropped its error listener (CI run 35962531852 failed the
+ * whole server package on exactly that).
+ *
+ * Forced second because a plain drop fails with "is being accessed by other
+ * users" when something the suite booted (a server's own pool, a delivery
+ * worker) still holds a session. The server log showed 61 such failures, each
+ * one a leaked database. Scoped to the exact name this process created.
+ */
+async function dropOwnDatabase(admin: Pool, name: string): Promise<void> {
+  try {
+    await admin.query(`drop database if exists ${name}`);
+  } catch (error) {
+    if ((error as { code?: string }).code !== '55006') throw error;
+    await admin.query(`drop database if exists ${name} with (force)`);
+  }
+}
+
 export async function createW1ScratchDatabase(label: string): Promise<W1ScratchDatabase> {
   const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 20);
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
@@ -186,11 +210,7 @@ export async function createW1ScratchDatabase(label: string): Promise<W1ScratchD
       await pool.end();
       const cleanup = new Pool({ connectionString: adminUrl, max: 1 });
       try {
-        // `with (force)`: this database is ours alone, and a plain drop fails
-        // with "is being accessed by other users" whenever anything the suite
-        // booted (a server's own pool, a delivery worker) still holds a
-        // session. The server log showed 61 such failures, each one a leak.
-        await cleanup.query(`drop database if exists ${name} with (force)`);
+        await dropOwnDatabase(cleanup, name);
         undropped.delete(name);
       } finally {
         await cleanup.end();

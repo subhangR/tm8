@@ -298,17 +298,21 @@ export async function startRealServer(label: string): Promise<RealServer> {
     // Guarded: only ever removes a directory this harness created.
     if (dataDir && dataDir.includes('tm8-w4-')) await rm(dataDir, { recursive: true, force: true });
     // The child is gone by now, so every session this suite opened is ending.
-    // `with (force)` covers backends that have not noticed their client went
-    // away yet: a plain drop failed with "is being accessed by other users" in
-    // exactly that window, and the old `.catch(() => undefined)` turned each
-    // such failure into a silent leak. Scoped to the name this call created.
+    // Plain first (Postgres waits up to 5s for those backends to exit), forced
+    // only if still refused as "being accessed by other users"; the old
+    // `.catch(() => undefined)` turned each such refusal into a silent leak.
+    // Scoped to the exact name this call created.
     //
     // A failure is logged, not thrown: teardown runs after the assertions, the
     // database is garbage the GC script will collect, and a forced drop that
     // still fails means the cluster is unreachable, which is not what the suite
     // under test is about.
     try {
-      await run('psql', [...PSQL, admin, '-c', `drop database if exists ${database} with (force)`], { env: PG_ENV });
+      await run('psql', [...PSQL, admin, '-c', `drop database if exists ${database}`], { env: PG_ENV })
+        .catch(async (plain: { stderr?: string }) => {
+          if (!/being accessed by other users/.test(plain.stderr ?? '')) throw plain;
+          await run('psql', [...PSQL, admin, '-c', `drop database if exists ${database} with (force)`], { env: PG_ENV });
+        });
       undropped.delete(database);
     } catch (err) {
       console.error(

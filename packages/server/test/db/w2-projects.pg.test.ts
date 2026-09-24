@@ -546,10 +546,18 @@ describe.sequential('W2.G06 projects and associations PostgreSQL semantics', () 
         [sessionId, raced.projectionId],
       );
       expect(prechecked.rows[0]!.count).toBe(2);
+      // Settled into a value AT ONCE: the insert blocks on the unlinker's lock
+      // and rejects the instant that commit lands, which can be before this
+      // test reaches its `expect` below. A bare promise rejecting with no
+      // handler yet is an "Unhandled Rejection" that fails the whole package
+      // run (seen in CI run 35962531852) even though the assertion then passes.
       const pending = writer.query(
         `insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
          values ($1, $2, $3, 'in_project', '{}'::jsonb, $4)`,
         [fixture.spaceA, sessionId, raced.projectionId, fixture.ownerA],
+      ).then(
+        () => { throw new Error('the racing insert succeeded; it must be refused'); },
+        (error: unknown) => error,
       );
       await Promise.resolve();
       await unlinker.query(
@@ -557,7 +565,7 @@ describe.sequential('W2.G06 projects and associations PostgreSQL semantics', () 
         [fixture.spaceA, raced.projectId],
       );
       await unlinker.query('commit');
-      await expect(pending).rejects.toMatchObject({ code: '23514', detail: 'project_not_linked' });
+      expect(await pending).toMatchObject({ code: '23514', detail: 'project_not_linked' });
       await writer.query('rollback');
     } finally {
       unlinker.release();
