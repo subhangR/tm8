@@ -14,7 +14,7 @@
  * to that fixture; this file does not change.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { formQuestionConfigIssues, validateFormAnswers } from '@tm8/contract';
+import { FORM_QUESTION_TYPE_NAMES, formQuestionConfigIssues, validateFormAnswers } from '@tm8/contract';
 
 import {
   ANSWER_CASES,
@@ -53,6 +53,22 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.destroy();
+});
+
+describe('the registry and the SQL arms are the same set of types', () => {
+  it('every FORM_QUESTION_TYPES entry has an internal.form_qtype_<type>(text,jsonb,jsonb) arm, and vice versa', async () => {
+    // Catches a type added on ONE side only — the registry without its SQL
+    // arm (the DB refuses the question) or an arm without its entry (the CLI
+    // and UI refuse what the DB accepts).
+    const arms = (await db.query<{ type: string }>(
+      `select substr(p.proname, length('form_qtype_') + 1) as type
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'internal' and p.proname like 'form\\_qtype\\_%'
+          and pg_get_function_identity_arguments(p.oid) ~ '^\\w+ text, \\w+ jsonb, \\w+ jsonb$'
+        order by 1`,
+    )).map((r) => r.type);
+    expect(arms).toEqual([...FORM_QUESTION_TYPE_NAMES].sort());
+  });
 });
 
 describe('answers: SQL and Zod return the same verdict for every fixture case', () => {

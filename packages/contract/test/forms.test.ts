@@ -27,8 +27,19 @@ import { ANSWER_CASES, CONFIG_CASES, PARITY_QUESTIONS, verdict } from './fixture
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe('FORM_QUESTION_TYPES', () => {
-  it('ships exactly the five v1 types (decision 4)', () => {
-    expect(FORM_QUESTION_TYPE_NAMES).toEqual(['single_choice', 'multi_choice', 'short_text', 'long_text', 'scale']);
+  // No test pins the LIST of types: the registry IS the list, and decision 4
+  // is scope policy enforced in review. What is pinned is totality — every
+  // type has a SQL arm (forms-parity.pg.test.ts) and parity cases (below) —
+  // so adding a type edits no existing test.
+  it('every registry type brings parity cases: a config case and an answer case', () => {
+    for (const type of FORM_QUESTION_TYPE_NAMES) {
+      expect(CONFIG_CASES.some((c) => c.type === type), `${type}: no config parity case`).toBe(true);
+      const keys = new Set(PARITY_QUESTIONS.filter((q) => q.type === type).map((q) => q.key));
+      const answered = ANSWER_CASES.some((c) =>
+        typeof c.answers === 'object' && c.answers !== null && !Array.isArray(c.answers)
+        && Object.keys(c.answers).some((k) => keys.has(k)));
+      expect(answered, `${type}: no answer parity case`).toBe(true);
+    }
   });
 
   it('keys each entry by its own type, and every example is valid', () => {
@@ -76,7 +87,7 @@ describe('FormQuestionSchema', () => {
   });
 
   it('refuses an unknown type, naming the known ones', () => {
-    const r = FormQuestionSchema.safeParse({ key: 'q', type: 'yes_no', title: 'Q' });
+    const r = FormQuestionSchema.safeParse({ key: 'q', type: 'not_a_type', title: 'Q' });
     expect(r.success).toBe(false);
     expect(r.error?.issues[0]?.message).toContain('single_choice');
     expect(r.error?.issues[0]?.path).toEqual(['type']);

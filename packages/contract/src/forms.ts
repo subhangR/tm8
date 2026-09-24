@@ -12,8 +12,13 @@
  *   1. add one entry to FORM_QUESTION_TYPES below;
  *   2. add one SQL arm, `internal.form_qtype_<type>(op, config, answer)`, in a
  *      new migration (see 209's header for its contract);
- *   3. add its cases to the shared parity fixture (test/fixtures/form-parity.ts).
- * The UI input/answer components are the W1-frontend registry's concern.
+ *   3. add its cases to the shared parity fixture (test/fixtures/form-parity.ts):
+ *      a fixture question of the type, its config bounds, and one answer case
+ *      per issue code its arm can return.
+ * Nothing else changes: no existing test names a type list, and the registry
+ * <-> SQL-arm totality check (forms-parity.pg.test.ts) goes red if step 1 or
+ * step 2 is missing. The UI input/answer components are the W1-frontend
+ * registry's concern.
  *
  * PARITY. `internal.validate_form_answers` in SQL is the authority; these
  * validators mirror it so the CLI and UI fail early. Both run the same
@@ -350,8 +355,9 @@ const scale = defineQuestionType({
 });
 
 /**
- * THE registry. v1 ships exactly these five (decision 4). Keyed by type; the
- * key and the entry's `type` are the same string.
+ * THE registry, keyed by type (the key and the entry's `type` are the same
+ * string). Every key has a SQL arm `internal.form_qtype_<key>` and vice versa
+ * (checked by forms-parity.pg.test.ts). Decision 4 set the v1 contents.
  */
 export const FORM_QUESTION_TYPES = {
   single_choice: singleChoice,

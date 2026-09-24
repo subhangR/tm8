@@ -172,7 +172,7 @@ describe('structure constraints', () => {
   it('refuses a question type with no SQL arm, and an invalid config, as invalid input', async () => {
     const form = await mintForm();
     await refused(sql(`insert into public.form_questions(form_id, key, position, type, title)
-                       values ($1, 'q', 5, 'yes_no', 'Q')`, [form]), '22023');
+                       values ($1, 'q', 5, 'not_a_type', 'Q')`, [form]), '22023');
     const e = await refused(sql(`insert into public.form_questions(form_id, key, position, type, title, config)
                                  values ($1, 'q', 5, 'scale', 'Q', '{"max": 11}')`, [form]), '22023');
     expect(JSON.parse(e.detail)).toMatchObject({ reason: 'invalid_config', key: 'q' });
