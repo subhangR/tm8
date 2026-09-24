@@ -279,10 +279,36 @@ export const PROFILE_KNOBS: readonly SubjectKnob[] = [
   { name: 'promptPolicy.kernelMaxBytes', summary: 'Kernel prompt byte ceiling (≤ BYTE_BUDGETS.kernel).', default: '6144', definedAt: `${CORE_DRAFT}:68`, change: 'profile' },
   { name: 'promptPolicy.initialContextMaxBytes', summary: 'Initial context byte ceiling.', default: '32768', definedAt: `${CORE_DRAFT}:69`, change: 'profile' },
   { name: 'promptPolicy.rollingControlMaxBytes', summary: 'Rolling control message byte ceiling.', default: '32768', definedAt: `${CORE_DRAFT}:70`, change: 'profile' },
+  { name: 'toolDiscoveryPolicy.semanticSearchEnabled', summary: 'Semantic help search on or off.', default: 'true', definedAt: `${CORE_DRAFT}:77`, change: 'profile' },
   { name: 'toolDiscoveryPolicy.semanticMaxMatches', summary: 'Matches a semantic help search returns.', default: '5', definedAt: `${CORE_DRAFT}:78`, change: 'profile' },
   { name: 'toolDiscoveryPolicy.nounShardMaxBytes', summary: 'Byte ceiling of one noun help shard.', default: '8192', definedAt: `${CORE_DRAFT}:79`, change: 'profile' },
   { name: 'toolDiscoveryPolicy.commandShardMaxBytes', summary: 'Byte ceiling of one command help shard.', default: '16384', definedAt: `${CORE_DRAFT}:80`, change: 'profile' },
   { name: 'toolDiscoveryPolicy.entityContextDefaultBytes', summary: 'Default byte budget of entity context.', default: '16384', definedAt: `${CORE_DRAFT}:81`, change: 'profile' },
   { name: 'feedPolicy.pageSize', summary: 'Chat feed page size.', default: '50', definedAt: `${CORE_DRAFT}:84`, change: 'profile' },
   { name: 'feedPolicy.bodyExcerptBytes', summary: 'Chat feed body excerpt bytes.', default: '1024', definedAt: `${CORE_DRAFT}:84`, change: 'profile' },
+  { name: 'initialContentSurface', summary: 'Surface a session on this profile opens on: terminal or chat. Unset defers to the pinned template.', default: null, definedAt: 'packages/contract/src/contract.ts:6380', change: 'profile' },
 ];
+
+/**
+ * Leaves of `InteractionProfileDraftSchema` that are not a knob. The registry
+ * test walks the schema and fails on any leaf path that is neither a
+ * `PROFILE_KNOBS` row nor listed here — so a new profile field (a budget, a
+ * floor) cannot ship without a row on the Configs page.
+ */
+export const NOT_PROFILE_KNOBS: Readonly<Record<string, string>> = {
+  name: 'the profile\'s label, shown as the subject heading',
+  templateKey: 'the static template the profile pins, shown on the Interaction profiles page',
+  templateVersion: 'the static template version',
+  'promptPolicy.allowedInjectionKinds': 'a closed vocabulary list, shown on the Interaction profiles page',
+  'promptPolicy.untrustedEncoding': 'a single-valued literal',
+  'toolDiscoveryPolicy.rootHelpRef': 'a single-valued literal',
+  'toolDiscoveryPolicy.preloadNouns': 'a list of help nouns, shown on the Interaction profiles page',
+  'toolDiscoveryPolicy.providerToolRegistrationAllowlist': 'an operation list, shown on the Interaction profiles page',
+  'feedPolicy.scope': 'a single-valued enum',
+  providerCaptureMode: 'a single-valued literal',
+  'composerPolicy.schemaRef': 'composer wiring, not a behaviour budget',
+  'composerPolicy.supportsReply': 'composer wiring, not a behaviour budget',
+  'composerPolicy.supportsAttachments': 'composer wiring, not a behaviour budget',
+  'composerPolicy.allowedAttachmentKinds': 'composer wiring, not a behaviour budget',
+  'composerPolicy.operationBindings': 'composer wiring, not a behaviour budget',
+};

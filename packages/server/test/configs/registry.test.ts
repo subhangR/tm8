@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { memberLaunchPreferences } from '@tm8/execution';
+import { InteractionProfileDraftSchema } from '@tm8/contract';
 import { BYTE_BUDGETS } from '@tm8/prompt';
 
 import {
@@ -17,6 +18,7 @@ import {
   NODE_ENV,
   NOT_CONFIG_ENV,
   NOT_POLICY_CONSTANTS,
+  NOT_PROFILE_KNOBS,
   POLICY_FILES,
   PROFILE_KNOBS,
   TEAMMATE_KNOBS,
@@ -95,6 +97,25 @@ describe('config registry', () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it('lists every leaf of the interaction-profile draft schema', () => {
+    // Walks the contract's own Zod schema, so a field added there (a budget,
+    // a floor) fails here until it has a PROFILE_KNOBS row or a stated reason.
+    type Def = { typeName?: string; innerType?: unknown; schema?: unknown; shape?: () => Record<string, unknown> };
+    const leaves = (schema: unknown, path: string[] = []): string[] => {
+      let def = (schema as { _def?: Def })._def;
+      while (def && (def.innerType || def.schema)) def = ((def.innerType ?? def.schema) as { _def?: Def })._def;
+      if (def?.typeName === 'ZodObject') {
+        return Object.entries(def.shape!()).flatMap(([key, child]) => leaves(child, [...path, key]));
+      }
+      return [path.join('.')];
+    };
+    const listed = new Set([...PROFILE_KNOBS.map((k) => k.name), ...Object.keys(NOT_PROFILE_KNOBS)]);
+    const all = leaves(InteractionProfileDraftSchema);
+    expect(all.length).toBeGreaterThan(20);
+    expect(all.filter((path) => !listed.has(path))).toEqual([]);
+    expect([...listed].filter((path) => !all.includes(path))).toEqual([]);
   });
 
   it('shows every BYTE_BUDGETS key, live', () => {
