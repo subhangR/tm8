@@ -1,6 +1,7 @@
 # Forms — design (v1, decisions settled)
 
-**Status:** APPROVED for implementation (2026-09-24). Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
+**Status:** APPROVED for implementation (2026-09-24). §3–§7 reflect the W0 foundation as
+merged in PR #725. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
 Section 11 records the owner's decisions. Where this doc and §11 disagree, §11 wins.
 Nothing here is built yet.
 
@@ -54,12 +55,21 @@ create table public.forms (
   updated_at timestamptz not null default now()
 );
 
+create table public.form_sections (           -- optional headings (decision 5)
+  form_id    uuid not null references public.forms(entity_id) on delete cascade,
+  key        text not null,
+  position   int  not null,
+  title      text not null,
+  help       text,                                                     -- markdown
+  primary key (form_id, key)
+);
+
 create table public.form_questions (          -- ordered, modular questions
   form_id    uuid not null references public.forms(entity_id) on delete cascade,
   key        text not null check (key ~ '^[a-z][a-z0-9_]{0,63}$'),     -- stable, agent-chosen
-  position   int  not null,
-  section    text,                                                     -- section key, optional
-  type       text not null,                                            -- §4
+  position   int  not null,                    -- unique (form_id, position) deferrable
+  section    text,                             -- FK (form_id, section) → form_sections, on delete set null
+  type       text not null,                    -- valid iff internal.form_qtype_<type> exists (§4)
   title      text not null check (char_length(title) between 1 and 500),
   help       text check (char_length(help) <= 4000),                   -- markdown
   required   boolean not null default true,
@@ -95,6 +105,7 @@ create table public.form_deliveries (         -- outbox: response → requesting
   attempts int not null default 0, last_error text,
   delivery_id uuid,                             -- session_message_deliveries row
   spawned_session_id uuid references public.entities(id),  -- new_session / spawn_new
+  created_at timestamptz not null default now(),
   primary key (response_id, work_session_id)
 );
 ```
@@ -104,35 +115,49 @@ answer fails the T-L3 entity test (nobody discusses, links or reacts to one ques
 The *form* passes: it gets discussed, linked to tasks, badged for attention, and it
 needs a panel.
 
-Amend model (W0 advisor final ruling, 2026-09-24):
+Amend model (as merged in W0, PR #725):
 - Every submission is an immutable row. An edit-and-resubmit starts as a draft with
   `supersedes_id` pointing at the current revision.
-- **`lineage_key uuid not null`** is the response's slot. It is derived from
-  `settings.responses` and set when the draft is **first saved**:
+- **`lineage_key uuid not null`** is the response's slot, derived from
+  `settings.responses`:
   - `per_member`: `respondent_id`
   - `single`: `form_id`
   - `unlimited`: the id of revision 1
 
-  If the mode changes before the first submit, existing drafts' `lineage_key` is
-  rewritten.
+  It is set when the draft is **first saved**, and **re-derived for a revision-1 draft
+  at submit**, under the form lock. That closes the race between a save and a mode
+  change. A responses-mode change before the freeze also re-keys existing drafts.
 - On submit, one transaction:
   1. locks the form row;
   2. flips the old row's `is_current` to false;
   3. promotes the draft to `submitted`, revision N+1, `is_current = true`.
 - `is_current` defaults to false, and drafts are never current.
-- Indexes:
-  - `form_responses_one_current`: `unique (form_id, lineage_key) where is_current`.
-    One index enforces the response limit for all three modes; a violation maps to
-    `409 form_response_limit`.
-  - `unique (form_id, respondent_id) where status = 'draft'`: one open draft per
-    member.
-- `settings.responses` freezes at the first submission, together with the questions
-  (decision 7).
+- **Constraints and indexes, by name:**
+
+  | Name | Definition | Violation maps to |
+  |---|---|---|
+  | `form_responses_one_current` | `unique (form_id, lineage_key) where is_current` | `409 form_response_limit` |
+  | `form_responses_one_draft_per_member` | `unique (form_id, respondent_id) where status='draft'` | `409 conflict` (TFD01) |
+  | `form_responses_one_successor` | `unique (supersedes_id)` | `409 version_conflict` |
+  | composite FK | `(supersedes_id, form_id, lineage_key)` → the same form and lineage | — |
+  | CHECKs | current ⇒ submitted; submitted ⇔ `submitted_at` ⇔ `questions_snapshot`; `revision = 1` ⇔ `supersedes_id is null` | — |
+
+- **Mutability:**
+  - Submitted rows are immutable, except `is_current` (true → false only) and
+    `message_id`. They can't be deleted while the form exists.
+  - Drafts are mutable and deletable (discard).
+- **Keyset indexes:**
+  - `form_responses (form_id, submitted_at, id) where is_current`
+  - `form_responses (space_id, respondent_id, submitted_at, id) where status='submitted'`
+    ("my submissions")
+  - `form_responses (form_id, lineage_key, revision)` (history)
+  - `form_deliveries (work_session_id, created_at) where status='pending'` (drain)
+- **Freeze:** one rule (§5), at the first **submitted** response.
 - The full history stays queryable, which is what "check what I submitted" reads.
 
 Why `answers` is jsonb: its shape is per-question-type. The database is still the
-authority. `internal.validate_form_answers(form_id, answers, final bool)` runs in the
-submit RPC and checks keys, types, required fields, option membership and bounds. The
+authority. The W0 core `internal.form_submit` validates keys, required fields and each
+answer through its type's SQL arm (§4). Bounds and option membership live in the arm. The
 Zod schemas mirror it so the CLI and UI fail early.
 
 ### 3.2 Edges (T-L3: relations are edges)
@@ -162,16 +187,32 @@ type FormSettings = {
   attentionPoints: number;         // 1–100, default 60. Raised on open, resolved on submit
 };
 ```
+Settings are stored **sparse**, and defaults apply on read
+(`internal.form_settings_effective`). Only explicitly set keys are persisted.
+
 There is no expiry in v1 (decision 9). Add an `expired` status and an `expires_at`
 column when expiry is designed.
 
 ## 4. Question types (modular)
 
 Every question has `{ key, type, title, help?, required, section?, config }`. A type
-is a row in one registry (`FORM_QUESTION_TYPES`, contract). Each row has a config
-schema, an answer schema, a validator, a UI renderer and a plain-text renderer for the
-PTY. Adding a type means adding a registry row and a SQL validator arm, and nothing
-else.
+is one entry in the contract registry `FORM_QUESTION_TYPES` (as merged in W0):
+
+```ts
+{ type, label, configSchema, answerSchema, validate, renderAnswerText,
+  textLayout?, answersEqual?, example }
+```
+
+- `answersEqual` defaults to canonical deep-equal, and `multi_choice` uses set
+  equality. It drives "Changed (n)" in resubmissions.
+- The SQL arm is `internal.form_qtype_<type>(op 'config'|'answer', config, answer)`.
+  It returns `[{code, message}]`, where `[{code:'empty'}]` means well-formed but
+  empty.
+- The generic validator resolves arms by name through `to_regprocedure`, so no SQL
+  `CASE` switches on the type. `form_questions.type` is valid iff its arm exists.
+- **Adding a type** means adding the registry entry, its SQL arm and its parity
+  fixture cases. Totality tests enforce that every entry has an arm and fixtures, and
+  vice versa. The UI input component is added at the W1 frontend registry.
 
 | Type | `config` | Answer | v1 |
 |---|---|---|---|
@@ -197,16 +238,17 @@ the count. A question type is one registry entry that owns its
 - plain-text PTY renderer.
 
 Nothing outside the registry switches on the question type. The acceptance test for
-the foundation: adding `yes_no` touches only the registry entry, one SQL validator
-arm, and one input component.
+the foundation (passed, dry-run PR #726): adding `yes_no` touched only the registry
+entry, one SQL arm, and its fixture cases. The UI input component leg is checked at the W1 frontend gate.
 
 Options come from agents, so they borrow two things from Claude's `AskUserQuestion`:
 - `recommended: true`, which the UI renders as a badge and pre-selects in "accept
   defaults";
 - a per-option `help`, which the UI shows when the option is focused.
 
-Sections: optional `sections[{key,title,help?}]` on the form. Questions reference them
-by key, and the UI renders one heading per section (decision 5).
+Sections: optional `form_sections` rows (`key, position, title, help`). A question's
+`section` is a real FK to them (on delete set null), and the UI renders one heading
+per section (decision 5).
 
 ## 5. Lifecycle
 
@@ -218,10 +260,12 @@ draft ──open──▶ open ──submit (closeOnSubmit)──▶ closed
 
 - **Agents create forms `open` by default** (a form nobody can answer is useless to an
   agent). Humans default to `draft`.
-- **Question edits** are allowed in `draft` and in `open`, but only until the first
-  submitted response. After that the structure is frozen and further edits are refused
-  with `form_structure_frozen`. Each edit bumps `structure_version`, and every
-  response records the version it answered.
+- **Freeze, one rule:** at the first **submitted** response. Drafts never freeze a
+  form. Questions, sections and `settings.responses` freeze together, and any later
+  edit to them is refused with `form_structure_frozen`. Before the freeze:
+  - each structure edit bumps `structure_version`, and every response records the
+    version it answered;
+  - a responses-mode change re-keys existing drafts.
 - **Draft responses** autosave, so a human can leave and come back. A structure edit
   keeps draft answers whose keys still validate and drops the others.
 - **Cancel:** the requester gets a `form_cancelled` message, so an agent that is
@@ -253,19 +297,43 @@ context` (a `form` arm in `internal.entity_content`) and the response ops below.
 Twelve operations in total. Actions (`tm8 action list`) get cases in
 `structurallyAvailable` per form status, so agents discover `submit`/`close` from state.
 
-Errors, all from the closed taxonomy:
-- `422 form_answers_invalid` (with `details[{key, code, message}]`)
-- `409 form_not_open`
-- `409 form_structure_frozen`
-- `409 form_response_limit`
-- `403 form_respondent_not_allowed`
+Errors: the closed taxonomy, carried from SQL by SQLSTATE class `TF`.
+
+| SQLSTATE | Error |
+|---|---|
+| TFA01 | `422 form_answers_invalid`, body `details.issues[{key, code, message}]` |
+| TFN01 | `409 form_not_open` |
+| TFS01 | `409 form_structure_frozen` |
+| TFL01 | `409 form_response_limit` |
+| TFR01 | `403 form_respondent_not_allowed` |
+| TFD01 | `409 conflict`: a draft is in flight for another target, and the error names the draft |
+| 40001 | `409 version_conflict`: the amended revision is no longer current |
+
+Drafts: one draft per member per form. Under `unlimited`, an amend draft blocks
+starting a new chain (TFD01) until it is submitted or discarded. This is accepted for
+v1.
 
 ## 7. Submission and delivery
 
 ### 7.1 One transaction (`public.submit_form_response`)
+
+It is layered as merged in W0:
+- **W0 internal cores:** `internal.form_save_draft` and `internal.form_submit` own the
+  lock, the status check, the respondent policy, validation, the revision flip and the
+  limit mapping.
+- **W1 public doors:** the `SECURITY DEFINER` RPCs wrap the cores in the same
+  transaction and under the core's form lock. They add the ledger, auth, the message,
+  the delivery row, `closeOnSubmit` and attention.
+
+Lock scope:
+- the form row `FOR NO KEY UPDATE`, plus the draft row and the superseded row;
+- not `FOR SHARE`, which would deadlock on the `closeOnSubmit` upgrade;
+- not `FOR UPDATE`, which would block the FK `KEY SHARE` that draft saves take.
+
+Steps:
 1. Lock the form, assert `status='open'`, and check the respondent against the
    settings and the response limit.
-2. `validate_form_answers(final:=true)`. Freeze `questions_snapshot`. Set
+2. Validate through the per-type SQL arms (final). Freeze `questions_snapshot`. Set
    `status='submitted'`.
 3. Post a **message** authored by the respondent:
    - anchored on `[requesting session, form]`, with `conversationAnchorId = form`;
@@ -302,8 +370,9 @@ Form: Pick the migration strategy
 
 Each answer shows both the key and the value, so the agent can use it directly.
 
-A resubmission carries `<response id=… revision="2" supersedes=…>`. Its body lists
-only the **changed** answers first, then the full set. For
+A resubmission carries `<response id=… revision="2" supersedes=…>`. The body comes
+from `renderFormResponseText({title, questions, answers, previousAnswers?})`. It
+emits `Changed (n):` (using each type's `answersEqual`) and then `All answers:`. For
 the full shape, the agent fetches the JSON.
 
 ### 7.3 Where a response goes
@@ -405,7 +474,7 @@ contract Zod schema before any call is made.
 | 7 | Editing | Questions editable until the first submitted response, then frozen. |
 | 8 | Amend | One response per member by default, but the member **can edit and resubmit** (`allowAmend` default true). Each resubmission is a new revision, delivered again, and history is kept. |
 | 9 | Expiry | Not needed for now. |
-| 10 | Visibility | Space-visible. |
+| 10 | Visibility | Forms and **submitted** responses are space-visible. A **draft** is visible only to its respondent (RLS via `internal.form_is_caller`). Deliveries follow their response. |
 | 11 | UI surfaces | Form panel, session tile chip, pending-forms banner at the top of the session panel. |
 | 12 | Agent guidance | Rich `tm8 help form` plus a few prompt lines pointing to it; add `tm8 form wait`. |
 | 13 | Templates | (default) v2. |
