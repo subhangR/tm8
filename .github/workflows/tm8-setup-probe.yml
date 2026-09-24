@@ -1,0 +1,90 @@
+# TEMPORARY — lane 0b-probe's proof that .github/actions/tm8-setup works on GitHub.
+# Lives only on a draft PR that is closed unmerged. Not a gate.
+name: tm8-setup probe
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tm8-setup-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  with-postgres:
+    name: probe (postgres "true")
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: tm8
+          POSTGRES_DB: postgres
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd "pg_isready -U tm8"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/tm8-setup
+        with:
+          postgres: "true"
+
+      - name: Assert the three cluster roles exist, git identity is set, install happened
+        run: |
+          set -euo pipefail
+          got="$(psql "postgres://tm8@127.0.0.1:5442/postgres" -Atc "select string_agg(rolname, ',' order by rolname) from pg_roles where rolname in ('tm8_app','tm8_delivery_worker','tm8_graph_owner')")"
+          echo "roles: $got"
+          [ "$got" = "tm8_app,tm8_delivery_worker,tm8_graph_owner" ]
+          [ "$(git config --global user.name)" = "tm8 CI" ]
+          [ -x node_modules/.bin/vitest ] && [ -x node_modules/.bin/tsc ]
+          bun --version; node --version
+
+      - name: check.sh trace harness (no-flag equivalence vs PR base, new-flag assertions)
+        run: bash tools/ci/test/check-trace.sh "${{ github.event.pull_request.base.sha || 'origin/main' }}"
+
+      - name: W1 shape — contract build + test
+        run: bash tools/ci/check.sh --only typecheck:packages/contract,test:packages/contract
+        env:
+          CI: "1"
+
+      - name: server test shard 1/2 against the pre-created roles
+        run: bash tools/ci/check.sh --only typecheck:packages/contract,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,test:packages/server --shard 1/2
+        env:
+          CI: "1"
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
+
+  without-postgres:
+    name: probe (postgres default "false", NO service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # If the postgres-gated steps ran here, the role pre-create would die on a
+      # refused connection (there is no service) and turn this job red. The step
+      # after it proves that connection really is refused, so the control can fire.
+      - uses: ./.github/actions/tm8-setup
+
+      - name: Control — no pre-created role step ran, and a psql connection here fails, so a running pre-create step would have failed
+        run: |
+          command -v psql || { echo "psql not even installed: nothing could have pre-created roles"; exit 0; }
+          if psql "postgres://tm8@127.0.0.1:5442/postgres" -c 'select 1' 2>&1; then
+            echo "a postgres answered — the control is blind"; exit 1
+          fi
+          echo "no postgres reachable: the role step was skipped, not merely lucky"
+
+      - name: install happened without the postgres parts
+        run: |
+          [ -x node_modules/.bin/vitest ]
+          bash tools/ci/check.sh --only typecheck:packages/contract,test:packages/contract
+        env:
+          CI: "1"
