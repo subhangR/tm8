@@ -2288,6 +2288,23 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
+  // ── forms (FORMS-DESIGN §6) ──────────────────────────────────────────────
+  // Registered by the backend lane with `cmd: null`: the operations exist and
+  // are discoverable, and the `tm8 form` noun (a separate CLI lane) binds the
+  // commands. `null` here is "no public invocation YET", never a fabricated one.
+  'forms.create': { cmd: null, sum: 'Create a form (questions, sections, settings) in one call; returns the form and its url', authz: 'space', input: 'bound', tags: ['form', 'question', 'ask', 'survey'], reason: 'cli_noun_pending' },
+  'forms.update': { cmd: null, sum: 'Update a form title, description, settings or sections under a version guard', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'settings'], reason: 'cli_noun_pending' },
+  'forms.questions.add': { cmd: null, sum: 'Add a question to a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
+  'forms.questions.update': { cmd: null, sum: 'Edit one question of a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
+  'forms.questions.remove': { cmd: null, sum: 'Remove one question from a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
+  'forms.questions.move': { cmd: null, sum: 'Move one question after another (or first)', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question', 'order'], reason: 'cli_noun_pending' },
+  'forms.transition': { cmd: null, sum: 'Open, close, reopen or cancel a form', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'open', 'close', 'cancel'], reason: 'cli_noun_pending' },
+  'forms.responses.save': { cmd: null, sum: 'Save the caller\'s draft answers to an open form (partial validation)', authz: 'entity', input: 'bound', tags: ['form', 'response', 'draft', 'answer'], reason: 'cli_noun_pending' },
+  'forms.responses.submit': { cmd: null, sum: 'Submit answers to an open form; stores the response and posts it to the requesting session', authz: 'entity', input: 'bound', tags: ['form', 'response', 'submit', 'answer'], reason: 'cli_noun_pending' },
+  'forms.responses.list': { cmd: null, sum: 'Page the current submitted responses of a form (and the caller\'s own draft)', authz: 'entity', input: 'none', tags: ['form', 'response', 'list'], reason: 'cli_noun_pending' },
+  'forms.responses.get': { cmd: null, sum: 'Read one form response: answers, the frozen questions, and delivery status', authz: 'entity', input: 'none', tags: ['form', 'response'], reason: 'cli_noun_pending' },
+  'forms.responses.mine': { cmd: null, sum: 'Page what the caller has submitted, across a space', authz: 'space', input: 'none', tags: ['form', 'response', 'mine', 'history'], reason: 'cli_noun_pending' },
+
   // ── containers (TM8-CONTAINERS-DESIGN §14) ───────────────────────────────
   //
   // Twenty-five rows, and every one of them is here because this record is
@@ -2682,6 +2699,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   teamMembers: 'teammate',
   voice: 'voice',
   artifacts: 'artifact',
+  forms: 'form',
   // `chat`, not `chat-thread`. The old noun named the shape a chat used to
   // have — a message THREAD bound to its root — and 176 replaced that with an
   // entity kind whose slug is `chat`. Keeping both would put one thing under

@@ -42,6 +42,15 @@ import {
   ArtifactsPreviewStartInputSchema,
   ArtifactsPublishInputSchema,
   ArtifactsRestoreInputSchema,
+  FormsCreateInputSchema,
+  FormsQuestionsAddInputSchema,
+  FormsQuestionsMoveInputSchema,
+  FormsQuestionsRemoveInputSchema,
+  FormsQuestionsUpdateInputSchema,
+  FormsResponsesSaveInputSchema,
+  FormsResponsesSubmitInputSchema,
+  FormsTransitionInputSchema,
+  FormsUpdateInputSchema,
   AuthClaimInputSchema,
   AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
@@ -311,6 +320,17 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'artifacts.publish': ArtifactsPublishInputSchema,
   'artifacts.preview.start': ArtifactsPreviewStartInputSchema,
   'artifacts.restore': ArtifactsRestoreInputSchema,
+
+  // forms (FORMS-DESIGN §6). The three reads are path/query addressed.
+  'forms.create': FormsCreateInputSchema,
+  'forms.update': FormsUpdateInputSchema,
+  'forms.questions.add': FormsQuestionsAddInputSchema,
+  'forms.questions.update': FormsQuestionsUpdateInputSchema,
+  'forms.questions.remove': FormsQuestionsRemoveInputSchema,
+  'forms.questions.move': FormsQuestionsMoveInputSchema,
+  'forms.transition': FormsTransitionInputSchema,
+  'forms.responses.save': FormsResponsesSaveInputSchema,
+  'forms.responses.submit': FormsResponsesSubmitInputSchema,
 
   // files (AM-2 §2)
   'files.uploadInit': FileUploadInitInputSchema,

@@ -1384,6 +1384,90 @@
         "source": "server-router"
       },
       {
+        "operation": "forms.create",
+        "method": "POST",
+        "path": "/v2/forms",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.update",
+        "method": "PATCH",
+        "path": "/v2/forms/:formId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.add",
+        "method": "POST",
+        "path": "/v2/forms/:formId/questions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.update",
+        "method": "PATCH",
+        "path": "/v2/forms/:formId/questions/:questionKey",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.remove",
+        "method": "DELETE",
+        "path": "/v2/forms/:formId/questions/:questionKey",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.move",
+        "method": "POST",
+        "path": "/v2/forms/:formId/questions/:questionKey/move",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.transition",
+        "method": "POST",
+        "path": "/v2/forms/:formId/transition",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.save",
+        "method": "PUT",
+        "path": "/v2/forms/:formId/responses/mine",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.submit",
+        "method": "POST",
+        "path": "/v2/forms/:formId/responses/submit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.list",
+        "method": "GET",
+        "path": "/v2/forms/:formId/responses",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.get",
+        "method": "GET",
+        "path": "/v2/form-responses/:responseId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.mine",
+        "method": "GET",
+        "path": "/v2/form-responses",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "identity.profile.update",
         "method": "POST",
         "path": "/v2/identity/profile",
@@ -4970,6 +5054,207 @@
         "intentTags": [
           "artifacts",
           "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.create",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.create",
+        "intentTags": [
+          "forms",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.update",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.update",
+        "intentTags": [
+          "forms",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.add",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.add",
+        "intentTags": [
+          "forms",
+          "questions",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.update",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.update",
+        "intentTags": [
+          "forms",
+          "questions",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.remove",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.remove",
+        "intentTags": [
+          "forms",
+          "questions",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.move",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.move",
+        "intentTags": [
+          "forms",
+          "questions",
+          "move"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.transition",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.transition",
+        "intentTags": [
+          "forms",
+          "transition"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.save",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.save",
+        "intentTags": [
+          "forms",
+          "responses",
+          "save"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.submit",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.submit",
+        "intentTags": [
+          "forms",
+          "responses",
+          "submit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.list",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.list",
+        "intentTags": [
+          "forms",
+          "responses",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.get",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.get",
+        "intentTags": [
+          "forms",
+          "responses",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.mine",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.mine",
+        "intentTags": [
+          "forms",
+          "responses",
+          "mine"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

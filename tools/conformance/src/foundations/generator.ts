@@ -227,6 +227,7 @@ function nounForOperation(operation: OperationName): string {
     case 'skills': return 'skill';
     case 'voice': return 'voice';
     case 'artifacts': return 'artifact';
+    case 'forms': return 'form';
     // A noun is required even though all four `credentials.*` rows are
     // deliberately `cmd: null` — the manifest groups by noun regardless of
     // whether the noun has any invocable command today, and that is the right
