@@ -246,55 +246,6 @@ export interface PgDbOptions {
  */
 const TX_WATCHDOG_MILLIS = 10_000;
 
-/** pg-pool's own words when `connectionTimeoutMillis` elapses in the queue. */
-const POOL_ACQUIRE_TIMEOUT = /timeout exceeded when trying to connect/i;
-/** At most one saturation line per this window; a wave produces hundreds. */
-const POOL_SATURATION_LOG_MILLIS = 5_000;
-let lastPoolSaturationLogAt = 0;
-
-/**
- * A POOL-ACQUIRE TIMEOUT IS "THE NODE IS BUSY", NOT AN INTERNAL ERROR.
- *
- * `pool.connect()` rejects with a bare `Error` (no SQLSTATE) when every one of
- * `max` clients stays checked out for `connectionTimeoutMillis`. It used to
- * escape as that bare Error, so the wire said `internal server error` and the
- * log carried only a stack through pg-pool — nothing said the pool was
- * saturated, by how much, or that retrying in a second is the right move.
- * Measured on prod 2026-09-24: bursts of UI re-reads held all 32 clients for
- * seconds at a time, and `execution.spawn` failed exactly this way.
- *
- * Still a 503 (`upstream_unavailable`, retryable) — the status and retry flag
- * are unchanged, only now honest about the cause and carrying `Retry-After`.
- */
-export function translatePoolAcquireError(
-  err: unknown,
-  pool: Pick<pg.Pool, 'totalCount' | 'idleCount' | 'waitingCount'> & { options?: { max?: number } },
-  claims: Pick<DbClaims, 'requestId'>,
-): unknown {
-  if (!(err instanceof Error) || !POOL_ACQUIRE_TIMEOUT.test(err.message)) return err;
-  const stats = {
-    reason: 'db_pool_exhausted',
-    max: pool.options?.max,
-    total: pool.totalCount,
-    idle: pool.idleCount,
-    waiting: pool.waitingCount,
-    retryAfterSeconds: 1,
-  };
-  const now = Date.now();
-  if (now - lastPoolSaturationLogAt >= POOL_SATURATION_LOG_MILLIS) {
-    lastPoolSaturationLogAt = now;
-    console.warn(
-      `[db] pool exhausted: no client free within the acquire deadline ` +
-        `(request ${claims.requestId ?? 'unknown'}; total=${stats.total} idle=${stats.idle} ` +
-        `waiting=${stats.waiting} max=${stats.max ?? '?'})`,
-    );
-  }
-  return new CollabError('upstream_unavailable', 'the node is busy: no database connection was free in time, retry shortly', {
-    details: stats,
-    retryable: true,
-  });
-}
-
 export class PgDb implements Db {
   private readonly pool: pg.Pool;
   private readonly role: string;
@@ -323,12 +274,7 @@ export class PgDb implements Db {
   }
 
   async tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
-    let client: pg.PoolClient;
-    try {
-      client = await this.pool.connect();
-    } catch (err) {
-      throw translatePoolAcquireError(err, this.pool, claims);
-    }
+    const client = await this.pool.connect();
     // THE POOL GUARD IN THE CONSTRUCTOR DOES NOT COVER THIS CLIENT.
     //
     // `pool.on('error')` is only consulted for clients sitting IDLE in the pool.

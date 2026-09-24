@@ -10,7 +10,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { HandlerRegistry } from '../src/facade/index.js';
-import { translatePoolAcquireError } from '../src/db/client.js';
 import { createFacadeServer, type FacadeServer } from '../src/http/server.js';
 import { ReadAdmission, readLimitForPool } from '../src/http/read-admission.js';
 
@@ -137,26 +136,5 @@ describe('read admission in the HTTP pipeline', () => {
     while (releaseReads.length > 0) releaseReads.shift()!();
     const statuses = (await Promise.all(reads)).map((r) => r.status);
     expect(statuses).toEqual([200, 200, 200]);
-  });
-});
-
-describe('translatePoolAcquireError', () => {
-  const pool = { totalCount: 32, idleCount: 0, waitingCount: 17, options: { max: 32 } };
-
-  it('turns pg-pool\'s acquire timeout into a retryable, self-describing 503', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const out = translatePoolAcquireError(
-      new Error('timeout exceeded when trying to connect'), pool, { requestId: 'req_x' },
-    ) as { code?: string; retryable?: boolean; message?: string; details?: Record<string, unknown> };
-    warn.mockRestore();
-    expect(out.code).toBe('upstream_unavailable');
-    expect(out.retryable).toBe(true);
-    expect(out.message).not.toBe('internal server error');
-    expect(out.details).toMatchObject({ reason: 'db_pool_exhausted', total: 32, idle: 0, waiting: 17, max: 32, retryAfterSeconds: 1 });
-  });
-
-  it('leaves every other connect failure untouched', () => {
-    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' });
-    expect(translatePoolAcquireError(refused, pool, {})).toBe(refused);
   });
 });
