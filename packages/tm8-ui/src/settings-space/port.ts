@@ -46,6 +46,7 @@ import type {
   IdentityProfileUpdateInput,
   IdentityProfileView,
   MenuConfig,
+  SpaceConfigsView,
   SpaceId,
   SpaceInviteView,
   SpaceMemberRole,
@@ -264,6 +265,13 @@ export interface SettingsPort {
   loadWorkflows(): Promise<TaskWorkflow[]>;
 
   /**
+   * Settings → Configs (`spaces.configs`). Optional so a port built before the
+   * section existed still type-checks; without it the section says it is not
+   * wired rather than drawing an empty table.
+   */
+  loadConfigs?(): Promise<SpaceConfigsView>;
+
+  /**
    * Write / delete one type value's vocabulary. Every rule is the server's
    * and comes back as its own words: space-admin authorization, the
    * duplicate-status refusal, the structural {open,working,done} check
@@ -392,6 +400,10 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
       return seam.commands.deleteTaskAxis(spaceId, axisId, {
         clientMutationId: newMutationId('axisrm'),
       });
+    },
+
+    loadConfigs() {
+      return seam.spaceConfigs(spaceId);
     },
 
     async loadWorkflows() {

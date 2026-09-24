@@ -56,6 +56,7 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     [`#/s/${SPACE}/settings/menu`, { view: 'settings', section: 'menu' }],
     // Lane K: the Jev no-key link's destination.
     [`#/s/${SPACE}/settings/credentials`, { view: 'settings', section: 'credentials' }],
+    [`#/s/${SPACE}/settings/configs`, { view: 'settings', section: 'configs' }],
   ];
 
   it.each(cases)('parses %s', (hash, target) => {

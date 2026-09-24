@@ -71,6 +71,7 @@ import {
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
+  type SpaceConfigsView,
   type Workflow,
   type SpaceSummary,
 } from '@tm8/contract';
@@ -322,6 +323,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     identity: (): Promise<IdentityView> => ops.identity(),
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
+    spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),

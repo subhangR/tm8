@@ -265,7 +265,7 @@ export interface ResolvedLaunchConfig {
  *   { "launch": { "harnessSurface": "inherit", "plugins": ["sales"],
  *                 "mcpServers": { "linear": { "type": "http", "url": "…" } } } }
  */
-function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
+export function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
   harnessSurface: HarnessSurface | null;
   plugins: string[] | null;
   mcpServers: Record<string, Record<string, unknown>> | null;

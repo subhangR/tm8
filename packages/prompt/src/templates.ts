@@ -343,7 +343,7 @@ export interface TaskLinkedEntity {
  * plus 120 characters of name each). The surplus is DECLARED as `omitted`,
  * never dropped in silence.
  */
-const LINKED_MANIFEST_MAX = 16;
+export const LINKED_MANIFEST_MAX = 16;
 const LINKED_NAME_MAX_CHARS = 120;
 /** The one kind referenced by id alone (task decision 2, 01a0cfb0). */
 const ID_ONLY_KIND = 'work_session';

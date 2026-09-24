@@ -488,6 +488,37 @@ function renderSettings(dto: unknown): string {
   );
 }
 
+/** One line per knob: `name = value  [source]  file:line`. Secrets arrive redacted. */
+function renderConfigs(dto: unknown): string {
+  const raw = (row: unknown, name: string): unknown =>
+    row === null || typeof row !== 'object' ? undefined : (row as Record<string, unknown>)[name];
+  const valueOf = (v: unknown): string => {
+    switch (field(v, 'kind')) {
+      case 'value': return String(field(v, 'text') ?? '');
+      case 'secret': return field(v, 'present') === 'true' ? '(set, hidden)' : '(not set)';
+      case 'unobservable': return '(read by the CLI, not the server)';
+      default: return '(unset)';
+    }
+  };
+  const knobLine = (k: unknown): string =>
+    `  ${field(k, 'name')} = ${valueOf(raw(k, 'value'))}  [${field(k, 'source')}]  ${field(k, 'definedAt')}`;
+  const node = raw(dto, 'node');
+  const subjects = (key: string): string[] =>
+    rowsOf(dto, key).flatMap((s) => [`${key.slice(0, -1)} ${field(s, 'name')}`, ...rowsOf(s, 'knobs').map(knobLine)]);
+  return joinLines(
+    [
+      field(node, 'visible') === 'true'
+        ? ['node env', ...rowsOf(node, 'knobs').map(knobLine)].join('\n')
+        : `node env hidden: ${field(node, 'reason') ?? 'not visible'}`,
+      ...subjects('teammates'),
+      ...subjects('profiles'),
+      ['code constants', ...rowsOf(dto, 'code').map(knobLine)].join('\n'),
+      ['cli env', ...rowsOf(dto, 'cli').map(knobLine)].join('\n'),
+    ],
+    fallback(dto),
+  );
+}
+
 function renderLeaderboard(dto: unknown): string {
   const rows = rowsOf(dto, 'items');
   return joinLines(
@@ -664,7 +695,7 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
 /** The three read-only Space projections, which differ only in row and renderer. */
 function spaceProjection(
   command: string,
-  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts',
+  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs',
   render: (dto: unknown) => string,
 ): (cmd: CommandContext) => Promise<ExitCode> {
   return async (cmd) => {
@@ -1182,6 +1213,10 @@ export const SPACE_COMMANDS: CommandModule[] = [
   {
     path: ['space', 'settings', 'get'],
     run: spaceProjection('space settings get', 'spaces.settings', renderSettings),
+  },
+  {
+    path: ['space', 'configs', 'get'],
+    run: spaceProjection('space configs get', 'spaces.configs', renderConfigs),
   },
   { path: ['space', 'member', 'list'], run: spaceMemberList },
   { path: ['space', 'member', 'role'], run: spaceMemberRole },

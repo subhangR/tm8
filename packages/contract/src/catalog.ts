@@ -74,6 +74,7 @@ export const OPERATIONS = [
   { name: 'spaces.home',             method: 'GET',    path: '/v2/spaces/:spaceId/home',                    kind: 'read',    status: 'v1' },
   { name: 'spaces.counts',           method: 'GET',    path: '/v2/spaces/:spaceId/counts',                  kind: 'read',    status: 'v1' },
   { name: 'spaces.settings',         method: 'GET',    path: '/v2/spaces/:spaceId/settings',                kind: 'read',    status: 'v1' },
+  { name: 'spaces.configs',          method: 'GET',    path: '/v2/spaces/:spaceId/configs',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.updateRole', method: 'PATCH', path: '/v2/spaces/:spaceId/members/:memberId',       kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },

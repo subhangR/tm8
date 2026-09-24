@@ -29,6 +29,7 @@ export type SettingsSectionId =
   | 'projects'
   | 'menu'
   | 'kinds'
+  | 'configs'
   | 'danger';
 
 export interface SettingsSectionDef {
@@ -85,6 +86,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Menu', heading: 'Menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },
+  /* Every knob that shapes tm8's behaviour — node env, teammate launch,
+     interaction profiles, code constants — read-only, from `spaces.configs`.
+     Last before the danger zone: it is reference, not a daily setting. */
+  { id: 'configs', label: 'Configs', heading: 'Configs' },
   { id: 'danger', label: 'Danger zone', heading: 'Danger zone', danger: true },
 ];
 

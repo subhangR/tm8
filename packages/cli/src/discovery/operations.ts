@@ -619,6 +619,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
   },
+  'spaces.configs': {
+    cmd: ['space', 'configs', 'get'],
+    syn: 'tm8 space configs get [<space-id>]',
+    sum: 'Read every tm8 config knob with its current value, source and definition (node env for node admins only)',
+    authz: 'space',
+    input: 'none',
+    tags: ['config', 'env', 'settings', 'constants', 'budgets'],
+  },
   'spaces.members.list': {
     cmd: ['space', 'member', 'list'],
     syn: 'tm8 space member list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -2768,7 +2776,7 @@ export const CATALOG_DIGEST =
   // Re-measured 2026-09-23, SC-3: + credentials.space.* and node.credentials.*.
   // Read out of the failing digest test and matched to the regenerated manifest.
   // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
-  'sha256:1b1faa046bec1bba7a64797f80759ae65fb0f5d9d42313e237c80019287f1760';
+  'sha256:7e8dc5880b7c4886f63a139f11ed30563537a2b1e5a3badfa4aa3124f1100776';
 
 export const GRAMMAR_VERSION = '2';
 

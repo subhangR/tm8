@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(220); // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(SURFACE).toHaveLength(221); /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(220); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(rows).toHaveLength(221); /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(220); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(new Set(rows.map((r) => r.op)).size).toBe(221); /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
   });
 
   /**

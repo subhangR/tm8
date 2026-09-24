@@ -83,18 +83,18 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // lockstep a second time: catalog 198 -> 199, catalog-non-WS 196 -> 197,
     // mounted routes 196 -> 197, registered handlers 194 -> 195. MEASURED from
     // this file's own failing run on the MERGED tree, not derived.
-    expect(OPERATIONS).toHaveLength(224); /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F) // +9 skills (2026-09-23) // +25 (177) containers, +1 (187), +1 (gitStage) /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(OPERATIONS).toHaveLength(225); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F) // +9 skills (2026-09-23) // +25 (177) containers, +1 (187), +1 (gitStage) /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 171 -> 195: 24 container HTTP rows. The 25th is the WS alias.
     // 196 -> 197 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(222); /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(223); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 222, /* +1 entities.commands.tick (bug 01a0d2f1). */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops // +3 service keys (Jev lane K) // +1 launch.suggest (Jev lane F) // +9 skills (2026-09-23) // +24 (177): the container HTTP rows; +1 (187); +1 (gitStage)
-      implemented: 220, /* +1 entities.commands.tick (bug 01a0d2f1). */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3, mounted with the credential seam // +3 service keys, mounted with the credential seam (Jev lane K) // +1 launch.suggest (Jev lane F, placeholder handler) // +9 skills (2026-09-23) // +24 (177): all registered, all mounted; +1 (187); +1 (gitStage)
+      operations: 223, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops // +3 service keys (Jev lane K) // +1 launch.suggest (Jev lane F) // +9 skills (2026-09-23) // +24 (177): the container HTTP rows; +1 (187); +1 (gitStage)
+      implemented: 221, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3, mounted with the credential seam // +3 service keys, mounted with the credential seam (Jev lane K) // +1 launch.suggest (Jev lane F, placeholder handler) // +9 skills (2026-09-23) // +24 (177): all registered, all mounted; +1 (187); +1 (gitStage)
     });
   });
 
@@ -170,7 +170,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 189 -> 190 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(implemented).toHaveLength(215); /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops, +9 skills (2026-09-23), +1 launch.suggest (Jev lane F), +3 service keys (Jev lane K), MEASURED /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(implemented).toHaveLength(216); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops, +9 skills (2026-09-23), +1 launch.suggest (Jev lane F), +3 service keys (Jev lane K), MEASURED /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
   });
 
   /**

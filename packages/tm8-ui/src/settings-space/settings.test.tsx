@@ -262,6 +262,9 @@ const LIVE_VERBS = [
   // renders; their own controls are held in space-credentials.test.tsx.
   /^Space credentials$/,
   /^Node credentials$/,
+  // Configs: the NAV ROW only. The section is read-only (`spaces.configs`)
+  // and draws no control of its own.
+  /^Configs$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

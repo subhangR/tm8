@@ -2463,6 +2463,57 @@ export interface NodeCredentialsPolicySetInput {
   clientMutationId?: string;
 }
 
+/** Where a config knob's effective value came from. */
+export type ConfigSource = 'env' | 'persona' | 'profile' | 'default' | 'code';
+
+/** How a config knob is changed: an env edit and restart, a persona or profile edit, or a code change. */
+export type ConfigChangeRoute = 'env' | 'persona' | 'profile' | 'code';
+
+/**
+ * A knob's effective value. A secret is `secret` with presence only — the
+ * server never serializes its value. `unobservable` is a value read in another
+ * process (the `tm8` CLI's own shell), which the server cannot see.
+ */
+export type ConfigValue =
+  | { kind: 'value'; text: string }
+  | { kind: 'unset' }
+  | { kind: 'secret'; present: boolean }
+  | { kind: 'unobservable'; reason: string };
+
+export interface ConfigKnobView {
+  name: string;
+  group: string;
+  summary: string;
+  value: ConfigValue;
+  source: ConfigSource;
+  /** The value used when nothing sets it, as text; `null` when there is none. */
+  default: string | null;
+  /** `path/to/file.ts:line`, relative to the repository root. */
+  definedAt: string;
+  change: ConfigChangeRoute;
+}
+
+/** One teammate's or one interaction profile's knobs. */
+export interface ConfigSubjectView {
+  id: EntityId;
+  name: string;
+  knobs: ConfigKnobView[];
+}
+
+/**
+ * `spaces.configs` — every knob that shapes tm8's behaviour, read-only.
+ * `node` (the server's environment) is shown to a node admin on a human
+ * session only; everything else follows the caller's space access.
+ */
+export interface SpaceConfigsView {
+  spaceId: SpaceId;
+  node: { visible: true; knobs: ConfigKnobView[] } | { visible: false; reason: string };
+  cli: ConfigKnobView[];
+  code: ConfigKnobView[];
+  teammates: ConfigSubjectView[];
+  profiles: ConfigSubjectView[];
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;

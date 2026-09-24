@@ -453,7 +453,7 @@ function parseTarget(
     }
     case 'settings': {
       const section = rest[1];
-      if (section === 'projects' || section === 'menu' || section === 'credentials') return { view: 'settings', section };
+      if (section === 'projects' || section === 'menu' || section === 'credentials' || section === 'configs') return { view: 'settings', section };
       return { view: 'settings', section: null };
     }
     case 'channel': {

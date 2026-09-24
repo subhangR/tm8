@@ -137,6 +137,7 @@ import {
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
+  type SpaceConfigsView,
   type SpaceSummary,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
@@ -2247,6 +2248,22 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async spaces() {
       return clone([spaceSummary]);
+    },
+    /** A small, honest sample: the fixture has no server environment to report. */
+    async spaceConfigs(spaceId): Promise<SpaceConfigsView> {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      return {
+        spaceId,
+        node: { visible: false, reason: 'The fixture node has no server environment.' },
+        cli: [],
+        code: [{
+          name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories a launch can carry.',
+          value: { kind: 'value', text: '32' }, source: 'code', default: null,
+          definedAt: 'packages/server/src/jev/groups.ts:33', change: 'code',
+        }],
+        teammates: [],
+        profiles: [],
+      };
     },
     async spaceSettings(spaceId): Promise<SpaceSettingsView> {
       if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
