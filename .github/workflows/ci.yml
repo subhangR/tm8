@@ -128,7 +128,7 @@ jobs:
           name: vitest-json-test-server-${{ matrix.shard }}
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test-cli:
     name: test-cli
@@ -167,7 +167,7 @@ jobs:
           name: vitest-json-test-cli
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test-execution:
     name: test-execution
@@ -186,7 +186,7 @@ jobs:
           name: vitest-json-test-execution
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test-ui:
     name: test-ui (${{ matrix.shard }}/2)
@@ -209,7 +209,7 @@ jobs:
           name: vitest-json-test-ui-${{ matrix.shard }}
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test-small:
     name: test-small
@@ -229,7 +229,7 @@ jobs:
           name: vitest-json-test-small
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   migrations:
     name: migrations apply clean

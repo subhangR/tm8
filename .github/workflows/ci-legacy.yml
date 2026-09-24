@@ -154,7 +154,7 @@ jobs:
           name: vitest-json-legacy
           path: vitest-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   migrations:
     name: migrations apply clean
