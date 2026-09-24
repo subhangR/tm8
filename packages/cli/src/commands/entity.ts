@@ -66,7 +66,8 @@ import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { renderContextBrief } from '../context-brief.js';
-import { resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
+import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
+import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -351,6 +352,13 @@ async function entityGet(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, []);
   const id = requireArg(cmd, 0, '<entity-id>');
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', { params: { id } });
+  // Bounded by default (see ../entity-bounded.ts): `--full` is the only thing
+  // that sets receipts to 'full', so it doubles as the explicit escape hatch.
+  // The human render reads one summary line either way.
+  if (cmd.out.format !== 'human' && cmd.out.receipts !== 'full' && isEntityDetail(data)) {
+    cmd.out.data(boundEntityDetail(data), renderEntity, { minify: isAgentCaller(), raw: true });
+    return EXIT_OK;
+  }
   cmd.out.data(data, renderEntity);
   return EXIT_OK;
 }
