@@ -245,6 +245,30 @@ function invalidCredentials(): CollabError {
 }
 
 /**
+ * How often one session's `last_used_at` is re-stamped. The stamp is
+ * informational (nothing expires on it), so minute precision loses nothing.
+ *
+ * Stamping on EVERY request made auth the one write on the read path: each
+ * request took a row lock on its session's `auth_sessions` row and a WAL flush
+ * at commit. A UI tab fans out up to 24 reads on one token, so they queued
+ * behind each other on that lock. Prod 2026-09-24 after 218, load ~45:
+ * `touch_auth_session` waited on Lock/transactionid for up to 459ms, and it
+ * made about three quarters of all row updates in tm8_prod (6.2 of 8.1/s).
+ */
+export const AUTH_TOUCH_INTERVAL_MS = 60_000;
+const AUTH_TOUCH_MAX_TRACKED = 10_000;
+const lastTouchedAt = new Map<string, number>();
+
+/** True at most once per `AUTH_TOUCH_INTERVAL_MS` per session in this process. */
+export function touchDue(sessionId: string, now: number): boolean {
+  const last = lastTouchedAt.get(sessionId);
+  if (last !== undefined && now - last < AUTH_TOUCH_INTERVAL_MS) return false;
+  if (lastTouchedAt.size >= AUTH_TOUCH_MAX_TRACKED) lastTouchedAt.clear();
+  lastTouchedAt.set(sessionId, now);
+  return true;
+}
+
+/**
  * Verify a presented `tm8s_…` bearer token against `auth_sessions`.
  *
  * Claim-free by design (007's one claim-free session read): the token IS the
@@ -262,7 +286,9 @@ export async function resolveBearerIdentity(db: Db, token: string): Promise<Reso
   const tokenHash = hashToken(parsed.secret);
   const session = await db.tx({}, async (q) => {
     const resolved = await q.rpc<ResolvedAuthSession | null>('resolve_auth_session', [tokenHash]);
-    if (resolved) await q.rpc('touch_auth_session', [resolved.sessionId]);
+    if (resolved && touchDue(resolved.sessionId, Date.now())) {
+      await q.rpc('touch_auth_session', [resolved.sessionId]);
+    }
     return resolved;
   });
 
