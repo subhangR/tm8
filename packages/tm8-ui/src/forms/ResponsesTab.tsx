@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Timestamp } from '../kit';
 import { AnswerList, DeliveryChip, DeliveryNote, RevisionHistory, answeredCount } from './parts';
-import type { FormResponseView, FormState, FormsPort } from './seam';
+import { redeliverFor, type FormResponseView, type FormState, type FormsPort } from './seam';
 import { errorText, type Questionnaire } from './useQuestionnaire';
 
 export function ResponsesTab({ q }: { q: Questionnaire }) {
@@ -14,7 +14,7 @@ export function ResponsesTab({ q }: { q: Questionnaire }) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (!form || !responses) return null;
   const open = responses.find((r) => r.id === openId);
-  if (open) return <ResponseDetail form={form} response={open} port={port} onBack={() => setOpenId(null)} />;
+  if (open) return <ResponseDetail form={form} response={open} port={port} onBack={() => setOpenId(null)} onSettled={() => void q.reload()} />;
 
   if (responses.length === 0) {
     return <p className="qn-muted" data-testid="responses-empty">No responses yet.</p>;
@@ -46,7 +46,7 @@ export function ResponsesTab({ q }: { q: Questionnaire }) {
               <td>{answeredCount(questions, r.answers)}/{r.questionsSnapshot?.questions.length ?? total}</td>
               <td>
                 {r.deliveries.length > 0
-                  ? r.deliveries.map((d) => <DeliveryChip key={d.workSessionId} status={d.status} />)
+                  ? r.deliveries.map((d) => <DeliveryChip key={d.workSessionId} delivery={d} />)
                   : <span className="qn-muted">—</span>}
               </td>
             </tr>
@@ -58,16 +58,16 @@ export function ResponsesTab({ q }: { q: Questionnaire }) {
 }
 
 function ResponseDetail({
-  form, response, port, onBack,
+  form, response, port, onBack, onSettled,
 }: {
   form: FormState;
   response: FormResponseView;
   port: FormsPort;
   onBack(): void;
+  onSettled(): void;
 }) {
   const [history, setHistory] = useState<FormResponseView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resumed, setResumed] = useState<Record<string, true>>({});
 
   useEffect(() => {
     let live = true;
@@ -87,15 +87,7 @@ function ResponseDetail({
         Revision {response.revision} · submitted <Timestamp at={response.submittedAt} />
       </p>
       {response.deliveries.map((d) => (
-        <DeliveryNote
-          key={d.workSessionId}
-          delivery={d}
-          resumeState={resumed[d.workSessionId] ? 'requested' : 'idle'}
-          onResume={() => {
-            void port.resumeDelivery(response.id, d.workSessionId);
-            setResumed((r) => ({ ...r, [d.workSessionId]: true }));
-          }}
-        />
+        <DeliveryNote key={d.workSessionId} delivery={d} redeliver={redeliverFor(port, response.id)} onSettled={onSettled} />
       ))}
       <AnswerList
         response={response}

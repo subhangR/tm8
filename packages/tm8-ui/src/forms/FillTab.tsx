@@ -19,7 +19,7 @@ import {
   compactAnswers,
 } from './parts';
 import { resolveQuestion } from './question-types';
-import { FormsPortError, type FormResponseView, type FormState, type FormsPort } from './seam';
+import { FormsPortError, redeliverFor, type FormResponseView, type FormState, type FormsPort } from './seam';
 import { errorText, type Questionnaire } from './useQuestionnaire';
 
 /** Idle time before a change is saved as a draft. */
@@ -30,6 +30,8 @@ type Editing = { supersedesId: string | null } | null;
 export function FillTab({ q }: { q: Questionnaire }) {
   const { form, mine, port } = q;
   const [editing, setEditing] = useState<Editing>(null);
+  /** Bumped by "Reload" after a conflict: remounts the form from the server's state. */
+  const [generation, setGeneration] = useState(0);
   if (!form || !mine) return null;
   const { status, settings } = form.content;
 
@@ -63,7 +65,7 @@ export function FillTab({ q }: { q: Questionnaire }) {
     const initial = mine.draft?.answers ?? amendOf?.answers ?? {};
     return (
       <FillForm
-        key={`${supersedesId ?? 'new'}:${form.content.structureVersion}`}
+        key={`${supersedesId ?? 'new'}:${form.content.structureVersion}:${generation}`}
         form={form}
         port={port}
         initial={initial}
@@ -75,10 +77,14 @@ export function FillTab({ q }: { q: Questionnaire }) {
           setEditing(null);
         }}
         onCancel={mine.current ? async () => {
-          if (mine.draft) await port.discardDraft(form.id, mine.draft.id);
+          if (mine.draft) await port.discardDraft(form.id, mine.draft);
           await q.reload();
           setEditing(null);
         } : null}
+        onReload={async () => {
+          await Promise.all([q.reload(), q.refetchForm()]);
+          setGeneration((g) => g + 1);
+        }}
       />
     );
   }
@@ -92,6 +98,7 @@ export function FillTab({ q }: { q: Questionnaire }) {
           current={mine.current}
           history={mine.history}
           port={port}
+          onSettled={() => void q.reload()}
           canAmend={!readOnly && settings.allowAmend}
           amendOff={!readOnly && !settings.allowAmend}
           canSubmitAnother={!readOnly && settings.responses === 'unlimited'}
@@ -106,19 +113,19 @@ export function FillTab({ q }: { q: Questionnaire }) {
 }
 
 function SubmittedView({
-  form, current, history, port, canAmend, amendOff, canSubmitAnother, onEdit, onAnother,
+  form, current, history, port, onSettled, canAmend, amendOff, canSubmitAnother, onEdit, onAnother,
 }: {
   form: FormState;
   current: FormResponseView;
   history: FormResponseView[];
   port: FormsPort;
+  onSettled(): void;
   canAmend: boolean;
   amendOff: boolean;
   canSubmitAnother: boolean;
   onEdit(): void;
   onAnother(): void;
 }) {
-  const [resumed, setResumed] = useState<Record<string, true>>({});
   return (
     <>
       <div className="qn-bar">
@@ -133,15 +140,7 @@ function SubmittedView({
       </div>
       {amendOff ? <p className="qn-muted">This form doesn’t accept changes after submitting.</p> : null}
       {current.deliveries.map((d) => (
-        <DeliveryNote
-          key={d.workSessionId}
-          delivery={d}
-          resumeState={resumed[d.workSessionId] ? 'requested' : 'idle'}
-          onResume={() => {
-            void port.resumeDelivery(current.id, d.workSessionId);
-            setResumed((r) => ({ ...r, [d.workSessionId]: true }));
-          }}
-        />
+        <DeliveryNote key={d.workSessionId} delivery={d} redeliver={redeliverFor(port, current.id)} onSettled={onSettled} />
       ))}
       <AnswerList response={current} fallbackSections={form.content.sections} fallbackQuestions={form.content.questions} />
       {history.length > 1 ? (
@@ -151,7 +150,7 @@ function SubmittedView({
   );
 }
 
-type SaveState = 'clean' | 'dirty' | 'saving' | 'saved' | 'invalid' | 'error';
+type SaveState = 'clean' | 'dirty' | 'saving' | 'saved' | 'invalid' | 'error' | 'blocked';
 
 const SAVE_WORD: Record<SaveState, string> = {
   clean: '',
@@ -160,10 +159,14 @@ const SAVE_WORD: Record<SaveState, string> = {
   saved: 'Draft saved',
   invalid: 'Not saved: fix the marked answers',
   error: 'Couldn’t save the draft',
+  blocked: 'Not saved',
 };
 
+/** A refusal the member must act on before editing on (server error codes, mapped). */
+type Blocker = 'draft_in_flight' | 'version_conflict';
+
 function FillForm({
-  form, port, initial, draft, supersedesId, amendOfRevision, onSubmitted, onCancel,
+  form, port, initial, draft, supersedesId, amendOfRevision, onSubmitted, onCancel, onReload,
 }: {
   form: FormState;
   port: FormsPort;
@@ -173,6 +176,7 @@ function FillForm({
   amendOfRevision: number | null;
   onSubmitted(): Promise<void>;
   onCancel: (() => Promise<void>) | null;
+  onReload(): Promise<void>;
 }) {
   const { questions, sections } = form.content;
   const [answers, setAnswers] = useState<FormAnswers>(initial);
@@ -186,6 +190,23 @@ function FillForm({
   /** The save on the wire, if any: a submit waits for it, or the save would
       land after the submit and open a phantom amend draft of the new revision. */
   const inflight = useRef<Promise<unknown> | null>(null);
+  /** The draft's version: every save and the submit send it (`responseVersion`). */
+  const draftVersion = useRef<number | undefined>(draft?.version);
+  const [blocker, setBlocker] = useState<Blocker | null>(null);
+
+  /** A refusal → what the member sees; true when it was one we map. */
+  const refusal = (e: unknown): boolean => {
+    if (!(e instanceof FormsPortError)) return false;
+    if (e.code === 'form_answers_invalid') {
+      setServerIssues(e.issues);
+      return true;
+    }
+    if (e.code === 'draft_in_flight' || e.code === 'version_conflict') {
+      setBlocker(e.code);
+      return true;
+    }
+    return false;
+  };
 
   const flush = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
@@ -198,17 +219,36 @@ function FillForm({
       return;
     }
     setSave('saving');
-    const saving = port.saveDraft(form.id, { answers: next, supersedesId });
+    const saving = port.saveDraft(form.id, {
+      answers: next,
+      supersedesId,
+      ...(draftVersion.current ? { responseVersion: draftVersion.current } : {}),
+    });
     inflight.current = saving;
     try {
-      await saving;
+      const saved = await saving;
+      draftVersion.current = saved.version;
       setSave((s) => (s === 'saving' ? 'saved' : s));
-    } catch {
-      setSave('error');
+    } catch (e) {
+      const code = e instanceof FormsPortError ? e.code : null;
+      setSave(refusal(e) ? (code === 'form_answers_invalid' ? 'invalid' : 'blocked') : 'error');
     } finally {
       if (inflight.current === saving) inflight.current = null;
     }
   }, [port, form.id, questions, supersedesId]);
+
+  /** "Discard the other draft": clear the server's draft, then save this one. */
+  const discardOther = async () => {
+    setBlocker(null);
+    try {
+      await port.discardDraft(form.id);
+      draftVersion.current = undefined;
+      pending.current = compactAnswers(answersRef.current);
+      await flush();
+    } catch (e) {
+      if (!refusal(e)) setSubmitError(errorText(e));
+    }
+  };
 
   // Leaving the tab mid-debounce still saves.
   useEffect(() => () => { void flush(); }, [flush]);
@@ -218,6 +258,9 @@ function FillForm({
     timer.current = null;
     pending.current = null;
   };
+
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
 
   const change = (next: FormAnswers) => {
     setAnswers(next);
@@ -258,11 +301,16 @@ function FillForm({
     setSubmitError(null);
     try {
       await inflight.current?.catch(() => undefined);
-      await port.submit(form.id, { answers: payload, supersedesId });
+      await port.submit(form.id, {
+        answers: payload,
+        supersedesId,
+        ...(draftVersion.current ? { responseVersion: draftVersion.current } : {}),
+      });
       await onSubmitted();
     } catch (e) {
-      if (e instanceof FormsPortError && e.code === 'form_answers_invalid') setServerIssues(e.issues);
-      setSubmitError(errorText(e));
+      // A blocker has its own notice; everything else (field issues included) says why here.
+      const blocked = refusal(e) && e instanceof FormsPortError && e.code !== 'form_answers_invalid';
+      if (!blocked) setSubmitError(errorText(e));
       setSubmitting(false);
     }
   };
@@ -272,6 +320,18 @@ function FillForm({
       {amendOfRevision !== null ? (
         <Notice tone="info" title={`Editing revision ${amendOfRevision}`}>
           Submitting makes revision {amendOfRevision + 1}; it is delivered again and your earlier answers stay in the history.
+        </Notice>
+      ) : null}
+      {blocker === 'draft_in_flight' ? (
+        <Notice tone="wait" title="Another draft is in flight" testId="fill-draft-in-flight">
+          You have an unsent draft on this form for a different revision, so this one can’t be saved.{' '}
+          <button type="button" className="pn-btn" onClick={() => void discardOther()}>Discard the other draft</button>
+        </Notice>
+      ) : null}
+      {blocker === 'version_conflict' ? (
+        <Notice tone="wait" title="This changed elsewhere" testId="fill-version-conflict">
+          Your draft or the answer you’re editing changed since this page loaded (another tab, or a new revision).{' '}
+          <button type="button" className="pn-btn" onClick={() => void onReload()}>Reload</button>
         </Notice>
       ) : null}
       <div className="qn-bar">

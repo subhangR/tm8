@@ -303,7 +303,7 @@ export const FORM_FIXTURE_RESPONSES: FormResponseView[] = [
       target: { value: 'beta' }, surfaces: { values: ['cli'] }, rollback: { value: 'flag' },
       codename: null, confidence: { number: 4 }, risks: null,
     },
-    deliveries: [delivery('cancelled', at(23, 18), { lastError: 'session deleted' })],
+    deliveries: [delivery('cancelled', at(23, 18), { lastError: 'session_deleted' })],
   }),
 
   // The viewer's autosaved draft on the migration form (single mode: one slot).

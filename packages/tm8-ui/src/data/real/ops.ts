@@ -1,5 +1,6 @@
 import type { SkillPort } from '../../skills/port';
 import type { JevPort } from '../../jev/port';
+import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -30,6 +31,8 @@ import type { JevPort } from '../../jev/port';
  *      so this adapter stamps the request id onto the snapshot.
  */
 import {
+  isOperationName,
+  type OperationName,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -279,6 +282,9 @@ function defaultMutationId(prefix: string): string {
 }
 
 export type Ops = ReturnType<typeof createOps>;
+
+/** Not in every build's catalog yet (agent-guidance PR); feature-detected by name. */
+const REDELIVER_OP = 'forms.responses.redeliver';
 
 export function createOps(http: HttpClient, options: OpsOptions = {}) {
   const newId = options.newClientMutationId ?? defaultMutationId;
@@ -1032,6 +1038,28 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // inject a `clientMutationId`, which the contract tolerates.
       suggest(spaceId, input) { return http.call('launch.suggest', { params: { spaceId }, body: input }); },
     } satisfies JevPort,
+    /**
+     * `forms.*` (FORMS-DESIGN §6) for the questionnaire block's real port.
+     * `redeliver` is feature-detected: it exists only once this build's
+     * catalog carries `forms.responses.redeliver`.
+     */
+    forms: {
+      update(formId, input) { return http.call('forms.update', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
+      questionsAdd(formId, input) { return http.call('forms.questions.add', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
+      questionsUpdate(formId, questionKey, input) { return http.call('forms.questions.update', { params: { formId, questionKey }, body: { ...input, clientMutationId: newId('form') } }); },
+      questionsRemove(formId, questionKey, input) { return http.call('forms.questions.remove', { params: { formId, questionKey }, body: { ...input, clientMutationId: newId('form') } }); },
+      questionsMove(formId, questionKey, input) { return http.call('forms.questions.move', { params: { formId, questionKey }, body: { ...input, clientMutationId: newId('form') } }); },
+      transition(formId, input) { return http.call('forms.transition', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
+      responsesSave(formId, input) { return http.call('forms.responses.save', { params: { formId }, body: { ...input, clientMutationId: newId('form-response') } }); },
+      responsesDiscard(formId, input) { return http.call('forms.responses.discard', { params: { formId }, body: { ...input, clientMutationId: newId('form-response') } }); },
+      responsesSubmit(formId, input) { return http.call('forms.responses.submit', { params: { formId }, body: { ...input, clientMutationId: newId('form-response') } }); },
+      responsesList(formId, query = {}) { return http.call('forms.responses.list', { params: { formId }, query: { ...query } }); },
+      ...(isOperationName(REDELIVER_OP) ? {
+        redeliver(responseId: string, input: FormsRedeliverInput) {
+          return http.call(REDELIVER_OP as OperationName, { params: { responseId }, body: { ...input, clientMutationId: newId('form-response') } });
+        },
+      } : {}),
+    } satisfies FormsOps,
     createEdge(input: CreateEdgeInput): Promise<CommandResult> {
       return http.call<CommandResult>('edges.create', { body: input });
     },
