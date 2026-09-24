@@ -26,6 +26,7 @@
 import { BYTE_BUDGETS, utf8Bytes, type BudgetName } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
+import { orientationLineV2, V2_REPO_GRAPH_LINE, workerRulesV2 } from './worker-v2.js';
 import {
   coordinatorBootstrapControl,
   workerBootstrapControl,
@@ -495,7 +496,60 @@ const DISCOVERY_ENTRIES: readonly PromptEntry[] = [
   },
 ];
 
+const V2_GATE =
+  'On a worker or coordinated-worker launch whose pinned Interaction Profile sets ' +
+  'promptPolicy.kernelTemplate "tm8.core.v2" (manifest promptVersion "2"). v1 stays the default ' +
+  'until the spec ca8d §6.2 evaluation passes.';
+
+const numbered = (rules: readonly string[]): string => rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+
 const FRAME_ENTRIES: readonly PromptEntry[] = [
+  {
+    id: 'frame.rules-v2',
+    categoryId: 'frame',
+    title: 'Five rules (v2.0 worker)',
+    summary:
+      'The whole always-on instruction set of the v2 frame, each rule stated once: untrusted data, scope, discovery, visibility, and the exact closeout.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/worker-v2.ts',
+    injectedWhen: `Inside <rules>. ${V2_GATE}`,
+    text: numbered(workerRulesV2('worker')),
+  },
+  {
+    id: 'frame.rules-v2-coordinated',
+    categoryId: 'frame',
+    title: 'Five rules (v2.0 coordinated worker)',
+    summary: 'Rules 4 and 5 send one closing receipt to both the task and the coordinator, with --conversation.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/worker-v2.ts',
+    injectedWhen: `Inside <rules> for a coordinated worker. ${V2_GATE}`,
+    text: numbered(workerRulesV2('coordinated-worker')),
+  },
+  {
+    id: 'frame.orientation-v2',
+    categoryId: 'frame',
+    title: 'Embedded-context orientation line (v2.0)',
+    summary:
+      'The one prose sentence of the v2 task header: the task context DTO below it IS the orientation read.',
+    status: 'live',
+    rendering: 'composed',
+    source: 'packages/prompt/src/worker-v2.ts',
+    injectedWhen: `Inside <assignment>, above the embedded tm8.entity-context.v2 DTO. ${V2_GATE}`,
+    text: orientationLineV2('{taskId}'),
+  },
+  {
+    id: 'frame.repo-graph-v2',
+    categoryId: 'frame',
+    title: 'Code-graph line (v2.0)',
+    summary: 'Points at graphify, without benchmark figures, only when the session cwd holds a graph.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/worker-v2.ts',
+    injectedWhen: `Inside <repo>, when graphify-out/merged-graph.json exists in the session cwd. ${V2_GATE}`,
+    text: V2_REPO_GRAPH_LINE,
+  },
   {
     id: 'frame.command-surface',
     categoryId: 'frame',

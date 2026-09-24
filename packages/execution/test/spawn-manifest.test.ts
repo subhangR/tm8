@@ -1138,6 +1138,36 @@ describe('composeManifest', () => {
     });
   });
 
+  it('stamps promptVersion "2" only when the pinned profile opts a worker mode into tm8.core.v2 (spec ca8d Q14)', () => {
+    const v2Profile = {
+      profileId: 'profile-v2',
+      profileVersion: 1,
+      templateKey: 'tm8.chat.core',
+      templateVersion: 1,
+      source: 'teammate_default' as const,
+      resolvedHash: 'hash-v2',
+      pinRevision: 1,
+      snapshot: { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v2' } } },
+    };
+    const compose = (mode: 'worker' | 'coordinated-worker' | 'coordinator', profile?: typeof v2Profile) =>
+      composeManifest({
+        sessionId: 'sess-v2',
+        request: { ...base, parentSessionId: 'coord-session-1' },
+        context: context(),
+        launch: { mode, model: 'opus', agentTool: 'claude-code', permissionMode: 'bypassPermissions' },
+        ...(profile ? { interactionProfile: profile } : {}),
+        workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+        command: 'claude',
+        baseUrl: 'http://127.0.0.1:4610',
+      });
+    expect(compose('worker', v2Profile).promptVersion).toBe('2');
+    expect(compose('coordinated-worker', v2Profile).promptVersion).toBe('2');
+    // Out of v2's scope: a coordinator on the same profile keeps v1.
+    expect(compose('coordinator', v2Profile).promptVersion).toBe('1');
+    // The core default (tm8.core.v1) keeps every worker on v1 — the rollout default.
+    expect(compose('worker').promptVersion).toBe(DEFAULT_PROMPT_VERSION);
+  });
+
   it('titles a session from its first task, then from the persona', () => {
     const withTask = context();
     withTask.tasks = [

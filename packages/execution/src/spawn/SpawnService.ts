@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -16,7 +16,7 @@ import type {
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
-import { composePrompt } from '@tm8/prompt';
+import { composePrompt, primaryContextBudgetV2, PROMPT_VERSION_V2, type PromptRuntime } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -235,6 +235,9 @@ interface SandboxDecision {
 
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
+
+/** How long a v2 launch waits for its task's context render before degrading. */
+const TASK_CONTEXT_RENDER_TIMEOUT_MS = 5_000;
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
  *  graph in lifecycle states, and 'completed' is not one of the five the
@@ -1101,6 +1104,51 @@ export class SpawnService {
    * precedes 5 because the agent reads the manifest at boot — a PTY started
    * before the file exists races its own configuration.
    */
+  /**
+   * The per-launch facts only the v2 frame reads (spec ca8d §2): the primary
+   * task's context DTO, rendered now — after the session row exists, so as its
+   * actor and with the task already `working` — and whether the cwd holds a
+   * code graph. A v1 launch reads neither and pays for neither.
+   *
+   * A failed or slow render never fails the launch (§2.3): the header then
+   * says `snapshot="unavailable"` with the reason and names the one read to run.
+   */
+  private async promptV2Runtime(
+    auth: GraphAuth,
+    manifest: Tm8Manifest,
+    sessionId: string,
+    cwd: string,
+  ): Promise<Pick<PromptRuntime, 'taskContext' | 'codeGraph'>> {
+    if (manifest.promptVersion !== PROMPT_VERSION_V2) return {};
+    const codeGraph = await access(join(cwd, 'graphify-out', 'merged-graph.json')).then(
+      () => true,
+      () => false,
+    );
+    const primary = manifest.tasks[0];
+    if (!primary) return { codeGraph };
+    const load = this.graph.loadTaskContextSnapshot?.bind(this.graph);
+    if (!load) return { codeGraph, taskContext: { taskId: primary.id, unavailable: 'not_supported' } };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const dto = await Promise.race([
+        load(auth, { sessionId, taskId: primary.id, totalBytes: primaryContextBudgetV2(manifest.tasks) }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('context render timed out'), { code: 'timeout' })), TASK_CONTEXT_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+      return { codeGraph, taskContext: { taskId: primary.id, dto } };
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      this.logger?.warn?.('spawn: v2 task context render failed', { sessionId, taskId: primary.id, error: String(error) });
+      return {
+        codeGraph,
+        taskContext: { taskId: primary.id, unavailable: typeof code === 'string' && code !== '' ? code : 'render_failed' },
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
@@ -1344,6 +1392,7 @@ export class SpawnService {
       const envelope = composePrompt(manifest, {
         sessionId,
         baseUrl: this.baseUrl,
+        ...(await this.promptV2Runtime(auth, manifest, sessionId, cwd)),
       });
       // The two halves stay SEPARATE all the way to the argv. `envelope.system`
       // configures the agent; `envelope.task` is its first user turn, and is
