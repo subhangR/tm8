@@ -1,21 +1,39 @@
-# tm8 CI — the merge gate.
+# tm8 CI — the merge gate, split into parallel jobs.
 #
-# This file is ready for the day tm8 gains a remote; until then the same gate runs
-# locally via `bun run check` (and optionally as a pre-push hook: `bun run hooks:install`).
+# Every job runs the SAME gate script the pre-push hook runs, tools/ci/check.sh,
+# narrowed with `--only <stage>,...` (and `--shard i/n` for the two big suites).
+# Stages are always named one by one, never as a bare group (`test`,
+# `typecheck`): under a group a stage that would skip stays a reported skip, while
+# a stage named on its own that would skip turns the job red.
 #
-# Two jobs on purpose:
-#   check       — install + per-package scoped `tsc -b` + vitest, against a real Postgres.
-#   migrations  — the same script against a real Postgres service container.
+# Jobs:
+#   typecheck        every scoped `tsc -b` project + the UI typecheck
+#   test-server x4   packages/server, sharded            (postgres)
+#   test-cli         packages/cli                        (postgres)
+#   test-execution   packages/execution
+#   test-ui x2       packages/tm8-ui, sharded
+#   test-small       packages/contract, packages/jev, tools/conformance
+#   migrations       clean apply of db/migrations on its own password-auth postgres
+#   ci-ok            the one stable check name; red unless every job above succeeded
 #
-# The `check` job carried "No database needed" from the day it was written, and it
-# stopped being true long before anyone noticed: ~92 test files across
-# packages/server and packages/cli create a scratch database per suite and had been
-# dying on `ECONNREFUSED 127.0.0.1:5442` on EVERY commit, main included. They are
-# the tests that see plpgsql rules a FakeDb cannot, so skipping them is not an
-# option — the job gets the same service container the migrations job has.
+# BUILD LISTS ARE LITERAL. A test job's `typecheck:<project>` stages are its build
+# step (`tsc -b` emits dist), and `tsc -b <pkg>` alone does NOT build everything
+# its suites load at runtime: packages/execution's tsconfig never references the
+# cli, yet codex-loopback.integration.test.ts executes packages/cli/dist and turns
+# itself into describe.skip when that dist is missing; the cli integration
+# harness spawns packages/server/dist, which the cli's references never build.
+# So each job names what it builds (design §2 table), and a job's list only ever
+# grows with a reason.
 #
-# Deliberately NOT here: any parallel vite build. The UI (W3/M2) gets ONE build step
-# inside the `check` job when it lands — concurrent vite builds SIGTERM each other.
+# "Never a parallel vite build / sequential tsc" is a SAME-MACHINE rule: two vite
+# builds or two tsc -b runs in one checkout SIGTERM each other or race on dist/.
+# Separate jobs are separate runners with separate checkouts, so running them in
+# parallel does not break it. Inside one job check.sh still runs every stage
+# sequentially, in its own fixed order.
+#
+# Every job writes vitest's JSON report (TM8_VITEST_JSON_DIR) as a short-lived
+# artifact, so a run's test-ID/status set can be diffed: against the old monolith
+# (Wave 1's proof), between shards, and for shard rebalancing.
 
 name: ci
 
@@ -24,26 +42,47 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Nightly full run of main (schedule only ever runs on the default branch).
+    - cron: "17 3 * * *"
 
+# Only a pull_request run is ever cancelled, by a newer push to the same PR.
+# cancel-in-progress:false alone is not enough to protect main: GitHub still
+# replaces a PENDING run in the same group, so three quick merges would drop the
+# middle one. Every non-PR run therefore gets a group of its own (its run_id).
+# github.workflow is part of the key because groups are repo-wide, not
+# per-workflow.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# node / bun versions live in ONE place: the tm8-setup composite's input defaults.
 
 env:
-  # packages/server + packages/execution run under node (node-pty is broken under bun).
-  NODE_VERSION: "22"
-  BUN_VERSION: "1.2.x"
+  CI: "1"
+  TM8_VITEST_JSON_DIR: .vitest-json
 
 jobs:
-  check:
-    name: typecheck + tests
+  typecheck:
+    name: typecheck
     runs-on: ubuntu-latest
-    # 20 -> 45. The suites this job could never run are DB-backed: each creates a
-    # scratch database and applies the whole migration chain before it asserts
-    # anything. The full gate measures ~12 minutes of tests on a fast local box
-    # with a warm cluster; a 2-core runner is several times that, and a job
-    # killed by its own timeout is a red that reads exactly like a real failure.
-    timeout-minutes: 45
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+      - name: Typecheck
+        run: >-
+          bash tools/ci/check.sh --only
+          typecheck:packages/contract,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,typecheck:packages/execution,typecheck:packages/cli,typecheck:tools/conformance,typecheck:packages/tm8-ui
+
+  test-server:
+    name: test-server (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         # Same pin as the `migrations` job below — see the note there.
@@ -70,80 +109,127 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/tm8-setup
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # The scratch-database helpers shell out to `psql` to apply migrations
-      # (packages/server/test/db/w1-pg.ts, packages/cli/test/integration/harness.ts).
-      - name: Install postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      # packages/execution's worktree-manager suite runs `git merge` in a scratch
-      # repository. A bare runner has no committer identity, so the merge dies with
-      # "empty ident name" — a red test that says nothing about the code.
-      - name: Configure git identity for worktree tests
-        run: |
-          git config --global user.email "ci@tm8.invalid"
-          git config --global user.name "tm8 CI"
-
-      # ONCE, SINGLE-THREADED, BEFORE ANY SUITE RUNS. Roles are CLUSTER-global
-      # while scratch databases are per-suite, and `001_core_graph.sql:37` guards
-      # its `create role` with `if not exists` — which is check-then-act, not
-      # atomic. A dozen vitest workers applying 001 at the same moment on a FRESH
-      # cluster all pass the check and one loses the insert:
-      #   ERROR: duplicate key value violates unique constraint "pg_authid_rolname_index"
-      # It cannot be fixed in 001: that file is applied on every existing database
-      # and `db/migrate.mjs` refuses a checksum that moved after it was applied.
-      # Creating the roles up front satisfies the `if not exists` guard for every
-      # worker, which is exactly the state a developer's long-lived cluster is
-      # already in — and why this never reproduced off a fresh one.
-      - name: Pre-create cluster-global roles (001/015) to de-race parallel suites
-        run: |
-          psql "postgres://tm8@127.0.0.1:5442/postgres" -v ON_ERROR_STOP=1 -c "
-            do \$\$
-            begin
-              if not exists (select 1 from pg_roles where rolname = 'tm8_graph_owner') then
-                create role tm8_graph_owner nologin noinherit;
-              end if;
-              if not exists (select 1 from pg_roles where rolname = 'tm8_app') then
-                create role tm8_app login;
-              end if;
-              if not exists (select 1 from pg_roles where rolname = 'tm8_delivery_worker') then
-                create role tm8_delivery_worker login noinherit nosuperuser nocreatedb
-                  nocreaterole noreplication nobypassrls;
-              end if;
-            end
-            \$\$;"
-
-      - name: Cache bun install
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      # --no-migrations skips the migration apply (the `migrations` job owns it)
-      # but still does install, every scoped tsc -b, and every package's vitest
-      # suite. Do NOT use --fast here: it ALSO skips install, and a fresh runner
-      # has no node_modules, so every later stage dies as `vitest: command not
-      # found` / `Cannot find module '@tm8/contract'` — which is exactly how this
-      # job failed on every commit until 2026-08-02.
+          postgres: "true"
+      # Builds: packages/server (its references cover mcp, jev, execution, prompt, contract).
       - name: Gate
-        run: bash tools/ci/check.sh --no-migrations
+        run: bash tools/ci/check.sh --only typecheck:packages/server,test:packages/server --shard ${{ matrix.shard }}/4
         env:
-          CI: "1"
           # Read by BOTH scratch-database helpers: packages/server's w1-pg.ts
           # (2nd of 3 fallbacks) and packages/cli's integration harness. It is
           # deliberately NOT TM8_DATABASE_URL — several suites skip themselves by
           # name on that variable, and setting it would silently enlist tests that
           # are meant to be opt-in. No password, matching the trust cluster above.
           TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-json-test-server-${{ matrix.shard }}
+          path: .vitest-json/
+          retention-days: 7
+          if-no-files-found: warn
+
+  test-cli:
+    name: test-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        # Same pin and TRUST auth as test-server — see the note there.
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: tm8
+          POSTGRES_DB: postgres
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd "pg_isready -U tm8"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+        with:
+          postgres: "true"
+      # Builds: packages/cli AND packages/server — the integration harness spawns
+      # packages/server/dist, which the cli's own references never build.
+      - name: Gate
+        run: bash tools/ci/check.sh --only typecheck:packages/server,typecheck:packages/cli,test:packages/cli
+        env:
+          # Same variable, same reason as test-server; NOT TM8_DATABASE_URL.
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-json-test-cli
+          path: .vitest-json/
+          retention-days: 7
+          if-no-files-found: warn
+
+  test-execution:
+    name: test-execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+      # Builds: packages/execution AND packages/cli — codex-loopback.integration
+      # executes packages/cli/dist/index.js and skips itself when it is missing.
+      - name: Gate
+        run: bash tools/ci/check.sh --only typecheck:packages/execution,typecheck:packages/cli,test:packages/execution
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-json-test-execution
+          path: .vitest-json/
+          retention-days: 7
+          if-no-files-found: warn
+
+  test-ui:
+    name: test-ui (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+      # Builds: packages/cli (emits the contract, prompt and cli dists the UI's
+      # imports resolve through), then the UI typecheck.
+      - name: Gate
+        run: bash tools/ci/check.sh --only typecheck:packages/cli,typecheck:packages/tm8-ui,test:packages/tm8-ui --shard ${{ matrix.shard }}/2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-json-test-ui-${{ matrix.shard }}
+          path: .vitest-json/
+          retention-days: 7
+          if-no-files-found: warn
+
+  test-small:
+    name: test-small
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+      # Builds: packages/contract, packages/jev, tools/conformance.
+      - name: Gate
+        run: >-
+          bash tools/ci/check.sh --only
+          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-json-test-small
+          path: .vitest-json/
+          retention-days: 7
+          if-no-files-found: warn
 
   migrations:
     name: migrations apply clean
@@ -154,6 +240,12 @@ jobs:
         # PIN: keep this aligned with the sidecar major settled in
         # docs/ops/SIDECAR-PACKAGING.md. A drift between CI and the shipped sidecar
         # is exactly the class of bug the migration gate exists to catch.
+        #
+        # PASSWORD auth and NO role pre-create, on purpose, and never merged with
+        # the trust service above: roles are cluster-global, so pre-created roles
+        # would turn 001/015's CREATE ROLE paths into no-ops and this clean-apply
+        # gate would pass without proving the migrations create their own roles.
+        # Hence tm8-setup with postgres "false" (its default) here.
         image: postgres:17
         env:
           POSTGRES_PASSWORD: tm8
@@ -168,16 +260,30 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
+      - uses: ./.github/actions/tm8-setup
       - name: Install postgres client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
       - name: Migration gate
         run: bash tools/ci/migrations-check.sh
         env:
-          CI: "1"
           TM8_MIGRATION_DATABASE_URL: postgres://tm8:tm8@localhost:5442/postgres
+
+  # The one check to require. `if: always()` — never `!cancelled()`, under which a
+  # cancelled run leaves this job skipped, and a skipped check reads as passing.
+  # In Wave 1 nothing is path-filtered, so every needed job must be `success`;
+  # skipped, failure and cancelled are all red. No needed job may carry a
+  # job-level `if:`. N is pinned so that dropping a job from `needs` is red too:
+  # it must equal the number of jobs above.
+  ci-ok:
+    name: ci-ok
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [typecheck, test-server, test-cli, test-execution, test-ui, test-small, migrations]
+    steps:
+      - name: Every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          printf '%s\n' "$NEEDS" | jq -e 'length == 7 and all(.[]; .result == "success")' >/dev/null
