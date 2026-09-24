@@ -7,6 +7,7 @@ import {
   ActorSummarySchema, BASE_PATH, CollabError, CollectionQuerySchema, CommandResultSchema,
   CreateEntityInputSchema, CredentialProviderNameSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
   EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionLivenessSchema,
+  ExecutionResumeInputSchema,
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
@@ -414,6 +415,23 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       ...ok,
       credentialSources: { somebodyElse: 'member' },
     }).success).toBe(false);
+    // SC-2: 'space' is a source, and a space credential is pinned by its own
+    // strict-uuid id per provider.
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'space' }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok,
+      credentialSources: { anthropic: 'space', openai: 'space', github: 'space' },
+      spaceCredentialIds: {
+        anthropic: '66666666-6666-4666-8666-666666666666',
+        github: '77777777-7777-4777-8777-777777777777',
+      },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, spaceCredentialIds: { anthropic: 'not-an-id' },
+    }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, spaceCredentialIds: { gemini: '66666666-6666-4666-8666-666666666666' },
+    }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: ok.spaceId }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
       ...ok, projectId: '44444444-4444-4444-8444-444444444444', workdir: { mode: 'project' },
@@ -440,6 +458,33 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, interactionProfileId: 'fixture-profile' }).success).toBe(false);
     // the pre-AM-2 untyped ref is dead
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, projectRef: '~/code/x' }).success).toBe(false);
+  });
+
+  it('I1: the launch contract never accepts an account id, in any spelling', () => {
+    const ok = {
+      clientMutationId: 'cmid-spawn-i1',
+      spaceId: '11111111-1111-4111-8111-111111111111',
+      teamMemberId: '22222222-2222-4222-8222-222222222222',
+      mode: 'worker',
+    };
+    const account = '88888888-8888-4888-8888-888888888888';
+    expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
+    for (const key of ['accountId', 'launcherAccountId', 'credentialAccountId', 'ownerAccountId', 'memberAccountId', 'onBehalfOf']) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...ok, [key]: account }).success, key).toBe(false);
+    }
+    // Nor inside the credential carriers: a source is a closed enum, and a pin
+    // is keyed by provider only.
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSources: { anthropic: account } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: `member:${account}` }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, spaceCredentialIds: { account } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, spaceCredentialIds: { accountId: account } }).success).toBe(false);
+    // Resume carries no credential input at all: the server derives the
+    // launcher from the resumer's own auth (C2/C3).
+    const resume = { clientMutationId: 'cmid-resume-i1', cols: 80, rows: 24 };
+    expect(ExecutionResumeInputSchema.safeParse(resume).success).toBe(true);
+    for (const key of ['accountId', 'launcherAccountId', 'spaceCredentialIds', 'credentialSource']) {
+      expect(ExecutionResumeInputSchema.safeParse({ ...resume, [key]: account }).success, key).toBe(false);
+    }
   });
 
   it('project resources + inputs validate (AM-2 §1)', () => {

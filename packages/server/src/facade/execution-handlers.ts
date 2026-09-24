@@ -94,6 +94,7 @@ import type { Db, DbClaims, Querier } from '../db/types.js';
 import { PgDurableSeqSource } from '../events/seq.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
+import { spaceCredentialPort } from '../credentials/space-credential-port.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
@@ -1015,12 +1016,14 @@ export class DbGraphPort implements GraphPort {
       permission_mode: string | null;
       credential_source: string | null;
       credential_sources: unknown;
+      space_credential_ids: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
-              sm.manifest #>  '{launch,credentialSources}' as credential_sources
+              sm.manifest #>  '{launch,credentialSources}' as credential_sources,
+              sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -1049,6 +1052,14 @@ export class DbGraphPort implements GraphPort {
           storedCredentialSources[provider] ?? null,
         ]),
       ) as SessionLaunchPosture['credentialSources'],
+      // The EXACT ids a child and a resume inherit (A4). Narrowed downstream,
+      // where a `space` source without a well-formed id refuses (M8a).
+      spaceCredentialIds:
+        typeof row.space_credential_ids === 'object' &&
+        row.space_credential_ids !== null &&
+        !Array.isArray(row.space_credential_ids)
+          ? (row.space_credential_ids as Record<string, unknown>)
+          : null,
     };
   }
 
@@ -1593,6 +1604,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
             dataDir: deps.dataDir,
             ...(deps.logger ? { logger: deps.logger } : {}),
           }),
+          // SC-2: the space rung of D4. Same data-root condition: the sealed
+          // key and every per-session home live under it.
+          spaceCredentials: spaceCredentialPort(deps.db, deps.dataDir, deps.logger),
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
@@ -1619,6 +1633,14 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       //
       // Wrapped because resolving the owner touches the database, and a node
       // whose graph is briefly unreachable at boot must still start.
+      // SC-2: scrub space API keys a crash left in per-session homes. Runs
+      // BEFORE the owner lookup — it needs no identity, and a node whose graph
+      // is briefly unreachable must still take the keys off its disk.
+      await spawnService.sweepSpaceSessionSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: space credential sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -1753,6 +1775,9 @@ export function registerExecutionHandlers(
             dataDir: deps.dataDir,
             ...(deps.logger ? { logger: deps.logger } : {}),
           }),
+          // SC-2: the space rung of D4. Same data-root condition: the sealed
+          // key and every per-session home live under it.
+          spaceCredentials: spaceCredentialPort(deps.db, deps.dataDir, deps.logger),
         }
       : {}),
     ...(worktrees ? { worktrees } : {}),
@@ -1773,6 +1798,14 @@ export function registerExecutionHandlers(
     // Same reconciliation as createExecutionRuntime — a node wired through the
     // legacy shape leaves the same ghosts behind and deserves the same cleanup.
     reconcileGhosts: async () => {
+      // SC-2: scrub space API keys a crash left in per-session homes. Runs
+      // BEFORE the owner lookup — it needs no identity, and a node whose graph
+      // is briefly unreachable must still take the keys off its disk.
+      await spawnService.sweepSpaceSessionSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: space credential sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2848,6 +2881,9 @@ function registerHandlers(
       accessMode: input.accessMode ?? null,
       credentialSources: input.credentialSources ?? null,
       credentialSource: input.credentialSource ?? null,
+      // A space credential id only — never an account id (I1). Membership and
+      // the credential's space are re-checked at spawn (206).
+      spaceCredentialIds: input.spaceCredentialIds ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),

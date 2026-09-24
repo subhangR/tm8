@@ -12,6 +12,7 @@
  * spawn allowlist DOES forward. The detector must find it there, which is what
  * makes its silence in the first test a measurement rather than a blind spot.
  */
+import { CollabError } from '@tm8/contract';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -71,6 +72,11 @@ class SpawnDb implements Db {
       } as T;
     }
     if (fn === 'read_account_git_credential') return null as T;
+    // As 206's read_space_credential_for_spawn answers a space with no default:
+    // P0002, which the Db maps to a CollabError carrying the reason.
+    if (fn === 'read_space_credential_for_spawn') {
+      throw new CollabError('not_found', 'this space has no default credential', { details: { reason: 'no_default' } });
+    }
     // The member HAS a stored key: were spawn ever to ask, it would get one.
     if (fn === 'read_account_service_key') {
       return { accountId: 'owner-account', provider: 'typesafe', keyCiphertext: Buffer.from(MEMBER_KEY).toString('base64'), keyNonce: '' } as T;

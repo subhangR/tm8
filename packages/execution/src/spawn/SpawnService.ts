@@ -54,6 +54,15 @@ import {
   apiKeyBackendForModel,
   isApiKeyCredentialProvider,
 } from '../credentials/api-key-credentials.js';
+import {
+  resolveSessionCredentials,
+  type ResolvedSessionCredentials,
+} from './credential-resolution.js';
+import {
+  materializeSpaceApiKeyHome,
+  scrubSpaceSessionSecrets,
+  sweepSpaceSessionSecrets,
+} from './space-credential-session-home.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
@@ -76,6 +85,7 @@ import type {
   SpawnContext,
   SpawnRequest,
   SpawnResult,
+  SpaceCredentialPort,
   Tm8Manifest,
   TransitionInput,
   WorkSessionEndedKind,
@@ -133,6 +143,12 @@ export interface SpawnServiceOptions {
   credentialHome?: AgentCredentialHomePort;
   /** Caller-owned GitHub token store, resolved independently of agent vendor. */
   gitHubCredentials?: GitHubCredentialPort;
+  /**
+   * SPACE credentials (206), the D4 rung between the member's own and the
+   * node's. OPTIONAL: without it an explicit `space` source is refused by name
+   * and auto runs member → node exactly as before.
+   */
+  spaceCredentials?: SpaceCredentialPort;
   /**
    * The node's Git worktree manager. Its PRESENCE is what makes
    * `workdir.mode:'worktree'` serviceable — omit it and the mode is refused by
@@ -337,6 +353,7 @@ export class SpawnService {
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
   private readonly gitHubCredentials: GitHubCredentialPort | undefined;
+  private readonly spaceCredentials: SpaceCredentialPort | undefined;
   private readonly worktrees: WorktreeManager | null;
   private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
@@ -388,6 +405,7 @@ export class SpawnService {
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
     this.gitHubCredentials = options.gitHubCredentials;
+    this.spaceCredentials = options.spaceCredentials;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
   }
@@ -493,6 +511,106 @@ export class SpawnService {
   ): Promise<GitHubCredential | null> {
     if (source === 'node' || !this.gitHubCredentials) return null;
     return this.gitHubCredentials.resolve(auth);
+  }
+
+  /**
+   * Every credential a session runs on, member → space → node under D5
+   * (`credential-resolution.ts`, the ONLY place the policy is enforced). A
+   * space API key is materialized into the session's own 0700 home from the
+   * key read NOW, so a resume picks up a rekey (D7).
+   */
+  private resolveSessionCredentials(
+    auth: GraphAuth,
+    spaceId: string,
+    sessionId: string,
+    launch: ResolvedLaunchConfig,
+    resume = false,
+  ): Promise<ResolvedSessionCredentials> {
+    return resolveSessionCredentials(
+      { auth, spaceId, launch, resume },
+      {
+        ...(this.spaceCredentials ? { spaceCredentials: this.spaceCredentials } : {}),
+        resolveMemberHome: (source) =>
+          this.resolveCredentialHome(auth, launch.agentTool, launch.model, source),
+        resolveMemberGitHub: () => this.resolveGitHubCredential(auth, null),
+        materializeApiKeyHome: (input) =>
+          materializeSpaceApiKeyHome({ dataDir: this.dataDir, sessionId, ...input }),
+      },
+    );
+  }
+
+  /**
+   * M7: the space credentials a session launched on are re-read AFTER its PTY
+   * exists. A delete that revoked one between our read and now found no PTY to
+   * kill (SC-3 kills by recorded session), so this is the check that closes
+   * that window; a delete from here on finds the PTY. Refuses on a read error
+   * too — an unanswerable question is not an active credential.
+   */
+  private async assertSpaceCredentialsStillActive(
+    auth: GraphAuth,
+    sessionId: string,
+    credentialIds: readonly string[],
+  ): Promise<void> {
+    if (credentialIds.length === 0 || !this.spaceCredentials) return;
+    let active: ReadonlySet<string>;
+    try {
+      active = await this.spaceCredentials.activeIds(auth, credentialIds);
+    } catch (error) {
+      throw new SpawnError(
+        'could not re-check the space credentials this session launched on, so it was stopped ' +
+          'rather than left running on one that may have been deleted — retry',
+        'internal',
+        { sessionId, cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    const gone = credentialIds.filter((id) => !active.has(id));
+    if (gone.length > 0) {
+      throw new SpawnError(
+        `space credential ${gone.join(', ')} was deleted or disabled while this session was ` +
+          'starting, so it was stopped — launch again to use another credential',
+        'conflict',
+        { sessionId, spaceCredentialIds: gone },
+      );
+    }
+  }
+
+  /**
+   * Scrub a session's space API key from its per-session home, keeping its
+   * conversation state. Best effort and silent about contents (I5): a failure
+   * is logged by session id only, and the boot sweep retries it.
+   */
+  private async scrubSpaceSecrets(sessionId: string): Promise<void> {
+    try {
+      await scrubSpaceSessionSecrets(this.dataDir, sessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not scrub a session space credential home', {
+        sessionId,
+        code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+      });
+    }
+  }
+
+  /**
+   * The boot sweep for space API keys: scrub every per-session home whose
+   * session has no live PTY and no in-flight claims here. A crash skips the
+   * exit path; this is what catches it.
+   *
+   * Safe at boot ONLY because no agent survives the server: PTYs die with it
+   * (the unit's KillMode=control-group, PtyHostService.ts ~585). An
+   * agent that outlived a restart would find its key scrubbed mid-session.
+   */
+  async sweepSpaceSessionSecrets(): Promise<{ scrubbed: string[]; errors: string[] }> {
+    const result = await sweepSpaceSessionSecrets(
+      this.dataDir,
+      (sessionId) => this.pty.hasSession(sessionId) || this.sessionAuth.has(sessionId),
+    );
+    if (result.scrubbed.length > 0 || result.errors.length > 0) {
+      this.logger?.info('SpawnService: swept space credential session homes', {
+        scrubbed: result.scrubbed.length,
+        errors: result.errors,
+      });
+    }
+    return result;
   }
 
   /**
@@ -791,15 +909,71 @@ export class SpawnService {
   private async recordedPosture(
     auth: GraphAuth,
     sessionId: string,
-  ): Promise<SessionLaunchPosture | null> {
+  ): Promise<{ posture: SessionLaunchPosture | null; unreadable: boolean }> {
     try {
-      return await this.graph.loadSessionLaunchPosture(auth, sessionId);
+      return { posture: await this.graph.loadSessionLaunchPosture(auth, sessionId), unreadable: false };
     } catch (error) {
       this.logger?.warn?.('SpawnService: could not read the recorded posture of a resuming session', {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
-      return null;
+      return { posture: null, unreadable: true };
+    }
+  }
+
+  /**
+   * Resume's space-credential gate, run BEFORE the PTY (C3). The DB's
+   * session_space_credentials rows are the authority on what this session ran
+   * on; the recorded posture only names it. So:
+   *   - a session resolved onto space credentials re-points them to the
+   *     resumer (206 refuses unless every one is still active), and what 206
+   *     recorded must be exactly what resolution chose;
+   *   - a session whose posture could not be read is asked the DB directly:
+   *     had it run on a space credential, re-resolving it from nothing would
+   *     silently move it onto member or node, so that refuses.
+   */
+  private async repointSpaceCredentials(
+    auth: GraphAuth,
+    sessionId: string,
+    resolved: ResolvedSessionCredentials,
+    postureUnreadable: boolean,
+  ): Promise<void> {
+    if (!this.spaceCredentials) return;
+    if (resolved.spaceCredentialIds.length === 0 && !postureUnreadable) return;
+    let repoint;
+    try {
+      repoint = await this.spaceCredentials.repointSession(auth, sessionId);
+    } catch (error) {
+      throw new SpawnError(
+        'could not re-point the space credentials this session runs on to you, so the resume ' +
+          'is refused rather than run with the wrong launcher on record — retry',
+        'internal',
+        { sessionId, cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    if (!repoint.ok) {
+      throw new SpawnError(
+        'a space credential this session launched on has been deleted or is no longer usable, ' +
+          'so it cannot resume on it — start a new session with another credential',
+        'conflict',
+        { sessionId, reason: repoint.reason },
+      );
+    }
+    const chosen = resolved.launch.spaceCredentialIds ?? {};
+    const recorded = new Map(repoint.credentials.map((c) => [c.provider, c.spaceCredentialId]));
+    const agrees =
+      recorded.size === Object.keys(chosen).length &&
+      [...recorded].every(([provider, id]) => chosen[provider] === id);
+    if (!agrees) {
+      throw new SpawnError(
+        postureUnreadable
+          ? "this session's recorded launch could not be read and it ran on a space credential, " +
+              'so it is not resumed on a different one — retry, or start a new session'
+          : 'the space credentials recorded for this session do not match its manifest, so the ' +
+              'resume is refused — start a new session',
+        'conflict',
+        { sessionId },
+      );
     }
   }
 
@@ -812,10 +986,12 @@ export class SpawnService {
    * persona default is what makes a delegated agent sit forever on an approval
    * prompt that no human will ever see, so the parent's posture carries down.
    *
-   * Three deliberate silences, all of them "no inheritance" rather than a
-   * failure:
-   *   - an explicit `accessMode` on the request means the caller has already
-   *     answered the question; nothing is read at all
+   * An explicit `accessMode` on the request still wins over the parent's —
+   * `resolveLaunchConfig` ranks the request first — but the parent is READ
+   * regardless: its credential sources and exact space credential ids carry
+   * down whatever posture the child names (A4, D6a).
+   *
+   * Two deliberate silences, both "no inheritance" rather than a failure:
    *   - a root spawn (no parent) has nothing to inherit from
    *   - an unreadable or missing parent manifest is a WARNING, never a refused
    *     spawn: posture inheritance is a default-selection convenience, and
@@ -827,7 +1003,7 @@ export class SpawnService {
     request: SpawnRequest,
   ): Promise<SessionLaunchPosture | null> {
     const parentSessionId = request.parentSessionId ?? null;
-    if (!parentSessionId || request.accessMode) return null;
+    if (!parentSessionId) return null;
     try {
       return await this.graph.loadSessionLaunchPosture(auth, parentSessionId);
     } catch (error) {
@@ -998,6 +1174,7 @@ export class SpawnService {
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
     this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
+    let spaceCredentialIds: string[] = [];
 
     try {
       // Step 7 (§4.8) — publish. The lease and the association need the session
@@ -1055,21 +1232,24 @@ export class SpawnService {
         sandboxUnavailable: sandbox.unavailable,
       });
       const manifestPath = this.manifestPathFor(sessionId);
-      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
-      const agentCredentialSource = agentCredentialProvider
-        ? launch.credentialSources[agentCredentialProvider]
-        : null;
-      const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, launch.model, agentCredentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSources.github),
-      ]);
+      const credentials = await this.resolveSessionCredentials(
+        auth,
+        request.spaceId,
+        sessionId,
+        launch,
+      );
+      spaceCredentialIds = credentials.spaceCredentialIds;
+      const { credentialHome, gitHubCredential } = credentials;
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
         sessionId,
         request,
         context,
-        launch,
+        // The RESOLVED sources: auto that landed on the space is recorded as
+        // `space` with its id, which is what 206's manifest writer turns into
+        // the session_space_credentials row containment reads (D8).
+        launch: credentials.launch,
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
@@ -1132,7 +1312,7 @@ export class SpawnService {
         agentToken,
         credentialHome ?? undefined,
         gitHubCredential ?? undefined,
-        launch.credentialSources.github,
+        credentials.launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -1224,6 +1404,7 @@ export class SpawnService {
       // after that await creates a gap where the PTY entry and its exit evidence
       // have already been removed before we begin watching.
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
       const [earlyExit, promptOutcome] = await Promise.all([
         bootSettlement,
         firstPromptDeliveryId && firstPromptOutcome
@@ -1273,6 +1454,8 @@ export class SpawnService {
           .releaseWorktreeLease(auth, worktree.worktreeId)
           .catch(() => undefined);
       }
+      // The session is dead; its space key must not outlive it on disk.
+      await this.scrubSpaceSecrets(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -1472,6 +1655,7 @@ export class SpawnService {
     // must not turn that unrelated failure into destruction of the healthy
     // process we merely found.
     let launchedPty = false;
+    let spaceCredentialIds: string[] = [];
 
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(
@@ -1514,7 +1698,8 @@ export class SpawnService {
     // default — a session launched `fullAccess` came back on `auto` and stalled
     // on its first approval. The recorded manifest is where that fact is
     // durable, and resume does not rewrite it, so it still describes the launch.
-    const recordedPosture = await this.recordedPosture(auth, sessionId);
+    const recorded = await this.recordedPosture(auth, sessionId);
+    const recordedPosture = recorded.posture;
 
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
@@ -1793,21 +1978,27 @@ export class SpawnService {
       const baseCommand = buildAgentCommand(launch, this.env, {
         sandboxUnavailable: sandbox.unavailable,
       });
-      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
-      const agentCredentialSource = agentCredentialProvider
-        ? launch.credentialSources[agentCredentialProvider]
-        : null;
-      const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, launch.model, agentCredentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSources.github),
-      ]);
+      // Re-resolved under the RESUMER's claims: membership, policy (A5) and
+      // credential status are today's, the space key is re-read and re-seeded
+      // from the current sealed value (D7), and a pinned or recorded id that
+      // is no longer usable refuses rather than falling back (M8d).
+      const credentials = await this.resolveSessionCredentials(
+        auth,
+        info.spaceId,
+        sessionId,
+        launch,
+        true,
+      );
+      spaceCredentialIds = credentials.spaceCredentialIds;
+      const { credentialHome, gitHubCredential } = credentials;
+      await this.repointSpaceCredentials(auth, sessionId, credentials, recorded.unreadable);
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
         sessionId,
         request: syntheticRequest,
         context,
-        launch,
+        launch: credentials.launch,
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
@@ -1838,7 +2029,7 @@ export class SpawnService {
         agentToken,
         credentialHome ?? undefined,
         gitHubCredential ?? undefined,
-        launch.credentialSources.github,
+        credentials.launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -1866,6 +2057,7 @@ export class SpawnService {
       launchedPty = !reused;
 
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
       const earlyExit = await bootSettlement;
@@ -1883,6 +2075,8 @@ export class SpawnService {
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
       if (launchedPty) this.pty.kill(sessionId);
+      // A PTY this resume merely FOUND is healthy and still reads its key.
+      if (!this.pty.hasSession(sessionId)) await this.scrubSpaceSecrets(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -2571,6 +2765,10 @@ export class SpawnService {
   ): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
+    // FIRST, before any graph write can fail, and on the ghost path too: the
+    // process that read the space key is gone, so the key leaves the disk. A
+    // kill (containment) arrives here like any other exit.
+    await this.scrubSpaceSecrets(sessionId);
     if (auth === undefined) {
       this.loud(
         `PTY for session ${sessionId} exited (${status}) with no captured claims — ` +

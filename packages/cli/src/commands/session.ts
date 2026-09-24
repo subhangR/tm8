@@ -81,6 +81,63 @@ type AccessMode = (typeof ACCESS_MODES)[number];
 const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+/**
+ * `--credential-source` (design 01a0cfa8 §4). Repeatable, one provider each:
+ * `anthropic=member`, `openai=node`, `github=space`, or `anthropic=space:<id>`
+ * to pin one space credential over the space default. A bare source with no
+ * provider is the deprecated scalar every provider falls back to.
+ *
+ * Only a SPACE credential can be named, and only by its own id: there is no
+ * spelling that names an account (I1). Whether the caller may use that id is
+ * the server's question — it re-checks membership at spawn and at resume.
+ */
+const CREDENTIAL_SOURCES = ['member', 'space', 'node'] as const;
+type CredentialSourceFlag = (typeof CREDENTIAL_SOURCES)[number];
+const CREDENTIAL_SOURCE_PROVIDERS = ['anthropic', 'openai', 'github'] as const;
+type CredentialSourceProvider = (typeof CREDENTIAL_SOURCE_PROVIDERS)[number];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface ParsedCredentialSources {
+  credentialSource?: CredentialSourceFlag;
+  credentialSources?: Partial<Record<CredentialSourceProvider, CredentialSourceFlag>>;
+  spaceCredentialIds?: Partial<Record<CredentialSourceProvider, string>>;
+}
+
+export function parseCredentialSourceFlags(raws: readonly string[]): ParsedCredentialSources {
+  const usage = (detail: string): CliError =>
+    new CliError(`--credential-source ${detail}`, EXIT_USAGE, {
+      hint: `expects <provider>=member|space|node or <provider>=space:<space-credential-id> (provider ${CREDENTIAL_SOURCE_PROVIDERS.join('|')}), or a bare member|space|node for every provider`,
+    });
+  const out: ParsedCredentialSources = {};
+  for (const raw of raws) {
+    const eq = raw.indexOf('=');
+    if (eq < 0) {
+      const scalar = CREDENTIAL_SOURCES.find((s) => s === raw);
+      if (scalar === undefined) throw usage(`got ${JSON.stringify(raw)}`);
+      if (out.credentialSource !== undefined) throw usage('names the all-provider source twice');
+      out.credentialSource = scalar;
+      continue;
+    }
+    const providerRaw = raw.slice(0, eq);
+    const provider = CREDENTIAL_SOURCE_PROVIDERS.find((p) => p === providerRaw);
+    if (provider === undefined) throw usage(`names unknown provider ${JSON.stringify(providerRaw)}`);
+    const value = raw.slice(eq + 1);
+    const colon = value.indexOf(':');
+    const sourceRaw = colon < 0 ? value : value.slice(0, colon);
+    const source = CREDENTIAL_SOURCES.find((s) => s === sourceRaw);
+    if (source === undefined) throw usage(`got ${JSON.stringify(raw)}`);
+    if (out.credentialSources?.[provider] !== undefined) throw usage(`names ${provider} twice`);
+    (out.credentialSources ??= {})[provider] = source;
+    if (colon >= 0) {
+      const id = value.slice(colon + 1);
+      if (source !== 'space') throw usage(`pins an id on ${provider}=${source}; only a space credential can be pinned`);
+      if (!UUID_RE.test(id)) throw usage(`pins ${JSON.stringify(id)}, which is not a space credential id`);
+      (out.spaceCredentialIds ??= {})[provider] = id;
+    }
+  }
+  return out;
+}
+
 /** §4.13's closed attach-mode set. `view` observes; `drive` owns the terminal. */
 const ATTACH_MODES = ['view', 'drive'] as const;
 type AttachMode = (typeof ATTACH_MODES)[number];
@@ -462,6 +519,12 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // child LESS than it holds, which is the only direction worth spelling out.
   if (accessMode !== undefined) body.accessMode = accessMode;
   if (reasoningEffort !== undefined) body.reasoningEffort = reasoningEffort;
+  // Sent ONLY when named, like `accessMode`: an absent source is what lets a
+  // child inherit its spawner's exact credential rather than re-resolving.
+  const credentials = parseCredentialSourceFlags(cmd.options.values('credential-source'));
+  if (credentials.credentialSource !== undefined) body.credentialSource = credentials.credentialSource;
+  if (credentials.credentialSources !== undefined) body.credentialSources = credentials.credentialSources;
+  if (credentials.spaceCredentialIds !== undefined) body.spaceCredentialIds = credentials.spaceCredentialIds;
   if (model !== undefined) body.model = model;
   if (agentTool !== undefined) body.agentTool = agentTool;
   if (title !== undefined) body.title = title;
