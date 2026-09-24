@@ -1,5 +1,5 @@
 -- =============================================================================
--- 217 — RLS membership is resolved ONCE per statement, not once per row.
+-- 218 — RLS membership is resolved ONCE per statement, not once per row.
 --
 -- WHAT THIS CHANGES
 --   1. New `internal.member_space_ids()` — SECURITY DEFINER, STABLE — returns
@@ -64,7 +64,7 @@
 --     is_space_member calls; member_space_ids() is SECURITY DEFINER, so that
 --     rewrite does not depend on the caller's role.)
 --   * Verified before commit on a restored copy of prod (staging cluster,
---     with 216 + 217 applied inside a rolled-back transaction): (count, md5
+--     with 216 + 218 applied inside a rolled-back transaction): (count, md5
 --     of ctids) for each of the 68 tables tm8_app can SELECT, under each of
 --     the 13 identities with memberships plus a stranger and an unset claim
 --     = 1020 fingerprints, identical before and after (636 of them non-empty).
@@ -87,7 +87,7 @@ $$;
 comment on function internal.member_space_ids() is
   'The calling identity''s space ids. RLS policies call it as '
   '`X = any ((select internal.member_space_ids())::uuid[])` so membership is resolved '
-  'once per statement (InitPlan), not once per row (217).';
+  'once per statement (InitPlan), not once per row (218).';
 
 revoke all on function internal.member_space_ids() from public;
 grant execute on function internal.member_space_ids() to tm8_app;

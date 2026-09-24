@@ -1,21 +1,21 @@
 /**
- * 217 — RLS membership is resolved once per statement, and admits exactly
+ * 218 — RLS membership is resolved once per statement, and admits exactly
  * what the per-row helpers admitted.
  *
- * 217 rewrote every policy that called `internal.is_space_member(X)` to
+ * 218 rewrote every policy that called `internal.is_space_member(X)` to
  * `X = any ((select internal.member_space_ids())::uuid[])`, `entities_select`
  * to the same array plus the carve-out, and every `internal.entity_readable(X)`
  * policy to an `exists (... offset 0)` over `public.entities` that
  * `entities_select` filters.
  * The helper functions themselves are unchanged (rls-predicate-guards covers
- * them); this file covers the POLICIES, which is where 217 moved the logic.
+ * them); this file covers the POLICIES, which is where 218 moved the logic.
  *
  * Every visibility assertion is a red/green pair: the member sees the row AND
  * the outsider, the stranger and the unset claim do not. A policy that returned
  * false for everything would fail the green half; one that dropped the
  * membership test would fail the red half.
  *
- * The plan-shape case pins the reason 217 exists: the membership lookup must
+ * The plan-shape case pins the reason 218 exists: the membership lookup must
  * be an InitPlan (once per statement), never a per-row helper call.
  */
 import { randomUUID } from 'node:crypto';
@@ -27,11 +27,11 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
-const MEMBER_IDENTITY = 'rls217-member';
+const MEMBER_IDENTITY = 'rls218-member';
 /** A member of a DIFFERENT space only. */
-const OUTSIDER_IDENTITY = 'rls217-outsider';
+const OUTSIDER_IDENTITY = 'rls218-outsider';
 /** A real identity with no membership at all. */
-const STRANGER_IDENTITY = 'rls217-stranger';
+const STRANGER_IDENTITY = 'rls218-stranger';
 
 interface Fixture {
   spaceId: string;
@@ -99,12 +99,12 @@ async function seed(): Promise<Fixture> {
 
     await client.query(
       `insert into public.user_profiles(identity_id, display_name)
-       values ($1, '217 member'), ($2, '217 outsider'), ($3, '217 stranger')`,
+       values ($1, '218 member'), ($2, '218 outsider'), ($3, '218 stranger')`,
       [MEMBER_IDENTITY, OUTSIDER_IDENTITY, STRANGER_IDENTITY],
     );
     await client.query(
       `insert into public.spaces(id, name, created_by_identity)
-       values ($1, 'RLS 217', $3), ($2, 'RLS 217 elsewhere', $4)`,
+       values ($1, 'RLS 218', $3), ($2, 'RLS 218 elsewhere', $4)`,
       [row.space_id, row.other_space_id, MEMBER_IDENTITY, OUTSIDER_IDENTITY],
     );
     await client.query(
@@ -114,7 +114,7 @@ async function seed(): Promise<Fixture> {
     );
     await client.query(
       `insert into public.members(entity_id, space_id, identity_id, role, display_name) values
-       ($1, $3, $5, 'owner', '217 member'), ($2, $4, $6, 'owner', '217 outsider')`,
+       ($1, $3, $5, 'owner', '218 member'), ($2, $4, $6, 'owner', '218 outsider')`,
       [
         row.member_id,
         row.outsider_member_id,
@@ -142,11 +142,11 @@ async function seed(): Promise<Fixture> {
     ]);
 
     // Linking a project mints a `restricted` projection visible ONLY through
-    // the carve-out that 217 kept behind `internal.entity_row_visible`.
+    // the carve-out that 218 kept behind `internal.entity_row_visible`.
     const projectId = (await client.query<{ id: string }>('select internal.new_id() id')).rows[0]!.id;
     await client.query(
-      `insert into public.projects(id, name, working_dir) values ($1, 'rls217-project', $2)`,
-      [projectId, `/tmp/rls217-${randomUUID()}`],
+      `insert into public.projects(id, name, working_dir) values ($1, 'rls218-project', $2)`,
+      [projectId, `/tmp/rls218-${randomUUID()}`],
     );
     await client.query(`insert into public.space_projects(space_id, project_id) values ($1, $2)`, [
       row.space_id,
@@ -171,7 +171,7 @@ async function seed(): Promise<Fixture> {
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('rls_membership_217');
+  database = await createW1ScratchDatabase('rls_membership_218');
   database.apply(migrationFiles());
   fixture = await seed();
 });
@@ -233,7 +233,7 @@ describe('entity_readable policies (now an exists over entities_select)', () => 
   });
 });
 
-describe('the reason 217 exists', () => {
+describe('the reason 218 exists', () => {
   it('no policy calls a per-row membership helper any more', async () => {
     const rows = await database.query<{ line: string }>(
       `select tablename || '.' || policyname line from pg_policies
