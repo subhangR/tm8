@@ -109,6 +109,43 @@ describe('LaunchContextSection', () => {
     expect(harness).toContain('Indexed skills2');
   });
 
+  it('prefers the recorded harness over the pick and the declaration, and says which it shows', () => {
+    const base = record();
+    const launch = base.manifest!.launch as Record<string, unknown>;
+    const recorded = record({
+      manifest: {
+        ...base.manifest,
+        launch: {
+          ...launch,
+          harnessChoice: { surface: 'inherit', plugins: ['picked'] },
+          harness: {
+            plugins: {
+              allowed: [{ id: 'figma@market', source: 'equipped' }],
+              denied: [{ id: 'slack@market', because: 'not allowlisted' }],
+            },
+          },
+        },
+      },
+    });
+    const { getByTestId, unmount } = render(<LaunchContextSection state={{ phase: 'ready', record: recorded }} />);
+    const harness = getByTestId('launch-context-harness').textContent ?? '';
+    expect(harness).toMatch(/^HARNESS(?! · DECLARED)/);
+    expect(harness).toContain('Harness surfaceinherit');
+    expect(harness).toContain('Pluginsfigma@market');
+    expect(harness).toContain('Plugins deniedslack@market (not allowlisted)');
+    expect(harness).not.toContain('sales');
+    unmount();
+
+    // No record: the launch pick replaces the declared list, even when empty.
+    const picked = record({
+      manifest: { ...base.manifest, launch: { ...launch, harnessChoice: { plugins: [] } } },
+    });
+    const pickedText = render(<LaunchContextSection state={{ phase: 'ready', record: picked }} />)
+      .getByTestId('launch-context-harness').textContent ?? '';
+    expect(pickedText).toContain('HARNESS · DECLARED');
+    expect(pickedText).toContain('Pluginsnone');
+  });
+
   it("hides the declared harness when the viewer cannot read the teammate", () => {
     const base = record();
     const withoutTeammate = record({

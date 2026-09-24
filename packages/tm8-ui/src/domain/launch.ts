@@ -1180,25 +1180,56 @@ export function launchContextFacts(manifest: Record<string, unknown> | null): Ma
 }
 
 /**
- * The harness surface as the TEAMMATE DECLARED it (`capabilities.launch`:
- * surface, plugins, MCP servers), plus how the launch's skills loaded. Plugins
- * a lane gets from its equipment are not in the manifest. Declared, not effective: the stored
- * manifest does not yet record what the harness actually allowed — design
- * 01a0d348 §6 (I2) adds `launch.harness` for that.
+ * The harness a launch ran with, for the LAUNCH CONTEXT section.
+ *
+ * Plugins come from the best record the manifest has: `launch.harness.plugins`
+ * (what the harness actually allowed and denied, written since #731), else the
+ * launch-time pick (`launch.harnessChoice`), else the teammate's declared
+ * `capabilities.launch`. `recorded` is true only in the first case, so the
+ * surface can label anything else as declared. MCP servers are the declared
+ * ones; plugins a lane gets from its equipment appear only in the record.
  */
-export function declaredHarnessFacts(manifest: Record<string, unknown> | null): ManifestFact[] {
+export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
+  facts: ManifestFact[];
+  recorded: boolean;
+} {
+  const launch = readObject(manifest, 'launch');
   const declared = readObject(readObject(readObject(manifest, 'agent'), 'capabilities'), 'launch');
+  const choice = readObject(launch, 'harnessChoice');
+  const record = readObject(readObject(launch, 'harness'), 'plugins');
   const effective = readObject(manifest, 'effectiveSkills');
-  const plugins = readArray(declared, 'plugins').filter((p): p is string => typeof p === 'string');
   const facts: ManifestFact[] = [];
+  const list = (items: string[]) => (items.length > 0 ? items.join(', ') : 'none');
+  const strings = (items: unknown[]) => items.filter((p): p is string => typeof p === 'string');
   // Only a Claude lane has a harness surface (`harness-surface.ts`).
-  if (readText(readObject(manifest, 'launch'), 'tool')?.startsWith('claude')) {
-    const surface = readText(declared, 'harnessSurface');
-    const mcpServers = Object.keys(readObject(declared, 'mcpServers') ?? {});
+  if (readText(launch, 'tool')?.startsWith('claude')) {
+    const surface = readText(choice, 'surface') ?? readText(declared, 'harnessSurface');
+    facts.push({ label: 'Harness surface', value: surface ?? 'minimal (default)', mono: true });
+    if (record !== null) {
+      const allowed = readArray(record, 'allowed').flatMap((item) => {
+        const id = readText(asObject(item), 'id');
+        return id === null ? [] : [id];
+      });
+      const denied = readArray(record, 'denied').flatMap((item) => {
+        const entry = asObject(item);
+        const id = readText(entry, 'id');
+        if (id === null) return [];
+        const because = readText(entry, 'because');
+        return [because === null ? id : `${id} (${because})`];
+      });
+      facts.push({ label: 'Plugins', value: list(allowed), mono: true });
+      if (denied.length > 0) facts.push({ label: 'Plugins denied', value: denied.join(', '), mono: true });
+    } else {
+      // A launch pick REPLACES the persona's list, even when it is empty.
+      const picked = Array.isArray(choice?.plugins);
+      facts.push({
+        label: 'Plugins',
+        value: list(strings(readArray(picked ? choice : declared, 'plugins'))),
+        mono: true,
+      });
+    }
     facts.push(
-      { label: 'Harness surface', value: surface ?? 'minimal (default)', mono: true },
-      { label: 'Plugins', value: plugins.length > 0 ? plugins.join(', ') : 'none', mono: true },
-      { label: 'MCP servers', value: mcpServers.length > 0 ? mcpServers.join(', ') : 'none', mono: true },
+      { label: 'MCP servers', value: list(Object.keys(readObject(declared, 'mcpServers') ?? {})), mono: true },
       // A minimal lane switches off the bundled skills lanes never use.
       { label: 'Bundled skills', value: surface === 'inherit' ? 'all' : 'trimmed', mono: false },
     );
@@ -1209,7 +1240,7 @@ export function declaredHarnessFacts(manifest: Record<string, unknown> | null): 
       { label: 'Indexed skills', value: String(readArray(effective, 'indexed').length), mono: true },
     );
   }
-  return facts;
+  return { facts, recorded: record !== null };
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {

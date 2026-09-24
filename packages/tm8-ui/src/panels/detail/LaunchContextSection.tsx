@@ -4,8 +4,8 @@ import {
   KindIcon,
   LAUNCH_CONTEXT_ROLE_LABEL,
   LAUNCH_CONTEXT_SOURCE_LABEL,
-  declaredHarnessFacts,
   launchContextFacts,
+  launchHarnessFacts,
   type ManifestFact,
 } from '../../domain';
 
@@ -17,7 +17,7 @@ export type LaunchContextState =
 /**
  * LAUNCH CONTEXT — every selection that went into a session's launch, at the
  * top of its Connections tab: the entities it loaded (each with where it came
- * from), the launch facts, and the harness surface as declared.
+ * from), the launch facts, and the harness (as recorded, else as declared).
  *
  * Presentational: the host-wired surface (`views/launchContextSurface.tsx`)
  * reads the launch record once and hands its state in. Entity rows are
@@ -69,7 +69,8 @@ export function LaunchContextSection({
   // The declared harness is the teammate's own configuration: shown only when
   // the viewer can read that teammate, i.e. when its row came back.
   const teammateVisible = context.entries.some((e) => e.role === 'teammate');
-  const harness = teammateVisible ? declaredHarnessFacts(record.manifest).filter(hasValue) : [];
+  const harness = launchHarnessFacts(record.manifest);
+  const harnessFacts = teammateVisible ? harness.facts.filter(hasValue) : [];
 
   return (
     <section className="pn-section pn-launch" data-testid="launch-context">
@@ -103,7 +104,11 @@ export function LaunchContextSection({
         </ul>
       ) : null}
       <FactStrip label="LAUNCH" facts={facts} testId="launch-context-facts" />
-      <FactStrip label="HARNESS · DECLARED" facts={harness} testId="launch-context-harness" />
+      <FactStrip
+        label={harness.recorded ? 'HARNESS' : 'HARNESS · DECLARED'}
+        facts={harnessFacts}
+        testId="launch-context-harness"
+      />
     </section>
   );
 }
