@@ -13,6 +13,7 @@ import {
   findNew,
   parseCancelReason,
   POLL_BACKOFF_MS,
+  REQUEST_MIN_MS,
   runFormWait,
   STATE_REREAD_MS,
   type FormWaitDeps,
@@ -275,6 +276,82 @@ describe('transport blips', () => {
     w.at(3_000, () => w.submit(view('r1', T0 + 3_000)));
     expect(await runFormWait(w.deps, FORM, NONE, 600_000)).toMatchObject({ kind: 'answered' });
     expect(w.calls.warnings).toEqual([]);
+  });
+});
+
+describe('a slow Server: only the deadline ends the wait', () => {
+  const slow = () => new TransportError('GET /v2/entities/<form> timed out after 1000ms (per-request deadline)');
+
+  it('a per-request timeout on the LAST tick is a timeout (13), not a transport failure (7)', async () => {
+    const w = world();
+    const status = w.deps.formStatus;
+    w.deps.formStatus = async (t) => {
+      if (w.deps.now() >= 10_000) throw slow();
+      return status(t);
+    };
+    expect(await runFormWait(w.deps, FORM, { at: T0, tieIds: new Set(['r0']), resume: 'r0' }, 10_000))
+      .toEqual({ kind: 'timeout', resume: 'r0' });
+  });
+
+  it('a per-request timeout on a MIDDLE tick is no news: the wait goes on and still finds the answer', async () => {
+    const w = world();
+    const list = w.deps.listPage;
+    let failed = 0;
+    w.deps.listPage = async (c, t) => {
+      if (w.deps.now() >= 3_000 && failed < 2) {
+        failed++;
+        throw slow();
+      }
+      return list(c, t);
+    };
+    w.at(3_000, () => w.submit(view('r1', T0 + 3_000)));
+    expect(await runFormWait(w.deps, FORM, NONE, 600_000)).toMatchObject({ kind: 'answered', response: { id: 'r1' } });
+    expect(failed).toBe(2);
+    expect(w.calls.warnings).toEqual([]);
+  });
+
+  it('the first state read timing out is no news either', async () => {
+    const w = world();
+    const status = w.deps.formStatus;
+    let n = 0;
+    w.deps.formStatus = async (t) => {
+      if (n++ === 0) throw slow();
+      return status(t);
+    };
+    w.at(2_000, () => w.setStatus('closed'));
+    expect(await runFormWait(w.deps, FORM, NONE, 600_000)).toMatchObject({ kind: 'terminal', status: 'closed' });
+  });
+
+  it('every read gets at least REQUEST_MIN_MS, even on the deadline tick', async () => {
+    const w = world();
+    const budgets: number[] = [];
+    const status = w.deps.formStatus;
+    w.deps.formStatus = async (t) => {
+      budgets.push(t);
+      return status(t);
+    };
+    await runFormWait(w.deps, FORM, NONE, 3_000);
+    expect(budgets.length).toBeGreaterThan(1);
+    expect(Math.min(...budgets)).toBe(REQUEST_MIN_MS);
+  });
+
+  it('a transient failure SEEDING the feed retries the seed; it does not drop to polling', async () => {
+    const w = world();
+    const changes = w.deps.changes;
+    let n = 0;
+    w.deps.changes = async (after, t) => {
+      if (n++ === 0) throw slow();
+      return changes(after, t);
+    };
+    w.at(6_000, () => w.submit(view('r1', T0 + 6_000)));
+    expect(await runFormWait(w.deps, FORM, NONE, 600_000)).toMatchObject({ kind: 'answered' });
+    expect(w.calls.warnings).toEqual([]);
+  });
+
+  it('a hard refusal on a read still ends the wait with its own error', async () => {
+    const w = world();
+    w.deps.formStatus = async () => { throw new ApiError(404, 'not_found', 'no form', 'req', false, null); };
+    await expect(runFormWait(w.deps, FORM, NONE, 600_000)).rejects.toMatchObject({ code: 'not_found' });
   });
 });
 

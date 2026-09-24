@@ -65,8 +65,14 @@ export const FEED_BACKOFF_MS = { initial: 1_000, cap: 5_000 } as const;
 export const POLL_BACKOFF_MS = { initial: 1_000, cap: 10_000 } as const;
 /** The bounded fallback: the state is re-read at least this often even when the feed is quiet. */
 export const STATE_REREAD_MS = 30_000;
-/** One request never outlives the wait, and never hangs longer than this. */
+/** One request never hangs longer than this. */
 const REQUEST_CAP_MS = 30_000;
+/**
+ * …and is never given less than this, even on the deadline tick: a read
+ * clamped to the last second of a wait is a spurious timeout on a slow Server
+ * (measured in CI: a 1000ms entities.get). The wait may overrun --timeout by it.
+ */
+export const REQUEST_MIN_MS = 5_000;
 /** Pages of the response list read per check before giving up on finding the baseline. */
 const MAX_LIST_PAGES = 10;
 const LIST_PAGE = 50;
@@ -192,6 +198,13 @@ export async function currentBaseline(
 /**
  * Drive one wait to its outcome. `deadline` is epoch ms on `deps.now()`'s
  * clock; a wait is always bounded.
+ *
+ * ONLY THE DEADLINE ENDS A WAIT WITH 13. A per-request timeout or a dropped
+ * socket inside the loop (a slow Server) is "no news this tick", never exit 7:
+ * the loop backs off and asks again, and the tick that reaches the deadline
+ * re-reads once with a full REQUEST_MIN_MS of its own (overrunning --timeout
+ * by at most that). A non-transient refusal (not_found, forbidden, …) still
+ * ends the wait with its own code.
  */
 export async function runFormWait(
   deps: FormWaitDeps,
@@ -199,20 +212,31 @@ export async function runFormWait(
   base: WaitBaseline,
   deadline: number,
 ): Promise<WaitOutcome> {
-  const budget = (): number => {
-    const left = deadline - deps.now();
-    return Math.max(1_000, Math.min(REQUEST_CAP_MS, left));
-  };
+  /** Never less than REQUEST_MIN_MS, even past the deadline: a clamped 1s read on a slow Server is a spurious miss. */
+  const budget = (): number => Math.min(REQUEST_CAP_MS, Math.max(REQUEST_MIN_MS, deadline - deps.now()));
 
-  // The feed position is taken BEFORE the first state read, so nothing that
-  // lands between the two can be missed.
-  let through: number | undefined;
-  try {
-    through = (await deps.changes(0, budget())).through;
-  } catch (err) {
-    if (!(err instanceof ApiError) && !(err instanceof CliError) && !isRetryable(err)) throw err;
-    deps.warn('`tm8 form wait`: the change feed is unavailable — polling the form instead');
-  }
+  // The feed: 'seed' until its position is known (a transient failure retries
+  // the seed next tick), 'live' with a position, 'off' after a real refusal.
+  type FeedState = 'seed' | 'live' | 'off';
+  let feed = 'seed' as FeedState;
+  let through = 0;
+  const feedStep = async (): Promise<boolean> => {
+    try {
+      const view = await deps.changes(through, budget());
+      const changed = feed === 'live' && view.changed;
+      through = view.through;
+      feed = 'live';
+      return changed;
+    } catch (err) {
+      if (isRetryable(err)) return true; // a blip: the reads decide this tick
+      if (err instanceof ApiError || err instanceof CliError) {
+        feed = 'off';
+        deps.warn('`tm8 form wait`: the change feed is unavailable — polling the form instead');
+        return true;
+      }
+      throw err;
+    }
+  };
 
   const check = async (): Promise<WaitOutcome | undefined> => {
     const found = await findNew(deps, base, budget());
@@ -231,12 +255,23 @@ export async function runFormWait(
     }
     return undefined;
   };
+  /** One state read; a transient failure is "no news" (undefined), anything else is the answer. */
+  const tryCheck = async (): Promise<WaitOutcome | undefined> => {
+    try {
+      return await check();
+    } catch (err) {
+      if (isRetryable(err)) return undefined;
+      throw err;
+    }
+  };
 
-  let outcome = await check();
+  // The feed position is taken BEFORE the first state read, so nothing that
+  // lands between the two can be missed.
+  await feedStep();
+  let outcome = await tryCheck();
   if (outcome !== undefined) return outcome;
   let lastCheck = deps.now();
-  const backoff = through === undefined ? POLL_BACKOFF_MS : FEED_BACKOFF_MS;
-  let delay: number = backoff.initial;
+  let delay: number = feed === 'off' ? POLL_BACKOFF_MS.initial : FEED_BACKOFF_MS.initial;
 
   for (;;) {
     if (deps.now() >= deadline) return { kind: 'timeout', resume: base.resume };
@@ -245,35 +280,16 @@ export async function runFormWait(
     // answer landing in the last backoff interval is not reported as a timeout.
     const lastTick = deps.now() >= deadline;
 
-    let reread = through === undefined || lastTick || deps.now() - lastCheck >= STATE_REREAD_MS;
-    if (through !== undefined && !lastTick) {
-      try {
-        const view = await deps.changes(through, budget());
-        through = view.through;
-        if (view.changed) reread = true;
-      } catch (err) {
-        if (isRetryable(err)) {
-          reread = true; // a blip: the reads decide this tick
-        } else if (err instanceof ApiError || err instanceof CliError) {
-          through = undefined;
-          reread = true;
-          deps.warn('`tm8 form wait`: the change feed refused — polling the form instead');
-        } else {
-          throw err;
-        }
-      }
-    }
+    let reread = feed !== 'live' || lastTick || deps.now() - lastCheck >= STATE_REREAD_MS;
+    if (feed !== 'off' && !lastTick && (await feedStep())) reread = true;
 
     if (reread) {
-      try {
-        outcome = await check();
-        lastCheck = deps.now();
-        if (outcome !== undefined) return outcome;
-      } catch (err) {
-        // A transient failure costs a tick, not the wait; anything else is the answer.
-        if (!isRetryable(err) || lastTick) throw err;
-      }
-      delay = through === undefined ? Math.min(delay * 2, POLL_BACKOFF_MS.cap) : FEED_BACKOFF_MS.initial;
+      outcome = await tryCheck();
+      lastCheck = deps.now();
+      if (outcome !== undefined) return outcome;
+      // A live feed re-arms at 1s after a re-read; without one (off, or a seed
+      // still failing) the reads back off 1s -> 10s.
+      delay = feed === 'live' ? FEED_BACKOFF_MS.initial : Math.min(delay * 2, POLL_BACKOFF_MS.cap);
     } else {
       delay = Math.min(delay * 2, FEED_BACKOFF_MS.cap);
     }
