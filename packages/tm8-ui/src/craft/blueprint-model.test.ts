@@ -1,12 +1,16 @@
 /**
  * The blueprint fold — pure, so every honesty rule is testable without a DOM:
- * lean parsing (R2), layout honored with first-seen-grid fallback, spec vs
- * reference told apart, dangling edges COUNTED never silently dropped, and
- * the mermaid arm carrying its source through untouched.
+ * lean parsing (R2), the stored layout honored as a pin, spec vs reference
+ * told apart, dangling edges COUNTED never silently dropped, the mermaid arm
+ * carrying its source through untouched — and the orchestration MEANING:
+ * assignees docked not drawn, flow drawn in data order, lanes, lists and
+ * findings pinned where the UI shows them.
  */
 import { describe, expect, it } from 'vitest';
-import { CARD_H, CARD_W, GAP_X, GAP_Y, PAD } from '../chat-home/induced-layout';
-import { blueprintView } from './blueprint-model';
+import { BLUEPRINT_ASSIGNEE_DOCK, BLUEPRINT_CARD_SIZE, PAD, blueprintView } from './blueprint-model';
+
+const CARD_W = BLUEPRINT_CARD_SIZE['task']!.width;
+const CARD_H = BLUEPRINT_CARD_SIZE['task']!.height;
 
 const entityContent = (over: Record<string, unknown> = {}) => ({
   kind: 'graph',
@@ -30,7 +34,9 @@ describe('blueprintView — the entity-type fold', () => {
     const view = blueprintView(entityContent());
     expect(view.graphType).toBe('entity');
     expect(view.cards.map((c) => c.key)).toEqual(['a', 'b', 'c']);
-    expect(view.lines).toHaveLength(2);
+    /* The assignment is not a line: it docks `a` on `b`. */
+    expect(view.lines).toHaveLength(1);
+    expect(view.cards[1]!.assignees.map((x) => x.key)).toEqual(['a']);
     expect(view.danglingEdgeCount).toBe(0);
   });
 
@@ -53,19 +59,20 @@ describe('blueprintView — the entity-type fold', () => {
       entityContent(),
       new Map([['019f0000-0000-7000-8000-00000000aaaa', { kind: 'team_member', title: 'Cygnus-bot' }]]),
     );
-    expect(resolved.cards[0]!.title).toBe('Cygnus-bot');
-    expect(resolved.cards[0]!.kind).toBe('team_member');
+    /* Resolved as a teammate whose only edge is its assignment: docked, not a card. */
+    expect(resolved.cards.map((c) => c.key)).toEqual(['b', 'c']);
+    expect(resolved.attached).toEqual([expect.objectContaining({ key: 'a', title: 'Cygnus-bot', kind: 'team_member', tasks: ['b'] })]);
+    expect(resolved.cards[0]!.assignees[0]).toMatchObject({ title: 'Cygnus-bot', kind: 'team_member' });
   });
 
-  it('honors layout for the nodes that carry one and grids the rest by first-seen index', () => {
+  it('honors a stored layout entry as a pin and lays the rest out as a flow', () => {
     const view = blueprintView(entityContent({ layout: { b: { x: 300, y: 40 } } }));
-    const [a, b, c] = view.cards;
-    // a (index 0) and c (index 2) fall back to the grid…
-    expect([a!.x, a!.y]).toEqual([PAD, PAD]);
-    expect([c!.x, c!.y]).toEqual([PAD + 2 * (CARD_W + GAP_X), PAD]);
-    // …and b sits exactly where the row says, offset by the canvas padding.
-    expect([b!.x, b!.y]).toEqual([PAD + 300, PAD + 40]);
-    // The canvas grows to hold the placed card.
+    const byKey = new Map(view.cards.map((c) => [c.key, c]));
+    /* b sits exactly where the row says, offset by the canvas padding… */
+    expect(byKey.get('b')).toMatchObject({ x: PAD + 300, y: PAD + 40, pinned: true });
+    /* …and c depends on b, so the prerequisite b is drawn first in the flow. */
+    expect(byKey.get('c')!.pinned).toBe(false);
+    expect(byKey.get('b')!.rank).toBeLessThan(byKey.get('c')!.rank);
     expect(view.width).toBeGreaterThanOrEqual(PAD + 300 + CARD_W);
     expect(view.height).toBeGreaterThanOrEqual(PAD + 40 + CARD_H);
   });
@@ -136,10 +143,14 @@ describe('blueprintView — the entity-type fold', () => {
     expect(view.danglingEdgeCount).toBe(1);
   });
 
-  it('humanises the relation type — the edge vocabulary as intent, not a raw token', () => {
-    const view = blueprintView(entityContent());
+  it('labels from the vocabulary, never a raw token, and keeps the note', () => {
+    const view = blueprintView(entityContent({
+      edges: [{ src: 'c', dst: 'b', type: 'depends_on', note: 'needs the API' }, { src: 'b', dst: 'c', type: 'feeds_into_x' }],
+    }));
     expect(view.lines[0]!.label.toLowerCase()).not.toContain('_');
-    expect(view.lines[0]!.note).toBe('alpha owns backend');
+    expect(view.lines[0]!.note).toBe('needs the API');
+    /* An unknown type still draws, humanised. */
+    expect(view.lines[1]!).toMatchObject({ role: 'unknown', knownType: false, label: 'feeds into x' });
   });
 
   it('tolerates leanness: keyless nodes, empty content, junk members (R2)', () => {
@@ -236,5 +247,221 @@ describe('blueprintView — the entity-type fold', () => {
     expect(view.graphType).toBe('mermaid');
     expect(view.source).toBe('flowchart TD; a-->b');
     expect(view.cards).toHaveLength(0);
+  });
+});
+
+/**
+ * THE ORCHESTRATION VIEW — the plan from the craft prompt's own example,
+ * written the way the vocabulary says (every edge reads `src <type> dst`).
+ */
+describe('blueprintView — the orchestration view model', () => {
+  const REF = '019f0000-0000-7000-8000-00000000cccc';
+  const plan = (over: Record<string, unknown> = {}) => ({
+    kind: 'graph',
+    graphType: 'entity',
+    nodes: [
+      { id: 't-research', spec: { kind: 'task', title: 'Research', phase: 'Discover' } },
+      { id: 'd-spec', spec: { kind: 'doc', title: 'Spec' } },
+      { id: 't-api', ref: REF, spec: { kind: 'task', title: 'Build API', phase: 'Build' } },
+      { id: 'tm-ada', spec: { kind: 'team_member', title: 'Ada' } },
+      { id: 'tm-bo', spec: { kind: 'team_member', title: 'Bo' } },
+      { id: 'm-notes', spec: { kind: 'memory', title: 'Notes' } },
+    ],
+    edges: [
+      { src: 't-research', dst: 'd-spec', type: 'produces' },
+      { src: 't-api', dst: 'd-spec', type: 'consumes' },
+      { src: 't-api', dst: 't-research', type: 'depends_on' },
+      { src: 't-research', dst: 'tm-ada', type: 'assigned_to' },
+      { src: 't-api', dst: 'tm-bo', type: 'assigned_to' },
+      { src: 't-api', dst: 'm-notes', type: 'remembers' },
+    ],
+    layout: {},
+    ...over,
+  });
+
+  it('docks assignees on their tasks instead of drawing them', () => {
+    const view = blueprintView(plan());
+    expect(view.cards.map((c) => c.key)).toEqual(['t-research', 'd-spec', 't-api', 'm-notes']);
+    expect(view.attached.map((a) => [a.key, a.tasks])).toEqual([['tm-ada', ['t-research']], ['tm-bo', ['t-api']]]);
+    expect(view.lines.some((l) => l.type === 'assigned_to')).toBe(false);
+    expect(view.cards.find((c) => c.key === 't-api')!.assignees.map((a) => a.title)).toEqual(['Bo']);
+  });
+
+  it('draws flow in DATA order: research → spec → api, with labels that read along the arrow', () => {
+    const view = blueprintView(plan());
+    const rank = (k: string) => view.cards.find((c) => c.key === k)!.rank;
+    expect(rank('t-research')).toBeLessThan(rank('d-spec'));
+    expect(rank('d-spec')).toBeLessThan(rank('t-api'));
+    const line = (type: string) => view.lines.find((l) => l.type === type)!;
+    expect(line('produces')).toMatchObject({ role: 'flow', drawnReversed: false, label: 'produces', sentence: 't-research produces d-spec' });
+    expect(line('consumes')).toMatchObject({ role: 'flow', drawnReversed: true, label: 'consumed by', sentence: 't-api consumes d-spec' });
+    expect(line('depends_on')).toMatchObject({ role: 'dependency', drawnReversed: true, label: 'blocks' });
+    expect(line('remembers')).toMatchObject({ role: 'context' });
+    /* The arrow ends on the card the data flows INTO. */
+    const consumes = line('consumes');
+    const api = view.cards.find((c) => c.key === 't-api')!;
+    const end = consumes.points[consumes.points.length - 1]!;
+    expect(end.x).toBeCloseTo(api.x, 1);
+    expect(consumes.path.startsWith('M ')).toBe(true);
+  });
+
+  it('marks a spec that now carries a ref as materialized, with the host\'s live status', () => {
+    const view = blueprintView(plan(), new Map([[REF, { kind: 'task', title: 'Build API (real)', status: 'working', live: true }]]));
+    const api = view.cards.find((c) => c.key === 't-api')!;
+    expect(api).toMatchObject({ isSpec: false, materialized: true, title: 'Build API (real)', status: 'working', live: true });
+    expect(view.cards.find((c) => c.key === 't-research')).toMatchObject({ isSpec: true, materialized: false, status: null });
+  });
+
+  it('lanes by assignee: outputs follow their producer, lanes in node order, bands clear of each other', () => {
+    const view = blueprintView(plan(), undefined, { mode: 'swimlane' });
+    expect(view.lanes.map((l) => [l.label, l.assignee?.key ?? null])).toEqual([['Ada', 'tm-ada'], ['Bo', 'tm-bo']]);
+    const laneOf = (k: string) => view.cards.find((c) => c.key === k)!.lane;
+    expect(laneOf('t-research')).toBe('tm-ada');
+    expect(laneOf('d-spec')).toBe('tm-ada');
+    expect(laneOf('t-api')).toBe('tm-bo');
+    expect(laneOf('m-notes')).toBe('tm-bo');
+    view.cards.forEach((card) => {
+      const lane = view.lanes.find((l) => l.key === card.lane)!.box;
+      expect(card.y).toBeGreaterThanOrEqual(lane.y);
+      expect(card.y + card.height).toBeLessThanOrEqual(lane.y + lane.height);
+    });
+  });
+
+  it('lanes by kind and by phase', () => {
+    expect(blueprintView(plan(), undefined, { mode: 'swimlane', laneBy: 'kind' }).lanes.map((l) => l.label))
+      .toEqual(['Tasks', 'Docs', 'Memories']);
+    expect(blueprintView(plan(), undefined, { mode: 'swimlane', laneBy: 'phase' }).lanes.map((l) => l.label))
+      .toEqual(['Discover', 'Build', 'No phase']);
+  });
+
+  it('hands list views the plan without a layout: per assignee, per stage, as rows', () => {
+    const view = blueprintView(plan());
+    expect(view.lists.byAssignee.map((g) => [g.assignee?.key ?? null, g.tasks])).toEqual([
+      ['tm-ada', ['t-research']], ['tm-bo', ['t-api']],
+    ]);
+    expect(view.lists.stages.map((s) => s.keys)).toEqual([['t-research'], ['d-spec'], ['t-api'], ['m-notes']]);
+    const api = view.lists.rows.find((r) => r.key === 't-api')!;
+    expect(api).toMatchObject({
+      assignees: ['tm-bo'], consumes: ['d-spec'], produces: [], dependsOn: ['t-research'], context: ['m-notes'],
+    });
+    expect(view.lists.rows.find((r) => r.key === 't-research')!.blocks).toEqual(['t-api']);
+  });
+
+  it('pins coherence findings on the nodes and edges they name', () => {
+    const view = blueprintView(plan({
+      edges: [
+        { src: 't-api', dst: 'd-spec', type: 'consumes' },
+        { src: 't-api', dst: 't-research', type: 'blocks' },
+      ],
+    }));
+    expect(view.findings.map((f) => f.code)).toEqual(expect.arrayContaining(['input_without_producer', 'task_unassigned', 'aliased_edge_type']));
+    const spec = view.cards.find((c) => c.key === 'd-spec')!;
+    expect(spec.severity).toBe('warning');
+    expect(spec.findings.map((f) => f.code)).toContain('input_without_producer');
+    const alias = view.lines.find((l) => l.sentence === 't-api blocks t-research')!;
+    expect(alias.severity).toBe('info');
+    /* `blocks` folds to depends_on reversed: t-api is the prerequisite, drawn first. */
+    const rank = (k: string) => view.cards.find((c) => c.key === k)!.rank;
+    expect(rank('t-api')).toBeLessThan(rank('t-research'));
+  });
+
+  it('parks an unconnected card after the flow, and is deterministic', () => {
+    const content = plan({ nodes: [...plan().nodes, { id: 't-orphan', spec: { kind: 'task', title: 'Orphan' } }] });
+    const view = blueprintView(content);
+    const orphan = view.cards.find((c) => c.key === 't-orphan')!;
+    expect(orphan.rank).toBe(-1);
+    const flowBottom = Math.max(...view.cards.filter((c) => c.rank >= 0).map((c) => c.y + c.height));
+    expect(orphan.y).toBeGreaterThan(flowBottom);
+    expect(blueprintView(content)).toEqual(view);
+  });
+
+  it('flows top to bottom when asked', () => {
+    const view = blueprintView(plan(), undefined, { direction: 'TB' });
+    const card = (k: string) => view.cards.find((c) => c.key === k)!;
+    expect(card('d-spec').y).toBeGreaterThan(card('t-research').y + card('t-research').height);
+  });
+});
+
+describe('blueprintView — regressions from drawing it', () => {
+  it('a swimlane band starts at its own content, not hundreds of pixels above it', () => {
+    const view = blueprintView({
+      kind: 'graph', graphType: 'entity',
+      nodes: [
+        { id: 'tm-res', spec: { kind: 'team_member', title: 'Researcher' } },
+        { id: 'tm-wr', spec: { kind: 'team_member', title: 'Writer' } },
+        { id: 't-research', spec: { kind: 'task', title: 'Research' } },
+        { id: 't-copy', spec: { kind: 'task', title: 'Copy' } },
+        { id: 'd-brief', spec: { kind: 'doc', title: 'Brief' } },
+      ],
+      edges: [
+        { src: 't-research', dst: 'tm-res', type: 'assigned_to' },
+        { src: 't-copy', dst: 'tm-wr', type: 'assigned_to' },
+        { src: 't-research', dst: 'd-brief', type: 'produces' },
+        { src: 't-copy', dst: 'd-brief', type: 'consumes' },
+      ],
+    }, undefined, { mode: 'swimlane' });
+    expect(view.lanes.map((l) => l.key)).toEqual(['tm-res', 'tm-wr']);
+    view.lanes.forEach((lane) => {
+      const mine = view.cards.filter((c) => c.lane === lane.key);
+      expect(mine.length).toBeGreaterThan(0);
+      const top = Math.min(...mine.map((c) => c.y));
+      const bottom = Math.max(...mine.map((c) => c.y + c.height));
+      /* Header + a little air above, never a void. */
+      expect(top - lane.box.y).toBeLessThan(60);
+      expect(lane.box.y + lane.box.height - bottom).toBeLessThan(40);
+    });
+  });
+
+  it('no edge label ever sits on a card (the typical harness row, plus a context link)', () => {
+    const nodes = [
+      { key: 'ui', spec: { kind: 'team_member', title: 'tm8 UI Builder' } },
+      { key: 'ge', spec: { kind: 'team_member', title: 'Graph Engineer' } },
+      ...['panes', 'picker', 'resize', 'fit', 'panel', 'verify'].map((k) => ({ key: k, spec: { kind: 'task', title: k } })),
+    ];
+    const edges = [
+      { src: 'panes', dst: 'ui', type: 'assigned_to' },
+      { src: 'picker', dst: 'panes', type: 'depends_on', note: 'the column has to go first' },
+      { src: 'resize', dst: 'panes', type: 'depends_on' },
+      { src: 'fit', dst: 'ge', type: 'assigned_to' },
+      { src: 'panel', dst: 'picker', type: 'depends_on' },
+      { src: 'verify', dst: 'fit', type: 'depends_on' },
+      { src: 'verify', dst: 'panel', type: 'depends_on' },
+      { src: 'verify', dst: 'resize', type: 'relates_to' },
+      { src: 'verify', dst: 'picker', type: 'relates_to' },
+    ];
+    for (const mode of ['flow', 'swimlane'] as const) {
+      for (const direction of ['LR', 'TB'] as const) {
+        const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges }, undefined, { mode, direction });
+        const labels = view.lines.map((l) => l.labelBox).filter((b) => b !== null);
+        view.cards.forEach((card) => {
+          const dock = card.assignees.length > 0 ? BLUEPRINT_ASSIGNEE_DOCK / 2 : 0;
+          labels.forEach((b) => {
+            const hit = b!.x < card.x + card.width && card.x < b!.x + b!.width
+              && b!.y < card.y + card.height + dock && card.y < b!.y + b!.height;
+            expect(hit, `${mode}/${direction}: a label sits on ${card.key}`).toBe(false);
+          });
+        });
+      }
+    }
+  });
+});
+
+describe('the owner-chip dock', () => {
+  it('reserves half the dock below every task with an owner, so the chip never touches the card below', () => {
+    const nodes = [
+      { id: 'tm', spec: { kind: 'team_member', title: 'Owner' } },
+      ...['a', 'b', 'c', 'd'].map((k) => ({ id: k, spec: { kind: 'task', title: k } })),
+    ];
+    const edges = [
+      ...['a', 'b', 'c', 'd'].map((k) => ({ src: k, dst: 'tm', type: 'assigned_to' })),
+      { src: 'b', dst: 'a', type: 'depends_on' }, { src: 'c', dst: 'a', type: 'depends_on' }, { src: 'd', dst: 'a', type: 'depends_on' },
+    ];
+    const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges });
+    const column = view.cards.filter((c) => c.rank === 1).sort((p, q) => p.y - q.y);
+    expect(column.length).toBe(3);
+    for (let i = 0; i + 1 < column.length; i += 1) {
+      const chipBottom = column[i]!.y + column[i]!.height + BLUEPRINT_ASSIGNEE_DOCK / 2;
+      expect(column[i + 1]!.y).toBeGreaterThan(chipBottom);
+    }
   });
 });

@@ -12,8 +12,8 @@ import { Chip, Eyebrow } from '../../kit';
    uses to draw its feed, because this section is now the same shape: a day
    divider over rows stamped with a clock time. `kit/time`'s rule is that no
    surface formats a date FOR ITSELF, not that no surface may ask it to. */
-import { absTime, clockTime, dayLabel, dayStart } from '../../kit/time';
-import { KindIcon, getKind } from '../../domain';
+import { absTime, clockTime, dayLabel, dayStart, relTime } from '../../kit/time';
+import { CONVERSATION_KIND, KindIcon, edgeVerb, edgeVerbBoth, getKind, isConversationEdge } from '../../domain';
 import { EmptyBody } from './PanelStates';
 
 /**
@@ -50,8 +50,10 @@ interface PeerGroup {
   /** Edge types, deduped by direction+type. */
   relations: {
     key: string;
-    label: string;
-    direction: 'outgoing' | 'incoming';
+    /** The verb phrase, read from this entity's side (`domain/edge-verbs`). */
+    verb: string;
+    /** Null when one peer holds the type BOTH ways and the two are one phrase. */
+    direction: 'outgoing' | 'incoming' | null;
     count: number;
     unresolvedHard: boolean;
     /**
@@ -97,6 +99,9 @@ function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] 
     for (const edge of group.edges) {
       // The far end of the edge relative to THIS entity.
       const peer = edge.source.id === selfId ? edge.target : edge.source;
+      // Messages posted on or from this entity are Discussion content; they
+      // are summarised by `conversationOf`, not drawn one row each.
+      if (isConversationEdge(group.type, group.direction, peer.kind)) continue;
       let entry = byPeer.get(peer.id);
       if (!entry) {
         entry = { peer, relations: [], unresolvedHard: false, latest: Number.NEGATIVE_INFINITY };
@@ -117,7 +122,7 @@ function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] 
       } else {
         entry.relations.push({
           key,
-          label: group.label,
+          verb: edgeVerb(group.type, group.direction),
           direction: group.direction,
           count: 1,
           unresolvedHard: hard,
@@ -128,12 +133,75 @@ function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] 
       entry.unresolvedHard ||= hard;
     }
   }
+  for (const entry of byPeer.values()) entry.relations = mergeBothWays(entry.relations);
   /* NEWEST FIRST — see `TIME IS THE ORDER` above `ConnectionsTab`. Ties keep
      first-appearance order, so edges written in one transaction (which share
      an instant to the microsecond) do not reshuffle between renders. */
   return [...byPeer.values()].sort(
     (a, b) => b.latest - a.latest || (seenAt.get(a.peer.id) ?? 0) - (seenAt.get(b.peer.id) ?? 0),
   );
+}
+
+/**
+ * ONE PHRASE FOR A TWO-WAY RELATION. A session that messaged a peer and heard
+ * back from it holds `messaged` in both directions; "Messaged · Heard from" is
+ * one conversation said twice. Only types whose verb row declares a `both`
+ * phrase merge — for the rest the two directions are different facts.
+ */
+function mergeBothWays(relations: PeerGroup['relations']): PeerGroup['relations'] {
+  const out: PeerGroup['relations'] = [];
+  for (const rel of relations) {
+    const type = rel.key.slice(rel.key.indexOf(':') + 1);
+    const both = edgeVerbBoth(type);
+    const twin = both
+      ? out.find((r) => r.direction !== null && r.direction !== rel.direction && r.key.endsWith(`:${type}`))
+      : undefined;
+    if (!both || !twin) {
+      out.push({ ...rel });
+      continue;
+    }
+    twin.key = `both:${type}`;
+    twin.verb = both;
+    twin.direction = null;
+    twin.count += rel.count;
+    twin.unresolvedHard ||= rel.unresolvedHard;
+    twin.since = olderOf(twin.since, rel.since);
+    twin.changed = newerOf(twin.changed, rel.changed);
+  }
+  return out;
+}
+
+/** The messages posted on or from this entity, as one summary. */
+interface Conversation {
+  /** Distinct messages. */
+  total: number;
+  /** Written from this entity (`authored_from`). */
+  sent: number;
+  /** Posted on this entity by someone else (`anchored_to` only). */
+  postedHere: number;
+  /** Newest instant across them, or null when none is dated. */
+  latest: string | null;
+}
+
+function conversationOf(groups: readonly EdgeGroup[], selfId: string): Conversation {
+  const authored = new Set<string>();
+  const anchored = new Set<string>();
+  let latest: string | null = null;
+  for (const group of groups) {
+    for (const edge of group.edges) {
+      const peer = edge.source.id === selfId ? edge.target : edge.source;
+      if (!isConversationEdge(group.type, group.direction, peer.kind)) continue;
+      (group.type === 'authored_from' ? authored : anchored).add(peer.id);
+      latest = newerOf(latest, edge.updatedAt ?? edge.createdAt);
+    }
+  }
+  const all = new Set([...authored, ...anchored]);
+  return {
+    total: all.size,
+    sent: authored.size,
+    postedHere: [...anchored].filter((id) => !authored.has(id)).length,
+    latest,
+  };
 }
 
 /**
@@ -255,6 +323,19 @@ function peerTitle(kind: string, title: string): string {
   return `${getKind(kind).label} · ${title}`;
 }
 
+/**
+ * The summary's detail clauses. Each is drawn only when it has something to
+ * say: a task has no messages "sent" from it, so it reads "7 messages · posted
+ * here" rather than "0 sent".
+ */
+function conversationParts(c: Conversation): string[] {
+  const parts: string[] = [];
+  if (c.sent > 0) parts.push(`${c.sent} sent from here`);
+  if (c.postedHere > 0) parts.push(c.sent > 0 ? `${c.postedHere} posted here` : 'posted here');
+  if (c.latest !== null) parts.push(`latest ${relTime(c.latest)}`);
+  return parts;
+}
+
 function ConnectionsViewSwitch({
   view,
   onChange,
@@ -335,10 +416,16 @@ export function ConnectionsTab({
   onOpenEntity,
   graph,
   launchContext,
+  onOpenDiscussion,
 }: {
   detail: EntityDetail;
   connections?: Connections;
   onOpenEntity?: (id: string) => void;
+  /**
+   * Switches the panel to its Discussion tab. Absent ⇒ the message summary is
+   * drawn without a button, rather than with one that does nothing.
+   */
+  onOpenDiscussion?: () => void;
   /** The ego-network canvas for THIS entity. Absent ⇒ no switch is drawn. */
   graph?: ReactNode;
   /**
@@ -353,9 +440,10 @@ export function ConnectionsTab({
     ...(connections?.incoming ?? detail.connections.incoming),
   ];
   const peers = groupByPeer(groups, detail.id);
+  const conversation = conversationOf(groups, detail.id);
   const parent = detail.hierarchy.parent;
   const children = detail.hierarchy.children.items;
-  const empty = !parent && children.length === 0 && peers.length === 0;
+  const empty = !parent && children.length === 0 && peers.length === 0 && conversation.total === 0;
 
   if (graph !== undefined && view === 'graph') {
     return (
@@ -416,6 +504,9 @@ export function ConnectionsTab({
                     <span className="pn-peers__day-label">{entry.dayLabel}</span>
                   </li>
                 ) : null}
+                {/* ONE LINE PER ROW: title · verbs · clock, on a grid, so a long
+                    title truncates instead of pushing its relations and its time
+                    onto a second line. The full title is on the chip's hover. */}
                 <li className="pn-peers__row">
                   <Chip
                     glyph={<KindIcon kind={entry.peer.kind} />}
@@ -428,7 +519,7 @@ export function ConnectionsTab({
                         : peerTitle(entry.peer.kind, entry.peer.title)
                     }
                   >
-                    {entry.peer.title}
+                    <span className="pn-peers__title">{entry.peer.title}</span>
                   </Chip>
                   <div className="pn-peers__rels">
                     {entry.relations.map((rel) => (
@@ -440,13 +531,13 @@ export function ConnectionsTab({
                         title={
                           rel.unresolvedHard
                             ? 'unresolved hard dependency'
-                            : `${rel.direction} · ${rel.label}${whenClause(rel.since, rel.changed)}`
+                            : `${rel.verb}${whenClause(rel.since, rel.changed)}`
                         }
                       >
-                        {/* Direction is part of the relation's meaning: "blocks"
-                            and "blocked by" are the same edge type read two ways. */}
-                        <span aria-hidden="true">{rel.direction === 'outgoing' ? '→' : '←'}</span>
-                        {rel.label}
+                        {/* The verb carries the direction ("Depends on" and
+                            "Needed by" are one edge type read from its two
+                            ends), so no arrow is drawn. */}
+                        {rel.verb}
                         {rel.count > 1 ? ` · ${rel.count}` : ''}
                       </span>
                     ))}
@@ -463,6 +554,32 @@ export function ConnectionsTab({
               </Fragment>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {conversation.total > 0 ? (
+        /* THE MESSAGES, AS ONE ROW. Every message posted on or from this entity
+           used to be a row of its own here — on a working session, most of the
+           list — repeating what the Discussion tab already shows in full. */
+        <section className="pn-section">
+          <div className="pn-convo" data-testid="pn-convo">
+            <span className="pn-convo__glyph" aria-hidden>
+              <KindIcon kind={CONVERSATION_KIND} />
+            </span>
+            <span className="pn-convo__text">
+              <span className="pn-convo__count">
+                {conversation.total === 1 ? '1 message' : `${conversation.total} messages`}
+              </span>
+              {conversationParts(conversation).map((part) => (
+                <span key={part}>{` · ${part}`}</span>
+              ))}
+            </span>
+            {onOpenDiscussion ? (
+              <button type="button" className="pn-convo__open" onClick={onOpenDiscussion}>
+                Open Discussion →
+              </button>
+            ) : null}
+          </div>
         </section>
       ) : null}
 
