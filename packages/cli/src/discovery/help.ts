@@ -53,7 +53,7 @@ import {
   type Versioning,
 } from './operations.js';
 import type { AvailabilityLedger } from './availability.js';
-import { matchReason, rank } from './search.js';
+import { matchIntent, matchReason, rank } from './search.js';
 
 export const CLI_VERSION = '0.1.0';
 
@@ -87,7 +87,13 @@ export interface RootHelp {
   cliVersion: string;
   grammarVersion: string;
   catalogDigest: string;
-  nouns: { name: string; summary: string; helpRef: string }[];
+  /**
+   * How every help ref is spelled, stated ONCE instead of per row: a noun is
+   * `tm8://help/<noun>`, a command `tm8://help/<noun>/<verb>`, an operation
+   * `tm8://help/operation/<OperationName>`.
+   */
+  helpRefs: string;
+  nouns: { name: string; summary: string }[];
   globalOptions: { option: string; summary: string }[];
   discovery: {
     noun: string;
@@ -101,13 +107,20 @@ export interface RootHelp {
   truncated?: Truncation;
 }
 
+/**
+ * One row of a noun shard. Fields that would repeat the SAME value on almost
+ * every row are omitted at their default and stated once on the shard
+ * (`defaults`): `exposure` appears only when it is not `public`, and
+ * `availability` only when it is not `unknown`. The per-row `helpRef` is gone
+ * because it is derivable (`helpRefs`). Measured: the noun shards shrink by
+ * roughly a third, and every fact survives.
+ */
 export interface NounCommandSummary {
   command: string;
   operations: readonly OperationName[];
-  exposure: Exposure;
   summary: string;
-  availability: Availability;
-  helpRef: string;
+  exposure?: Exposure;
+  availability?: Availability;
 }
 
 export interface NounHelp {
@@ -115,6 +128,9 @@ export interface NounHelp {
   catalogDigest: string;
   noun: string;
   summary: string;
+  /** The value an omitted per-row field has. */
+  defaults: { exposure: 'public'; availability: 'unknown' };
+  helpRefs: string;
   commands: NounCommandSummary[];
   /**
    * Operations in this noun with no public invocation. Listed rather than
@@ -126,7 +142,6 @@ export interface NounHelp {
     exposure: Exposure;
     reason: string | null;
     publicComposite: OperationName | null;
-    helpRef: string;
   }[];
   truncated?: Truncation;
 }
@@ -169,6 +184,8 @@ export interface SearchHelp {
     reason: string;
     availability: Availability;
     helpRef: string;
+    /** Present only on a routed closeout intent: the one-line invocation. */
+    example?: string;
   }[];
   truncated?: Truncation;
 }
@@ -240,13 +257,12 @@ const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--full', summary: 'render complete envelopes; defeats --terse; on write receipts prints the full result (state after a write: tm8 entity context <id>)' },
 ];
 
+/** Every help ref's spelling, stated once per shard instead of once per row. */
+export const HELP_REFS = 'tm8://help/<noun>[/<verb>] · tm8://help/operation/<OperationName>';
+
 export function rootHelp(opts: ShardOptions = {}): RootHelp {
   const cap = opts.cap ?? CAPS.root;
-  const nouns = PUBLIC_NOUNS.map((name) => ({
-    name,
-    summary: nounSummary(name),
-    helpRef: `tm8://help/${name}`,
-  }));
+  const nouns = PUBLIC_NOUNS.map((name) => ({ name, summary: nounSummary(name) }));
 
   return fit<RootHelp, (typeof nouns)[number]>(
     (items) => ({
@@ -254,6 +270,7 @@ export function rootHelp(opts: ShardOptions = {}): RootHelp {
       cliVersion: CLI_VERSION,
       grammarVersion: GRAMMAR_VERSION,
       catalogDigest: CATALOG_DIGEST,
+      helpRefs: HELP_REFS,
       nouns: items,
       globalOptions: GLOBAL_OPTIONS,
       discovery: {
@@ -278,13 +295,12 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
   if (!isNoun(noun)) return undefined;
   const cap = opts.cap ?? CAPS.noun;
 
-  const rows = commandsForNoun(noun, opts.from).map((c) => ({
+  const rows = commandsForNoun(noun, opts.from).map((c): NounCommandSummary => ({
     command: c.command,
     operations: c.operations,
-    exposure: c.exposure,
     summary: c.summary,
-    availability: c.availability,
-    helpRef: c.helpRef,
+    ...(c.exposure === 'public' ? {} : { exposure: c.exposure }),
+    ...(c.availability === 'unknown' ? {} : { availability: c.availability }),
   }));
 
   const commandless = commandlessForNoun(noun, opts.from).map((d) => ({
@@ -292,7 +308,6 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
     exposure: d.exposure,
     reason: d.reason,
     publicComposite: d.publicComposite,
-    helpRef: d.helpRef,
   }));
 
   return fit<NounHelp, NounCommandSummary>(
@@ -301,6 +316,8 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
       catalogDigest: CATALOG_DIGEST,
       noun,
       summary: nounSummary(noun),
+      defaults: { exposure: 'public', availability: 'unknown' },
+      helpRefs: HELP_REFS,
       commands: items,
       operationsWithoutCommand: commandless,
     }),
@@ -473,16 +490,45 @@ export function operationHelp(
   );
 }
 
+/**
+ * A closeout intent (see `INTENT_ROUTES`) resolved against THIS projection:
+ * the first candidate command that exists, ranked first with its example.
+ */
+function routedMatch(query: string, from?: AvailabilityLedger): SearchHelp['matches'][number] | undefined {
+  const route = matchIntent(query);
+  if (route === undefined) return undefined;
+  for (const candidate of route.candidates) {
+    const found = commandDiscovery(candidate.path, from);
+    if (found === undefined) continue;
+    return {
+      command: found.command,
+      operation: found.operations[0] as OperationName,
+      reason: `intent: ${route.intent} — ${found.summary.toLowerCase()}`,
+      availability: found.availability,
+      helpRef: `tm8://help/${candidate.path.join('/')}`,
+      example: candidate.example,
+    };
+  }
+  return undefined;
+}
+
 export function searchHelp(query: string, opts: ShardOptions = {}): SearchHelp {
   const cap = opts.cap ?? CAPS.search;
+  const routed = routedMatch(query, opts.from);
   const scored = rank(query, discovery(opts.from), MAX_MATCHES);
-  const matches = scored.map((s) => ({
-    command: s.row.command === null ? null : s.row.command.join(' '),
-    operation: s.row.operation,
-    reason: matchReason(s),
-    availability: s.row.availability,
-    helpRef: s.row.helpRef,
-  }));
+  const matches: SearchHelp['matches'] = routed === undefined ? [] : [routed];
+  for (const s of scored) {
+    if (matches.length >= MAX_MATCHES) break;
+    const command = s.row.command === null ? null : s.row.command.join(' ');
+    if (routed !== undefined && command === routed.command) continue;
+    matches.push({
+      command,
+      operation: s.row.operation,
+      reason: matchReason(s),
+      availability: s.row.availability,
+      helpRef: s.row.helpRef,
+    });
+  }
 
   return fit<SearchHelp, (typeof matches)[number]>(
     (items) => ({
