@@ -34,10 +34,8 @@ import {
   assertWithinBudget,
   COORDINATOR_KINDS,
   DEFAULT_PROMPT_VERSION,
-  PROMPT_VERSIONS,
   utf8Bytes,
   type CoordinatorKind,
-  type PromptVersion,
 } from '@tm8/prompt';
 
 export const MANIFEST_VERSION = '2';
@@ -176,9 +174,10 @@ export interface BootstrapManifestV2 {
   /**
    * Which prompt frame the session boots with (spec ca8d §6.3) — the tag that
    * splits journals and metrics by version. Not the document shape; that is
-   * `manifestVersion`.
+   * `manifestVersion`. Typed `string`, not `PromptVersion`: a CLI older than
+   * the frame it is handed must still read the manifest, not drop it.
    */
-  promptVersion: PromptVersion;
+  promptVersion: string;
   server: BootstrapServer;
   /** Exactly one field. There is no value field to accidentally populate. */
   credential: { bearerEnv: string };
@@ -205,7 +204,7 @@ export interface BootstrapManifestInput {
    * Defaults to `DEFAULT_PROMPT_VERSION`. Accepted rather than always derived
    * so a manifest read back from disk keeps the frame it was stamped with.
    */
-  promptVersion?: PromptVersion;
+  promptVersion?: string;
 }
 
 const INPUT_KEYS: readonly string[] = [
@@ -313,10 +312,11 @@ export function composeBootstrapManifest(input: BootstrapManifestInput): Bootstr
   }
   const taskIds = (taskIdsRaw ?? []).map((id, i) => str(`assignment.taskIds[${i}]`, id));
 
+  // Any non-empty tag, not only the ones this build knows: an unknown value is
+  // a NEWER frame, and refusing it would make parseBootstrapManifest drop a
+  // valid v2 manifest onto the v1 path.
   const promptVersion =
-    raw.promptVersion === undefined
-      ? DEFAULT_PROMPT_VERSION
-      : oneOf('promptVersion', raw.promptVersion, PROMPT_VERSIONS);
+    raw.promptVersion === undefined ? DEFAULT_PROMPT_VERSION : str('promptVersion', raw.promptVersion);
 
   return {
     manifestVersion: MANIFEST_VERSION,
@@ -422,7 +422,7 @@ export function parseBootstrapManifest(raw: unknown): BootstrapManifestV2 | null
       interactionProfile: raw.interactionProfile as unknown as BootstrapInteractionProfile,
       assignment: assignment as unknown as BootstrapManifestInput['assignment'],
       routing: raw.routing as unknown as BootstrapRouting,
-      ...(raw.promptVersion === undefined ? {} : { promptVersion: raw.promptVersion as PromptVersion }),
+      ...(raw.promptVersion === undefined ? {} : { promptVersion: raw.promptVersion as string }),
     });
   } catch {
     // A file claiming version 2 that does not validate is not a v2 manifest.

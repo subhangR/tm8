@@ -79,9 +79,12 @@ describe('shape', () => {
     expect(manifest.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
     expect(manifest.promptVersion).toBe('1');
     expect(parseBootstrapManifest(JSON.parse(JSON.stringify(manifest)))?.promptVersion).toBe('1');
-    expect(() => composeBootstrapManifest({ ...INPUT, promptVersion: '9' as never })).toThrow(
+    expect(() => composeBootstrapManifest({ ...INPUT, promptVersion: '' })).toThrow(
       InvalidBootstrapManifestError,
     );
+    // A frame newer than this build is still read, never dropped to the v1 path.
+    const newer = JSON.parse(JSON.stringify({ ...manifest, promptVersion: '2.0' }));
+    expect(parseBootstrapManifest(newer)?.promptVersion).toBe('2.0');
   });
 
   it('pins manifestVersion 2 and grammarVersion 2', () => {
