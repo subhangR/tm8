@@ -464,7 +464,15 @@ export function spineChanges(a: Accumulator): string[] {
     const prev = rows[i - 1];
     if (prev === undefined) {
       if (row.version === 1) return;
-      if (a.statusVerb && row.category !== null) {
+      // A status move writes the spine row (status only, version unchanged)
+      // and, in the same transaction, the detail snapshot's version bump. A
+      // content edit writes only the bump. So a first row followed in its own
+      // transaction by `version + 1` moved status — read from the window, not
+      // looked up. Its `from` is outside the window and is not named.
+      const next = rows[1];
+      const sameTxBump = next !== undefined && next.at === row.at
+        && row.version !== null && next.version === row.version + 1;
+      if ((a.statusVerb || sameTxBump) && row.category !== null) {
         out.push(`status:${row.category}`);
         statusSeen = true;
         statusTx.add(row.at);
@@ -822,7 +830,8 @@ export class PgChangeFeed {
     const ended = new Map<string, string>();
     if (sessionIds.length > 0) {
       const rows = await q.query<{ entity_id: string; ended_at: Date | string | null }>(
-        'select entity_id, ended_at from public.work_sessions where entity_id = any($1::uuid[])',
+        `select entity_id::text entity_id, coalesce(exited_at, status_changed_at) ended_at
+           from public.work_sessions where entity_id = any($1::uuid[])`,
         [sessionIds],
       );
       for (const r of rows) if (r.ended_at !== null) ended.set(r.entity_id, new Date(r.ended_at).toISOString());
@@ -832,7 +841,9 @@ export class PgChangeFeed {
     const needCursor: Array<{ entry: EventChangeEntry; anchorKind: string; lastShown: string }> = [];
     for (const a of candidates) {
       const s = summaries.get(a.id);
-      if (s === undefined) continue;
+      // Gone or unreadable now: omitted (a NAMED hard delete is reported
+      // separately). A message never stands alone — it rolls up under its anchor.
+      if (s === undefined || s.kind === 'message') continue;
       let changes = a.changes;
       const state = s.state as { kind: string; status?: string; endedKind?: string | null; endedReason?: string | null };
       if (s.kind === 'work_session' && (state.status === 'exited' || state.status === 'failed')) {

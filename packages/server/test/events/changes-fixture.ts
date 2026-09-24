@@ -142,6 +142,11 @@ export class ChangesFixture {
     ]);
   }
 
+  /** `done` is not a work_status edit — completion goes through `complete_task`. */
+  async complete(id: string): Promise<void> {
+    await this.db.rpc(this.claims(), 'public.complete_task', [id, await this.version(id), '{}', this.memberId, cmid()]);
+  }
+
   async post(anchorId: string, body: string, mentions: unknown[] = []): Promise<string> {
     const r = await this.db.asOwner((q) => q.rpc<CommandResult>('public.post_message', [
       anchorId, body, this.memberId, null, JSON.stringify(mentions), '[]', cmid(),
@@ -167,6 +172,34 @@ export class ChangesFixture {
     const rows = await this.db.asOwner((q) => q.query<{ id: string }>(
       `select ed.dst_id::text id from public.edges ed join public.entities d on d.id = ed.dst_id
         where ed.src_id = $1 and ed.type = 'tracks' and d.kind = 'pull_request'`, [taskId]));
+    return rows[0]!.id;
+  }
+
+  /** A work session as the product makes one: envelope, then a `spawning` detail row (owner SQL). */
+  async createSession(title: string): Promise<string> {
+    return this.db.asOwner(async (q) => {
+      const rows = await q.query<{ id: string }>(
+        `insert into public.entities(space_id,kind,parent_id,position,created_by)
+         values($1,'work_session',null,0,$2) returning id::text id`,
+        [this.spaceId, this.memberId],
+      );
+      const id = rows[0]!.id;
+      await q.query(`insert into public.work_sessions(entity_id,title,status) values($1,$2,'spawning')`, [id, title]);
+      return id;
+    });
+  }
+
+  async transition(sessionId: string, status: string, endedKind: string | null = null, reason: string | null = null): Promise<void> {
+    await this.db.tx(this.claims(), (q) =>
+      q.query('select public.work_session_transition($1,$2,null,null,null,$3,$4,$5)', [
+        sessionId, status, cmid(), endedKind, reason,
+      ]));
+  }
+
+  async channelId(): Promise<string> {
+    const rows = await this.db.asOwner((q) => q.query<{ id: string }>(
+      `select id::text id from public.entities where space_id = $1 and kind = 'channel' order by created_at limit 1`,
+      [this.spaceId]));
     return rows[0]!.id;
   }
 
