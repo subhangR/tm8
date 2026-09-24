@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(218); // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(SURFACE).toHaveLength(219); // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(218); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(rows).toHaveLength(219); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(218); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); +1 launch.suggest (Jev lane F). MEASURED.
+    expect(new Set(rows.map((r) => r.op)).size).toBe(219); // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED.
   });
 
   /**
@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(189);
+    expect(server.appliedMigrations.length).toBe(190); // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

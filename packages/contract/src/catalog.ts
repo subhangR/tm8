@@ -230,6 +230,9 @@ export const OPERATIONS = [
   // events — one socket (T-L10/04 §2.3) + polling catch-up fallback
   { name: 'events.subscribe',        method: 'WS',     path: '/v2/ws',                                      kind: 'stream',  status: 'v1' },
   { name: 'events.poll',             method: 'GET',    path: '/v2/spaces/:spaceId/events',                  kind: 'read',    status: 'v1' },
+  // The scoped change feed (spec doc 01a0cf35): "did anything I care about
+  // change since seq N?" answered as a per-entity digest, not a replay.
+  { name: 'events.changes',          method: 'GET',    path: '/v2/spaces/:spaceId/events/changes',          kind: 'read',    status: 'v1' },
   { name: 'presence.get',            method: 'GET',    path: '/v2/entities/:id/presence',                   kind: 'read',    status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)

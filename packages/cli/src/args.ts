@@ -80,6 +80,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'ready',               // entity query --ready
   'unread',              // inbox list --unread
   'until-match',         // event watch --until-match
+  'events',              // event changes --events — thin rows instead of the digest
   'overwrite',           // file download --overwrite
   'force',               // session terminate --force
   'grant-only',          // session attach --grant-only

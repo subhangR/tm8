@@ -122,6 +122,20 @@ export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
   'git.worktree_status_changed',
 ]);
 
+/**
+ * The event types the capture trigger (003/165) writes, each with an arm in
+ * `bodyOf`. Together with `RPC_AUTHORED_PASSTHROUGH` this is every type the
+ * mapper projects; subject-set.ts must classify each one.
+ */
+export const CAPTURED_EVENT_TYPES: readonly string[] = Object.freeze([
+  'entity.upsert', 'entity.deleted', 'entity.activity_touched',
+  'edge.upsert', 'edge.deleted',
+  'message.created', 'message.updated', 'message.deleted',
+  'counter.changed',
+  'activity.created',
+  'notification.created', 'notification.read',
+]);
+
 function str(v: unknown): string | null {
   return typeof v === 'string' && v !== '' ? v : null;
 }
