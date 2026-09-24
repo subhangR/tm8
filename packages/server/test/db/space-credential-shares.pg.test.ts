@@ -419,6 +419,35 @@ describe('sc8-5 — lifecycle: each revokes, and only sessions on that share are
     await store.revoke(claims(OWN), spaceKey.id);
   });
 
+  it('MF2 (iii): an un-share kills only that share’s sessions; an admin removal likewise', async () => {
+    await connectToken(A);
+    await connectToken(C);
+    const sharedByA = await share(A);
+    const sharedByC = await share(C);
+    const onA = await session('S');
+    await launchOn(claims(B), onA, { github: sharedByA.id });
+    const onC = await session('S');
+    await launchOn(claims(B), onC, { github: sharedByC.id });
+
+    const terminals = fakeTerminals();
+    const killing = new SpaceCredentialCatalogService({
+      db,
+      store,
+      probe: { probe: async () => ({ ok: true }) } as never,
+      terminals: { terminate: () => 'killed', hasLiveTerminal: () => false } as never,
+      agentSessions: terminals,
+      env: {},
+    });
+    const unshared = await killing.delete(claims(A), sharedByA.id);
+    expect(terminals.asked).toEqual([onA]);
+    expect(unshared.terminatedAgentSessionIds).toEqual([onA]);
+    expect((await row(sharedByC.id)).status).toBe('active');
+
+    const removed = await killing.delete(claims(OWN), sharedByC.id);
+    expect(terminals.asked).toEqual([onA, onC]);
+    expect(removed.terminatedAgentSessionIds).toEqual([onC]);
+  });
+
   it('a session that ended is not asked; a retry after the trigger revoked still finds the live one', async () => {
     await connectToken(A);
     const shared = await share(A);
