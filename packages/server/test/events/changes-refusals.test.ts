@@ -27,7 +27,11 @@ describe('events.changes refusals', () => {
 
   it('leave the closed error-code set exactly as it was', () => {
     expect(Object.keys(ERROR_STATUS).sort()).toEqual([
-      'conflict', 'context_budget_too_small', 'forbidden', 'invalid_cursor', 'invalid_input',
+      'conflict', 'context_budget_too_small', 'forbidden',
+      // Forms W1 (#734) added these five; #733's pin predates them on main.
+      'form_answers_invalid', 'form_not_open', 'form_respondent_not_allowed', 'form_response_limit',
+      'form_structure_frozen',
+      'invalid_cursor', 'invalid_input',
       'invariant_violation', 'limit_exceeded', 'not_found', 'not_implemented', 'payload_too_large',
       'rate_limited', 'unauthenticated', 'upstream_unavailable', 'version_conflict',
     ]);
