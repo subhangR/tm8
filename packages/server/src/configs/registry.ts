@@ -27,7 +27,7 @@
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
 import { LANE_BUNDLED_SKILLS_OFF, MINIMAL_MCP_CONFIG } from '@tm8/execution';
-import { BYTE_BUDGETS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
+import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
 
 import { LINKED_ROW_CAP } from '../facade/execution-handlers.js';
 import {
@@ -242,6 +242,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
 export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Hard byte ceilings on every prompt tm8 injects. A profile may choose smaller, never larger.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
+  { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
   { name: 'TEAMMATE_FIT_SCORE', group: 'Jev selection', summary: 'A teammate scoring at least this "fits" the work.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TEAMMATE_FIT_SCORE },
   { name: 'TICK_SCORE', group: 'Jev selection', summary: 'A memory or skill at or above this is pre-ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TICK_SCORE },

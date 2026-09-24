@@ -1182,12 +1182,13 @@ export function launchContextFacts(manifest: Record<string, unknown> | null): Ma
 /**
  * The harness a launch ran with, for the LAUNCH CONTEXT section.
  *
- * Plugins come from the best record the manifest has: `launch.harness.plugins`
- * (what the harness actually allowed and denied, written since #731), else the
- * launch-time pick (`launch.harnessChoice`), else the teammate's declared
- * `capabilities.launch`. `recorded` is true only in the first case, so the
- * surface can label anything else as declared. MCP servers are the declared
- * ones; plugins a lane gets from its equipment appear only in the record.
+ * Each row shows the best record the manifest has. `launch.harness` is what
+ * the lane actually ran with: `plugins` since #731, and `surface`,
+ * `mcpServers` and `skillOverrides` since I2. Next comes the launch-time pick
+ * (`launch.harnessChoice`), then the teammate's declared `capabilities.launch`.
+ * A row that is not recorded names its source, `(picked)` or `(declared)`, so
+ * the strip never passes a declaration off as what ran. `recorded` is true
+ * only when every row came from the record.
  */
 export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
   facts: ManifestFact[];
@@ -1196,15 +1197,28 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
   const launch = readObject(manifest, 'launch');
   const declared = readObject(readObject(readObject(manifest, 'agent'), 'capabilities'), 'launch');
   const choice = readObject(launch, 'harnessChoice');
-  const record = readObject(readObject(launch, 'harness'), 'plugins');
+  const harness = readObject(launch, 'harness');
+  const record = readObject(harness, 'plugins');
   const effective = readObject(manifest, 'effectiveSkills');
   const facts: ManifestFact[] = [];
   const list = (items: string[]) => (items.length > 0 ? items.join(', ') : 'none');
   const strings = (items: unknown[]) => items.filter((p): p is string => typeof p === 'string');
+  const recordedSurface = readText(harness, 'surface');
+  let recorded = false;
   // Only a Claude lane has a harness surface (`harness-surface.ts`).
   if (readText(launch, 'tool')?.startsWith('claude')) {
-    const surface = readText(choice, 'surface') ?? readText(declared, 'harnessSurface');
-    facts.push({ label: 'Harness surface', value: surface ?? 'minimal (default)', mono: true });
+    const pickedSurface = readText(choice, 'surface');
+    const declaredSurface = readText(declared, 'harnessSurface');
+    const surface = recordedSurface ?? pickedSurface ?? declaredSurface;
+    facts.push({
+      label: 'Harness surface',
+      value: recordedSurface !== null
+        ? joinParts([recordedSurface, bracket(readText(harness, 'surfaceSource'))], ' ')
+        : pickedSurface !== null ? `${pickedSurface} (picked)`
+          : declaredSurface !== null ? `${declaredSurface} (declared)`
+            : 'minimal (default)',
+      mono: true,
+    });
     if (record !== null) {
       const allowed = readArray(record, 'allowed').flatMap((item) => {
         const id = readText(asObject(item), 'id');
@@ -1224,15 +1238,32 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
       const picked = Array.isArray(choice?.plugins);
       facts.push({
         label: 'Plugins',
-        value: list(strings(readArray(picked ? choice : declared, 'plugins'))),
+        value: `${list(strings(readArray(picked ? choice : declared, 'plugins')))} (${picked ? 'picked' : 'declared'})`,
         mono: true,
       });
     }
-    facts.push(
-      { label: 'MCP servers', value: list(Object.keys(readObject(declared, 'mcpServers') ?? {})), mono: true },
-      // A minimal lane switches off the bundled skills lanes never use.
-      { label: 'Bundled skills', value: surface === 'inherit' ? 'all' : 'trimmed', mono: false },
-    );
+    // Under `inherit` the lane strips nothing, so its record has no MCP or
+    // skill-override rows: every connector and bundled skill is on.
+    const inheritRecorded = recordedSurface === 'inherit';
+    const mcpRecord = Array.isArray(harness?.mcpServers) ? readArray(harness, 'mcpServers') : null;
+    facts.push({
+      label: 'MCP servers',
+      value: inheritRecorded ? 'all'
+        : mcpRecord !== null
+          ? list(mcpRecord.flatMap((item) => readText(asObject(item), 'name') ?? []))
+          : `${list(Object.keys(readObject(declared, 'mcpServers') ?? {}))} (declared)`,
+      mono: true,
+    });
+    const overrides = readObject(harness, 'skillOverrides');
+    // A minimal lane switches off the bundled skills lanes never use.
+    facts.push({
+      label: 'Bundled skills',
+      value: inheritRecorded ? 'all'
+        : overrides !== null ? `trimmed (${readArray(overrides, 'off').length} off)`
+          : `${surface === 'inherit' ? 'all' : 'trimmed'} (declared)`,
+      mono: false,
+    });
+    recorded = recordedSurface !== null && record !== null;
   }
   if (effective !== null) {
     facts.push(
@@ -1240,7 +1271,7 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
       { label: 'Indexed skills', value: String(readArray(effective, 'indexed').length), mono: true },
     );
   }
-  return { facts, recorded: record !== null };
+  return { facts, recorded };
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
