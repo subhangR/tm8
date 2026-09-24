@@ -48,12 +48,12 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // +1 launch.suggest (Jev lane F, 2026-09-23): one mounted v1 POST, so all four move. MEASURED.
         // Jev lane K: +3 credentials.serviceKeys.* rows. MEASURED.
         // SC-3: +10 credentials.space.* / node.credentials.* rows, all mounted v1 HTTP. MEASURED.
-        total: 238, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
-        v1: 236, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        total: 240, /* +2 SC-8 share ops. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        v1: 238, /* +2 SC-8. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         reserved: 2,
-        http: 236, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        http: 238, /* +2 SC-8. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         ws: 1,
-        registerableV1Http: 234, /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        registerableV1Http: 236, /* +2 SC-8. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
