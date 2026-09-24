@@ -823,6 +823,23 @@ describe('S3 the v2 DTO', () => {
 // ===========================================================================
 
 describe('S4 body ceiling and caller budget', () => {
+  it('records minimumBytes per fixture: 1024 either fits or is the 422 with a minimum above it (S4)', async () => {
+    const rows: string[] = [];
+    for (const fixture of FIXTURES) {
+      try {
+        const fits = await v2(fixture.id, 'totalBytes=1024');
+        expect(fits.bytes, fixture.name).toBeLessThanOrEqual(1024);
+        rows.push(`| ${fixture.name} | fits (${fits.bytes}) | — |`);
+      } catch (caught) {
+        const error = caught as { code?: string; details?: Record<string, unknown> };
+        expect(error.code, fixture.name).toBe('context_budget_too_small');
+        expect(error.details!['minimumBytes'] as number, fixture.name).toBeGreaterThan(1024);
+        rows.push(`| ${fixture.name} | ${String(error.details!['minimumBytes'])} | ${String(error.details!['next'] ?? '—')} |`);
+      }
+    }
+    console.log(['', '[context-v2 S4] minimumBytes per fixture', '| fixture | minimumBytes | next |', '|---|---|---|', ...rows, ''].join('\n'));
+  });
+
   it('[c904 §5.2 · c761 §10.3] a body over the ceiling is cut with complete:false and reassembles byte-identically, multi-byte included (S4)', async () => {
     for (const fixture of LARGE_BODIES) {
       const first = await v2(fixture.id);
