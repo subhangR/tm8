@@ -285,6 +285,13 @@ describe('v2 section pages (S3b)', () => {
     expect(EntityContextV2ViewSchema.safeParse(tracks.view).success).toBe(true);
   });
 
+  it('an unknown --edge-type is invalid_input naming the valid types, not an empty page', async () => {
+    const err = await v2(F.G, 'sections=connections&edgeType=working_onn').then(() => null, (e: unknown) => e);
+    expect(err).toMatchObject({ code: 'invalid_input', details: { reason: 'unknown_edge_type', field: 'edgeType' } });
+    const valid = (err as { details: { validTypes: string[] } }).details.validTypes;
+    expect(valid).toEqual(expect.arrayContaining(['depends_on', 'tracks', 'working_on']));
+  });
+
   it('a cursor is bound to its entity, section and filter, and is refused before any SQL', async () => {
     const full = await v2(F.P);
     const trimmed = await v2(F.P, `totalBytes=${full.bytes - 600}`);

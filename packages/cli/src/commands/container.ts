@@ -386,7 +386,7 @@ function requireExpectVersion(command: string, cmd: CommandContext): number {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
     throw new CliError(`\`tm8 ${command}\` requires --expect-version <n>`, EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <container-id>`',
+      hint: 'read the current version with `tm8 entity context <container-id>` (its first line)',
     });
   }
   if (expectedVersion < 0) {

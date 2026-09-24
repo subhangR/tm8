@@ -2481,7 +2481,9 @@ export const GrantPointsInputSchema: z.ZodType<GrantPointsInput> = z.object({
 export const CompleteTaskInputSchema: z.ZodType<CompleteTaskInput> = z.object({
   ...commandContextShape,
   expectedVersion: z.number().finite(),
-  completerIds: z.array(EntityIdSchema).min(1),
+  // a uuid, checked here: a non-uuid reached SQL and came back as not_found
+  // quoting raw Postgres text, which reads as "the TASK is missing".
+  completerIds: z.array(z.string().uuid({ message: 'completerIds (--by) must be actor ids (uuids)' })).min(1),
 }).strict();
 
 export const PullInputSchema: z.ZodType<PullInput> = z.object({
