@@ -41,7 +41,8 @@ import {
   type BootstrapControlFacts,
   type CoordinatorKind,
 } from './templates.js';
-import { DEFAULT_PROMPT_VERSION } from './prompt-version.js';
+import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
+import { composeWorkerPromptV2, type TaskContextSnapshot } from './worker-v2.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -53,6 +54,7 @@ export * from './escape.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
+export * from './worker-v2.js';
 
 export type AgentMode =
   | 'worker'
@@ -166,6 +168,17 @@ export interface PromptRuntime {
   /** Wins over the manifest — it is what the PTY actually set. */
   sessionId?: string | undefined;
   baseUrl?: string | undefined;
+  /**
+   * v2 only: the primary task's `tm8.entity-context.v2` DTO, rendered by the
+   * server at delivery time as the spawned actor. Absent means the v2 header
+   * degrades to "run `tm8 entity context` first" (spec ca8d §2.3).
+   */
+  taskContext?: TaskContextSnapshot | undefined;
+  /**
+   * v2 only: the session cwd holds `graphify-out/merged-graph.json`. The
+   * caller checks the disk; this package has no `fs` (Q9).
+   */
+  codeGraph?: boolean | undefined;
 }
 
 export interface PromptEnvelope {
@@ -452,7 +465,9 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'do not re-check it by grepping: it is an AST index of the same files, not a ' +
   'guess. One or two queries settle a structural question; if three have not, ' +
   'the question is not structural. Read the files themselves when you need to ' +
-  'understand or change code — the graph answers structure, not intent.';
+  'understand or change code — the graph answers structure, not intent. ' +
+  'Then read the range you need (`sed -n X,Yp`, Read offset/limit), not the ' +
+  'whole file: every result is re-sent on each later turn.';
 
 /**
  * Codex's legacy read-only sandbox cannot enable command networking. A tm8
@@ -464,6 +479,10 @@ export const CODEX_PLAN_AUTHORIZATION_INSTRUCTION =
   'workspace source files. Codex uses the workspace-write sandbox only so commands ' +
   'can reach the loopback tm8 graph API through its proxy; that transport capability ' +
   'does not grant source-editing authority.';
+
+export const PLAN_AUTHORIZATION_INSTRUCTION =
+  'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete ' +
+  'workspace source files.';
 
 export const NO_TASK_NOTE_V1 =
   'No task is attached to this session. Wait for instructions rather ' +
@@ -828,6 +847,27 @@ export function composePrompt(
     throw new Error(`${mode} prompt requires a coordinator session id`);
   }
 
+  const planAuthorization =
+    manifest.launch?.accessMode === 'plan'
+      ? manifest.launch.tool === 'codex'
+        ? CODEX_PLAN_AUTHORIZATION_INSTRUCTION
+        : PLAN_AUTHORIZATION_INSTRUCTION
+      : null;
+
+  // The v2.0 worker frame (spec ca8d). Selected by the stamp alone, and only
+  // for the modes it covers: a stamp on any other mode renders v1 rather than
+  // a frame nobody specified for it.
+  if (promptVersion === PROMPT_VERSION_V2 && PROMPT_V2_MODES.includes(mode)) {
+    return composeWorkerPromptV2(manifest, runtime, {
+      mode,
+      sessionId,
+      spaceId,
+      coordinatorSessionId,
+      planAuthorization,
+      noTaskNote: NO_TASK_NOTE_V2,
+    });
+  }
+
   // ---- system (v1 manifest) ----------------------------------------------
   const s: string[] = [];
   s.push(`<tm8_system_prompt version="${FRAME_VERSION}" mode="${esc(mode)}">`);
@@ -877,15 +917,9 @@ export function composePrompt(
   if (workingDir) s.push(`    <working_dir>${esc(workingDir)}</working_dir>`);
   s.push('  </session_context>');
 
-  if (manifest.launch?.accessMode === 'plan') {
+  if (planAuthorization) {
     s.push('  <authorization access_mode="plan">');
-    s.push(
-      `    <instruction>${
-        manifest.launch.tool === 'codex'
-          ? CODEX_PLAN_AUTHORIZATION_INSTRUCTION
-          : 'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete workspace source files.'
-      }</instruction>`,
-    );
+    s.push(`    <instruction>${planAuthorization}</instruction>`);
     s.push('  </authorization>');
   }
 

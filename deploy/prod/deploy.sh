@@ -343,8 +343,9 @@ missing=()
 for d in "$SRC"/packages/*/ "$SRC"/tools/*/; do
   [[ -f "$d/package.json" ]] || continue
   [[ -d "$d/node_modules" ]] && continue
-  # A package that declares no deps (packages/pty-protocol) never gets a
-  # node_modules from bun, and step 3 skips it for the same reason. Counting it
+  # A package that declares no deps never gets a node_modules from bun, and
+  # step 3 skips it for the same reason. (None does today; pty-protocol did
+  # until it declared its vitest/typescript devDependencies.) Counting it
   # as missing re-ran `bun install` on EVERY deploy and trained the eye to
   # ignore this warning — which is the one that catches a real partial install.
   if "$TM8_NODE_BIN" -e '

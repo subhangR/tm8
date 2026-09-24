@@ -36,8 +36,17 @@ import {
 // two hand-maintained spellings of one fact and could disagree in silence —
 // which is what happened: both said "yet", and fixing either alone would have
 // left help contradicting itself on adjacent lines.
-import { NOUNS, UNBOUND_MARKER, isCommandPath, isNoun } from '../discovery/operations.js';
+import {
+  NOUNS,
+  UNBOUND_MARKER,
+  discovery,
+  isCommandPath,
+  isNoun,
+  lookupOperation,
+} from '../discovery/operations.js';
+import { closest } from '../discovery/search.js';
 import { isOperationName } from '@tm8/contract';
+import { isAgentCaller } from '../wire-schema.js';
 
 const pad = (s: string, n: number): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
 
@@ -91,7 +100,7 @@ function renderNoun(dto: NounHelp): string {
     for (const c of dto.commands) {
       lines.push(
         `  ${pad(c.command, width)}  ${c.summary}`,
-        `  ${pad('', width)}  ${availabilityLabel(c.availability, null)}`,
+        `  ${pad('', width)}  ${availabilityLabel(c.availability ?? dto.defaults.availability, null)}`,
       );
     }
   }
@@ -165,6 +174,7 @@ function renderSearch(dto: SearchHelp): string {
     lines.push(
       `  ${m.command ?? `(no cli command) ${m.operation}`}  ${availabilityLabel(m.availability, null)}`,
       `    ${m.reason}`,
+      ...(m.example === undefined ? [] : [`    e.g. ${m.example}`]),
       `    ${m.command ? `tm8 help ${m.command}` : `tm8 help --operation ${m.operation}`}`,
       '',
     );
@@ -174,12 +184,50 @@ function renderSearch(dto: SearchHelp): string {
   return lines.join('\n');
 }
 
+/**
+ * Help json is read by agents far more than by people, and indentation is
+ * paid for and read by nobody — the same rule `action list` applies.
+ */
+function compact(): { minify: boolean } {
+  return { minify: isAgentCaller() };
+}
+
+/** Words an agent puts in front of an operation id: `help operation entities.patch`. */
+const OPERATION_PREFIXES: ReadonlySet<string> = new Set(['operation', 'operations', 'op', 'schema', 'schemas']);
+
+/**
+ * An operation id as a help TOPIC resolves to the command that OWNS it —
+ * `tm8 help entities.patch` is `tm8 help entity update` — because the command
+ * shard is what a caller acts on. A commandless operation gets its operation
+ * shard, which names the owner instead of fabricating an invocation.
+ */
+function emitOperationTopic(operation: string, out: Output): ExitCode | undefined {
+  const row = lookupOperation(operation);
+  if (row === undefined) return undefined;
+  if (row.command !== null && isCommandPath(row.command)) return emitCommandHelp(row.command, out);
+  const shard = operationHelp(row.operation);
+  /* c8 ignore next */
+  if (shard === undefined) return undefined;
+  out.data(shard, renderCommand, compact());
+  return EXIT_OK;
+}
+
+/** `tm8 help <command> …` pointers for the closest rows, or the empty string. */
+function suggestionsFor(topic: string): string {
+  const rows = closest(topic, discovery(), 3);
+  if (rows.length === 0) return '';
+  const refs = rows.map((r) =>
+    r.command === null ? `tm8 help --operation ${r.operation}` : `tm8 help ${r.command.join(' ')} (${r.operation})`,
+  );
+  return `closest: ${refs.join('; ')}`;
+}
+
 /** `tm8 <command> --help` — the shared renderer, so both routes agree exactly. */
 export function emitCommandHelp(path: readonly string[], out: Output): ExitCode {
   const shard = commandHelp(path);
   /* c8 ignore next */
   if (shard === undefined) throw new CliError(`no help for \`tm8 ${path.join(' ')}\``, EXIT_USAGE);
-  out.data(shard, renderCommand);
+  out.data(shard, renderCommand, compact());
   return EXIT_OK;
 }
 
@@ -194,18 +242,18 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
     const shard = operationHelp(operation);
     /* c8 ignore next */
     if (shard === undefined) throw new CliError(`no help for operation ${operation}`, EXIT_USAGE);
-    out.data(shard, renderCommand);
+    out.data(shard, renderCommand, compact());
     return EXIT_OK;
   }
 
   const query = options.value('query');
   if (query !== undefined) {
-    out.data(searchHelp(query), renderSearch);
+    out.data(searchHelp(query), renderSearch, compact());
     return EXIT_OK;
   }
 
   if (args.length === 0) {
-    out.data(rootHelp(), renderRoot);
+    out.data(rootHelp(), renderRoot, compact());
     return EXIT_OK;
   }
 
@@ -221,6 +269,21 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
   for (let n = Math.min(3, tokens.length); n >= 2; n--) {
     const path = tokens.slice(0, n);
     if (isCommandPath(path)) return emitCommandHelp(path, out);
+  }
+
+  // An operation id, bare or behind `operation`/`schema`: resolve, never refuse.
+  const first = (tokens[0] ?? '').toLowerCase();
+  const opTopic = OPERATION_PREFIXES.has(first) ? tokens[1] : tokens[0];
+  if (opTopic !== undefined && tokens.length <= 2 && isOperationName(opTopic)) {
+    const code = emitOperationTopic(opTopic, out);
+    if (code !== undefined) return code;
+  }
+  if (OPERATION_PREFIXES.has(first) && tokens.length === 1) {
+    throw new CliError(`\`${first}\` needs an operation or command to describe`, EXIT_USAGE, {
+      hint:
+        'input/output schema refs are in every command shard: `tm8 help <noun> <verb>`, or ' +
+        '`tm8 help --operation <OperationName>` / `tm8 help <OperationName>` (e.g. `tm8 help entities.patch`)',
+    });
   }
 
   const noun = tokens[0] as string;
@@ -241,15 +304,19 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
       const verbs = shard.commands.map((c) =>
         c.command.startsWith(`${noun} `) ? c.command.slice(noun.length + 1) : c.command,
       );
+      const near = suggestionsFor(tokens.join(' '));
       throw new CliError(`no verb \`${tokens.slice(1).join(' ')}\` on noun \`${noun}\``, EXIT_USAGE, {
-        hint: `verbs on \`${noun}\`: ${verbs.join(', ')}`,
+        hint: `${near === '' ? '' : `${near}\n`}verbs on \`${noun}\`: ${verbs.join(', ')}`,
       });
     }
-    out.data(shard, renderNoun);
+    out.data(shard, renderNoun, compact());
     return EXIT_OK;
   }
 
-  throw new CliError(`no help for \`${args.join(' ')}\``, EXIT_USAGE, {
-    hint: `run \`tm8 help\` for the noun list, or \`tm8 help --query "${args.join(' ')}"\` to search by intent`,
+  const near = suggestionsFor(tokens.join(' '));
+  throw new CliError(`unknown help topic \`${args.join(' ')}\``, EXIT_USAGE, {
+    hint:
+      (near === '' ? '' : `${near}\n`) +
+      `run \`tm8 help\` for the noun list, or \`tm8 help --query "${args.join(' ')}"\` to search by intent`,
   });
 }

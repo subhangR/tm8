@@ -100,6 +100,7 @@ import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
@@ -871,6 +872,24 @@ export class DbGraphPort implements GraphPort {
       pinRevision: pin.pinRevision,
       snapshot: profile.snapshot,
     };
+  }
+
+  /**
+   * Prompt v2's embedded orientation read (spec ca8d §2.2): the exact
+   * `entities.context` v2 projection, all default sections, as the NEW
+   * session's actor — `internal.actor_id()` then resolves the persona through
+   * `participates_in`, so `you:true` is the agent's own view, not the
+   * spawner's. Read-only; the spawner's identity still bounds visibility.
+   */
+  async loadTaskContextSnapshot(
+    auth: GraphAuth,
+    input: { sessionId: string; taskId: string; totalBytes: number },
+  ): Promise<Record<string, unknown>> {
+    const claims: DbClaims = { ...this.claims(auth), actorId: input.sessionId };
+    const view = await this.db.tx(claims, (q) =>
+      loadContextV2(q, input.taskId, { sections: null, totalBytes: input.totalBytes }),
+    );
+    return view as unknown as Record<string, unknown>;
   }
 
   async issueWorkSessionAgentToken(

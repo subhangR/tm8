@@ -207,6 +207,15 @@ describe('v1 stays reachable and unchanged', () => {
     const r = await drive(['entity', 'context', ENT, '--total-bytes', '4096', '--section-bytes', '1024']);
     expect(r.code).toBe(0);
     expect(seen[0]?.query.get('sectionBytes')).toBe('1024');
+    // ...but never silently: the v1 brief has no body, so the switch is announced.
+    expect(r.stderr).toMatch(/--section-bytes is v1-only.*--total-bytes/s);
+  });
+
+  it('`--schema v1 --section-bytes` is explicit, so it prints no note', async () => {
+    reply = ok({ schemaVersion: 'tm8.entity-context.v1' });
+    const r = await drive(['entity', 'context', ENT, '--schema', 'v1', '--section-bytes', '1024']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).not.toMatch(/v1-only/);
   });
 });
 

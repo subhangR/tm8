@@ -1,5 +1,13 @@
 import { computeEffectiveSkills } from './effective-skills.js';
-import { composePrompt, BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
+import {
+  asHarnessSurface,
+  asReadHints,
+  disabledPluginSettings,
+  readHintHookSettings,
+  MINIMAL_MCP_CONFIG,
+  type HarnessSurface,
+} from './harness-surface.js';
+import { composePrompt, BYTE_BUDGETS, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -221,6 +229,50 @@ export interface ResolvedLaunchConfig {
   spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>>;
   /** D9: set by the spawn path once it has resolved auto; absent before that. */
   effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+  /**
+   * Which harness surface a Claude lane boots with — see `harness-surface.ts`.
+   * `minimal` strips the operator's MCP connectors, non-allowlisted plugins
+   * and the harness Artifact tool; `inherit` is the bare `claude` command.
+   * Absent means `minimal`, the lane default. Ignored for every other tool.
+   */
+  harnessSurface?: HarnessSurface;
+  /**
+   * Plugins a `minimal` lane keeps: `<name>@<marketplace>` or a bare name.
+   * Absent means none.
+   */
+  plugins?: string[];
+  /**
+   * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
+   * after a large repository read. OFF by default — the hook ships dark until
+   * the A/B in doc 01a0d2e9 has run, and `TM8_READ_HINTS=on` (node) or
+   * `capabilities.launch.readHints: true` (persona) is how an arm is turned
+   * on. Absent here means off. Independent of `harnessSurface`.
+   */
+  readHints?: boolean;
+}
+
+/**
+ * A teammate's launch preferences, read from `capabilities.launch` on the
+ * persona — a stored JSON bag, so every field is narrowed, never cast:
+ *   { "launch": { "harnessSurface": "inherit", "plugins": ["sales"] } }
+ */
+function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
+  harnessSurface: HarnessSurface | null;
+  plugins: string[] | null;
+  readHints: boolean | null;
+} {
+  const raw = capabilities?.launch;
+  const launch = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+  const plugins = Array.isArray(launch.plugins)
+    ? launch.plugins.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
+    : null;
+  return {
+    harnessSurface: asHarnessSurface(launch.harnessSurface),
+    plugins,
+    readHints: asReadHints(launch.readHints),
+  };
 }
 
 /**
@@ -390,6 +442,19 @@ export function resolveLaunchConfig(
   );
   const credentialSource = commonCredentialSource(credentialSources);
 
+  // Operator env over persona over the lane default, like TM8_PERMISSION_MODE:
+  // a node can flip every lane back to `inherit` without editing any persona.
+  const preferences = memberLaunchPreferences(member.capabilities);
+  const harnessSurface =
+    asHarnessSurface(env.TM8_HARNESS_SURFACE) ?? preferences.harnessSurface ?? 'minimal';
+  // Same precedence, but the default is OFF: this hook is an experiment that
+  // has not been through its A/B yet, so merging it changes no lane. Turning
+  // an arm on is `TM8_READ_HINTS=on` node-wide, or the persona's
+  // `capabilities.launch.readHints`.
+  const readHints =
+    agentTool === 'claude-code' &&
+    (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
+
   return {
     mode,
     model,
@@ -400,6 +465,9 @@ export function resolveLaunchConfig(
     credentialSource,
     credentialSources,
     spaceCredentialIds,
+    harnessSurface,
+    plugins: preferences.plugins ?? [],
+    readHints,
   };
 }
 
@@ -754,6 +822,13 @@ export function buildAgentCommand(
      * about it.
      */
     sandboxUnavailable?: boolean;
+    /**
+     * Plugin ids (`<name>@<marketplace>`) installed in the lane's Claude
+     * config home, read at spawn by `readInstalledClaudePlugins`. A `minimal`
+     * launch disables every one not on `launch.plugins`. Passed in rather
+     * than read here so this function stays pure.
+     */
+    installedClaudePlugins?: readonly string[];
   } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
@@ -786,6 +861,21 @@ export function buildAgentCommand(
   if (launch.model) args.push('--model', shellQuote(launch.model));
   if (launch.reasoningEffort) args.push('--effort', launch.reasoningEffort);
   if (opts.claudeSessionId) args.push('--session-id', shellQuote(opts.claudeSessionId));
+  // ONE flag-level settings object for everything tm8 layers onto a lane
+  // (Claude Code takes a single `--settings`); each feature adds its own key.
+  const settings: Record<string, unknown> = {};
+  if (launch.harnessSurface !== 'inherit') {
+    // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
+    // builds on this same base command, so these flags survive `--resume`.
+    args.push('--strict-mcp-config', '--mcp-config', shellQuote(MINIMAL_MCP_CONFIG));
+    const disabled = disabledPluginSettings(opts.installedClaudePlugins ?? [], launch.plugins ?? []);
+    if (Object.keys(disabled).length > 0) settings.enabledPlugins = disabled;
+  }
+  // Flag-level hooks merge with the user's own hooks rather than replace them.
+  if (launch.readHints === true) settings.hooks = readHintHookSettings();
+  if (Object.keys(settings).length > 0) {
+    args.push('--settings', shellQuote(JSON.stringify(settings)));
+  }
   return ['claude', ...args].join(' ');
 }
 
@@ -1548,7 +1638,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
   const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
-    promptVersion: DEFAULT_PROMPT_VERSION,
+    // v1 unless the pinned profile opts a worker into v2 (spec ca8d Q14).
+    promptVersion: promptVersionFor({ mode: launch.mode, profileSnapshot: interactionProfile.snapshot }),
     sessionId,
     spaceId: context.spaceId,
     generatedAt: (input.now ?? new Date()).toISOString(),

@@ -719,6 +719,18 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
   const root = rootRows[0];
   // c761 Q15: a deleted root is not_found (no caller asks for deleted rows yet).
   if (!root || root.deleted_at) throw new CollabError('not_found', `no readable entity: ${id}`);
+  // Edge types are a closed catalog: an unknown filter would read exactly like
+  // "no such edges" (an empty page, rc 0), so a typo must fail here instead.
+  if (edgeType !== null) {
+    const types = await taggedQuerier(q, 'connections').query<{ type: string }>(
+      'select type from public.edge_types order by type',
+    );
+    if (!types.some((t) => t.type === edgeType)) {
+      throw new CollabError('invalid_input', `unknown edge type ${JSON.stringify(edgeType)}`, {
+        details: { reason: 'unknown_edge_type', field: 'edgeType', validTypes: types.map((t) => t.type) },
+      });
+    }
+  }
 
   const plan = v2LoadPlan(root.kind, request.sections, after);
   const omitted: EntityContextOmitted[] = [];

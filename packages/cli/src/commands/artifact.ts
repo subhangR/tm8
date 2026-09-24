@@ -516,7 +516,7 @@ async function artifactRestore(cmd: CommandContext): Promise<ExitCode> {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined || expectedVersion <= 0) {
     throw new CliError('tm8 artifact restore requires --expect-version <n>', EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <artifact-id>`',
+      hint: 'read the current version with `tm8 entity context <artifact-id>` (its first line)',
     });
   }
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'artifacts.restore', {

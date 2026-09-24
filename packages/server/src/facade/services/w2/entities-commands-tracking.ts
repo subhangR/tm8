@@ -583,15 +583,42 @@ async function queryConnections(
   const orderBy = query.sort === 'type'
     ? `g.type ${direction}, g.created_at ${direction}, g.id ${direction}`
     : `${sortColumn} ${direction}, g.id ${direction}`;
+  // THE ENDPOINTS ARE PRIMARY-KEY LOOKUPS PER EDGE, NOT JOINS, ON PURPOSE.
+  //
+  // As plain `join public.entities src on src.id = g.src_id and src.deleted_at
+  // is null`, the plan depended entirely on statistics. With none (every
+  // per-suite scratch database: autovacuum_naptime is 60s and a suite is done
+  // sooner), `deleted_at is null` estimates at one row, so the planner put
+  // ENTITIES outermost and nested all live dst × all live src, calling the
+  // security-definer `entity_row_visible` on each: N² RLS calls to answer "no
+  // edges" for a task created a moment ago. Measured on g02-public H2: 1.2–1.4s
+  // per call for a brand-new task, 11.5s once the file had created more
+  // entities, and this runs inside every createTask (`attachInitialConnections`),
+  // which is where the 12s statement_timeout (57014) and H2's 60s CI timeout came
+  // from. `tm8_stable`, which has statistics, got the right plan (88ms for a
+  // 706-edge hub), which is why it never showed there.
+  //
+  // `lateral (… where e.id = g.x limit 1)` keeps edges outermost whatever the
+  // estimates say: `limit 1` stops the subquery being flattened back into a
+  // join, and keeping `deleted_at` OUTSIDE it leaves `entities_pkey` as the only
+  // index that can serve `id = g.x` (every partial index on entities is
+  // `where deleted_at is null` and leads with another column). Semantics are
+  // unchanged: `id` is unique, and a row RLS hides yields no lateral row, which
+  // drops the edge exactly as the inner join did.
   const rows = await q.query<EdgeRow>(
     `select g.id, g.src_id, g.dst_id, g.type, g.props, g.created_by, g.created_at, g.updated_at,
             ${MICROS('g.created_at')} cursor_created_at,
             ${MICROS('g.updated_at')} cursor_updated_at,
             case when g.type = 'depends_on' then internal.is_resolved(g.dst_id) else null end resolved
        from public.edges g
-       join public.entities src on src.id = g.src_id and src.deleted_at is null
-       join public.entities dst on dst.id = g.dst_id and dst.deleted_at is null
-      where ${where.join(' and ')}
+       cross join lateral (
+         select e.kind, e.deleted_at from public.entities e where e.id = g.src_id limit 1
+       ) src
+       cross join lateral (
+         select e.kind, e.deleted_at from public.entities e where e.id = g.dst_id limit 1
+       ) dst
+      where src.deleted_at is null and dst.deleted_at is null
+        and ${where.join(' and ')}
       order by ${orderBy}
       limit ${query.limit + 1}`,
     params.values,

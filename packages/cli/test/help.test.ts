@@ -47,8 +47,10 @@ describe('root help — tm8.help.v1, 8 KiB HARD (conformance D4)', () => {
     expect(root.nouns.map((n) => n.name).sort()).toEqual([...PUBLIC_NOUNS].sort());
     for (const n of root.nouns) {
       expect(n.summary.length, n.name).toBeGreaterThan(5);
-      expect(n.helpRef, n.name).toBe(`tm8://help/${n.name}`);
+      // The per-row helpRef is derivable and stated once (`helpRefs`).
+      expect(n, n.name).not.toHaveProperty('helpRef');
     }
+    expect(root.helpRefs).toContain('tm8://help/<noun>');
     expect(root.truncated).toBeUndefined();
   });
 

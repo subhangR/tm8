@@ -20,6 +20,9 @@
  * shares that exact composer, so the two can never drift; it exists for an
  * agent that wants to re-read its own briefing.
  */
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { OptionBag } from '../args.js';
 import { readEnv } from '../env.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -39,9 +42,14 @@ export function workerInit(options: OptionBag, out: Output): ExitCode {
   }
 
   const manifest = readManifest(manifestPath);
+  // v2 only: the `<repo>` line is emitted when the session cwd holds a code
+  // graph. No task-context DTO here — the re-read degrades to the header that
+  // names `tm8 entity context`, which is the same read the DTO would have been.
+  const cwd = manifest.session?.workingDirectory;
   const envelope = composePrompt(manifest, {
     sessionId: env.sessionId ?? manifest.sessionId,
     baseUrl: env.baseUrl,
+    codeGraph: cwd ? existsSync(join(cwd, 'graphify-out', 'merged-graph.json')) : false,
   });
 
   // NOTHING on stderr, deliberately — and this is stronger than the usual

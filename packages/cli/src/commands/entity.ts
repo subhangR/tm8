@@ -66,7 +66,8 @@ import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { renderContextBrief } from '../context-brief.js';
-import { resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
+import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
+import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -351,6 +352,13 @@ async function entityGet(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, []);
   const id = requireArg(cmd, 0, '<entity-id>');
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', { params: { id } });
+  // Bounded by default (see ../entity-bounded.ts): `--full` is the only thing
+  // that sets receipts to 'full', so it doubles as the explicit escape hatch.
+  // The human render reads one summary line either way.
+  if (cmd.out.format !== 'human' && cmd.out.receipts !== 'full' && isEntityDetail(data)) {
+    cmd.out.data(boundEntityDetail(data), renderEntity, { minify: isAgentCaller(), raw: true });
+    return EXIT_OK;
+  }
   cmd.out.data(data, renderEntity);
   return EXIT_OK;
 }
@@ -464,7 +472,18 @@ function contextSchema(cmd: CommandContext, defaultV2: boolean): WireSchema {
   const explicit = schemaOption(cmd, 'schema');
   if (explicit) return explicit;
   const sections = (cmd.options.value('sections') ?? '').split(',').map((s) => s.trim());
-  if (cmd.options.value('section-bytes') !== undefined || sections.includes('activity')) return 'v1';
+  if (cmd.options.value('section-bytes') !== undefined || sections.includes('activity')) {
+    // The switch is silent otherwise, and the v1 brief carries no body: an
+    // agent trimming output with --section-bytes would lose its assignment.
+    if (defaultV2) {
+      const flag = cmd.options.value('section-bytes') !== undefined ? '--section-bytes' : '--sections activity';
+      cmd.out.note(
+        `note: ${flag} is v1-only, so this read is tm8.entity-context.v1 (no body text). ` +
+          'v2 budgets are total-only: use --total-bytes <1024..32768>, or pass --schema v1 to keep v1 explicitly.',
+      );
+    }
+    return 'v1';
+  }
   const v2Only = ['offset', 'cursor', 'edge-type'].some((flag) => cmd.options.value(flag) !== undefined)
     || sections.includes('assignment') || sections.includes('blockers');
   if (v2Only) return 'v2';
@@ -833,7 +852,7 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
     throw new CliError('`tm8 entity update` requires --expect-version <n>', EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <entity-id>`',
+      hint: 'read the current version with `tm8 entity context <entity-id>` (its first line)',
     });
   }
 
@@ -987,7 +1006,7 @@ async function entityPull(cmd: CommandContext): Promise<ExitCode> {
   const pinnedVersion = cmd.options.integer('pinned-version');
   if (pinnedVersion === undefined) {
     throw new CliError('`tm8 entity pull` requires --pinned-version <n>', EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <entity-id>`',
+      hint: 'read the current version with `tm8 entity context <entity-id>` (its first line)',
     });
   }
   const body: Record<string, unknown> = {

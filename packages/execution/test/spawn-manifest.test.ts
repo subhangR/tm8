@@ -398,6 +398,9 @@ describe('resolveWorkdir', () => {
   });
 });
 
+/** The argv tail every default (`minimal`) Claude lane carries. */
+const MINIMAL = ` --strict-mcp-config --mcp-config '{"mcpServers":{}}'`;
+
 describe('buildAgentCommand', () => {
   const launch = {
     mode: 'worker' as const,
@@ -415,24 +418,24 @@ describe('buildAgentCommand', () => {
 
   it('maps the resolved access posture to Claude flags without escalating it', () => {
     expect(buildAgentCommand(launch, {})).toBe(
-      "claude --permission-mode acceptEdits --model 'opus'",
+      `claude --permission-mode acceptEdits --model 'opus'${MINIMAL}`,
     );
     // `auto` is a real Claude mode, passed through rather than approximated —
     // approximating it upward would be a silent escalation, downward a hang.
     expect(buildAgentCommand({ ...launch, permissionMode: 'auto' }, {})).toBe(
-      "claude --permission-mode auto --model 'opus'",
+      `claude --permission-mode auto --model 'opus'${MINIMAL}`,
     );
     expect(
       buildAgentCommand({ ...launch, permissionMode: 'bypassPermissions' }, {}),
-    ).toBe("claude --dangerously-skip-permissions --model 'opus'");
+    ).toBe(`claude --dangerously-skip-permissions --model 'opus'${MINIMAL}`);
   });
 
   it('honours restrictive Claude access and provider reasoning effort', () => {
     expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).toBe(
-      "claude --permission-mode plan --model 'opus'",
+      `claude --permission-mode plan --model 'opus'${MINIMAL}`,
     );
     expect(buildAgentCommand({ ...launch, reasoningEffort: 'low' }, {})).toBe(
-      "claude --permission-mode acceptEdits --model 'opus' --effort low",
+      `claude --permission-mode acceptEdits --model 'opus' --effort low${MINIMAL}`,
     );
   });
 
@@ -441,7 +444,7 @@ describe('buildAgentCommand', () => {
     // class: unquoted it expands to `1` or `m` if such a file exists in the
     // workdir, and the agent silently starts on the wrong model.
     expect(buildAgentCommand({ ...launch, model: 'claude-opus-5[1m]' }, {})).toBe(
-      "claude --permission-mode acceptEdits --model 'claude-opus-5[1m]'",
+      `claude --permission-mode acceptEdits --model 'claude-opus-5[1m]'${MINIMAL}`,
     );
   });
 
@@ -1133,6 +1136,36 @@ describe('composeManifest', () => {
       pinRevision: 0,
       snapshot: { profile: { source: 'core_default' } },
     });
+  });
+
+  it('stamps promptVersion "2" only when the pinned profile opts a worker mode into tm8.core.v2 (spec ca8d Q14)', () => {
+    const v2Profile = {
+      profileId: 'profile-v2',
+      profileVersion: 1,
+      templateKey: 'tm8.chat.core',
+      templateVersion: 1,
+      source: 'teammate_default' as const,
+      resolvedHash: 'hash-v2',
+      pinRevision: 1,
+      snapshot: { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v2' } } },
+    };
+    const compose = (mode: 'worker' | 'coordinated-worker' | 'coordinator', profile?: typeof v2Profile) =>
+      composeManifest({
+        sessionId: 'sess-v2',
+        request: { ...base, parentSessionId: 'coord-session-1' },
+        context: context(),
+        launch: { mode, model: 'opus', agentTool: 'claude-code', permissionMode: 'bypassPermissions' },
+        ...(profile ? { interactionProfile: profile } : {}),
+        workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+        command: 'claude',
+        baseUrl: 'http://127.0.0.1:4610',
+      });
+    expect(compose('worker', v2Profile).promptVersion).toBe('2');
+    expect(compose('coordinated-worker', v2Profile).promptVersion).toBe('2');
+    // Out of v2's scope: a coordinator on the same profile keeps v1.
+    expect(compose('coordinator', v2Profile).promptVersion).toBe('1');
+    // The core default (tm8.core.v1) keeps every worker on v1 — the rollout default.
+    expect(compose('worker').promptVersion).toBe(DEFAULT_PROMPT_VERSION);
   });
 
   it('titles a session from its first task, then from the persona', () => {

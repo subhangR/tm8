@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -16,7 +16,7 @@ import type {
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
-import { composePrompt } from '@tm8/prompt';
+import { composePrompt, primaryContextBudgetV2, PROMPT_VERSION_V2, type PromptRuntime } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -40,6 +40,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
+import { harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -234,6 +235,9 @@ interface SandboxDecision {
 
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
+
+/** How long a v2 launch waits for its task's context render before degrading. */
+const TASK_CONTEXT_RENDER_TIMEOUT_MS = 5_000;
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
  *  graph in lifecycle states, and 'completed' is not one of the five the
@@ -801,6 +805,24 @@ export class SpawnService {
   }
 
   /**
+   * The plugins a `minimal` Claude lane must turn off, read from the config
+   * home the child will run under: the member's credential home when there is
+   * one, else the node's `CLAUDE_CONFIG_DIR`, else `~/.claude` — the same
+   * resolution `recordManifest` records. Empty (no read at all) for any other
+   * tool, for `inherit`, and under an operator `TM8_AGENT_CMD` wrapper.
+   */
+  private installedClaudePluginsFor(
+    launch: ResolvedLaunchConfig,
+    credentialConfigDir: string | undefined,
+  ): string[] {
+    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
+    if (this.env.TM8_AGENT_CMD?.trim()) return [];
+    const configDir =
+      credentialConfigDir ?? this.env.CLAUDE_CONFIG_DIR ?? join(this.env.HOME ?? homedir(), '.claude');
+    return readInstalledClaudePlugins(configDir);
+  }
+
+  /**
    * Decide what a launch is allowed to do when the node cannot actually give it
    * the sandbox its posture asks for. Returns whether `buildAgentCommand` must
    * drop `--sandbox`; throws when the launch may not proceed at all.
@@ -1082,6 +1104,51 @@ export class SpawnService {
    * precedes 5 because the agent reads the manifest at boot — a PTY started
    * before the file exists races its own configuration.
    */
+  /**
+   * The per-launch facts only the v2 frame reads (spec ca8d §2): the primary
+   * task's context DTO, rendered now — after the session row exists, so as its
+   * actor and with the task already `working` — and whether the cwd holds a
+   * code graph. A v1 launch reads neither and pays for neither.
+   *
+   * A failed or slow render never fails the launch (§2.3): the header then
+   * says `snapshot="unavailable"` with the reason and names the one read to run.
+   */
+  private async promptV2Runtime(
+    auth: GraphAuth,
+    manifest: Tm8Manifest,
+    sessionId: string,
+    cwd: string,
+  ): Promise<Pick<PromptRuntime, 'taskContext' | 'codeGraph'>> {
+    if (manifest.promptVersion !== PROMPT_VERSION_V2) return {};
+    const codeGraph = await access(join(cwd, 'graphify-out', 'merged-graph.json')).then(
+      () => true,
+      () => false,
+    );
+    const primary = manifest.tasks[0];
+    if (!primary) return { codeGraph };
+    const load = this.graph.loadTaskContextSnapshot?.bind(this.graph);
+    if (!load) return { codeGraph, taskContext: { taskId: primary.id, unavailable: 'not_supported' } };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const dto = await Promise.race([
+        load(auth, { sessionId, taskId: primary.id, totalBytes: primaryContextBudgetV2(manifest.tasks) }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('context render timed out'), { code: 'timeout' })), TASK_CONTEXT_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+      return { codeGraph, taskContext: { taskId: primary.id, dto } };
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      this.logger?.warn?.('spawn: v2 task context render failed', { sessionId, taskId: primary.id, error: String(error) });
+      return {
+        codeGraph,
+        taskContext: { taskId: primary.id, unavailable: typeof code === 'string' && code !== '' ? code : 'render_failed' },
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
@@ -1280,10 +1347,6 @@ export class SpawnService {
       // precondition — instead of booting an agent that will look healthy and
       // be unable to run anything. Throws unless the operator has opted in.
       const sandbox = await this.resolveSandboxPosture(launch);
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        claudeSessionId: nativeSessionId,
-        sandboxUnavailable: sandbox.unavailable,
-      });
       const manifestPath = this.manifestPathFor(sessionId);
       const credentials = await this.resolveSessionCredentials(
         auth,
@@ -1293,6 +1356,13 @@ export class SpawnService {
       );
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
+      // Built after the credentials because a `minimal` launch reads the
+      // plugin registry of the config home the child will actually use.
+      const baseCommand = buildAgentCommand(launch, this.env, {
+        claudeSessionId: nativeSessionId,
+        sandboxUnavailable: sandbox.unavailable,
+        installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+      });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -1322,6 +1392,7 @@ export class SpawnService {
       const envelope = composePrompt(manifest, {
         sessionId,
         baseUrl: this.baseUrl,
+        ...(await this.promptV2Runtime(auth, manifest, sessionId, cwd)),
       });
       // The two halves stay SEPARATE all the way to the argv. `envelope.system`
       // configures the agent; `envelope.task` is its first user turn, and is
@@ -1367,6 +1438,7 @@ export class SpawnService {
         gitHubCredential ?? undefined,
         credentials.launch.credentialSources.github,
       );
+      Object.assign(env, harnessSurfaceEnv(launch));
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -2028,9 +2100,6 @@ export class SpawnService {
       // first ran is not sandboxed by having been sandboxed before, and resume
       // is exactly the path that moves a session onto a different node.
       const sandbox = await this.resolveSandboxPosture(launch);
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        sandboxUnavailable: sandbox.unavailable,
-      });
       // Re-resolved under the RESUMER's claims: membership, policy (A5) and
       // credential status are today's, the space key is re-read and re-seeded
       // from the current sealed value (D7), and a pinned or recorded id that
@@ -2045,6 +2114,12 @@ export class SpawnService {
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
       await this.repointSpaceCredentials(auth, sessionId, credentials, recorded.unreadable);
+      // Same harness surface as the fresh spawn: `withAgentResume` builds on
+      // this base command, so the minimal-surface flags survive `--resume`.
+      const baseCommand = buildAgentCommand(launch, this.env, {
+        sandboxUnavailable: sandbox.unavailable,
+        installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+      });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -2084,6 +2159,7 @@ export class SpawnService {
         gitHubCredential ?? undefined,
         credentials.launch.credentialSources.github,
       );
+      Object.assign(env, harnessSurfaceEnv(launch));
       const envVarNames = Object.keys(env).sort();
 
       await this.assertAgentRuntime(baseCommand, launch, env);
