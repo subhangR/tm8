@@ -60,7 +60,7 @@ concurrency:
 
 env:
   CI: "1"
-  TM8_VITEST_JSON_DIR: .vitest-json
+  TM8_VITEST_JSON_DIR: vitest-reports
 
 jobs:
   typecheck:
@@ -126,7 +126,7 @@ jobs:
         if: always()
         with:
           name: vitest-json-test-server-${{ matrix.shard }}
-          path: .vitest-json/
+          path: vitest-reports/
           retention-days: 7
           if-no-files-found: warn
 
@@ -165,7 +165,7 @@ jobs:
         if: always()
         with:
           name: vitest-json-test-cli
-          path: .vitest-json/
+          path: vitest-reports/
           retention-days: 7
           if-no-files-found: warn
 
@@ -184,7 +184,7 @@ jobs:
         if: always()
         with:
           name: vitest-json-test-execution
-          path: .vitest-json/
+          path: vitest-reports/
           retention-days: 7
           if-no-files-found: warn
 
@@ -207,7 +207,7 @@ jobs:
         if: always()
         with:
           name: vitest-json-test-ui-${{ matrix.shard }}
-          path: .vitest-json/
+          path: vitest-reports/
           retention-days: 7
           if-no-files-found: warn
 
@@ -227,7 +227,7 @@ jobs:
         if: always()
         with:
           name: vitest-json-test-small
-          path: .vitest-json/
+          path: vitest-reports/
           retention-days: 7
           if-no-files-found: warn
 
