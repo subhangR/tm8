@@ -15,10 +15,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function mount(formId: string, tab: QuestionnaireTab = 'fill', responses?: FormResponseView[]) {
+async function mount(formId: string, tab: QuestionnaireTab = 'fill', responses?: FormResponseView[], canEdit = true) {
   const port = createFixtureFormsPort(responses ? { responses } : {});
   const f = FORM_FIXTURE_FORMS.find((x) => x.id === formId)!;
-  const detail = { id: f.id, title: f.title, version: f.version, content: { kind: 'form', ...f.content } };
+  const detail = { id: f.id, title: f.title, version: f.version, content: { kind: 'form', ...f.content }, capabilities: { canEdit } };
   const view = render(
     <FormsPortProvider port={port}>
       <QuestionnaireBlock detail={detail as never} initialTab={tab} />
@@ -89,6 +89,25 @@ describe('Fill', () => {
     expect(port.rows.some((r) => r.status === 'draft' && r.formId === FORM_FIXTURE_IDS.release)).toBe(false);
   });
 
+  it('a submit waits for the autosave on the wire, so no phantom amend draft appears', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { port } = await mount(FORM_FIXTURE_IDS.migration);
+    let release!: () => void;
+    const realSave = port.saveDraft.bind(port);
+    port.saveDraft = async (...args) => {
+      await new Promise<void>((r) => { release = r; });
+      return realSave(...args);
+    };
+    fireEvent.click(screen.getByLabelText(/Online backfill/));
+    await act(async () => { vi.advanceTimersByTime(AUTOSAVE_MS + 10); });
+    expect(screen.getByTestId('save-state').textContent).toBe('Saving…');
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await act(async () => { release(); });
+    await screen.findByTestId('fill-submitted');
+    expect(port.rows.filter((r) => r.formId === FORM_FIXTURE_IDS.migration && r.status === 'draft')).toEqual([]);
+    expect(within(screen.getByTestId('answer-strategy')).getByText('Online backfill')).toBeTruthy();
+  });
+
   it('refuses to submit with required answers missing, and says which', async () => {
     const { port } = await mount(FORM_FIXTURE_IDS.release, 'fill', []);
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
@@ -152,6 +171,15 @@ describe('Fill', () => {
 });
 
 describe('Build', () => {
+  it('without edit capability: a read-only preview, no editing or lifecycle controls', async () => {
+    await mount(FORM_FIXTURE_IDS.migration, 'build', undefined, false);
+    expect(screen.getByTestId('build-no-edit')).toBeTruthy();
+    expect(screen.getByTestId('build-preview')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    expect(screen.queryByText('+ Short text')).toBeNull();
+  });
+
   it('frozen: explains why, and locks questions, sections and the responses setting', async () => {
     await mount(FORM_FIXTURE_IDS.release, 'build');
     expect(screen.getByTestId('frozen-banner').textContent).toMatch(/questions,\s+sections and the responses setting are frozen/);

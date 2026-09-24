@@ -27,12 +27,15 @@ export function QuestionnaireBlock({
   detail,
   initialTab = 'fill',
 }: {
-  detail: Pick<EntityDetail, 'id' | 'title' | 'version' | 'content'>;
+  detail: Pick<EntityDetail, 'id' | 'title' | 'version' | 'content'> & Partial<Pick<EntityDetail, 'capabilities'>>;
   initialTab?: QuestionnaireTab;
 }) {
   const q = useQuestionnaire(detail);
   const [tab, setTab] = useState<QuestionnaireTab>(initialTab);
   const base = useId();
+  // §6: structure and lifecycle are the author's or an admin's. Absent
+  // capabilities mean not permitted, the contract's rule.
+  const canEdit = detail.capabilities?.canEdit === true;
   if (!q.form) {
     return <p className="qn-muted">This form’s questions didn’t load.</p>;
   }
@@ -77,7 +80,7 @@ export function QuestionnaireBlock({
         {q.loading ? <p className="qn-muted">Loading…</p> : (
           <>
             {tab === 'fill' ? <FillTab q={q} /> : null}
-            {tab === 'build' ? <BuildTab q={q} /> : null}
+            {tab === 'build' ? <BuildTab q={q} canEdit={canEdit} /> : null}
             {tab === 'responses' ? <ResponsesTab q={q} /> : null}
           </>
         )}

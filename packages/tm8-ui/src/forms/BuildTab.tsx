@@ -73,7 +73,7 @@ function specIssues(title: string, d: Draft): string[] {
   });
 }
 
-export function BuildTab({ q }: { q: Questionnaire }) {
+export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean }) {
   const { form, frozen, port } = q;
   const base = useMemo(() => (form ? draftOf(form) : null), [form]);
   const [work, setWork] = useState<Draft | null>(null);
@@ -86,6 +86,17 @@ export function BuildTab({ q }: { q: Questionnaire }) {
   const locked = frozen || form.content.status === 'cancelled';
   const issues = dirty ? specIssues(form.title, d) : [];
   const update = (next: Partial<Draft>) => { setWork({ ...d, ...next }); setError(null); };
+
+  if (!canEdit) {
+    return (
+      <div className="qn-build" data-testid="build-readonly">
+        <Notice tone="idle" title="Read-only" testId="build-no-edit">
+          Only the form’s author or a space admin can change its questions, settings or status. This is a preview.
+        </Notice>
+        <Preview draft={base} />
+      </div>
+    );
+  }
 
   const save = async () => {
     setSaving(true);

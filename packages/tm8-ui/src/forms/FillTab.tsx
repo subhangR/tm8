@@ -183,6 +183,9 @@ function FillForm({
   const [submitting, setSubmitting] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<FormAnswers | null>(null);
+  /** The save on the wire, if any: a submit waits for it, or the save would
+      land after the submit and open a phantom amend draft of the new revision. */
+  const inflight = useRef<Promise<unknown> | null>(null);
 
   const flush = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
@@ -195,11 +198,15 @@ function FillForm({
       return;
     }
     setSave('saving');
+    const saving = port.saveDraft(form.id, { answers: next, supersedesId });
+    inflight.current = saving;
     try {
-      await port.saveDraft(form.id, { answers: next, supersedesId });
+      await saving;
       setSave((s) => (s === 'saving' ? 'saved' : s));
     } catch {
       setSave('error');
+    } finally {
+      if (inflight.current === saving) inflight.current = null;
     }
   }, [port, form.id, questions, supersedesId]);
 
@@ -250,6 +257,7 @@ function FillForm({
     setSubmitting(true);
     setSubmitError(null);
     try {
+      await inflight.current?.catch(() => undefined);
       await port.submit(form.id, { answers: payload, supersedesId });
       await onSubmitted();
     } catch (e) {
