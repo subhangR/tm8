@@ -516,6 +516,19 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
       });
     }
   }
+  // c761 §5: a context cursor continues exactly ONE paged v2 section, and
+  // --edge-type filters the v2 connections section. Both are the server's
+  // own expands, so a misuse is a usage error here, before any request.
+  const cursor = cmd.options.value('cursor');
+  const edgeType = cmd.options.value('edge-type');
+  const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
+  if (cursor !== undefined
+    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'blockers', 'connections', 'messages'].includes(only))) {
+    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
+  }
+  if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
+    throw new CliError('--edge-type filters the v2 connections section: --schema v2 --sections connections', EXIT_USAGE);
+  }
   // The actions section rolls out to `tm8.actions.v2` rows like `action list`
   // does. Only asked about when the section is in a view that prints it: the
   // human render shows no actions, so it keeps sending no query at all.
@@ -536,12 +549,14 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
     ...(offset === undefined ? {} : { offset: String(offset) }),
     ...(actionsSchema === 'v2' ? { actionsSchema } : {}),
+    ...(cursor === undefined ? {} : { cursor }),
+    ...(edgeType === undefined ? {} : { edgeType }),
   };
 }
 
 async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['schema', 'sections', 'total-bytes', 'section-bytes', 'offset', 'actions-schema']);
+  assertKnownOptions(cmd, ['schema', 'sections', 'total-bytes', 'section-bytes', 'offset', 'actions-schema', 'cursor', 'edge-type']);
   const id = requireArg(cmd, 0, '<entity-id>');
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {

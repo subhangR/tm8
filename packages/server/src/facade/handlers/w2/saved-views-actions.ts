@@ -12,12 +12,15 @@ import { createSavedViewsActionsService } from '../../services/w2/saved-views-ac
  */
 export function registerW2SavedViewsActionsHandlers(
   registry: HandlerRegistry,
-  deps: { readonly db: Db; readonly config: ServerConfig },
+  deps: { readonly db: Db; readonly config: ServerConfig; readonly owner?: FacadeDeps['owner'] },
 ): void {
   const facade: FacadeDeps = {
     db: deps.db,
     config: deps.config,
-    owner: createLoopbackOwnerResolver(deps.db),
+    // The composition root's owner when one is injected, as every other W2
+    // seam does (facade/index.ts); otherwise `actions.list` answered for a
+    // different caller than `entities.context`'s own palette.
+    owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
   };
   const service = createSavedViewsActionsService(facade, registry);
 

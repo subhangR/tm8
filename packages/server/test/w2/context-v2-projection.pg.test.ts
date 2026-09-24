@@ -38,6 +38,8 @@ const OWNER = {
 };
 /** A message on T that mentions the caller's member row (for `toMe`). */
 const MENTION = '01a0c000-0000-7000-8000-000000000a01';
+/** A restricted PR G also tracks: the caller cannot read it (S3b gate fix). */
+const HIDDEN_PR = '01a0c000-0000-7000-8000-000000000a02';
 
 let database: W1ScratchDatabase;
 let pgDb: Db;
@@ -65,6 +67,21 @@ beforeAll(async () => {
       `insert into public.messages(entity_id,anchor_id,author_id,body,mentions,created_at)
        values ($1,$2,$3,'@owner please review',$4::jsonb,'2026-09-23T13:00:00Z')`,
       [MENTION, F.T, F.teammate, JSON.stringify([{ entityId: F.member, kind: 'member', display: 'Fixture Owner' }])],
+    );
+    await c.query(
+      `insert into public.entities(id,space_id,kind,created_by,visibility,created_at,updated_at)
+       values ($1,$2,'pull_request',$3,'restricted','2026-09-23T13:00:00Z','2026-09-23T13:00:00Z')`,
+      [HIDDEN_PR, F.space, F.teammate],
+    );
+    await c.query(
+      `insert into public.pull_requests(entity_id,space_id,provider,url,repo,number,title,state,ci_status)
+       values ($1,$2,'github','https://github.com/example/tm8/pull/9002','example/tm8',9002,'Hidden PR','open','pending')`,
+      [HIDDEN_PR, F.space],
+    );
+    await c.query(
+      `insert into public.edges(space_id,src_id,dst_id,type,created_by,created_at)
+       values ($1,$2,$3,'tracks',$4,'2026-09-23T13:00:00Z')`,
+      [F.space, F.G, HIDDEN_PR, F.teammate],
     );
   });
   pgDb = createDb(database.url);
@@ -145,8 +162,12 @@ describe('v2 projection (S3a)', () => {
     expect(view.notLoaded.map((n) => n.section)).toEqual(['assignment', 'hierarchy', 'connections', 'messages', 'actions']);
     for (const entry of view.notLoaded) {
       if (entry.section === 'actions') {
-        // Gated until #669 ships the bounded action list: named, no expand.
-        expect(entry).toEqual({ section: 'actions' });
+        // Bounded since #669: the CLI pages by default, the expandOp names v2.
+        expect(entry).toEqual({
+          section: 'actions',
+          expand: `tm8 action list --for ${F.T}`,
+          expandOp: { operation: 'actions.list', params: { contextEntityId: F.T, schema: 'v2' } },
+        });
         continue;
       }
       expect(entry.expand).toBe(`tm8 entity context ${F.T} --sections ${entry.section}`);
@@ -179,7 +200,12 @@ describe('v2 projection (S3a)', () => {
     expect(kept.length).toBeLessThan(10);
     // The nearest (first) children survive; the farthest went first.
     expect(kept.map((c) => c.id)).toEqual((full.view.children ?? []).slice(0, kept.length).map((c) => c.id));
-    expect(view.omitted).toContainEqual({ section: 'children', kept: kept.length, more: true, reason: 'budget' });
+    // The expand pages on from the last child the trim kept (S3b section cursor).
+    const entry = view.omitted.find((o) => o.section === 'children');
+    expect(entry).toMatchObject({ section: 'children', kept: kept.length, more: true, reason: 'budget' });
+    expect(entry?.expand).toMatch(new RegExp(`^tm8 entity context ${F.P} --sections hierarchy --cursor \\S+$`));
+    const next = await v2(F.P, `sections=hierarchy&cursor=${entry!.expandOp!.params['cursor'] as string}`);
+    expect(next.view.children?.[0]?.id).toBe(full.view.children?.[kept.length]?.id);
     // Messages go only after every child has.
     expect(view.messages).toEqual(full.view.messages);
   });
@@ -229,5 +255,54 @@ describe('v2 projection (S3a)', () => {
       rows.push(`| ${fixture.name} | ${fmt(old.bytes)} | ${fmt(Math.round(old.bytes / 4))} | ${old.statements} | ${fmt(now.bytes)} | ${fmt(Math.round(now.bytes / 4))} | ${now.statements} | ${assignmentOnly.statements} | ${complete} | ${fmt(fixedCore)} |`);
     }
     console.log(`\n[context-v2 S3a] v1 default vs v2 default, minified server DTO (per fixture, never summed)\n${rows.join('\n')}\n`);
+  });
+});
+
+// ===========================================================================
+// S3b — section cursors, --edge-type, and the gate's unreadable PR
+// ===========================================================================
+
+describe('v2 section pages (S3b)', () => {
+  it('a gated task names a tracked PR it cannot read as {id, unreadable:true}, not by dropping it', async () => {
+    const { view } = await v2(F.G);
+    expect(EntityContextV2ViewSchema.safeParse(view).success).toBe(true);
+    const gate = (view as { gate?: { prs: unknown[] } }).gate;
+    expect(gate?.prs).toEqual([
+      { url: 'https://github.com/example/tm8/pull/9001', state: 'open', ci: 'pending' },
+      { id: HIDDEN_PR, unreadable: true },
+    ]);
+  });
+
+  it('--edge-type filters connections to one type; the unfiltered read hides anchored_to only', async () => {
+    const all = await v2(F.G, 'sections=connections');
+    const types = new Set((all.view.connections ?? []).map((c) => c.type));
+    expect(types.has('tracks') && types.has('depends_on')).toBe(true);
+    expect(types.has('anchored_to')).toBe(false);
+    const tracks = await v2(F.G, 'sections=connections&edgeType=depends_on');
+    expect(tracks.view.connections?.map((c) => [c.type, c.other.id])).toEqual([['depends_on', F.B]]);
+    expect(EntityContextV2ViewSchema.safeParse(tracks.view).success).toBe(true);
+  });
+
+  it('a cursor is bound to its entity, section and filter, and is refused before any SQL', async () => {
+    const full = await v2(F.P);
+    const trimmed = await v2(F.P, `totalBytes=${full.bytes - 600}`);
+    const cursor = trimmed.view.omitted.find((o) => o.section === 'children')?.expandOp?.params['cursor'] as string;
+    expect(cursor).toEqual(expect.any(String));
+    // The same cursor pages P's hierarchy...
+    await expect(v2(F.P, `sections=hierarchy&cursor=${cursor}`)).resolves.toBeTruthy();
+    // ...but not another entity's, another section's, or a filtered read's.
+    for (const query of [
+      [F.T, `sections=hierarchy&cursor=${cursor}`],
+      [F.P, `sections=messages&cursor=${cursor}`],
+      [F.P, `sections=connections&edgeType=tracks&cursor=${cursor}`],
+    ] as const) {
+      counter.reset();
+      await expect(v2(query[0], query[1]), query.join(' ')).rejects.toMatchObject({ code: 'invalid_cursor' });
+      expect(counter.total(), query.join(' ')).toBe(0);
+    }
+    // Anything but exactly one paged section is a usage error, not a cursor error.
+    for (const query of [`sections=hierarchy,messages&cursor=${cursor}`, `sections=assignment&cursor=${cursor}`, `cursor=${cursor}`]) {
+      await expect(v2(F.P, query), query).rejects.toMatchObject({ code: 'invalid_input' });
+    }
   });
 });

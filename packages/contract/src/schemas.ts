@@ -3707,6 +3707,7 @@ export const EntityFeedPageSchema: z.ZodType<EntityFeedPage> = z.lazy(() => z.ob
 
 const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
 const ENTITY_CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
+const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'blockers', 'connections', 'messages'];
 
 /**
  * One query shape for both DTOs; `schema` picks which section names and budget
@@ -3722,8 +3723,27 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   sectionBytes: z.number().int().min(512).max(8192).optional(),
   offset: z.number().int().nonnegative().optional(),
   actionsSchema: z.enum(['v1', 'v2']).optional(),
+  cursor: CursorSchema.optional(),
+  edgeType: z.string().regex(/^[a-z][a-z_]{0,63}$/).optional(),
 }).strict().superRefine((query, issues) => {
   const v2 = query.schema === 'v2';
+  // c761 §5: a context cursor continues exactly ONE paged v2 section, and
+  // `--edge-type` filters the connections section only.
+  const only = query.sections?.length === 1 ? query.sections[0] : undefined;
+  if (query.cursor !== undefined && !(v2 && only !== undefined && ENTITY_CONTEXT_V2_PAGED.includes(only))) {
+    issues.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['cursor'],
+      message: 'a context cursor continues exactly one paged v2 section (hierarchy, blockers, connections or messages)',
+    });
+  }
+  if (query.edgeType !== undefined && !(v2 && only === 'connections')) {
+    issues.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['edgeType'],
+      message: 'edgeType filters the v2 connections section; pass sections=connections alone',
+    });
+  }
   const legal: readonly string[] = v2 ? ENTITY_CONTEXT_V2_SECTIONS : ENTITY_CONTEXT_V1_SECTIONS;
   for (const section of query.sections ?? []) {
     if (!legal.includes(section)) {
@@ -3831,7 +3851,11 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
     z.literal('none'),
     z.object({
       kind: z.literal('pr_merged'),
-      prs: z.array(z.object({ url: z.string(), state: z.string(), ci: z.string().nullable() }).strict()),
+      prs: z.array(z.union([
+        z.object({ url: z.string(), state: z.string(), ci: z.string().nullable() }).strict(),
+        // c761 §6: a tracked PR the caller cannot read is named, never dropped.
+        z.object({ id: EntityIdSchema, unreadable: z.literal(true) }).strict(),
+      ])),
       more: z.literal(true).optional(),
     }).strict(),
   ]).optional(),

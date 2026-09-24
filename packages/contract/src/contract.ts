@@ -6057,6 +6057,15 @@ export interface EntityContextQuery {
   offset?: number;
   /** `v2` returns the actions section as `ActionRows`; `v1` (default) as `PaletteAction[]`. */
   actionsSchema?: 'v1' | 'v2';
+  /**
+   * v2 only: continues the ONE paged section in `sections` (hierarchy,
+   * blockers, connections or messages). Context-owned: the token binds entity,
+   * section, edge-type filter and order, and is never an `entities.children`
+   * or `entities.connections` cursor.
+   */
+  cursor?: string;
+  /** v2 only, with `sections=connections` alone: one edge type, `anchored_to` included. */
+  edgeType?: string;
 }
 
 export interface EntityContextView {
@@ -6150,7 +6159,8 @@ export type EntityContextGate =
   | 'none'
   | {
       kind: 'pr_merged';
-      prs: Array<{ url: string; state: string; ci: string | null }>;
+      /** A tracked PR the caller cannot read is `{id, unreadable:true}` (c761 §6). */
+      prs: Array<{ url: string; state: string; ci: string | null } | { id: string; unreadable: true }>;
       more?: true;
     };
 

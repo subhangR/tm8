@@ -32,16 +32,22 @@
  * server. A core that cannot fit the caller's `totalBytes` is refused with 422
  * `context_budget_too_small`, never cut: the caller's budget buys rows, not body.
  *
- * NOT HERE YET, and why (c904 Q12: never advertise an expand whose consumer is
- * missing). These expands are GATED until their consumer ships:
- *   - section cursors (`--sections X --cursor <c>`, `--edge-type`): M2/S3b.
- *     Until then an `omitted[]` entry carries `kept`/`more`/`reason` and no
- *     `expand`.
- *   - the actions expand (`tm8 action list --for <id>`): only in its bounded
- *     form, PR #669 (task 01a0cf2e-ee2a). `ADVERTISE_ACTIONS_EXPAND` flips it.
+ * SECTION PAGES (M2/S3b). Every `omitted[]` entry carries the exact expand
+ * that continues it: `--sections X --cursor <c>` for children (hierarchy),
+ * blockers, messages and connections, and `--sections connections
+ * --edge-type working_on` for a session's tasks. The cursor is context-owned
+ * (see `sectionFingerprint`) and is checked before any statement runs.
+ *
+ * THE ACTIONS EXPAND (c904 Q12: never advertise an expand whose consumer is
+ * missing) is advertised only in its bounded form, `tm8 action list --for
+ * <id>` over PR #669's pages; `ADVERTISE_ACTIONS_EXPAND` gates it.
  */
+import { createHash } from 'node:crypto';
+
 import {
   CollabError,
+  decodeCursor,
+  encodeCursor,
   type EntityContextAssignee,
   type EntityContextAssignment,
   type EntityContextBlocker,
@@ -57,7 +63,7 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
-import { ENTITY_COLUMNS, ENTITY_FROM, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
+import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 
 // ---------------------------------------------------------------------------
@@ -82,11 +88,13 @@ const OUTLINE_MAX_BYTES = 1024;
 const ELLIPSIS = '…';
 
 /**
- * The actions expand is advertised only once `action list` is bounded
- * (PR #669, task 01a0cf2e-ee2a; c904 §2.8 ruling 3). Until then the
- * `actions` entry in `notLoaded[]` names the section without an expand.
+ * The actions expand is advertised only in its bounded form (c904 §2.8 ruling
+ * 3): `action list` pages since PR #669. The CLI string is bounded because an
+ * agent or human `tm8 action list` asks for `tm8.actions.v2` pages by default;
+ * the wire `expandOp` is bounded because it names `schema: 'v2'` itself —
+ * `actions.list` with no schema is still the unpaged v1 inventory (M2/S5).
  */
-export const ADVERTISE_ACTIONS_EXPAND = false;
+export const ADVERTISE_ACTIONS_EXPAND = true;
 
 /** The v2 section names; `summary` is accepted as an alias of `assignment`. */
 export type V2Section = 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
@@ -141,7 +149,11 @@ export interface ContextV2LoadPlan {
   readonly notLoaded: readonly V2Section[];
 }
 
-export function v2LoadPlan(kind: string, requested: ReadonlySet<V2Section> | null): ContextV2LoadPlan {
+export function v2LoadPlan(
+  kind: string,
+  requested: ReadonlySet<V2Section> | null,
+  after: ContextV2After | null = null,
+): ContextV2LoadPlan {
   const available = sectionsFor(kind);
   const messagePlan: MessagePlan = kind === 'chat' || kind === 'work_session' ? CORE_MESSAGES : TRIMMABLE_MESSAGES;
   const isTask = kind === 'task';
@@ -175,7 +187,8 @@ export function v2LoadPlan(kind: string, requested: ReadonlySet<V2Section> | nul
   return {
     explicit: true,
     assignment: has('assignment'),
-    parent: has('hierarchy'),
+    // A `--cursor` page is the section's rows only (c761 §3.5): no parent ref.
+    parent: has('hierarchy') && after === null,
     assignees: false,
     gate: false,
     blockers: has('blockers'),
@@ -187,6 +200,124 @@ export function v2LoadPlan(kind: string, requested: ReadonlySet<V2Section> | nul
     // `actions` is always notLoaded: v2 never renders the palette itself.
     notLoaded: available.filter((section) => section === 'actions' || !has(section)),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Section cursors — context-owned, one section each (c761 §5, M2/S3b)
+// ---------------------------------------------------------------------------
+
+/** The sections a `--cursor` continues. */
+export type V2PagedSection = 'hierarchy' | 'blockers' | 'connections' | 'messages';
+const PAGED: readonly V2PagedSection[] = ['hierarchy', 'blockers', 'connections', 'messages'];
+
+/**
+ * Each paged section's order, exactly as its loader sorts. It is part of the
+ * fingerprint, so a change to a loader's ORDER BY invalidates every cursor
+ * minted under the old one instead of silently skipping or repeating rows.
+ */
+const ORDERS: Record<V2PagedSection, string> = {
+  hierarchy: 'closed asc, updated_at desc, id desc',
+  blockers: 'edge created_at asc, edge id asc',
+  connections: 'edge created_at desc, edge id desc',
+  messages: 'created_at desc, id desc',
+};
+
+/**
+ * c761 §5: "the fingerprint binds entity, section, filter and order". A context
+ * cursor is consumed ONLY by `entities.context` v2 for the same entity, section
+ * and `--edge-type`; it is never an `entities.children` or
+ * `entities.connections` token, whose row shape and order differ.
+ */
+function sectionFingerprint(entityId: string, section: V2PagedSection, filter: string | null): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ operation: 'entities.context.v2', entityId, section, filter, order: ORDERS[section] }))
+    .digest('hex');
+}
+
+/** The keyset a page resumes after: the last row of the previous page. */
+export type ContextV2After =
+  | { section: 'hierarchy'; closed: boolean; at: string; id: string }
+  | { section: 'blockers' | 'connections' | 'messages'; at: string; id: string };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MICROS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+
+/**
+ * Decode and bind a context cursor BEFORE any statement runs, so a foreign,
+ * cross-filter or malformed token fails the read as `invalid_cursor` instead
+ * of reaching SQL as a cast error. The query schema already refuses a cursor
+ * without exactly one paged section; this re-checks for direct callers.
+ */
+export function decodeV2Cursor(input: {
+  id: string;
+  sections: ReadonlySet<V2Section> | null;
+  edgeType?: string | undefined;
+  cursor?: string | undefined;
+}): ContextV2After | null {
+  if (input.cursor === undefined) return null;
+  const only = input.sections?.size === 1 ? [...input.sections][0] : undefined;
+  if (!only || !PAGED.includes(only as V2PagedSection)) {
+    throw new CollabError(
+      'invalid_input',
+      'a context cursor continues exactly one paged section (hierarchy, blockers, connections or messages)',
+    );
+  }
+  const section = only as V2PagedSection;
+  const filter = section === 'connections' ? (input.edgeType ?? null) : null;
+  const { k } = decodeCursor(input.cursor);
+  const arity = section === 'hierarchy' ? 3 : 2;
+  if (k.length !== arity + 1 || k[0] !== sectionFingerprint(input.id, section, filter)) {
+    throw new CollabError('invalid_cursor', `cursor does not continue ${section} of this entity with this filter`);
+  }
+  const at = String(k.at(-2));
+  const rowId = String(k.at(-1));
+  if (!MICROS_RE.test(at) || !UUID_RE.test(rowId)) throw new CollabError('invalid_cursor', 'cursor keys are malformed');
+  if (section === 'hierarchy') {
+    if (k[1] !== 0 && k[1] !== 1) throw new CollabError('invalid_cursor', 'cursor keys are malformed');
+    return { section, closed: k[1] === 1, at, id: rowId };
+  }
+  return { section, at, id: rowId };
+}
+
+/** The expand for one section page: `--cursor` present unless it is the first. */
+function pageExpand(
+  id: string,
+  section: V2PagedSection,
+  filter: string | null,
+  keys: Array<string | number> | null,
+): { expand: string; expandOp: EntityContextExpandOp } {
+  const cursor = keys === null ? null : encodeCursor([sectionFingerprint(id, section, filter), ...keys]);
+  return {
+    expand: `tm8 entity context ${id} --sections ${section}`
+      + (filter === null ? '' : ` --edge-type ${filter}`)
+      + (cursor === null ? '' : ` --cursor ${cursor}`),
+    expandOp: {
+      operation: 'entities.context',
+      params: {
+        id,
+        sections: [section],
+        ...(filter === null ? {} : { edgeType: filter }),
+        ...(cursor === null ? {} : { cursor }),
+      },
+    },
+  };
+}
+
+/**
+ * The expand that continues a list after its first `kept` rows (in load
+ * order). Built lazily so a budget trim (c904 §2.7) re-points it at the last
+ * row it actually kept. `kept = 0` is the section's first page.
+ */
+type Pager = (kept: number) => { expand: string; expandOp: EntityContextExpandOp };
+
+function pagerOf<R>(
+  id: string,
+  section: V2PagedSection,
+  filter: string | null,
+  rows: readonly R[],
+  keysOf: (row: R) => Array<string | number>,
+): Pager {
+  return (kept) => pageExpand(id, section, filter, kept === 0 ? null : keysOf(rows[kept - 1]!));
 }
 
 // ---------------------------------------------------------------------------
@@ -311,15 +442,18 @@ const encodedBytes = (value: string): number => jsonBytes(value) - 2;
  * bytes, so a cut on raw bytes alone would overrun it by the escapes.
  */
 function cutEncoded(value: string, limit: number): string {
-  let raw = limit;
-  let text = cutUtf8(value, raw);
-  for (let round = 0; round < 16; round += 1) {
-    const over = encodedBytes(text) - limit;
-    if (over <= 0) return text;
-    raw -= over;
-    text = cutUtf8(value, Math.max(0, raw));
+  if (encodedBytes(value) <= limit) return value;
+  // Binary search on the raw cut: `cutUtf8` is monotone in its limit, but it
+  // snaps back to a line end, so an over-by-N step from the snapped text can
+  // undershoot the correction and never converge (#697 stalled on escapes).
+  let lo = 0;
+  let hi = Math.min(Math.max(0, limit), utf8Bytes(value));
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (encodedBytes(cutUtf8(value, mid)) <= limit) lo = mid;
+    else hi = mid - 1;
   }
-  return text;
+  return cutUtf8(value, lo);
 }
 
 // ---------------------------------------------------------------------------
@@ -445,7 +579,7 @@ function notLoadedEntry(id: string, section: V2Section): EntityContextNotLoaded 
       ? {
           section,
           expand: `tm8 action list --for ${id}`,
-          expandOp: { operation: 'actions.list', params: { contextEntityId: id } },
+          expandOp: { operation: 'actions.list', params: { contextEntityId: id, schema: 'v2' } },
         }
       : { section };
   }
@@ -477,6 +611,8 @@ interface Loaded {
   connections?: EntityContextConnection[];
   /** rowLimit trims, from fetching one row past the limit. */
   omitted: EntityContextOmitted[];
+  /** `omitted[]` section → the expand that continues it after N kept rows. */
+  pagers: Map<string, Pager>;
   errors: EntityContextError[];
   asOfSeq: number;
 }
@@ -510,10 +646,20 @@ async function listLoader<T>(
   }
 }
 
-/** `rows` fetched as `limit + 1`: keep `limit`, and note `more` in `omitted[]`. */
-function keep<T>(rows: readonly T[], limit: number, section: string, omitted: EntityContextOmitted[]): T[] {
+/**
+ * `rows` fetched as `limit + 1`: keep `limit`, and note `more` in `omitted[]`
+ * with the expand that continues after the last kept row.
+ */
+function keep<T>(
+  rows: readonly T[],
+  limit: number,
+  section: string,
+  loaded: Pick<Loaded, 'omitted' | 'pagers'>,
+  pager: Pager,
+): T[] {
+  loaded.pagers.set(section, pager);
   if (rows.length <= limit) return [...rows];
-  omitted.push({ section, kept: limit, more: true, reason: 'rowLimit' });
+  loaded.omitted.push({ section, kept: limit, more: true, reason: 'rowLimit', ...pager(limit) });
   return rows.slice(0, limit);
 }
 
@@ -532,7 +678,14 @@ function namedRef(refs: Map<string, RefRow>, id: string): EntityContextRef {
   return row ? refOf(row) : { id, unreadable: true };
 }
 
-async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> | null): Promise<{ loaded: Loaded; plan: ContextV2LoadPlan }> {
+interface V2Request {
+  readonly sections: ReadonlySet<V2Section> | null;
+  readonly edgeType: string | null;
+  readonly after: ContextV2After | null;
+}
+
+async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loaded: Loaded; plan: ContextV2LoadPlan }> {
+  const { after, edgeType } = request;
   // The root carries the body, acceptance and every per-kind scalar, so a
   // failure here — or on anything the core needs — fails the read (c761 Q17).
   const rootRows = await taggedQuerier(q, 'root').query<EntityRow>(
@@ -543,10 +696,10 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
   // c761 Q15: a deleted root is not_found (no caller asks for deleted rows yet).
   if (!root || root.deleted_at) throw new CollabError('not_found', `no readable entity: ${id}`);
 
-  const plan = v2LoadPlan(root.kind, requested);
+  const plan = v2LoadPlan(root.kind, request.sections, after);
   const omitted: EntityContextOmitted[] = [];
   const errors: EntityContextError[] = [];
-  const loaded: Loaded = { root, parent: undefined, omitted, errors, asOfSeq: 0 };
+  const loaded: Loaded = { root, parent: undefined, omitted, pagers: new Map(), errors, asOfSeq: 0 };
 
   if (plan.parent) {
     if (root.parent_id) {
@@ -588,13 +741,22 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
     if (root.completion_gate === 'pr_merged') {
       // c761 Q13: one indexed read, gated tasks only. `tracks` is the edge the
       // gate itself evaluates (151_completion_gate_on_the_transition.sql).
-      const prs = await listLoader(q, 'gate', 'gate', errors, (tq) => tq.query<{
-        url: string | null; state: string | null; ci_status: string | null;
+      // LEFT joins: edges are space-visible, so a tracked PR the caller cannot
+      // read still has its edge, and renders `{id, unreadable:true}` (c761 §6)
+      // rather than vanishing into `prs:[]`. A readable non-PR target (a
+      // tracked commit) is not a PR and is skipped in SQL, before the limit.
+      // A failure is reported under `connections`: the gate is a core field,
+      // not a section, and its expand is `--sections connections --edge-type
+      // tracks` (c761 §5, "gate PRs beyond 10").
+      const prs = await listLoader(q, 'gate', 'connections', errors, (tq) => tq.query<{
+        id: string; readable: boolean; url: string | null; state: string | null; ci_status: string | null;
       }>(
-        `select pr.url, pr.state, pr.ci_status
+        `select g.dst_id id, target.id is not null readable, pr.url, pr.state, pr.ci_status
            from public.edges g
-           join public.pull_requests pr on pr.entity_id = g.dst_id
+           left join public.entities target on target.id = g.dst_id
+           left join public.pull_requests pr on pr.entity_id = target.id
           where g.src_id = $1 and g.type = 'tracks'
+            and (target.id is null or target.kind = 'pull_request')
           order by g.created_at asc, g.id asc
           limit ${ROW_LIMIT + 1}`,
         [id],
@@ -602,7 +764,9 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
       if (prs) {
         loaded.gate = {
           kind: 'pr_merged',
-          prs: prs.slice(0, ROW_LIMIT).map((pr) => ({ url: pr.url ?? '', state: pr.state ?? 'unknown', ci: pr.ci_status })),
+          prs: prs.slice(0, ROW_LIMIT).map((pr) => (pr.readable
+            ? { url: pr.url ?? '', state: pr.state ?? 'unknown', ci: pr.ci_status }
+            : { id: pr.id, unreadable: true as const })),
           ...(prs.length > ROW_LIMIT ? { more: true as const } : {}),
         };
       }
@@ -614,29 +778,48 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
   if (plan.blockers) {
     // c761 Q14: unresolved `depends_on` only, ONE filtered query. A target the
     // caller cannot read is dropped by RLS with no marker (c761 Q16).
-    const rows = await listLoader(q, 'blockers', 'blockers', errors, (tq) => tq.query<RefRow>(
-      `select ${REF_COLUMNS} ${REF_FROM}
+    const page = after?.section === 'blockers' ? after : null;
+    const rows = await listLoader(q, 'blockers', 'blockers', errors, (tq) => tq.query<RefRow & {
+      edge_id: string; edge_key: string;
+    }>(
+      `select ${REF_COLUMNS}, g.id edge_id, ${MICROS('g.created_at')} edge_key ${REF_FROM}
          join public.edges g on g.dst_id = e.id and g.src_id = $1 and g.type = 'depends_on'
         where not internal.is_resolved(g.dst_id)
+          ${page ? 'and (g.created_at, g.id) > ($2::timestamptz, $3::uuid)' : ''}
         order by g.created_at asc, g.id asc
         limit ${ROW_LIMIT + 1}`,
-      [id],
+      page ? [id, page.at, page.id] : [id],
     ));
-    if (rows) loaded.blockers = keep(rows, ROW_LIMIT, 'blockers', omitted).map(blockerOf);
+    if (rows) {
+      loaded.blockers = keep(rows, ROW_LIMIT, 'blockers', loaded,
+        pagerOf(id, 'blockers', null, rows, (row) => [row.edge_key, row.edge_id])).map(blockerOf);
+    }
   }
 
   if (plan.children) {
     // c761 Q5: open children first, then most recently updated.
-    const rows = await listLoader(q, 'children', 'children', errors, (tq) => tq.query<RefRow>(
-      `select ${REF_COLUMNS} ${REF_FROM}
-        where e.parent_id = $1 and e.deleted_at is null
-        order by coalesce(e.status_category in ('done', 'cancelled')
-                          or t.work_status in ('done', 'cancelled'), false) asc,
-                 e.updated_at desc, e.id desc
+    const page = after?.section === 'hierarchy' ? after : null;
+    const rows = await listLoader(q, 'children', 'children', errors, (tq) => tq.query<RefRow & {
+      closed: boolean; updated_key: string;
+    }>(
+      `select c.* from (
+         select ${REF_COLUMNS}, e.updated_at, ${MICROS('e.updated_at')} updated_key,
+                coalesce(e.status_category in ('done', 'cancelled')
+                         or t.work_status in ('done', 'cancelled'), false) closed
+           ${REF_FROM}
+          where e.parent_id = $1 and e.deleted_at is null
+       ) c
+       ${page ? `where c.closed > $2::boolean
+                   or (c.closed = $2::boolean and (c.updated_at < $3::timestamptz
+                       or (c.updated_at = $3::timestamptz and c.id < $4::uuid)))` : ''}
+        order by c.closed asc, c.updated_at desc, c.id desc
         limit ${ROW_LIMIT + 1}`,
-      [id],
+      page ? [id, page.closed, page.at, page.id] : [id],
     ));
-    if (rows) loaded.children = keep(rows, ROW_LIMIT, 'children', omitted).map(refOf);
+    if (rows) {
+      loaded.children = keep(rows, ROW_LIMIT, 'children', loaded,
+        pagerOf(id, 'hierarchy', null, rows, (row) => [row.closed ? 1 : 0, row.updated_key, row.id])).map(refOf);
+    }
   }
 
   if (plan.sessionCard) {
@@ -649,14 +832,22 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
     );
     loaded.teammate = persona[0]?.name ?? null;
     // c761 Q7: the session's tasks, one indexed read of `working_on`.
-    const rows = await listLoader(q, 'tasks', 'tasks', errors, (tq) => tq.query<RefRow>(
+    // A failure is reported under `connections`, the section whose
+    // `--edge-type working_on` expand lists these tasks: `tasks` is a core
+    // field of a session, not a section a caller can request.
+    const rows = await listLoader(q, 'tasks', 'connections', errors, (tq) => tq.query<RefRow>(
       `select ${REF_COLUMNS} ${REF_FROM}
          join public.edges g on g.dst_id = e.id and g.src_id = $1 and g.type = 'working_on'
         order by g.created_at asc, g.id asc
         limit ${ROW_LIMIT + 1}`,
       [id],
     ));
-    if (rows) loaded.tasks = keep(rows, ROW_LIMIT, 'tasks', omitted).map(refOf);
+    if (rows) {
+      // Tasks are oldest-first and connections newest-first, so no cursor can
+      // continue one from the other: the expand is the filtered section itself.
+      const tasksPage = pageExpand(id, 'connections', 'working_on', null);
+      loaded.tasks = keep(rows, ROW_LIMIT, 'tasks', loaded, () => tasksPage).map(refOf);
+    }
   }
 
   if (plan.messageCard) {
@@ -683,9 +874,12 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
   if (plan.messages) {
     const limit = plan.messages.limit;
     const author = actorNameSql('m.author_id', 'author');
-    const rows = await listLoader(q, 'messages', 'messages', errors, (tq) => tq.query<MessageRow>(
+    // A page continues to OLDER messages, so walking it reassembles the thread.
+    const page = after?.section === 'messages' ? after : null;
+    const rows = await listLoader(q, 'messages', 'messages', errors, (tq) => tq.query<MessageRow & { at_key: string }>(
       `with ${ME_CTE}
        select m.entity_id id, e.parent_id reply_to, m.body, m.redacted_at, m.created_at,
+              ${MICROS('m.created_at')} at_key,
               ${author.select} author_name,
               exists (
                 select 1 from jsonb_array_elements(coalesce(m.mentions, '[]'::jsonb)) mention
@@ -695,36 +889,58 @@ async function loadV2(q: Querier, id: string, requested: ReadonlySet<V2Section> 
          join public.entities e on e.id = m.entity_id and e.deleted_at is null
          ${author.joins}
         where m.anchor_id = $1
+          ${page ? 'and (m.created_at, m.entity_id) < ($3::timestamptz, $4::uuid)' : ''}
         order by m.created_at desc, m.entity_id desc
         limit ${limit + 1}`,
-      [id, root.space_id],
+      page ? [id, root.space_id, page.at, page.id] : [id, root.space_id],
     ));
     if (rows) {
       // Latest N selected, emitted oldest→newest (c761 Q6).
-      loaded.messages = keep(rows, limit, 'messages', omitted).reverse()
+      loaded.messages = keep(rows, limit, 'messages', loaded,
+        pagerOf(id, 'messages', null, rows, (row) => [row.at_key, row.id])).reverse()
         .map((row) => messageOf(row, plan.messages!.cap));
     }
   }
 
   if (plan.connections) {
     // Explicit `--sections connections`: every edge type but `anchored_to`
-    // (c761 Q11), newest first. A hidden endpoint drops the row silently.
+    // (c761 Q11), newest first; `--edge-type` narrows it to one type,
+    // `anchored_to` included when named. A hidden endpoint drops the row
+    // silently. The two directions are a UNION ALL of two index-driven scans
+    // rather than an OR join, which the planner can only satisfy by probing
+    // every edge per entity row; the in-direction skips a self-loop so it is
+    // listed once, as `out`, exactly as the OR join listed it. The limit
+    // applies after the join, so a hidden endpoint never shortens a page.
+    const page = after?.section === 'connections' ? after : null;
+    const params: unknown[] = [id];
+    const typeFilter = edgeType === null ? `g.type <> 'anchored_to'` : `g.type = $${params.push(edgeType)}`;
+    const keyset = page
+      ? `and (g.created_at, g.id) < ($${params.push(page.at)}::timestamptz, $${params.push(page.id)}::uuid)`
+      : '';
     const rows = await listLoader(q, 'connections', 'connections', errors, (tq) => tq.query<RefRow & {
-      edge_type: string; outgoing: boolean; edge_resolved: boolean | null;
+      edge_type: string; outgoing: boolean; edge_resolved: boolean | null; edge_id: string; edge_key: string;
     }>(
-      `select g.type edge_type, g.src_id = $1 outgoing,
-              case when g.type = 'depends_on' and g.src_id = $1
-                   then internal.is_resolved(g.dst_id) end edge_resolved,
+      `select c.edge_type, c.outgoing,
+              case when c.edge_type = 'depends_on' and c.outgoing
+                   then internal.is_resolved(c.other_id) end edge_resolved,
+              c.edge_id, ${MICROS('c.edge_at')} edge_key,
               ${REF_COLUMNS} ${REF_FROM}
-         join public.edges g
-           on (g.src_id = $1 and g.dst_id = e.id) or (g.dst_id = $1 and g.src_id = e.id)
-        where g.type <> 'anchored_to'
-        order by g.created_at desc, g.id desc
+         join (
+           (select g.id edge_id, g.type edge_type, g.created_at edge_at, true outgoing, g.dst_id other_id
+              from public.edges g
+             where g.src_id = $1 and ${typeFilter} ${keyset})
+           union all
+           (select g.id, g.type, g.created_at, false, g.src_id
+              from public.edges g
+             where g.dst_id = $1 and g.src_id <> $1 and ${typeFilter} ${keyset})
+         ) c on c.other_id = e.id
+        order by c.edge_at desc, c.edge_id desc
         limit ${ROW_LIMIT + 1}`,
-      [id],
+      params,
     ));
     if (rows) {
-      loaded.connections = keep(rows, ROW_LIMIT, 'connections', omitted).map((row) => ({
+      loaded.connections = keep(rows, ROW_LIMIT, 'connections', loaded,
+        pagerOf(id, 'connections', edgeType, rows, (row) => [row.edge_key, row.edge_id])).map((row) => ({
         type: row.edge_type,
         dir: row.outgoing ? 'out' as const : 'in' as const,
         other: refOf(row),
@@ -775,11 +991,20 @@ function droppableLists(messagesAreCore: boolean): Array<'connections' | 'childr
  * outline, notLoaded, errors, a chat's or session's messages) stay in, because
  * a ceiling that ignored them would make the default read overrun its own
  * 16,384 B with nothing left to drop — a default read that 422s.
+ * A list the budget may empty is measured as the `omitted[]` entry its trim
+ * would leave (with a section cursor, whose length does not depend on which
+ * row it names), so trimming rows can never push a default read past its own
+ * ceiling into a 422 (M2/S3b).
  */
-function envelopeBytes(view: View, messagesAreCore: boolean): number {
-  const clone = structuredClone(view) as Record<string, unknown>;
+function envelopeBytes(view: View, messagesAreCore: boolean, pagers: ReadonlyMap<string, Pager>): number {
+  const clone = structuredClone(view) as View;
   (clone['assignment'] as EntityContextAssignment).text = '';
-  for (const key of droppableLists(messagesAreCore)) if (Array.isArray(clone[key])) clone[key] = [];
+  for (const key of droppableLists(messagesAreCore)) {
+    const rows = clone[key];
+    if (!Array.isArray(rows)) continue;
+    if (rows.length > 0) trimmed(clone, key, rows.length, pagers);
+    clone[key] = [];
+  }
   return jsonBytes(clone);
 }
 
@@ -930,15 +1155,20 @@ function withOutline(view: View, body: string): void {
   Object.assign(view, reordered);
 }
 
-/** Record a budget trim on the section's `omitted[]` entry (c904 §2.7). */
-function trimmed(view: View, section: string, kept: number): void {
+/**
+ * Record a budget trim on the section's `omitted[]` entry (c904 §2.7), its
+ * expand re-pointed at the last row the trim kept.
+ */
+function trimmed(view: View, section: string, kept: number, pagers: ReadonlyMap<string, Pager>): void {
+  const page = pagers.get(section)?.(kept);
   const entry = view.omitted.find((o) => o.section === section);
   if (entry) {
     entry.kept = kept;
     entry.more = true;
     entry.reason = 'budget';
+    if (page) Object.assign(entry, page);
   } else {
-    view.omitted.push({ section, kept, more: true, reason: 'budget' });
+    view.omitted.push({ section, kept, more: true, reason: 'budget', ...page });
   }
 }
 
@@ -957,7 +1187,7 @@ function bodyExpand(id: string, offset: number): { expand: string; expandOp: Ent
  * envelope, and the marker names the next offset, so the cut is settled on a
  * fixed point: cut, re-mark, re-measure, until the cut stops moving.
  */
-function cutAtCeiling(view: View, id: string, messagesAreCore: boolean): void {
+function cutAtCeiling(view: View, id: string, messagesAreCore: boolean, pagers: ReadonlyMap<string, Pager>): void {
   const assignment = view.assignment;
   if (!assignment) return;
   const rest = assignment.text;
@@ -966,7 +1196,7 @@ function cutAtCeiling(view: View, id: string, messagesAreCore: boolean): void {
   const start = assignment.offset ?? 0;
   const ceiling = (): number => {
     settle(view, V2_DEFAULT_TOTAL_BYTES);
-    return Math.max(0, V2_DEFAULT_TOTAL_BYTES - envelopeBytes(view, messagesAreCore));
+    return Math.max(0, V2_DEFAULT_TOTAL_BYTES - envelopeBytes(view, messagesAreCore, pagers));
   };
   if (encodedBytes(rest) <= ceiling()) return;
 
@@ -1067,8 +1297,9 @@ function fit(
   requested: number,
   input: { sections: ReadonlySet<V2Section> | null; offset?: number },
   messagesAreCore: boolean,
+  pagers: ReadonlyMap<string, Pager>,
 ): View {
-  cutAtCeiling(view, id, messagesAreCore);
+  cutAtCeiling(view, id, messagesAreCore, pagers);
 
   let used = settle(view, requested);
   for (const key of droppableLists(messagesAreCore)) {
@@ -1078,7 +1309,7 @@ function fit(
       // messages are emitted oldest→newest, so the oldest is at the front.
       if (key === 'messages') rows.shift();
       else rows.pop();
-      trimmed(view, key, rows.length);
+      trimmed(view, key, rows.length, pagers);
       used = settle(view, requested);
     }
   }
@@ -1093,10 +1324,21 @@ function fit(
 export async function loadContextV2(
   q: Querier,
   id: string,
-  input: { sections: ReadonlySet<V2Section> | null; totalBytes: number; offset?: number },
+  input: {
+    sections: ReadonlySet<V2Section> | null;
+    totalBytes: number;
+    offset?: number;
+    edgeType?: string | undefined;
+    /** Decoded by `decodeV2Cursor` before the transaction opens. */
+    after?: ContextV2After | null;
+  },
 ): Promise<EntityContextV2View> {
-  const { loaded, plan } = await loadV2(q, id, input.sections);
+  const { loaded, plan } = await loadV2(q, id, {
+    sections: input.sections,
+    edgeType: input.edgeType ?? null,
+    after: input.after ?? null,
+  });
   const view = assemble(id, loaded, plan, input.offset);
   const messagesAreCore = plan.messages?.core === true;
-  return fit(view, id, input.totalBytes, input, messagesAreCore);
+  return fit(view, id, input.totalBytes, input, messagesAreCore, loaded.pagers);
 }

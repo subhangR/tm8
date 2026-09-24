@@ -741,7 +741,7 @@ describe('entity context', () => {
     }
   });
 
-  for (const flag of ['--depth', '--messages', '--children', '--edge-type']) {
+  for (const flag of ['--depth', '--messages', '--children']) {
     it(`${flag} is an ordinary unknown option now — the refusal quotes the REAL syntax`, async () => {
       const r = await drive(['entity', 'context', ENT, flag, '1']);
       expect(r.code).toBe(2);
@@ -750,6 +750,15 @@ describe('entity context', () => {
       expect(r.stderr).toContain('--sections');
     });
   }
+
+  // S3b: --edge-type is a real flag again, but only as the v2 connections
+  // filter; anywhere else it is refused before anything is sent.
+  it('--edge-type outside a v2 connections read is a usage error that sends nothing', async () => {
+    const r = await drive(['entity', 'context', ENT, '--edge-type', 'tracks']);
+    expect(r.code).toBe(2);
+    expect(seen).toHaveLength(0);
+    expect(r.stderr).toContain('--schema v2 --sections connections');
+  });
 });
 
 /**
