@@ -335,6 +335,18 @@ describe('events.poll paging — exactly-once, not merely duplicate-free', () =>
     const spaceId = created.space?.id ?? created.id;
     expect(spaceId, `could not read a space id from ${mk.stdout}`).toBeTruthy();
 
+    // THE KNOWN SET IS WHAT THIS TEST SEEDS, not the whole space feed. A new
+    // space is born with its own bootstrap events (menu, channels, members), and
+    // that count only grows: 63 on the CI run that timed this test out at 120s,
+    // because each `--limit 1` page is a fresh `tm8` process (~1.9s on the
+    // runner). Starting the walk at the feed's position BEFORE seeding keeps
+    // every walked row a page boundary, which is the whole point of --limit 1,
+    // while the cost stays proportional to what the test itself wrote.
+    const before = await cli(
+      ['event', 'list', '--space', spaceId!, '--limit', '500', '--format', 'json'], server);
+    expect(before.code, before.stderr).toBe(0);
+    const start = (JSON.parse(before.stdout) as { nextCursor: string | null }).nextCursor ?? '0';
+
     // Seeded over raw HTTP rather than through `tm8 entity create`, DELIBERATELY:
     // that command belongs to another slot and is not wired into the built CLI
     // right now (it answers the kernel's honest exit 8, "in the tm8 grammar but
@@ -354,14 +366,15 @@ describe('events.poll paging — exactly-once, not merely duplicate-free', () =>
       ['event', 'list', '--space', spaceId!, '--limit', '500', '--format', 'json'], server);
     expect(whole.code, whole.stderr).toBe(0);
     const full = JSON.parse(whole.stdout) as { items: Array<{ seq: number }>; nextCursor: string };
-    const fullSeqs = full.items.map((e) => e.seq);
+    const fullSeqs = full.items.map((e) => e.seq).filter((seq) => seq > Number(start));
     measured['events.poll.knownSetSize'] = fullSeqs.length;
     // GUARD AGAINST A VACUOUS SWEEP: a loop over zero rows would satisfy every
-    // assertion below and prove nothing at all.
-    expect(fullSeqs.length).toBeGreaterThan(0);
+    // assertion below and prove nothing at all. Three seeded tasks are at
+    // least three events after `start`.
+    expect(fullSeqs.length).toBeGreaterThanOrEqual(3);
 
     const walked: number[] = [];
-    let cursor = '0';
+    let cursor = start;
     for (let guard = 0; guard < 200; guard++) {
       const r = await cli(
         ['event', 'list', '--space', spaceId!, '--after', cursor, '--limit', '1', '--format', 'json'],
