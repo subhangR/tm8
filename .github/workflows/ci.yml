@@ -132,7 +132,7 @@ jobs:
   # The table tests of the scripts this workflow's gating depends on (W2-4). Every run,
   # required by ci-ok: it is what stops a MODULE_OF/EXTRA_EDGES or ci-ok regression merging.
   ci-scripts:
-    name: ci scripts (affected / changes / ci-ok table tests)
+    name: ci scripts (affected / changes / ci-ok / wiring table tests)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -141,6 +141,9 @@ jobs:
         run: bash tools/ci/affected.test.sh
       - name: changes.sh + ci-ok.sh table test
         run: bash tools/ci/ci-ok.test.sh
+      # every check.sh stage is in some job's --only list, every module has one job (W3)
+      - name: check.sh -> ci.yml wiring test
+        run: bash tools/ci/ci-wiring.test.sh
 
   # Always runs, gated on nothing: every module's build depends on it.
   typecheck:
@@ -153,7 +156,7 @@ jobs:
       - name: Typecheck
         run: >-
           bash tools/ci/check.sh --only
-          typecheck:packages/contract,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,typecheck:packages/execution,typecheck:packages/cli,typecheck:tools/conformance,typecheck:packages/tm8-ui
+          typecheck:packages/contract,typecheck:packages/prompt,typecheck:packages/jev,typecheck:packages/mcp,typecheck:packages/server,typecheck:packages/execution,typecheck:packages/cli,typecheck:tools/conformance,typecheck:packages/tm8-ui
 
   test-server:
     name: test-server (${{ matrix.shard }}/4)
@@ -308,11 +311,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tm8-setup
-      # Builds: packages/contract, packages/jev, tools/conformance.
+      # Builds: packages/contract, packages/jev, tools/conformance. mcp and prompt are
+      # src-only suites (CI split W3): mcp's tests need only the contract dist built here,
+      # prompt's import no workspace package. Both are typechecked in the typecheck job.
       - name: Gate
         run: >-
           bash tools/ci/check.sh --only
-          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance
+          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance,test:packages/mcp,test:packages/prompt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
