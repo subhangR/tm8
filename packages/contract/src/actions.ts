@@ -66,3 +66,4 @@ export function isActionRows(value: unknown): value is ActionRows {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && (value as { schema?: unknown }).schema === 'tm8.actions.v2';
 }
+// W2 proof: contract
