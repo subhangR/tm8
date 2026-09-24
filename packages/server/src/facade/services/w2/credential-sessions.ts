@@ -61,6 +61,16 @@ import {
   ensureCredentialHome,
 } from '../../../credentials/agent-credential-home.js';
 import {
+  assertSpaceLoginProvider,
+  SpaceLoginHomes,
+  type SpaceLoginHomeKey,
+} from '../../../credentials/space-credential-home.js';
+import {
+  DbSpaceCredentialStore,
+  type SpaceCredential,
+  type SpaceCredentialLoginFinish,
+} from '../../../credentials/space-credential-store.js';
+import {
   captureGitHubToken,
   credentialCliInstallMessage,
   measureCredentialBinary,
@@ -113,6 +123,13 @@ export interface StartCredentialSessionInput {
   provider: string;
   cols?: number;
   rows?: number;
+  /**
+   * A login into a SPACE credential (206, SC-4) instead of the member's own:
+   * `label` opens a new pending credential (any member, D1), `credentialId`
+   * logs in again onto an existing one (its creator or a space admin, M4).
+   * Exactly one of the two.
+   */
+  spaceCredential?: { label?: string; credentialId?: string };
 }
 
 export interface StartedCredentialSession {
@@ -122,6 +139,8 @@ export interface StartedCredentialSession {
   expiresAt: string;
   /** The exact table entry that was launched. Recorded, never accepted. */
   command: string;
+  /** A space login's credential: the new pending row, or the one logged into. */
+  spaceCredential?: SpaceCredential;
 }
 
 export interface FinishedCredentialSession {
@@ -131,6 +150,11 @@ export interface FinishedCredentialSession {
   /** True when the metadata row was written. False for any non-positive probe. */
   stored: boolean;
   terminated: boolean;
+  /**
+   * A space login's credential AS THE PROBED FINISH LEFT IT (I6): the row
+   * `finish_space_credential_login` returned, never a reading of the files.
+   */
+  spaceCredential?: SpaceCredential;
 }
 
 /** What one pass of `closeSession` established. */
@@ -151,7 +175,25 @@ interface CloseOutcome {
   terminated: boolean;
   /** The first error that occurred, or null. Returned, never thrown — see `closeSession`. */
   failure: unknown;
+  /** A space login: the credential row the finish RPC returned. */
+  spaceCredential?: SpaceCredential;
+  /**
+   * A space login whose PTY the host could not kill. Its row is NOT stamped
+   * and its registry entry is kept, so the next sweep tries again: a row
+   * stamped finished over a live terminal is what unblocks a re-login that
+   * then races that terminal for the space home (A6, kill-before-stamp).
+   */
+  killFailed?: boolean;
 }
+
+/**
+ * How a close treats the terminal. `probe` asks the vendor CLI what the
+ * terminal achieved (the member's own finish, and a PTY that exited before
+ * its expiry). `abandon` never probes: an expired space login is closed
+ * through `finish_space_credential_login(ws, false)` and nothing else, so
+ * 206's N1/B1/B2 guards and lock order stay the only write path.
+ */
+type CloseMode = 'probe' | 'abandon';
 
 /** The row `reportClosedSession` reads for a session this node no longer holds. */
 interface ClosedSessionRow {
@@ -175,6 +217,12 @@ interface RegistryEntry {
   env: Record<string, string>;
   /** Held so the sweep can finish the row AS ITS OWNER, not as the node. */
   principal: CredentialPrincipal;
+  /**
+   * Set for a login into a space credential. Every close of this entry then
+   * goes through `finish_space_credential_login` — never 083's member finish —
+   * and a probed success is promoted from the staging home into the space home.
+   */
+  space?: SpaceLoginHomeKey & { isNew: boolean };
 }
 
 interface StartRpcResult {
@@ -218,6 +266,26 @@ export interface W2CredentialSessionsServiceOptions {
     provider: 'github';
     token: string;
   }) => Promise<void>;
+  /** 206's space-login RPCs. Defaults to the real store over `db`. */
+  spaceStore?: SpaceLoginStorePort;
+  /** The space login homes. Defaults to one over `dataDir`; share it with delete. */
+  spaceHomes?: SpaceLoginHomes;
+}
+
+export type SpaceLoginStorePort = Pick<
+  DbSpaceCredentialStore,
+  'startLogin' | 'finishLogin' | 'liveSessions' | 'expirePending' | 'recordProbe'
+>;
+
+/** What `closeSpaceLogin` did for a caller outside this service (delete). */
+export type SpaceLoginCloseResult = 'closed' | 'kill_failed';
+
+interface OwnSpaceLoginRow {
+  work_session_id: string;
+  space_credential_id: string;
+  provider: string;
+  expires_at: Date | string;
+  finished_at: Date | string | null;
 }
 
 export class W2CredentialSessionsService {
@@ -233,6 +301,8 @@ export class W2CredentialSessionsService {
   private readonly storeGitCredential:
     | W2CredentialSessionsServiceOptions['storeGitCredential']
     | undefined;
+  private readonly spaceStore: SpaceLoginStorePort;
+  private readonly spaceHomes: SpaceLoginHomes;
 
   /** This node's live login terminals. See the sweep discussion in the header. */
   private readonly registry = new Map<string, RegistryEntry>();
@@ -288,6 +358,9 @@ export class W2CredentialSessionsService {
     this.binaryResolver = options.binaryResolver;
     this.now = options.now ?? (() => Date.now());
     this.storeGitCredential = options.storeGitCredential;
+    this.spaceStore =
+      options.spaceStore ?? new DbSpaceCredentialStore({ db: options.db, dataDir: options.dataDir });
+    this.spaceHomes = options.spaceHomes ?? new SpaceLoginHomes({ dataDir: options.dataDir });
   }
 
   // -------------------------------------------------------------------------
@@ -326,6 +399,7 @@ export class W2CredentialSessionsService {
     input: StartCredentialSessionInput,
     principal: CredentialPrincipal,
   ): Promise<StartedCredentialSession> {
+    if (input.spaceCredential) return this.startSpace(input, input.spaceCredential, principal);
     const { provider } = input;
     assertKnownProvider(provider);
 
@@ -511,6 +585,7 @@ export class W2CredentialSessionsService {
       probe: outcome.probe,
       stored: outcome.stored,
       terminated: outcome.terminated,
+      ...(outcome.spaceCredential ? { spaceCredential: outcome.spaceCredential } : {}),
     };
   }
 
@@ -595,12 +670,15 @@ export class W2CredentialSessionsService {
   private closeSession(
     entry: RegistryEntry,
     principal: CredentialPrincipal,
+    mode: CloseMode = 'probe',
   ): Promise<CloseOutcome> {
     const inFlight = this.closing.get(entry.workSessionId);
     if (inFlight) return inFlight;
     // The claim is registered from the promise, not from inside `runClose`,
     // so the entry cannot be cleared before it is set.
-    const run = this.runClose(entry, principal);
+    const run = entry.space
+      ? this.runSpaceClose(entry, principal, mode)
+      : this.runClose(entry, principal);
     const claim = run.finally(() => {
       this.closing.delete(entry.workSessionId);
     });
@@ -690,21 +768,19 @@ export class W2CredentialSessionsService {
   ): Promise<FinishedCredentialSession> {
     const sessions = await this.db.query<ClosedSessionRow>(
       principal.claims,
+      // A space login's row is not a member credential session (A3b): read
+      // without this filter, its provider sent a space login to the member's
+      // own `account_agent_credentials` row and reported THAT as its outcome.
       `select provider
          from public.credential_sessions
-        where work_session_id = $1`,
+        where work_session_id = $1
+          and space_credential_id is null`,
       [workSessionId],
     );
     const session = sessions[0];
-    // RLS already scopes this to the caller's own rows, so no row really does
-    // mean "never existed, or not yours" — the original `not_found`, still the
-    // right answer.
-    if (!session) {
-      throw new CollabError(
-        'not_found',
-        'no live credential session on this node for that work session',
-      );
-    }
+    // No member row: a space login's, or (RLS scopes both to the caller's own
+    // rows) "never existed, or not yours" — `not_found`, answered there.
+    if (!session) return this.reportClosedSpaceSession(workSessionId, principal);
 
     const provider = session.provider as CredentialProvider;
     const probe = await this.readStoredCredential(provider, principal);
@@ -835,6 +911,10 @@ export class W2CredentialSessionsService {
     try {
       const now = this.now();
       let swept = 0;
+      // `expire_pending_space_credentials` must be called by a human (206);
+      // the node has no such identity, so it borrows the claims of a space
+      // login it just closed — the one moment a pending row may have aged out.
+      let spaceClaims: DbClaims | null = null;
       for (const entry of [...this.registry.values()]) {
         const expired = entry.expiresAtMs <= now;
         const gone = !this.launcher.hasLiveTerminal(entry.workSessionId);
@@ -847,7 +927,16 @@ export class W2CredentialSessionsService {
         // If another path claimed it between the snapshot and here, this awaits
         // THAT close rather than skipping the entry, so the tick does not
         // return while a session it is responsible for is still half-closed.
-        const outcome = await this.closeSession(entry, entry.principal);
+        // A SPACE login past its expiry is ABANDONED, never probed: the sweep
+        // closes its row only through `finish_space_credential_login(ws,
+        // false)`, after the kill (acceptance 1 and 2; A10). One that exited
+        // before its expiry is the success path and is probed, as above.
+        const outcome = await this.closeSession(
+          entry,
+          entry.principal,
+          entry.space && expired ? 'abandon' : 'probe',
+        );
+        if (entry.space) spaceClaims ??= entry.principal.claims;
 
         if (outcome.failure) {
           // Best-effort by design, and `closeSession` has already stamped the
@@ -864,6 +953,7 @@ export class W2CredentialSessionsService {
         }
         swept += 1;
       }
+      if (spaceClaims) await this.expirePendingQuietly(spaceClaims);
       return swept;
     } finally {
       this.sweeping = false;
@@ -994,6 +1084,439 @@ export class W2CredentialSessionsService {
     await this.db.rpc(principal.claims, 'finish_credential_session', [workSessionId]);
   }
 
+  // -------------------------------------------------------------------------
+  // space logins (206, SC-4)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Open a login terminal onto a SPACE credential.
+   *
+   * The order differs from the member start in one place, deliberately: the
+   * RPC runs BEFORE the home exists, because a new login's credential id —
+   * the home's directory — is minted by `start_space_credential_login`. A
+   * home that cannot be made then releases the row through
+   * `finish_space_credential_login(ws, false)`, as a failed launch does.
+   *
+   * The terminal logs in under a STAGING home of its own, never the live one
+   * agents read (A6); see `space-credential-home.ts`.
+   */
+  private async startSpace(
+    input: StartCredentialSessionInput,
+    target: { label?: string; credentialId?: string },
+    principal: CredentialPrincipal,
+  ): Promise<StartedCredentialSession> {
+    const { provider } = input;
+    assertSpaceLoginProvider(provider);
+    if (principal.claims.actorId) {
+      throw new CollabError(
+        'forbidden',
+        'a credential session is never opened on another actor’s behalf (finding D2)',
+      );
+    }
+    const hasLabel = target.label !== undefined;
+    const hasId = target.credentialId !== undefined;
+    if (hasLabel === hasId) {
+      throw new CollabError(
+        'invalid_input',
+        'a space login names exactly one of a label (a new credential) or a credentialId (log in again)',
+      );
+    }
+
+    await this.reclaimExpiredSpaceLogins(principal, input.spaceId, provider, target);
+
+    let started: Awaited<ReturnType<SpaceLoginStorePort['startLogin']>>;
+    try {
+      started = await this.spaceStore.startLogin(principal.claims, {
+        spaceId: input.spaceId,
+        provider,
+        label: target.label ?? null,
+        credentialId: target.credentialId ?? null,
+        ttlSeconds: DEFAULT_CREDENTIAL_TTL_SECONDS,
+        sessionCap: resolveCredentialSessionCap(this.env),
+      });
+    } catch (error) {
+      throw spaceStartRefusal(error, target);
+    }
+
+    const key: SpaceLoginHomeKey = {
+      spaceId: started.credential.spaceId,
+      credentialId: started.credential.id,
+      provider,
+    };
+    try {
+      const { homeDir, configDir } = await this.spaceHomes.ensureStaging(key, started.workSessionId);
+      // After the RPC, for the reason the member start gives: an
+      // authorization answer must never depend on a fact about the node.
+      const binary = measureCredentialBinary({
+        provider,
+        homeDir,
+        configDir,
+        parentEnv: this.env,
+        ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+      });
+      if (binary.status === 'unavailable') {
+        throw new CollabError('invalid_input', credentialCliInstallMessage(provider));
+      }
+      if (binary.status === 'unknown') {
+        throw new CollabError(
+          'upstream_unavailable',
+          binary.detail ?? `could not determine whether credential CLI '${binary.binary}' is installed`,
+        );
+      }
+
+      const launched = this.launcher.launch({
+        sessionId: started.workSessionId,
+        provider,
+        homeDir,
+        configDir,
+        ...(input.cols ? { cols: input.cols } : {}),
+        ...(input.rows ? { rows: input.rows } : {}),
+      });
+
+      // Registered at once, in the same registry the member sweep walks, so
+      // this terminal is killed before its row is ever stamped — by the
+      // sweep at expiry, by a delete, or by a re-login's reclaim.
+      this.registry.set(started.workSessionId, {
+        workSessionId: started.workSessionId,
+        provider,
+        expiresAtMs: new Date(started.expiresAt).getTime(),
+        homeDir,
+        configDir,
+        env: launched.env,
+        principal,
+        space: { ...key, isNew: !hasId },
+      });
+
+      return {
+        workSessionId: started.workSessionId,
+        spaceId: started.spaceId,
+        provider,
+        expiresAt: started.expiresAt,
+        command: launched.command,
+        spaceCredential: started.credential,
+      };
+    } catch (error) {
+      // Nothing was launched, or the launch threw: no PTY to kill first.
+      this.launcher.terminate(started.workSessionId);
+      await this.spaceStore
+        .finishLogin(principal.claims, started.workSessionId, false)
+        .catch(() => undefined);
+      await this.spaceHomes.removeStaging(key, started.workSessionId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * KILL, PROBE, FINISH, PROMOTE — the one way a space login terminal ends.
+   *
+   * The kill comes first and GATES everything after it. A terminal the PTY
+   * host could not kill is left open: its row is not stamped and its entry is
+   * kept for the next sweep. Stamping it would free the credential for a
+   * re-login that then races a live terminal for the home.
+   *
+   * The finish RPC is the only writer of the row (206: N1, B1, B2 and the
+   * lock order live there). `ok` is the probe's verdict AND the presence of
+   * the credential file in the staging home — a probe that saw a login
+   * somewhere else must not activate this credential. Files move into the
+   * live home only after the RPC committed `connected`, and a promote that
+   * then fails marks the credential `stale` through the probe RPC, so the
+   * row never claims a login the disk does not hold (I6).
+   */
+  private async runSpaceClose(
+    entry: RegistryEntry,
+    principal: CredentialPrincipal,
+    mode: CloseMode,
+  ): Promise<CloseOutcome> {
+    const key = entry.space!;
+    const killed = this.launcher.terminate(entry.workSessionId);
+    if (killed === 'error') {
+      return {
+        probe: null,
+        stored: false,
+        terminated: false,
+        killFailed: true,
+        failure: new CollabError(
+          'upstream_unavailable',
+          'the PTY host could not kill this login terminal; it was left open and will be retried',
+        ),
+      };
+    }
+
+    let failure: unknown = null;
+    let measured: ProbeResult | null = null;
+    let ok = false;
+    if (mode === 'probe') {
+      try {
+        measured = await runCredentialProbe({
+          provider: entry.provider,
+          env: entry.env,
+          cwd: entry.homeDir,
+          ...(this.probeRunner ? { run: this.probeRunner } : {}),
+          ...(this.binaryResolver ? { resolveBinary: this.binaryResolver } : {}),
+        });
+        ok = measured.connected && (await this.spaceHomes.stagingHasLogin(key, entry.workSessionId));
+      } catch (error) {
+        failure = error;
+      }
+    }
+
+    let finished: SpaceCredentialLoginFinish | null = null;
+    try {
+      finished = await this.spaceStore.finishLogin(
+        principal.claims,
+        entry.workSessionId,
+        ok,
+        ok ? measured?.login ?? null : null,
+      );
+    } catch (error) {
+      failure ??= error;
+      if (ok) {
+        // A success the RPC refused — the credential was deleted meanwhile
+        // (M6), or a manager already closed the terminal (B2). The terminal
+        // is dead either way, so it is still stamped, as a failure.
+        try {
+          finished = await this.spaceStore.finishLogin(principal.claims, entry.workSessionId, false);
+        } catch (second) {
+          failure ??= second;
+        }
+      }
+    }
+
+    let stored = false;
+    let credential = finished?.credential;
+    if (finished?.connected) {
+      try {
+        stored = await this.spaceHomes.promote(key, entry.workSessionId, () =>
+          this.spaceLoginStillWanted(principal.claims, key.credentialId),
+        );
+        if (!stored) failure ??= new CollabError('invariant_violation', 'the login could not be moved into the space home');
+      } catch (error) {
+        failure ??= error;
+      }
+      if (!stored) {
+        credential = await this.spaceStore
+          .recordProbe(principal.claims, key.credentialId, false)
+          .catch(() => credential);
+      }
+    }
+
+    if (finished) {
+      this.registry.delete(entry.workSessionId);
+      await this.spaceHomes.removeStaging(key, entry.workSessionId).catch(() => undefined);
+    }
+    // Otherwise the row is still open (the RPC could not be reached): the
+    // entry and the staging home are kept, and the next sweep retries.
+
+    const connected = finished?.connected === true && stored;
+    return {
+      probe: finished
+        ? {
+            provider: entry.provider,
+            connected,
+            status: credential?.status === 'active' ? 'active' : 'stale',
+            login: credential?.displayLogin ?? null,
+            authMethod: connected ? measured?.authMethod ?? null : null,
+            detail: `the space credential is recorded as '${credential?.status ?? 'unknown'}'`,
+          }
+        : null,
+      stored,
+      terminated: killed === 'killed',
+      failure: connected ? null : failure,
+      ...(credential ? { spaceCredential: credential } : {}),
+    };
+  }
+
+  /** Whether a promote may still write: the row, read under the member RLS policy (I6). */
+  private async spaceLoginStillWanted(claims: DbClaims, credentialId: string): Promise<boolean> {
+    const rows = await this.db.query<{ status: string }>(
+      claims,
+      'select status from public.space_credentials where id = $1',
+      [credentialId],
+    );
+    return rows[0]?.status === 'active' || rows[0]?.status === 'stale';
+  }
+
+  /**
+   * `finish` for a space login this node no longer holds: after a restart,
+   * or a second click. An open row of the caller's own is closed as the
+   * sweep would close it — killed, then `finish(ws, false)`; the answer is
+   * the credential row, never the files (I6).
+   */
+  private async reportClosedSpaceSession(
+    workSessionId: string,
+    principal: CredentialPrincipal,
+  ): Promise<FinishedCredentialSession> {
+    const rows = await this.db.query<OwnSpaceLoginRow>(
+      principal.claims,
+      `select work_session_id, space_credential_id, provider, expires_at, finished_at
+         from public.credential_sessions
+        where work_session_id = $1
+          and space_credential_id is not null`,
+      [workSessionId],
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new CollabError('not_found', 'no live credential session on this node for that work session');
+    }
+    const provider = row.provider as CredentialProvider;
+
+    let credential: SpaceCredential | undefined;
+    let terminated = false;
+    if (row.finished_at === null) {
+      const killed = this.launcher.terminate(workSessionId);
+      if (killed === 'error') {
+        throw new CollabError('upstream_unavailable', 'the PTY host could not kill this login terminal');
+      }
+      terminated = killed === 'killed';
+      credential = (await this.spaceStore.finishLogin(principal.claims, workSessionId, false)).credential;
+    } else {
+      const found = await this.db.query<{ credential: SpaceCredential }>(
+        principal.claims,
+        `select jsonb_build_object(
+                  'id', id, 'spaceId', space_id, 'provider', provider, 'shape', shape,
+                  'label', label, 'isDefault', is_default, 'status', status,
+                  'createdByAccountId', created_by_account_id,
+                  'displayLogin', display_login, 'keyHint', key_hint,
+                  'pendingExpiresAt', pending_expires_at,
+                  'createdAt', created_at, 'updatedAt', updated_at,
+                  'lastUsedAt', last_used_at, 'lastProbeAt', last_probe_at) as credential
+           from public.space_credentials where id = $1`,
+        [row.space_credential_id],
+      );
+      credential = found[0]?.credential;
+    }
+    const connected = credential?.status === 'active';
+    return {
+      workSessionId,
+      provider,
+      probe: {
+        provider,
+        connected,
+        status: connected ? 'active' : 'stale',
+        login: credential?.displayLogin ?? null,
+        authMethod: null,
+        detail: `the space credential is recorded as '${credential?.status ?? 'gone'}'; this close did not measure it`,
+      },
+      stored: false,
+      terminated,
+      ...(credential ? { spaceCredential: credential } : {}),
+    };
+  }
+
+  /**
+   * N1: before a start raises `login_open` (a re-login) or a taken label (a
+   * new login), close what is ALREADY PAST ITS EXPIRY and that the caller may
+   * close — its own terminals, or, for the credential's creator or a space
+   * admin, anyone's (206's manager close). A terminal still inside its
+   * expiry is NEVER closed here, even the caller's own: it answers
+   * `login_open`, so a second manager cannot kill the first one's terminal
+   * mid-login.
+   *
+   * Every close kills first, through the registry when this node holds the
+   * terminal, and stamps only through `finish_space_credential_login(ws,
+   * false)`. After a restart the registry is empty; the terminal is killed
+   * by id (a no-op when no PTY survived) and then stamped.
+   */
+  private async reclaimExpiredSpaceLogins(
+    principal: CredentialPrincipal,
+    spaceId: string,
+    provider: string,
+    target: { label?: string; credentialId?: string },
+  ): Promise<void> {
+    const now = this.now();
+    const expired = new Map<string, string>(); // workSessionId -> credentialId
+
+    // The caller's own expired space terminals, visible through RLS: they
+    // hold the credential cap and, for a re-login, the credential.
+    const own = await this.db.query<OwnSpaceLoginRow>(
+      principal.claims,
+      `select work_session_id, space_credential_id, provider, expires_at, finished_at
+         from public.credential_sessions
+        where finished_at is null
+          and space_credential_id is not null`,
+    );
+    for (const row of own) {
+      if (new Date(row.expires_at).getTime() <= now) expired.set(row.work_session_id, row.space_credential_id);
+    }
+
+    // Anyone's expired terminal on the targeted credential — or on the
+    // pending credential holding the requested label. `liveSessions` is
+    // manager-only in SQL; a caller who is not a manager gets nothing here,
+    // and the start RPC answers them.
+    let credentialId = target.credentialId ?? null;
+    if (target.label !== undefined) {
+      const pending = await this.db.query<{ id: string }>(
+        principal.claims,
+        `select id from public.space_credentials
+          where space_id = $1 and provider = $2 and status = 'pending' and label = btrim($3)`,
+        [spaceId, provider, target.label],
+      );
+      credentialId = pending[0]?.id ?? null;
+    }
+    if (credentialId) {
+      try {
+        const live = await this.spaceStore.liveSessions(principal.claims, credentialId);
+        for (const terminal of live.loginTerminals) {
+          if (new Date(terminal.expiresAt).getTime() <= now) expired.set(terminal.workSessionId, credentialId);
+        }
+      } catch {
+        // Not a manager, or not found: nothing of anyone else's to close.
+      }
+    }
+
+    for (const workSessionId of expired.keys()) {
+      const result = await this.closeSpaceLogin(principal.claims, workSessionId).catch((error: unknown) => {
+        this.logger?.warn?.('space login reclaim could not close a terminal', {
+          workSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 'kill_failed' as const;
+      });
+      if (result === 'kill_failed') {
+        this.logger?.warn?.('space login reclaim left a terminal open', { workSessionId });
+      }
+    }
+    // A pending credential whose login is now closed and whose deadline has
+    // passed gives its label back here, before the start asks for it.
+    if (expired.size > 0 || target.label !== undefined) await this.expirePendingQuietly(principal.claims);
+  }
+
+  /**
+   * Close one space login terminal as ABANDONED: kill it — through the
+   * registry when this node holds it, so an in-flight close is awaited rather
+   * than raced — and only then `finish_space_credential_login(ws, false)`
+   * under `claims`, which 206 admits for the opener, or for a manager once the
+   * credential is revoked or the terminal is past its expiry. Delete (step 3
+   * and 4) and the start-time reclaim both come through here.
+   */
+  async closeSpaceLogin(claims: DbClaims, workSessionId: string): Promise<SpaceLoginCloseResult> {
+    const entry = this.registry.get(workSessionId);
+    if (entry?.space) {
+      const outcome = await this.closeSession(
+        entry,
+        { claims, identityId: entry.principal.identityId },
+        'abandon',
+      );
+      if (outcome.killFailed) return 'kill_failed';
+      if (outcome.failure && !outcome.probe) throw outcome.failure;
+      return 'closed';
+    }
+    if (this.launcher.terminate(workSessionId) === 'error') return 'kill_failed';
+    await this.spaceStore.finishLogin(claims, workSessionId, false);
+    return 'closed';
+  }
+
+  /** The pending-login expiry (M3). Best effort: a failure leaves the row for the next call. */
+  private async expirePendingQuietly(claims: DbClaims): Promise<void> {
+    try {
+      await this.spaceStore.expirePending(claims);
+    } catch (error) {
+      this.logger?.warn?.('pending space credential expiry failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /** The command that WOULD run for `provider`. Exposed for the settings UI. */
   static commandFor(provider: CredentialProvider): string {
     return CREDENTIAL_LOGIN_COMMANDS[provider];
@@ -1003,4 +1526,35 @@ export class W2CredentialSessionsService {
   liveSessionIds(): string[] {
     return [...this.registry.keys()];
   }
+}
+
+/**
+ * A start refusal, named so a caller can tell its causes apart without
+ * reading a message: `details.reason` is `login_open` (a login onto that
+ * credential is still inside its expiry) or `label_taken`.
+ */
+function spaceStartRefusal(error: unknown, target: { label?: string; credentialId?: string }): unknown {
+  if (!(error instanceof CollabError) || error.code !== 'invariant_violation') return error;
+  const details = error.details ?? {};
+  if (details.reason === 'login_open') {
+    return new CollabError('conflict', 'a login onto this space credential is already open', {
+      details: {
+        reason: 'login_open',
+        ...(typeof details.expiresAt === 'string' ? { expiresAt: details.expiresAt } : {}),
+        ...(target.credentialId ? { credentialId: target.credentialId } : {}),
+      },
+    });
+  }
+  if (details.sqlstate === '23505') {
+    // A new login's only unique key is the label; a re-login's is the
+    // one-live-per-credential index, reached only by a race with another start.
+    return target.credentialId
+      ? new CollabError('conflict', 'a login onto this space credential is already open', {
+          details: { reason: 'login_open', credentialId: target.credentialId },
+        })
+      : new CollabError('conflict', 'a credential with this label already exists for this provider', {
+          details: { reason: 'label_taken', label: target.label?.trim() ?? null },
+        });
+  }
+  return error;
 }

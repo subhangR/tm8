@@ -2173,6 +2173,14 @@ export interface CredentialsLoginSessionStartInput {
   /** Terminal geometry only — the one client input, and it cannot reach argv. */
   cols?: number;
   rows?: number;
+  /**
+   * Log into a SPACE credential instead of your own (206, SC-4); anthropic
+   * and openai only. `label` opens a new pending credential (any member,
+   * D1); `credentialId` logs in again onto an existing login credential (its
+   * creator or a space admin, D11). Exactly one. A refusal is `conflict` with
+   * `details.reason` `login_open` (with `expiresAt`) or `label_taken`.
+   */
+  spaceCredential?: { label: string; credentialId?: never } | { credentialId: string; label?: never };
   clientMutationId?: string;
 }
 
@@ -2184,6 +2192,8 @@ export interface CredentialsLoginSessionStartResult {
   expiresAt: string;
   /** The exact table entry that WAS launched. Recorded so a caller can assert it. */
   command: string;
+  /** A space login: the new pending credential, or the one being logged into. */
+  spaceCredential?: SpaceCredentialView;
 }
 
 /**
@@ -2216,6 +2226,11 @@ export interface CredentialsLoginSessionFinishResult {
   stored: boolean;
   /** Whether this node's PTY was killed, as the PTY itself reported it. */
   terminated: boolean;
+  /**
+   * A space login: the credential as the PROBED finish left it (I6). Render
+   * from its `status`, not from `connected`.
+   */
+  spaceCredential?: SpaceCredentialView;
 }
 
 /**
