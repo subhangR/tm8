@@ -19,6 +19,8 @@
  * dropped, so a DTO addition is never silently invisible in text.
  */
 
+import { escapeXml } from '@tm8/prompt';
+
 type Row = Record<string, unknown>;
 
 const isRow = (v: unknown): v is Row => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -81,10 +83,12 @@ export function renderHeaderLines(header: Record<string, unknown>): string[] {
       + (version > 0 ? ` v${version}` : ' (none authored: --expect-version 0)')
       + (header['stale'] === true ? ` · stale (written for v${String(header['pinnedVersion'])})` : '')
       + (header['bytes'] == null ? '' : ` · body ${String(header['bytes'])} B`),
-    '<untrusted_data type="entry-header">',
-    ...(header['whenToUse'] == null ? [] : [`when to use: ${String(header['whenToUse'])}`]),
-    ...(header['summary'] == null ? [] : [`summary: ${String(header['summary'])}`]),
-    ...(keywords.length === 0 ? [] : [`keywords: ${keywords.join(', ')}`]),
+    // Escaped as the prompt escapes it (@tm8/prompt escape.ts), or authored
+    // text reading `</untrusted_data>` would end the block it is in.
+    '<untrusted_data type="entry-header" encoding="escaped-utf8">',
+    ...(header['whenToUse'] == null ? [] : [`when to use: ${escapeXml(String(header['whenToUse']))}`]),
+    ...(header['summary'] == null ? [] : [`summary: ${escapeXml(String(header['summary']))}`]),
+    ...(keywords.length === 0 ? [] : [`keywords: ${keywords.map(escapeXml).join(', ')}`]),
     '</untrusted_data>',
   ];
 }

@@ -65,7 +65,7 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
-import { resolveHeaderViews } from '../../../headers/resolve.js';
+import { resolveAuthoredHeaderView } from '../../../headers/resolve.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 
@@ -777,8 +777,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     // is shown: a derived one restates the body this read already carries (a
     // task's is its own description), and an entity nobody has written a
     // header for reads byte-identical to before (headers design §9.5).
-    const header = (await resolveHeaderViews(taggedQuerier(q, 'header'), root.space_id, [id])).get(id);
-    if (header && header.version > 0) loaded.header = header;
+    loaded.header = await resolveAuthoredHeaderView(taggedQuerier(q, 'header'), root.space_id, id);
   }
 
   if (plan.assignees) {

@@ -228,3 +228,23 @@ export async function resolveHeaderViews(
     pinnedVersion: row.header_pinned_version == null ? null : Number(row.header_pinned_version),
   }]));
 }
+
+/**
+ * The AUTHORED header of one entity, or undefined — what an entity read
+ * (`entities.get`, `entities.context`) shows. Almost no entity has an
+ * `entity_headers` row, so a one-row probe (under the same RLS) runs first
+ * and the full resolve only when it finds one.
+ */
+export async function resolveAuthoredHeaderView(
+  q: Querier,
+  spaceId: string,
+  id: string,
+): Promise<EntityHeaderView | undefined> {
+  const probe = await q.query<{ found: number }>(
+    'select 1 as found from public.entity_headers where entity_id = $1',
+    [id],
+  );
+  if (probe.length === 0) return undefined;
+  const header = (await resolveHeaderViews(q, spaceId, [id])).get(id);
+  return header && header.version > 0 ? header : undefined;
+}

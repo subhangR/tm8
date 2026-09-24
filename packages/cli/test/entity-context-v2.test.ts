@@ -426,7 +426,7 @@ describe('S5 rendering and rollout', () => {
     expect(r.code).toBe(0);
     const lines = r.stdout.split('\n');
     expect(lines).toContain('header: authored v2 · stale (written for v1) · body 40211 B');
-    const open = lines.indexOf('<untrusted_data type="entry-header">');
+    const open = lines.indexOf('<untrusted_data type="entry-header" encoding="escaped-utf8">');
     expect(lines.slice(open + 1, open + 3)).toEqual(['when to use: Pick when budgets matter', '</untrusted_data>']);
     // Rendered by name, never again as a `header: [object]` fallthrough line.
     expect(r.stdout).not.toContain('[object Object]');

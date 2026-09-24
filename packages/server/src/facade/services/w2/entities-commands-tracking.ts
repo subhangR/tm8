@@ -43,7 +43,7 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
-import { resolveHeaderViews } from '../../../headers/resolve.js';
+import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
 import { clearEntityHeader, createHeaderMutationId, setEntityHeader } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
@@ -932,7 +932,9 @@ const authored = (header: EntityHeaderView | undefined): EntityHeaderView | unde
 
 /** `entities.get`'s detail, with `header` when one is authored. */
 async function withHeader(q: Querier, detail: EntityDetail): Promise<EntityDetail> {
-  const header = authored(await headerOf(q, detail));
+  const header = HEADER_KINDS.has(detail.kind)
+    ? await resolveAuthoredHeaderView(q, detail.spaceId, detail.id)
+    : undefined;
   return header ? { ...detail, header } : detail;
 }
 
