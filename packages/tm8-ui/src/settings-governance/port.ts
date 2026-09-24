@@ -99,6 +99,3 @@ export type LoadState<T> =
   | { phase: 'loading' }
   | { phase: 'ready'; value: T }
   | { phase: 'failed'; message: string };
-
-/** A load state that has never been asked. Used by hosts rendering the screen bare. */
-export const NOT_LOADED: LoadState<never> = { phase: 'loading' };
