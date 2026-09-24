@@ -136,6 +136,21 @@ export interface IdentityServiceOptions {
   /** Defaults for the owner minted on first run. */
   owner?: { username?: string; displayName?: string };
   sessionTtlMs?: Partial<Record<AuthSessionKind, number>>;
+  /**
+   * SC-6: kills the sessions a disabled account LAUNCHED on space credentials
+   * (`credentials/space-credential-containment.ts`). The composition binds the
+   * acting node admin's claims; absent, disable does what it always did.
+   */
+  spaceCredentialContainment?: AccountSpaceCredentialContainment;
+}
+
+/**
+ * The seam `disableAccount` calls after the account's tokens are revoked. The
+ * implementation reports a failed kill in its result rather than throwing; a
+ * throw here is a broken adapter and propagates.
+ */
+export interface AccountSpaceCredentialContainment {
+  killSessionsLaunchedBy(accountId: AccountId): Promise<unknown>;
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -159,6 +174,7 @@ export class IdentityServiceImpl implements IdentityService {
   private readonly hasher: PasswordHasher;
   private readonly ownerDefaults: { username: string; displayName: string };
   private readonly ttl: Record<AuthSessionKind, number>;
+  private readonly spaceCredentialContainment: AccountSpaceCredentialContainment | undefined;
 
   constructor(options: IdentityServiceOptions) {
     this.repo = options.repository;
@@ -170,6 +186,7 @@ export class IdentityServiceImpl implements IdentityService {
       displayName: options.owner?.displayName ?? DEFAULT_OWNER_DISPLAY_NAME,
     };
     this.ttl = { ...DEFAULT_SESSION_TTL_MS, ...options.sessionTtlMs };
+    this.spaceCredentialContainment = options.spaceCredentialContainment;
   }
 
   // --- bootstrap -----------------------------------------------------------
@@ -322,6 +339,14 @@ export class IdentityServiceImpl implements IdentityService {
     // Revocation kills sessions. It does NOT touch the member entity or any
     // authored history — the graph is a historical record of who acted (R6).
     await this.repo.revokeAccountSessions(accountId, this.clock.now());
+    // SC-6 (design 01a0cfa8 §5): then kill what it launched on space
+    // credentials. AFTER the revoke, as a credential delete revokes before it
+    // kills: with the tokens dead neither the account nor an agent it minted
+    // can launch or resume one more between the lookup and the kill. The
+    // lookup keys on session_space_credentials.launcher_account_id only (C2),
+    // so a session it launched and another member has since resumed is the
+    // resumer's, and survives (C3).
+    await this.spaceCredentialContainment?.killSessionsLaunchedBy(accountId);
     return account;
   }
 

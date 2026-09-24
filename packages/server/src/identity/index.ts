@@ -49,6 +49,7 @@ export type {
 } from './repository.js';
 
 export type {
+  AccountSpaceCredentialContainment,
   AuthenticateInput,
   BootstrapOwnerInput,
   IdentityService,

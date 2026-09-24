@@ -434,5 +434,15 @@ function spaceGitHub(grant: SpaceCredentialGrant): GitHubCredential {
     );
   }
   // D10: commits are authored by the token's account, shown in the picker.
-  return { provider: 'github', login: grant.displayLogin ?? grant.label, token: grant.secret };
+  // The probe stores a token only with its login; one without is refused
+  // rather than authoring as the label, which names no GitHub account (I3).
+  if (!grant.displayLogin) {
+    throw new SpawnError(
+      `space credential ${grant.credentialId} has no GitHub account login recorded, so its commits could not be `
+        + 'attributed — re-key it so tm8 can read the account it belongs to',
+      'conflict',
+      { provider: 'github', spaceCredentialId: grant.credentialId },
+    );
+  }
+  return { provider: 'github', login: grant.displayLogin, token: grant.secret };
 }

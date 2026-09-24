@@ -92,11 +92,18 @@ export function createVendorProbe(options: VendorProbeOptions = {}): SpaceCreden
       return { ok: false, reason: 'unreachable', detail: `HTTP ${response.status}` };
     }
     if (provider !== 'github') return { ok: true, displayLogin: null };
+    // D10: a GitHub token is stored only with the login its commits will be
+    // authored by. A 200 that does not name one is no usable verdict: the
+    // spawn would have no account to author as, so nothing is stored.
+    let login: string | null = null;
     try {
       const body = (await response.json()) as { login?: unknown };
-      return { ok: true, displayLogin: typeof body.login === 'string' && body.login.trim() ? body.login.trim() : null };
+      if (typeof body.login === 'string' && body.login.trim()) login = body.login.trim();
     } catch {
-      return { ok: true, displayLogin: null };
+      login = null;
     }
+    return login
+      ? { ok: true, displayLogin: login }
+      : { ok: false, reason: 'unreachable', detail: 'no account login in the GitHub response' };
   };
 }

@@ -1,0 +1,143 @@
+/**
+ * SC-6 — MEMBER CONTAINMENT for space credentials (design 01a0cfa8 §5):
+ * "sessions that member launched on space credentials are killed".
+ *
+ * There is no member-removal operation yet, so this is the TS equivalent of
+ * `internal.kill_space_credential_sessions_for_member(space, account)`: the
+ * lookup is 206's `member_space_credential_sessions` (human-only, node admin /
+ * space admin / self), and the kill is this node's PTY host. It is wired into
+ * `IdentityService.disableAccount` (every space) and takes a space id for the
+ * future removal op (that space only). A member who is gone but whose session
+ * survived anyway cannot bring it back: the resume path re-checks membership
+ * before it re-points anything (T2).
+ *
+ * WHO "LAUNCHED" A SESSION (PLAN v2.1, C2/C3). The key is ONLY
+ * `session_space_credentials.launcher_account_id` — the account whose claims
+ * wrote the row: the human at a spawn, the minting human under an agent token
+ * (A6: an agent-spawned child is its root launcher's), and the RESUMER after a
+ * resume re-points it. Never `entities.created_by` → `owner_member_id`, which
+ * names the persona's owner: A launching B's teammate is A's session.
+ *
+ * Consequences of keying on the re-pointed value, kept on purpose:
+ *   - C3: once B resumes a session A launched, it is B's. Disabling A leaves it
+ *     running; disabling B kills it.
+ *   - S4: the repoint is committed BEFORE the PTY starts (so a delete racing
+ *     the resume sees the new launcher). If the resume then fails — the PTY
+ *     spawn fails, or the M7 re-check refuses — launcher_account_id stays on
+ *     the resumer. Disabling the ORIGINAL launcher then does not touch that
+ *     session; disabling the resumer does. The resumer is the last account that
+ *     authorised a PTY on it, so this is the intended attribution, not a leak.
+ *
+ * SINGLE-NODE ASSUMPTION (#681 C). `terminate` reaches THIS node's PTY host
+ * only. `not_found` means no PTY for that session here. On a single node that
+ * is the state asked for: every PTY dies with the server (KillMode=
+ * control-group, PtyHostService.ts:585 — the same fact the boot sweep of space
+ * secrets relies on, S5), so a row still reading live has no process behind
+ * it. On a multi-node deployment the PTY may be alive on another node, which
+ * this cannot reach. So unlike SC-3's delete, a `not_found` is NOT reported as
+ * terminated: it goes in `notOnThisNodeSessionIds`, and a multi-node build must
+ * route those to their node.
+ *
+ * Best effort after the lookup, as the member Disconnect and SC-3's delete
+ * are: the caller has already revoked what it was revoking (the account's
+ * tokens), so a failed kill is named in `failures`, never thrown. This module
+ * never sees a secret (I5): it reads ids and statuses only.
+ */
+import type { DbClaims } from '../db/types.js';
+import type { DbSpaceCredentialStore } from './space-credential-store.js';
+
+/** The PTY host's kill, as `CredentialSessionLauncher.terminate` answers it. */
+export interface SessionTerminator {
+  terminate(sessionId: string): string;
+}
+
+export interface MemberContainmentResult {
+  accountId: string;
+  /** Null when the containment spanned every space (account disable). */
+  spaceId: string | null;
+  /** Sessions whose PTY this node killed. */
+  terminatedSessionIds: string[];
+  /** Recorded live, but no PTY on this node: see SINGLE-NODE ASSUMPTION. */
+  notOnThisNodeSessionIds: string[];
+  failures: Array<{ sessionId?: string; reason: string }>;
+}
+
+export interface SpaceCredentialMemberContainmentOptions {
+  store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
+  terminals: SessionTerminator;
+}
+
+export class SpaceCredentialMemberContainment {
+  private readonly store: Pick<DbSpaceCredentialStore, 'memberSessions'>;
+  private readonly terminals: SessionTerminator;
+
+  constructor(options: SpaceCredentialMemberContainmentOptions) {
+    this.store = options.store;
+    this.terminals = options.terminals;
+  }
+
+  /**
+   * Kill every live session `accountId` launched on a space credential — in
+   * `spaceId`, or in every space when it is null. `claims` authorise the
+   * lookup: a node admin for every space, a space admin for theirs.
+   */
+  async killSessionsLaunchedBy(
+    claims: DbClaims,
+    accountId: string,
+    spaceId: string | null = null,
+  ): Promise<MemberContainmentResult> {
+    const result: MemberContainmentResult = {
+      accountId,
+      spaceId,
+      terminatedSessionIds: [],
+      notOnThisNodeSessionIds: [],
+      failures: [],
+    };
+
+    let sessionIds: string[];
+    try {
+      const found = await this.store.memberSessions(claims, spaceId, accountId);
+      // One row per (session, provider): a session on a space anthropic key AND
+      // a space GitHub token is one PTY, killed once.
+      sessionIds = [...new Set(found.sessions.map((s) => s.workSessionId))];
+    } catch (error) {
+      // Nothing was read, so nothing was killed: a retry finishes it.
+      result.failures.push({ reason: `lookup_failed: ${reasonOf(error)}` });
+      return result;
+    }
+
+    for (const sessionId of sessionIds) {
+      const outcome = this.terminals.terminate(sessionId);
+      if (outcome === 'error') {
+        result.failures.push({ sessionId, reason: 'the PTY host could not kill this agent session' });
+      } else if (outcome === 'not_found') {
+        result.notOnThisNodeSessionIds.push(sessionId);
+      } else {
+        result.terminatedSessionIds.push(sessionId);
+      }
+    }
+    return result;
+  }
+}
+
+/**
+ * The `IdentityService.disableAccount` seam: every space, under the acting
+ * node admin's claims (206 lets only a node admin, or the account itself, ask
+ * across spaces). `claims` is a function so a per-request composition can hand
+ * over the caller it is serving.
+ */
+export function accountDisableContainment(
+  containment: SpaceCredentialMemberContainment,
+  claims: () => DbClaims,
+): { killSessionsLaunchedBy(accountId: string): Promise<MemberContainmentResult> } {
+  return {
+    killSessionsLaunchedBy: (accountId) => containment.killSessionsLaunchedBy(claims(), accountId, null),
+  };
+}
+
+/** An error's code or class name: never its message, which may quote input. */
+function reasonOf(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') return code;
+  return error instanceof Error ? error.name : 'unknown';
+}

@@ -407,6 +407,20 @@ describe('M8 — every broken space credential refuses; none degrades', () => {
     expect(e2.message).toBe(`space credential ${GH_DEFAULT} is not a GitHub token — pick a GitHub token credential`);
   });
 
+  it('D10: a space GitHub token with no recorded account login refuses — it never authors as the label', async () => {
+    const noLogin = fakePort({
+      byId: { [GH_DEFAULT]: { ok: true, grant: { ...apiKeyGrant('github', GH_DEFAULT), displayLogin: null } } },
+    });
+    const e = await refusal(
+      resolve(
+        launch({ credentialSources: { github: 'space' }, spaceCredentialIds: { github: GH_DEFAULT } }),
+        deps(noLogin),
+      ),
+    );
+    expect(e.message).toContain(`space credential ${GH_DEFAULT} has no GitHub account login recorded`);
+    expect(e.message).not.toContain(`secret-${GH_DEFAULT}`);
+  });
+
   it('M8c: a policy that cannot be read refuses rather than being treated as permissive', async () => {
     const d = deps(fakePort({ policyError: new Error('connection refused'), defaults: { anthropic: ANT_DEFAULT } }), {
       home: MEMBER_HOME,
