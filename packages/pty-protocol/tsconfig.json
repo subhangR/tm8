@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // Deliberately empty. package.json exports ./src/index.ts, so tm8-ui
+    // compiles this source into a browser bundle; a Node global (Buffer,
+    // process) slipping into the parser must fail here, not in the browser.
+    // Do not add "node". This blocks @types/* only: the base sets no `lib`, so
+    // DOM stays in, which is the correct side for a browser-consumed parser.
+    "types": []
+  },
+  // Like prompt/contract, test/ is outside include: tsc checks src only.
+  "include": ["src"]
+}
