@@ -25,9 +25,18 @@ describe('events.changes refusals', () => {
     }
   });
 
+  /**
+   * A deliberate PIN, not a derivation: widening the closed set must be a
+   * conscious edit here. (Deriving it from ERROR_STATUS would compare the
+   * registry with itself.) The five `form_*` codes are Forms W1's (#734),
+   * which landed beside this test (#733) — neither PR saw the other.
+   */
   it('leave the closed error-code set exactly as it was', () => {
     expect(Object.keys(ERROR_STATUS).sort()).toEqual([
-      'conflict', 'context_budget_too_small', 'forbidden', 'invalid_cursor', 'invalid_input',
+      'conflict', 'context_budget_too_small', 'forbidden',
+      'form_answers_invalid', 'form_not_open', 'form_respondent_not_allowed', 'form_response_limit',
+      'form_structure_frozen',
+      'invalid_cursor', 'invalid_input',
       'invariant_violation', 'limit_exceeded', 'not_found', 'not_implemented', 'payload_too_large',
       'rate_limited', 'unauthenticated', 'upstream_unavailable', 'version_conflict',
     ]);
