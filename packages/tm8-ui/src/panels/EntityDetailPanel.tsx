@@ -15,7 +15,7 @@ import type { SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
+import { getKind, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
 import { LaunchComposerPopup } from '../new-session';
@@ -1386,6 +1386,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     barSlot={barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                     stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
+                    onSelectTab={selectTab}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -1491,6 +1492,8 @@ function PanelBody(
     attachmentSlot?: ReactNode;
     /** Edges the strip draws as entity tiles; the subtree body skips them. */
     stripEdgeIds?: ReadonlySet<string>;
+    /** The panel's own tab switch, for a body that links to another tab. */
+    onSelectTab?: (tab: PanelTab) => void;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -1529,6 +1532,8 @@ function PanelBody(
           detail={detail}
           connections={props.connections}
           onOpenEntity={onOpenEntity}
+          /* The message summary row's way to the messages themselves. */
+          onOpenDiscussion={props.onSelectTab ? () => props.onSelectTab?.('discussion') : undefined}
           /* The SAME surface the session's Graph chip renders, offered here for
              every kind — see the tab's docblock. (The old comment here claimed
              "sessions never reach this arm"; they do, and always did — this
@@ -1897,5 +1902,15 @@ export function countConnections(detail: EntityDetail, connections?: Connections
     ...(connections?.outgoing ?? detail.connections.outgoing),
     ...(connections?.incoming ?? detail.connections.incoming),
   ];
-  return groups.reduce((n, g) => n + g.edges.length, 0);
+  /* Messages posted on or from this entity are the Discussion tab's count, not
+     this one's — the Connections tab summarises them as a single row. */
+  return groups.reduce(
+    (n, g) =>
+      n +
+      g.edges.filter((e) => {
+        const peer = e.source.id === detail.id ? e.target : e.source;
+        return !isConversationEdge(g.type, g.direction, peer.kind);
+      }).length,
+    0,
+  );
 }
