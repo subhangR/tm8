@@ -610,6 +610,30 @@ function notLoadedEntry(id: string, section: V2Section): EntityContextNotLoaded 
   return { section, ...sectionExpand(id, section) };
 }
 
+/**
+ * c761 §3.4: `in_project` and `authored_from` are never in a default read, so
+ * while `connections` is not loaded each is advertised by its own filtered
+ * expand, no count. Only for a kind the edge catalog lets carry the edge, in
+ * either direction (`edge_types.src_kinds`/`dst_kinds`, as of 194) — the same
+ * closed set the `--edge-type` check reads, spelled here so a notLoaded entry
+ * never costs a statement.
+ */
+const ADVERTISED_EDGE_TYPES: ReadonlyArray<{ type: string; kinds: ReadonlySet<string> }> = [
+  { type: 'in_project', kinds: new Set(['task', 'work_session', 'pull_request', 'commit', 'artifact', 'project']) },
+  { type: 'authored_from', kinds: new Set(['message', 'memory', 'artifact', 'work_session', 'chat']) },
+];
+
+function notLoadedEntries(id: string, kind: string, section: V2Section): EntityContextNotLoaded[] {
+  const entry = notLoadedEntry(id, section);
+  if (section !== 'connections') return [entry];
+  return [
+    entry,
+    ...ADVERTISED_EDGE_TYPES
+      .filter((edge) => edge.kinds.has(kind))
+      .map((edge) => ({ section: edge.type, ...pageExpand(id, 'connections', edge.type, null) })),
+  ];
+}
+
 function errorOf(section: string, error: unknown): EntityContextError {
   if (error instanceof CollabError) return { section, code: error.code, retry: error.retryable };
   return { section, code: 'upstream_unavailable', retry: true };
@@ -798,9 +822,14 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
         [id],
       ));
       if (prs) {
+        // Beyond 10, the `omitted[]` entry carries the expand (c761 §5, "gate
+        // PRs beyond 10"): gate PRs are oldest-first and connections
+        // newest-first, so no cursor continues one from the other — the
+        // expand is the `tracks`-filtered section itself, as for `tasks`.
+        const gatePage = pageExpand(id, 'connections', 'tracks', null);
         loaded.gate = {
           kind: 'pr_merged',
-          prs: prs.slice(0, ROW_LIMIT).map((pr) => (pr.readable
+          prs: keep(prs, ROW_LIMIT, 'gate', loaded, () => gatePage).map((pr) => (pr.readable
             ? { url: pr.url ?? '', state: pr.state ?? 'unknown', ci: pr.ci_status }
             : { id: pr.id, unreadable: true as const })),
           ...(prs.length > ROW_LIMIT ? { more: true as const } : {}),
@@ -1089,7 +1118,7 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
     version: Number(root.version),
   };
   const status = statusOf(root);
-  const notLoaded = plan.notLoaded.map((section) => notLoadedEntry(id, section));
+  const notLoaded = plan.notLoaded.flatMap((section) => notLoadedEntries(id, root.kind, section));
   const tail = { omitted: loaded.omitted, notLoaded, errors: loaded.errors, budget: { requested: 0, used: 0 } };
 
   const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};
