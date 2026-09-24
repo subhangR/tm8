@@ -3569,6 +3569,9 @@ export interface ActionDiscoveryPage extends ActionRows {
   nextCursor: Cursor | null;
 }
 
+/** What `actions.list` returns: the v1 inventory, or the v2 page when `schema=v2` asked for it. */
+export type ActionListResult = ActionDiscoveryResult | ActionDiscoveryPage;
+
 export type Unsubscribe = () => void;
 
 // ===========================================================================

@@ -1,5 +1,6 @@
 import {
   ActionDiscoveryResultSchema,
+  ActionListResultSchema,
   AttentionRequestListQuerySchema,
   AttentionRequestMutationResultSchema,
   AttentionRequestSchema,
@@ -72,6 +73,7 @@ const PageOfAttentionRequestSchema = pageOf(AttentionRequestSchema);
 
 export const SCHEMA_REGISTRY = {
   ActionDiscoveryResultSchema,
+  ActionListResultSchema,
   AttentionRequestListQuerySchema,
   AttentionRequestMutationResultSchema,
   AttentionRequestSchema,
@@ -200,7 +202,7 @@ export const FROZEN_SCHEMA_DISPOSITIONS = {
   'entities.commands.linkCommit': { requestSchema: 'LinkCommitInputSchema', resultSchema: 'CommandResultSchema' },
   'inbox.list': { requestSchema: 'InboxListQuerySchema', resultSchema: 'PageOfNotificationItemSchema' },
   'inbox.markRead': { requestSchema: 'InboxMarkReadInputSchema', resultSchema: 'NotificationItemSchema' },
-  'actions.list': { requestSchema: null, resultSchema: 'ActionDiscoveryResultSchema' },
+  'actions.list': { requestSchema: null, resultSchema: 'ActionListResultSchema' },
   'events.subscribe': { requestSchema: null, resultSchema: 'WorkspaceEventSchema' },
 } as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
 

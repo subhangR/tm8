@@ -639,28 +639,34 @@ describe('entity query', () => {
  * is now the honest answer for them.
  */
 describe('entity context', () => {
-  it('the bare form still sends no query parameters', async () => {
+  // M2/S5 (c761 §9): text output is v2 for every caller, immediately.
+  it('the bare form asks for v2 and nothing else; --schema v1 is the escape', async () => {
     const r = await drive(['entity', 'context', ENT]);
     expect(r.code).toBe(0);
-    expect(seen[0]?.query).toBe('');
+    expect(seen[0]?.query).toBe('?schema=v2');
+    const v1 = await drive(['entity', 'context', ENT, '--schema', 'v1']);
+    expect(v1.code).toBe(0);
+    expect(seen[1]?.query).toBe('?schema=v1');
   });
 
   it('--sections is sent as ONE comma-separated value, the shape the Server splits', async () => {
     const r = await drive(['entity', 'context', ENT, '--sections', 'summary,actions']);
     expect(r.code).toBe(0);
-    expect(seen[0]?.query).toBe('?sections=summary%2Cactions');
+    expect(seen[0]?.query).toBe('?schema=v2&sections=summary%2Cactions');
   });
 
-  describe('the actions section rolls out to tm8.actions.v2 rows', () => {
+  // The v1 actions section: reached by `--schema v1` for an agent (v2 lists
+  // actions in notLoaded[] instead), and by a non-agent json read's v1 default.
+  describe('the v1 actions section rolls out to tm8.actions.v2 rows', () => {
     afterEach(() => {
       delete process.env.TM8_JOURNAL_CLASS;
     });
 
     it('asks for v2 rows for an agent-class structured read, silently', async () => {
       process.env.TM8_JOURNAL_CLASS = 'agent';
-      const r = await drive(['entity', 'context', ENT, '--format', 'json']);
+      const r = await drive(['entity', 'context', ENT, '--format', 'json', '--schema', 'v1']);
       expect(r.code).toBe(0);
-      expect(seen[0]?.query).toBe('?actionsSchema=v2');
+      expect(seen[0]?.query).toBe('?schema=v1&actionsSchema=v2');
       expect(r.stderr).toBe('');
     });
 
@@ -672,12 +678,16 @@ describe('entity context', () => {
 
       const pinned = await drive(['entity', 'context', ENT, '--format', 'json', '--actions-schema', 'v2']);
       expect(seen[1]?.query).toBe('?actionsSchema=v2');
-      expect(pinned.stderr).toBe('');
+      expect(pinned.stderr).not.toMatch(/--actions-schema/);
 
       // No actions section, no question about its shape.
       const none = await drive(['entity', 'context', ENT, '--format', 'json', '--sections', 'summary']);
       expect(seen[2]?.query).toBe('?sections=summary');
-      expect(none.stderr).toBe('');
+      expect(none.stderr).not.toMatch(/--actions-schema/);
+      // Only the context rollout notice (c761 §9), which `--schema` silences.
+      expect(none.stderr).toMatch(/`tm8 entity context` --format json still emits the v1 shape.*--schema v2/s);
+      await drive(['entity', 'context', ENT, '--format', 'json', '--sections', 'summary', '--schema', 'v1']);
+      expect(seen[3]?.query).toBe('?schema=v1&sections=summary');
     });
   });
 
@@ -695,7 +705,11 @@ describe('entity context', () => {
     expect(r.code).toBe(2);
     expect(seen).toHaveLength(0);
     expect(r.stderr).toContain('bogus');
-    expect(r.stderr).toContain('summary|hierarchy|connections|messages|activity|actions');
+    expect(r.stderr).toContain('assignment|summary|hierarchy|blockers|connections|messages|actions');
+    const v1 = await drive(['entity', 'context', ENT, '--schema', 'v1', '--sections', 'summary,bogus']);
+    expect(v1.code).toBe(2);
+    expect(seen).toHaveLength(0);
+    expect(v1.stderr).toContain('summary|hierarchy|connections|messages|activity|actions');
   });
 
   it('a byte budget outside the frozen schema range fails locally with the bounds', async () => {

@@ -90,7 +90,7 @@ import type {
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
   NavChannelNode,
-  NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, PatchEdgeInput, PatchEntityInput,
+  NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, ActionListResult, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
   StartChatResult,
@@ -4406,6 +4406,12 @@ export const ActionDiscoveryPageSchema: z.ZodType<ActionDiscoveryPage> = z.objec
   ...ActionRowsShape,
   nextCursor: CursorSchema.nullable(),
 }).strict();
+
+/** What `actions.list` returns: v1, or the v2 page when `schema=v2` asked for it. */
+export const ActionListResultSchema: z.ZodType<ActionListResult> = z.union([
+  ActionDiscoveryResultSchema,
+  ActionDiscoveryPageSchema,
+]);
 
 // ---------------------------------------------------------------------------
 // Wire envelope + error body (DEV-6 / DEV-8)

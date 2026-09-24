@@ -2121,7 +2121,7 @@
       },
       "actions.list": {
         "requestSchema": null,
-        "resultSchema": "ActionDiscoveryResultSchema"
+        "resultSchema": "ActionListResultSchema"
       },
       "events.subscribe": {
         "requestSchema": null,
@@ -4019,7 +4019,7 @@
           "list"
         ],
         "inputSchemaRef": null,
-        "resultSchemaRef": "ActionDiscoveryResultSchema",
+        "resultSchemaRef": "ActionListResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,

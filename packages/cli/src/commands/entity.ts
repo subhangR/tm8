@@ -65,7 +65,8 @@ import { commandDiscovery } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
-import { resolveWireSchema, schemaOption } from '../wire-schema.js';
+import { renderContextBrief } from '../context-brief.js';
+import { resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -326,26 +327,9 @@ function renderFeed(dto: unknown): string {
   return lines.length > 0 ? lines.join('\n') : 'no feed items';
 }
 
-/**
- * The human line for a v2 read. Deliberately minimal: the lossless text brief
- * (c761 §4, §8) is M2/S5's; until then a v2 caller reads `--format json`.
- */
-function renderContextV2(view: Record<string, unknown>): string {
-  const count = (v: unknown): string => (Array.isArray(v) ? String(v.length) : '-');
-  const assignment = view['assignment'] as { bytes?: number; complete?: boolean } | undefined;
-  return [
-    `${String(view['kind'])} ${String(view['id'])} v${String(view['version'])} · ${String(view['status'])} · seq ${String(view['asOfSeq'])}`,
-    `title: ${String(view['title'])}`,
-    ...(assignment ? [`assignment: ${String(assignment.bytes)} B${assignment.complete === false ? ' (complete:false)' : ''}`] : []),
-    `children ${count(view['children'])}  messages ${count(view['messages'])}  blockers ${count(view['blockers'])}  ` +
-      `omitted ${count(view['omitted'])}  notLoaded ${count(view['notLoaded'])}  errors ${count(view['errors'])}`,
-    'full view: --format json',
-  ].join('\n');
-}
-
 function renderContext(dto: unknown): string {
   if ((dto as { schemaVersion?: unknown } | undefined)?.schemaVersion === 'tm8.entity-context.v2') {
-    return renderContextV2(dto as Record<string, unknown>);
+    return renderContextBrief(dto as Record<string, unknown>);
   }
   const view = dto as
     | { root?: SummaryLike; parents?: unknown; children?: unknown; edges?: unknown; messages?: unknown; truncated?: unknown }
@@ -465,6 +449,34 @@ function byteBudgetOption(cmd: CommandContext, name: string, min: number, max: n
 }
 
 /**
+ * Which shape `entity context` asks for (c761 §9, the rollout matrix):
+ *   - `--schema v1|v2` wins, always — `--schema v1` is the escape;
+ *   - a flag only one shape has picks that shape: `--section-bytes` and the
+ *     `activity` section are v1's, `--offset`/`--cursor`/`--edge-type` and the
+ *     `assignment`/`blockers` sections are v2's (the server's expands carry no
+ *     `--schema`, and must run verbatim for every caller);
+ *   - otherwise text output and agent-class `--format json` get v2 now, and a
+ *     non-agent `--format json|jsonl` keeps v1 for one release with a stderr
+ *     notice (`resolveWireSchema`, the rule `action list` rolled out under).
+ * `defaultV2` is false for `chat show`, whose render reads v1's `root`.
+ */
+function contextSchema(cmd: CommandContext, defaultV2: boolean): WireSchema {
+  const explicit = schemaOption(cmd, 'schema');
+  if (explicit) return explicit;
+  const sections = (cmd.options.value('sections') ?? '').split(',').map((s) => s.trim());
+  if (cmd.options.value('section-bytes') !== undefined || sections.includes('activity')) return 'v1';
+  const v2Only = ['offset', 'cursor', 'edge-type'].some((flag) => cmd.options.value(flag) !== undefined)
+    || sections.includes('assignment') || sections.includes('blockers');
+  if (v2Only) return 'v2';
+  if (!defaultV2) return 'v1';
+  return resolveWireSchema(cmd, {
+    flag: 'schema',
+    subject: '`tm8 entity context`',
+    v2Name: 'tm8.entity-context.v2 (the narrow per-kind read with omitted/notLoaded expands)',
+  });
+}
+
+/**
  * The `entities.context` query, validated once.
  *
  * EXPORTED because `tm8 chat show` is a second spelling of this read, and two
@@ -473,10 +485,8 @@ function byteBudgetOption(cmd: CommandContext, name: string, min: number, max: n
  * command and as a wire 400 quoting zod internals on the other, for the same
  * typo. The three flags are ALL that bind (`EntityContextQuery`).
  */
-export function contextQuery(cmd: CommandContext): Record<string, string> {
-  // `--schema v2` asks for `tm8.entity-context.v2`; absent stays v1 until the
-  // rollout step flips the default, and `--schema v1` names v1 explicitly.
-  const schema = enumOption(cmd, 'schema', ['v1', 'v2']);
+export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean } = {}): Record<string, string> {
+  const schema = contextSchema(cmd, rollout.defaultV2 === true);
   const sectionSet: readonly string[] = schema === 'v2' ? CONTEXT_V2_SECTIONS : CONTEXT_SECTIONS;
   // One comma-separated value, exactly as the Server splits it. Each part is
   // validated HERE against the closed enum — a typoed section name must fail
@@ -532,7 +542,7 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
   // The actions section rolls out to `tm8.actions.v2` rows like `action list`
   // does. Only asked about when the section is in a view that prints it: the
   // human render shows no actions, so it keeps sending no query at all.
-  const wantsActions = cmd.out.format !== 'human'
+  const wantsActions = schema === 'v1' && cmd.out.format !== 'human'
     && (sections === undefined || sections.split(',').includes('actions'));
   const actionsSchema = wantsActions
     ? resolveWireSchema(cmd, {
@@ -543,7 +553,7 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     : schemaOption(cmd, 'actions-schema');
 
   return {
-    ...(schema === undefined ? {} : { schema }),
+    ...(schema === 'v2' || cmd.options.value('schema') !== undefined ? { schema } : {}),
     ...(sections === undefined ? {} : { sections }),
     ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
     ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
@@ -561,10 +571,15 @@ async function entityContext(cmd: CommandContext): Promise<ExitCode> {
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {
     params: { id },
-    query: contextQuery(cmd),
+    query: contextQuery(cmd, { defaultV2: true }),
   });
-  journal.noteContextRead(contextSchemaVersion(data));
-  cmd.out.data(data, renderContext);
+  const version = contextSchemaVersion(data);
+  journal.noteContextRead(version);
+  // c761 §8 / c904 Q6: v2 json is the minified DTO — byte for byte what the
+  // server sent, which is also the budget and hash unit. So no projection:
+  // `--terse`/`--full`/TM8_NO_TERSE_DEFAULT are no-ops here. v1 is unchanged.
+  if (version === 'tm8.entity-context.v2') cmd.out.data(data, renderContext, { minify: true, raw: true });
+  else cmd.out.data(data, renderContext);
   return EXIT_OK;
 }
 
@@ -664,7 +679,7 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
   // why that function stands down when the caller named one.
   const seen = new Set<string>();
   return tuples.filter((t) => {
-    const key = `${t.type} ${t.targetId}`;
+    const key = `${t.type}\u0000${t.targetId}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
