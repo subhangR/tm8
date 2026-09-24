@@ -2795,7 +2795,8 @@ export const CATALOG_DIGEST =
   // Re-measured 2026-09-23, SC-3: + credentials.space.* and node.credentials.*.
   // Read out of the failing digest test and matched to the regenerated manifest.
   // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
-  'sha256:7e8dc5880b7c4886f63a139f11ed30563537a2b1e5a3badfa4aa3124f1100776';
+  // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
+  'sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942';
 
 export const GRAMMAR_VERSION = '2';
 
