@@ -1592,7 +1592,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'events.poll': {
     cmd: ['event', 'list'],
-    syn: 'tm8 event list [--space <space-id>] [--after <space-seq>] [--limit <count>]',
+    syn: 'tm8 event list [--space <space-id>] [--after <space-seq>] [--limit <count>] [--entity <entity-id>]',
     // NOT "the reconnect stage" any more: `resume` repairs a gap over a socket
     // that is up, so the definite article claimed an exclusivity this row lost.
     // It is still exactly right for the socket-down case, which is why the

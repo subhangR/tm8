@@ -283,11 +283,14 @@ export class Tm8Client {
    * and never serves a stale byte. A quiet replay also advances the session's
    * per-space watermark: evidence this cheap is worth keeping.
    *
-   * A FULL page proves nothing about what lies past it (`nextCursor` is never
-   * null on this feed — it echoes the position when caught up), so a full
-   * page pages on from its `nextCursor`, at most REVALIDATE_MAX_PAGES times;
-   * still full after that answers CHANGED — a refetch is cheaper than a crawl.
-   * The watermark advances only over pages actually inspected.
+   * The feed's end is `hasMore:false` (poll.ts DurableEventPage), NEVER a
+   * short page: `items` omits rows skipped for RLS, deletion or failed
+   * hydration, so a page padded with rows this caller cannot read is short
+   * and still not the head. While `hasMore` is true the loop pages on from
+   * `nextCursor` (it covers skipped rows too), at most REVALIDATE_MAX_PAGES
+   * times; still more after that answers CHANGED — a refetch is cheaper than
+   * a crawl. A server too old to send `hasMore` falls back to the page-length
+   * heuristic. The watermark advances only over pages actually inspected.
    */
   private async unchangedSince(entry: CacheEntry): Promise<boolean> {
     let since = entry.seq;
@@ -309,7 +312,10 @@ export class Tm8Client {
         // pinned by the conformance suite). `data.events` and a bare array are
         // kept as accepted legacy shapes; anything else is still unreadable and
         // fails CLOSED to a refetch.
-        const page = data as { events?: unknown; items?: unknown; nextCursor?: unknown } | null | undefined;
+        const page = data as
+          | { events?: unknown; items?: unknown; nextCursor?: unknown; hasMore?: unknown; examinedThrough?: unknown }
+          | null
+          | undefined;
         const events = Array.isArray(data)
           ? data
           : Array.isArray(page?.events)
@@ -324,10 +330,15 @@ export class Tm8Client {
           .map((e) => (e as { seq?: unknown }).seq)
           .filter((s): s is number => typeof s === 'number');
         const pageMax = seqs.length > 0 ? Math.max(...seqs) : null;
-        if (pageMax !== null) seen = Math.max(seen ?? pageMax, pageMax);
-        if (events.length < REVALIDATE_PAGE_LIMIT) return true; // caught up
-        // Full page: resume from the cursor (it covers skipped rows too), else
-        // the highest seq it carried. No forward progress is unreadable.
+        const hasMore = Array.isArray(data) ? undefined : page?.hasMore;
+        const examined = Array.isArray(data) ? NaN : Number(page?.examinedThrough);
+        const through = Number.isSafeInteger(examined) ? examined : pageMax;
+        if (through !== null) seen = Math.max(seen ?? through, through);
+        if (hasMore === false) return true; // caught up: the examine cap was not hit
+        // Legacy page (no `hasMore`): a short page is the best evidence it has.
+        if (typeof hasMore !== 'boolean' && events.length < REVALIDATE_PAGE_LIMIT) return true;
+        // More to examine: resume from the cursor (it covers skipped rows too),
+        // else the highest seq it carried. No forward progress is unreadable.
         const cursor = Array.isArray(data) ? NaN : Number(page?.nextCursor);
         const next = Number.isSafeInteger(cursor) ? cursor : pageMax;
         if (next === null || next <= since) return false;

@@ -100,6 +100,22 @@ function limitCount(cmd: CommandContext): string | undefined {
   return raw;
 }
 
+/**
+ * `--entity <id>`: ONE entity, filtered SERVER-side (events.poll `?entity=`).
+ * Unlike `event watch --entity` this is not repeatable — the poll takes one
+ * id — so a second one is refused rather than silently dropped.
+ */
+function entityFilter(options: OptionBag): string | undefined {
+  const ids = options.values('entity');
+  if (ids.length === 0) return undefined;
+  if (ids.length > 1) {
+    throw new CliError('`tm8 event list --entity` takes one <entity-id>', EXIT_USAGE, {
+      hint: 'run one `tm8 event list --entity <id>` per entity, or `tm8 event watch --entity` for several',
+    });
+  }
+  return ids[0];
+}
+
 async function eventList(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('event list', cmd.options.value('mutation-id'));
   if (cmd.options.has('cursor')) {
@@ -113,6 +129,7 @@ async function eventList(cmd: CommandContext): Promise<ExitCode> {
   const spaceId = requireSpace(cmd.ctx);
   const since = afterSeq(cmd.options);
   const limit = limitCount(cmd);
+  const entity = entityFilter(cmd.options);
 
   // `events.poll` is `input: none` — no REQUEST PAYLOAD. Query params are a
   // different thing entirely and never meet a body schema, which is why a GET
@@ -120,13 +137,14 @@ async function eventList(cmd: CommandContext): Promise<ExitCode> {
   const query: Record<string, string> = {};
   if (since !== undefined) query['since'] = since;
   if (limit !== undefined) query['limit'] = limit;
+  if (entity !== undefined) query['entity'] = entity;
 
   const page = await observedInvoke<unknown>(clientFor(cmd.ctx), 'events.poll', {
     params: { spaceId },
     ...(Object.keys(query).length > 0 ? { query } : {}),
   });
 
-  cmd.out.data(page, renderPage);
+  cmd.out.data(page, (dto) => renderPage(dto, entity));
   return EXIT_OK;
 }
 
@@ -779,6 +797,7 @@ function renderAck(ack: WorkspaceControlAck): string {
 interface Page {
   items?: unknown;
   nextCursor?: unknown;
+  hasMore?: unknown;
 }
 
 /**
@@ -829,17 +848,21 @@ function renderEvent(raw: unknown): string {
  * Human is a rendering of the SAME DTO json emits, never a second shape and
  * never a subset that drops an id. `nextCursor` is printed as the literal flag
  * the next invocation takes, because that is the one value a caller must not
- * have to reconstruct.
+ * have to reconstruct. A `--entity` filter is repeated on that line: following
+ * it without the filter would silently widen the read to the whole stream.
  */
-function renderPage(dto: unknown): string {
+function renderPage(dto: unknown, entity?: string): string {
   const page = (dto ?? {}) as Page;
   const items = Array.isArray(page.items) ? page.items : [];
   const lines = items.map((raw) => renderEvent(raw));
 
-  if (lines.length === 0) lines.push('no events');
+  if (lines.length === 0) lines.push(page.hasMore === true ? 'no events on this page' : 'no events');
+  // A short (even empty) page is NOT the head when the examine cap was hit —
+  // the rows it skipped were unreadable or did not match `--entity`.
+  if (page.hasMore === true) lines.push('more: the page examined its full limit; page on with the next cursor');
   lines.push(
     typeof page.nextCursor === 'string' || typeof page.nextCursor === 'number'
-      ? `next: tm8 event list --after ${String(page.nextCursor)}`
+      ? `next: tm8 event list --after ${String(page.nextCursor)}${entity === undefined ? '' : ` --entity ${entity}`}`
       : 'next: the Server returned no cursor',
   );
   return lines.join('\n');

@@ -1212,3 +1212,43 @@ describe('tm8 event watch — local validation and the disclosure discipline', (
     expect(r.stderr).not.toMatch(roadmap);
   });
 });
+
+describe('tm8 event list --entity — the server-side subject filter', () => {
+  it('carries --entity as the ?entity= query param, next to --after', async () => {
+    await drive(['event', 'list', '--after', '42', '--entity', ENTITY]);
+    const q = new URLSearchParams(seen[0]?.query ?? '');
+    expect(q.get('entity')).toBe(ENTITY);
+    expect(q.get('since')).toBe('42');
+  });
+
+  it('refuses a second --entity locally rather than silently dropping it', async () => {
+    const r = await drive(['event', 'list', '--entity', ENTITY, '--entity', SPACE]);
+    expect(r.code).toBe(EXIT_USAGE);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('a short page with hasMore says so, instead of reading as the head', async () => {
+    reply = {
+      status: 200,
+      body: { data: { items: [], nextCursor: '240', hasMore: true, examinedThrough: 240 }, requestId: 'r' },
+    };
+    const r = await drive(['event', 'list', '--entity', ENTITY]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/more:/);
+    expect(r.stdout).toMatch(/--after 240/);
+  });
+
+  it('the human next: line repeats --entity, so following it keeps the filter', async () => {
+    reply = {
+      status: 200,
+      body: { data: { items: [], nextCursor: '240', hasMore: true, examinedThrough: 240 }, requestId: 'r' },
+    };
+    const r = await drive(['event', 'list', '--entity', ENTITY]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`next: tm8 event list --after 240 --entity ${ENTITY}`);
+
+    // And an unfiltered list never invents one.
+    const plain = await drive(['event', 'list']);
+    expect(plain.stdout).toMatch(/next: tm8 event list --after 240$/m);
+  });
+});

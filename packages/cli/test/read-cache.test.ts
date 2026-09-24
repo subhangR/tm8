@@ -378,3 +378,96 @@ describe('revalidation past the first poll page (fails closed on a busy space)',
     expect(calls.filter((u) => u.includes('/events'))).toHaveLength(1);
   });
 });
+
+// ── hasMore, not page length, ends revalidation (change feed step 1) ────────
+
+/**
+ * The poll.ts page WITH `hasMore` / `examinedThrough`: every seq after 41 up
+ * to `lastSeq` is examined, but only every `readableEvery`th one is readable,
+ * so a page that hit its examine cap is SHORT. `hasMore` is the cap, exactly
+ * as poll.ts computes it.
+ */
+function paddedFeedRoute(lastSeq: number, relevantSeq: number | null = null, readableEvery = 4): Route {
+  return {
+    match: (u) => u.includes('/events'),
+    body: (u) => {
+      const q = new URL(u).searchParams;
+      const since = Number(q.get('since'));
+      const limit = Math.min(Number(q.get('limit') ?? 200), 500);
+      const through = Math.min(since + limit, lastSeq);
+      const examined = Math.max(0, through - since);
+      const items: unknown[] = [];
+      for (let seq = since + 1; seq <= through; seq += 1) {
+        if (seq !== relevantSeq && seq % readableEvery !== 0) continue; // unreadable: skipped
+        const id = seq === relevantSeq ? ENTITY : `019fc06c-0000-7000-8000-${String(seq).padStart(12, '0')}`;
+        items.push({ seq, entity: { id } });
+      }
+      return JSON.stringify({
+        data: { items, nextCursor: String(through), hasMore: examined === limit, examinedThrough: through },
+        requestId: 'r2',
+      });
+    },
+  };
+}
+
+describe('revalidation stops only on hasMore:false, never on a short page', () => {
+  it('a SHORT page with hasMore:true pages on, and a change past it forces a refetch', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { version += 1; return `v${version}`; }),
+      paddedFeedRoute(700, 642),
+    ];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    // Pre-fix the first page (short: ~50 readable of 200+ examined) read as
+    // "caught up" and served v1 — a stale byte.
+    expect(second.marker).toBe('v2');
+    const polls = calls.filter((u) => u.includes('/events'));
+    expect(polls.length).toBeGreaterThan(1);
+  });
+
+  it('padded pages page to hasMore:false, serve the cache, and the watermark covers the skipped rows', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let served = 0;
+    // 741 is not readable (741 % 4 !== 0): the watermark must still reach it.
+    const routes: Route[] = [contextRoute(() => 41, () => { served += 1; return `serve-${served}`; }), paddedFeedRoute(741)];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('serve-1');
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(1);
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(2);
+    expect(cache.watermark(SPACE)).toBe(741);
+  });
+
+  it('an EMPTY page with hasMore:true is not the head either', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    // Nothing readable before 642 at all: the first page is empty but capped.
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { version += 1; return `v${version}`; }),
+      paddedFeedRoute(700, 642, 1_000_000),
+    ];
+    const { client } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+  });
+
+  it('still hasMore at the page cap refetches instead of crawling', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const routes: Route[] = [contextRoute(() => 41, () => { version += 1; return `v${version}`; }), paddedFeedRoute(100_000)];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(3);
+  });
+});
