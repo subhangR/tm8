@@ -235,6 +235,13 @@ export const GraphContentInputSchema = z.object({
   edges: z.array(GraphEdgeInputSchema).optional(),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()).nullable().optional(),
   source: z.string().nullable().optional(),
+  /**
+   * THE MATERIALIZE WRITE-BACK (Craft Foundations): `{nodeId: entityId}`. The
+   * door sets `ref` on each named node (its `spec` kept) instead of making the
+   * orchestrator restate every node. Values are checked by `applyGraphLinks`,
+   * which names every bad key; never persisted as a member of its own.
+   */
+  link: z.record(z.unknown()).optional(),
 }).passthrough();
 
 /**

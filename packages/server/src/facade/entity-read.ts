@@ -59,7 +59,7 @@ import type {
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
-import { DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
+import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -2489,18 +2489,27 @@ export function contentOf(row: EntityRow): EntityContent {
       // server-side, and nothing else on the row is content rather than state.
       // The arm exists so the discriminated union is total, and says so.
       return { kind: 'chat' };
-    case 'graph':
+    case 'graph': {
       // The whole row IS the graph (R1): one read hands a renderer or an
       // orchestrating agent everything. Lean fallbacks keep a hypothetical
       // stray envelope readable rather than failing the strict schema.
+      const graphType = row.graph_type ?? 'entity';
+      const nodes = (Array.isArray(row.graph_nodes) ? row.graph_nodes : []) as GraphNode[];
+      const edges = (Array.isArray(row.graph_edges) ? row.graph_edges : []) as GraphEdgeSpec[];
       return {
         kind: 'graph',
-        graphType: row.graph_type ?? 'entity',
-        nodes: (Array.isArray(row.graph_nodes) ? row.graph_nodes : []) as GraphNode[],
-        edges: (Array.isArray(row.graph_edges) ? row.graph_edges : []) as GraphEdgeSpec[],
+        graphType,
+        nodes,
+        edges,
         layout: row.graph_layout ?? {},
         source: row.graph_source,
+        // DERIVED ON READ, here and only here: the craft agent's self-check after
+        // each patch. Version history is the DB's own snapshot of the row, so a
+        // finding can never be stored, snapshotted or hashed. Pure, ~100 nodes
+        // well under a millisecond-scale budget (pinned in the server test).
+        ...(graphType === 'entity' ? { findings: checkGraphCoherence({ nodes, edges }) } : {}),
       };
+    }
     case 'drawing':
       // The whole row IS the scene: one read hands the editor everything it
       // needs to mount, in Excalidraw's own member names, so nothing between
