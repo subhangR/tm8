@@ -240,11 +240,24 @@ export function graphNodeKey(node: NodeLike, index: number): string {
 }
 
 /**
- * An edge's stable key within one row version. The index keeps two identical
- * edges distinct; the rest makes the key readable in a finding.
+ * EDGE KEYS — stable across edits, so a diff between two versions of a row
+ * and a finding pinned on an edge both keep naming the same edge.
+ *
+ * `src:dst:type`, exactly as stored. Only a TRUE duplicate (the same three
+ * again) gets a suffix: `#2`, `#3`, … in array order. The array index is
+ * deliberately NOT part of the key: with it, inserting one edge early re-keyed
+ * every later edge, so a patch diff reported them all as removed-and-added and
+ * a finding computed before the insert pointed at the wrong edge after it.
  */
-export function graphEdgeKey(edge: EdgeLike, index: number): string {
-  return `${str(edge.src) ?? ''}:${str(edge.dst) ?? ''}:${str(edge.type) ?? ''}:${index}`;
+export function graphEdgeKeys(edges: readonly unknown[]): string[] {
+  const seen = new Map<string, number>();
+  return edges.map((raw) => {
+    const edge = (raw && typeof raw === 'object' ? raw : {}) as EdgeLike;
+    const base = `${str(edge.src) ?? ''}:${str(edge.dst) ?? ''}:${str(edge.type) ?? ''}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
+  });
 }
 
 /**
@@ -357,7 +370,7 @@ export interface CoherenceFinding {
   message: string;
   /** Row-local node keys this is about — the UI pins the finding on them. */
   nodes: string[];
-  /** Edge keys (`graphEdgeKey`) this is about. */
+  /** Edge keys (`graphEdgeKeys`) this is about. */
   edges: string[];
 }
 
@@ -420,9 +433,10 @@ export function checkGraphCoherence(content: unknown, options: CoherenceOptions 
   interface E { key: string; src: string; dst: string; type: string; def: OrchestrationEdgeType | null }
   const edges: E[] = [];
   const edgeSeen = new Map<string, string>();
+  const edgeKeys = graphEdgeKeys(rawEdges);
   rawEdges.forEach((raw, index) => {
     const edge = (raw && typeof raw === 'object' ? raw : {}) as EdgeLike;
-    const key = graphEdgeKey(edge, index);
+    const key = edgeKeys[index] as string;
     const s = str(edge.src);
     const d = str(edge.dst);
     const missing = [s, d].filter((k): k is string => k !== null && !byKey.has(k));

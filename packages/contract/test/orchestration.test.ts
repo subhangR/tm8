@@ -13,7 +13,7 @@ import {
   parseBlueprintNodeRef,
   parseNodeMentions,
   checkGraphCoherence,
-  graphEdgeKey,
+  graphEdgeKeys,
   graphNodeKey,
   graphNodeMaterialized,
   graphNodeRef,
@@ -69,7 +69,38 @@ describe('reading nodes', () => {
     expect(graphNodeMaterialized({ id: 't1', ref: REF })).toBe(false);
     expect(graphNodeKey({ key: 'k', id: 'i' }, 0)).toBe('k');
     expect(graphNodeKey({}, 3)).toBe('#3');
-    expect(graphEdgeKey({ src: 'a', dst: 'b', type: 'produces' }, 2)).toBe('a:b:produces:2');
+  });
+});
+
+describe('graphEdgeKeys — stable across edits', () => {
+  it('is src:dst:type, suffixing only true duplicates in array order', () => {
+    expect(graphEdgeKeys([
+      { src: 'a', dst: 'b', type: 'produces' },
+      { src: 'a', dst: 'b', type: 'consumes' },
+      { src: 'a', dst: 'b', type: 'produces' },
+      { src: 'a', dst: 'b', type: 'produces' },
+      { src: 'a' },
+      null,
+    ])).toEqual(['a:b:produces', 'a:b:consumes', 'a:b:produces#2', 'a:b:produces#3', 'a::', '::']);
+  });
+
+  it('inserting an edge early re-keys nothing after it', () => {
+    const edges = [
+      { src: 't1', dst: 'd1', type: 'produces' },
+      { src: 't2', dst: 'd1', type: 'consumes' },
+      { src: 't2', dst: 't1', type: 'depends_on' },
+    ];
+    const before = graphEdgeKeys(edges);
+    const after = graphEdgeKeys([{ src: 't0', dst: 't1', type: 'relates_to' }, ...edges]);
+    expect(after.slice(1)).toEqual(before);
+  });
+
+  it('a finding keeps naming the same edge after an unrelated insert', () => {
+    const nodes = [spec('t1', 'task'), spec('d1', 'doc'), spec('t0', 'task')];
+    const edges = [{ src: 't1', dst: 't1', type: 'relates_to' }];
+    const key = (e: unknown[]) => checkGraphCoherence({ nodes, edges: e }).find((f) => f.code === 'self_loop')!.edges;
+    expect(key([{ src: 't0', dst: 'd1', type: 'produces' }, ...edges])).toEqual(key(edges));
+    expect(key(edges)).toEqual(['t1:t1:relates_to']);
   });
 });
 
