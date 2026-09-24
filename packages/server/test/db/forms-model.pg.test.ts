@@ -406,6 +406,51 @@ describe('the amend model', () => {
                        values ($1, $2, 'draft', $3)`, [form, w.m2, n.id]), '23514');
   });
 
+  it('submit re-derives a first-revision draft\'s stale lineage_key under the form lock (M1)', async () => {
+    // The race: a draft saved while a responses-mode change commits keeps the
+    // OLD mode's key, and the re-key trigger never saw the uncommitted row.
+    // Reproduced deterministically by writing the stale key behind the
+    // trigger's back, as the table owner.
+    const form = await mintForm({ settings: { responses: 'single' } });
+    const draft = await saveDraft(form, w.m1, PICK_X);
+    expect(draft.lineage_key).toBe(form);
+    await owner(async (c) => {
+      await c.query('alter table public.form_responses disable trigger form_responses_before_update');
+      await c.query(`update public.form_responses set lineage_key = respondent_id where id = $1`, [draft.id]);
+      await c.query('alter table public.form_responses enable trigger form_responses_before_update');
+    });
+    const submitted = await submit(form, w.m1, null);
+    expect(submitted).toMatchObject({ id: draft.id, lineage_key: form, is_current: true });
+    // …so the limit enforces the CURRENT mode: a second member is refused.
+    await refused(submit(form, w.m2, PICK_Y), 'TFL01');
+  });
+
+  it('two first saves racing on one member land in the same draft (S2)', async () => {
+    const form = await mintForm();
+    const a = await db.pool.connect();
+    const b = await db.pool.connect();
+    try {
+      await a.query('begin; set local role tm8_graph_owner');
+      await b.query('begin; set local role tm8_graph_owner');
+      const call = `select id::text, version from internal.form_save_draft($1, $2, $3::jsonb, null)`;
+      const first = await a.query(call, [form, w.m1, JSON.stringify(PICK_X)]);
+      // B's insert waits on A's uncommitted draft in the unique index…
+      const second = b.query(call, [form, w.m1, JSON.stringify(PICK_Y)]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await a.query('commit');
+      // …then saves INTO it instead of refusing.
+      const secondRows = await second;
+      await b.query('commit');
+      expect(secondRows.rows[0]!.id).toBe(first.rows[0]!.id);
+    } finally {
+      a.release();
+      b.release();
+    }
+    const rows = await responses(form);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'draft', answers: PICK_Y, version: 2 });
+  });
+
   it('drafts are never current', async () => {
     const form = await mintForm();
     await refused(sql(`insert into public.form_responses(form_id, respondent_id, status, is_current)
@@ -496,6 +541,41 @@ describe('RLS: space-visible reads, no direct writes (decision 10)', () => {
     // Member 2 did not respond, and still sees the response: space-visible.
     expect((await asIdentity(w.identity2, counts)).rows[0]).toEqual({ forms: 1, questions: 2, responses: 1, deliveries: 1 });
     expect((await asIdentity(w.identity3, counts)).rows[0]).toEqual({ forms: 0, questions: 0, responses: 0, deliveries: 0 });
+  });
+
+  it('a draft is private to its respondent; the submitted revision is space-visible (M2)', async () => {
+    const form = await mintForm();
+    const r1 = await submit(form, w.m1, PICK_X);
+    const draft = await saveDraft(form, w.m1, PICK_Y);
+    const session = (await sql(`select internal.new_id()::text id`))[0]!.id as string;
+    await sql(`insert into public.entities(id, space_id, kind, parent_id, position, created_by)
+               values ($1, $2, 'work_session', null, 0, $3)`, [session, w.spaceA, w.m1]);
+    // A delivery row on a draft cannot happen in the product; it pins that the
+    // deliveries policy carries the same restriction through its join.
+    await sql(`insert into public.form_deliveries(response_id, work_session_id) values ($1, $3), ($2, $3)`,
+      [r1.id, draft.id, session]);
+
+    const seen = (c: PoolClient) => c.query(`select
+        array(select id::text from public.form_responses where form_id = $1 order by revision) responses,
+        array(select response_id::text from public.form_deliveries where work_session_id = $2
+               order by response_id) deliveries`, [form, session]);
+
+    const byOther = (await asIdentity(w.identity2, seen)).rows[0]!;
+    expect(byOther.responses).toEqual([r1.id]);
+    expect(byOther.deliveries).toEqual([r1.id]);
+
+    const byRespondent = (await asIdentity(w.identity1, seen)).rows[0]!;
+    expect(byRespondent.responses).toEqual([r1.id, draft.id]);
+    expect([...byRespondent.deliveries].sort()).toEqual([r1.id, draft.id].sort());
+
+    // An agent reading as the teammate it acts for sees only its own drafts.
+    const byActor = (await db.transaction(async (c) => {
+      await c.query('set local role tm8_app');
+      await c.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.actor_id', $2, true),
+                            set_config('tm8.node_admin', 'false', true)`, [w.identity2, w.teammate]);
+      return seen(c);
+    })).rows[0]!;
+    expect(byActor.responses).toEqual([r1.id]);
   });
 
   it('tm8_app cannot write any form table directly', async () => {
