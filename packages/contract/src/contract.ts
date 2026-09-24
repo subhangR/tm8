@@ -20,6 +20,7 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
+import type { RelevanceLevel } from './launch-suggest.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -5612,6 +5613,73 @@ export interface SessionLaunchRecord {
   };
   /** When the manifest row was written — i.e. when the session was launched. */
   recordedAt: string | null;
+  /**
+   * Every entity selection that went into the launch, projected from
+   * `manifest` for the session's Connections tab. Null when there is no
+   * manifest. Unlike `manifest`, this is filtered for the viewer.
+   */
+  launchContext: SessionLaunchContext | null;
+}
+
+/** What an entity was in the launch. */
+export type LaunchContextRole =
+  | 'teammate'
+  | 'task'
+  | 'memory'
+  | 'skill'
+  | 'reference'
+  | 'attachment'
+  | 'coordinator';
+
+/**
+ * Why it was in the launch. `launch` means it was named on the launch itself
+ * (teammate, tasks, coordinator); `teammate` and `task` mean it came from that
+ * teammate's or task's graph; `jev` means Ask Jev suggested it; `requested`
+ * means it was named by id and matches neither.
+ */
+export type LaunchContextSource = 'launch' | 'teammate' | 'task' | 'jev' | 'requested';
+
+export interface LaunchContextEntry {
+  entityId: EntityId;
+  role: LaunchContextRole;
+  /** The entity's kind now. */
+  kind: string;
+  /** The entity's title now. Graph-authored text: render it as data. */
+  title: string;
+  source: LaunchContextSource;
+  /** The launch task a reference, attachment or skill came through. */
+  viaTaskId: EntityId | null;
+  /** Skills only: loaded natively by the harness, or listed in the index. */
+  skillLoad: 'native' | 'indexed' | null;
+  /** Ask Jev's rating, when the launch came from a Jev run that rated it. */
+  jev: { level: RelevanceLevel; score: number } | null;
+}
+
+/**
+ * A launch's selections, filtered for the viewer: an entity the viewer cannot
+ * read (or that has been deleted) is counted in `hiddenCount`, never named.
+ */
+export interface SessionLaunchContext {
+  entries: LaunchContextEntry[];
+  hiddenCount: number;
+  /**
+   * Memories the manifest recorded only as text: every memory of a launch
+   * that predates `manifest.context.memoryIds`, and the legacy id-less
+   * remainder of one that does not. Shown only to a viewer who can read the
+   * launch's teammate, and counted in `hiddenCount` otherwise. That gate is
+   * exact for the legacy remainder, which lives on the teammate row, but on a
+   * pre-`memoryIds` launch it is coarse: those strings also include
+   * task-remembered and requested memories, and ones since deleted, which
+   * cannot be checked one by one without ids. The raw `manifest` on the same
+   * record carries the same text.
+   */
+  unlinkedMemories: string[];
+  /**
+   * Skills the launch indexed that have no graph entity (e.g. found on the
+   * filesystem only), so there is no row to show. Counted so nothing drops
+   * silently.
+   */
+  unlinkedSkillCount: number;
 }
 
 /**

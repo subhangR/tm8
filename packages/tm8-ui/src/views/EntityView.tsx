@@ -93,6 +93,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { launchContextSurfaceFor } from './launchContextSurface';
 import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
 
@@ -853,6 +854,11 @@ export function EntityView(props: EntityViewProps) {
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
               setAux({ sort: 'entity', id: id as EntityId }),
             )
+          : undefined
+      }
+      launchContextSurface={
+        detail
+          ? launchContextSurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }))
           : undefined
       }
       messages={messages}

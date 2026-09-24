@@ -348,6 +348,13 @@ export interface TeamMemberContext {
   role: string;
   identity: string;
   memories: unknown[];
+  /**
+   * The memory ENTITIES injected into `memories`, in injection order: the
+   * first `memoryIds.length` entries of `memories` are these, and any after
+   * them are the legacy jsonb remainder, which has no ids. Absent from
+   * contexts that predate it.
+   */
+  memoryIds?: string[];
   model: string | null;
   agentTool: string | null;
   mode: AgentMode | null;
@@ -999,6 +1006,19 @@ export interface Tm8Manifest {
   effectiveSkills?: EffectiveSkills;
   /** Names omitted by relevance selection or the serialized index byte budget. */
   droppedSkills?: string[];
+
+  /**
+   * The launch-context audit (design 01a0d348 §6). Only `memoryIds` so far:
+   * the memory entities injected into `agent.memory`, in injection order.
+   *
+   * PREFIX RULE, which readers rely on: the first `memoryIds.length` entries of
+   * `agent.memory` are these memories, in this order; any entries after them
+   * are the legacy jsonb remainder and have no id. An extension that breaks
+   * this (e.g. recording an id whose text was dropped) must record the
+   * pairing explicitly instead. `[]` means recorded and none injected; absent
+   * means the manifest predates this field.
+   */
+  context?: { memoryIds: string[] };
 
   /**
    * Present for coordinated modes — the concrete return path, and since 176

@@ -21,6 +21,8 @@ import type {
   EntityId,
   ExecutionSpawnInput,
   InteractionProfileStatus,
+  LaunchContextRole,
+  LaunchContextSource,
   LaunchModelEffort,
   ProjectId,
   SpawnWorkdir,
@@ -1122,6 +1124,123 @@ export function describeLaunchManifest(
   });
 
   return { facts, command: readText(launch, 'command'), tasks };
+}
+
+/** What each LAUNCH CONTEXT row was in the launch. */
+export const LAUNCH_CONTEXT_ROLE_LABEL: Record<LaunchContextRole, string> = {
+  teammate: 'teammate',
+  task: 'task',
+  memory: 'memory',
+  skill: 'skill',
+  reference: 'reference',
+  attachment: 'attachment',
+  coordinator: 'coordinator',
+};
+
+/** Where a LAUNCH CONTEXT row came from: the one provenance badge each row carries. */
+export const LAUNCH_CONTEXT_SOURCE_LABEL: Record<LaunchContextSource, { text: string; title: string }> = {
+  launch: { text: 'launch', title: 'Named on the launch itself' },
+  teammate: { text: 'teammate', title: "From the teammate's own graph" },
+  task: { text: 'task', title: 'Came in through a launch task' },
+  jev: { text: 'Jev', title: 'Suggested by Ask Jev' },
+  requested: { text: 'requested', title: 'Named by id at launch' },
+};
+
+/**
+ * The launch facts the Connections tab's LAUNCH CONTEXT section shows: the
+ * choices made for this launch, not the whole debug record. Credentials say
+ * which KIND of source each provider ran on and nothing more.
+ */
+export function launchContextFacts(manifest: Record<string, unknown> | null): ManifestFact[] {
+  const launch = readObject(manifest, 'launch');
+  const profile = readObject(manifest, 'interactionProfile');
+  const effective = readObject(launch, 'effectiveCredentialSources');
+  const requested = readObject(launch, 'credentialSources');
+  const credentials: ManifestFact[] = [];
+  for (const provider of CREDENTIAL_FACT_PROVIDERS) {
+    const source = readText(effective, provider) ?? readText(requested, provider);
+    if (source !== 'member' && source !== 'space' && source !== 'node') continue;
+    credentials.push({ label: `${CREDENTIAL_FACT_NAME[provider]} credential`, value: LAUNCH_SOURCE_WORD[source], mono: false });
+  }
+  return [
+    { label: 'Tool', value: readText(launch, 'tool'), mono: true },
+    { label: 'Model', value: readText(launch, 'model'), mono: true },
+    { label: 'Effort', value: readText(launch, 'reasoningEffort'), mono: true },
+    { label: 'Permission', value: readText(launch, 'permissionMode'), mono: true },
+    { label: 'Access', value: readText(launch, 'accessMode'), mono: true },
+    { label: 'Agent mode', value: readText(manifest, 'mode'), mono: true },
+    {
+      label: 'Interaction profile',
+      value: joinParts([readText(profile, 'templateKey'), bracket(readText(profile, 'source'))], ' '),
+      mono: true,
+    },
+    ...credentials,
+    ...(readText(launch, 'jevRunId') !== null ? [{ label: 'Ask Jev', value: 'used', mono: false }] : []),
+  ];
+}
+
+/**
+ * The harness a launch ran with, for the LAUNCH CONTEXT section.
+ *
+ * Plugins come from the best record the manifest has: `launch.harness.plugins`
+ * (what the harness actually allowed and denied, written since #731), else the
+ * launch-time pick (`launch.harnessChoice`), else the teammate's declared
+ * `capabilities.launch`. `recorded` is true only in the first case, so the
+ * surface can label anything else as declared. MCP servers are the declared
+ * ones; plugins a lane gets from its equipment appear only in the record.
+ */
+export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
+  facts: ManifestFact[];
+  recorded: boolean;
+} {
+  const launch = readObject(manifest, 'launch');
+  const declared = readObject(readObject(readObject(manifest, 'agent'), 'capabilities'), 'launch');
+  const choice = readObject(launch, 'harnessChoice');
+  const record = readObject(readObject(launch, 'harness'), 'plugins');
+  const effective = readObject(manifest, 'effectiveSkills');
+  const facts: ManifestFact[] = [];
+  const list = (items: string[]) => (items.length > 0 ? items.join(', ') : 'none');
+  const strings = (items: unknown[]) => items.filter((p): p is string => typeof p === 'string');
+  // Only a Claude lane has a harness surface (`harness-surface.ts`).
+  if (readText(launch, 'tool')?.startsWith('claude')) {
+    const surface = readText(choice, 'surface') ?? readText(declared, 'harnessSurface');
+    facts.push({ label: 'Harness surface', value: surface ?? 'minimal (default)', mono: true });
+    if (record !== null) {
+      const allowed = readArray(record, 'allowed').flatMap((item) => {
+        const id = readText(asObject(item), 'id');
+        return id === null ? [] : [id];
+      });
+      const denied = readArray(record, 'denied').flatMap((item) => {
+        const entry = asObject(item);
+        const id = readText(entry, 'id');
+        if (id === null) return [];
+        const because = readText(entry, 'because');
+        return [because === null ? id : `${id} (${because})`];
+      });
+      facts.push({ label: 'Plugins', value: list(allowed), mono: true });
+      if (denied.length > 0) facts.push({ label: 'Plugins denied', value: denied.join(', '), mono: true });
+    } else {
+      // A launch pick REPLACES the persona's list, even when it is empty.
+      const picked = Array.isArray(choice?.plugins);
+      facts.push({
+        label: 'Plugins',
+        value: list(strings(readArray(picked ? choice : declared, 'plugins'))),
+        mono: true,
+      });
+    }
+    facts.push(
+      { label: 'MCP servers', value: list(Object.keys(readObject(declared, 'mcpServers') ?? {})), mono: true },
+      // A minimal lane switches off the bundled skills lanes never use.
+      { label: 'Bundled skills', value: surface === 'inherit' ? 'all' : 'trimmed', mono: false },
+    );
+  }
+  if (effective !== null) {
+    facts.push(
+      { label: 'Native skills', value: String(readArray(effective, 'native').length), mono: true },
+      { label: 'Indexed skills', value: String(readArray(effective, 'indexed').length), mono: true },
+    );
+  }
+  return { facts, recorded: record !== null };
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {

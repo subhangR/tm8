@@ -119,6 +119,16 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes launchContextSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('launchContextSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass launchContextSurface, so a session's ` +
+          'Connections tab would silently lose its LAUNCH CONTEXT section in that view',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes gitSurface at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -263,6 +273,12 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         expect(
           block.includes('taskGitSectionFor'),
           `${file} builds taskGitSection inline; use taskGitSectionFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('launchContextSurface')) {
+        expect(
+          block.includes('launchContextSurfaceFor'),
+          `${file} builds launchContextSurface inline; use launchContextSurfaceFor() so every host stays identical`,
         ).toBe(true);
       }
       if (block.includes('graphSurface')) {

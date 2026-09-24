@@ -380,6 +380,12 @@ export interface EntityDetailPanelProps {
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
+   * A session's LAUNCH CONTEXT section, drawn at the top of its Connections
+   * tab. Same contract as Debug (`views/launchContextSurface.tsx`); rendered
+   * for work sessions only.
+   */
+  launchContextSurface?: ReactNode;
+  /**
    * THE EXITED SESSION'S POST-MORTEM — tokens, messages, tools, models and the
    * files it touched, read from the agent's own transcript. Same contract as
    * Debug: self-fetching, host wires the seam (`views/sessionStatsSurface.tsx`).
@@ -1531,6 +1537,8 @@ function PanelBody(
              entrances to one canvas. Left as-is: it is pre-existing and closing
              it is a ruling about the session chip row, not about tab order.) */
           graph={props.graphSurface}
+          /* Only a session has a launch: the terminal archetype, by registry data. */
+          launchContext={config.panel.archetype === 'terminal' ? props.launchContextSurface : undefined}
         />
       </>
     );

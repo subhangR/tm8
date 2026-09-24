@@ -334,12 +334,18 @@ export function ConnectionsTab({
   connections,
   onOpenEntity,
   graph,
+  launchContext,
 }: {
   detail: EntityDetail;
   connections?: Connections;
   onOpenEntity?: (id: string) => void;
   /** The ego-network canvas for THIS entity. Absent ⇒ no switch is drawn. */
   graph?: ReactNode;
+  /**
+   * A session's LAUNCH CONTEXT section — every selection that went into its
+   * launch — drawn first, above the edges. Host-composed; absent for other kinds.
+   */
+  launchContext?: ReactNode;
 }) {
   const [view, setView] = useState<'list' | 'graph'>('list');
   const groups: EdgeGroup[] = [
@@ -368,6 +374,7 @@ export function ConnectionsTab({
   return (
     <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
       {graph === undefined ? null : <ConnectionsViewSwitch view={view} onChange={setView} />}
+      {launchContext}
       {empty ? (
         <EmptyBody
           glyph="⊕"
