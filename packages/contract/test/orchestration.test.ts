@@ -7,7 +7,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ORCHESTRATION_EDGE_TYPES,
+  BLUEPRINT_NODE_URI,
   applyGraphLinks,
+  blueprintNodeRef,
+  parseBlueprintNodeRef,
+  parseNodeMentions,
   checkGraphCoherence,
   graphEdgeKey,
   graphNodeKey,
@@ -217,5 +221,26 @@ describe('checkGraphCoherence', () => {
     const nodes = Array.from({ length: 2000 }, (_, i) => spec(`t${i}`, 'task'));
     const edges = nodes.slice(1).map((_, i) => ({ src: `t${i + 1}`, dst: `t${i}`, type: 'depends_on' }));
     expect(() => checkGraphCoherence({ nodes, edges })).not.toThrow();
+  });
+});
+
+describe('node mentions — one spelling for UI, prompt and transcript', () => {
+  it('formats the composer link form and round-trips through both parsers, escapes included', () => {
+    const link = blueprintNodeRef(REF, 't-api', 'Ship [v2] \\ API');
+    expect(link).toBe(`[Ship \\[v2\\] \\\\ API](tm8://node/${REF}/t-api)`);
+    expect(link.startsWith('[')).toBe(true);
+    const href = link.slice(link.indexOf('](') + 2, -1);
+    expect(href.startsWith(BLUEPRINT_NODE_URI)).toBe(true);
+    expect(parseBlueprintNodeRef(href)).toEqual({ graphId: REF, nodeId: 't-api' });
+    expect(parseNodeMentions(`look at ${link} and ${blueprintNodeRef(REF, 'd spec/1', '')} please`)).toEqual([
+      { graphId: REF, nodeId: 't-api', title: 'Ship [v2] \\ API' },
+      { graphId: REF, nodeId: 'd spec/1', title: 'd spec/1' },
+    ]);
+  });
+
+  it('refuses what is not a node link', () => {
+    expect(parseBlueprintNodeRef('tm8://file/abc')).toBeNull();
+    expect(parseBlueprintNodeRef('tm8://node/only-graph')).toBeNull();
+    expect(parseNodeMentions('[x](tm8://file/abc) [y](https://e.com)')).toEqual([]);
   });
 });

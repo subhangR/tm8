@@ -21,6 +21,7 @@ import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { RelevanceLevel } from './launch-suggest.js';
+import type { CoherenceFinding } from './orchestration.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -806,7 +807,13 @@ export type CoreEntityContent =
    */
   | { kind: 'chat' }
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
-      layout: Record<string, { x: number; y: number }>; source: string | null }
+      layout: Record<string, { x: number; y: number }>; source: string | null;
+      /**
+       * Coherence findings (`checkGraphCoherence`), DERIVED ON READ for an
+       * 'entity' graph — never stored, never snapshotted, never hashed. Absent
+       * on other graph types. The craft agent reads it after each patch.
+       */
+      findings?: CoherenceFinding[] }
   /**
    * The whole Excalidraw scene in one row (194 D2).
    *

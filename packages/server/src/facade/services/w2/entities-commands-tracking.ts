@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import {
   CollabError,
   GraphContentInputSchema,
+  applyGraphLinks,
+  graphNodeKey,
   DrawingContentInputSchema,
   decodeCursor,
   encodeCursor,
@@ -1080,6 +1082,50 @@ function softGraphContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
+/**
+ * THE MATERIALIZE WRITE-BACK: `content.link = {nodeId: entityId}` sets `ref` on
+ * each named node and keeps its `spec` — the node now reads as MATERIALIZED.
+ * Strictly additive: a patch without `link` takes the unchanged path above.
+ * Every unknown node id and every non-entity-id value is refused BY NAME,
+ * with the ids the row does carry, so a typo can never read as a link landed.
+ */
+function linkNodes(graphId: string, nodes: readonly unknown[], link: Record<string, unknown>): unknown[] {
+  const result = applyGraphLinks(nodes.map((n) => (n && typeof n === 'object' ? n : {}) as Record<string, unknown>), link);
+  if (result.unknownKeys.length > 0) {
+    const known = nodes.map((n, i) => graphNodeKey((n && typeof n === 'object' ? n : {}) as Record<string, unknown>, i));
+    throw new CollabError('invalid_input',
+      `graph ${graphId} has no node ${result.unknownKeys.join(', ')}; its nodes: ${known.length > 0 ? known.join(', ') : 'none'}`,
+      { details: { reason: 'unknown_node', unknown: result.unknownKeys, known } });
+  }
+  if (result.invalidRefs.length > 0) {
+    throw new CollabError('invalid_input',
+      `graph link: ${result.invalidRefs.join(', ')} must map to an entity id`,
+      { details: { reason: 'invalid_ref', nodes: result.invalidRefs } });
+  }
+  return result.nodes;
+}
+
+/**
+ * The stored nodes a `link`-only patch merges into — read WITH the version, and
+ * refused unless it is the version the caller expects. The RPC re-checks under
+ * its row lock; this check is what stops a caller whose `expectedVersion` is
+ * AHEAD of the row we read from writing nodes merged into a stale copy.
+ */
+async function storedGraphNodes(q: Querier, id: string, expectedVersion: number): Promise<unknown[]> {
+  const rows = await q.query<{ version: number; nodes: unknown }>(
+    `select e.version, g.nodes from public.entities e join public.graphs g on g.entity_id = e.id
+      where e.id = $1 and e.deleted_at is null`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) throw new CollabError('not_found', `no such graph: ${id}`);
+  if (row.version !== expectedVersion) {
+    throw new CollabError('version_conflict', `version conflict on ${id}`,
+      { details: { entityId: id, currentVersion: row.version } });
+  }
+  return Array.isArray(row.nodes) ? row.nodes : [];
+}
+
 function softDrawingContent(content: Record<string, unknown>) {
   const parsed = DrawingContentInputSchema.safeParse(content);
   if (!parsed.success) {
@@ -1307,9 +1353,10 @@ export class W2EntitiesCommandsTrackingService {
           // through; it must never grow into a program schema. The same 056
           // posture as memory/loop: zero new catalog rows.
           const graph = softGraphContent(content);
+          const nodes = graph.link === undefined ? graph.nodes : linkNodes('new graph', graph.nodes ?? [], graph.link);
           raw = await q.rpc('create_graph_entity', [input.spaceId, input.title, envelope.actorId ?? null,
             graph.graphType ?? 'entity',
-            JSON.stringify(graph.nodes ?? []), JSON.stringify(graph.edges ?? []),
+            JSON.stringify(nodes ?? []), JSON.stringify(graph.edges ?? []),
             JSON.stringify(graph.layout ?? {}), graph.source ?? null,
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
@@ -1466,9 +1513,12 @@ export class W2EntitiesCommandsTrackingService {
             // the one-guarded-patch-per-turn crafting flow), and an explicit
             // `source: null` is the clear signal, the loop pattern exactly.
             const graph = softGraphContent(content);
+            const nodes = graph.link === undefined
+              ? graph.nodes
+              : linkNodes(id, graph.nodes ?? await storedGraphNodes(q, id, input.expectedVersion), graph.link);
             raw = await q.rpc('update_graph_entity', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, graph.graphType ?? null,
-              graph.nodes === undefined ? null : JSON.stringify(graph.nodes),
+              nodes === undefined ? null : JSON.stringify(nodes),
               graph.edges === undefined ? null : JSON.stringify(graph.edges),
               graph.layout === undefined || graph.layout === null ? null : JSON.stringify(graph.layout),
               graph.source ?? null, graph.source === null,

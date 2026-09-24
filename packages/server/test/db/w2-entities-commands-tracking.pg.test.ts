@@ -297,6 +297,115 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
     });
   });
 
+  /**
+   * THE MATERIALIZE WRITE-BACK (Craft Foundations). `content.link` merges
+   * refs into the STORED nodes under the version guard; a full-nodes patch
+   * keeps its old path untouched; a bad key is refused by name, never dropped.
+   */
+  it('links materialized entities into a blueprint row by node id, under the version guard', async () => {
+    const created = await service.createEntity(request('entities.create', { body: {
+      clientMutationId: 'craft-link-create', spaceId: fixture.spaceId, kind: 'graph', title: 'Link blueprint',
+      content: {
+        graphType: 'entity',
+        nodes: [
+          { id: 't-api', spec: { kind: 'task', title: 'Ship API', hint: 'REST' } },
+          { id: 'tm-x', spec: { kind: 'team_member', title: 'Backend' } },
+        ],
+        edges: [{ src: 't-api', dst: 'tm-x', type: 'assigned_to' }],
+      },
+    } }));
+    const id = created.entity!.id;
+
+    /* Refused by name: an unknown node, and a value that is not an entity id. */
+    await expect(service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-unknown', expectedVersion: 1, content: { link: { 't-nope': fixture.taskId } } },
+    }))).rejects.toMatchObject({
+      code: 'invalid_input',
+      details: { reason: 'unknown_node', unknown: ['t-nope'], known: ['t-api', 'tm-x'] },
+    });
+    await expect(service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-invalid', expectedVersion: 1, content: { link: { 't-api': 'nope' } } },
+    }))).rejects.toMatchObject({ code: 'invalid_input', details: { reason: 'invalid_ref', nodes: ['t-api'] } });
+
+    /* The version guard: stale AND ahead are both conflicts, never a merge into another version's nodes. */
+    await expect(service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-ahead', expectedVersion: 2, content: { link: { 't-api': fixture.taskId } } },
+    }))).rejects.toMatchObject({ code: 'version_conflict', current: { id, version: 1 } });
+
+    await service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-ok', expectedVersion: 1, content: { link: { 't-api': fixture.taskId } } },
+    }));
+    const detail = await asApp(database, fixture.identityId, (q) => buildUniversalDetail(q, id, fixture.identityId));
+    expect(EntityDetailSchema.safeParse(detail).success).toBe(true);
+    expect(detail.version).toBe(2);
+    const content = detail.content as Record<string, any>;
+    expect(content['nodes']).toEqual([
+      { id: 't-api', ref: fixture.taskId, spec: { kind: 'task', title: 'Ship API', hint: 'REST' } },
+      { id: 'tm-x', spec: { kind: 'team_member', title: 'Backend' } },
+    ]);
+    expect(content).not.toHaveProperty('link');
+    await expect(service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-stale', expectedVersion: 1, content: { link: { 'tm-x': fixture.teamMemberId } } },
+    }))).rejects.toMatchObject({ code: 'version_conflict', current: { id, version: 2 } });
+
+    /* Unchanged path: a full-nodes patch still replaces the array verbatim. */
+    await service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-link-full', expectedVersion: 2, content: { nodes: [{ id: 'only' }] } },
+    }));
+    const replaced = await asApp(database, fixture.identityId, (q) => buildUniversalDetail(q, id, fixture.identityId));
+    expect((replaced.content as Record<string, any>)['nodes']).toEqual([{ id: 'only' }]);
+  });
+
+  /**
+   * FINDINGS ARE DERIVED ON READ, NEVER STORED: the detail read carries them,
+   * the version snapshot (the DB's copy of the row) does not, and 100 nodes
+   * stay inside a read's budget.
+   */
+  it('derives coherence findings on the graph read, outside the stored row and its versions', async () => {
+    const nodes: unknown[] = [];
+    const edges: unknown[] = [];
+    for (let i = 0; i < 100; i += 1) {
+      nodes.push({ id: `t${i}`, spec: { kind: 'task', title: `Task ${i}` } });
+      if (i > 0) edges.push({ src: `t${i}`, dst: `t${i - 1}`, type: 'depends_on' });
+    }
+    const created = await service.createEntity(request('entities.create', { body: {
+      clientMutationId: 'craft-findings-create', spaceId: fixture.spaceId, kind: 'graph', title: 'Findings blueprint',
+      content: { graphType: 'entity', nodes, edges },
+    } }));
+    const id = created.entity!.id;
+    const started = performance.now();
+    const detail = await asApp(database, fixture.identityId, (q) => buildUniversalDetail(q, id, fixture.identityId));
+    const readMs = performance.now() - started;
+    const findings = (detail.content as Record<string, any>)['findings'] as { code: string }[];
+    expect(findings.filter((f) => f.code === 'task_unassigned')).toHaveLength(100);
+    expect(EntityDetailSchema.safeParse(detail).success).toBe(true);
+    expect(readMs).toBeLessThan(2_000);
+
+    const stored = await database.query<{ graph: string; versions: string }>(
+      `select (select nodes::text || edges::text || layout::text from public.graphs where entity_id = $1) graph,
+              coalesce((select string_agg(snapshot::text, '') from public.entity_versions where entity_id = $1), '') versions`,
+      [id],
+    );
+    expect(stored[0]!.graph).not.toContain('findings');
+    expect(stored[0]!.graph).not.toContain('task_unassigned');
+    expect(stored[0]!.versions).not.toContain('task_unassigned');
+
+    /* A non-entity graph type carries no findings at all. */
+    const mermaid = await service.createEntity(request('entities.create', { body: {
+      clientMutationId: 'craft-findings-mermaid', spaceId: fixture.spaceId, kind: 'graph', title: 'Sketch',
+      content: { graphType: 'mermaid', source: 'graph TD; a-->b' },
+    } }));
+    const sketch = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, mermaid.entity!.id, fixture.identityId));
+    expect(sketch.content).not.toHaveProperty('findings');
+  });
+
   it('refuses generic lifecycle writes for member, message, work-session, project, and interaction-profile ownership', async () => {
     await expect(asApp(database, fixture.identityId, (q) => q.rpc('delete_entity',
       [fixture.memberId, null, 'g02-member-delete']))).rejects.toMatchObject({ code: '42501' });

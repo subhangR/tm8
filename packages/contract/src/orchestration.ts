@@ -287,6 +287,50 @@ export function applyGraphLinks<N extends NodeLike>(
   return { nodes: next, unknownKeys, invalidRefs };
 }
 
+// ─── Node mentions ─────────────────────────────────────────────────────────────
+
+/**
+ * HOW A TURN NAMES A BLUEPRINT NODE: `[<title>](tm8://node/<graphId>/<nodeId>)`.
+ *
+ * The composer's one reference convention (`fileReference` → `tm8://file/`),
+ * so it degrades to readable text anywhere markdown is not rendered. It
+ * carries the graph id because node ids are row-local, and it is the SAME
+ * form for spec, ref and materialized nodes — the agent reads the ref off the
+ * row. The UI seeds it, the craft prompt is built from it, and both import
+ * this pair, so the spelling cannot drift (coordinator ruling 2026-09-24).
+ */
+export const BLUEPRINT_NODE_URI = 'tm8://node/';
+
+export interface NodeMention { graphId: string; nodeId: string; title: string }
+
+/** `[<title>](tm8://node/<graphId>/<nodeId>)`; `]` and `\` in the title are escaped. */
+export function blueprintNodeRef(graphId: string, nodeId: string, title?: string | null): string {
+  const text = (title ?? '').trim() || nodeId;
+  const label = text.replace(/([[\]\\])/g, '\\$1');
+  return `[${label}](${BLUEPRINT_NODE_URI}${encodeURIComponent(graphId)}/${encodeURIComponent(nodeId)})`;
+}
+
+const decode = (v: string): string => { try { return decodeURIComponent(v); } catch { return v; } };
+
+/** The link TARGET → `{graphId, nodeId}`, or null when it is not a node link. */
+export function parseBlueprintNodeRef(href: string): { graphId: string; nodeId: string } | null {
+  if (!href.startsWith(BLUEPRINT_NODE_URI)) return null;
+  const match = /^([^/\s)]+)\/([^/\s)]+)$/.exec(href.slice(BLUEPRINT_NODE_URI.length));
+  return match ? { graphId: decode(match[1] as string), nodeId: decode(match[2] as string) } : null;
+}
+
+const NODE_MENTION = /\[((?:\\.|[^\]\\])*)\]\((tm8:\/\/node\/[^\s)]+)\)/g;
+
+/** Every node link in a turn's TEXT, in order, titles unescaped. */
+export function parseNodeMentions(text: string): NodeMention[] {
+  const out: NodeMention[] = [];
+  for (const match of text.matchAll(NODE_MENTION)) {
+    const target = parseBlueprintNodeRef(match[2] as string);
+    if (target) out.push({ ...target, title: (match[1] as string).replace(/\\([[\]\\])/g, '$1') });
+  }
+  return out;
+}
+
 // ─── Coherence ─────────────────────────────────────────────────────────────────
 
 export type CoherenceSeverity = 'error' | 'warning' | 'info';
