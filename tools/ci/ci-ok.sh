@@ -11,7 +11,7 @@
 #   2. changes.result == success, and its `modules` output parses as a non-empty set of
 #      known modules that contains typecheck; all=true means that set is every module;
 #   2b. all=true whenever the run must be full: any event but pull_request, or the
-#      shadow's FORCE_ALL. A wrapper that narrows a main push is red here, not green;
+#      a caller's FORCE_ALL. A wrapper that narrows a main push is red here, not green;
 #   3. no job is failure or cancelled — ever, affected or not;
 #   4. every job whose module is in the set (and every always-required job) is success;
 #   5. a job whose module is NOT in the set is skipped (or success).

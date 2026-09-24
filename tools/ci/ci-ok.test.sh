@@ -139,7 +139,7 @@ is_fallback && called_with "--all"
 report "push, but affected.sh --all answers narrow -> fallback ALL" $? "want fallback"
 ch "$GOOD" pull_request true
 is_all && called_with "--all"
-report "pull_request with FORCE_ALL=true (the shadow) -> --all" $? "want --all"
+report "pull_request with FORCE_ALL=true (a full-gate caller) -> --all" $? "want --all"
 ch "$GOOD" pull_request false
 [[ $OUT == "$NARROW" ]]
 report "pull_request with FORCE_ALL=false -> diff" $? "want narrow"
@@ -238,7 +238,7 @@ ok GREEN "ui-only: test-ui success, the rest skipped" "$UI"
 ok GREEN "docs-only: every test job skipped" "$DOCS"
 ok GREEN "all=true, everything success" "$FULL"
 ok GREEN "push, all=true" "$FULL" push
-ok GREEN "shadow (force_all), all=true" "$FULL" pull_request true
+ok GREEN "full-gate caller (force_all), all=true" "$FULL" pull_request true
 # an mcp change (CI split W3): mcp is not a module, its closure lands on small and its dependents
 ok GREEN "mcp change: typecheck, server, cli, small" "$(needs false '["typecheck","server","cli","small"]')"
 ok RED "mcp as a module name (folded into small by W3)" "$(edit "$UI" '.changes.outputs.modules = "[\"typecheck\",\"mcp\"]"')"
@@ -269,7 +269,7 @@ ok RED "all=true with a narrow set" "$(edit "$UI" '.changes.outputs.all = "true"
 ok RED "CONTROL push narrowed (all=false) — must be full" "$UI" push
 ok RED "schedule narrowed" "$UI" schedule
 ok RED "event missing, narrowed" "$UI" ""
-ok RED "CONTROL shadow narrowed (force_all=true, all=false)" "$UI" pull_request true
+ok RED "CONTROL full-gate caller narrowed (force_all=true, all=false)" "$UI" pull_request true
 ok RED "a job missing from needs" "$(edit "$UI" 'del(.migrations)')"
 ok RED "an unpinned job in needs" "$(edit "$UI" '.extra = {result: "success"}')"
 ok RED "NEEDS empty" ""
