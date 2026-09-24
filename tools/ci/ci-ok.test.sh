@@ -47,6 +47,40 @@ OUT="ci.yml jobs - ci-ok=$Y_JOBS"$'\n'"ci-ok needs=$Y_NEEDS"$'\n'"ci-ok.sh JOBS=
 [[ $Y_JOBS != "[]" && $Y_JOBS == "$Y_NEEDS" && $Y_NEEDS == "$S_JOBS" && $S_PIN == "$(jq length <<<"$S_JOBS")" ]]
 report "ci.yml jobs (minus ci-ok) == ci-ok needs == ci-ok.sh JOBS keys, PINNED_COUNT their size" $? "job sets differ"
 
+# ---- every job's `if:` gate is the module ci-ok.sh maps it to ------------------------------
+# JOBS says which module a skip is excused by; the job's `if:` says which module skips it.
+# Nothing else ties the two: a coherent mis-map (test-small gated on outputs.migrations AND
+# JOBS test-small=migrations) passes every verdict row, and a small-only PR skips test-small
+# green. So each gate is READ from ci.yml: a job mapped to module m (not "*", not typecheck)
+# has exactly `if: needs.changes.outputs.m == 'true'`; every other job has no `if:`. And the
+# changes job's outputs: must carry each gated module, or its gate is never true.
+# The gate alone cannot catch a coherent SWAP (test-small gated on and mapped to migrations,
+# migrations to small): gates match JOBS, every module has a job, and a small-only PR skips
+# test-small green. So the module is also pinned to the job's NAME: JOBS[job] is the job id
+# or the id without "test-". A swap then has to rename jobs, which a reviewer sees.
+Y_IFS=$(awk '/^jobs:/ {j=1; next} j && /^[^ #]/ {j=0}
+  j && /^  [A-Za-z0-9_-]+:/ {job=$1; sub(/:$/,"",job); gate[job]=""; order[++n]=job}
+  j && /^    if:/ {l=$0; sub(/^    if: */,"",l); gate[job]=l}
+  END {for (i=1;i<=n;i++) print order[i] "\t" gate[order[i]]}' "$CIYML" | grep -v '^ci-ok	')
+Y_OUTS=$(awk '/^  changes:/ {c=1; next} c && /^  [A-Za-z0-9_-]+:/ {c=0} c && /^    outputs:/ {o=1; next}
+  c && o && /^      [A-Za-z0-9_-]+:/ {k=$1; sub(/:$/,"",k); print k; next} c && o && /^    [^ ]/ {o=0}' "$CIYML")
+S_MAP=$(sed -n "/^JOBS='{/,/^}'/p" "$CIOK" | sed "1s/^JOBS='//; \$s/'\$//" | jq -r 'to_entries[] | "\(.key)\t\(.value)"')
+OUT="ci.yml gates:"$'\n'"$Y_IFS"$'\n'"changes outputs: $(tr '\n' ' ' <<<"$Y_OUTS")"
+GATE_BAD=""
+while IFS=$'\t' read -r job mod; do
+  have=$(awk -F'\t' -v j="$job" '$1 == j {print $2; f=1} END {if (!f) print "<no such job>"}' <<<"$Y_IFS")
+  [[ $mod == "*" || $mod == "$job" || $mod == "${job#test-}" ]] || GATE_BAD+="$job: JOBS maps it to $mod, not to its name; "
+  if [[ $mod == "*" || $mod == typecheck ]]; then want=""
+  else
+    want="needs.changes.outputs.$mod == 'true'"
+    grep -qx -- "$mod" <<<"$Y_OUTS" || GATE_BAD+="changes outputs lack $mod; "
+  fi
+  [[ $have == "$want" ]] || GATE_BAD+="$job: if is [$have], JOBS maps it to $mod so want [$want]; "
+done <<<"$S_MAP"
+OUT+=$'\n'"$GATE_BAD"
+[[ -n $S_MAP && -z $GATE_BAD ]]
+report "each ci.yml job's if: gates on the module ci-ok.sh JOBS maps it to, named by the job; changes outputs cover them" $? "gate/module mismatch"
+
 # ==== changes.sh ==========================================================================
 # A repo whose HEAD is a two-parent merge commit, the shape of refs/pull/N/merge.
 G="$TMP/g"
