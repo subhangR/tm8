@@ -176,12 +176,24 @@ function ProviderGroup({
 }) {
   const name = SPACE_PROVIDER_NAME[provider];
   const missingDefault = noDefaultNotice(provider, rows);
-  const [login, setLogin] = useState<(PendingLogin & { lede: string }) | null>(null);
+  const [login, setLogin] = useState<OpenSpaceLogin | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginFailure, setLoginFailure] = useState<SpaceLoginStartFailure | null>(null);
 
-  async function startLogin(target: SpaceLoginTarget) {
-    if (!isLoginProvider(provider)) return;
+  // A login whose credential has left the list (deleted here, or by anyone)
+  // has no row left to finish onto: close its panel instead of holding the
+  // group's controls busy until a reload. `seen` waits for the reload that
+  // first shows a NEW label's pending row, so that gap does not count as gone.
+  useEffect(() => {
+    if (!login?.credentialId) return;
+    const present = allRows.some((r) => r.id === login.credentialId && r.status !== 'revoked');
+    if (present && !login.seen) setLogin({ ...login, seen: true });
+    else if (!present && login.seen) setLogin(null);
+  }, [allRows, login]);
+
+  /** Resolves to the refusal, or null once the terminal is open. */
+  async function startLogin(target: SpaceLoginTarget): Promise<SpaceLoginStartFailure | null> {
+    if (!isLoginProvider(provider)) return null;
     setLoginBusy(true);
     setLoginFailure(null);
     try {
@@ -192,16 +204,21 @@ function ProviderGroup({
         workSessionId: started.workSessionId,
         expiresAt: started.expiresAt,
         command: started.command,
+        credentialId: started.spaceCredential?.id ?? target.credentialId ?? null,
+        seen: false,
         lede: target.credentialId
           ? `Logging in again onto the space credential “${label}”. Follow the terminal prompts, then press “I’ve finished signing in”. Until it completes, “${label}” keeps the login it had.`
           : `Logging in for the new space credential “${label}”. It belongs to the space, not your account. Follow the terminal prompts, then press “I’ve finished signing in”.`,
       });
       // A new label is now a pending row holding that label (A7): show it.
       if (!target.credentialId) await onChanged();
+      return null;
     } catch (err) {
       const failure = spaceLoginStartFailureOf(err, provider, allRows);
-      setLoginFailure(failure);
+      // A taken label is the add form's field error: the form draws it there.
+      if (failure.kind !== 'label_taken') setLoginFailure(failure);
       if ((err as { code?: unknown })?.code === 'not_found') await onChanged();
+      return failure;
     } finally {
       setLoginBusy(false);
     }
@@ -214,14 +231,21 @@ function ProviderGroup({
       setLogin(null);
       await onChanged(spaceLoginOutcome(result));
     } catch (err) {
-      setLoginFailure({ kind: 'failure', failure: failureOf(err) });
+      // not_found: the server holds no login session for it any more (a
+      // restart, another node): nothing is left to finish, so close the panel.
+      if ((err as { code?: unknown })?.code === 'not_found') {
+        setLogin(null);
+        setLoginFailure({ kind: 'failure', failure: { kind: 'failed', text: 'That login is no longer open on the server, so there is nothing to finish. Log in again to start a fresh one.' } });
+      } else {
+        setLoginFailure({ kind: 'failure', failure: failureOf(err) });
+      }
     } finally {
       setLoginBusy(false);
     }
   }
 
   const loginControls = isLoginProvider(provider)
-    ? { busy: loginBusy || login !== null, start: (target: SpaceLoginTarget) => void startLogin(target) }
+    ? { busy: loginBusy || login !== null, start: startLogin }
     : null;
   return (
     <section className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={name}>
@@ -337,7 +361,7 @@ function CredentialRow({
           {!pasted && login ? (
             <button type="button" className="cred-action" aria-label={`Log in again ${row.label}`}
               disabled={busy !== null || login.busy}
-              onClick={() => login.start({ credentialId: row.id })}>
+              onClick={() => void login.start({ credentialId: row.id })}>
               Log in again
             </button>
           ) : null}
@@ -432,6 +456,8 @@ function AddByKey({
   const [open, setOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginLabel, setLoginLabel] = useState('');
+  /** The server's A7 refusal for the label as submitted; cleared on edit. */
+  const [serverTaken, setServerTaken] = useState<string | null>(null);
   const loginTaken = labelTakenReason(provider, loginLabel, rows);
   const [label, setLabel] = useState('');
   const [secret, setSecret] = useState('');
@@ -485,18 +511,29 @@ function AddByKey({
           e.preventDefault();
           const label = loginLabel.trim();
           if (!label || loginTaken || login.busy) return;
-          setLoginOpen(false);
-          setLoginLabel('');
-          login.start({ label });
+          setServerTaken(null);
+          // The form closes only once the terminal is open: a refused label
+          // stays typed, with the reason at the field.
+          void login.start({ label }).then((refused) => {
+            if (refused === null) {
+              setLoginOpen(false);
+              setLoginLabel('');
+            } else if (refused.kind === 'label_taken') {
+              setServerTaken(refused.text);
+            }
+          });
         }}>
           <input className="set-spc__input" aria-label={`Label for the new ${name} login`} placeholder="Label, e.g. Max plan"
-            value={loginLabel} maxLength={80} onChange={(e) => setLoginLabel(e.target.value)} />
+            value={loginLabel} maxLength={80} onChange={(e) => { setLoginLabel(e.target.value); setServerTaken(null); }} />
           <button type="submit" className="cred-action cred-action--primary" aria-label={`Open ${name} login terminal`}
-            disabled={login.busy || !loginLabel.trim() || loginTaken !== null}>
+            disabled={login.busy || !loginLabel.trim() || loginTaken !== null || serverTaken !== null}>
             Open login terminal
           </button>
+          {serverTaken ? (
+            <span className="set-spc__why" role="alert" data-testid="space-login-label-taken">{serverTaken}</span>
+          ) : null}
           <span className="set-spc__why">
-            {loginTaken ?? 'A login needs its label first: the label is held for this login until it finishes or expires.'}
+            {serverTaken ? null : loginTaken ?? 'A login needs its label first: the label is held for this login until it finishes or expires.'}
           </span>
         </form>
       ) : null}
@@ -523,8 +560,12 @@ function AddByKey({
 interface LoginControls {
   /** A start is in flight, or a login terminal is already open in this group. */
   busy: boolean;
-  start(target: SpaceLoginTarget): void;
+  /** Resolves to the refusal, or null once the terminal is open. */
+  start(target: SpaceLoginTarget): Promise<SpaceLoginStartFailure | null>;
 }
+
+/** An open space login terminal, and the credential it logs in onto. */
+type OpenSpaceLogin = PendingLogin & { lede: string; credentialId: string | null; seen: boolean };
 
 /**
  * A refused start. `login_open` past its expiry offers "Log in again" onto the
@@ -538,9 +579,8 @@ function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
   viewer: SpaceCredentialsViewer | null;
   login: LoginControls | null;
 }) {
-  if (failure.kind === 'label_taken') {
-    return <p className="set-spc__fail set-spc__fail--invalid" role="alert" data-testid="space-login-label-taken">{failure.text}</p>;
-  }
+  // A taken label is drawn at the add form's label field, not here.
+  if (failure.kind === 'label_taken') return null;
   if (failure.kind === 'failure') {
     return (
       <p className={`set-spc__fail set-spc__fail--${failure.failure.kind}`} role="alert" data-testid={`space-cred-failure-${failure.failure.kind}`}>
@@ -560,7 +600,7 @@ function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
           <button type="button" className="cred-action cred-action--primary" disabled={login.busy}
             aria-label={`Close the expired login and log in again${held ? ` ${held.label}` : ''}`}
             data-testid="space-login-reclaim"
-            onClick={() => login.start({ credentialId: notice.credentialId! })}>
+            onClick={() => void login.start({ credentialId: notice.credentialId! })}>
             Log in again
           </button>
         ) : (

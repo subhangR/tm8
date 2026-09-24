@@ -498,9 +498,130 @@ describe('Add by login (SC-4) — label first, terminal, result from the probed 
     fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
     fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Raced' } });
     fireEvent.click(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }));
-    expect((await screen.findByTestId('space-login-label-taken')).textContent).toMatch(/“Raced” is taken/);
+    const taken = await screen.findByTestId('space-login-label-taken');
+    expect(taken.textContent).toMatch(/“Raced” is taken/);
     expect(screen.queryByTestId('space-login-open-anthropic')).toBeNull();
     expect(screen.queryByTestId('credential-login-terminal')).toBeNull();
+    // F2: a field error — the form stays open, the typed label kept, the reason beside it.
+    const form = screen.getByTestId('space-cred-login-form-anthropic');
+    expect(within(form).getByTestId('space-login-label-taken')).toBe(taken);
+    expect((screen.getByLabelText('Label for the new Claude (Anthropic) login') as HTMLInputElement).value).toBe('Raced');
+    expect((screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }) as HTMLButtonElement).disabled).toBe(true);
+    // Editing the label lifts the server's refusal.
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Raced 2' } });
+    expect(screen.queryByTestId('space-login-label-taken')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  async function openNewLogin(port: ReturnType<typeof fakePort>, label = 'Max plan') {
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: label } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }));
+    await screen.findByTestId('credential-login-terminal');
+    expect(port.startLogin).toHaveBeenCalled();
+  }
+  function openTerminalEnabled(): boolean {
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Second' } });
+    return !(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }) as HTMLButtonElement).disabled;
+  }
+
+  it('P1a: deleting the pending row of an open login closes its terminal at once and frees the controls — no finish needed', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    await screen.findByTestId('space-cred-row-l-2');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Max plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Max plan' }));
+    await waitFor(() => expect(screen.queryByTestId('space-cred-row-l-2')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('credential-login-terminal')).toBeNull());
+    expect(port.finishLogin).not.toHaveBeenCalled();
+    expect(openTerminalEnabled()).toBe(true);
+  });
+
+  it('a NEW login whose pending row has not been listed yet keeps its terminal: not yet listed is not deleted', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    // The re-read after start lands a real network turn later, so a render
+    // with the login open and the row still absent comes first.
+    const list = port.list.getMockImplementation()!;
+    port.list.mockImplementationOnce(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return list();
+    });
+    await openNewLogin(port);
+    await screen.findByTestId('space-cred-row-l-2');
+    expect(screen.getByTestId('credential-login-terminal')).toBeTruthy();
+  });
+
+  it('P1b: the owner probe — delete, then a finish refused not_found still leaves the group usable', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    await screen.findByTestId('space-cred-row-l-2');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Max plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Max plan' }));
+    await waitFor(() => expect(screen.queryByTestId('space-cred-row-l-2')).toBeNull());
+    port.finishLogin.mockRejectedValueOnce(new CollabError('not_found', 'no live credential session on this node for that work session'));
+    if (screen.queryByTestId('credential-login-terminal')) {
+      fireEvent.click(screen.getByTestId('credential-finish-login'));
+      await act(async () => {});
+    }
+    expect(openTerminalEnabled()).toBe(true);
+  });
+
+  it('P1b (c): a finish refused not_found — no session left on the server (restart, another node) — closes the panel', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    port.finishLogin.mockRejectedValueOnce(new CollabError('not_found', 'no live credential session on this node for that work session'));
+    fireEvent.click(screen.getByTestId('credential-finish-login'));
+    await waitFor(() => expect(screen.queryByTestId('credential-login-terminal')).toBeNull());
+    expect(screen.getByTestId('space-cred-failure-failed').textContent).toMatch(/no longer open on the server, so there is nothing to finish/);
+    expect(openTerminalEnabled()).toBe(true);
+  });
+
+  it('P1c: the server\'s real answer after a delete elsewhere — finish RESOLVES revoked, not connected — clears the panel', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    const held = (await port.list()).find((r) => r.label === 'Max plan')!;
+    // Deleted from another tab: this list has not reloaded, so the row is still drawn.
+    port.finishLogin.mockResolvedValueOnce({
+      workSessionId: 'ws-1', provider: 'anthropic', connected: false, login: null, authMethod: null, status: 'revoked', stored: false, terminated: true,
+      spaceCredential: { ...held, status: 'revoked' },
+    } as never);
+    fireEvent.click(screen.getByTestId('credential-finish-login'));
+    expect((await screen.findByTestId('space-cred-notice')).textContent).toMatch(/no longer usable/);
+    expect(screen.queryByTestId('credential-login-terminal')).toBeNull();
+    expect(openTerminalEnabled()).toBe(true);
+  });
+
+  it('P1c: … and when RLS hides the revoked row, the finish names that it cannot say which credential', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    port.finishLogin.mockResolvedValueOnce({
+      workSessionId: 'ws-1', provider: 'anthropic', connected: false, login: null, authMethod: null, status: 'revoked', stored: false, terminated: true,
+    } as never);
+    fireEvent.click(screen.getByTestId('credential-finish-login'));
+    expect((await screen.findByTestId('space-cred-notice')).textContent).toMatch(/did not say which space credential/);
+    expect(screen.queryByTestId('credential-login-terminal')).toBeNull();
+  });
+
+  it('I6-b: a finish that says connected but returns a still-PENDING row shows the pending copy, not success', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    await openNewLogin(port);
+    const held = (await port.list()).find((r) => r.label === 'Max plan')!;
+    port.finishLogin.mockResolvedValueOnce({
+      workSessionId: 'ws-1', provider: 'anthropic', connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active', stored: true, terminated: true,
+      spaceCredential: held,
+    } as never);
+    fireEvent.click(screen.getByTestId('credential-finish-login'));
+    const notice = await screen.findByTestId('space-cred-notice');
+    expect(notice.textContent).toMatch(/“Max plan” is still pending and launches cannot use it/);
+    expect(notice.textContent).not.toMatch(/Logged in/);
   });
 
   it('N1: an EXPIRED login_open is closed only by starting again onto that credential — never finish, never delete', async () => {
