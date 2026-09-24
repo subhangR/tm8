@@ -128,10 +128,15 @@ describe('SpawnService', () => {
         join(configDir, 'plugins', 'synced', 'bucket', 'manifest.json'),
         JSON.stringify({ plugins: [{ name: 'sales' }, { name: 'marketing' }] }),
       );
+      // A stub `claude` on PATH: the spawn preflight only checks it exists, and
+      // CI has no real one. The PTY is mocked, so it never runs.
+      const binDir = join(dataDir, 'bin');
+      await mkdir(binDir, { recursive: true });
+      await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
       graph = new FakeGraph({ workingDir: projectDir, ...options });
       await new SpawnService({
         graph, pty, baseUrl: 'http://127.0.0.1:4611', dataDir,
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: configDir },
+        env: { PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: configDir },
         bootSettlementMs: 25,
       }).spawn({ identityId: 'i' }, { ...REQUEST, selection: SELECTION });
       return graph.manifests[0]!.manifest.launch.command;
