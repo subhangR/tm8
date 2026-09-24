@@ -166,7 +166,7 @@ function fullDigest(overrides: Partial<EventChangesView> = {}): EventChangesView
         ],
         messagesTotal: 6,
         messagesMore: true,
-        messagesNext: `tm8 entity feed ${T1} --order newest --cursor abc123`,
+        messagesNext: `tm8 entity context ${T1} --sections messages --cursor abc123`,
       },
       {
         id: ROOT, kind: 'task', title: 'Work on: research', parentId: null, v: 2, status: 'working',
@@ -261,6 +261,16 @@ describe('acceptance 9 — the line view is lossless and the footer tells the tr
     expect(r.stdout).toContain('+message×6');
     expect(r.stdout).toContain('parent -');
     expect(r.stdout).toContain('root');
+  });
+
+  it('an omitted parentId is the one --subtree root, spelled out', async () => {
+    const dto = fullDigest();
+    const { parentId: _omitted, ...child } = dto.changed![0]!;
+    reply = ok({ ...dto, changed: [child, dto.changed![1]!] });
+    const r = await drive(['event', 'changes', '--subtree', ROOT]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`parent ${ROOT}`);
+    expect(r.stdout).toContain('parent -');
   });
 
   it('"unchanged" ONLY when !more && !gap', async () => {

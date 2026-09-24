@@ -58,7 +58,7 @@ import {
 
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { MICROS } from '../facade/entity-read.js';
-import { newestFeedCursorAfter } from '../facade/services/w2/feed-context.js';
+import { messagesSectionExpand } from '../facade/services/w2/feed-context-v2.js';
 import { WorkspaceEventMapper, WORKSPACE_EVENT_COLUMNS, type WorkspaceEventRow } from './mapper.js';
 import { PgEntityProjector, type EntityProjector } from './projector.js';
 import { gateSubjectIndex } from './subject-index.js';
@@ -600,6 +600,14 @@ export function assembleDigest(input: AssembleInput): EventChangesView {
     const size = byteLength(view(input, [...emitted, ...group], input.examinedThrough, true));
     if (size > input.req.totalBytes) {
       if (emitted.length === 0) {
+        // A first group that only a multi-byte worst case pushes over the
+        // budget is cut to fit in BYTES before it is refused: its titles and
+        // excerpts shrink (each marked `truncated`), never its ids or fields.
+        const compact = compactGroup(input, group);
+        if (compact !== null) {
+          emitted.push(...compact);
+          continue;
+        }
         // The floor is sized so this cannot happen (§3.3). If it ever does, the
         // honest answer is a refusal: never over budget, never a stalled
         // cursor, never a skipped group.
@@ -627,6 +635,53 @@ export function assembleDigest(input: AssembleInput): EventChangesView {
   const through = stopAt === null ? input.examinedThrough : Math.min(stopAt - 1, input.examinedThrough);
   const more = input.examineCapHit || stopAt !== null;
   return view(input, emitted, through, more);
+}
+
+/** Cut `text` to at most `maxBytes` UTF-8 bytes on a code-point boundary, ending in `…` when cut. */
+export function truncateBytes(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  const room = maxBytes - Buffer.byteLength('…', 'utf8');
+  let out = '';
+  let used = 0;
+  for (const ch of text) {
+    const n = Buffer.byteLength(ch, 'utf8');
+    if (used + n > room) break;
+    out += ch;
+    used += n;
+  }
+  return `${out}…`;
+}
+
+/**
+ * Byte caps tried, in order, on a first group that does not fit: [title, excerpt].
+ * An ASCII title (≤ 80 chars) and excerpt (≤ 120) are never cut by the first
+ * step, so only a multi-byte group ever loses characters here.
+ */
+const COMPACT_STEPS: ReadonlyArray<readonly [number, number]> = [
+  [EVENT_CHANGES_TITLE_CHARS, EVENT_CHANGES_EXCERPT_CHARS],
+  [EVENT_CHANGES_TITLE_CHARS, 80],
+  [48, 48],
+];
+
+/**
+ * The first group re-spelt with byte-capped titles and excerpts, at the least
+ * cut that fits the budget; `null` when even the smallest does not (then the
+ * caller refuses with `digest_group_too_large`).
+ */
+function compactGroup(input: AssembleInput, group: ReadyEntry[]): ReadyEntry[] | null {
+  for (const [titleBytes, excerptBytes] of COMPACT_STEPS) {
+    const compact = group.map((r): ReadyEntry => {
+      const { entry } = r;
+      const title = entry.title === null ? null : truncateBytes(entry.title, titleBytes);
+      const messages = entry.messages?.map((m): EventChangeMessage => {
+        const excerpt = truncateBytes(m.excerpt, excerptBytes);
+        return excerpt === m.excerpt ? m : { ...m, excerpt, truncated: true };
+      });
+      return { ...r, entry: { ...entry, title, ...(messages === undefined ? {} : { messages }) } };
+    });
+    if (byteLength(view(input, compact, input.examinedThrough, true)) <= input.req.totalBytes) return compact;
+  }
+  return null;
 }
 
 /**
@@ -716,6 +771,15 @@ export interface ChangeFeedOptions {
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/**
+ * `parentId`, omitted when it is the ONE `--subtree` root the caller named
+ * (§6.1 trim): every direct child would otherwise repeat that id. `null` still
+ * means "no parent"; with several roots the id is always spelled out.
+ */
+function parentField(req: ChangesRequest, parentId: string | null): { parentId?: string | null } {
+  return req.subtree.length === 1 && parentId === req.subtree[0] ? {} : { parentId };
 }
 
 export class PgChangeFeed {
@@ -810,7 +874,7 @@ export class PgChangeFeed {
       }
 
       const acc = accumulate(examined, ctx, scope);
-      const hardDeleted = scoped ? hardDeletedNamed(examined, resolved!) : [];
+      const hardDeleted = scoped ? hardDeletedNamed(examined, resolved!, req) : [];
       const entries = await this.ready(q, acc, req, callerIds);
       for (const d of hardDeleted) {
         if (req.kind.length > 0 && !req.kind.includes(d.entry.kind)) continue;
@@ -858,7 +922,7 @@ export class PgChangeFeed {
     }
 
     const out: ReadyEntry[] = [];
-    const needCursor: Array<{ entry: EventChangeEntry; anchorKind: string; lastShown: string }> = [];
+    const needCursor: Array<{ entry: EventChangeEntry; lastShown: string }> = [];
     for (const a of candidates) {
       const s = summaries.get(a.id);
       // Gone or unreadable now: omitted (a NAMED hard delete is reported
@@ -881,13 +945,16 @@ export class PgChangeFeed {
       if (req.kind.length > 0 && !req.kind.includes(s.kind)) continue;
       if (req.change.length > 0 && !changes.some((c) => req.change.some((f) => changeMatches(c, f)))) continue;
 
+      // `status` is carried only when this window moved it or created the
+      // entity: an unchanged status is already known to the caller (§6.1 trim).
+      const statusMoved = changes.some((c) => c === 'created' || c === 'status' || c.startsWith('status:'));
       const entry: EventChangeEntry = {
         id: s.id,
         kind: s.kind,
         title: truncate(s.title, EVENT_CHANGES_TITLE_CHARS),
-        parentId: s.parentId,
+        ...parentField(req, s.parentId),
         v: s.version,
-        ...(typeof state.status === 'string' && (s.kind === 'task' || s.kind === 'work_session')
+        ...(statusMoved && typeof state.status === 'string' && (s.kind === 'task' || s.kind === 'work_session')
           ? { status: state.status }
           : {}),
         lastSeq: a.lastSeq,
@@ -914,7 +981,7 @@ export class PgChangeFeed {
         entry.messagesTotal = messagesCount;
         if (newest.length > cap) {
           entry.messagesMore = true;
-          needCursor.push({ entry, anchorKind: s.kind, lastShown: shown.at(-1)!.id });
+          needCursor.push({ entry, lastShown: shown.at(-1)!.id });
         }
       }
       out.push({ firstSeq: a.firstSeq, entry, ...(messagesCount === undefined ? {} : { messagesCount }) });
@@ -928,9 +995,11 @@ export class PgChangeFeed {
       const at = new Map(rows.map((r) => [r.entity_id, r.c]));
       for (const n of needCursor) {
         const c = at.get(n.lastShown);
+        // The context's own messages-section cursor (#687): newest first, it
+        // continues right after the last message shown here.
         n.entry.messagesNext = c === undefined
-          ? `tm8 entity feed ${n.entry.id} --order newest`
-          : `tm8 entity feed ${n.entry.id} --order newest --cursor ${newestFeedCursorAfter(n.entry.id, n.anchorKind, c, n.lastShown)}`;
+          ? `tm8 entity context ${n.entry.id} --sections messages`
+          : messagesSectionExpand(n.entry.id, c, n.lastShown);
       }
     }
     return out;
@@ -1052,7 +1121,7 @@ async function kindsOf(
  * captured `entity.deleted` row — which the caller could read, because the scan
  * returned it under event RLS. Unnamed ids that no longer resolve are omitted.
  */
-function hardDeletedNamed(rows: readonly ExaminedRow[], resolved: Resolution): ReadyEntry[] {
+function hardDeletedNamed(rows: readonly ExaminedRow[], resolved: Resolution, req: ChangesRequest): ReadyEntry[] {
   const out = new Map<string, ReadyEntry>();
   const unresolved = new Set(resolved.unresolved);
   for (const row of rows) {
@@ -1066,7 +1135,7 @@ function hardDeletedNamed(rows: readonly ExaminedRow[], resolved: Resolution): R
         id,
         kind: str(row.payload['kind']) ?? 'unknown',
         title: null,
-        parentId: str(row.payload['parent_id']),
+        ...parentField(req, str(row.payload['parent_id'])),
         v: null,
         lastSeq: row.seq,
         changes: ['deleted'],
