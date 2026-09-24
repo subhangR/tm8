@@ -380,3 +380,71 @@ describe('the sessions chip and the inline group', () => {
     expect(document.activeElement).toBe(screen.getByTestId('session-chip'));
   });
 });
+
+/**
+ * THE WORKTREE DOOR (user ruling 2026-09-24): a worktree session's tile shows
+ * the worktree MARK instead of the minted `tm8/<uuid>` branch, and the mark
+ * opens the worktree — reached by the session's outgoing `in_worktree` edge —
+ * as a real tile under the session, like every other relation chip.
+ */
+describe('session tile — the worktree mark is a relation door', () => {
+  const branch = 'tm8/01a0d301-f012-73a7-9763-016e3316c16f';
+  const laneSession: EntitySummary = {
+    ...sessionLive,
+    state: { ...sessionLive.state, checkoutBranch: branch, workdirMode: 'worktree' } as EntitySummary['state'],
+  };
+  const worktree: EntitySummary = {
+    ...sessionLive,
+    id: '019f0000-0000-7000-8000-0000000000f1',
+    kind: 'worktree',
+    title: branch,
+    parentId: null,
+    state: {
+      kind: 'worktree',
+      status: 'active',
+      branch,
+      baseRef: 'origin/main',
+      baseCommitOid: 'a'.repeat(40),
+      projectId: '019f0000-0000-7000-8000-0000000000f2',
+    } as EntitySummary['state'],
+  };
+  const laneConnections: Connections = {
+    outgoing: [
+      {
+        type: 'in_worktree',
+        direction: 'outgoing',
+        label: 'in worktree',
+        edges: [edge('e-wt', 'in_worktree', laneSession, worktree)],
+      },
+    ],
+    incoming: [],
+    unresolvedHardDependencyCount: 0,
+  };
+
+  it('draws no branch id on the tile, and the mark opens the worktree tile under it', () => {
+    render(
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="work_session"
+          rowsFor={() => [laneSession]}
+          ctx={ctx}
+          connectionsOf={(id) => (id === laneSession.id ? laneConnections : undefined)}
+        />
+      </div>,
+    );
+    const lane = screen.getByTestId('session-lane-line');
+    expect(lane.textContent).not.toContain(branch);
+    expect(screen.queryByText(branch)).toBeNull();
+
+    fireEvent.click(screen.getByTestId('session-lane-worktree-door'));
+    const door = screen.getByTestId('session-lane-worktree-door');
+    expect(door.getAttribute('aria-expanded')).toBe('true');
+    const group = document.getElementById(door.getAttribute('aria-controls') ?? '');
+    expect(group).not.toBeNull();
+    expect(within(group as HTMLElement).getByText(branch)).toBeTruthy();
+
+    fireEvent.click(door);
+    expect(screen.getByTestId('session-lane-worktree-door').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(branch)).toBeNull();
+  });
+});

@@ -138,16 +138,102 @@ export function SessionLaneModeBadge({ mode }: { mode: SessionLaneMode | null })
   );
 }
 
-/** `⎇ branch · [mode]` — pass `null` to render nothing (honest absence). */
-export function SessionLaneLine({ lane }: { lane: SessionLaneFacts | null }) {
+/**
+ * WHERE THE WORKTREE DOOR LEADS: the session's worktree entity, reached by
+ * the `in_worktree` edge (session → worktree, 081's `link_session_worktree`).
+ * Named HERE, beside the lane facts that already speak worktree, so the list
+ * panel stays free of kind names and just opens the relation it is handed.
+ */
+export const WORKTREE_RELATION = {
+  kind: 'worktree',
+  edge: { type: 'in_worktree', direction: 'outgoing' },
+} as const satisfies { kind: string; edge: { type: string; direction: 'incoming' | 'outgoing' } };
+
+/**
+ * A branch tm8 minted for the lane rather than one a person named:
+ * `tm8/<worktreeId>` (`branchNameFor`, execution's worktree provisioning) and
+ * `tm8/chat/<rootMessageId>`. Both are a uuid the worktree itself already
+ * identifies, so on a TILE the name is ~40 monospace characters spent
+ * repeating the mark beside it (user ruling 2026-09-24). A human-named branch
+ * (`feat/login-fix`) is short and says something, so it stays.
+ */
+const MINTED_BRANCH = /^tm8\/(?:chat\/)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isMintedBranch(branch: string): boolean {
+  return MINTED_BRANCH.test(branch);
+}
+
+/**
+ * The worktree mark as a DOOR (user ruling 2026-09-24): on a list tile the
+ * mark opens the session's worktree inline under the row — the relation-chip
+ * vocabulary every other tile badge already speaks (`TileCountBadges`, the
+ * sessions chip). The host owns the open state and the group; this line only
+ * draws the button.
+ */
+export interface SessionLaneDoor {
+  open: boolean;
+  onToggle: () => void;
+  /** The open group's DOM id, for `aria-controls`. */
+  controlsId?: string;
+}
+
+/**
+ * `⎇ branch · [mode]` — pass `null` to render nothing (honest absence).
+ *
+ * `compact` is the LIST-TILE form (user ruling 2026-09-24): a minted
+ * `tm8/<uuid>` branch collapses to the worktree mark alone, with the full
+ * branch kept in the mark's tooltip. The Git tab keeps the full line — the
+ * detail view is where the whole name belongs. `door` makes the worktree
+ * mark a button; it only applies in the `worktree` mode, the one mode with a
+ * worktree entity behind it.
+ */
+export function SessionLaneLine({ lane, compact = false, door }: {
+  lane: SessionLaneFacts | null;
+  compact?: boolean;
+  door?: SessionLaneDoor;
+}) {
   if (lane === null) return null;
+  const showBranch = !(compact && lane.mode === 'worktree' && isMintedBranch(lane.branch));
+  const worktreeDoor = lane.mode === 'worktree' ? door : undefined;
   return (
     <span className="pn-lane" data-testid="session-lane-line">
-      <span className="pn-lane__branch" title={`branch ${lane.branch}`}>
-        <span aria-hidden className="pn-git__branch-glyph">⎇</span>
-        {lane.branch}
-      </span>
-      <SessionLaneModeBadge mode={lane.mode} />
+      {showBranch ? (
+        <span className="pn-lane__branch" title={`branch ${lane.branch}`}>
+          <span aria-hidden className="pn-git__branch-glyph">⎇</span>
+          {lane.branch}
+        </span>
+      ) : null}
+      {worktreeDoor ? (
+        <button
+          type="button"
+          className={
+            worktreeDoor.open
+              ? 'pn-st__count pn-st__count--btn pn-st__count--open pn-lane__door'
+              : 'pn-st__count pn-st__count--btn pn-lane__door'
+          }
+          data-testid="session-lane-worktree-door"
+          title={`Worktree on branch ${lane.branch} — click to show it under this row`}
+          aria-label={`${worktreeDoor.open ? 'Hide' : 'Show'} this session’s worktree (branch ${lane.branch}) under this row`}
+          aria-expanded={worktreeDoor.open}
+          aria-controls={worktreeDoor.open ? worktreeDoor.controlsId : undefined}
+          onClick={(event) => {
+            event.stopPropagation();
+            worktreeDoor.onToggle();
+          }}
+        >
+          <VectorIcon paths={WORKTREE_MARK} filled size={13} className="pn-lane__worktree-mark" />
+        </button>
+      ) : lane.mode === 'worktree' && !showBranch ? (
+        <VectorIcon
+          paths={WORKTREE_MARK}
+          filled
+          size={13}
+          className="pn-lane__worktree-mark"
+          title={`${MODE_TITLE.worktree} Branch ${lane.branch}.`}
+        />
+      ) : (
+        <SessionLaneModeBadge mode={lane.mode} />
+      )}
     </span>
   );
 }

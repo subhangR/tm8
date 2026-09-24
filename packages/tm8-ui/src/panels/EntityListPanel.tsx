@@ -84,7 +84,7 @@ import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
-import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
+import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
 import {
   routeMessagePulse,
@@ -3417,7 +3417,22 @@ export function Tile({
            that same task as a chip one level down — the loop the ruling
            names (parent → child → parent renders once). */
         tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
-        lane={lane !== null ? <SessionLaneLine lane={lane} /> : undefined}
+        /* The list tile's lane is COMPACT (user ruling 2026-09-24): a minted
+           `tm8/<uuid>` branch collapses to the worktree mark, and the mark is
+           a relation DOOR onto the session's worktree tile — same accordion
+           as every other chip. A door needs the connections projection to
+           ever fill, exactly like the count badges. */
+        lane={lane !== null ? (
+          <SessionLaneLine
+            lane={lane}
+            compact
+            door={props.connectionsOf ? {
+              open: openRelation?.kind === WORKTREE_RELATION.kind,
+              onToggle: () => toggleRelation(WORKTREE_RELATION.kind, WORKTREE_RELATION.edge),
+              controlsId: relatedGroupId,
+            } : undefined}
+          />
+        ) : undefined}
         badges={tileBadges}
         childCount={childCount}
         childrenExpanded={expanded}
