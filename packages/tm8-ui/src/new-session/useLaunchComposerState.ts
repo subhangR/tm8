@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, LaunchModelEffort, ProjectId } from '@tm8/contract';
 
 import {
@@ -207,14 +207,20 @@ export function useLaunchComposerState(args: {
   const harnessApplies = toolId === 'claude-code';
   const [installed, setInstalled] = useState<{ forId: string; ids: readonly string[] | null } | null>(null);
   const teammateKey = teammate?.id ?? null;
+  /* THE LOADER RIDES A REF — the host rebuilds it on every graph event, and
+     keying the effect on it re-read the plugins once per event. */
+  const loadPluginsRef = useRef(loadInstalledPlugins);
+  loadPluginsRef.current = loadInstalledPlugins;
+  const canLoadPlugins = loadInstalledPlugins !== undefined;
   useEffect(() => {
-    if (!harnessApplies || !teammateKey || !loadInstalledPlugins) return;
+    const load = loadPluginsRef.current;
+    if (!harnessApplies || !teammateKey || !load) return;
     let live = true;
-    loadInstalledPlugins(teammateKey)
+    load(teammateKey)
       .then((ids) => { if (live) setInstalled({ forId: teammateKey, ids }); })
       .catch(() => { if (live) setInstalled({ forId: teammateKey, ids: null }); });
     return () => { live = false; };
-  }, [harnessApplies, teammateKey, loadInstalledPlugins]);
+  }, [harnessApplies, teammateKey, canLoadPlugins]);
   const installedPlugins = installed && installed.forId === teammateKey ? installed.ids : null;
   const installedPluginsNote = !loadInstalledPlugins
     ? PLUGINS_UNAVAILABLE
