@@ -56,3 +56,4 @@ Every document was reorganised on 2026-08-02. Old paths appear in commit message
 tm8 entities, and inside the applied migrations under `db/migrations/` — those
 migrations are checksum-immutable and were deliberately left unedited.
 [`MOVED-PATHS.md`](MOVED-PATHS.md) maps every old path to its new one.
+<!-- W2 control iv -->
