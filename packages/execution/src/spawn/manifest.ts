@@ -6,6 +6,7 @@ import {
   laneSkillOverrides,
   minimalMcpConfig,
   pluginSettings,
+  type HarnessPluginDecisions,
   readHintHookSettings,
   type HarnessSurface,
 } from './harness-surface.js';
@@ -256,6 +257,11 @@ export interface ResolvedLaunchConfig {
    * surface and plugins above came from the node env or the persona.
    */
   harnessChoice?: HarnessChoice;
+  /**
+   * The persona's `capabilities.launch.plugins`, kept ONLY when a launch pick
+   * replaced it — so the manifest can name what the pick removed.
+   */
+  personaPlugins?: string[];
   /**
    * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
    * after a large repository read. OFF by default — the hook ships dark until
@@ -524,6 +530,7 @@ export function resolveLaunchConfig(
     harnessSurface,
     plugins: choice?.plugins ?? preferences.plugins ?? [],
     ...(choice ? { harnessChoice: choice } : {}),
+    ...(choice?.plugins && preferences.plugins?.length ? { personaPlugins: preferences.plugins } : {}),
     ...(preferences.mcpServers && Object.keys(preferences.mcpServers).length > 0
       ? { mcpServers: preferences.mcpServers }
       : {}),
@@ -1668,6 +1675,12 @@ export interface ComposeManifestInput {
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
+  /**
+   * Every installed plugin's fate in a minimal claude lane, with its reason
+   * (`pluginDecisions`). Written as `launch.harness.plugins`; absent when the
+   * lane is not minimal or its config home has no plugins.
+   */
+  harnessPlugins?: HarnessPluginDecisions | null;
   now?: Date;
   agentConfigDir?: string;
   homeDir?: string;
@@ -1755,6 +1768,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // Absent unless the launch UI (or the session this one continues) picked
       // a harness, so an ordinary launch writes the manifest it always wrote.
       ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),
+      ...(input.harnessPlugins ? { harness: { plugins: input.harnessPlugins } } : {}),
     },
     session: {
       title: resolveSessionTitle(request, context),

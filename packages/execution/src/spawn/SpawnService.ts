@@ -40,7 +40,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { equippedClaudePlugins, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
+import { equippedClaudePlugins, harnessSurfaceEnv, pluginDecisions, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1358,11 +1358,22 @@ export class SpawnService {
       const { credentialHome, gitHubCredential } = credentials;
       // Built after the credentials because a `minimal` launch reads the
       // plugin registry of the config home the child will actually use.
+      // Read once: the same lists build the argv and the manifest's record of
+      // it, so the two cannot disagree about a plugin.
+      const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
+      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
+      const harnessPlugins = installedPlugins.length > 0
+        ? pluginDecisions(installedPlugins, {
+          launchPick: launch.harnessChoice?.plugins ?? null,
+          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
+          effective: effectivePlugins,
+        })
+        : null;
       const baseCommand = buildAgentCommand(launch, this.env, {
         claudeSessionId: nativeSessionId,
         sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
-        equippedClaudePlugins: equippedClaudePlugins(context.skillEquips ?? context.skills ?? []),
+        installedClaudePlugins: installedPlugins,
+        equippedClaudePlugins: effectivePlugins,
       });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
@@ -1379,6 +1390,7 @@ export class SpawnService {
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
         sandboxDegraded: sandbox.degradedReason,
+        harnessPlugins,
         baseUrl: this.baseUrl,
       });
 
@@ -2117,10 +2129,21 @@ export class SpawnService {
       await this.repointSpaceCredentials(auth, sessionId, credentials, recorded.unreadable);
       // Same harness surface as the fresh spawn: `withAgentResume` builds on
       // this base command, so the minimal-surface flags survive `--resume`.
+      // Read once: the same lists build the argv and the manifest's record of
+      // it, so the two cannot disagree about a plugin.
+      const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
+      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
+      const harnessPlugins = installedPlugins.length > 0
+        ? pluginDecisions(installedPlugins, {
+          launchPick: launch.harnessChoice?.plugins ?? null,
+          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
+          effective: effectivePlugins,
+        })
+        : null;
       const baseCommand = buildAgentCommand(launch, this.env, {
         sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
-        equippedClaudePlugins: equippedClaudePlugins(context.skillEquips ?? context.skills ?? []),
+        installedClaudePlugins: installedPlugins,
+        equippedClaudePlugins: effectivePlugins,
       });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
@@ -2134,6 +2157,7 @@ export class SpawnService {
         workdir: { mode: info.workdirMode, path: cwd },
         command: baseCommand,
         sandboxDegraded: sandbox.degradedReason,
+        harnessPlugins,
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });

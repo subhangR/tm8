@@ -18,6 +18,7 @@ import {
   equippedClaudePlugins,
   harnessSurfaceEnv,
   laneSkillOverrides,
+  pluginDecisions,
   pluginSettings,
   readInstalledClaudePlugins,
 } from '../src/spawn/harness-surface.js';
@@ -243,6 +244,28 @@ describe('pluginSettings', () => {
       'a@m': false,
       'b@m': false,
       'c@synced': true,
+    });
+  });
+});
+
+describe('pluginDecisions', () => {
+  const installed = ['marketing@synced', 'ops@synced', 'sales@synced', 'x@m'];
+
+  it('names the source of every enabled plugin and the reason for every disabled one', () => {
+    expect(pluginDecisions(installed, { launchPick: null, persona: ['marketing'], effective: ['sales'] })).toEqual({
+      allowed: [{ id: 'marketing@synced', source: 'persona' }, { id: 'sales@synced', source: 'effective-skill' }],
+      denied: [{ id: 'ops@synced', because: 'not-chosen' }, { id: 'x@m', because: 'not-chosen' }],
+    });
+  });
+
+  it('a launch pick replaces the persona list and records what it removed', () => {
+    expect(pluginDecisions(installed, { launchPick: ['ops'], persona: ['marketing'], effective: [] })).toEqual({
+      allowed: [{ id: 'ops@synced', source: 'launch' }],
+      denied: [
+        { id: 'marketing@synced', because: 'launch-pick' },
+        { id: 'sales@synced', because: 'not-chosen' },
+        { id: 'x@m', because: 'not-chosen' },
+      ],
     });
   });
 });
