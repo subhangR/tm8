@@ -430,11 +430,11 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // settings only, `cmd: null`), so allowNode reaches the wire only from the UI
   // seam — there is no CLI flag to collide with. Same shape as `all` above.
   allowNode: 'no CLI flag: node.credentials.policy.set is a commandless human-settings row; the node settings screen sets it (2026-09-23)',
-  // Forms W1 backend: every forms.* row is `cmd: null` until the `tm8 form`
-  // noun lands (a CLI lane stacked on this one), so these reach the wire only
-  // from the UI seam today. That lane replaces both lines with its spelling.
-  open: 'no CLI flag yet: forms.create is commandless until the tm8 form noun lands (Forms W1, 2026-09-24)',
-  required: 'no CLI flag yet: forms.questions.update is commandless until the tm8 form noun lands (Forms W1, 2026-09-24)',
+  // Forms W1 CLI: `open` is the bare --open (with its opposite --draft) and
+  // is on BOOLEAN_OPTIONS. `required` is spelled per command (advisor W1-R4 3):
+  // a question is required by default, so the flag a caller needs is the one
+  // that turns it OFF, and it must name WHICH question.
+  required: '`--optional <question-key>` (repeatable) on form create / form question add, and `--required true|false` on form question update (2026-09-24)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 
