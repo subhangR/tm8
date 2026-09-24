@@ -981,7 +981,7 @@ describe('composeEnv', () => {
 });
 
 describe('composeManifest', () => {
-  it('records the injected memory ids beside agent.memory, and nothing when there are none', () => {
+  it('records the injected memory ids beside agent.memory: [] when none, absent when not supplied', () => {
     const input = {
       sessionId: 'sess-memory-ids',
       request: base,
@@ -990,13 +990,14 @@ describe('composeManifest', () => {
       command: "claude --model 'opus'",
       baseUrl: 'http://127.0.0.1:4610',
     };
-    // Not index-aligned: the legacy jsonb entry has no id.
+    // The prefix rule: the ids are the first entries; the legacy jsonb one has none.
     const withIds = composeManifest({
       ...input,
       context: context({ memories: ['a', 'b', 'legacy'], memoryIds: ['mem-a', 'mem-b'] }),
     });
     expect(withIds.agent.memory).toEqual(['a', 'b', 'legacy']);
     expect(withIds.context).toEqual({ memoryIds: ['mem-a', 'mem-b'] });
+    expect(composeManifest({ ...input, context: context({ memoryIds: [] }) }).context).toEqual({ memoryIds: [] });
     expect(composeManifest({ ...input, context: context() }).context).toBeUndefined();
   });
 

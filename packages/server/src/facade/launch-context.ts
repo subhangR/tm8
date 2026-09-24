@@ -33,12 +33,13 @@ export async function projectLaunchContext(
   const unlinkedMemories = unlinkedMemoriesOf(manifest, memoryIds);
 
   const ids = [...new Set(candidates.map((c) => c.entityId))];
-  if (ids.length === 0) return { entries: [], hiddenCount: 0, unlinkedMemories };
+  // No teammate to check them against: text-only memories are counted, not shown.
+  if (ids.length === 0) return { entries: [], hiddenCount: unlinkedMemories.length, unlinkedMemories: [] };
 
   const taskIds = candidates.filter((c) => c.role === 'task').map((c) => c.entityId);
   const teamMemberId = candidates.find((c) => c.role === 'teammate')?.entityId ?? null;
   const [visible, jev] = await Promise.all([
-    db.query<{ id: string; kind: string; title: string; teammate_remembers: boolean; task_remembers: boolean }>(
+    db.query<{ id: string; kind: string; title: string; teammate_remembers: boolean; remembering_tasks: string[] }>(
       claims,
       `select e.id, e.kind,
               coalesce(case e.kind
@@ -56,8 +57,9 @@ export async function projectLaunchContext(
               end, e.kind) as title,
               exists (select 1 from public.edges r
                        where r.type = 'remembers' and r.src_id = $2 and r.dst_id = e.id) as teammate_remembers,
-              exists (select 1 from public.edges r
-                       where r.type = 'remembers' and r.src_id = any($3::uuid[]) and r.dst_id = e.id) as task_remembers
+              array(select r.src_id::text from public.edges r
+                     where r.type = 'remembers' and r.src_id = any($3::uuid[])
+                       and r.dst_id = e.id) as remembering_tasks
          from public.entities e
          left join public.tasks t on t.entity_id = e.id
          left join public.documents d on d.entity_id = e.id
@@ -76,6 +78,7 @@ export async function projectLaunchContext(
     loadJevRatings(db, claims, manifest),
   ]);
   const byId = new Map(visible.map((row) => [row.id, row]));
+  const teammateVisible = teamMemberId !== null && byId.has(teamMemberId);
 
   const entries: LaunchContextEntry[] = [];
   const seen = new Set<string>();
@@ -97,7 +100,10 @@ export async function projectLaunchContext(
       // Not recorded at launch (the §6 audit will record it); read from the
       // graph's `remembers` edges now, which is what put it in the launch
       // unless those edges have changed since.
-      source = row.teammate_remembers ? 'teammate' : row.task_remembers ? 'task' : 'requested';
+      // Only a teammate or task the viewer can read may be named as the source.
+      source = row.teammate_remembers && teammateVisible
+        ? 'teammate'
+        : row.remembering_tasks.some((id) => byId.has(id)) ? 'task' : 'requested';
     }
     entries.push({
       entityId: c.entityId,
@@ -110,7 +116,12 @@ export async function projectLaunchContext(
       jev: rating ? { level: rating.level, score: rating.score } : null,
     });
   }
-  return { entries, hiddenCount: hidden.size, unlinkedMemories };
+  // Text-only memories cannot be checked one by one: they have no ids. They
+  // are the teammate's memories, so they show only to a viewer who can read
+  // the teammate, and are otherwise counted like any other hidden entry.
+  return teammateVisible
+    ? { entries, hiddenCount: hidden.size, unlinkedMemories }
+    : { entries, hiddenCount: hidden.size + unlinkedMemories.length, unlinkedMemories: [] };
 }
 
 interface Candidate {
@@ -193,10 +204,10 @@ function memoryIdsOf(manifest: Record<string, unknown>): string[] | null {
 }
 
 /**
- * The memories recorded as text only. `agent.memory` is the injected memories
- * (one per recorded id, in the same order) followed by any legacy id-less
- * remainder, so with ids recorded the remainder is the tail past their count;
- * without them, every entry is text only.
+ * The memories recorded as text only. Relies on the PREFIX RULE documented on
+ * `Tm8Manifest.context`: the first `memoryIds.length` entries of `agent.memory`
+ * are those memories, in order, and only the rest have no id. Without ids
+ * recorded, every entry is text only.
  */
 function unlinkedMemoriesOf(manifest: Record<string, unknown>, memoryIds: string[] | null): string[] {
   const texts = arrayOf(recordOf(manifest.agent)?.memory).filter(

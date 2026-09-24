@@ -107,6 +107,15 @@ describe('LaunchContextSection', () => {
     expect(harness).toContain('Indexed skills2');
   });
 
+  it("hides the declared harness when the viewer cannot read the teammate", () => {
+    const base = record();
+    const withoutTeammate = record({
+      launchContext: { ...base.launchContext!, entries: base.launchContext!.entries.filter((e) => e.role !== 'teammate') },
+    });
+    const { queryByTestId } = render(<LaunchContextSection state={{ phase: 'ready', record: withoutTeammate }} />);
+    expect(queryByTestId('launch-context-harness')).toBeNull();
+  });
+
   it('says so when the launch was not recorded', () => {
     const { getByTestId } = render(
       <LaunchContextSection

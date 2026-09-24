@@ -349,9 +349,10 @@ export interface TeamMemberContext {
   identity: string;
   memories: unknown[];
   /**
-   * The memory ENTITIES injected into `memories`, in injection order. Not
-   * index-aligned with `memories`: that list may end with the legacy jsonb
-   * remainder, which has no ids. Absent from contexts that predate it.
+   * The memory ENTITIES injected into `memories`, in injection order: the
+   * first `memoryIds.length` entries of `memories` are these, and any after
+   * them are the legacy jsonb remainder, which has no ids. Absent from
+   * contexts that predate it.
    */
   memoryIds?: string[];
   model: string | null;
@@ -1008,9 +1009,14 @@ export interface Tm8Manifest {
 
   /**
    * The launch-context audit (design 01a0d348 §6). Only `memoryIds` so far:
-   * the memory entities injected into `agent.memory`, in injection order. Look
-   * memories up BY ID — this is not index-aligned with `agent.memory`, which
-   * can also carry legacy id-less strings. Absent on manifests that predate it.
+   * the memory entities injected into `agent.memory`, in injection order.
+   *
+   * PREFIX RULE, which readers rely on: the first `memoryIds.length` entries of
+   * `agent.memory` are these memories, in this order; any entries after them
+   * are the legacy jsonb remainder and have no id. An extension that breaks
+   * this (e.g. recording an id whose text was dropped) must record the
+   * pairing explicitly instead. `[]` means recorded and none injected; absent
+   * means the manifest predates this field.
    */
   context?: { memoryIds: string[] };
 
