@@ -45,9 +45,11 @@ export interface DurableEventLog {
 /**
  * Optional server-side narrowing of one poll page.
  *
- * `entityId` keeps only events whose SUBJECT is that entity: the entity itself
- * (`entity.*`), either edge endpoint, a message's own entity or its anchor, an
- * activity's `entityId`, and a notification's target. The page's `hasMore` and
+ * `entityId` keeps only events whose SUBJECT is that entity, by the canonical
+ * subject set (subject-set.ts, migration 208): the entity itself (`entity.*`),
+ * either edge endpoint, a message's own entity or its anchor, a counter's
+ * entity, an activity's `entityId`, a notification's target, and a git fact's
+ * PR/commit/worktree entity. The page's `hasMore` and
  * `examinedThrough` still describe the rows EXAMINED, so a filtered reader
  * pages exactly as an unfiltered one does.
  */
@@ -94,20 +96,15 @@ const EXAMINED_COLUMNS = WORKSPACE_EVENT_COLUMNS.split(', ').map((c) => `e.${c}`
 /**
  * Is `$4` (an entity id, as text) the SUBJECT of window row `e`?
  *
- * The same subject rules as `WorkspaceEventMapper`'s payload keys: entity id,
- * edge src/dst, message entity/anchor, activity `entity_id`, notification
- * target. Unindexed jsonb: it only ever scans the `limit`-row window, never the
- * log. Change feed step 2 replaces this with the indexed
- * `workspace_events.subject_ids uuid[]` column (GIN, filled by the capture
- * trigger) — one query path then, no jsonb.
+ * The canonical subject set (migration 208, subject-set.ts): the row's indexed
+ * `subject_ids`, or — for a row the 205 backfill has not reached yet — the SAME
+ * derivation computed on the spot. One definition of "about", used by the
+ * trigger, the backfill, the change feed and this filter; the jsonb copy that
+ * used to live here had already drifted from it (no `counter.changed`, no
+ * `git.*`). It only ever scans the `limit`-row window, never the log.
  */
 const SUBJECT_MATCH_SQL = `(
-  (e.event_type in ('entity.upsert', 'entity.deleted', 'entity.activity_touched') and e.payload->>'id' = $4)
-  or (e.event_type in ('edge.upsert', 'edge.deleted') and $4 in (e.payload->>'src_id', e.payload->>'dst_id'))
-  or (e.event_type in ('message.created', 'message.updated', 'message.deleted')
-      and $4 in (e.payload->>'entity_id', e.payload->>'anchor_id'))
-  or (e.event_type = 'activity.created' and e.payload->>'entity_id' = $4)
-  or (e.event_type in ('notification.created', 'notification.read') and e.payload->>'target_entity_id' = $4)
+  coalesce(e.subject_ids, internal.event_subject_ids(e.event_type, e.payload)) @> array[$4::uuid]
 )`;
 
 /**
@@ -213,7 +210,7 @@ export class PgDurableEventLog implements DurableEventLog {
         // still advances.
         const hits = await q.query<WorkspaceEventRow & { examined_count: number; examined_last: string | number | null }>(
           `with examined as (
-             select ${WORKSPACE_EVENT_COLUMNS}
+             select ${WORKSPACE_EVENT_COLUMNS}, subject_ids
                from public.workspace_events
               where space_id = $1 and seq > $2
               order by seq asc

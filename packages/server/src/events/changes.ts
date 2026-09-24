@@ -12,7 +12,7 @@
  * ## One query path
  *
  * A scoped request reads `workspace_events` through `subject_ids && $ids`
- * (migration 204's GIN index) with the space/seq predicates, and nothing else.
+ * (migration 205's GIN index; the canonical set is 208's) with the space/seq predicates, and nothing else.
  * There is no jsonb fallback: a window reaching below the backfill watermark is
  * refused with `index_incomplete` (`subject-index.ts`), never answered from a
  * second path that could disagree with the first.
