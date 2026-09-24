@@ -26,7 +26,6 @@ import {
   type FormSectionRow,
   type FormSettings,
 } from '@tm8/contract';
-import { Timestamp } from '../kit';
 import { Notice, QuestionField, QuestionFields } from './parts';
 import { FORM_TRANSITIONS, type FormState } from './seam';
 import { errorText, type Questionnaire } from './useQuestionnaire';
@@ -75,7 +74,7 @@ function specIssues(title: string, d: Draft): string[] {
 }
 
 export function BuildTab({ q }: { q: Questionnaire }) {
-  const { form, frozen, port, responses } = q;
+  const { form, frozen, port } = q;
   const base = useMemo(() => (form ? draftOf(form) : null), [form]);
   const [work, setWork] = useState<Draft | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -87,9 +86,6 @@ export function BuildTab({ q }: { q: Questionnaire }) {
   const locked = frozen || form.content.status === 'cancelled';
   const issues = dirty ? specIssues(form.title, d) : [];
   const update = (next: Partial<Draft>) => { setWork({ ...d, ...next }); setError(null); };
-  const firstSubmit = responses
-    ?.map((r) => r.submittedAt ?? '')
-    .sort()[0];
 
   const save = async () => {
     setSaving(true);
@@ -144,8 +140,7 @@ export function BuildTab({ q }: { q: Questionnaire }) {
     <div className="qn-build" data-testid="build">
       {frozen ? (
         <Notice tone="wait" title="Questions are locked" testId="frozen-banner">
-          The first response was submitted{firstSubmit ? <> <Timestamp at={firstSubmit} /></> : null}, so the questions,
-          sections and the responses setting are frozen: changing them would change what earlier answers meant. Other
+          A response has been submitted, so the questions, sections and the responses setting are frozen: changing them would change what earlier answers meant. Other
           settings can still change.
         </Notice>
       ) : null}

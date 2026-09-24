@@ -223,3 +223,10 @@
 @media (max-width: 640px) {
   .qb-editor { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The kit's buttons draw no disabled state; a frozen form's controls must
+   read as unavailable, not as broken. */
+.qn .pn-btn:disabled { opacity: 0.4; cursor: default; }
+.qn .pn-btn:disabled:hover { background: var(--pn-card); }
+.qb-editor__fields > .pn-btn { align-self: flex-start; }
+.qn-detail > p { margin: 0; }
