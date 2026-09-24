@@ -79,7 +79,7 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
   const codes = Object.keys(ERROR_STATUS) as CommandErrorCode[];
 
   it('covers every CommandErrorCode the contract defines', () => {
-    expect(codes.length).toBe(13);
+    expect(codes.length).toBe(14);
     for (const code of codes) {
       const exit = exitCodeForCommandError(code);
       expect(isExitCode(exit), `${code} -> ${exit}`).toBe(true);
@@ -99,6 +99,7 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
       conflict: 6,
       invariant_violation: 6,
       payload_too_large: 9,
+      context_budget_too_small: 2,
       rate_limited: 7,
       limit_exceeded: 7,
       not_implemented: 8,

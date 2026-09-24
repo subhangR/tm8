@@ -26,14 +26,17 @@
  *    acceptance ride the root statement and fail the whole read. Every trimmed
  *    list says so in `omitted[]`; a section not loaded says so in `notLoaded[]`.
  *
+ * THE BODY (M2/S4, c904 §2.4–2.5). A body over the ceiling arrives
+ * `complete:false` with `offset` and an `expand` that names the next page:
+ * `--sections assignment --offset <N>`, N in UTF-8 bytes, filled in by the
+ * server. A core that cannot fit the caller's `totalBytes` is refused with 422
+ * `context_budget_too_small`, never cut: the caller's budget buys rows, not body.
+ *
  * NOT HERE YET, and why (c904 Q12: never advertise an expand whose consumer is
  * missing). These expands are GATED until their consumer ships:
  *   - section cursors (`--sections X --cursor <c>`, `--edge-type`): M2/S3b.
  *     Until then an `omitted[]` entry carries `kept`/`more`/`reason` and no
  *     `expand`.
- *   - the body ceiling's `--offset` page and `context_budget_too_small`: M2/S4.
- *     Until then a body that cannot fit arrives `complete:false` with its full
- *     `bytes` and no `expand` — cut, but visibly.
  *   - the actions expand (`tm8 action list --for <id>`): only in its bounded
  *     form, PR #669 (task 01a0cf2e-ee2a). `ADVERTISE_ACTIONS_EXPAND` flips it.
  */
@@ -64,6 +67,8 @@ import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 export const V2_SCHEMA_VERSION = 'tm8.entity-context.v2' as const;
 /** c904 §2.5: the default `--total-bytes`, and the base of the body ceiling. */
 export const V2_DEFAULT_TOTAL_BYTES = 16_384;
+/** c904 §2.5: the top of the `--total-bytes` range. */
+const V2_MAX_TOTAL_BYTES = 32_768;
 /** Ref titles and message `from`: code points, the ellipsis included (Q28/Q28b). */
 const TITLE_CAP = 80;
 const FROM_CAP = 80;
@@ -762,13 +767,14 @@ function droppableLists(messagesAreCore: boolean): Array<'connections' | 'childr
 }
 
 /**
- * The core envelope the body ceiling is measured against: the whole DTO with
- * the body text and every TRIMMABLE row removed. c904 §2.4 says "with every
- * list empty"; the lists that cannot be trimmed (acceptance, assignees,
- * blockers, notLoaded, errors, a chat's or session's messages) are kept in the
- * envelope here, because a ceiling that ignored them would let the default
- * read overrun its own 16,384 B with nothing left to drop. INTERIM reading
- * until S4 formalises the ceiling; stated in the PR.
+ * The core envelope the body ceiling is measured against (c904 §2.4): the
+ * whole DTO — the body's own marker (`offset`, `expand`, `expandOp`) and a
+ * budget block at the default included — with the body text and every list
+ * the BUDGET can empty (§2.6) emptied. "Every list empty" is read as every
+ * droppable list: the never-drop lists (acceptance, assignees, blockers, the
+ * outline, notLoaded, errors, a chat's or session's messages) stay in, because
+ * a ceiling that ignored them would make the default read overrun its own
+ * 16,384 B with nothing left to drop — a default read that 422s.
  */
 function envelopeBytes(view: View, messagesAreCore: boolean): number {
   const clone = structuredClone(view) as Record<string, unknown>;
@@ -777,7 +783,42 @@ function envelopeBytes(view: View, messagesAreCore: boolean): number {
   return jsonBytes(clone);
 }
 
-function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan): View {
+/**
+ * The body from `offset` on (c904 §2.4). The head read (no offset) carries
+ * acceptance with it; a page carries the body and nothing else, because the
+ * head already delivered the rest of the section. An offset the server could
+ * not have emitted — past the end, or inside a character — is refused.
+ */
+function assignmentOf(root: EntityRow, offset: number | undefined): Record<string, unknown> {
+  const body = bodyOf(root);
+  const whole = Buffer.from(body, 'utf8');
+  if (offset === undefined) {
+    return {
+      assignment: { text: body, bytes: whole.length, complete: true } satisfies EntityContextAssignment,
+      ...(root.kind === 'task' ? { acceptance: acceptanceOf(root) } : {}),
+    };
+  }
+  if (offset > whole.length) {
+    throw new CollabError('invalid_input', `offset ${offset} is past the end of the ${whole.length}-byte body`, {
+      details: { reason: 'offset_out_of_range', bytes: whole.length },
+    });
+  }
+  if (offset < whole.length && (whole[offset]! & 0xc0) === 0x80) {
+    throw new CollabError('invalid_input', `offset ${offset} splits a character; use the offset from the expand`, {
+      details: { reason: 'offset_not_on_code_point' },
+    });
+  }
+  return {
+    assignment: {
+      text: whole.subarray(offset).toString('utf8'),
+      bytes: whole.length,
+      complete: true,
+      offset,
+    } satisfies EntityContextAssignment,
+  };
+}
+
+function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: number | undefined): View {
   const { root } = loaded;
   const header = {
     schemaVersion: V2_SCHEMA_VERSION,
@@ -790,13 +831,7 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan): View {
   const notLoaded = plan.notLoaded.map((section) => notLoadedEntry(id, section));
   const tail = { omitted: loaded.omitted, notLoaded, errors: loaded.errors, budget: { requested: 0, used: 0 } };
 
-  const body = plan.assignment ? bodyOf(root) : undefined;
-  const assignmentFields = plan.assignment
-    ? {
-        assignment: { text: body!, bytes: utf8Bytes(body!), complete: true } as EntityContextAssignment,
-        ...(root.kind === 'task' ? { acceptance: acceptanceOf(root) } : {}),
-      }
-    : {};
+  const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};
 
   if (plan.explicit) {
     // c904 §2.10: the header, the requested sections, notLoaded, errors, budget.
@@ -907,36 +942,133 @@ function trimmed(view: View, section: string, kept: number): void {
   }
 }
 
-/**
- * Fit the view to `requested` (c904 §2.6): body first to the ceiling, then
- * drop rows outside the core — edges, then children, then messages (task,
- * doc, project; chat and session messages are core) — farthest or oldest
- * first, each trim recorded in `omitted[]`.
- *
- * INTERIM until M2/S4: a body over the ceiling arrives cut with
- * `complete:false` and its full `bytes`, but no `--offset` expand (its consumer
- * is S4's), and a core that still cannot fit the caller's budget is cut
- * further rather than refused with `context_budget_too_small` (also S4).
- */
-function fit(view: View, requested: number, messagesAreCore: boolean): View {
-  const assignment = view.assignment;
-  const body = assignment?.text;
+/** The body's continuation (c904 §2.8): exact, server-filled, no placeholder. */
+function bodyExpand(id: string, offset: number): { expand: string; expandOp: EntityContextExpandOp } {
+  return {
+    expand: `tm8 entity context ${id} --sections assignment --offset ${offset}`,
+    expandOp: { operation: 'entities.context', params: { id, sections: ['assignment'], offset } },
+  };
+}
 
-  if (assignment && body !== undefined) {
-    // c904 §2.4: the ceiling is 16,384 − the core envelope, whatever the
-    // caller's budget — a larger budget buys rows, never more body.
-    const ceiling = (): number => {
-      settle(view, V2_DEFAULT_TOTAL_BYTES);
-      return Math.max(0, V2_DEFAULT_TOTAL_BYTES - envelopeBytes(view, messagesAreCore));
-    };
-    if (encodedBytes(body) > ceiling()) {
-      assignment.complete = false;
-      // c761 Q9: a cut doc carries its outline, which is core — so it is in
-      // the envelope before the ceiling that cuts the body is measured.
-      if (view.kind === 'doc') withOutline(view, body);
-      assignment.text = cutEncoded(body, ceiling());
-    }
+/**
+ * Cut the body at the ceiling (c904 §2.4): 16,384 − the core envelope,
+ * whatever the caller's budget, so a larger budget never buys more body and a
+ * read cuts where the launch snapshot does. The marker is part of the
+ * envelope, and the marker names the next offset, so the cut is settled on a
+ * fixed point: cut, re-mark, re-measure, until the cut stops moving.
+ */
+function cutAtCeiling(view: View, id: string, messagesAreCore: boolean): void {
+  const assignment = view.assignment;
+  if (!assignment) return;
+  const rest = assignment.text;
+  // A page carries `offset` from assembly; the head read has none until cut.
+  const head = assignment.offset === undefined;
+  const start = assignment.offset ?? 0;
+  const ceiling = (): number => {
+    settle(view, V2_DEFAULT_TOTAL_BYTES);
+    return Math.max(0, V2_DEFAULT_TOTAL_BYTES - envelopeBytes(view, messagesAreCore));
+  };
+  if (encodedBytes(rest) <= ceiling()) return;
+
+  const mark = (text: string): void => {
+    assignment.text = text;
+    assignment.complete = false;
+    assignment.offset = start;
+    Object.assign(assignment, bodyExpand(id, start + utf8Bytes(text)));
+  };
+  // c761 Q9: a cut doc's outline is core, so it is in the envelope before the
+  // ceiling that cuts the body is measured. Only the head carries it.
+  if (view.kind === 'doc' && head) {
+    withOutline(view, rest);
   }
+  let text = rest;
+  for (let round = 0; round < 8; round += 1) {
+    mark(text);
+    const cut = cutEncoded(rest, ceiling());
+    if (cut === text) break;
+    text = cut;
+  }
+  // A digit boundary in the next offset can make the fixed point alternate;
+  // settle on the shorter side so the page is never over its ceiling.
+  while (encodedBytes(assignment.text) > ceiling() && assignment.text.length > 0) {
+    mark(cutEncoded(rest, encodedBytes(assignment.text) - 1));
+  }
+}
+
+/** The never-drop sections a view carries, for the 422's `details.core`. */
+function coreSections(view: View, messagesAreCore: boolean): string[] {
+  const core = ['root'];
+  for (const key of ['assignment', 'acceptance', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
+    if (view[key] !== undefined) core.push(key);
+  }
+  if (messagesAreCore && view.messages !== undefined) core.push('messages');
+  if (view.errors.length > 0) core.push('errors');
+  return core;
+}
+
+/**
+ * c904 §2.5: the smallest `totalBytes` the core fits in. `budget` counts its
+ * own digits, so this is the least R with size(R) ≤ R — a fixed point, then a
+ * step down in case one digit fewer in `requested` is what makes it fit.
+ */
+function minimumBytes(view: View): number {
+  let minimum = settle(view, V2_DEFAULT_TOTAL_BYTES);
+  for (let round = 0; round < 8; round += 1) {
+    const size = settle(view, minimum);
+    if (size === minimum) break;
+    minimum = size;
+  }
+  while (minimum > 1 && settle(view, minimum - 1) <= minimum - 1) minimum -= 1;
+  return minimum;
+}
+
+/**
+ * The core does not fit the caller's budget: refuse, never cut (c904 §2.5).
+ * `next` rounds up to the next KB so a small concurrent edit does not fail the
+ * retry, and repeats the caller's selection so it runs verbatim. A minimum
+ * past the flag's range has no runnable retry, so it carries no `next`.
+ */
+function budgetTooSmall(
+  view: View,
+  id: string,
+  requested: number,
+  input: { sections: ReadonlySet<V2Section> | null; offset?: number },
+  messagesAreCore: boolean,
+): CollabError {
+  const minimum = minimumBytes(view);
+  const retry = Math.ceil(minimum / 1024) * 1024;
+  const selection = input.sections === null ? '' : ` --sections ${[...input.sections].join(',')}`;
+  const page = input.offset === undefined ? '' : ` --offset ${input.offset}`;
+  const next = retry <= V2_MAX_TOTAL_BYTES ? `tm8 entity context ${id}${selection}${page} --total-bytes ${retry}` : undefined;
+  return new CollabError(
+    'context_budget_too_small',
+    `the never-drop core needs ${minimum} bytes; ${requested} were requested`,
+    {
+      details: {
+        requestedBytes: requested,
+        minimumBytes: minimum,
+        core: coreSections(view, messagesAreCore),
+        ...(next === undefined ? {} : { next }),
+      },
+    },
+  );
+}
+
+/**
+ * Fit the view to `requested` (c904 §2.4–2.6): the body first, to the ceiling;
+ * then drop rows outside the core — edges, then children, then messages (task,
+ * doc, project; chat and session messages are core) — farthest or oldest
+ * first, each trim recorded in `omitted[]`. A core that still does not fit is
+ * a 422, never a shorter body.
+ */
+function fit(
+  view: View,
+  id: string,
+  requested: number,
+  input: { sections: ReadonlySet<V2Section> | null; offset?: number },
+  messagesAreCore: boolean,
+): View {
+  cutAtCeiling(view, id, messagesAreCore);
 
   let used = settle(view, requested);
   for (const key of droppableLists(messagesAreCore)) {
@@ -950,14 +1082,7 @@ function fit(view: View, requested: number, messagesAreCore: boolean): View {
       used = settle(view, requested);
     }
   }
-
-  // INTERIM (S4 replaces this with the 422): cut the body to what is left.
-  for (let round = 0; round < 6 && used > requested && assignment && assignment.text.length > 0; round += 1) {
-    const target = Math.max(0, encodedBytes(assignment.text) - (used - requested));
-    assignment.text = cutEncoded(assignment.text, target);
-    assignment.complete = false;
-    used = settle(view, requested);
-  }
+  if (used > requested) throw budgetTooSmall(view, id, requested, input, messagesAreCore);
   return view;
 }
 
@@ -968,10 +1093,10 @@ function fit(view: View, requested: number, messagesAreCore: boolean): View {
 export async function loadContextV2(
   q: Querier,
   id: string,
-  input: { sections: ReadonlySet<V2Section> | null; totalBytes: number },
+  input: { sections: ReadonlySet<V2Section> | null; totalBytes: number; offset?: number },
 ): Promise<EntityContextV2View> {
   const { loaded, plan } = await loadV2(q, id, input.sections);
-  const view = assemble(id, loaded, plan);
+  const view = assemble(id, loaded, plan, input.offset);
   const messagesAreCore = plan.messages?.core === true;
-  return fit(view, input.totalBytes, messagesAreCore);
+  return fit(view, id, input.totalBytes, input, messagesAreCore);
 }

@@ -1578,7 +1578,9 @@ export type CommandErrorCode =
   | 'unauthenticated' | 'forbidden' | 'not_found'
   | 'version_conflict' | 'conflict' | 'invariant_violation'
   | 'payload_too_large' | 'rate_limited' | 'limit_exceeded'
-  | 'not_implemented' | 'upstream_unavailable';
+  | 'not_implemented' | 'upstream_unavailable'
+  /** c904 §2.5: the never-drop core does not fit the caller's `totalBytes`. */
+  | 'context_budget_too_small';
 
 export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   invalid_input: 400, invalid_cursor: 400,
@@ -1586,6 +1588,7 @@ export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   version_conflict: 409, conflict: 409, invariant_violation: 409,
   payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
   not_implemented: 501, upstream_unavailable: 503,
+  context_budget_too_small: 422,
 };
 
 export const RETRYABLE_BY_DEFAULT = new Set<CommandErrorCode>(['rate_limited', 'limit_exceeded', 'upstream_unavailable']);
@@ -6046,6 +6049,12 @@ export interface EntityContextQuery {
   totalBytes?: number;
   /** v1 only. v2 budgets are total-only (c904 Q17). */
   sectionBytes?: number;
+  /**
+   * v2 only, with `sections: ['assignment']`: the UTF-8 byte offset of a body
+   * page (c904 §2.4). Taken from the server's `assignment.expand`, never
+   * computed by the caller.
+   */
+  offset?: number;
   /** `v2` returns the actions section as `ActionRows`; `v1` (default) as `PaletteAction[]`. */
   actionsSchema?: 'v1' | 'v2';
 }

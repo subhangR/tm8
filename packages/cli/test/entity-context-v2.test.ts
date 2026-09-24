@@ -263,7 +263,7 @@ describe('S3 --schema and section paging flags', () => {
 // ============================================================================
 
 describe('S4 body pages and caller budget', () => {
-  it.fails('[c904 §2.4] the body expand runs verbatim: --sections assignment --offset binds (S4)', async () => {
+  it('[c904 §2.4] the body expand runs verbatim: --sections assignment --offset binds (S4)', async () => {
     const expand = V2_TASK.assignment.expand;
     const r = await drive([...expand.split(' ').slice(1), '--schema', 'v2']);
     expect(r.code).toBe(0);
@@ -271,21 +271,22 @@ describe('S4 body pages and caller budget', () => {
     expect(seen[0]?.query.get('offset')).toBe('15342');
   });
 
-  it.fails('[c904 §5.3] context_budget_too_small exits 2 and prints the `next` command (S4)', async () => {
+  it('[c904 §5.3] context_budget_too_small exits 2 and prints the `next` command (S4)', async () => {
     // Control: the same argv succeeds when the server answers 200.
     const control = await drive(['entity', 'context', ENT, '--schema', 'v2', '--total-bytes', '1024', '--format', 'json']);
     expect(control.code).toBe(0);
     const next = `tm8 entity context ${ENT} --total-bytes 5120`;
+    // The DEV-8 wire body (strict): `next` rides in `details`, as the Server sends it.
     reply = {
       status: 422,
       body: {
         error: {
           code: 'context_budget_too_small',
-          message: 'the core needs 4698 bytes; 1024 were requested',
-          details: { requestedBytes: 1024, minimumBytes: 4698, core: ['root', 'assignment', 'acceptance', 'blockers'] },
-          next,
+          message: 'the never-drop core needs 4698 bytes; 1024 were requested',
+          details: { requestedBytes: 1024, minimumBytes: 4698, core: ['root', 'assignment', 'acceptance', 'blockers'], next },
+          requestId: 'req_ctx_v2',
+          retryable: false,
         },
-        requestId: 'req_ctx_v2',
       },
     };
     const r = await drive(['entity', 'context', ENT, '--schema', 'v2', '--total-bytes', '1024', '--format', 'json']);
