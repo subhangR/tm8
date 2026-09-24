@@ -490,6 +490,21 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       serviceKeys: () => ops.credentialsServiceKeys(),
       saveServiceKey: (provider, apiKey) => ops.credentialsSaveServiceKey(provider, apiKey),
       removeServiceKey: (provider) => ops.credentialsRemoveServiceKey(provider),
+      space: {
+        list: (spaceId) => ops.spaceCredentialsList(spaceId),
+        create: (spaceId, input) => ops.spaceCredentialsCreate(spaceId, input),
+        rekey: (credentialId, secret) => ops.spaceCredentialsRekey(credentialId, secret),
+        rename: (credentialId, label) => ops.spaceCredentialsRename(credentialId, label),
+        setDefault: (credentialId) => ops.spaceCredentialsSetDefault(credentialId),
+        remove: (credentialId) => ops.spaceCredentialsDelete(credentialId),
+        policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
+        setPolicy: (spaceId, provider, allowedSources) =>
+          ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
+      },
+      node: {
+        status: () => ops.nodeCredentialsStatus(),
+        setPolicy: (provider, allowNode) => ops.nodeCredentialsSetPolicy(provider, allowNode),
+      },
     },
 
     // -- liveness ------------------------------------------------------------

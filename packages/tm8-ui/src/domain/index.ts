@@ -124,6 +124,9 @@ export {
   defaultLaunchTarget,
   describeCapacity,
   describeLaunchManifest,
+  launchCredentialFacts,
+  launchSpaceCredentialIds,
+  LAUNCH_SOURCE_WORD,
   describeTeammateLoad,
   describeProfile,
   modelsFor,
@@ -200,3 +203,15 @@ export {
  */
 export { CHANNEL_KIND, VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
 export type { Landing } from './nav-targets';
+
+/* SC-5: the launch picker's credential source options (D4/D5/D6a/D10). */
+export {
+  disabledSourcesNote,
+  githubAuthorshipLine,
+  isSpaceCredentialProvider,
+  launchSourceOptions,
+  launchableSpaceCredentials,
+  parseLaunchSourceChoice,
+  sourcePolicyReason,
+} from './launch-sources';
+export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput } from './launch-sources';

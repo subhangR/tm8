@@ -61,7 +61,14 @@ import type { SkillPreviewResult } from '@tm8/contract';
  * one dialog, which is what a screen reader is entitled to.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
-import type { CredentialProviderName, CredentialsStatusView, EntityId } from '@tm8/contract';
+import type {
+  CredentialProviderName,
+  CredentialsSpaceListView,
+  CredentialsSpacePolicyView,
+  CredentialsStatusView,
+  EntityId,
+  SpaceCredentialView,
+} from '@tm8/contract';
 import { Avatar } from '../kit';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import './launch-sheet-mobile.css';
@@ -84,6 +91,14 @@ import {
   type LaunchTarget,
   type LaunchTeammate,
 } from '../domain/launch';
+import {
+  disabledSourcesNote,
+  githubAuthorshipLine,
+  launchSourceOptions,
+  parseLaunchSourceChoice,
+  type LaunchSourceChoice,
+  type LaunchSourceOption,
+} from '../domain/launch-sources';
 import { MEMORY_IDS_MAX } from '../domain/memory';
 import { modelCatalog } from '../domain/model-catalog';
 import {
@@ -129,6 +144,13 @@ export interface LaunchSheetProps {
   launching?: boolean;
   /** Reads only the viewer's display-safe connection metadata; never a token. */
   loadCredentialStatus?(): Promise<CredentialsStatusView>;
+  /**
+   * SC-5: the space's credentials and its source policy, so the picker can
+   * offer Space ▸ credential and grey out what policy turns off (D5), with the
+   * reason. Absent ⇒ the Space option draws disabled, saying why.
+   */
+  loadSpaceCredentials?(spaceId: string): Promise<CredentialsSpaceListView>;
+  loadSpacePolicy?(spaceId: string): Promise<CredentialsSpacePolicyView>;
   onLaunch(config: LaunchSelection): void;
   /**
    * D5 — route the subject through the space's resident dispatcher instead of
@@ -158,7 +180,7 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
 /** Rosters longer than this get the filter input. Below it, a search box over
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
-type CredentialChoice = '' | 'member' | 'node';
+type CredentialChoice = LaunchSourceChoice;
 // The tool→provider map and the vendor labels live in `domain/launch` now —
 // the New Session composer is their second consumer, and two private copies
 // of a vocabulary is the copy-drift class (D34).
@@ -298,6 +320,35 @@ export function LaunchSheet(props: LaunchSheetProps) {
     };
   }, [props.loadCredentialStatus]);
 
+  // Same moment, same reason: the space's credentials and policy as they are
+  // NOW. A failed read leaves the Space option disabled with the reason; it
+  // never hides the Yours/Node choices that do not depend on it.
+  const [spaceCredentials, setSpaceCredentials] = useState<SpaceCredentialView[] | null>(null);
+  const [spaceUnavailable, setSpaceUnavailable] = useState<string>(
+    props.loadSpaceCredentials && props.spaceId ? 'reading the space’s credentials…' : 'space credentials are not available here',
+  );
+  const [spacePolicy, setSpacePolicy] = useState<CredentialsSpacePolicyView | null>(null);
+  useEffect(() => {
+    const load = props.loadSpaceCredentials;
+    const spaceId = props.spaceId;
+    if (!load || !spaceId) return undefined;
+    let cancelled = false;
+    void load(spaceId).then(
+      (view) => { if (!cancelled) setSpaceCredentials(view.credentials); },
+      () => { if (!cancelled) setSpaceUnavailable('the space’s credentials could not be read'); },
+    );
+    return () => { cancelled = true; };
+  }, [props.loadSpaceCredentials, props.spaceId]);
+  useEffect(() => {
+    const load = props.loadSpacePolicy;
+    const spaceId = props.spaceId;
+    if (!load || !spaceId) return undefined;
+    let cancelled = false;
+    // Unreadable policy ⇒ nothing is greyed here; the server still enforces it.
+    void load(spaceId).then((view) => { if (!cancelled) setSpacePolicy(view); }, () => {});
+    return () => { cancelled = true; };
+  }, [props.loadSpacePolicy, props.spaceId]);
+
   const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
   const agentCredentialSource = agentCredentialProvider
     ? credentialChoices[agentCredentialProvider] ?? ''
@@ -321,6 +372,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
         credentialStatusState,
         identity: agentIdentity,
         strictMissing: true,
+        spaceCredentials,
       })
     : 'This agent tool has no personal credential provider';
   const githubIdentityCopy = describeProviderLaunchIdentity({
@@ -330,6 +382,35 @@ export function LaunchSheet(props: LaunchSheetProps) {
     credentialStatusState,
     identity: githubHandle,
     strictMissing: false,
+    spaceCredentials,
+  });
+  const agentSourceOptions = agentCredentialProvider
+    ? launchSourceOptions({
+        provider: agentCredentialProvider,
+        autoText: 'Auto · yours, else the space’s, else the node’s',
+        memberText: agentIdentity
+          ? `My ${CREDENTIAL_PROVIDER_LABEL[agentCredentialProvider]} · ${agentIdentity}`
+          : 'My credential · refuse if this provider is not connected',
+        nodeText: 'Node credential · this server’s agent account',
+        spaceCredentials,
+        spaceUnavailable,
+        policy: spacePolicy,
+      })
+    : [];
+  const githubSourceOptions = launchSourceOptions({
+    provider: 'github',
+    autoText: 'Auto · yours, else the space’s, else the node’s',
+    memberText: githubHandle ? `My GitHub · ${githubHandle}` : 'My GitHub · block node fallback if not connected',
+    nodeText: 'Node GitHub · this server’s account',
+    spaceCredentials,
+    spaceUnavailable,
+    policy: spacePolicy,
+  });
+  const githubAuthorship = githubAuthorshipLine({
+    choice: githubCredentialSource,
+    memberHandle: githubHandle,
+    spaceCredentials,
+    policy: spacePolicy,
   });
 
   /**
@@ -653,13 +734,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
                   }));
                 }}
               >
-                <option value="">Auto · mine if connected, else the node&apos;s</option>
-                <option value="member">
-                  {agentCredentialProvider && agentIdentity
-                    ? `My ${CREDENTIAL_PROVIDER_LABEL[agentCredentialProvider]} · ${agentIdentity}`
-                    : 'My credential · refuse if this provider is not connected'}
-                </option>
-                <option value="node">Node credential · this server&apos;s agent account</option>
+                {agentCredentialProvider
+                  ? <SourceOptions options={agentSourceOptions} />
+                  : <option value="">Auto · mine if connected, else the node&apos;s</option>}
               </select>
               <span
                 className="ls__rowsub"
@@ -668,6 +745,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               >
                 {agentIdentityCopy}
               </span>
+              <SourcesNote options={agentSourceOptions} testId="launch-agent-sources-note" />
             </span>
           </label>
           <label className="ls__row ls__row--inert">
@@ -683,13 +761,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
                   setCredentialChoices((current) => ({ ...current, github: source }));
                 }}
               >
-                <option value="">Auto · mine if connected, else the node&apos;s</option>
-                <option value="member">
-                  {githubHandle
-                    ? `My GitHub · ${githubHandle}`
-                    : 'My GitHub · block node fallback if not connected'}
-                </option>
-                <option value="node">Node GitHub · this server&apos;s account</option>
+                <SourceOptions options={githubSourceOptions} />
               </select>
               <span
                 className="ls__rowsub"
@@ -697,6 +769,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 aria-live="polite"
               >
                 {githubIdentityCopy}
+              </span>
+              <SourcesNote options={githubSourceOptions} testId="launch-github-sources-note" />
+              <span className="ls__rowsub" data-testid="launch-github-authorship">
+                {githubAuthorship}
               </span>
             </span>
           </label>
@@ -1120,10 +1196,18 @@ export function LaunchSheet(props: LaunchSheetProps) {
           onClick={() => {
             if (!teammate || atCapacity || launching) return;
             const credentialSources: NonNullable<LaunchConfig['credentialSources']> = {};
-            if (agentCredentialProvider && agentCredentialSource) {
-              credentialSources[agentCredentialProvider] = agentCredentialSource;
-            }
-            if (githubCredentialSource) credentialSources.github = githubCredentialSource;
+            const spaceCredentialIds: NonNullable<LaunchConfig['spaceCredentialIds']> = {};
+            const pick = (provider: CredentialProviderName, choice: CredentialChoice) => {
+              const parsed = parseLaunchSourceChoice(choice);
+              if (!parsed) return;
+              credentialSources[provider] = parsed.source;
+              // Only the three space providers can pin; the contract refuses others.
+              if (parsed.spaceCredentialId && (provider === 'anthropic' || provider === 'openai' || provider === 'github')) {
+                spaceCredentialIds[provider] = parsed.spaceCredentialId;
+              }
+            };
+            if (agentCredentialProvider) pick(agentCredentialProvider, agentCredentialSource);
+            pick('github', githubCredentialSource);
             /* `{}` until Ask Jev is pressed, so a launch without Jev is exactly
                today's. With a selection, the additive `memoryIds` is NOT sent:
                the contract refuses the pair, and the picker is hidden anyway. */
@@ -1136,6 +1220,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               reasoningEffort,
               accessMode,
               ...(Object.keys(credentialSources).length > 0 ? { credentialSources } : {}),
+              ...(Object.keys(spaceCredentialIds).length > 0 ? { spaceCredentialIds } : {}),
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),
@@ -1187,7 +1272,19 @@ function describeProviderLaunchIdentity(input: {
   identity: string | null;
   /** Missing personal agent auth refuses launch; missing GitHub only blocks fallback. */
   strictMissing: boolean;
+  spaceCredentials: readonly SpaceCredentialView[] | null;
 }): string {
+  const providerName = CREDENTIAL_PROVIDER_LABEL[input.provider];
+  const space = parseLaunchSourceChoice(input.source);
+  if (space?.source === 'space') {
+    const rows = (input.spaceCredentials ?? []).filter((c) => c.provider === input.provider);
+    const row = space.spaceCredentialId
+      ? rows.find((c) => c.id === space.spaceCredentialId)
+      : rows.find((c) => c.isDefault);
+    return row
+      ? `${providerName} for this session: the space’s “${row.label}” · shared by the space, not your account`
+      : `${providerName} for this session: the space’s default · none is set, so launch will be refused`;
+  }
   const label = CREDENTIAL_PROVIDER_LABEL[input.provider];
   if (input.credentialStatusState === 'loading') return `Checking your ${label} identity…`;
   if (input.credentialStatusState === 'error') {
@@ -1234,4 +1331,22 @@ function profileSurfaceDescription(profile: LaunchProfile): string {
     surface === 'terminal' ? 'Terminal' : 'Chat').join(' + ');
   const initial = profile.initialContentSurface === 'terminal' ? 'Terminal' : 'Chat';
   return `${surfaces} · starts in ${initial}`;
+}
+
+/** A provider's source options. A disabled one keeps its reason in its text AND its title. */
+function SourceOptions({ options }: { options: readonly LaunchSourceOption[] }) {
+  return (
+    <>
+      {options.map((o) => (
+        <option key={o.value} value={o.value} disabled={o.disabled} title={o.reason ?? undefined}>
+          {o.text}
+        </option>
+      ))}
+    </>
+  );
+}
+
+function SourcesNote({ options, testId }: { options: readonly LaunchSourceOption[]; testId: string }) {
+  const note = disabledSourcesNote(options);
+  return note ? <span className="ls__rowsub" data-testid={testId}>{note}</span> : null;
 }

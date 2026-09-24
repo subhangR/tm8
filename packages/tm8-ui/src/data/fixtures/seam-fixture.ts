@@ -99,6 +99,9 @@ import {
   type PostMessageInput,
   type CredentialsStatusView,
   type CredentialsServiceKeysStatusView,
+  type CredentialsSpacePolicyView,
+  type NodeCredentialsStatusView,
+  type SpaceCredentialView,
   type ContentionReport,
   type ProjectBranchTopology,
   type ProjectFileBlame,
@@ -1158,6 +1161,65 @@ export function createFixtureSeam(): FixtureSeam {
   const serviceKeysState: CredentialsServiceKeysStatusView = {
     keys: [{ provider: 'typesafe', connected: false, keyHint: null, updatedAt: null, nodeFallback: false }],
     store: 'present',
+  };
+  /**
+   * SPACE credentials (SC-3). Scripted so every state a screen must say is
+   * reachable without a node: an anthropic group WITH a default (one the
+   * viewer created, one another member did); an openai group with a key but
+   * NO default — the D6a state a delete of the default leaves behind; and a
+   * github token whose `displayLogin` is the commit author (D10). The fixture
+   * viewer is `acct-ada`, the space owner, so every control is live here.
+   */
+  const spaceCredentialsState: SpaceCredentialView[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000a01', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
+      shape: 'api_key', label: 'Team Claude', isDefault: true, status: 'active',
+      createdByAccountId: 'acct-ada', displayLogin: null, keyHint: 'x9Qa',
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+    },
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000a02', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
+      shape: 'api_key', label: 'Research budget', isDefault: false, status: 'stale',
+      createdByAccountId: 'acct-other', displayLogin: null, keyHint: '7fPk',
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+    },
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000b01', spaceId: FIXTURE_SPACE_ID, provider: 'openai',
+      shape: 'api_key', label: 'Codex shared', isDefault: false, status: 'active',
+      createdByAccountId: null, displayLogin: null, keyHint: 'Zt2m',
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+    },
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000c01', spaceId: FIXTURE_SPACE_ID, provider: 'github',
+      shape: 'token', label: 'tm8-bot', isDefault: true, status: 'active',
+      createdByAccountId: 'acct-ada', displayLogin: 'tm8-bot', keyHint: 'k3Jd',
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+    },
+  ];
+  const spacePolicyState: CredentialsSpacePolicyView = {
+    spaceId: FIXTURE_SPACE_ID,
+    providers: [
+      { provider: 'anthropic', allowedSources: null },
+      { provider: 'openai', allowedSources: ['space'] },
+      { provider: 'github', allowedSources: null },
+    ],
+    node: [
+      { provider: 'anthropic', allowNode: null },
+      { provider: 'openai', allowNode: null },
+      { provider: 'github', allowNode: false },
+    ],
+  };
+  const nodeCredentialsState: NodeCredentialsStatusView = {
+    providers: [
+      { provider: 'anthropic', allowNode: null, envKeyPresent: true },
+      { provider: 'openai', allowNode: null, envKeyPresent: false },
+      { provider: 'github', allowNode: false, envKeyPresent: true },
+    ],
+  };
+  const spaceCredentialById = (id: string): SpaceCredentialView => {
+    const row = spaceCredentialsState.find((c) => c.id === id);
+    if (!row) throw new CollabError('not_found', `space credential ${id} not found`);
+    return row;
   };
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -5054,6 +5116,76 @@ export function createFixtureSeam(): FixtureSeam {
         entry.keyHint = null;
         entry.updatedAt = null;
         return { provider, revoked: true };
+      },
+
+      space: {
+        async list(spaceId) {
+          return { spaceId, credentials: clone(spaceCredentialsState.filter((c) => c.spaceId === spaceId)) };
+        },
+        async create(spaceId, input) {
+          const row: SpaceCredentialView = {
+            id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
+            spaceId,
+            provider: input.provider,
+            shape: input.shape,
+            label: input.label.trim(),
+            isDefault: !spaceCredentialsState.some((c) => c.provider === input.provider && c.isDefault),
+            status: 'active',
+            createdByAccountId: 'acct-ada',
+            displayLogin: input.provider === 'github' ? 'ada' : null,
+            keyHint: input.secret.trim().slice(-4),
+            createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+          };
+          spaceCredentialsState.push(row);
+          return clone(row);
+        },
+        async rekey(credentialId, secret) {
+          const row = spaceCredentialById(credentialId);
+          row.keyHint = secret.trim().slice(-4);
+          row.status = 'active';
+          row.updatedAt = tick();
+          return clone(row);
+        },
+        async rename(credentialId, label) {
+          const row = spaceCredentialById(credentialId);
+          row.label = label.trim();
+          return clone(row);
+        },
+        async setDefault(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          for (const c of spaceCredentialsState) if (c.provider === row.provider) c.isDefault = c.id === row.id;
+          return clone(row);
+        },
+        async remove(credentialId) {
+          const at = spaceCredentialsState.findIndex((c) => c.id === credentialId);
+          if (at >= 0) spaceCredentialsState.splice(at, 1);
+          // D6a: deleting the default promotes NOTHING.
+          return {
+            credentialId, revoked: at >= 0,
+            terminatedLoginSessionIds: [], terminatedAgentSessionIds: [], failures: [],
+          };
+        },
+        async policy(spaceId) {
+          return { ...clone(spacePolicyState), spaceId };
+        },
+        async setPolicy(spaceId, provider, allowedSources) {
+          const entry = spacePolicyState.providers.find((p) => p.provider === provider);
+          if (entry) entry.allowedSources = allowedSources ? [...allowedSources] : null;
+          return { spaceId, provider, allowedSources };
+        },
+      },
+
+      node: {
+        async status() {
+          return clone(nodeCredentialsState);
+        },
+        async setPolicy(provider, allowNode) {
+          const entry = nodeCredentialsState.providers.find((p) => p.provider === provider);
+          if (entry) entry.allowNode = allowNode;
+          const policy = spacePolicyState.node.find((p) => p.provider === provider);
+          if (policy) policy.allowNode = allowNode;
+          return { provider, allowNode };
+        },
       },
     },
 

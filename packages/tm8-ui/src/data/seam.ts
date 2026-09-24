@@ -129,6 +129,16 @@ import type {
   CredentialsLoginSessionStartResult,
   CredentialsStatusView,
   CredentialsServiceKeyDeleteResult,
+  CredentialPolicySource,
+  CredentialsSpaceCreateInput,
+  CredentialsSpaceDeleteResult,
+  CredentialsSpaceListView,
+  CredentialsSpacePolicySetResult,
+  CredentialsSpacePolicyView,
+  NodeCredentialPolicyEntry,
+  NodeCredentialsStatusView,
+  SpaceCredentialProviderName,
+  SpaceCredentialView,
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
@@ -1205,6 +1215,36 @@ export interface Seam {
     serviceKeys(): Promise<CredentialsServiceKeysStatusView>;
     saveServiceKey(provider: ServiceKeyProviderName, apiKey: string): Promise<ServiceKeyView>;
     removeServiceKey(provider: ServiceKeyProviderName): Promise<CredentialsServiceKeyDeleteResult>;
+    /**
+     * SPACE credentials (`credentials.space.*`, 206/SC-3) — credentials the
+     * SPACE owns, which every member may launch with (D3). Human-only like the
+     * rest of this block. Every answer is metadata: a secret goes OUT in a
+     * create or rekey body and never comes back (I5).
+     *
+     * Rights are the server's (D11: creator or space admin changes one; space
+     * admin sets policy). A refusal arrives as a `forbidden` CollabError BEFORE
+     * any vendor probe, so a caller renders its message, not a probe failure.
+     */
+    space: {
+      list(spaceId: SpaceId): Promise<CredentialsSpaceListView>;
+      create(spaceId: SpaceId, input: Omit<CredentialsSpaceCreateInput, 'clientMutationId'>): Promise<SpaceCredentialView>;
+      rekey(credentialId: string, secret: string): Promise<SpaceCredentialView>;
+      rename(credentialId: string, label: string): Promise<SpaceCredentialView>;
+      setDefault(credentialId: string): Promise<SpaceCredentialView>;
+      /** Revoke, then kill every live session on it whoever launched it (D7). */
+      remove(credentialId: string): Promise<CredentialsSpaceDeleteResult>;
+      policy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView>;
+      setPolicy(
+        spaceId: SpaceId,
+        provider: SpaceCredentialProviderName,
+        allowedSources: CredentialPolicySource[] | null,
+      ): Promise<CredentialsSpacePolicySetResult>;
+    };
+    /** The node's own fallback credentials (D9) — node admin only. */
+    node: {
+      status(): Promise<NodeCredentialsStatusView>;
+      setPolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
+    };
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

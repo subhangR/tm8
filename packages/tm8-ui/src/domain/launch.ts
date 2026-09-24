@@ -512,6 +512,8 @@ export interface LaunchConfig {
   accessMode: 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess' | null;
   /** Independent source selection per provider. An absent key means auto. */
   credentialSources?: NonNullable<ExecutionSpawnInput['credentialSources']> | null;
+  /** A pinned space credential per provider whose source is `space`; absent means its default. */
+  spaceCredentialIds?: NonNullable<ExecutionSpawnInput['spaceCredentialIds']> | null;
   /** Compatibility for cached configs created before provider splitting. */
   credentialSource?: NonNullable<ExecutionSpawnInput['credentialSource']> | null;
   mode: LaunchMode;
@@ -873,6 +875,9 @@ export function buildSpawnInput(args: {
   if (config.accessMode) input.accessMode = config.accessMode;
   if (config.credentialSources && Object.keys(config.credentialSources).length > 0) {
     input.credentialSources = { ...config.credentialSources };
+    if (config.spaceCredentialIds && Object.keys(config.spaceCredentialIds).length > 0) {
+      input.spaceCredentialIds = { ...config.spaceCredentialIds };
+    }
   } else if (config.credentialSource) {
     input.credentialSource = config.credentialSource;
   }
@@ -973,6 +978,69 @@ export interface ManifestDescription {
 }
 
 /**
+ * The credential facts (D8/D9): which source each provider ACTUALLY ran on,
+ * and — for a space source — which credential, by label.
+ *
+ * Reads `launch.effectiveCredentialSources` (what resolution chose) first and
+ * falls back to `launch.credentialSources` (what was asked) for a manifest
+ * written before resolution was recorded, saying "requested" so a request is
+ * never presented as an outcome. The manifest carries a space credential's ID
+ * only; the label comes from `spaceCredentialLabels` (the space's list), and a
+ * credential that is no longer listed — deleted, or never visible — says so
+ * rather than showing a bare id as if it were a name.
+ */
+export const LAUNCH_SOURCE_WORD: Record<LaunchCredentialSource, string> = {
+  member: 'yours',
+  space: 'space',
+  node: 'node',
+};
+
+const CREDENTIAL_FACT_PROVIDERS = ['anthropic', 'openai', 'github'] as const;
+const CREDENTIAL_FACT_NAME: Record<(typeof CREDENTIAL_FACT_PROVIDERS)[number], string> = {
+  anthropic: 'Claude',
+  openai: 'Codex',
+  github: 'GitHub',
+};
+
+export function launchCredentialFacts(
+  launch: Record<string, unknown> | null,
+  spaceCredentialLabels: ReadonlyMap<string, string> | null = null,
+): ManifestFact[] {
+  const effective = readObject(launch, 'effectiveCredentialSources');
+  const requested = readObject(launch, 'credentialSources');
+  const pinned = readObject(launch, 'spaceCredentialIds');
+  const facts: ManifestFact[] = [];
+  for (const provider of CREDENTIAL_FACT_PROVIDERS) {
+    const ran = readText(effective, provider);
+    const asked = readText(requested, provider);
+    const source = ran ?? asked;
+    if (source !== 'member' && source !== 'space' && source !== 'node') continue;
+    let value = LAUNCH_SOURCE_WORD[source];
+    if (source === 'space') {
+      const id = readText(pinned, provider);
+      if (id === null) {
+        value += ' ▸ credential not recorded';
+      } else if (spaceCredentialLabels === null) {
+        value += ` ▸ ${id}`;
+      } else {
+        const label = spaceCredentialLabels.get(id);
+        value += label !== undefined ? ` ▸ ${label}` : ` ▸ ${id} (no longer listed: deleted, or not visible to you)`;
+      }
+    }
+    if (ran === null) value += ' (requested; the resolved source was not recorded)';
+    facts.push({ label: `${CREDENTIAL_FACT_NAME[provider]} credential`, value, mono: false });
+  }
+  return facts;
+}
+
+/** The space credential ids a manifest names, so a host can look up their labels. */
+export function launchSpaceCredentialIds(manifest: Record<string, unknown> | null): string[] {
+  const pinned = readObject(readObject(manifest, 'launch'), 'spaceCredentialIds');
+  if (pinned === null) return [];
+  return Object.values(pinned).filter((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+/**
  * Describe a STORED manifest — the document a session was actually launched
  * with, read back out of the graph.
  *
@@ -991,6 +1059,7 @@ export interface ManifestDescription {
  */
 export function describeLaunchManifest(
   manifest: Record<string, unknown> | null,
+  spaceCredentialLabels: ReadonlyMap<string, string> | null = null,
 ): ManifestDescription {
   const agent = readObject(manifest, 'agent');
   const launch = readObject(manifest, 'launch');
@@ -1007,6 +1076,7 @@ export function describeLaunchManifest(
     { label: 'Permission mode', value: readText(launch, 'permissionMode'), mono: true },
     { label: 'Access mode', value: readText(launch, 'accessMode'), mono: true },
     { label: 'Reasoning effort', value: readText(launch, 'reasoningEffort'), mono: true },
+    ...launchCredentialFacts(launch, spaceCredentialLabels),
     {
       label: 'Command network',
       value: joinParts([readText(network, 'mode'), joinStrings(readArray(network, 'allowedHosts'))], ' · '),

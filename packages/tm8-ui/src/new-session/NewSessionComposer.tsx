@@ -149,7 +149,7 @@ export interface NewSessionComposerProps {
    * the row renders disabled with that reason rather than vanishing.
    */
   credentialProviderLabel: string | null;
-  /** `null` is Auto: mine if connected, else the node's. */
+  /** `null` is Auto: mine if connected, else the space default, else the node's (D4). */
   credential: LaunchCredentialSource | null;
   onCredentialChange(next: LaunchCredentialSource | null): void;
 
@@ -472,7 +472,7 @@ export function NewSessionComposer({
                 {sub === 'cred' ? (
                   <div className="nsx-menu__subsec">
                     {([
-                      { value: null, label: 'Auto · mine if connected, else the node’s' },
+                      { value: null, label: 'Auto · mine if connected, else the space’s, else the node’s' },
                       { value: 'member', label: 'Mine', hint: 'My credential · refuse if this provider is not connected' },
                       { value: 'node', label: 'Node’s', hint: 'Node credential · this server’s agent account' },
                     ] as const).map((option) => (
