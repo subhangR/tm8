@@ -21,7 +21,7 @@
  * card, this only fills it.
  */
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { BlueprintAssignee, BlueprintCard } from './blueprint-types';
+import { BLUEPRINT_ASSIGNEE_DOCK, type BlueprintAssignee, type BlueprintCard } from './blueprint-types';
 import { getKind } from '../domain';
 import { humanStatus, initials, statusTone, truncate, wrapText } from './presentation';
 
@@ -41,8 +41,6 @@ export interface BlueprintNodeProps {
   onPressAssignee?: ((key: string) => void) | undefined;
 }
 
-const AVATAR_R = 10;
-const MAX_AVATARS = 3;
 
 export function BlueprintNode({
   card,
@@ -66,6 +64,7 @@ export function BlueprintNode({
   const label = [
     `${card.kindLabel}: ${card.title}`,
     state,
+    card.hint ?? '',
     statusWords,
     card.assignees.length ? `assigned to ${card.assignees.map((a) => a.title).join(', ')}` : '',
     card.severity ? `${card.findings.length} ${card.findings.length === 1 ? 'issue' : 'issues'}` : '',
@@ -102,7 +101,10 @@ export function BlueprintNode({
      lines, a margin) — a title is the one thing on a card worth wrapping for.
      The hint takes the second line only when the title did not need it. */
   const titleLines = compact ? [truncate(card.title, titleChars)] : wrapText(card.title, titleChars, h >= 58 ? 2 : 1);
-  const hintRoom = !compact && titleLines.length === 1 && h >= 58;
+  /* The owner chips sit centred on the bottom edge, where a hint would run —
+     an assigned card gives the line to its owners (the hint stays in the
+     card's title attribute and the inspector). */
+  const hintRoom = !compact && titleLines.length === 1 && h >= 58 && card.assignees.length === 0;
 
   return (
     <g
@@ -239,10 +241,12 @@ function Silhouette({ kind, w, h }: { kind: Shape; w: number; h: number }) {
 }
 
 /**
- * Assignees DOCKED on the task's bottom edge, right-aligned and overlapping,
- * each ringed in the card colour so they read as attached rather than
- * floating. More than three collapse to "+N" — the full list is in the
- * card's label and the inspector.
+ * OWNERS DOCKED on the task's bottom edge — a chip per assignee, avatar plus
+ * short name, centred on the edge so it reads as attached to THIS card
+ * rather than floating near it. Two fit side by side on a task card; more
+ * collapse to the first plus "+N" (the full list is in the card's label and
+ * the inspector). Chip height is the layout's own dock constant, so the room
+ * the layout reserves below a task is exactly the room the chip takes.
  */
 function Avatars({
   assignees,
@@ -255,34 +259,58 @@ function Avatars({
   h: number;
   onPress?: ((key: string) => void) | undefined;
 }) {
-  const shown = assignees.slice(0, MAX_AVATARS);
+  const chipH = BLUEPRINT_ASSIGNEE_DOCK;
+  const r = chipH / 2 - 3;
+  const room = w - 24;
+  const gap = 4;
+  const moreW = 26;
+  const chipWidth = (name: string) => r * 2 + 10 + name.length * 6.1;
+  /* How many whole chips fit, names shortened to the first word if needed. */
+  const labelled = assignees.map((a) => ({ a, full: a.title, short: a.title.split(/\s+/)[0] ?? a.title }));
+  let shown = labelled.slice(0, 2).map((x) => ({ ...x, name: x.full }));
+  const total = () => shown.reduce((sum, x) => sum + chipWidth(x.name), 0) + gap * (shown.length - 1)
+    + (assignees.length > shown.length ? moreW + gap : 0);
+  if (total() > room) shown = shown.map((x) => ({ ...x, name: x.short }));
+  if (total() > room) shown = shown.slice(0, 1);
+  if (total() > room) {
+    const maxChars = Math.max(3, Math.floor((room - r * 2 - 10 - (assignees.length > 1 ? moreW + gap : 0)) / 6.1));
+    shown = [{ ...shown[0]!, name: truncate(shown[0]!.name, maxChars) }];
+  }
   const extra = assignees.length - shown.length;
-  const step = AVATAR_R * 2 - 5;
-  const right = w - 14;
+  const width = total();
+  let x = w / 2 - width / 2;
   return (
-    <g className="crf-avatars" transform={`translate(0 ${h})`}>
-      {extra > 0 ? (
-        <g className="crf-avatar crf-avatar--more" transform={`translate(${right} 0)`}>
-          <circle r={AVATAR_R} />
-          <text textAnchor="middle" dominantBaseline="central">{`+${extra}`}</text>
-        </g>
-      ) : null}
-      {shown.map((assignee, index) => {
-        const cx = right - (index + (extra > 0 ? 1 : 0)) * step;
+    <g className="crf-owners" transform={`translate(0 ${h})`}>
+      {shown.map(({ a, name }) => {
+        const cw = chipWidth(name);
+        const left = x;
+        x += cw + gap;
         return (
           <g
-            key={assignee.key}
-            className={['crf-avatar', ...(assignee.isSpec ? ['crf-avatar--spec'] : [])].join(' ')}
+            key={a.key}
+            className={['crf-chip', ...(a.isSpec ? ['crf-chip--spec'] : [])].join(' ')}
             data-testid="crf-avatar"
-            transform={`translate(${cx} 0)`}
-            onClick={onPress ? (event) => { event.stopPropagation(); onPress(assignee.key); } : undefined}
+            transform={`translate(${left} ${-chipH / 2})`}
+            onClick={onPress ? (event) => { event.stopPropagation(); onPress(a.key); } : undefined}
           >
-            <title>{`${assignee.title}${assignee.isSpec ? ' (spec)' : ''}`}</title>
-            <circle r={AVATAR_R} />
-            <text textAnchor="middle" dominantBaseline="central">{initials(assignee.title)}</text>
+            <title>{`${a.title}${a.isSpec ? ' (spec — to confirm)' : ''}`}</title>
+            <rect className="crf-chip__body" width={cw} height={chipH} rx={chipH / 2} />
+            <g transform={`translate(${chipH / 2} ${chipH / 2})`}>
+              <g className="crf-chip__face">
+                <circle r={r} />
+                <text textAnchor="middle" dominantBaseline="central">{initials(a.title)}</text>
+              </g>
+            </g>
+            <text className="crf-chip__name" x={r * 2 + 6} y={chipH / 2} dominantBaseline="central">{name}</text>
           </g>
         );
       })}
+      {extra > 0 ? (
+        <g className="crf-chip crf-chip--more" transform={`translate(${x} ${-chipH / 2})`}>
+          <rect className="crf-chip__body" width={moreW} height={chipH} rx={chipH / 2} />
+          <text x={moreW / 2} y={chipH / 2} textAnchor="middle" dominantBaseline="central">{`+${extra}`}</text>
+        </g>
+      ) : null}
     </g>
   );
 }

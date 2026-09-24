@@ -184,7 +184,9 @@ describe('Orchestrate pre-flight', () => {
     const post = vi.spyOn(seam.commands, 'postMessage');
     fireEvent.click(view.getByTestId('crf-orchestrate'));
     const pre = await waitFor(() => view.getByTestId('crf-preflight'));
-    expect(pre.textContent).toContain('Will create');
+    /* Tasks and docs are created; the teammate spec is the human's to confirm, by name. */
+    expect(pre.textContent).toContain('Will create 2 tasks, 1 doc.');
+    expect(within(pre).getByTestId('crf-preflight-confirm').textContent).toBe('1 teammate to confirm: Ada Writer');
     const approve = within(pre).getByTestId('crf-approve') as HTMLButtonElement;
     expect(approve.disabled).toBe(false);
     fireEvent.click(approve);

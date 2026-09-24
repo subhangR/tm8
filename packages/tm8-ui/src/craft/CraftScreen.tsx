@@ -31,7 +31,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { blueprintNodeRef, type EntityDetail, type EntityId, type EntitySummary, type SpaceId } from '@tm8/contract';
+import { blueprintNodeRef, orchestrationNodeKind, ORCHESTRATION_NODE_KINDS, type EntityDetail, type EntityId, type EntitySummary, type SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
@@ -578,14 +578,35 @@ export function CraftScreen({
     setComposerSeed((was) => ({ text, nonce: (was?.nonce ?? 0) + 1 }));
   }, []);
 
-  /* What Orchestrate would create — the specs, counted by kind. */
+  /**
+   * What Orchestrate would do with the specs. Only MATERIALIZABLE, rank-placed
+   * kinds are "created". Teammates (attach-placed) and kinds the orchestrator
+   * never creates (skills, people) are listed BY NAME as things the human
+   * confirms — the craft prompt says teammate specs are proposals, and a
+   * pre-flight that promised to create them would be the canvas contradicting
+   * the agent.
+   */
   const plan = useMemo(() => {
-    if (!view) return [] as [string, number][];
+    const create: [string, number][] = [];
+    const confirm: { label: string; names: string[] }[] = [];
+    if (!view) return { create, confirm };
     const counts = new Map<string, number>();
-    view.cards.filter((card) => card.isSpec).forEach((card) => counts.set(card.kindLabel, (counts.get(card.kindLabel) ?? 0) + 1));
-    const mates = view.attached.filter((node) => node.isSpec).length;
-    if (mates) counts.set('Teammate', (counts.get('Teammate') ?? 0) + mates);
-    return [...counts].map(([label, n]) => [n === 1 ? label : `${label}s`, n] as [string, number]);
+    const toConfirm = new Map<string, string[]>();
+    const note = (kind: string, label: string, title: string) => {
+      const def = orchestrationNodeKind(kind);
+      if (def && def.materializable && def.placement === 'rank') {
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      } else {
+        toConfirm.set(label, [...(toConfirm.get(label) ?? []), title]);
+      }
+    };
+    view.cards.filter((card) => card.isSpec).forEach((card) => note(card.kind, card.kindLabel, card.title));
+    view.attached.filter((node) => node.isSpec)
+      .forEach((node) => note(node.kind, orchestrationNodeKind(node.kind)?.label ?? 'Teammate', node.title));
+    const plural = (label: string, n: number) => (n === 1 ? label : orchestrationNodeKindPlural(label));
+    counts.forEach((n, label) => create.push([plural(label, n), n]));
+    toConfirm.forEach((names, label) => confirm.push({ label: plural(label, names.length), names }));
+    return { create, confirm };
   }, [view]);
 
   const isEntityGraph = view?.graphType === 'entity';
@@ -649,7 +670,8 @@ export function CraftScreen({
         />
         <OrchestrateButton
           findings={findings}
-          plan={plan}
+          plan={plan.create}
+          confirm={plan.confirm}
           disabledReason={orchestrateBlocked}
           approving={approving}
           onApprove={() => void approveOrchestrate()}
@@ -902,4 +924,9 @@ function DiffStrip({
       </button>
     </div>
   );
+}
+
+/** "Task" → "Tasks", from the vocabulary's own plural; unknown labels get an "s". */
+function orchestrationNodeKindPlural(label: string): string {
+  return ORCHESTRATION_NODE_KINDS.find((kind) => kind.label === label)?.plural ?? `${label}s`;
 }

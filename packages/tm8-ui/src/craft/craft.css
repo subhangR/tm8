@@ -610,20 +610,22 @@
   animation: crf-live-pulse 1.8s var(--pn-ease-out) infinite;
 }
 
-/* -- avatars (assignment is ATTACHMENT) ------------------------------------ */
-.crf-avatar circle {
-  fill: var(--pn-brand-soft);
-  stroke: var(--pn-card);
-  stroke-width: 2;
-}
+/* -- owner chips (assignment is ATTACHMENT) -------------------------------- */
+.crf-chip { cursor: pointer; }
+.crf-chip__body { fill: var(--pn-card); stroke: var(--pn-brand); stroke-width: 1.2; }
+.crf-chip__face circle { fill: var(--pn-brand); }
+.crf-chip__face text { font-size: 8px; font-weight: 800; fill: var(--pn-card); }
+.crf-chip__name { font-size: 10.5px; font-weight: 700; fill: var(--pn-ink); }
+.crf-chip:hover .crf-chip__body { fill: var(--pn-brand-soft); }
+.crf-chip--spec .crf-chip__body { stroke-dasharray: 3 2; }
+.crf-chip--spec .crf-chip__face circle { fill: var(--pn-brand-soft); stroke: var(--pn-brand); stroke-dasharray: 2 1.5; }
+.crf-chip--spec .crf-chip__face text { fill: var(--pn-brand); }
+.crf-chip--more .crf-chip__body { stroke: var(--pn-line-2); }
+.crf-chip--more text { font-size: 10px; font-weight: 700; fill: var(--pn-ink-2); }
 
-.crf-avatar { cursor: pointer; }
-.crf-avatar text { font-size: 8.5px; font-weight: 700; fill: var(--pn-brand); }
-.crf-avatar:hover circle { fill: var(--pn-brand); }
-.crf-avatar:hover text { fill: var(--pn-card); }
-.crf-avatar--spec circle { stroke-dasharray: 2 2; stroke: var(--pn-brand); stroke-width: 1; }
-.crf-avatar--more circle { fill: var(--pn-active); }
-.crf-avatar--more text { fill: var(--pn-ink-2); }
+/* Lane headers reuse the avatar mark. */
+.crf-avatar circle { fill: var(--pn-brand); }
+.crf-avatar text { font-size: 8px; font-weight: 800; fill: var(--pn-card); }
 
 /* -- edges: the ROLE picks the stroke --------------------------------------- */
 .crf-edge { transition: opacity var(--pn-dur-fast) var(--pn-ease-out); }
@@ -666,6 +668,10 @@
 .crf-viewport[data-lod='far'] .crf-edge__label,
 .crf-viewport[data-lod='far'] .crf-node__tag { display: none; }
 .crf-viewport[data-lod='far'] .crf-node__title { font-size: 15px; }
+/* Far out, an owner is at least a readable face: the name goes, the avatar grows. */
+.crf-viewport[data-lod='far'] .crf-chip__name,
+.crf-viewport[data-lod='far'] .crf-chip__body { display: none; }
+.crf-viewport[data-lod='far'] .crf-chip__face { transform: scale(1.8); transform-box: fill-box; transform-origin: center; }
 
 /* -- overlays --------------------------------------------------------------- */
 .crf-find {
@@ -748,6 +754,41 @@
   font-variant-numeric: tabular-nums;
 }
 .crf-nav__focus { border-right: 1px solid var(--pn-line); border-radius: var(--pn-r-sm) 0 0 var(--pn-r-sm); margin-right: 2px; }
+
+/* The intentional clip: a fade on the edge the plan continues past, and a
+   nudge that pans toward it. */
+.crf-more {
+  position: absolute;
+  top: 60px;
+  bottom: 56px;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  padding: 0 10px;
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  font-weight: 700;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.crf-more--right {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(to right, transparent, var(--pn-paper) 85%);
+}
+
+.crf-more--left {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(to left, transparent, var(--pn-paper) 85%);
+}
+
+.crf-more span[aria-hidden] { font-size: 18px; line-height: 1; }
+.crf-more:hover { color: var(--pn-brand); }
+.crf-more__word { writing-mode: vertical-rl; letter-spacing: 0.1em; text-transform: uppercase; font-size: var(--pn-fs-tick); }
 
 .crf-minimap {
   position: absolute;
@@ -995,6 +1036,9 @@
 /* == PRE-FLIGHT ============================================================= */
 .crf-pre__head { display: grid; gap: 2px; padding: 12px 14px 8px; border-bottom: 1px solid var(--pn-line); }
 .crf-pre__sum { font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.crf-pre__confirm { margin-top: 4px; font-size: var(--pn-fs-label); color: var(--pn-ink-2); }
+.crf-pre__confirm p { margin: 2px 0 0; }
+.crf-pre__confirm strong { color: var(--pn-wait); font-weight: 700; }
 .crf-pre__ok { margin: 0; padding: 14px; color: var(--pn-run); font-size: var(--pn-fs-sm); }
 .crf-pre__group { padding: 8px 10px 4px; }
 .crf-pre__h { margin: 0 0 6px; font-size: var(--pn-fs-tick); letter-spacing: 0.08em; text-transform: uppercase; color: var(--pn-ink-3); }
