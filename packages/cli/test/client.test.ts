@@ -8,6 +8,8 @@
  * 200" test and fail this one.
  */
 import { describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
 import { getOperation } from '@tm8/contract';
 import { Tm8Client, pathParamNames, responseMode } from '../src/client.js';
 import { ApiError, ProtocolError, StreamOperationError, TransportError, exitCodeFor } from '../src/errors.js';
@@ -191,6 +193,35 @@ describe('failure classification', () => {
     expect((err as TransportError).message).toContain('per-request deadline');
     expect((err as TransportError).message).not.toContain('is tm8-server running');
   });
+
+  it('keeps the deadline armed through the body: headers then a stalled body times out', async () => {
+    // A REAL socket, not a stub: `fetch` resolves on the headers, and the defect
+    // lived in the gap after that — the timer was cleared there and `res.text()`
+    // waited on a body that never finished, forever. Only a real server that
+    // sends headers and then stalls reaches that state.
+    const sockets = new Set<Socket>();
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"data":{"items":[');
+    });
+    server.on('connection', (s) => { sockets.add(s); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const stalled = new Tm8Client({ baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 300 });
+      const t0 = Date.now();
+      const err = await stalled
+        .invoke('events.poll', { params: { spaceId: '00000000-0000-7000-8000-0000000000a1' } })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TransportError);
+      expect(exitCodeFor(err)).toBe(7);
+      expect((err as TransportError).message).toContain('timed out after 300ms reading the response body');
+      expect(Date.now() - t0).toBeLessThan(5_000);
+    } finally {
+      for (const s of sockets) s.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 10_000);
 });
 
 describe('pathParamNames', () => {

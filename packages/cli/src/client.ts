@@ -410,6 +410,7 @@ export class Tm8Client {
         responseChars: 0,
         durationMs: Date.now() - startedMs,
       });
+      clearTimeout(timer);
       if (controller.signal.aborted) {
         throw new TransportError(
           `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
@@ -421,13 +422,40 @@ export class Tm8Client {
         `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
         err,
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     // A byte response is only drained as text when it FAILED; a success is
     // read as an ArrayBuffer by the caller so no blob is ever utf8-decoded.
-    const text = read === 'text' || res.status >= 400 ? await res.text() : '';
+    //
+    // The deadline stays armed THROUGH the body read. `fetch` resolves on the
+    // headers, so clearing the timer there left `res.text()` with no deadline at
+    // all: a node that sent its headers and then stalled mid-body held the
+    // process open forever — a 15s per-request deadline that never fired.
+    let text = '';
+    try {
+      if (read === 'text' || res.status >= 400) text = await res.text();
+    } catch (err) {
+      journal.noteCall({
+        operation: name,
+        method: op.method,
+        path: url.pathname,
+        baseUrl: this.baseUrl,
+        status: res.status,
+        requestChars,
+        responseChars: 0,
+        durationMs: Date.now() - startedMs,
+      });
+      if (controller.signal.aborted) {
+        throw new TransportError(
+          `${op.method} ${url.pathname} timed out after ${timeoutMs}ms reading the response body (per-request deadline)`,
+          err,
+        );
+      }
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new TransportError(`${op.method} ${url.pathname} failed reading the response body: ${reason}`, err);
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (res.status < 400) {
       if (cacheable && text !== '') {
