@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(190); // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3). MEASURED.
+    expect(server.appliedMigrations.length).toBe(191); // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
