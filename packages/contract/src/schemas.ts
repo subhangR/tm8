@@ -20,6 +20,7 @@ import {
   PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES,
   PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES,
   SHA256_HEX_RE,
+  SPAWN_SELECTION_GROUP_LIMIT,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
@@ -3164,10 +3165,31 @@ const SpaceCredentialIdsSchema = z.object({
   github: SpawnUuidSchema.optional(),
 }).strict();
 
-/** `selection` (design 01a0cb80 §5.2): the exact sets, bounded like `memoryIds` and the skill index. */
+const SelectionGroupIdsSchema = z.array(SpawnUuidSchema).max(SPAWN_SELECTION_GROUP_LIMIT);
+
+export const SPAWN_SELECTION_EMPTY_MESSAGE =
+  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, or omit selection for the defaults';
+
+/**
+ * `selection` (design 01a0d348 §5.1): every group optional — absent means
+ * defaults, present is the exact set — and at least one group present. One
+ * count ceiling per group (`SPAWN_SELECTION_GROUP_LIMIT`, §10 Q5.7).
+ */
 export const SpawnSelectionSchema = z.object({
-  memoryIds: z.array(SpawnUuidSchema).max(32),
-  skillIds: z.array(SpawnUuidSchema).max(128),
+  memoryIds: SelectionGroupIdsSchema.optional(),
+  skillIds: SelectionGroupIdsSchema.optional(),
+  referenceIds: SelectionGroupIdsSchema.optional(),
+}).strict().refine(
+  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined,
+  { message: SPAWN_SELECTION_EMPTY_MESSAGE },
+);
+
+const SelectionDefaultReasonSchema = z.enum(['jev-failed', 'jev-pending', 'not-asked', 'cli']);
+/** `selectionReasons`: a closed enum per group; untrusted, audit-only. */
+export const SpawnSelectionReasonsSchema = z.object({
+  memories: SelectionDefaultReasonSchema.optional(),
+  skills: SelectionDefaultReasonSchema.optional(),
+  references: SelectionDefaultReasonSchema.optional(),
 }).strict();
 
 const executionSpawnInputObject = z.object({
@@ -3195,6 +3217,7 @@ const executionSpawnInputObject = z.object({
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   selection: SpawnSelectionSchema.optional(),
+  selectionReasons: SpawnSelectionReasonsSchema.optional(),
   jevRunId: SpawnUuidSchema.optional(),
   harnessSurface: z.enum(['minimal', 'inherit']).optional(),
   plugins: z.array(z.string().trim().min(1).max(200)).max(64).optional(),
@@ -3215,6 +3238,21 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = executi
         message: SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE,
       });
     }
+    // A group is either selected or defaulted for a reason, never both.
+    const named: Record<string, boolean> = {
+      memories: input.selection?.memoryIds !== undefined,
+      skills: input.selection?.skillIds !== undefined,
+      references: input.selection?.referenceIds !== undefined,
+    };
+    for (const group of Object.keys(input.selectionReasons ?? {})) {
+      if (named[group]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['selectionReasons', group],
+          message: `selectionReasons.${group} explains a defaulted group, but selection names ${group}`,
+        });
+      }
+    }
   },
 );
 
@@ -3227,6 +3265,10 @@ export type SpawnSelectionShapeProof = [
   Assert<SameShape<
     NonNullable<z.infer<typeof executionSpawnInputObject>['selection']>,
     NonNullable<ExecutionSpawnInput['selection']>
+  >>,
+  Assert<SameShape<
+    NonNullable<z.infer<typeof executionSpawnInputObject>['selectionReasons']>,
+    NonNullable<ExecutionSpawnInput['selectionReasons']>
   >>,
   Assert<SameShape<
     z.infer<typeof executionSpawnInputObject>['jevRunId'],

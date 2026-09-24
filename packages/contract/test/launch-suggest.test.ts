@@ -11,6 +11,8 @@ import {
   LaunchSuggestInputSchema,
   LaunchSuggestResultSchema,
   OPERATIONS,
+  SPAWN_SELECTION_EMPTY_MESSAGE,
+  SPAWN_SELECTION_GROUP_LIMIT,
   SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE,
   type LaunchSuggestResult,
 } from '../src/index.js';
@@ -160,29 +162,61 @@ describe('ExecutionSpawnInputSchema — selection and jevRunId', () => {
     expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, memoryIds: [uuid(33)] }).success).toBe(true);
   });
 
-  it('bounds the selection: 32 memories, 128 skills', () => {
+  it('bounds every group at one ceiling, SPAWN_SELECTION_GROUP_LIMIT (240)', () => {
+    expect(SPAWN_SELECTION_GROUP_LIMIT).toBe(240);
     const ids = (n: number, from: number) => Array.from({ length: n }, (_v, i) => uuid(from + i));
+    const max = SPAWN_SELECTION_GROUP_LIMIT;
     expect(ExecutionSpawnInputSchema.safeParse({
-      ...spawn, selection: { memoryIds: ids(32, 100), skillIds: ids(128, 200) },
+      ...spawn, selection: { memoryIds: ids(max, 1000), skillIds: ids(max, 2000), referenceIds: ids(max, 3000) },
     }).success).toBe(true);
-    expect(ExecutionSpawnInputSchema.safeParse({
-      ...spawn, selection: { memoryIds: ids(33, 100), skillIds: [] },
-    }).success).toBe(false);
-    expect(ExecutionSpawnInputSchema.safeParse({
-      ...spawn, selection: { memoryIds: [], skillIds: ids(129, 200) },
-    }).success).toBe(false);
+    for (const group of ['memoryIds', 'skillIds', 'referenceIds']) {
+      expect(ExecutionSpawnInputSchema.safeParse({
+        ...spawn, selection: { [group]: ids(max + 1, 1000) },
+      }).success, group).toBe(false);
+    }
   });
 
-  it('is strict inside selection, requires both arrays, and wants uuids', () => {
+  it('makes every group optional, but refuses a selection naming none', () => {
+    for (const only of [{ memoryIds: [] }, { skillIds: [uuid(3)] }, { referenceIds: [uuid(4)] }]) {
+      expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, selection: only }).success, JSON.stringify(only)).toBe(true);
+    }
+    const empty = ExecutionSpawnInputSchema.safeParse({ ...spawn, selection: {} });
+    expect(empty.success).toBe(false);
+    expect(JSON.stringify(empty.error?.issues)).toContain(SPAWN_SELECTION_EMPTY_MESSAGE);
+  });
+
+  it('is strict inside selection and wants uuids', () => {
     expect(ExecutionSpawnInputSchema.safeParse({
       ...spawn, selection: { ...selection, teammateIds: [] },
     }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
-      ...spawn, selection: { memoryIds: [] },
-    }).success).toBe(false);
-    expect(ExecutionSpawnInputSchema.safeParse({
       ...spawn, selection: { memoryIds: ['m0'], skillIds: [] },
     }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...spawn, selection: { referenceIds: ['doc-1'] },
+    }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, jevRunId: 'run-1' }).success).toBe(false);
+  });
+
+  it('keeps refusing selection together with the additive memoryIds, whichever groups it names', () => {
+    const r = ExecutionSpawnInputSchema.safeParse({ ...spawn, memoryIds: [uuid(1)], selection: { skillIds: [] } });
+    expect(r.success).toBe(false);
+    expect(JSON.stringify(r.error?.issues)).toContain(SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE);
+  });
+
+  it('takes a closed, per-group selectionReasons enum, only for groups the selection omits', () => {
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...spawn, selectionReasons: { memories: 'cli', skills: 'cli', references: 'cli' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...spawn, selection: { memoryIds: [] }, selectionReasons: { skills: 'jev-failed', references: 'jev-pending' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, selectionReasons: { memories: 'because' } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, selectionReasons: { teammates: 'cli' } }).success).toBe(false);
+    const both = ExecutionSpawnInputSchema.safeParse({
+      ...spawn, selection: { skillIds: [] }, selectionReasons: { skills: 'not-asked' },
+    });
+    expect(both.success).toBe(false);
+    expect(JSON.stringify(both.error?.issues)).toContain('selectionReasons.skills');
   });
 });

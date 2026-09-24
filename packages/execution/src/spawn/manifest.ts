@@ -1911,7 +1911,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       context,
       skills: manifest.skills,
       skippedSkills: manifest.effectiveSkills?.skipped ?? [],
-      requestSelected: request.selection !== undefined,
+      ...(request.selection ? { requestSelection: request.selection } : {}),
+      ...(request.selectionReasons ? { selectionReasons: request.selectionReasons } : {}),
     }),
   };
   composePrompt(manifest, { sessionId, baseUrl });

@@ -538,6 +538,10 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // set for this session only — a spawn-time hand-off, never a graph write.
   const memoryIds = cmd.options.values('memory');
   if (memoryIds.length > 0) body.memoryIds = memoryIds;
+  // The CLI (and the dispatcher, which spawns through it) never selects: every
+  // group keeps its defaults, and the launch audit says why (design 01a0d348
+  // §5.2). Audit-only — it changes nothing the session loads.
+  body.selectionReasons = { memories: 'cli', skills: 'cli', references: 'cli' };
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.spawn', { mutationId }), () =>

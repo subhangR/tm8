@@ -4683,12 +4683,50 @@ export type LaunchSpaceCredentialIds = Partial<Record<SpaceCredentialProvider, E
  * - Every `execution.*` command is recorded in the command_ledger like any
  *   other mutation — the ledger is the execution audit trail.
  */
-/** `execution.spawn.selection` — the exact memory and skill entity ids a session carries. */
+/**
+ * One count ceiling per `SpawnSelection` group (design 01a0d348 §10 Q5.7).
+ * It equals Ask Jev's candidate pool (`CANDIDATE_LIMIT`, which is defined
+ * from this), because nothing outside that pool can be ticked on the launch
+ * sheet. It is a safety ceiling, not the selection rule: the byte budget is
+ * the real limit, so a selection that fits its budget is never refused by a
+ * count.
+ */
+export const SPAWN_SELECTION_GROUP_LIMIT = 240;
+
+/** The `SpawnSelection` groups: each one is either absent (defaults) or an exact set. */
+export type SpawnSelectionGroup = 'memories' | 'skills' | 'references';
+
+/**
+ * Why a launch left a selection group to its defaults (design 01a0d348 §5.2).
+ * `jev-failed` / `jev-pending`: Ask Jev's group failed or had not answered;
+ * `not-asked`: the launch sheet never asked; `cli`: `tm8 session spawn`,
+ * including the dispatcher. Client-supplied and audit-only: it is recorded in
+ * `manifest.context.groups` and never changes what the session loads.
+ */
+export type SpawnSelectionDefaultReason = 'jev-failed' | 'jev-pending' | 'not-asked' | 'cli';
+
+/** Entity kinds `SpawnSelection.referenceIds` may name. */
+export const SPAWN_SELECTION_REFERENCE_KINDS = ['doc', 'artifact', 'drawing', 'file', 'task'] as const;
+export type SpawnSelectionReferenceKind = (typeof SPAWN_SELECTION_REFERENCE_KINDS)[number];
+
+/**
+ * `execution.spawn.selection` — the exact sets a session carries (design
+ * 01a0d348 §5.1). Every group is optional: an ABSENT group means that group's
+ * edge-driven defaults, a PRESENT group is the exact set, and every default it
+ * leaves out is recorded as `not-selected`. At least one group is required.
+ * Each group holds at most `SPAWN_SELECTION_GROUP_LIMIT` ids. Selection never
+ * writes edges.
+ */
 export interface SpawnSelection {
-  /** Memory entities, same space. At most 32. */
-  memoryIds: EntityId[];
-  /** Skill entities, same space. At most 128. */
-  skillIds: EntityId[];
+  /** Memory entities, same space. Replaces the teammate's and tasks' `remembers` sets. */
+  memoryIds?: EntityId[];
+  /** Skill entities, same space. Replaces the equipped skills. */
+  skillIds?: EntityId[];
+  /**
+   * Docs, artifacts, drawings, files and tasks, same space. Replaces the spawn
+   * tasks' `attached_to` / `relates_to` references and file attachments.
+   */
+  referenceIds?: EntityId[];
 }
 
 /** A claude-code lane's harness surface — see `ExecutionSpawnInput.harnessSurface`. */
@@ -4752,17 +4790,26 @@ export interface ExecutionSpawnInput extends CommandContext {
    */
   memoryIds?: EntityId[];
   /**
-   * The EXACT memory and skill sets for this session, as ticked in the launch
-   * UI (design 01a0cb80 §5.2). When present it replaces the teammate's working
-   * set, the task's `remembers` set and the equipped skills; when absent the
-   * launch behaves exactly as it always has. A selected skill that is not
-   * equipped is loaded for this session only — no edges are written — and an
-   * equipped skill left unticked is audited as `not-selected`.
+   * The EXACT memory, skill and reference sets for this session, as ticked in
+   * the launch UI (design 01a0d348 §5.1). Each group it names replaces that
+   * group's defaults (the teammate's and tasks' `remembers` sets, the equipped
+   * skills, the tasks' linked references); a group it omits keeps its
+   * defaults; absent altogether, the launch behaves exactly as it always has.
+   * A selected entity that is not a default rides this session only — no
+   * edges are written — and a default left unticked is audited as
+   * `not-selected`.
    *
    * Refused together with `memoryIds` (`invalid_input`), so a spawn field has
    * only one meaning: `memoryIds` ADDS to the working set, `selection` IS it.
    */
   selection?: SpawnSelection;
+  /**
+   * Why each group this launch does NOT select was left to its defaults, for
+   * the `manifest.context.groups` audit (design 01a0d348 §5.2). Audit-only:
+   * it never changes what loads. A reason for a group `selection` names is
+   * refused (`invalid_input`). Absent groups record `no-selection`.
+   */
+  selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /**
    * The Ask Jev run (`launch.suggest` `runId`) that informed this launch.
    * After a successful spawn the server links `jev_runs.session_id` and writes
