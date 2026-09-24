@@ -7,7 +7,7 @@
  * findings pinned where the UI shows them.
  */
 import { describe, expect, it } from 'vitest';
-import { BLUEPRINT_CARD_SIZE, PAD, blueprintView } from './blueprint-model';
+import { BLUEPRINT_ASSIGNEE_DOCK, BLUEPRINT_CARD_SIZE, PAD, blueprintView } from './blueprint-model';
 
 const CARD_W = BLUEPRINT_CARD_SIZE['task']!.width;
 const CARD_H = BLUEPRINT_CARD_SIZE['task']!.height;
@@ -434,7 +434,7 @@ describe('blueprintView — regressions from drawing it', () => {
         const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges }, undefined, { mode, direction });
         const labels = view.lines.map((l) => l.labelBox).filter((b) => b !== null);
         view.cards.forEach((card) => {
-          const dock = card.assignees.length > 0 ? 10 : 0;
+          const dock = card.assignees.length > 0 ? BLUEPRINT_ASSIGNEE_DOCK / 2 : 0;
           labels.forEach((b) => {
             const hit = b!.x < card.x + card.width && card.x < b!.x + b!.width
               && b!.y < card.y + card.height + dock && card.y < b!.y + b!.height;
@@ -442,6 +442,26 @@ describe('blueprintView — regressions from drawing it', () => {
           });
         });
       }
+    }
+  });
+});
+
+describe('the owner-chip dock', () => {
+  it('reserves half the dock below every task with an owner, so the chip never touches the card below', () => {
+    const nodes = [
+      { id: 'tm', spec: { kind: 'team_member', title: 'Owner' } },
+      ...['a', 'b', 'c', 'd'].map((k) => ({ id: k, spec: { kind: 'task', title: k } })),
+    ];
+    const edges = [
+      ...['a', 'b', 'c', 'd'].map((k) => ({ src: k, dst: 'tm', type: 'assigned_to' })),
+      { src: 'b', dst: 'a', type: 'depends_on' }, { src: 'c', dst: 'a', type: 'depends_on' }, { src: 'd', dst: 'a', type: 'depends_on' },
+    ];
+    const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges });
+    const column = view.cards.filter((c) => c.rank === 1).sort((p, q) => p.y - q.y);
+    expect(column.length).toBe(3);
+    for (let i = 0; i + 1 < column.length; i += 1) {
+      const chipBottom = column[i]!.y + column[i]!.height + BLUEPRINT_ASSIGNEE_DOCK / 2;
+      expect(column[i + 1]!.y).toBeGreaterThan(chipBottom);
     }
   });
 });

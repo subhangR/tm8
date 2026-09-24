@@ -35,7 +35,7 @@ export const BLUEPRINT_DEFAULT_CARD: BlueprintSize = { width: 200, height: 64 };
  * that overhang below every task that has assignees (`card.height` is the
  * card alone).
  */
-export const BLUEPRINT_ASSIGNEE_DOCK = 20;
+export const BLUEPRINT_ASSIGNEE_DOCK = 24;
 
 /** Edge-label metrics `labelBox` is sized with — render labels exactly so. */
 export const BLUEPRINT_LABEL = { fontSize: 10, fontWeight: 500, charWidth: 5.8, padX: 6, height: 16 } as const;
