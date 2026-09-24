@@ -2856,6 +2856,125 @@
 /* A selected row is not a hovered row, so the backing has to follow it. */
 .cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }
 .cv2-root .lp__tile--selected:hover .lp__rowactions { background: var(--pn-hover); }
+
+/* --- .lp__hoverbar — the row verbs as a toolbar on the tile's top edge ------ */
+/* USER ASK 2026-09-24: the verbs no longer sit over the end of the title row
+   on hover; they float as a small toolbar on the tile's TOP EDGE, icons only,
+   with the button titles as tooltips. The title keeps its whole width under
+   the pointer, which is the row the user was trying to read.
+
+   DESKTOP WITH A MOUSE ONLY. `RowActionCluster` does not render the wrapper on
+   the phone shell at all, and everywhere else outside this media query it is
+   `display: contents` — so touch layouts, and every `__actions > *` rule that
+   sizes them, see exactly the DOM they always did.
+
+   HOW IT ESCAPES THE ROW. The three anatomy containers (`lp__rowactions`,
+   `pn-tt__actions`, `pn-st__actions`) dissolve to `display: contents`, so the
+   bar and the disclosure chevron both position off the row itself (`__main`,
+   `position: relative`, whose top IS the tile's top). The chevron takes over
+   the float the container used to have — right edge, centred, hover-revealed
+   on the container's own backing via `inherit` — and the bar sits above it.
+
+   THE TILE UNCLIPS ON HOVER. All three tiles are `overflow: hidden` for their
+   rounded corners, which would cut the bar in half. Nothing is clipped at rest,
+   and the bar only exists on hover, so hover is when the clip lifts.
+
+   NO ROOM ABOVE. `.lp__body` is the scroll box and clips anything above the
+   first tile, or the tile scrolled to the top. `placeHoverBar` (EntityListPanel)
+   measures that on pointer entry and sets `data-hoverbar="inside"`, which
+   tucks the bar into the row beside the chevron instead. */
+.cv2-root .lp__hoverbar { display: contents; }
+
+@media (hover: hover) and (pointer: fine) {
+  .cv2-root:not([data-shell='mobile']) {
+    /* The bar measures 28px tall in Chrome; it overlaps the
+       tile by 4px, so it rises 24px — `HOVERBAR_RISE_PX` in EntityListPanel. */
+    --lp-hoverbar-overlap: 4px;
+  }
+
+  .cv2-root:not([data-shell='mobile']) :is(.lp__rowactions, .pn-tt__actions, .pn-st__actions) {
+    display: contents;
+  }
+
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within) {
+    overflow: visible;
+  }
+
+  /* The disclosure chevron: the float the container used to carry. */
+  .cv2-root:not([data-shell='mobile']) :is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind) {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(3px, -50%);
+    transition:
+      opacity var(--pn-dur-base) var(--pn-ease-standard),
+      transform var(--pn-dur-base) var(--pn-ease-out);
+  }
+  /* The container's backing, which the three anatomies already vary by state
+     (hover / selected / details open), inherited through `display: contents`. */
+  .cv2-root:not([data-shell='mobile']) :is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind):not(:hover) {
+    background-color: inherit;
+  }
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within, [data-details='open'])
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) :is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind) {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+
+  /* The bar. */
+  .cv2-root:not([data-shell='mobile']) .lp__hoverbar {
+    position: absolute;
+    right: 6px;
+    bottom: calc(100% - var(--lp-hoverbar-overlap));
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 1px;
+    background: var(--pn-card);
+    border: 1px solid var(--pn-line-2);
+    border-radius: var(--pn-r-md);
+    box-shadow: var(--pn-sh-sm);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+      opacity var(--pn-dur-base) var(--pn-ease-standard),
+      transform var(--pn-dur-base) var(--pn-ease-out);
+  }
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within)
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+  /* No room above: inside the row, left of the chevron (6 + 22 + 4). */
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st)[data-hoverbar='inside']
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar {
+    top: 50%;
+    bottom: auto;
+    right: 32px;
+    transform: translate(3px, -50%);
+  }
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st)[data-hoverbar='inside']:is(:hover, :focus-within)
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar {
+    transform: translate(0, -50%);
+  }
+
+  /* Inside the bar the buttons are toolbar icons, not bordered chips: the bar
+     is the one border. Hover keeps the cluster's inverted chip. */
+  .cv2-root:not([data-shell='mobile']) .lp__hoverbar :is(.lp__rowaction, .hon-checking, .hon-disabled):not(:hover) {
+    background: transparent;
+    border-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__hoverbar { transition: none; }
+}
 /* 22px, the session button (`pn-st__btn`). 26 was sized for a row half again
    as tall; in a 29px row it fills the whole thing. */
 .cv2-root .lp__rowaction {
@@ -3894,7 +4013,7 @@
    `.lp__cluster` for exactly this "how the cluster READS lives here, once"
    reason. The label span in `--wide` is included and wants to be: it is text
    inside its own button, never a target of its own. */
-.cv2-root .lp__cluster > button > * { pointer-events: none; }
+.cv2-root :is(.lp__cluster, .lp__hoverbar) > button > * { pointer-events: none; }
 
 /* THE SHAPE, ENUMERATED — R17. "A control the gate grew to 44px whose glyph is
    a CENTRED CHILD ELEMENT." Growing the box is what creates the fault: at 16px

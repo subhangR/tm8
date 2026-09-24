@@ -703,8 +703,18 @@
    two 22px buttons plus the caret leave the title nothing, so Run yields — the
    details caret is the one control that must never disappear. */
 @container task-tile (max-width: 200px) {
-  .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind) {
+  .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind):not(.lp__hoverbar) {
     display: none;
+  }
+}
+/* Where the verbs sit in `.lp__hoverbar` (panels.css) but it is inert, the
+   first verb is one level down. Where the bar FLOATS it takes no title width,
+   so nothing yields and this does not apply. */
+@media not ((hover: hover) and (pointer: fine)) {
+  @container task-tile (max-width: 200px) {
+    .cv2-root .pn-tt__actions > .lp__hoverbar > :first-child {
+      display: none;
+    }
   }
 }
 .cv2-root .pn-tt .lq__profile {
