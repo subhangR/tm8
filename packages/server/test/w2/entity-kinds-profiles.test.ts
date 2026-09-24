@@ -365,6 +365,28 @@ describe('W2.G12 entity-kind/profile handlers', () => {
     ]);
   });
 
+  it('refuses at save a profile whose contextBudgets cannot fit the prompt (design 01a0d348 §10 Q5.6)', async () => {
+    const db = new FakeDb(async () => [], async () => PROFILE);
+    const registry = registryFor(db);
+    const over = { ...DRAFT, contextBudgets: { memories: 20_000, references: 8192 } };
+    for (const [op, body] of [
+      ['interactionProfiles.propose', { clientMutationId: 'cmid-over', spaceId: SPACE_ID, draft: over }],
+      ['interactionProfiles.updateDraft', { clientMutationId: 'cmid-over-2', expectedVersion: 1, draft: over }],
+    ] as const) {
+      await expect(registry.get(op)!(context(op, body))).rejects.toMatchObject({
+        code: 'invalid_input',
+        message: expect.stringContaining('bytes over the'),
+      });
+    }
+    expect(db.rpcCalls).toEqual([]);
+    // The defaults, set explicitly, fit beside the kernel + manifest baseline.
+    const fits = { ...DRAFT, contextBudgets: { memories: 12_288, references: 8192 }, contextFloors: { memories: 1.5 } };
+    await registry.get('interactionProfiles.propose')!(
+      context('interactionProfiles.propose', { clientMutationId: 'cmid-fits', spaceId: SPACE_ID, draft: fits }),
+    );
+    expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile']);
+  });
+
   it('takes Teammate authorship from the authenticated bearer context, not the strict DTO', async () => {
     const db = new FakeDb(async () => [], async (fn, args) => {
       expect(fn).toBe('propose_interaction_profile');

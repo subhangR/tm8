@@ -19,9 +19,11 @@ import {
   isCollabError,
   type CommandErrorCode,
   type EntityKindDef,
+  type InteractionProfileDraft,
   type OperationName,
 } from '@tm8/contract';
 import type { z } from 'zod';
+import { contextBudgetOverrun } from '@tm8/prompt';
 
 import type { OperationHandler } from '../../../http/types.js';
 import {
@@ -43,6 +45,20 @@ interface EntityKindRow {
   capabilities: unknown;
   created_by: string | null;
   created_at: string | Date;
+}
+
+/**
+ * §10 Q5.6: a profile whose `contextBudgets` cannot fit the prompt beside its
+ * frame baseline is refused at save, naming the overrun, so a budget never
+ * promises more than the prompt can hold.
+ */
+function assertContextBudgetsFit(draft: InteractionProfileDraft): void {
+  const overrun = contextBudgetOverrun(draft);
+  if (!overrun) return;
+  throw invalidInput(
+    `contextBudgets promise ${overrun.promised} bytes beside a ${overrun.baseline}-byte frame baseline ` +
+      `(kernel + manifest ceilings), ${overrun.over} bytes over the ${overrun.cap}-byte initial-context ceiling`,
+  );
 }
 
 function invalidInput(message: string): CollabError {
@@ -228,6 +244,7 @@ export class W2EntityKindsProfileService {
     const pathSpaceId = requireUuidParam(ctx, 'spaceId');
     const input = parseInput(ProposeInteractionProfileInputSchema, ctx.body, 'profile proposal input');
     if (input.spaceId !== pathSpaceId) throw invalidInput('body spaceId must match the route spaceId');
+    assertContextBudgetsFit(input.draft);
     const envelope = requestEnvelope(ctx);
     const raw = await guarded('interactionProfiles.propose', () => this.deps.db.rpc<unknown>(
       claimsFor(owner, ctx, envelope),
@@ -241,6 +258,7 @@ export class W2EntityKindsProfileService {
     const owner = await this.deps.owner();
     const profileId = requireUuidParam(ctx, 'profileId');
     const input = parseInput(UpdateInteractionProfileDraftInputSchema, ctx.body, 'profile draft update input');
+    assertContextBudgetsFit(input.draft);
     const envelope = requestEnvelope(ctx);
     const raw = await guarded('interactionProfiles.updateDraft', () => this.deps.db.rpc<unknown>(
       claimsFor(owner, ctx, envelope),

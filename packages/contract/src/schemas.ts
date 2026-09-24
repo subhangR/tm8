@@ -4217,6 +4217,22 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
   /* `<context_index>` on (design 01a0d348 §2). OPTIONAL: absent is off, and
      every earlier draft stays valid. Shipped dark (§10 Q2). */
   contextIndex: z.boolean().optional(),
+  /* Per-kind prompt budgets and Jev score floors (design 01a0d348 §10 Q5).
+     OPTIONAL, every key too: an absent key takes the node default. A budget
+     past the combined 32 KiB ceiling can never be honoured, so it is refused
+     here; the fit against the frame baseline is checked at save. */
+  contextBudgets: z.object({
+    memories: z.number().int().min(0).max(32_768).optional(),
+    skills: z.number().int().min(0).max(32_768).optional(),
+    references: z.number().int().min(0).max(32_768).optional(),
+    teammates: z.number().int().min(0).max(32_768).optional(),
+  }).strict().optional(),
+  contextFloors: z.object({
+    memories: z.number().min(0).max(3).optional(),
+    skills: z.number().min(0).max(3).optional(),
+    references: z.number().min(0).max(3).optional(),
+    teammates: z.number().min(0).max(3).optional(),
+  }).strict().optional(),
 }).strict();
 
 export const ProposeInteractionProfileInputSchema: z.ZodType<ProposeInteractionProfileInput> = z.object({

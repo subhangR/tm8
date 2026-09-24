@@ -1210,12 +1210,19 @@ export class SpawnService {
    * RLS after the context load (so a spawn's refusals keep their order). A
    * graph without the read renders the index from the loader's own rows.
    */
-  private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext): Promise<void> {
-    if (!this.graph.loadContextHeaders) return;
-    context.headers = await this.graph.loadContextHeaders(auth, {
-      spaceId: context.spaceId,
-      ids: contextHeaderIds(context),
-    });
+  private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext, jevRunId?: string): Promise<void> {
+    if (this.graph.loadContextHeaders) {
+      context.headers = await this.graph.loadContextHeaders(auth, {
+        spaceId: context.spaceId,
+        ids: contextHeaderIds(context),
+      });
+    }
+    // The launch's Jev run ranks its memories for the collapse (§10 Q1).
+    const memoryIds = context.teamMember.memoryIds ?? [];
+    if (jevRunId && memoryIds.length > 0 && this.graph.loadMemoryScores) {
+      const scores = await this.graph.loadMemoryScores(auth, { spaceId: context.spaceId, jevRunId, memoryIds });
+      if (scores.length > 0) context.memoryScores = scores;
+    }
   }
 
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
@@ -1300,7 +1307,7 @@ export class SpawnService {
     // the pinned profile turns it on, and only then are its headers read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
-    if (contextIndex) await this.loadIndexHeaders(auth, context);
+    if (contextIndex) await this.loadIndexHeaders(auth, context, request.jevRunId);
 
     const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,

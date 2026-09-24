@@ -6625,6 +6625,10 @@ export interface InteractionProfileDraft {
       (design 01a0d348 §2; shipped dark, §10 Q2). Absent or false: off.
       `TM8_CONTEXT_INDEX` on the node outranks it either way. */
   contextIndex?: boolean;
+  /** Per-kind prompt byte budgets (§10 Q5); absent keys take the node default. */
+  contextBudgets?: import('./context-budgets.js').ContextBudgets;
+  /** Per-kind Jev score floors for the budget fill (§10 Q5; applied by Ask Jev, not spawn). */
+  contextFloors?: import('./context-budgets.js').ContextFloors;
 }
 
 export type InteractionProfileStatus = 'draft' | 'active' | 'retired';

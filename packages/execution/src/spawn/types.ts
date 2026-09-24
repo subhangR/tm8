@@ -515,6 +515,13 @@ export interface SpawnContext {
    * a skill's description).
    */
   headers?: SelectionHeader[];
+  /**
+   * Jev's scores for the injected memories, from the launch's run, when the
+   * run ranked memories (`GraphPort.loadMemoryScores`). `critical` is Jev's
+   * own threshold (`CRITICAL_SCORE`), decided server-side so there is one copy
+   * of it. Absent: no rank.
+   */
+  memoryScores?: { entityId: string; score: number; critical: boolean }[];
 }
 
 export interface SpawnContextAudit {
@@ -566,6 +573,14 @@ export interface ContextGroupAudit {
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
   legacyDropped?: number;
+  /**
+   * Memories only, when some collapsed into the index (§10 Q1): `jev` when
+   * the launch's Jev run ranked them (lowest score first), `none` when it did
+   * not, and then `collapseOrder` names the stated order used instead — so a
+   * collapse is never read as a Jev judgement.
+   */
+  rank?: 'jev' | 'none';
+  collapseOrder?: 'teammate>task>requested';
 }
 
 export interface ContextEntryRecord {
@@ -634,6 +649,13 @@ export interface ManifestContext {
    * Absent: the launch rendered today's `<skills>` block.
    */
   index?: ContextIndexRecord;
+  /**
+   * Byte budgets in force and their use, when the launch rendered
+   * `<context_index>`. `memoryInjection.borrowed` is how far critical
+   * memories, which never collapse, ran past the cap into the combined
+   * ceiling (§10 Q1 rule 2) — so the sub-cap is never exceeded silently.
+   */
+  budgets?: { memoryInjection: { cap: number; used: number; borrowed: number } };
 }
 
 /** `manifest.context.index`. */
@@ -647,6 +669,8 @@ export interface ContextIndexRecord {
    * the groups that share each; skills take what remains.
    */
   caps: { groups: string[]; cap: number }[];
+  /** `interactionProfile` `contextBudgets` keys that replaced a node default. */
+  profileBudgets?: string[];
 }
 
 /** `manifest.launch.harness` (design 01a0d348 §3.6). */
@@ -866,6 +890,16 @@ export interface GraphPort {
    * Optional so a graph without it renders the index from loader rows.
    */
   loadContextHeaders?(auth: GraphAuth, input: { spaceId: string; ids: string[] }): Promise<SelectionHeader[]>;
+  /**
+   * Jev's scores for `memoryIds` from the launch's Ask Jev run
+   * (`jev_runs.suggestions.memories`), read under the caller's RLS, with
+   * `critical` decided by Jev's own threshold. Empty when the run is
+   * unreadable or ranked no memories. Optional: without it, no rank.
+   */
+  loadMemoryScores?(
+    auth: GraphAuth,
+    input: { spaceId: string; jevRunId: string; memoryIds: string[] },
+  ): Promise<{ entityId: string; score: number; critical: boolean }[]>;
   /** `public.execution_spawn` — work_session row + `working_on` edges, one tx. */
   createWorkSession(auth: GraphAuth, input: CreateWorkSessionInput): Promise<CreateWorkSessionResult>;
   /** The project read behind a vanilla terminal. See {@link ShellSessionContext}. */

@@ -811,6 +811,7 @@ const BUDGET_LABELS: Record<BudgetName, string> = {
   incomingMessageInjection: 'One incoming-message injection',
   referenceIndex: 'Context index: references (and a worker\'s linked teammates), inside the combined ceiling',
   rosterIndex: 'Context index: a dispatcher\'s teammate roster, inside the combined ceiling',
+  memoryInjection: 'Memories injected whole; past it the lowest-ranked collapse into the context index',
 };
 
 const BUDGET_ENTRY: PromptEntry = {

@@ -4,6 +4,8 @@ import {
   clipIndexText,
   composePrompt,
   CONTEXT_INDEX_INSTRUCTION,
+  contextBudgetBaseline,
+  contextBudgetOverrun,
   contextEntryBytes,
   contextIndexNames,
   INDEX_DERIVED_HEADER_CHARS,
@@ -222,5 +224,20 @@ describe('I5a follow-ups: declared clip, names the index carries', () => {
     expect(CONTEXT_INDEX_INSTRUCTION).toContain('clipped names header fields shown cut short, so load the entry');
     // `omitted` also counts links past the launch's read (I5a follow-up b), not only the budget's drops.
     expect(CONTEXT_INDEX_INSTRUCTION).toContain('omitted count is entries left out, for the budget or past the launch\'s read');
+  });
+});
+
+describe('profile budgets fit the prompt (§10 Q5.6)', () => {
+  const policy = { kernelMaxBytes: 6144, manifestMaxBytes: 4096, initialContextMaxBytes: 32_768 };
+  it('uses the kernel + manifest ceilings as the baseline', () => {
+    expect(contextBudgetBaseline(policy)).toBe(10_240);
+  });
+  it('passes the node defaults and a profile that sets none; refuses an overrun, naming it', () => {
+    expect(contextBudgetOverrun({ promptPolicy: policy })).toBeNull();
+    expect(contextBudgetOverrun({ promptPolicy: policy, contextBudgets: {} })).toBeNull();
+    expect(contextBudgetOverrun({ promptPolicy: policy, contextBudgets: { skills: 4096 } })).toEqual({
+      baseline: 10_240, promised: 12_288 + 8192 + 4096, cap: 32_768, over: 10_240 + 24_576 - 32_768,
+    });
+    expect(contextBudgetOverrun({ promptPolicy: { ...policy, initialContextMaxBytes: 16_384 }, contextBudgets: {} })).not.toBeNull();
   });
 });
