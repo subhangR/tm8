@@ -13,9 +13,10 @@ import type {
   ConfigValue,
   SpaceConfigsView,
 } from '@tm8/contract';
-import { asHarnessSurface, asReadHints, memberLaunchPreferences } from '@tm8/execution';
+import { asHarnessSurface, asPermissionMode, asReadHints, memberLaunchPreferences } from '@tm8/execution';
 
 import type { DbClaims, Querier } from '../db/types.js';
+import { definedAt } from './locate.js';
 import {
   CLI_ENV,
   CODE_CONSTANTS,
@@ -37,6 +38,11 @@ export interface ConfigsCaller {
 
 export interface ConfigsDb {
   tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T>;
+}
+
+/** A dotted knob name is located by its last segment (`feedPolicy.pageSize` → `pageSize`). */
+export function locatorName(name: string): string {
+  return name.split('.').pop()!;
 }
 
 /** Text for any registry value — strings as-is, everything else as JSON. */
@@ -62,7 +68,7 @@ export function nodeKnobs(env: NodeJS.ProcessEnv): ConfigKnobView[] {
       value,
       source: set ? 'env' : 'default',
       default: knob.default,
-      definedAt: knob.definedAt,
+      definedAt: definedAt(knob.definedIn, knob.name),
       change: 'env',
     };
   });
@@ -78,7 +84,7 @@ export function cliKnobs(): ConfigKnobView[] {
       : { kind: 'unobservable', reason: 'read by the tm8 CLI in your own shell, not by the server' },
     source: 'env',
     default: knob.default,
-    definedAt: knob.definedAt,
+    definedAt: definedAt(knob.definedIn, knob.name),
     change: 'env',
   }));
 }
@@ -91,7 +97,7 @@ export function codeKnobs(): ConfigKnobView[] {
     value: { kind: 'value', text: valueText(c.read()) },
     source: 'code',
     default: null,
-    definedAt: c.definedAt,
+    definedAt: definedAt(c.definedIn, c.name),
     change: 'code',
   }));
 }
@@ -127,7 +133,9 @@ export function teammateSubject(
   const envOverride: Record<string, (raw: string | undefined) => unknown> = {
     TM8_HARNESS_SURFACE: (raw) => asHarnessSurface(raw),
     TM8_READ_HINTS: (raw) => asReadHints(raw),
-    TM8_PERMISSION_MODE: (raw) => raw?.trim() || null,
+    // The spawn path's own parser: an invalid value is discarded there, so it
+    // must not be reported here as the active one.
+    TM8_PERMISSION_MODE: (raw) => asPermissionMode(raw?.trim()),
   };
   return {
     id: row.entity_id,
@@ -149,7 +157,7 @@ export function teammateSubject(
         value,
         source,
         default: knob.default,
-        definedAt: knob.definedAt,
+        definedAt: definedAt(knob.definedIn, locatorName(knob.name), knob.anchor),
         change: source === 'env' ? 'env' : knob.change,
       };
     }),
@@ -187,7 +195,7 @@ export function profileSubject(row: ProfileRow): ConfigSubjectView {
         value: set ? { kind: 'value', text: valueText(raw) } : { kind: 'unset' },
         source: set && valueText(raw) !== knob.default ? 'profile' : 'default',
         default: knob.default,
-        definedAt: knob.definedAt,
+        definedAt: definedAt(knob.definedIn, locatorName(knob.name), knob.anchor),
         change: knob.change,
       };
     }),

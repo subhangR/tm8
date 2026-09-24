@@ -1,9 +1,10 @@
 /**
- * The config registry's three promises: every `definedAt` points at the line
- * that defines the knob, every `env.TM8_*` read in a package source is listed,
- * and no secret value ever reaches the serialized answer.
+ * The config registry's promises: every knob resolves, from source, to a line
+ * that names it; every env read, persona launch key, policy constant and
+ * profile field is listed; and no secret value reaches the serialized answer.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -23,24 +24,13 @@ import {
   PROFILE_KNOBS,
   TEAMMATE_KNOBS,
 } from '../../src/configs/registry.js';
-import { codeKnobs } from '../../src/configs/service.js';
+import { definedAt, locateLine, REPO_ROOT } from '../../src/configs/locate.js';
+import { codeKnobs, locatorName } from '../../src/configs/service.js';
 import { ConfigsService, NODE_CONFIG_HIDDEN, type ConfigsDb } from '../../src/configs/service.js';
 import type { DbClaims } from '../../src/db/types.js';
 
 const REPO = resolve(__dirname, '../../../..');
 const SPACE = '00000000-0000-4000-8000-000000000001';
-
-function lineAt(definedAt: string): string {
-  const [file, line] = definedAt.split(':');
-  const lines = readFileSync(join(REPO, file!), 'utf8').split('\n');
-  return lines[Number(line) - 1] ?? '';
-}
-
-/** The token the defining line must contain. */
-function anchorOf(name: string): string {
-  if (name.startsWith('capabilities.launch.')) return 'memberLaunchPreferences';
-  return name.split('.').pop()!;
-}
 
 describe('config registry', () => {
   const all = [
@@ -51,8 +41,31 @@ describe('config registry', () => {
     ...PROFILE_KNOBS,
   ];
 
-  it.each(all.map((k) => [k.name, k.definedAt]))('%s is defined at %s', (name, definedAt) => {
-    expect(lineAt(definedAt)).toContain(anchorOf(name));
+  it('resolves the repository root the locator reads from', () => {
+    expect(REPO_ROOT).toBe(REPO);
+  });
+
+  // No line is stored anywhere: an edit above a knob moves the answer with it
+  // and breaks nothing. What must hold is that the knob still RESOLVES, to a
+  // line that names it (or its explicit anchor, for a name that cannot).
+  it.each(all.map((k) => [k.name, k.definedIn, 'anchor' in k ? k.anchor : undefined] as const))(
+    '%s resolves in %s',
+    (name, file, anchor) => {
+      const line = locateLine(file, locatorName(name), anchor);
+      expect(line, `${name} not found in ${file}`).not.toBeNull();
+      const text = readFileSync(join(REPO, file), 'utf8').split('\n')[line! - 1]!;
+      expect(text).toContain(anchor ?? locatorName(name));
+    },
+  );
+
+  it('follows a knob when lines are inserted above it, and falls back to the file alone', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tm8-locate-'));
+    mkdirSync(join(root, 'pkg'));
+    writeFileSync(join(root, 'pkg/a.ts'), '// a comment naming TM8_X\nconst port = env.TM8_X;\n');
+    expect(definedAt('pkg/a.ts', 'TM8_X', undefined, root)).toBe('pkg/a.ts:2');
+    writeFileSync(join(root, 'pkg/b.ts'), '\n\n\n// TM8_X\nconst port = env.TM8_X;\n');
+    expect(definedAt('pkg/b.ts', 'TM8_X', undefined, root)).toBe('pkg/b.ts:5');
+    expect(definedAt('pkg/missing.ts', 'TM8_X', undefined, root)).toBe('pkg/missing.ts');
   });
 
   it('names each env knob once', () => {
@@ -175,6 +188,11 @@ describe('spaces.configs redaction', () => {
     expect(byName.get('TM8_LIVEKIT_API_SECRET')!.value).toEqual({ kind: 'secret', present: false });
     expect(byName.get('TM8_DB_POOL_MAX')).toMatchObject({ value: { kind: 'value', text: '16' }, source: 'env' });
     expect(byName.get('TM8_PORT')).toMatchObject({ value: { kind: 'unset' }, source: 'default', default: '4610' });
+    // The line is resolved from source and rendered file:line.
+    expect(byName.get('TM8_DB_POOL_MAX')!.definedAt).toMatch(/^packages\/server\/src\/http\/config\.ts:\d+$/);
+    // A wrapper command or a registry URL can carry a token.
+    expect(byName.get('TM8_AGENT_CMD')!.value).toEqual({ kind: 'secret', present: false });
+    expect(byName.get('TM8_CONTAINER_IMAGE_REGISTRY')!.value).toEqual({ kind: 'secret', present: false });
     // Node env outranks the persona, as the spawn path does.
     const surface = view.teammates[0]!.knobs.find((k) => k.name === 'capabilities.launch.harnessSurface')!;
     expect(surface).toMatchObject({ value: { kind: 'value', text: 'inherit' }, source: 'env' });
@@ -195,6 +213,14 @@ describe('spaces.configs redaction', () => {
       expect(surface).toMatchObject({ value: { kind: 'value', text: 'minimal' }, source: 'persona' });
       expect(view.code.length).toBe(CODE_CONSTANTS.length);
     }
+  });
+
+  it('does not report an env override the spawn path would discard', async () => {
+    const view = await new ConfigsService(fakeDb({ teammates: [{ ...teammate, permission_mode: 'plan' }] }), {
+      TM8_PERMISSION_MODE: 'not-a-mode',
+    }).read({ claims: ADMIN, authKind: 'browser' }, SPACE);
+    const mode = view.teammates[0]!.knobs.find((k) => k.name === 'permission_mode')!;
+    expect(mode).toMatchObject({ value: { kind: 'value', text: 'plan' }, source: 'persona' });
   });
 
   it('never reports a CLI env value', async () => {

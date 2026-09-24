@@ -18,6 +18,7 @@ export {
   codexLoopbackConfigArgs,
   composeEnv,
   composeManifest,
+  asPermissionMode,
   memberLaunchPreferences,
   echoAgentPath,
   resolveLaunchConfig,

@@ -104,6 +104,10 @@ export function ConfigsSection({ heading, load }: ConfigsSectionProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // A new reader starts from nothing: neither the last reader's answer nor
+    // its refusal may be drawn as this one's.
+    setView(null);
+    setError(null);
     if (!load) return;
     let live = true;
     load().then(

@@ -189,7 +189,7 @@ export function agentToolForModel(model: string | null | undefined): string | nu
   return null;
 }
 
-function asPermissionMode(value: string | null | undefined): PermissionMode | null {
+export function asPermissionMode(value: string | null | undefined): PermissionMode | null {
   if (!value) return null;
   return (PERMISSION_MODES as readonly string[]).includes(value) ? (value as PermissionMode) : null;
 }
