@@ -161,6 +161,9 @@ beforeAll(async () => {
       terminate: (id) => { killed.push(id); return 'killed'; },
       hasLiveTerminal: () => true,
     },
+    agentSessions: {
+      containCredentialSession: async (id) => { killed.push(id); return { outcome: 'killed', recorded: true }; },
+    },
     removeLoginHome: async (home) => { removedHomes.push(home); },
     env: {},
   });
@@ -305,6 +308,9 @@ describe('t3-9: the member Disconnect leaves space-credential work alone (A5)', 
       terminals: {
         terminate: (id) => { killed.push(id); return 'killed'; },
         hasLiveTerminal: () => true,
+      },
+      agentSessions: {
+        containCredentialSession: async (id) => { killed.push(id); return { outcome: 'killed', recorded: true }; },
       },
       dataDir,
       removeCredentialFiles: async () => undefined,

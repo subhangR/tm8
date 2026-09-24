@@ -338,6 +338,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const credentials = execution
     ? {
         launcher: new CredentialSessionLauncher({ pty: execution.pty }),
+        agentSessions: execution.spawnService,
         dataDir,
         ...(opts.spaceCredentialProbe ? { probeSpaceCredential: opts.spaceCredentialProbe } : {}),
       }

@@ -96,6 +96,7 @@ import {
 } from '../../services/w2/credential-sessions.js';
 import { W2CredentialCatalogService } from '../../services/w2/credential-catalog.js';
 import { DbSpaceCredentialStore } from '../../../credentials/space-credential-store.js';
+import type { AgentSessionContainmentPort } from '../../../credentials/agent-session-containment.js';
 import {
   createVendorProbe,
   type SpaceCredentialProbe,
@@ -235,6 +236,12 @@ function serviceKeyProviderParam(ctx: RequestContext): ServiceKeyProviderName {
 export interface CredentialHandlerDeps {
   /** Starts the login PTY. Built in the composition root; see `facade/index.ts`. */
   launcher: W2CredentialSessionsServiceLauncher;
+  /**
+   * Stops an AGENT session a credential containment takes away (the member
+   * Disconnect, SC-3's delete) and records its ending: the runtime's
+   * `SpawnService`. Login terminals stay on `launcher`.
+   */
+  agentSessions: AgentSessionContainmentPort;
   /** Node data root; the per-identity credential home hangs off it. */
   dataDir: string;
   /**
@@ -307,6 +314,7 @@ export function registerCredentialHandlers(
   const catalog = new W2CredentialCatalogService({
     db: deps.db,
     terminals: credentials.launcher,
+    agentSessions: credentials.agentSessions,
     dataDir: credentials.dataDir,
     revokeGitCredential: ({ principal }) => gitHubStore.delete(principal.claims),
   });
@@ -414,6 +422,7 @@ export function registerCredentialHandlers(
     // stamped — and its home removed under the promote lock (SC-4).
     closeLogin: (claims, workSessionId) => sessions.closeSpaceLogin(claims, workSessionId),
     removeLoginHome: (home) => spaceHomes.remove(home),
+    agentSessions: credentials.agentSessions,
     env,
   });
   const claimsOf = async (ctx: RequestContext) => (await principalFor(deps, ctx)).claims;

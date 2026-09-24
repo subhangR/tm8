@@ -34,6 +34,10 @@ import {
   type SpaceCredential,
   type SpaceCredentialHomeKey,
 } from '../../../credentials/space-credential-store.js';
+import {
+  containmentFailureOf,
+  type AgentSessionContainmentPort,
+} from '../../../credentials/agent-session-containment.js';
 import type { CredentialTerminalPort } from './credential-catalog.js';
 
 /** The node environment variable whose presence is the node fallback (D9). */
@@ -63,8 +67,10 @@ export interface SpaceCredentialCatalogOptions {
   db: Pick<Db, 'query'>;
   store: SpaceCredentialStorePort;
   probe: SpaceCredentialProbe;
-  /** Kills a login terminal or an agent session's PTY on this node. */
+  /** Kills a login terminal's PTY on this node. */
   terminals: CredentialTerminalPort;
+  /** Kills an agent session on this node and records its ending. */
+  agentSessions: AgentSessionContainmentPort;
   /**
    * Remove a login credential's file home (design §3). SC-4 owns the space
    * home, so the default does nothing; an api_key/token has no file and its
@@ -87,6 +93,7 @@ export class SpaceCredentialCatalogService {
   private readonly store: SpaceCredentialStorePort;
   private readonly probe: SpaceCredentialProbe;
   private readonly terminals: CredentialTerminalPort;
+  private readonly agentSessions: AgentSessionContainmentPort;
   private readonly removeLoginHome: (home: SpaceCredentialHomeKey) => Promise<void>;
   private readonly closeLogin: SpaceCredentialCatalogOptions['closeLogin'] | null;
   private readonly env: Readonly<Record<string, string | undefined>>;
@@ -96,6 +103,7 @@ export class SpaceCredentialCatalogService {
     this.store = options.store;
     this.probe = options.probe;
     this.terminals = options.terminals;
+    this.agentSessions = options.agentSessions;
     this.removeLoginHome = options.removeLoginHome ?? (async () => undefined);
     this.closeLogin = options.closeLogin ?? null;
     this.env = options.env ?? process.env;
@@ -252,14 +260,18 @@ export class SpaceCredentialCatalogService {
       killedLogins.push(login.workSessionId);
     }
     for (const session of live?.sessions ?? []) {
-      if (this.terminals.terminate(session.workSessionId) === 'error') {
-        failures.push({
-          step: 'agentSession',
-          sessionId: session.workSessionId,
-          reason: 'the PTY host could not kill this agent session',
-        });
-        continue;
+      // Kill, then record the ending through the stop path `terminate` uses,
+      // so the row does not read `running` after its process is gone. A failed
+      // kill leaves the row as it was.
+      const contained = await this.agentSessions.containCredentialSession(
+        session.workSessionId,
+        'space_credential_deleted',
+      );
+      const failure = containmentFailureOf(contained);
+      if (failure !== null) {
+        failures.push({ step: 'agentSession', sessionId: session.workSessionId, reason: failure });
       }
+      if (contained.outcome === 'error') continue;
       // `not_found`: no live PTY on this node — the state asked for.
       terminatedAgentSessionIds.push(session.workSessionId);
     }

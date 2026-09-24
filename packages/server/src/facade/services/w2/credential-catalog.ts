@@ -85,6 +85,10 @@ import {
   credentialHomeDir,
 } from '../../../credentials/agent-credential-home.js';
 import { AGENT_TOOLS_BY_CREDENTIAL_PROVIDER } from '../../../credentials/agent-credential-injection.js';
+import {
+  containmentFailureOf,
+  type AgentSessionContainmentPort,
+} from '../../../credentials/agent-session-containment.js';
 import type { CredentialPrincipal } from './credential-sessions.js';
 import {
   measureCredentialBinary,
@@ -180,6 +184,8 @@ export interface CredentialTerminalPort {
 export interface W2CredentialCatalogServiceOptions {
   db: Db;
   terminals: CredentialTerminalPort;
+  /** Kills a live agent session on the disconnected credential and records its ending. */
+  agentSessions: AgentSessionContainmentPort;
   /** Node data root; the per-identity credential home hangs off it. */
   dataDir: string;
   logger?: Logger;
@@ -211,6 +217,7 @@ export interface W2CredentialCatalogServiceOptions {
 export class W2CredentialCatalogService {
   private readonly db: Db;
   private readonly terminals: CredentialTerminalPort;
+  private readonly agentSessions: AgentSessionContainmentPort;
   private readonly dataDir: string;
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
@@ -225,6 +232,7 @@ export class W2CredentialCatalogService {
   constructor(options: W2CredentialCatalogServiceOptions) {
     this.db = options.db;
     this.terminals = options.terminals;
+    this.agentSessions = options.agentSessions;
     this.dataDir = options.dataDir;
     this.logger = options.logger;
     this.env = options.env ?? process.env;
@@ -645,15 +653,18 @@ export class W2CredentialCatalogService {
     }
 
     for (const row of rows) {
-      const outcome = this.terminals.terminate(row.work_session_id);
-      if (outcome === 'error') {
-        failures.push({
-          step: 'agentSession',
-          sessionId: row.work_session_id,
-          reason: 'the PTY host could not kill this agent session',
-        });
-        continue;
+      // Kill, then record the ending — one stop path with `terminate`, so the
+      // row does not read `running` after its process is gone. A failed kill
+      // leaves the row as it was.
+      const contained = await this.agentSessions.containCredentialSession(
+        row.work_session_id,
+        'member_credential_disconnected',
+      );
+      const failure = containmentFailureOf(contained);
+      if (failure !== null) {
+        failures.push({ step: 'agentSession', sessionId: row.work_session_id, reason: failure });
       }
+      if (contained.outcome === 'error') continue;
       // `not_found` is reported as terminated on purpose: it means no live PTY
       // on THIS node, which is the state the caller asked for. Recording it as
       // a failure would make a perfectly successful disconnect of a session

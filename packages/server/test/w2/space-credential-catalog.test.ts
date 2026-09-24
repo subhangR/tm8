@@ -128,6 +128,28 @@ function terminals(calls: string[], outcome: (id: string) => string = () => 'kil
   };
 }
 
+/**
+ * The agent half of the same fake: an agent session is killed through the
+ * containment port (`SpawnService.containCredentialSession` in production),
+ * which records its ending on a kill. `record: false` models a kill whose
+ * ending could not be written.
+ */
+function agentSessions(
+  calls: string[],
+  outcome: (id: string) => string = () => 'killed',
+  record = true,
+  causes: string[] = [],
+) {
+  return {
+    containCredentialSession: async (id: string, cause: string) => {
+      calls.push(`kill:${id}`);
+      causes.push(`${id}:${cause}`);
+      const o = outcome(id) as 'killed' | 'not_found' | 'error';
+      return o === 'killed' && !record ? { outcome: o, recorded: false, reason: 'transition_failed: 42501' } : { outcome: o, recorded: o === 'killed' };
+    },
+  };
+}
+
 const okProbe = (displayLogin: string | null = null): SpaceCredentialProbe => async () => ({ ok: true, displayLogin });
 const probeSaying = (result: SpaceCredentialProbeResult): SpaceCredentialProbe => async () => result;
 
@@ -136,6 +158,10 @@ function service(options: {
   store?: ReturnType<typeof fakeStore>;
   probe?: SpaceCredentialProbe;
   terminate?: (id: string) => string;
+  /** False: an agent kill whose ending could not be recorded. */
+  record?: boolean;
+  /** Collects `<id>:<cause>` for every agent containment. */
+  causes?: string[];
   removeLoginHome?: () => Promise<void>;
   env?: Record<string, string | undefined>;
   dbRows?: unknown[];
@@ -159,6 +185,7 @@ function service(options: {
       store: store as never,
       probe: options.probe ?? okProbe(),
       terminals: terminals(options.calls, options.terminate),
+      agentSessions: agentSessions(options.calls, options.terminate, options.record ?? true, options.causes),
       ...(options.removeLoginHome ? { removeLoginHome: options.removeLoginHome } : {}),
       env: options.env ?? {},
     }),
@@ -446,6 +473,21 @@ describe('t3-4/t3-8: delete revokes, reads, kills every launcher\'s sessions, th
     ]);
   });
 
+  it('an agent session is contained as a space-credential delete, and a kill whose ending was not recorded is a failure', async () => {
+    const calls: string[] = [];
+    const causes: string[] = [];
+    const { svc } = service({ calls, store: fakeStore({ calls, live }), record: false, causes });
+    const result = await svc.delete(HUMAN, CRED);
+    expect(causes).toEqual([`${AGENT_A}:space_credential_deleted`, `${AGENT_B}:space_credential_deleted`]);
+    // The PTY is gone, so the session is terminated — but the row still reads
+    // live, and that is named rather than swallowed.
+    expect(result.terminatedAgentSessionIds).toEqual([AGENT_A, AGENT_B]);
+    expect(result.failures.filter((f) => f.step === 'agentSession').map((f) => [f.sessionId, f.reason])).toEqual([
+      [AGENT_A, 'the session was killed, but its ending could not be recorded (transition_failed: 42501)'],
+      [AGENT_B, 'the session was killed, but its ending could not be recorded (transition_failed: 42501)'],
+    ]);
+  });
+
   it('an agent session with no PTY on this node counts as terminated (not_found is the state asked for)', async () => {
     const calls: string[] = [];
     const { svc } = service({ calls, store: fakeStore({ calls, live }), terminate: () => 'not_found' });
@@ -549,6 +591,7 @@ function handlerHarness(probe: SpaceCredentialProbe) {
   const registry = new HandlerRegistry();
   registerCredentialHandlers(registry, deps, {
     launcher: { terminate: () => 'killed', hasLiveTerminal: () => false, launch: () => { throw new Error('unexpected'); } } as never,
+    agentSessions: { containCredentialSession: async () => ({ outcome: 'killed', recorded: true }) },
     dataDir: '/tmp/tm8-sc3-unit',
     probeSpaceCredential: probe,
   });
