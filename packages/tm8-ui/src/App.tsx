@@ -69,3 +69,4 @@ function ConnectedGateApp({ pendingJoin }: { pendingJoin: string | null }) {
     />
   );
 }
+// W2 proof: ui-only
