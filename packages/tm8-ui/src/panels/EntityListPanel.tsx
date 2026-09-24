@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
   ActorSummary,
@@ -527,6 +527,31 @@ export interface BoardSnapshot {
   retry?: () => void;
 }
 
+/**
+ * How far the hover bar (`.lp__hoverbar`, see `RowActionCluster`) rises above
+ * its tile's top edge. Mirrors `--lp-hoverbar-rise` in panels.css.
+ */
+const HOVERBAR_RISE_PX = 24;
+
+/**
+ * WHERE THE HOVER BAR GOES on the tile under the pointer: on the top edge, or
+ * tucked INSIDE the tile when there is no room above it.
+ *
+ * The bar rises out of its tile, and `.lp__body` is the scroll box, so it clips
+ * the bar on the first tile of every list (7px of room) and on whichever tile
+ * is scrolled to the top. CSS cannot ask "how far am I from my scroll
+ * container's edge", so the answer is measured here, once per tile entered,
+ * and published as `data-hoverbar` for the stylesheet to read. Delegated from
+ * the body so no anatomy has to know about it.
+ */
+function placeHoverBar(event: ReactPointerEvent<HTMLElement>): void {
+  if (event.pointerType !== 'mouse') return;
+  const tile = (event.target as Element).closest('[data-testid="list-tile"]');
+  if (!tile || tile.contains(event.relatedTarget as Node | null)) return;
+  const room = tile.getBoundingClientRect().top - event.currentTarget.getBoundingClientRect().top;
+  tile.setAttribute('data-hoverbar', room < HOVERBAR_RISE_PX ? 'inside' : 'above');
+}
+
 export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
@@ -796,7 +821,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <LensNote set={lensSet} filter={lensFilter} props={props} config={config} />
       ) : null}
 
-      <div className="lp__body">
+      <div className="lp__body" onPointerOver={placeHoverBar}>
         {mode === 'board' && list.board ? (
           <BoardBody
             props={props}

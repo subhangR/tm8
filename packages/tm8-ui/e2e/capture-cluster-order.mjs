@@ -36,7 +36,9 @@ const readOrder = (columnLabel) =>
     const col = [...document.querySelectorAll('.harness-col')]
       .find((c) => c.querySelector('.harness-cap')?.textContent === label);
     const cluster = col.querySelector('.lp__cluster');
+    // The verbs sit inside `.lp__hoverbar` on the desktop; read through it.
     return [...cluster.children]
+      .flatMap((el) => (el.classList.contains('lp__hoverbar') ? [...el.children] : [el]))
       .map((el) => {
         const box = el.getBoundingClientRect();
         const name =

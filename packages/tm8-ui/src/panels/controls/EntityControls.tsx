@@ -91,6 +91,7 @@ import {
   type UnavailableReason,
 } from '../honesty/DisabledWithReason';
 import { useDismissable } from '../useDismissable';
+import { useMobileSurface } from '../../mobile/surface';
 
 /**
  * The slice of an entity these controls READ. Every member is on both
@@ -360,6 +361,19 @@ export interface ControlHost {
  * So `rowActions` stays what it is — the kind's own middle verbs, Run first —
  * and this component owns the invariant frame around them.
  *
+ * ## The hover bar (user ask 2026-09-24)
+ *
+ * On the desktop the verbs render inside `.lp__hoverbar`, a toolbar that floats
+ * on the tile's TOP EDGE on hover instead of sitting over the end of the title
+ * row, so the title keeps its width while the pointer is on it. The disclosure
+ * chevron stays in the row: it is the tile's own opener, not a verb.
+ *
+ * The phone shell gets NO wrapper, so its DOM — and every `__actions > *`
+ * rule in `mobile-screens.css` that sizes and hides these verbs — is exactly
+ * what it was. On a desktop shell without a fine pointer the wrapper exists
+ * but is `display: contents`, so it is inert there too. The floating geometry
+ * lives in panels.css under `(hover: hover) and (pointer: fine)`.
+ *
  * The disclosure chevron is the `trailing` slot rather than part of the frame:
  * every anatomy genuinely has its own (different class, different state
  * source, and the control-card's is a `pn-tt__ind` that the CSS sizes apart).
@@ -441,6 +455,7 @@ export function RowActionCluster({
   trailing?: ReactNode;
 }) {
   const list = config.list;
+  const { oneSurface } = useMobileSurface();
   const archived = row.deletedAt != null;
   const capabilities = props.capabilitiesOf?.(row.id);
 
@@ -559,7 +574,7 @@ export function RowActionCluster({
     />
   );
 
-  return (
+  const verbs = (
     <>
       {/* ARCHIVE LEADS (owner ruling 2026-08-18). Still HIDDEN and not greyed
           where the server refuses deletion, which is every session row — so
@@ -581,6 +596,12 @@ export function RowActionCluster({
       {middle.map(verb)}
       {anatomyActions}
       {tail.map(verb)}
+    </>
+  );
+
+  return (
+    <>
+      {oneSurface ? verbs : <span className="lp__hoverbar">{verbs}</span>}
       {trailing}
     </>
   );

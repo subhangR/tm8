@@ -20,6 +20,7 @@ import { type ActionContext, type ActionRef } from '../domain';
 import type { SessionLiveness } from '../data/seam';
 import { EntityListPanel } from './index';
 import type { SessionSharingPatch } from './controls/EntityControls';
+import { MobileSurfaceProvider } from '../mobile/surface';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
@@ -61,6 +62,8 @@ function mount(
     /** The two seam answers the process control turns on — see its describe. */
     liveness?: SessionLiveness;
     category?: StatusCategory;
+    /** Mount inside the phone shell's surface provider. */
+    phone?: boolean;
   } = {},
 ) {
   const rows = rowsOfKind(kind)
@@ -101,6 +104,9 @@ function mount(
       connectionsOf={() => ({ incoming: [], outgoing: [], unresolvedHardDependencyCount: 0 })}
       membershipSets={rowsOfKind('collection')}
     />,
+    handlers.phone
+      ? { wrapper: ({ children }) => <MobileSurfaceProvider sheetHost={null}>{children}</MobileSurfaceProvider> }
+      : undefined,
   );
 }
 
@@ -110,6 +116,15 @@ function firstCluster(container: HTMLElement): HTMLElement {
   if (!cluster) throw new Error('no .lp__cluster on the first tile');
   return cluster as HTMLElement;
 }
+
+/**
+ * The cluster's members in visual order. On the desktop the verbs sit one level
+ * down, inside the floating `.lp__hoverbar`, while the disclosure stays a
+ * direct child — so the ruled sequence is read through the bar, not off
+ * `children`.
+ */
+const membersOf = (cluster: HTMLElement): Element[] =>
+  [...cluster.children].flatMap((el) => (el.classList.contains('lp__hoverbar') ? [...el.children] : [el]));
 
 const verbsIn = (cluster: HTMLElement): string[] =>
   [...cluster.querySelectorAll('[data-action]')].map((el) => el.getAttribute('data-action')!);
@@ -132,6 +147,31 @@ describe('the row action cluster is one shape across all three anatomies', () =>
   });
 
   /**
+   * THE HOVER BAR (user ask 2026-09-24). On the desktop the verbs render inside
+   * `.lp__hoverbar`, which panels.css floats on the tile's top edge, and the
+   * disclosure stays outside it — the opener belongs to the row, not the bar.
+   */
+  it.each(['task', 'work_session', 'doc'])('%s puts its verbs in the hover bar and keeps the disclosure out of it', (kind) => {
+    const { container } = mount(kind, kind === 'work_session' ? SESSION : DELETABLE);
+    const cluster = firstCluster(container);
+    const bars = cluster.querySelectorAll(':scope > .lp__hoverbar');
+    expect(bars.length).toBe(1);
+    expect(verbsIn(bars[0] as HTMLElement)).toEqual(verbsIn(cluster));
+    expect(cluster.lastElementChild?.classList.contains('lp__hoverbar')).toBe(false);
+  });
+
+  /**
+   * The phone shell gets NO wrapper: `mobile-screens.css` sizes and hides these
+   * verbs with `__actions > *` rules, and a wrapper there would turn every one
+   * of them into a rule about the wrapper.
+   */
+  it('renders no hover bar on the phone shell', () => {
+    const { container } = mount('doc', DELETABLE, { phone: true });
+    expect(container.querySelector('.lp__hoverbar')).toBeNull();
+    expect(firstCluster(container).querySelector(':scope > [data-action="archive"]')).not.toBeNull();
+  });
+
+  /**
    * OWNER RULING 2026-08-18 — Archive moved from the far end to the LEAD, and
    * the tick moved in front of Run. Both used to be pinned here the other way
    * round, and flipping the assertions with the JSX is the point of pinning
@@ -142,7 +182,7 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     for (const kind of ['task', 'work_session', 'doc']) {
       const { container, unmount } = mount(kind, DELETABLE);
       const cluster = firstCluster(container);
-      const children = [...cluster.children];
+      const children = membersOf(cluster);
       expect({ kind, first: children[0]?.getAttribute('data-action') })
         .toEqual({ kind, first: 'archive' });
       unmount();
@@ -151,7 +191,7 @@ describe('the row action cluster is one shape across all three anatomies', () =>
 
   it('puts Collections second, right after Archive', () => {
     const { container } = mount('task', DELETABLE);
-    const children = [...firstCluster(container).children];
+    const children = membersOf(firstCluster(container));
     // Collections is not an ActionRef — it is the membership picker, so it is
     // identified by its own wrapper rather than by `data-action`.
     expect(children[1]?.className.includes('lp__assignwrap')).toBe(true);
@@ -182,7 +222,7 @@ describe('the row action cluster is one shape across all three anatomies', () =>
   it('places the session tile\'s Copy between the middle verbs and Terminate', () => {
     const { container } = mount('work_session', SESSION);
     const cluster = firstCluster(container);
-    const marks = [...cluster.children].map(
+    const marks = membersOf(cluster).map(
       (el) =>
         el.getAttribute('data-action')
         ?? el.getAttribute('aria-label')
@@ -322,7 +362,7 @@ describe('Archive is hidden on server truth, and ONLY on server truth', () => {
     expect(cluster.querySelectorAll('.hon-checking').length).toBeGreaterThan(0);
     // The cluster keeps its width: the same number of slots as when permitted.
     const { container: permitted } = mount('doc', DELETABLE);
-    expect(cluster.children.length).toBe(firstCluster(permitted).children.length);
+    expect(membersOf(cluster).length).toBe(membersOf(firstCluster(permitted)).length);
   });
 });
 
