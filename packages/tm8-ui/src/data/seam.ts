@@ -1,3 +1,4 @@
+import type { FormsPendingForSessionsResult } from '../forms/pending';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
@@ -656,6 +657,14 @@ export interface Seam {
     abort(folderUploadId: string, input: ProjectFolderUploadAbortInput): Promise<void>;
   };
   entity(id: EntityId): Promise<EntityDetail>;
+  /**
+   * `forms.pendingForSessions` (FORMS-DESIGN §10, decision 11): for each
+   * session id, the open forms it authored that the VIEWER can still answer,
+   * and how many submitted answers are queued for it. One call serves every
+   * session tile in view. OPTIONAL: absent on a seam that predates the
+   * op, and then the tile chip and the session banner render nothing.
+   */
+  formsPendingForSessions?(input: { spaceId: SpaceId; sessionIds: EntityId[] }): Promise<FormsPendingForSessionsResult>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab, and the edge-id lookup behind any edge REMOVAL. */
   connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
