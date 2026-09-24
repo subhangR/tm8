@@ -280,6 +280,16 @@ describe('A7 — why a label is taken', () => {
     expect((screen.getByRole('button', { name: 'Save new Claude (Anthropic) API key' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('a pending login row offers no key replacement: a login is renewed by logging in', async () => {
+    // 206 forbids a pending row that is not a login, and the server refuses a
+    // rekey on a login; the screen must not offer the paste either.
+    await mount(fakePort({ viewer: { accountId: 'acct-admin', isSpaceAdmin: true, isNodeAdmin: false }, rows: [MINE_DEFAULT, PENDING] }));
+    expect(screen.getByRole('button', { name: 'Delete Held label' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Replace API key Held label' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set default Held label' })).toBeNull();
+    expect(screen.getByTestId('space-cred-row-c-pending').textContent).toContain('login not finished');
+  });
+
   it('an active clash names the other credential; another provider’s label is free', () => {
     expect(labelTakenReason('anthropic', 'Team Claude', [MINE_DEFAULT])).toMatch(/another Claude \(Anthropic\) credential/);
     expect(labelTakenReason('openai', 'Team Claude', [MINE_DEFAULT])).toBeNull();
@@ -339,6 +349,18 @@ describe('I5 / t5-2 — the key is never rendered and the field is cleared', () 
     expect(document.body.innerHTML).not.toContain('SECRETVALUE');
   });
 
+  it('a key replacement the vendor rejects empties the still-open field, and the key appears nowhere', async () => {
+    const port = fakePort();
+    port.rekey.mockRejectedValueOnce(new CollabError('invalid_input', 'the anthropic key was refused by the vendor; nothing was stored', { details: { reason: 'credential_rejected' } }));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Replace API key Team Claude' }));
+    fireEvent.change(screen.getByLabelText('New API key for Team Claude'), { target: { value: KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key Team Claude' }));
+    expect((await screen.findByTestId('space-cred-failure-rejected')).textContent).toMatch(/rejected this key, so nothing was stored/);
+    expect((screen.getByLabelText('New API key for Team Claude') as HTMLInputElement).value).toBe('');
+    expect(document.body.innerHTML).not.toContain('SECRETVALUE');
+  });
+
   it('secret validation never quotes the draft', () => {
     for (const bad of ['Qz9k', 'Qz9kPw has space', 'Qz9k'.repeat(1300)]) {
       const reason = validateSecret(bad);
@@ -363,6 +385,9 @@ describe('#681 D — a 403 is a refusal, not a probe', () => {
     expect(refusal.textContent).toBe('Refused: only the creator or a space admin can rekey this credential');
     expect(screen.queryByTestId('space-cred-probe')).toBeNull();
     expect(screen.queryByTestId('space-cred-failure-rejected')).toBeNull();
+    // I5: a refused key does not sit in the still-open field waiting to be re-sent.
+    expect((screen.getByLabelText('New API key for Team Claude') as HTMLInputElement).value).toBe('');
+    expect(document.body.innerHTML).not.toContain('SECRETVALUE');
   });
 
   it('a policy write refused for a non-manager surfaces its reason', async () => {

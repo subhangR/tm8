@@ -131,6 +131,9 @@ export function launchSourceOptions(input: LaunchSourceOptionsInput): LaunchSour
   return options;
 }
 
+/** Appended to every Auto authorship line: Auto is predicted here, resolved by the server. */
+export const AUTO_PREDICTION = 'Auto, expected: the server resolves it at launch, and the session detail records what it used';
+
 /**
  * D10: who a session's commits and pull requests are authored as. Auto is
  * answered along D4 — yours, then the space default, then the node — skipping
@@ -159,12 +162,14 @@ export function githubAuthorshipLine(input: {
   if (parsed?.source === 'space') {
     return asSpace(parsed.spaceCredentialId ? rows.find((r) => r.id === parsed.spaceCredentialId) : rows.find((r) => r.isDefault));
   }
-  // Auto, along D4.
+  // Auto, along D4 — a PREDICTION. The server resolves Auto at launch (a
+  // member connection can lapse, a default can move), and the session detail
+  // shows what it actually used, so the line says it is an expectation.
   const allows = (s: CredentialPolicySource) => sourcePolicyReason('github', s, input.policy) === null;
-  if (input.memberHandle && allows('member')) return `${asMember} · Auto`;
+  if (input.memberHandle && allows('member')) return `${asMember} · ${AUTO_PREDICTION}`;
   const fallback = rows.find((r) => r.isDefault);
-  if (fallback && allows('space')) return `${asSpace(fallback)} · Auto`;
-  if (allows('node')) return `${asNode} · Auto`;
+  if (fallback && allows('space')) return `${asSpace(fallback)} · ${AUTO_PREDICTION}`;
+  if (allows('node')) return `${asNode} · ${AUTO_PREDICTION}`;
   return 'Commits and pull requests: no GitHub source this space allows is available, so this launch will be refused';
 }
 

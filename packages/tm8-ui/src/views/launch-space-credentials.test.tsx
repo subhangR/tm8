@@ -195,6 +195,10 @@ describe('SC-5 launch picker: GitHub authorship (D10)', () => {
     const notConnected = renderSheet();
     await waitFor(() => expect(notConnected.getByTestId('launch-github-authorship').textContent)
       .toContain('authored as @tm8-release-bot (space token “Release bot”) · Auto'));
+    // Auto is the UI's D4 PREDICTION; the server's resolution is the fact. The
+    // line must say so rather than read as a recorded outcome.
+    expect(notConnected.getByTestId('launch-github-authorship').textContent)
+      .toContain('Auto, expected: the server resolves it at launch, and the session detail records what it used');
   });
 
   it('says the node account authors when Node is chosen', () => {
