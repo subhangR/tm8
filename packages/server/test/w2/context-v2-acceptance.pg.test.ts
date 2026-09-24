@@ -333,6 +333,24 @@ function fixedCore(view: V2): number {
   return bytes(clone);
 }
 
+/**
+ * The body ceiling of one read (c904 §2.4, as S4 formalised it): 16,384 − the
+ * DTO with the body text and every list the BUDGET can empty (§2.6) emptied.
+ * The never-drop lists (acceptance, notLoaded, errors, a chat's messages…) stay
+ * in the envelope: a ceiling that ignored them would make the default read
+ * overrun 16,384 B with nothing left to drop. Computed per read, so a page —
+ * with no outline or acceptance — has its own, slightly larger ceiling.
+ */
+function ceilingOf(view: V2): number {
+  const envelope = structuredClone(view) as Record<string, unknown>;
+  (envelope['assignment'] as V2Assignment).text = '';
+  const droppable = view.kind === 'chat' || view.kind === 'work_session'
+    ? ['connections', 'children']
+    : ['connections', 'children', 'messages'];
+  for (const key of droppable) if (Array.isArray(envelope[key])) envelope[key] = [];
+  return DEFAULT_TOTAL - bytes(envelope);
+}
+
 /** Every `expand` the view advertises: omitted, notLoaded and the body marker. */
 function advertisedExpands(view: V2): string[] {
   return [
@@ -490,11 +508,22 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c904 §5.1] a caller budget above the core holds exactly, and trims rows, never the core (S3)', async () => {
-    // C: 12 messages of up to 720 chars, core for a chat — a tight budget must
-    // trim to omitted[] with reason budget, and still be ≤ requested.
+  it('[c904 §5.1] a caller budget above the core holds exactly, and trims rows, never the core (S3)', async () => {
+    // P carries an 8,004 B body, so its never-drop core is above 8,192: that
+    // budget is BELOW the core and S4 answers it with 422 + minimumBytes
+    // (c904 §2.9). Every budget from the KB-rounded minimum up must hold
+    // exactly, trimming rows to omitted[] with reason budget, never the core.
     const full = await v2(F.P);
-    for (const requested of [8_192, 12_288]) {
+    let minimum = 0;
+    try {
+      await v2(F.P, 'totalBytes=8192');
+    } catch (caught) {
+      const error = caught as { code?: string; details?: Record<string, unknown> };
+      expect(error.code).toBe('context_budget_too_small');
+      minimum = error.details!['minimumBytes'] as number;
+    }
+    expect(minimum, 'P core exceeds 8192').toBeGreaterThan(8_192);
+    for (const requested of [Math.ceil(minimum / 1024) * 1024, 12_288]) {
       const r = await v2(F.P, `totalBytes=${requested}`);
       expect(r.bytes).toBeLessThanOrEqual(requested);
       expect(r.view.budget).toEqual({ requested, used: r.bytes });
@@ -794,7 +823,7 @@ describe('S3 the v2 DTO', () => {
 // ===========================================================================
 
 describe('S4 body ceiling and caller budget', () => {
-  it.fails('[c904 §5.2 · c761 §10.3] a body over the ceiling is cut with complete:false and reassembles byte-identically, multi-byte included (S4)', async () => {
+  it('[c904 §5.2 · c761 §10.3] a body over the ceiling is cut with complete:false and reassembles byte-identically, multi-byte included (S4)', async () => {
     for (const fixture of LARGE_BODIES) {
       const first = await v2(fixture.id);
       const a = first.view.assignment!;
@@ -820,7 +849,9 @@ describe('S4 body ceiling and caller budget', () => {
         assertPageShape(page.view, 'assignment');
         const p = page.view.assignment!;
         expect(p.offset, fixture.name).toBe(nextOffset);
-        expect(bytes(p.text), `${fixture.name} page ≤ ceiling`).toBeLessThanOrEqual(ceiling + 4);
+        // Each page is ≤ its own read's ceiling, and the page itself ≤ 16 KB.
+        expect(bytes(p.text), `${fixture.name} page ≤ ceiling`).toBeLessThanOrEqual(ceilingOf(page.view));
+        expect(page.bytes, `${fixture.name} page ≤ default total`).toBeLessThanOrEqual(DEFAULT_TOTAL);
         expect(p.text, fixture.name).not.toContain('�');
         offset = nextOffset;
         text = p.text;
@@ -838,14 +869,11 @@ describe('S4 body ceiling and caller budget', () => {
     }
   });
 
-  it.fails('[c904 §5.2] the multi-byte fixture straddles the ceiling: the cut is walked back ≤ 3 bytes to a code point (S4)', async () => {
+  it('[c904 §5.2] the multi-byte fixture straddles the ceiling: the cut is walked back ≤ 3 bytes to a code point (S4)', async () => {
     const { view } = await v2(F.MB);
     const a = view.assignment!;
-    // c904 §2.4: ceiling = 16,384 − the core envelope with every list empty.
-    const envelope = structuredClone(view) as Record<string, unknown>;
-    (envelope['assignment'] as V2Assignment).text = '';
-    for (const key of ROW_LISTS) if (Array.isArray(envelope[key])) envelope[key] = [];
-    const ceiling = DEFAULT_TOTAL - bytes(envelope);
+    // c904 §2.4: ceiling = 16,384 − the core envelope with every droppable list empty.
+    const ceiling = ceilingOf(view);
     const cut = Buffer.byteLength(a.text, 'utf8');
     const whole = Buffer.from(BODIES.MB, 'utf8');
     expect(cut).toBeLessThanOrEqual(ceiling);
@@ -869,7 +897,7 @@ describe('S4 body ceiling and caller budget', () => {
     }
   });
 
-  it.fails('[c904 §5.3] --total-bytes 1024 on T is 422 context_budget_too_small with the EXACT minimum, and `next` succeeds (S4)', async () => {
+  it('[c904 §5.3] --total-bytes 1024 on T is 422 context_budget_too_small with the EXACT minimum, and `next` succeeds (S4)', async () => {
     const control = await v2(F.T);
     expect(control.view.schemaVersion).toBe('tm8.entity-context.v2');
     let error: { code?: string; status?: number; details?: Record<string, unknown>; next?: string } | undefined;
@@ -902,9 +930,10 @@ describe('S4 body ceiling and caller budget', () => {
   });
 
   it('[c904 §5.9] v2 rejects sectionBytes as a usage error; the same v2 read without it succeeds (S3a, ahead of S4)', async () => {
-    const control = await v2(F.T, 'totalBytes=4096');
+    // 8 KB, not 4 KB: since S4 a budget under T's core is a 422, not a read.
+    const control = await v2(F.T, 'totalBytes=8192');
     expect(control.view.schemaVersion).toBe('tm8.entity-context.v2');
-    await expect(v2(F.T, 'totalBytes=4096&sectionBytes=1024')).rejects.toMatchObject({
+    await expect(v2(F.T, 'totalBytes=8192&sectionBytes=1024')).rejects.toMatchObject({
       code: 'invalid_input',
       message: expect.stringMatching(/total-only|totalBytes|total-bytes/),
     });

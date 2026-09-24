@@ -383,6 +383,7 @@ function parseContextQuery(query: URLSearchParams): EntityContextQuery {
     }
     if ('totalBytes' in raw) raw['totalBytes'] = integer(raw['totalBytes']);
     if ('sectionBytes' in raw) raw['sectionBytes'] = integer(raw['sectionBytes']);
+    if ('offset' in raw) raw['offset'] = integer(raw['offset']);
   }, 'context query');
 }
 
@@ -1122,6 +1123,7 @@ export class W2FeedContextService {
       return this.deps.db.tx(claims, (q) => loadContextV2(q, id, {
         sections: parseV2Sections(input.sections),
         totalBytes: input.totalBytes ?? V2_DEFAULT_TOTAL_BYTES,
+        ...(input.offset === undefined ? {} : { offset: input.offset }),
       }));
     }
     // The schema admits only v1 section names when `schema` is not v2.

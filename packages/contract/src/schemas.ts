@@ -3720,6 +3720,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   ])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
+  offset: z.number().int().nonnegative().optional(),
   actionsSchema: z.enum(['v1', 'v2']).optional(),
 }).strict().superRefine((query, issues) => {
   const v2 = query.schema === 'v2';
@@ -3739,6 +3740,18 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
       path: ['sectionBytes'],
       message: 'v2 budgets are total-only; see --total-bytes',
     });
+  }
+  // c904 §2.4: an offset names a page of the body, and only of the body.
+  if (query.offset !== undefined) {
+    const sections = query.sections ?? [];
+    const bodyOnly = sections.length === 1 && (sections[0] === 'assignment' || sections[0] === 'summary');
+    if (!v2 || !bodyOnly) {
+      issues.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['offset'],
+        message: 'offset pages the v2 body: use it with schema=v2 and sections=assignment',
+      });
+    }
   }
 });
 
@@ -4380,6 +4393,7 @@ export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'version_conflict', 'conflict', 'invariant_violation',
   'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
+  'context_budget_too_small',
 ]);
 
 export const ErrorCodeSchema: z.ZodType<ErrorCode> = z.enum([

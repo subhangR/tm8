@@ -62,6 +62,9 @@ export const EXIT_BY_COMMAND_ERROR: Record<CommandErrorCode, ExitCode> = {
   limit_exceeded: EXIT_RETRYABLE,
   not_implemented: EXIT_NOT_IMPLEMENTED,
   upstream_unavailable: EXIT_RETRYABLE,
+  // c904 §2.5: the caller asked for a budget the core cannot fit; the error's
+  // `details.next` is the retry, so it is answered like a usage error.
+  context_budget_too_small: EXIT_USAGE,
 };
 
 /** The 7-code W0 subset → §7.6. Exhaustive by type. */
@@ -300,6 +303,10 @@ export function errorLines(err: unknown): string[] {
     if (err.code === 'not_implemented') {
       lines.push('  this operation is catalogued but not implemented on this node (honest 501)');
     }
+    // A refusal that names its own retry (c904 §2.5 `context_budget_too_small`)
+    // prints it verbatim, so the caller runs it rather than guessing a number.
+    const next = isRecord(err.details) ? err.details['next'] : undefined;
+    if (typeof next === 'string') lines.push(`  next: ${next}`);
     if (err.hint) lines.push(`  ${err.hint}`);
     return lines;
   }

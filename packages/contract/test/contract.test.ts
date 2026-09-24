@@ -49,7 +49,7 @@ describe('error taxonomy (DEV-8)', () => {
       invalid_input: 400, invalid_cursor: 400,
       unauthenticated: 401, forbidden: 403, not_found: 404,
       version_conflict: 409, conflict: 409, invariant_violation: 409,
-      payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
+      payload_too_large: 413, context_budget_too_small: 422, rate_limited: 429, limit_exceeded: 429,
       not_implemented: 501, upstream_unavailable: 503,
     });
   });

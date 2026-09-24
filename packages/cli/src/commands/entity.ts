@@ -505,6 +505,17 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     throw new CliError('v2 budgets are total-only; see --total-bytes', EXIT_USAGE);
   }
   const sectionBytes = byteBudgetOption(cmd, 'section-bytes', 512, 8192);
+  // c904 §2.4: `--offset` pages the v2 body. It is copied from the server's
+  // `assignment.expand`, never computed, and means nothing without that section.
+  const offset = cmd.options.integer('offset');
+  if (offset !== undefined) {
+    if (offset < 0) throw new CliError(`--offset expects a byte offset >= 0, got ${offset}`, EXIT_USAGE);
+    if (schema !== 'v2' || (sections !== 'assignment' && sections !== 'summary')) {
+      throw new CliError('--offset pages the v2 body: use it with --schema v2 --sections assignment', EXIT_USAGE, {
+        hint: 'copy the command from the body\'s `expand`; the server fills in the offset',
+      });
+    }
+  }
   // The actions section rolls out to `tm8.actions.v2` rows like `action list`
   // does. Only asked about when the section is in a view that prints it: the
   // human render shows no actions, so it keeps sending no query at all.
@@ -523,13 +534,14 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     ...(sections === undefined ? {} : { sections }),
     ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
     ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
+    ...(offset === undefined ? {} : { offset: String(offset) }),
     ...(actionsSchema === 'v2' ? { actionsSchema } : {}),
   };
 }
 
 async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['schema', 'sections', 'total-bytes', 'section-bytes', 'actions-schema']);
+  assertKnownOptions(cmd, ['schema', 'sections', 'total-bytes', 'section-bytes', 'offset', 'actions-schema']);
   const id = requireArg(cmd, 0, '<entity-id>');
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {
