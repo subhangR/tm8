@@ -24,4 +24,4 @@ dist-2.0/
 # `graphify-out/` would match only a directory — leaving the link untracked and
 # every lane permanently dirty.
 /graphify-out
-/.vitest-json/
+/vitest-reports/
