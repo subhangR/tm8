@@ -39,6 +39,11 @@ import '../src/terminal/terminal.css';
  *  · `?scenario=typical` — no `layout` at all, the fallback grid, which is
  *    what the craft agent actually writes. Judging the DEFAULT zoom off the
  *    awkward row would tune it against a case that barely occurs.
+ *  · `?scenario=plan` — the orchestration vocabulary in full: teammates
+ *    docked on tasks, docs consumed and produced, an artifact, a memory, a
+ *    skill, a dependency — every node kind and every edge role on one plan.
+ *  · `?scenario=large` — ~40 nodes, to show legibility at scale (the opening
+ *    zoom floor, the minimap, semantic zoom).
  *
  *   /e2e/craft-harness.html?scenario=typical
  */
@@ -76,12 +81,80 @@ const EDGES = [
 
 const SCENARIO = new URLSearchParams(window.location.search).get('scenario') ?? 'awkward';
 
-const BLUEPRINT = {
-  graphType: 'entity',
-  nodes: NODES,
-  edges: EDGES,
-  ...(SCENARIO === 'typical' ? {} : { layout: { verify: { x: 1400, y: 640 }, ui: { x: -320, y: -160 } } }),
-};
+/* The vocabulary in full (sentence rule: every edge reads `src <type> dst`). */
+const PLAN_NODES = [
+  { id: 'tm-res', spec: { kind: 'team_member', title: 'Research Scout' } },
+  { id: 'tm-wr', spec: { kind: 'team_member', title: 'Copy Writer' } },
+  { id: 'tm-des', spec: { kind: 'team_member', title: 'Design Lead' } },
+  { id: 't-research', spec: { kind: 'task', title: 'Research competitor pricing', hint: 'five closest rivals' } },
+  { id: 'd-brief', spec: { kind: 'doc', title: 'Pricing brief', hint: 'findings + recommendation' } },
+  { id: 't-copy', spec: { kind: 'task', title: 'Write the pricing page copy' } },
+  { id: 't-design', spec: { kind: 'task', title: 'Design the pricing table', hint: 'three tiers' } },
+  { id: 'a-mock', spec: { kind: 'artifact', title: 'Pricing page mock' } },
+  { id: 'd-copy', spec: { kind: 'doc', title: 'Page copy' } },
+  { id: 't-review', spec: { kind: 'task', title: 'Review copy against the mock' } },
+  { id: 't-ship', spec: { kind: 'task', title: 'Ship checklist' } },
+  { id: 'm-voice', spec: { kind: 'memory', title: 'Brand voice rules' } },
+  { id: 's-figma', spec: { kind: 'skill', title: 'figma-export' } },
+];
+const PLAN_EDGES = [
+  { src: 't-research', dst: 'tm-res', type: 'assigned_to' },
+  { src: 't-copy', dst: 'tm-wr', type: 'assigned_to' },
+  { src: 't-review', dst: 'tm-wr', type: 'assigned_to' },
+  { src: 't-design', dst: 'tm-des', type: 'assigned_to' },
+  { src: 't-research', dst: 'd-brief', type: 'produces' },
+  { src: 't-copy', dst: 'd-brief', type: 'consumes' },
+  { src: 't-design', dst: 'd-brief', type: 'consumes' },
+  { src: 't-copy', dst: 'd-copy', type: 'produces' },
+  { src: 't-design', dst: 'a-mock', type: 'produces' },
+  { src: 't-review', dst: 'd-copy', type: 'consumes' },
+  { src: 't-review', dst: 'a-mock', type: 'consumes' },
+  { src: 't-ship', dst: 't-review', type: 'depends_on', note: 'nothing ships unreviewed' },
+  { src: 't-copy', dst: 'm-voice', type: 'remembers' },
+  { src: 't-design', dst: 's-figma', type: 'equips' },
+];
+
+/** ~40 nodes: five workstreams of four tasks, each consuming the last stream's doc. */
+function largePlan() {
+  const nodes: Record<string, unknown>[] = [];
+  const edges: Record<string, unknown>[] = [];
+  const streams = ['Platform', 'API', 'Web', 'Mobile', 'Docs'];
+  streams.forEach((stream, si) => {
+    const mate = `tm-${si}`;
+    nodes.push({ id: mate, spec: { kind: 'team_member', title: `${stream} Engineer` } });
+    for (let ti = 0; ti < 4; ti += 1) {
+      const task = `t-${si}-${ti}`;
+      nodes.push({ id: task, spec: { kind: 'task', title: `${stream}: step ${ti + 1} of the migration`, hint: 'from the plan' } });
+      edges.push({ src: task, dst: mate, type: 'assigned_to' });
+      if (ti > 0) edges.push({ src: task, dst: `t-${si}-${ti - 1}`, type: 'depends_on' });
+    }
+    const doc = `d-${si}`;
+    nodes.push({ id: doc, spec: { kind: si % 2 ? 'artifact' : 'doc', title: `${stream} handoff notes` } });
+    edges.push({ src: `t-${si}-3`, dst: doc, type: 'produces' });
+    if (si > 0) edges.push({ src: `t-${si}-0`, dst: `d-${si - 1}`, type: 'consumes' });
+  });
+  nodes.push({ id: 'm-0', spec: { kind: 'memory', title: 'Migration decisions log' } });
+  nodes.push({ id: 's-0', spec: { kind: 'skill', title: 'db-migrate' } });
+  nodes.push({ id: 't-final', spec: { kind: 'task', title: 'Cut over and announce' } });
+  streams.forEach((_, si) => {
+    edges.push({ src: `t-${si}-1`, dst: 'm-0', type: 'remembers' });
+    edges.push({ src: 't-final', dst: `t-${si}-3`, type: 'depends_on' });
+  });
+  edges.push({ src: 't-0-0', dst: 's-0', type: 'equips' });
+  edges.push({ src: 't-1-0', dst: 's-0', type: 'equips' });
+  return { nodes, edges };
+}
+
+const BLUEPRINT = SCENARIO === 'plan'
+  ? { graphType: 'entity', nodes: PLAN_NODES, edges: PLAN_EDGES }
+  : SCENARIO === 'large'
+    ? { graphType: 'entity', ...largePlan() }
+    : {
+        graphType: 'entity',
+        nodes: NODES,
+        edges: EDGES,
+        ...(SCENARIO === 'typical' ? {} : { layout: { verify: { x: 1400, y: 640 }, ui: { x: -320, y: -160 } } }),
+      };
 
 function Harness() {
   const seam = useMemo(() => createFixtureSeam(), []);
@@ -128,11 +201,13 @@ function Harness() {
           expectedVersion: 1,
           content: {
             ...BLUEPRINT,
-            nodes: [...BLUEPRINT.nodes, ...refs],
+            nodes: [...BLUEPRINT.nodes, ...(SCENARIO === 'plan' || SCENARIO === 'large' ? [] : refs)],
             edges: [
               ...BLUEPRINT.edges,
-              ...(refs[0] ? [{ src: 'verify', dst: refs[0].key, type: 'relates_to' }] : []),
-              ...(refs[1] ? [{ src: refs[1].key, dst: 'panel', type: 'depends_on' }] : []),
+              ...(SCENARIO === 'plan' || SCENARIO === 'large' ? [] : [
+                ...(refs[0] ? [{ src: 'verify', dst: refs[0].key, type: 'relates_to' }] : []),
+                ...(refs[1] ? [{ src: refs[1].key, dst: 'panel', type: 'depends_on' }] : []),
+              ]),
             ],
           },
         });

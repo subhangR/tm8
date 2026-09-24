@@ -2,10 +2,19 @@
  * CRAFT — the blueprint studio (Craft P1, task 01a00a31; design doc
  * 01a00a17-2d18 v2.1, rulings R1-R3).
  *
- * SPLIT PANE: a craft-mode chat on the left, ABOUT the selected `graph`
- * entity (contextual chat — `ChatCreateInput.aboutId`, written as an `about`
- * edge by `chat.start` — with the mode PINNED to 'craft'); a canvas on the
- * right rendering that entity's ROW directly.
+ * ONE HEADER, THREE REGIONS: the studio header names the blueprint, the
+ * conversation about it, the view and the one committing verb; below it a
+ * craft-mode chat on the left, ABOUT the selected `graph` entity (contextual
+ * chat — `ChatCreateInput.aboutId`, written as an `about` edge by
+ * `chat.start` — with the mode PINNED to 'craft'); the blueprint in the
+ * middle, in the view the reader picked; and, when a node is selected, its
+ * INSPECTOR on the right — which is also where an opened entity lands (it
+ * replaces the inspector's body; never a fourth column).
+ *
+ * CHAT ↔ CANVAS: a node selected anywhere (canvas, outline, table, a finding)
+ * is selected everywhere; "Ask about this" seeds the composer with a link to
+ * the node; each agent patch is DIFFED against the previous fold and the
+ * strip over the canvas says what changed, its entries selecting the nodes.
  * The canvas dispatches on `graphType` (R3): 'entity' draws the card
  * blueprint, 'mermaid' renders the diagram source through the same Mermaid
  * component docs use, and an unknown type says so honestly.
@@ -22,7 +31,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import type { EntityDetail, EntityId, EntitySummary, SpaceId } from '@tm8/contract';
+import { blueprintNodeRef, orchestrationNodeKind, ORCHESTRATION_NODE_KINDS, type EntityDetail, type EntityId, type EntitySummary, type SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
@@ -31,9 +40,19 @@ import type { TriggerOption } from '../rich-input';
 import { Mermaid } from '../kit/Mermaid';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import { blueprintView, nodeRefId, type RefTitles } from './blueprint-model';
+import { blueprintView, nodeRefId } from './blueprint-model';
+import type { BlueprintView, RefInfo, RefTitles } from './blueprint-types';
 import { BlueprintCanvas } from './BlueprintCanvas';
+import { BlueprintOutline } from './BlueprintOutline';
+import { BlueprintTable } from './BlueprintTable';
 import { CraftChatPicker } from './CraftChatPicker';
+import { CraftChatIntro, CraftEmptyState } from './CraftEmptyState';
+import { NodeInspector } from './NodeInspector';
+import { FindingsChip, GraphPicker, OrchestrateButton, ViewSwitcher } from './StudioHeader';
+import { diffBlueprintViews, isEmptyDiff, summarizeDiff, type BlueprintDiff } from './blueprint-diff';
+import { availableViews, resolveView, type CraftViewId } from './presentation';
+import { nodeByKey, titleOf } from './canvas-nav';
+import { BlueprintTurnNote, graphWriteOf, type ToolNoteCall } from './turn-notes';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import type { CraftPanelHostProps } from './types';
 import '../session-graph/session-graph.css';
@@ -77,13 +96,19 @@ const cmid = (tag: string) => `craft:${tag}:${Date.now()}:${(craftSeq += 1)}`;
 
 /** The chat pane's default and floor. The floor is the composer's: narrower
  *  than this and the mode chip, agent select and Send wrap onto three rows. */
-const CHAT_DEFAULT = 520;
+const CHAT_DEFAULT = 440;
 const CHAT_MIN = 360;
 /** The canvas keeps at least this much, so dragging can never erase it. */
 const CANVAS_MIN = 320;
-/** Region C. Same numbers as every other reading column in the app. */
-const DETAIL_DEFAULT = 440;
+/** The inspector / region C column. Same numbers as every other reading column in the app. */
+const DETAIL_DEFAULT = 380;
 const DETAIL_MIN = 320;
+/**
+ * Below this studio width the inspector OVERLAYS the canvas's right edge
+ * instead of taking width from it (coordinator ruling on the design audit):
+ * three columns under ~1280px leave a canvas too narrow to read a flow in.
+ */
+const OVERLAY_BELOW = 1280;
 /**
  * The separator track (8px) plus the aside's own 1px border — nothing in this
  * package sets `box-sizing: border-box` globally, so that border ADDS. Copied
@@ -138,12 +163,27 @@ export function CraftScreen({
   /** The conversation list, published up by the chat screen's ONE read. */
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [approving, setApproving] = useState(false);
-  /** Keys that arrived in the latest patch — the glow set (cleared on a timer). */
-  const [fresh, setFresh] = useState<{ cards: ReadonlySet<string>; lines: ReadonlySet<string> } | null>(null);
-  const prevKeysRef = useRef<{ id: EntityId; cards: Set<string>; lines: Set<string> } | null>(null);
-  const freshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * What the LATEST agent patch changed, diffed against the previous fold of
+   * the same row. Durable until the next patch or a dismiss — the old 2.6s
+   * glow was motion nobody could read back after looking away.
+   */
+  const [lastDiff, setLastDiff] = useState<BlueprintDiff | null>(null);
+  /**
+   * Every patch diff seen live, by the ROW VERSION it produced — what lets a
+   * turn in the transcript name the nodes ITS patch changed, not just the
+   * latest one. Session memory: a thread reopened later falls back to "updated
+   * the blueprint" (see `turn-notes.tsx`).
+   */
+  const [diffByVersion, setDiffByVersion] = useState<ReadonlyMap<number, BlueprintDiff>>(new Map());
+  const prevViewRef = useRef<{ id: EntityId; version: number; view: BlueprintView } | null>(null);
   const selectedRef = useRef<EntityId | null>(null);
   selectedRef.current = selectedId;
+  /** The selected NODE (row-local key) — one selection shared by every view and the inspector. */
+  const [pickedNode, setNodeKey] = useState<string | null>(null);
+  const [viewChoice, setViewChoice] = useState<CraftViewId>('flow');
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [composerSeed, setComposerSeed] = useState<{ text: string; nonce: number } | undefined>(undefined);
 
   const refreshList = useCallback(async () => {
     const result = await seam.query({ spaceId, kinds: ['graph'], sort: 'activityAt_desc', limit: 50 });
@@ -190,6 +230,9 @@ export function CraftScreen({
   /* The selected row's read, and the switch reset. */
   useEffect(() => {
     setActiveThreadId(null);
+    setNodeKey(null);
+    setLastDiff(null);
+    setDiffByVersion(new Map());
     if (!selectedId) {
       setDetail(null);
       return;
@@ -346,7 +389,7 @@ export function CraftScreen({
           const id = wanted[index];
           if (!id) return;
           if (result.status === 'fulfilled') {
-            next.set(id, { kind: result.value.kind, title: result.value.title });
+            next.set(id, refInfoOf(result.value));
           } else {
             /* Honestly marked: the row references something this read cannot see. */
             next.set(id, { kind: 'entity', title: 'unavailable entity' });
@@ -359,6 +402,23 @@ export function CraftScreen({
       alive = false;
     };
   }, [content, refTitles, seam]);
+
+  /* THE LIVE MAP: after Orchestrate the references are real tasks whose
+     status moves. A durable upsert for an entity the blueprint references
+     re-reads just that one, so the card's stripe and pulse follow it. */
+  const refIdsRef = useRef(refTitles);
+  refIdsRef.current = refTitles;
+  useEffect(() => {
+    return seam.onEvent((event) => {
+      if (event.type !== 'entity.upsert') return;
+      const id = event.entity.id as EntityId;
+      if (!refIdsRef.current.has(id)) return;
+      void seam.entity(id).then(
+        (entity) => setRefTitles((current) => new Map(current).set(id, refInfoOf(entity))),
+        () => undefined,
+      );
+    });
+  }, [seam]);
 
   const createGraph = useCallback(async () => {
     try {
@@ -397,10 +457,16 @@ export function CraftScreen({
     }
   }, [selectedId, activeThreadId, approving, seam, onNotice]);
 
+  /* Lanes is the only view that changes the LAYOUT (swimlanes); Outline and
+     Table read `lists`, which are layout-independent, from the flow fold. */
   const view = useMemo(
-    () => (content && (content as { kind?: string }).kind === 'graph' ? blueprintView(content, refTitles) : null),
-    [content, refTitles],
+    () => (content && (content as { kind?: string }).kind === 'graph'
+      ? blueprintView(content, refTitles, { mode: viewChoice === 'lanes' ? 'swimlane' : 'flow' })
+      : null),
+    [content, refTitles, viewChoice],
   );
+  const viewId: CraftViewId = view ? resolveView(viewChoice, view) : 'flow';
+  const selectedNode = view && pickedNode && nodeByKey(view, pickedNode) ? pickedNode : null;
 
   /**
    * THE WIDTH SOLVER. `usePanelWidth` holds what the viewer ASKED FOR,
@@ -417,7 +483,7 @@ export function CraftScreen({
     CHAT_DEFAULT,
     CHAT_MIN,
   );
-  const detailPref = usePanelWidth('craft.detail', DETAIL_DEFAULT, DETAIL_MIN);
+  const detailPref = usePanelWidth('craft.inspector', DETAIL_DEFAULT, DETAIL_MIN);
 
   /**
    * REGION C — the entity a chip opened.
@@ -430,6 +496,10 @@ export function CraftScreen({
   const screen = useScreenStack(screenKeyOf.view('craft'));
   const canHostPanel = panelHost !== undefined;
   const detailId = canHostPanel ? screen.selected : null;
+  /* The right column is open for an opened entity OR a selected node, and it
+     OVERLAYS the canvas below the breakpoint rather than taking its width. */
+  const sideOpen = detailId !== null || selectedNode !== null;
+  const overlay = splitWidth > 0 && splitWidth < OVERLAY_BELOW;
 
   /* Region C's room comes out of the split BEFORE the chat's ceiling is
      computed, or a wide chat plus an open panel would leave the canvas below
@@ -438,7 +508,7 @@ export function CraftScreen({
     ? Math.max(DETAIL_MIN, splitWidth - CHAT_MIN - CANVAS_MIN - PANE_CHROME * 2)
     : Number.POSITIVE_INFINITY;
   const detailWidth = Math.min(Math.max(DETAIL_MIN, detailPref.width), detailMax);
-  const detailRoom = detailId ? detailWidth + PANE_CHROME : 0;
+  const detailRoom = sideOpen && !overlay ? detailWidth + PANE_CHROME : 0;
   /* Before the first measurement there is no honest ceiling, so the asked-for
      width paints as-is rather than being clamped against a zero. */
   const chatMax = splitWidth > 0
@@ -459,59 +529,185 @@ export function CraftScreen({
     [canHostPanel, screen, onOpenEntity],
   );
 
-  /* ESC CLOSES THE COLUMN — one rung, and only ours. `defaultPrevented`
-     keeps a dialog or the conversation popover ahead of us in the queue. */
+  /* ESC CLOSES THE COLUMN — one rung at a time, and only ours: an opened
+     entity first (back to the inspector), then the inspector. `defaultPrevented`
+     keeps a dialog, a popover or the canvas's own Escape ahead of us. */
   useEffect(() => {
-    if (!detailId) return;
+    if (!sideOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
-      screen.pop();
+      if (detailId) screen.pop();
+      else setNodeKey(null);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [detailId, screen]);
+  }, [sideOpen, detailId, screen]);
 
-  /* LIVE CONSTRUCTION READS AS MOTION: diff consecutive folds of the SAME
-     row and glow what the latest patch added. The drawn set never changes
-     here — attention is CSS only — and switching graphs resets the baseline
-     so a freshly opened blueprint does not arrive glowing wholesale. */
+  /* WHAT THE PATCH CHANGED: diff consecutive folds of the SAME row. Switching
+     graphs resets the baseline so a freshly opened blueprint does not arrive
+     "changed" wholesale; a fold that changed nothing (a re-read, a view
+     switch) leaves the last diff standing. */
+  /* Keyed on the ROW VERSION, not on the fold: resolving a reference's title
+     re-folds the view too, and "4f8c2a9e… → Session tree guide lines" is the
+     host catching up, not the agent changing the plan. */
+  const rowVersion = detail?.version ?? null;
   useEffect(() => {
-    if (!view || !selectedId) return;
-    const cards = new Set(view.cards.map((card) => card.key));
-    const lines = new Set(view.lines.map((line) => line.key));
-    const prev = prevKeysRef.current;
-    prevKeysRef.current = { id: selectedId, cards, lines };
+    if (!view || !selectedId || rowVersion === null) return;
+    const prev = prevViewRef.current;
+    if (prev && prev.id === selectedId && prev.version === rowVersion) {
+      prevViewRef.current = { ...prev, view };
+      return;
+    }
+    prevViewRef.current = { id: selectedId, version: rowVersion, view };
     if (!prev || prev.id !== selectedId) return;
-    const freshCards = new Set([...cards].filter((key) => !prev.cards.has(key)));
-    const freshLines = new Set([...lines].filter((key) => !prev.lines.has(key)));
-    if (freshCards.size === 0 && freshLines.size === 0) return;
-    setFresh({ cards: freshCards, lines: freshLines });
-    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
-    freshTimerRef.current = setTimeout(() => setFresh(null), 2600);
+    const diff = diffBlueprintViews(prev.view, view);
+    if (!isEmptyDiff(diff)) {
+      setLastDiff(diff);
+      setDiffByVersion((current) => new Map(current).set(rowVersion, diff));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowVersion, selectedId, view]);
+
+  const selectNode = useCallback((key: string | null) => {
+    setNodeKey(key);
+    if (key !== null) screen.clear();
+  }, [screen]);
+
+  /* "Ask about this": a link to the node, in the one spelling the craft
+     prompt teaches (`blueprintNodeRef`, @tm8/contract). */
+  const askAbout = useCallback((key: string) => {
+    if (!view || !selectedId) return;
+    setChatCollapsed(false);
+    setComposerSeed((was) => ({
+      text: blueprintNodeRef(selectedId, key, titleOf(view, key)),
+      nonce: (was?.nonce ?? 0) + 1,
+    }));
   }, [view, selectedId]);
 
-  useEffect(() => () => {
-    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+  const seedPrompt = useCallback((text: string) => {
+    setChatCollapsed(false);
+    setComposerSeed((was) => ({ text, nonce: (was?.nonce ?? 0) + 1 }));
   }, []);
+
+  /**
+   * What Orchestrate would do with the specs. Only MATERIALIZABLE, rank-placed
+   * kinds are "created". Teammates (attach-placed) and kinds the orchestrator
+   * never creates (skills, people) are listed BY NAME as things the human
+   * confirms — the craft prompt says teammate specs are proposals, and a
+   * pre-flight that promised to create them would be the canvas contradicting
+   * the agent.
+   */
+  const plan = useMemo(() => {
+    const create: [string, number][] = [];
+    const confirm: { label: string; names: string[] }[] = [];
+    if (!view) return { create, confirm };
+    const counts = new Map<string, number>();
+    const toConfirm = new Map<string, string[]>();
+    const note = (kind: string, label: string, title: string) => {
+      const def = orchestrationNodeKind(kind);
+      if (def && def.materializable && def.placement === 'rank') {
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      } else {
+        toConfirm.set(label, [...(toConfirm.get(label) ?? []), title]);
+      }
+    };
+    view.cards.filter((card) => card.isSpec).forEach((card) => note(card.kind, card.kindLabel, card.title));
+    view.attached.filter((node) => node.isSpec)
+      .forEach((node) => note(node.kind, orchestrationNodeKind(node.kind)?.label ?? 'Teammate', node.title));
+    const plural = (label: string, n: number) => (n === 1 ? label : orchestrationNodeKindPlural(label));
+    counts.forEach((n, label) => create.push([plural(label, n), n]));
+    toConfirm.forEach((names, label) => confirm.push({ label: plural(label, names.length), names }));
+    return { create, confirm };
+  }, [view]);
+
+  /* The transcript side of chat ↔ canvas: a call that wrote THIS blueprint
+     gets a line naming what it changed, each node a button onto the canvas. */
+  const toolNote = useCallback(
+    (call: ToolNoteCall) => {
+      const write = graphWriteOf(call, selectedId);
+      if (!write) return null;
+      const diff = write.version !== null ? diffByVersion.get(write.version) ?? null : null;
+      return <BlueprintTurnNote write={write} diff={diff} view={view} onSelect={selectNode} />;
+    },
+    [selectedId, diffByVersion, view, selectNode],
+  );
+
+  const isEntityGraph = view?.graphType === 'entity';
+  const viewOptions = view && isEntityGraph && view.cards.length > 0 ? availableViews(view) : [];
+  const findings = isEntityGraph && view ? view.findings : [];
+  const orchestrateBlocked = !selectedId
+    ? 'Select a blueprint first.'
+    : !view || view.cards.length === 0
+      ? 'The blueprint is empty — ask the chat to draft it first.'
+      : !activeThreadId
+        ? 'Open or start a craft conversation first — the approval posts into it.'
+        : null;
+  const marked = lastDiff ? { cards: lastDiff.marked, lines: lastDiff.markedLines } : undefined;
+  const describedBy = 'crf-canvas-help';
 
   return (
     <div className="crf-root" data-testid="craft-screen">
-      {/* NO SCREEN BAR. The old `.crf-bar` spent a full 34px row on the word
-          "Craft" — which the rail already says, since this screen is only
-          reachable from its own tab — plus one button. Orchestrate moved onto
-          the CANVAS pane's header, which is the row that names the blueprint
-          it acts on; a verb belongs beside its object, not on a banner above
-          both panes. The screen now opens straight into the split. */}
-      <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px`, '--crf-detail': `${detailWidth}px` } as CSSProperties}>
-        <section className="crf-chat" id="crf-chat-pane" aria-label="Craft conversation">
-          <CraftChatPicker
-            threads={threads}
-            aboutSelected={aboutSelected}
-            selectedId={activeThreadId}
-            onSelect={requestThread}
-            onNewChat={() => requestThread(null)}
-          />
+      {/* ONE HEADER for the studio: which plan › which conversation, how to
+          look at it, and the one committing verb. It replaced two pane
+          headers that each carried an unrelated picker and a ＋. */}
+      <header className="crf-head" data-testid="crf-head">
+        <button
+          type="button"
+          className="crf-head__chat"
+          data-testid="crf-chat-toggle"
+          aria-pressed={!chatCollapsed}
+          aria-controls="crf-chat-pane"
+          title={chatCollapsed ? 'Show the conversation' : 'Hide the conversation'}
+          onClick={() => setChatCollapsed((was) => !was)}
+        >
+          <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
+            <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
+            <path d={chatCollapsed ? 'M6 2.5 V13.5' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
+          </svg>
+        </button>
+        <GraphPicker
+          graphs={graphs}
+          selectedId={selectedId}
+          onSelect={(id) => setSelectedId(id)}
+          onCreate={() => void createGraph()}
+        />
+        <span className="crf-head__sep" aria-hidden>›</span>
+        <CraftChatPicker
+          threads={threads}
+          aboutSelected={aboutSelected}
+          selectedId={activeThreadId}
+          onSelect={requestThread}
+          onNewChat={() => {
+            setChatCollapsed(false);
+            requestThread(null);
+          }}
+        />
+        <span className="crf-head__fill" />
+        <ViewSwitcher options={viewOptions} value={viewId} onChange={setViewChoice} />
+        <FindingsChip
+          findings={findings}
+          onClick={() => {
+            const first = findings.find((finding) => finding.nodes.length > 0);
+            if (first) selectNode(first.nodes[0]!);
+          }}
+        />
+        <OrchestrateButton
+          findings={findings}
+          plan={plan.create}
+          confirm={plan.confirm}
+          disabledReason={orchestrateBlocked}
+          approving={approving}
+          onApprove={() => void approveOrchestrate()}
+          onShowNode={(key) => selectNode(key)}
+        />
+      </header>
+      <div
+        className={['crf-split', ...(overlay ? ['crf-split--overlay'] : [])].join(' ')}
+        ref={splitRef}
+        style={{ '--crf-chat': `${chatWidth}px`, '--crf-detail': `${detailWidth}px` } as CSSProperties}
+      >
+        <section className="crf-chat" id="crf-chat-pane" aria-label="Craft conversation" hidden={chatCollapsed}>
           <div className="crf-chat__body">
             <ChatHomeSurface
               seam={seam}
@@ -530,10 +726,13 @@ export function CraftScreen({
                  started since has had no `about` edge. */
               {...(selectedId ? { aboutId: selectedId } : {})}
               pinnedMode="craft"
+              composerSeed={composerSeed}
+              newThreadIntro={<CraftChatIntro onPrompt={seedPrompt} />}
+              toolNote={toolNote}
               skillOptions={skillOptions}
               onOpenEntity={openEntity}
-              /* TWO PANES: the thread column is this screen's, drawn as the
-                 picker above. `routeThreadId` is authoritative in solo mode. */
+              /* The thread column is this screen's, drawn as the header's
+                 conversation crumb. `routeThreadId` is authoritative in solo mode. */
               soloConversation
               routeThreadId={requestedThreadId}
               onThreadsChange={setThreads}
@@ -546,139 +745,213 @@ export function CraftScreen({
         {/* The floor is the CANVAS's, measured — see `chatMax`. A handle that
             could drag the blueprint to nothing would be the zero-floored
             track the layout law forbids. */}
-        <PanelResizer
-          side="left"
-          label="Craft conversation"
-          controls="crf-chat-pane"
-          width={chatWidth}
-          minWidth={CHAT_MIN}
-          maxWidth={chatMax}
-          onResize={setChatWidth}
-          onReset={resetChatWidth}
-        />
-        <section className="crf-canvas" aria-label="Blueprint canvas" data-testid="crf-canvas-pane">
-          <div className="crf-pane-head">
-            <label className="crf-pick crf-pick--graph">
-              <span className="crf-pick__caret" aria-hidden>
-                ▾
-              </span>
-              <select
-                data-testid="crf-picker"
-                aria-label="Blueprint"
-                value={selectedId ?? ''}
-                onChange={(event) => setSelectedId((event.target.value || null) as EntityId | null)}
-              >
-                {graphs.length === 0 ? <option value="">No graphs yet</option> : null}
-                {graphs.map((graph) => (
-                  <option key={graph.id} value={graph.id}>
-                    {graph.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="crf-pane-head__plus"
-              data-testid="crf-new"
-              aria-label="New graph"
-              title="Create a new blueprint"
-              onClick={() => void createGraph()}
-            >
-              <span aria-hidden>＋</span>
-            </button>
-            {/* ORCHESTRATE RIDES THE BLUEPRINT'S OWN ROW. It reads
-                `selectedId` — the very graph this picker names — so putting it
-                here makes the disabled reason legible from one glance at the
-                row rather than from a banner two panes wide. */}
-            <button
-              type="button"
-              className="crf-pane-head__orchestrate"
-              data-testid="crf-orchestrate"
-              disabled={!selectedId || !activeThreadId || approving}
-              title={
-                !selectedId
-                  ? 'Select a graph first.'
-                  : !activeThreadId
-                    ? 'Open or start a craft thread first — the approval posts into it.'
-                    : 'Post the approval into the craft thread; the agent orchestrates from there.'
-              }
-              onClick={() => void approveOrchestrate()}
-            >
-              Orchestrate ▸
-            </button>
-          </div>
+        {chatCollapsed ? null : (
+          <PanelResizer
+            side="left"
+            label="Craft conversation"
+            controls="crf-chat-pane"
+            width={chatWidth}
+            minWidth={CHAT_MIN}
+            maxWidth={chatMax}
+            onResize={setChatWidth}
+            onReset={resetChatWidth}
+          />
+        )}
+        <section className="crf-canvas" aria-label="Blueprint" data-testid="crf-canvas-pane">
+          {lastDiff && isEntityGraph ? (
+            <DiffStrip
+              diff={lastDiff}
+              view={view!}
+              onSelect={selectNode}
+              onDismiss={() => setLastDiff(null)}
+            />
+          ) : null}
           <div className="crf-canvas__body">
-          {loadState === 'error' ? (
-            <p className="crf-empty">This graph could not be read. Pick another, or retry from the picker.</p>
-          ) : !selectedId ? (
-            <p className="crf-empty" data-testid="crf-no-graph">
-              No graph selected. Create one with “+ New graph”, or ask the craft chat to start a blueprint.
-            </p>
-          ) : !view ? (
-            <p className="crf-empty" role="status">Loading the blueprint…</p>
-          ) : view.graphType === 'mermaid' ? (
-            view.source ? (
-              <div className="crf-mermaid" data-testid="crf-mermaid">
-                <Mermaid source={view.source} testId="crf-mermaid-svg" />
-              </div>
+            {loadState === 'error' ? (
+              <p className="crf-empty">This blueprint could not be read. Pick another from the header, or retry.</p>
+            ) : !selectedId ? (
+              loadState === 'loading' ? (
+                <p className="crf-empty" role="status">Loading blueprints…</p>
+              ) : (
+                <CraftEmptyState hasGraph={false} onPrompt={seedPrompt} onCreate={() => void createGraph()} />
+              )
+            ) : !view ? (
+              <p className="crf-empty" role="status">Loading the blueprint…</p>
+            ) : view.graphType === 'mermaid' ? (
+              view.source ? (
+                <div className="crf-mermaid" data-testid="crf-mermaid">
+                  <Mermaid source={view.source} testId="crf-mermaid-svg" />
+                </div>
+              ) : (
+                <p className="crf-empty">A mermaid graph with no source yet — ask the chat to sketch one.</p>
+              )
+            ) : view.graphType === 'entity' ? (
+              view.cards.length === 0 ? (
+                <CraftEmptyState hasGraph onPrompt={seedPrompt} />
+              ) : (
+                <>
+                  <p id={describedBy} className="crf-sr">
+                    Arrow keys move between nodes, Enter inspects the selected node, f finds, 0 fits the whole plan,
+                    and full stop focuses a node&apos;s neighbourhood. The Outline and Table views list the same blueprint as text.
+                  </p>
+                  {viewId === 'outline' ? (
+                    <div className="crf-scroll">
+                      <BlueprintOutline
+                        view={view}
+                        selectedKey={selectedNode}
+                        onSelect={selectNode}
+                        marked={lastDiff?.marked}
+                      />
+                    </div>
+                  ) : viewId === 'table' ? (
+                    <div className="crf-scroll">
+                      <BlueprintTable
+                        view={view}
+                        selectedKey={selectedNode}
+                        onSelect={selectNode}
+                        marked={lastDiff?.marked}
+                      />
+                    </div>
+                  ) : (
+                    <BlueprintCanvas
+                      /* A new blueprint or a new layout gets a fresh camera. */
+                      key={`${selectedId}:${viewId}`}
+                      view={view}
+                      ariaLabel={`Blueprint ${detail?.title ?? ''}: ${view.cards.length} nodes, ${view.lines.length} edges`}
+                      describedBy={describedBy}
+                      selectedKey={selectedNode}
+                      onSelect={selectNode}
+                      marked={marked}
+                    />
+                  )}
+                </>
+              )
             ) : (
-              <p className="crf-empty">A mermaid graph with no source yet — ask the chat to sketch one.</p>
-            )
-          ) : view.graphType === 'entity' ? (
-            <>
-              <BlueprintCanvas
-                view={view}
-                ariaLabel={`Blueprint ${detail?.title ?? ''}: ${view.cards.length} nodes, ${view.lines.length} edges`}
-                onOpenEntity={openEntity}
-                fresh={fresh ?? undefined}
-              />
-              {view.danglingEdgeCount > 0 ? (
-                <p className="crf-note" data-testid="crf-dangling">
-                  {`${view.danglingEdgeCount} edge${view.danglingEdgeCount === 1 ? '' : 's'} name keys no node carries — not drawn.`}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="crf-empty" data-testid="crf-unknown-type">
-              {`Graph type “${view.graphType}” has no renderer in this build — the row is intact; a future type renders here.`}
-            </p>
-          )}
+              <p className="crf-empty" data-testid="crf-unknown-type">
+                {`Graph type “${view.graphType}” has no renderer in this build — the row is intact; a future type renders here.`}
+              </p>
+            )}
           </div>
         </section>
         {/*
-          REGION C — the entity a chip opened, in the app's shared detail
-          mount. Rendered ONLY while something is open: an aside kept at
-          `display:none` would still mount that entity's panel — its chat
-          surface, its terminal, its polling — behind an invisible region,
-          which is the rule `EntityView` states and obeys.
-
-          `side="right"`, because the column this handle controls sits to its
-          right; the chat's handle is `side="left"` for the mirror reason.
+          THE RIGHT COLUMN — the selected node's inspector, or the entity an
+          "Open entity" / chat chip opened, which REPLACES the inspector's body
+          (with a back arrow to it) rather than opening a fourth column.
+          Rendered ONLY while something is open: an aside kept at
+          `display:none` would still mount that entity's panel behind an
+          invisible region, which is the rule `EntityView` states and obeys.
         */}
-        {detailId && panelHost ? (
+        {sideOpen && (selectedNode || (detailId && panelHost)) ? (
           <>
-            <PanelResizer
-              side="right"
-              label="Entity details"
-              controls="crf-detail-pane"
-              width={detailWidth}
-              minWidth={DETAIL_MIN}
-              maxWidth={detailMax}
-              onResize={detailPref.setWidth}
-              onReset={detailPref.reset}
-            />
-            <aside className="crf-detail" id="crf-detail-pane" aria-label="Entity details" data-testid="crf-detail">
-              <HostedEntityColumn
-                {...panelHost}
-                entityId={detailId}
-                /* Drilling REPLACES this column's subject — never a fourth. */
-                onOpenEntity={(id) => screen.open(id)}
-                onClose={() => screen.clear()}
+            {overlay ? null : (
+              <PanelResizer
+                side="right"
+                label="Inspector"
+                controls="crf-detail-pane"
+                width={detailWidth}
+                minWidth={DETAIL_MIN}
+                maxWidth={detailMax}
+                onResize={detailPref.setWidth}
+                onReset={detailPref.reset}
               />
+            )}
+            <aside
+              className="crf-detail"
+              id="crf-detail-pane"
+              aria-label={detailId ? 'Entity details' : 'Node inspector'}
+              data-testid="crf-detail"
+              data-overlay={overlay || undefined}
+            >
+              {detailId && panelHost ? (
+                <>
+                  {selectedNode ? (
+                    <button type="button" className="crf-back" data-testid="crf-back" onClick={() => screen.clear()}>
+                      <span aria-hidden>‹</span> Back to the node
+                    </button>
+                  ) : null}
+                  <div className="crf-detail__entity">
+                    <HostedEntityColumn
+                      {...panelHost}
+                      entityId={detailId}
+                      /* Drilling REPLACES this column's subject — never a fourth. */
+                      onOpenEntity={(id) => screen.open(id)}
+                      onClose={() => screen.clear()}
+                    />
+                  </div>
+                </>
+              ) : view && selectedNode ? (
+                <NodeInspector
+                  view={view}
+                  selectedKey={selectedNode}
+                  onSelect={selectNode}
+                  onOpenEntity={openEntity}
+                  onAsk={askAbout}
+                  onClose={() => setNodeKey(null)}
+                />
+              ) : null}
             </aside>
           </>
         ) : null}
       </div>
     </div>
   );
+}
+
+/** The live overlay a reference node carries: its status, and whether a session is on it now. */
+function refInfoOf(entity: EntityDetail): RefInfo {
+  const state = entity.state as { kind?: string; status?: string } | undefined;
+  return {
+    kind: entity.kind,
+    title: entity.title,
+    status: state && typeof state.status === 'string' ? state.status : null,
+    live: (entity.badges?.workingActors?.length ?? 0) > 0,
+  };
+}
+
+/**
+ * THE DIFF STRIP — what the latest agent patch changed, over the canvas. The
+ * entries are buttons that select the node (and so open the inspector), so
+ * "the agent added Draft API spec" is one press from seeing it.
+ */
+function DiffStrip({
+  diff,
+  view,
+  onSelect,
+  onDismiss,
+}: {
+  diff: BlueprintDiff;
+  view: BlueprintView;
+  onSelect(key: string): void;
+  onDismiss(): void;
+}) {
+  const entries = [
+    ...diff.added.map((key) => ({ key, verb: 'added' })),
+    ...diff.changed.map((key) => ({ key, verb: 'changed' })),
+  ].slice(0, 6);
+  const more = diff.added.length + diff.changed.length - entries.length;
+  return (
+    <div className="crf-diff" role="status" data-testid="crf-diff">
+      <span className="crf-diff__lead">Blueprint updated</span>
+      <span className="crf-diff__sum" data-testid="crf-diff-summary">{summarizeDiff(diff)}</span>
+      <span className="crf-diff__items">
+        {entries.map(({ key, verb }) => (
+          <button type="button" key={key} className="crf-diff__item" data-verb={verb} onClick={() => onSelect(key)}>
+            {titleOf(view, key)}
+          </button>
+        ))}
+        {more > 0 ? <span className="crf-diff__more">{`+${more} more`}</span> : null}
+        {diff.removed.slice(0, 3).map((node) => (
+          <span key={node.key} className="crf-diff__item crf-diff__item--gone" title="Removed">{node.title}</span>
+        ))}
+      </span>
+      <button type="button" className="crf-diff__close" aria-label="Dismiss the change summary" onClick={onDismiss}>
+        ×
+      </button>
+    </div>
+  );
+}
+
+/** "Task" → "Tasks", from the vocabulary's own plural; unknown labels get an "s". */
+function orchestrationNodeKindPlural(label: string): string {
+  return ORCHESTRATION_NODE_KINDS.find((kind) => kind.label === label)?.plural ?? `${label}s`;
 }

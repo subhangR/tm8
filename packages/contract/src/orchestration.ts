@@ -43,13 +43,19 @@ export interface OrchestrationNodeKind {
   label: string;
   plural: string;
   placement: OrchestrationPlacement;
-  /** Can the orchestrator create one of these at materialize time? */
+  /**
+   * True ⇒ the orchestrator CREATES a spec of this kind at materialize time,
+   * without asking. False ⇒ never created: the human confirms or picks an
+   * existing one and the node is linked to it. The craft prompt's materialize
+   * step and the Orchestrate pre-flight are both generated from this flag.
+   */
   materializable: boolean;
 }
 
 export const ORCHESTRATION_NODE_KINDS: readonly OrchestrationNodeKind[] = [
   { kind: 'task', label: 'Task', plural: 'Tasks', placement: 'rank', materializable: true },
-  { kind: 'team_member', label: 'Teammate', plural: 'Teammates', placement: 'attach', materializable: true },
+  /* A teammate is who does the work: the human confirms one, it is never auto-created. */
+  { kind: 'team_member', label: 'Teammate', plural: 'Teammates', placement: 'attach', materializable: false },
   /* A human. Assignable exactly like a teammate; never created by materialize. */
   { kind: 'member', label: 'Person', plural: 'People', placement: 'attach', materializable: false },
   { kind: 'doc', label: 'Doc', plural: 'Docs', placement: 'rank', materializable: true },
@@ -59,6 +65,11 @@ export const ORCHESTRATION_NODE_KINDS: readonly OrchestrationNodeKind[] = [
 ];
 
 const NODE_KINDS = new Map(ORCHESTRATION_NODE_KINDS.map((k) => [k.kind, k]));
+
+/** The kinds a human confirms rather than the orchestrator creating them. */
+export function confirmOnlyNodeKinds(): string[] {
+  return ORCHESTRATION_NODE_KINDS.filter((k) => !k.materializable).map((k) => k.kind);
+}
 
 export function orchestrationNodeKind(kind: string | null | undefined): OrchestrationNodeKind | null {
   return kind ? NODE_KINDS.get(kind) ?? null : null;
