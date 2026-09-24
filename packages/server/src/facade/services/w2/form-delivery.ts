@@ -204,9 +204,9 @@ export class FormDeliveryDrain {
       .filter((mode) => typeof options.notLive?.[mode] === 'function');
   }
 
-  /** Post-commit submit hook. Replays re-fire it; the claim makes that safe. */
   /**
-   * NOT awaited by the submit: a spawn-mode row resumes or spawns a session
+   * Post-commit submit hook. Replays re-fire it; the claim makes that safe.
+   * The drain is NOT awaited: a spawn-mode row resumes or spawns a session
    * (first-prompt settlement can take minutes), and the respondent's submit
    * must not wait on it. No `workSessionId` still drains: a session deleted
    * before submit has none, yet a spawn-mode row for it is pending (214 C).

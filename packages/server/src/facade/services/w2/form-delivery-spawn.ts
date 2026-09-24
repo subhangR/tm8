@@ -26,6 +26,9 @@
  * attempt, settles it `cancelled` with the reason. A session that cannot be
  * resumed is `resume_unavailable`; it is never silently spawned instead —
  * that is the respondent's "Send to a new session" to choose (§7.3).
+ * NOTE: the cap counts every ROUTE claim, deferrals for 'conflict' or a
+ * 'spawning' session included, so a flapping session spends it faster; the
+ * backoff still bounds how fast.
  *
  * AUTHORITY (coordinator ruling): the server's claims resume and spawn, and
  * the spawned session inherits the REQUESTER's recorded posture, never its
