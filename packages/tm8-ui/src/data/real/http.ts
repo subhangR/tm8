@@ -88,6 +88,27 @@ export interface HttpOptions {
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Operations whose SERVER-SIDE work legitimately outlives the default deadline
+ * — the same table, for the same reason, as the CLI's
+ * `SLOW_OPERATION_TIMEOUT_MS` (packages/cli/src/client.ts).
+ *
+ * `execution.spawn` answers only once the agent's first turn has verifiably
+ * reached its composer, a wait bounded by `SpawnService.firstPromptSettlementMs`
+ * (150s). Held to the 15s of a graph read, a launch that was proceeding
+ * normally was reported to the person who clicked Launch as a failure — while
+ * the node went on to start the session anyway, so the natural retry spent a
+ * second slot against the session cap. Measured on prod from the CLI journals
+ * (2026-09-20..24, n=212): `execution.spawn` p50 4.4s, p90 29s, max 180s.
+ *
+ * Floors on the DEFAULT only: a client built with an explicit `timeoutMs`
+ * said a number out loud and gets it, as `--timeout` does on the CLI.
+ */
+export const SLOW_OPERATION_TIMEOUT_MS: Readonly<Partial<Record<OperationName, number>>> = {
+  'execution.spawn': 180_000,
+  'execution.resume': 180_000,
+};
 /** Uploads move real bytes; they get a proportionally longer leash. */
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
@@ -192,7 +213,12 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
   const doFetch: FetchLike | undefined = options.fetch;
   const onTransport = options.onTransport;
   const getAuthToken = options.getAuthToken;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const timeoutExplicit = options.timeoutMs !== undefined;
+  function timeoutFor(op: OperationName): number {
+    if (timeoutExplicit) return defaultTimeoutMs;
+    return Math.max(defaultTimeoutMs, SLOW_OPERATION_TIMEOUT_MS[op] ?? 0);
+  }
 
   /**
    * The timeout covers the WHOLE exchange — connect, headers, and body — via
@@ -213,7 +239,16 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     };
   }
 
-  async function callPath<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  function callPath<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+    return callPathWithin<T>(defaultTimeoutMs, method, path, opts);
+  }
+
+  async function callPathWithin<T>(
+    timeoutMs: number,
+    method: string,
+    path: string,
+    opts: RequestOptions = {},
+  ): Promise<T> {
     if (doFetch === undefined) {
       // Not a network error: a wiring error. Saying so plainly beats an
       // `undefined is not a function` from three frames down.
@@ -304,7 +339,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       throw new CollabError('upstream_unavailable', 'no fetch implementation was provided to createHttpClient()');
     }
     const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
-    const guard = armTimeout(timeoutMs);
+    const guard = armTimeout(defaultTimeoutMs);
     const authToken = getAuthToken?.() ?? null;
 
     try {
@@ -323,7 +358,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
         throw new CollabError(
           'upstream_unavailable',
           guard.timedOut()
-            ? `the tm8 node did not answer within ${timeoutMs}ms`
+            ? `the tm8 node did not answer within ${defaultTimeoutMs}ms`
             : `cannot reach the tm8 node: ${String(cause)}`,
           { retryable: true, details: { url } },
         );
@@ -352,7 +387,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       } catch (cause) {
         if (!guard.timedOut()) throw cause;
         onTransport?.(false);
-        throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${timeoutMs}ms`, {
+        throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${defaultTimeoutMs}ms`, {
           retryable: true,
           details: { url },
         });
@@ -446,7 +481,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     putGrantedBytes,
     call<T>(op: OperationName, opts: RequestOptions = {}): Promise<T> {
       const binding = getOperation(op);
-      return callPath<T>(binding.method, bindPath(op, opts.params ?? {}), opts);
+      return callPathWithin<T>(timeoutFor(op), binding.method, bindPath(op, opts.params ?? {}), opts);
     },
     callBytes(op: OperationName, opts: RequestOptions = {}): Promise<Blob> {
       const binding = getOperation(op);
