@@ -569,14 +569,18 @@ export function BlueprintCanvas({
         </div>
       ) : null}
 
+      {/* The fade is decoration only (no pointer events, no text); the nudge
+          is a small chevron pinned to the top of the gutter, clear of the
+          vertically-centred plan, so neither ever sits on a node's words. */}
+      {chrome && moreLeft ? <div className="crf-fade crf-fade--left" aria-hidden /> : null}
+      {chrome && moreRight ? <div className="crf-fade crf-fade--right" aria-hidden /> : null}
       {chrome && moreLeft ? (
-        <button type="button" className="crf-more crf-more--left" data-testid="crf-more-left" aria-label="Show more of the plan to the left" onClick={() => nudge(-1)}>
+        <button type="button" className="crf-more crf-more--left" data-testid="crf-more-left" aria-label="Show more of the plan to the left" title="More to the left" onClick={() => nudge(-1)}>
           <span aria-hidden>‹</span>
         </button>
       ) : null}
       {chrome && moreRight ? (
-        <button type="button" className="crf-more crf-more--right" data-testid="crf-more-right" aria-label="Show more of the plan to the right" onClick={() => nudge(1)}>
-          <span className="crf-more__word">more</span>
+        <button type="button" className="crf-more crf-more--right" data-testid="crf-more-right" aria-label="Show more of the plan to the right" title="More to the right" onClick={() => nudge(1)}>
           <span aria-hidden>›</span>
         </button>
       ) : null}
