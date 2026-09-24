@@ -85,7 +85,7 @@ import {
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
 import { childCursor } from './entities-commands-tracking.js';
 import { taggedQuerier } from './context-tags.js';
-import { V2_DEFAULT_TOTAL_BYTES, loadContextV2, parseV2Sections } from './feed-context-v2.js';
+import { V2_DEFAULT_TOTAL_BYTES, decodeV2Cursor, loadContextV2, parseV2Sections } from './feed-context-v2.js';
 
 // ---------------------------------------------------------------------------
 // The versioned named-scope registry — the whole M1/M3 surface
@@ -1119,11 +1119,16 @@ export class W2FeedContextService {
     const input = parseContextQuery(ctx.query);
     if (input.schema === 'v2') {
       // M2/S3a: v2 only when asked for, until S5 flips the default.
+      const sections = parseV2Sections(input.sections);
+      // M2/S3b: a foreign or cross-filter cursor fails before any statement.
+      const after = decodeV2Cursor({ id, sections, edgeType: input.edgeType, cursor: input.cursor });
       const { claims } = await accessFor(this.deps, ctx);
       return this.deps.db.tx(claims, (q) => loadContextV2(q, id, {
-        sections: parseV2Sections(input.sections),
+        sections,
         totalBytes: input.totalBytes ?? V2_DEFAULT_TOTAL_BYTES,
         ...(input.offset === undefined ? {} : { offset: input.offset }),
+        edgeType: input.edgeType,
+        after,
       }));
     }
     // The schema admits only v1 section names when `schema` is not v2.
@@ -1132,8 +1137,14 @@ export class W2FeedContextService {
     const sectionBytes = input.sectionBytes ?? DEFAULT_SECTION_BYTES;
     const { claims, viewerIdentityId } = await accessFor(this.deps, ctx);
 
-    const loaded = await this.deps.db.tx(claims, (q) =>
-      this.loadContext(q, ctx, id, v1LoadPlan(sections), viewerIdentityId));
+    const plan = v1LoadPlan(sections);
+    const rows = await this.deps.db.tx(claims, (q) => this.loadContext(q, id, plan, viewerIdentityId));
+    // The palette reads in its own transaction, through a `deps.db` the
+    // registration seam tags `actions` (handlers/w2/feed-context.ts). It runs
+    // AFTER the context transaction has returned its client: opened inside it,
+    // one read held two pool clients at once.
+    const actions = plan.actions && this.options.actions ? await this.options.actions(ctx, id) : null;
+    const loaded: ContextRowSet = { ...rows, actions };
     // The default section cap is a fair-share guard for structural sections,
     // but applying it to messages first starves a coordination anchor before
     // the total-budget priority loop can let its conversation win. An explicit
@@ -1146,11 +1157,10 @@ export class W2FeedContextService {
 
   private async loadContext(
     q: Querier,
-    ctx: RequestContext,
     id: string,
     plan: ContextLoadPlan,
     viewerIdentityId: string,
-  ): Promise<ContextRowSet> {
+  ): Promise<Omit<ContextRowSet, 'actions'>> {
     const rootRows = await q.query<EntityRow>(
       `/* entities.context:root */
        select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1`,
@@ -1291,12 +1301,6 @@ export class W2FeedContextService {
       [root.space_id],
     );
 
-    // The palette reads in its own transaction, through a `deps.db` the
-    // registration seam tags `actions` (handlers/w2/feed-context.ts).
-    const actions = plan.actions && this.options.actions
-      ? await this.options.actions(ctx, id)
-      : null;
-
     return {
       root,
       rootSummary,
@@ -1305,7 +1309,6 @@ export class W2FeedContextService {
       edges,
       messages,
       messageCursors,
-      actions,
       newestActivity,
       eventSeq: Number(seqRows[0]?.seq ?? 0),
       overfetched,

@@ -229,7 +229,7 @@ describe('S3 --schema and section paging flags', () => {
     expect(seen.at(-1)?.query.get('sectionBytes')).toBe('1024');
   });
 
-  it.fails('[c904 §2.8 · c904 §5.4] the section expands run verbatim: --sections X --cursor, --edge-type bind (S3)', async () => {
+  it('[c904 §2.8 · c904 §5.4] the section expands run verbatim: --sections X --cursor, --edge-type bind (S3)', async () => {
     for (const expand of [
       `tm8 entity context ${ENT} --sections messages --cursor c_msgs_2`,
       `tm8 entity context ${ENT} --sections hierarchy --cursor c_kids_2`,

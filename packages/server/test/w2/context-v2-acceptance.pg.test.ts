@@ -150,7 +150,7 @@ const LIMIT = { children: 10, blockers: 10, connections: 10, taskMessages: 3, co
 /** Code points, the ellipsis INCLUDED (coordinator ruling on #674). */
 const TEXT_CAP = { task: 280, core: 500, title: 80, from: 80 };
 /** c761 §10.1 / Q28 = A. */
-const FIXED_CORE_MAX = 1_500;
+const FIXED_CORE_MAX = 1_024;
 const ROW_OVERHEAD_MAX = 200;
 const DEFAULT_TOTAL = 16_384;
 /**
@@ -620,7 +620,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c904 §5.4 · c761 §10.4] every advertised expand runs verbatim, bounded, same row shape, no gaps or overlaps (S3)', async () => {
+  it('[c904 §5.4 · c761 §10.4] every advertised expand runs verbatim, bounded, same row shape, no gaps or overlaps (S3)', async () => {
     for (const fixture of [...FIXTURES, { name: 'G', id: F.G }]) {
       const first = await v2(fixture.id);
       for (const expand of advertisedExpands(first.view)) {
@@ -650,6 +650,10 @@ describe('S3 the v2 DTO', () => {
     expect(all.map((m) => m.id).sort()).toEqual([...F.chatMessages].sort());
   });
 
+  // Still failing after S3b (#687): the expand is advertised, and actions.list
+  // now answers for the harness's owner, but this call names no `schema`, and
+  // the server default is still the unpaged v1 inventory (~11 KB). It flips
+  // when S5 makes v2 the actions.list default for agent callers.
   it.fails('[c761 §10.4] the actions expand is advertised only in its bounded form and runs verbatim (S3 + #669 bounded action list)', async () => {
     const { view } = await v2(F.T);
     const actions = view.notLoaded.find((n) => n.section === 'actions');
@@ -962,7 +966,7 @@ describe('S4 body ceiling and caller budget', () => {
 // ===========================================================================
 
 describe('S5 MCP expandOp', () => {
-  it.fails('[c904 §5.4 · c904 Q19] every omitted/notLoaded entry carries an expandOp that returns what its expand returns (S5)', async () => {
+  it('[c904 §5.4 · c904 Q19] every omitted/notLoaded entry carries an expandOp that returns what its expand returns (S5)', async () => {
     for (const fixture of [...FIXTURES, { name: 'G', id: F.G }]) {
       const { view } = await v2(fixture.id);
       for (const entry of [...view.omitted, ...view.notLoaded]) {

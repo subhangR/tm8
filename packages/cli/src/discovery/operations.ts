@@ -2074,13 +2074,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--schema v1|v2] [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--offset <bytes>] [--actions-schema v1|v2]',
+    syn: 'tm8 entity context <entity-id> [--schema v1|v2] [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>] [--offset <bytes>] [--actions-schema v1|v2] [--cursor <c>] [--edge-type <type>]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'exactly six flags bind — --schema, --sections, --total-bytes, --section-bytes, --offset, --actions-schema (EntityContextQuery); --depth/--messages/--children never bound and are gone',
+      'exactly eight flags bind — --schema, --sections, --total-bytes, --section-bytes, --offset, --actions-schema, --cursor, --edge-type (EntityContextQuery); --depth/--messages/--children never bound and are gone',
+      'v2 only: --cursor continues ONE paged section (--sections hierarchy|blockers|connections|messages) and is copied verbatim from an omitted[] expand; --edge-type filters --sections connections to one edge type',
       'actions under v2 (agent default) are tm8.actions.v2 rows; cursors.actions continues in `tm8 action list --for <id> --cursor <c>`',
       '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy, blockers, connections, messages, actions; v2 refuses --section-bytes. Without --schema the read is still v1',
       'v2 body ceiling: a body over ~15 KB arrives complete:false with an expand `--sections assignment --offset <N>` (UTF-8 bytes, server-filled; run it verbatim). A --total-bytes under the never-drop core is 422 context_budget_too_small (exit 2) and prints `next`, the retry rounded up to the KB',
