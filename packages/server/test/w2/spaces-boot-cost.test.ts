@@ -199,3 +199,71 @@ describe('the measured unread total still has a home', () => {
     expect(navigation.unreadTotal).toBe(0);
   });
 });
+
+describe('spaces.navigation counts unread once', () => {
+  /**
+   * `unread_counts` is a SECURITY DEFINER scan of `public.messages` — ~350 ms
+   * on a prod copy (2026-09-24, as `tm8_app`). Navigation used to pay it twice
+   * in one transaction: once inside `assembleSummaries` for the channels'
+   * `unreadCount`, once more in the handler for `unreadTotal`. One call now
+   * serves both; these pin the count AND that both consumers still read it.
+   */
+  const MEMBER_ENTITY = '00000000-0000-7000-8000-000000000002';
+  const CHANNEL_B = '00000000-0000-7000-8000-000000000004';
+  const TASK_ANCHOR = '00000000-0000-7000-8000-000000000005';
+
+  function channelRow(id: string, name: string, position: number): Record<string, unknown> {
+    const at = '2026-09-24T10:00:00.000Z';
+    return {
+      id, space_id: SPACE_ID, kind: 'channel', parent_id: null, position, visibility: 'space', version: 1,
+      activity_at: at, created_at: at, updated_at: at, deleted_at: null, created_by: MEMBER_ENTITY,
+      likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0,
+      channel_name: name, channel_topic: '',
+    };
+  }
+
+  function navigationDb(): RecordingDb & { rpcArgs: unknown[][] } {
+    const db = new RecordingDb((sql) => {
+      if (sql.includes('from public.members where space_id')) return [{ entity_id: MEMBER_ENTITY }];
+      if (sql.includes("e.kind = 'channel'")) return [channelRow(CHANNEL_ID, 'general', 0), channelRow(CHANNEL_B, 'random', 1)];
+      return [];
+    }) as RecordingDb & { rpcArgs: unknown[][] };
+    db.rpcArgs = [];
+    // Channel A has 3 unread, channel B none (a `group by` omits it), and a
+    // task anchor has 2 — which belongs in the total and on no channel.
+    const rows = [{ anchor_id: CHANNEL_ID, unread: 3 }, { anchor_id: TASK_ANCHOR, unread: 2 }];
+    const querier = (db as unknown as { querier: Querier }).querier;
+    querier.rpc = async <T>(fn: string, args: unknown[] = []): Promise<T> => {
+      db.rpcs.push(fn);
+      db.rpcArgs.push(args);
+      return (fn === 'unread_counts' ? rows : []) as unknown as T;
+    };
+    return db;
+  }
+
+  it('issues exactly one unread_counts call, for this space', async () => {
+    const db = navigationDb();
+    const registry = new HandlerRegistry();
+    registerW2IdentitySpacesHandlers(registry, deps(db));
+
+    await registry.get('spaces.navigation')!(context('spaces.navigation', { spaceId: SPACE_ID }));
+
+    const calls = db.rpcs.flatMap((fn, i) => (fn === 'unread_counts' ? [db.rpcArgs[i]] : []));
+    expect(calls).toEqual([[SPACE_ID]]);
+  });
+
+  it('feeds that one call to the channel counts AND the space total', async () => {
+    const db = navigationDb();
+    const registry = new HandlerRegistry();
+    registerW2IdentitySpacesHandlers(registry, deps(db));
+
+    const navigation = await registry.get('spaces.navigation')!(
+      context('spaces.navigation', { spaceId: SPACE_ID }),
+    ) as { unreadTotal: number; channels: Array<{ entity: { id: string; state: { unreadCount: number } } }> };
+
+    // Total spans every anchor kind — NOT the sum of the channel counts (3).
+    expect(navigation.unreadTotal).toBe(5);
+    const byId = new Map(navigation.channels.map((node) => [node.entity.id, node.entity.state.unreadCount]));
+    expect(byId).toEqual(new Map([[CHANNEL_ID, 3], [CHANNEL_B, 0]]));
+  });
+});

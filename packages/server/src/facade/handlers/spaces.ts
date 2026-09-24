@@ -266,19 +266,25 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
           order by e.position asc, e.id asc`,
         [spaceId],
       );
-      // Per-channel `unreadCount` is no longer patched in here: the assembler
-      // resolves it from the same `public.unread_counts`, so the nav tree and a
-      // directly-fetched channel cannot disagree.
-      const navigableSummaries = await assembleSummaries(q, rows, viewerIdentity);
-
-      // The space-wide total still needs its own call, and it is NOT the sum of
-      // the channel counts above: `unread_counts` reports every anchor kind, so
-      // unread messages on a task or a doc belong in this total and have no
-      // channel row to be summed from.
+      // ONE `unread_counts` call serves both the per-channel counts and the
+      // space-wide total. The assembler used to issue it for the channels and
+      // this handler issued it again for the total — the same SECURITY DEFINER
+      // scan of `public.messages`, twice in one transaction, and the dominant
+      // cost of the whole read (~350 ms each on a prod copy, 2026-09-24).
+      //
+      // The total is still NOT the sum of the channel counts: `unread_counts`
+      // reports every anchor kind, so unread messages on a task or a doc belong
+      // in it and have no channel row to be summed from. Handing the assembler
+      // the full map is exactly what `loadUnreadCounts` would have built — every
+      // row here is a channel of `spaceId`, the one space it would have asked
+      // about — so the nav tree and a directly-fetched channel still read one
+      // source and cannot disagree.
       const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>(
         'unread_counts',
         [spaceId],
       );
+      const unreadCounts = new Map(unreadRows.map((row) => [row.anchor_id, Number(row.unread)]));
+      const navigableSummaries = await assembleSummaries(q, rows, viewerIdentity, { unreadCounts });
 
       // Build the tree in one pass, then attach. A channel whose parent is
       // outside this result set (deleted, or not readable) is surfaced at the

@@ -2609,6 +2609,15 @@ export async function assembleSummaries(
   q: Querier,
   rows: readonly EntityRow[],
   viewerIdentityId: string,
+  preloaded: {
+    /**
+     * The `unread_counts` map for the rows' space, when the caller already
+     * holds it (`spaces.navigation` needs the raw rows for its total). Must be
+     * the complete result for every space the rows' channels belong to — the
+     * same map `loadUnreadCounts` would build — or channel counts read zero.
+     */
+    readonly unreadCounts?: Map<string, number>;
+  } = {},
 ): Promise<EntitySummary[]> {
   if (rows.length === 0) return [];
 
@@ -2619,7 +2628,7 @@ export async function assembleSummaries(
   // nothing and breaks at pg 9.
   const relations = await loadRelations(q, ids);
   const viewerReactions = await loadViewerReactions(q, ids, viewerIdentityId);
-  const unreadCounts = await loadUnreadCounts(q, rows);
+  const unreadCounts = preloaded.unreadCounts ?? await loadUnreadCounts(q, rows);
   // THE SAME loader the events projector calls — see its header for why this
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
