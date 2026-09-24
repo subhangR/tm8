@@ -1278,3 +1278,41 @@
 .crf-intro h1 { margin: 0 0 8px; font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-h2); color: var(--pn-ink); text-align: center; }
 .crf-intro p { margin: 0 0 14px; font-size: var(--pn-fs-sm); color: var(--pn-ink-2); line-height: 1.55; text-align: center; }
 .crf-intro__prompts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+/* == TURN NOTES: the transcript line for a turn that changed the blueprint == */
+.crf-turnnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 4px 0;
+  padding: 5px 10px;
+  border-left: 2px solid var(--pn-brand);
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  background: var(--pn-brand-soft);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+
+.crf-turnnote__mark { color: var(--pn-brand); }
+.crf-turnnote__lead { font-weight: 700; color: var(--pn-ink); }
+.crf-turnnote__ver { font-weight: 500; color: var(--pn-ink-3); font-variant-numeric: tabular-nums; }
+.crf-turnnote__sum { font-variant-numeric: tabular-nums; }
+.crf-turnnote__more { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+
+.crf-turnnote__node {
+  padding: 1px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+
+.crf-turnnote__node:hover { border-color: var(--pn-brand); color: var(--pn-brand); }
+.crf-turnnote__node[data-verb='added']::before { content: '+ '; color: var(--pn-run); font-weight: 700; }
+.crf-turnnote__node[data-verb='changed']::before { content: '~ '; color: var(--pn-brand); font-weight: 700; }
+.crf-turnnote__node[data-verb='built']::before { content: '✓ '; color: var(--pn-run); font-weight: 700; }

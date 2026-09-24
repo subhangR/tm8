@@ -52,6 +52,7 @@ import { FindingsChip, GraphPicker, OrchestrateButton, ViewSwitcher } from './St
 import { diffBlueprintViews, isEmptyDiff, summarizeDiff, type BlueprintDiff } from './blueprint-diff';
 import { availableViews, resolveView, type CraftViewId } from './presentation';
 import { nodeByKey, titleOf } from './canvas-nav';
+import { BlueprintTurnNote, graphWriteOf, type ToolNoteCall } from './turn-notes';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import type { CraftPanelHostProps } from './types';
 import '../session-graph/session-graph.css';
@@ -168,6 +169,13 @@ export function CraftScreen({
    * glow was motion nobody could read back after looking away.
    */
   const [lastDiff, setLastDiff] = useState<BlueprintDiff | null>(null);
+  /**
+   * Every patch diff seen live, by the ROW VERSION it produced — what lets a
+   * turn in the transcript name the nodes ITS patch changed, not just the
+   * latest one. Session memory: a thread reopened later falls back to "updated
+   * the blueprint" (see `turn-notes.tsx`).
+   */
+  const [diffByVersion, setDiffByVersion] = useState<ReadonlyMap<number, BlueprintDiff>>(new Map());
   const prevViewRef = useRef<{ id: EntityId; version: number; view: BlueprintView } | null>(null);
   const selectedRef = useRef<EntityId | null>(null);
   selectedRef.current = selectedId;
@@ -224,6 +232,7 @@ export function CraftScreen({
     setActiveThreadId(null);
     setNodeKey(null);
     setLastDiff(null);
+    setDiffByVersion(new Map());
     if (!selectedId) {
       setDetail(null);
       return;
@@ -553,7 +562,10 @@ export function CraftScreen({
     prevViewRef.current = { id: selectedId, version: rowVersion, view };
     if (!prev || prev.id !== selectedId) return;
     const diff = diffBlueprintViews(prev.view, view);
-    if (!isEmptyDiff(diff)) setLastDiff(diff);
+    if (!isEmptyDiff(diff)) {
+      setLastDiff(diff);
+      setDiffByVersion((current) => new Map(current).set(rowVersion, diff));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowVersion, selectedId, view]);
 
@@ -608,6 +620,18 @@ export function CraftScreen({
     toConfirm.forEach((names, label) => confirm.push({ label: plural(label, names.length), names }));
     return { create, confirm };
   }, [view]);
+
+  /* The transcript side of chat ↔ canvas: a call that wrote THIS blueprint
+     gets a line naming what it changed, each node a button onto the canvas. */
+  const toolNote = useCallback(
+    (call: ToolNoteCall) => {
+      const write = graphWriteOf(call, selectedId);
+      if (!write) return null;
+      const diff = write.version !== null ? diffByVersion.get(write.version) ?? null : null;
+      return <BlueprintTurnNote write={write} diff={diff} view={view} onSelect={selectNode} />;
+    },
+    [selectedId, diffByVersion, view, selectNode],
+  );
 
   const isEntityGraph = view?.graphType === 'entity';
   const viewOptions = view && isEntityGraph && view.cards.length > 0 ? availableViews(view) : [];
@@ -704,6 +728,7 @@ export function CraftScreen({
               pinnedMode="craft"
               composerSeed={composerSeed}
               newThreadIntro={<CraftChatIntro onPrompt={seedPrompt} />}
+              toolNote={toolNote}
               skillOptions={skillOptions}
               onOpenEntity={openEntity}
               /* The thread column is this screen's, drawn as the header's

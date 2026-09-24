@@ -47,7 +47,7 @@ import {
 import { EntityTray } from './EntityTray';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
-import { TurnParts } from './TurnParts';
+import { TurnParts, type TurnPartsProps } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
 import type {
   ChatHomePort,
@@ -116,6 +116,8 @@ export interface ChatHomeScreenProps {
    * agent will do with the blueprint). Absent ⇒ the greeting, unchanged.
    */
   newThreadIntro?: ReactNode;
+  /** A host's note under a tool call (see `TurnPartsProps.toolNote`). */
+  toolNote?: TurnPartsProps['toolNote'];
   models: readonly ChatModelOption[];
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
@@ -342,6 +344,7 @@ export function ChatHomeScreen({
   pinnedMode,
   composerSeed,
   newThreadIntro,
+  toolNote,
   models,
   newMutationId = defaultMutationId,
   onOpenEntity,
@@ -1880,6 +1883,7 @@ export function ChatHomeScreen({
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
                   assetHref={assetHref}
+                  toolNote={toolNote}
                   /* One fold for the whole thread (cached on the turns array),
                      so a transition's from-side and a create's parent survive
                      turn boundaries — the same model the sticky projection
@@ -2371,6 +2375,7 @@ function Turn({
   suppressEntityIds,
   assetHref,
   ledger,
+  toolNote,
 }: {
   turn: ChatThreadDetail['turns'][number];
   mode: ChatMode;
@@ -2383,6 +2388,7 @@ function Turn({
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
   /** The whole thread's ledger fold, for cross-turn memory in the lines. */
   ledger?: ChatLedger | undefined;
+  toolNote?: TurnPartsProps['toolNote'];
 }) {
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
@@ -2517,6 +2523,7 @@ function Turn({
         assetHref={assetHref}
         ledger={ledger}
         turnMessageId={turn.messageId}
+        toolNote={toolNote}
       />
     </article>
   );
