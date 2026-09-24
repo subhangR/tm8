@@ -324,7 +324,27 @@ function renderFeed(dto: unknown): string {
   return lines.length > 0 ? lines.join('\n') : 'no feed items';
 }
 
+/**
+ * The human line for a v2 read. Deliberately minimal: the lossless text brief
+ * (c761 §4, §8) is M2/S5's; until then a v2 caller reads `--format json`.
+ */
+function renderContextV2(view: Record<string, unknown>): string {
+  const count = (v: unknown): string => (Array.isArray(v) ? String(v.length) : '-');
+  const assignment = view['assignment'] as { bytes?: number; complete?: boolean } | undefined;
+  return [
+    `${String(view['kind'])} ${String(view['id'])} v${String(view['version'])} · ${String(view['status'])} · seq ${String(view['asOfSeq'])}`,
+    `title: ${String(view['title'])}`,
+    ...(assignment ? [`assignment: ${String(assignment.bytes)} B${assignment.complete === false ? ' (complete:false)' : ''}`] : []),
+    `children ${count(view['children'])}  messages ${count(view['messages'])}  blockers ${count(view['blockers'])}  ` +
+      `omitted ${count(view['omitted'])}  notLoaded ${count(view['notLoaded'])}  errors ${count(view['errors'])}`,
+    'full view: --format json',
+  ].join('\n');
+}
+
 function renderContext(dto: unknown): string {
+  if ((dto as { schemaVersion?: unknown } | undefined)?.schemaVersion === 'tm8.entity-context.v2') {
+    return renderContextV2(dto as Record<string, unknown>);
+  }
   const view = dto as
     | { root?: SummaryLike; parents?: unknown; children?: unknown; edges?: unknown; messages?: unknown; truncated?: unknown }
     | undefined;
@@ -425,6 +445,8 @@ async function entityFeed(cmd: CommandContext): Promise<ExitCode> {
 
 /** The closed section set — `EntityContextQuery.sections`, spelled once. */
 const CONTEXT_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
+/** The v2 section set (c904 §2.10): `summary` aliases `assignment`, `activity` is gone. */
+const CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
 
 /**
  * A byte-budget option, range-checked locally: the schema bounds are frozen
@@ -450,6 +472,10 @@ function byteBudgetOption(cmd: CommandContext, name: string, min: number, max: n
  * typo. The three flags are ALL that bind (`EntityContextQuery`).
  */
 export function contextQuery(cmd: CommandContext): Record<string, string> {
+  // `--schema v2` asks for `tm8.entity-context.v2`; absent stays v1 until the
+  // rollout step flips the default, and `--schema v1` names v1 explicitly.
+  const schema = enumOption(cmd, 'schema', ['v1', 'v2']);
+  const sectionSet: readonly string[] = schema === 'v2' ? CONTEXT_V2_SECTIONS : CONTEXT_SECTIONS;
   // One comma-separated value, exactly as the Server splits it. Each part is
   // validated HERE against the closed enum — a typoed section name must fail
   // as a usage error, not as a wire 400 quoting zod internals.
@@ -459,19 +485,23 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     const parts = rawSections.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
     if (parts.length === 0) {
       throw new CliError('--sections expects a comma-separated list of sections', EXIT_USAGE, {
-        hint: `sections: ${CONTEXT_SECTIONS.join('|')}`,
+        hint: `sections: ${sectionSet.join('|')}`,
       });
     }
     for (const part of parts) {
-      if (!(CONTEXT_SECTIONS as readonly string[]).includes(part)) {
+      if (!sectionSet.includes(part)) {
         throw new CliError(`--sections has no section ${JSON.stringify(part)}`, EXIT_USAGE, {
-          hint: `sections: ${CONTEXT_SECTIONS.join('|')}`,
+          hint: `sections: ${sectionSet.join('|')}`,
         });
       }
     }
     sections = parts.join(',');
   }
   const totalBytes = byteBudgetOption(cmd, 'total-bytes', 1024, 32_768);
+  // c904 Q17: v2 has no per-section budget; refused before any request.
+  if (schema === 'v2' && cmd.options.value('section-bytes') !== undefined) {
+    throw new CliError('v2 budgets are total-only; see --total-bytes', EXIT_USAGE);
+  }
   const sectionBytes = byteBudgetOption(cmd, 'section-bytes', 512, 8192);
   // The actions section rolls out to `tm8.actions.v2` rows like `action list`
   // does. Only asked about when the section is in a view that prints it: the
@@ -487,6 +517,7 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
     : schemaOption(cmd, 'actions-schema');
 
   return {
+    ...(schema === undefined ? {} : { schema }),
     ...(sections === undefined ? {} : { sections }),
     ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
     ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
@@ -496,7 +527,7 @@ export function contextQuery(cmd: CommandContext): Record<string, string> {
 
 async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes', 'actions-schema']);
+  assertKnownOptions(cmd, ['schema', 'sections', 'total-bytes', 'section-bytes', 'actions-schema']);
   const id = requireArg(cmd, 0, '<entity-id>');
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {

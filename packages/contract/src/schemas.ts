@@ -67,7 +67,7 @@ import type {
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
-  EntityContextQuery, EntityContextView, EntityCounters, EntityDetail,
+  EntityContextQuery, EntityContextResult, EntityContextV2View, EntityContextView, EntityCounters, EntityDetail,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
@@ -3704,12 +3704,42 @@ export const EntityFeedPageSchema: z.ZodType<EntityFeedPage> = z.lazy(() => z.ob
   previousCursor: CursorSchema.nullable().optional(),
 }).strict());
 
+const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
+const ENTITY_CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
+
+/**
+ * One query shape for both DTOs; `schema` picks which section names and budget
+ * knobs are legal. v1's rules are unchanged: absent `schema` is v1 until the
+ * rollout step (M2/S5) flips the default.
+ */
 export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object({
-  sections: uniqueArray(z.enum(['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'])).optional(),
+  schema: z.enum(['v1', 'v2']).optional(),
+  sections: uniqueArray(z.enum([
+    'summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions', 'assignment', 'blockers',
+  ])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
   actionsSchema: z.enum(['v1', 'v2']).optional(),
-}).strict();
+}).strict().superRefine((query, issues) => {
+  const v2 = query.schema === 'v2';
+  const legal: readonly string[] = v2 ? ENTITY_CONTEXT_V2_SECTIONS : ENTITY_CONTEXT_V1_SECTIONS;
+  for (const section of query.sections ?? []) {
+    if (!legal.includes(section)) {
+      issues.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sections'],
+        message: `${section} is not a ${v2 ? 'v2' : 'v1'} section`,
+      });
+    }
+  }
+  if (v2 && query.sectionBytes !== undefined) {
+    issues.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sectionBytes'],
+      message: 'v2 budgets are total-only; see --total-bytes',
+    });
+  }
+});
 
 export const EntityContextViewSchema: z.ZodType<EntityContextView> = z.lazy(() => z.object({
   schemaVersion: z.literal('tm8.entity-context.v1'),
@@ -3733,6 +3763,150 @@ export const EntityContextViewSchema: z.ZodType<EntityContextView> = z.lazy(() =
   byteSize: z.number().int().nonnegative(),
   truncated: z.boolean(),
 }).strict());
+
+
+// entities.context v2 (c761 §3, c904 §2). Strict throughout: a field the spec
+// did not name is a bug in the projection, not an extension.
+const ContextExpandOpSchema = z.object({
+  operation: z.custom<OperationName>(isOperationName),
+  params: z.record(z.unknown()),
+}).strict();
+const ContextRefSchema = z.union([
+  z.object({
+    id: EntityIdSchema,
+    kind: z.string().min(1),
+    title: z.string(),
+    status: z.string(),
+    titleTruncated: z.literal(true).optional(),
+    deleted: z.literal(true).optional(),
+  }).strict(),
+  z.object({ id: EntityIdSchema, unreadable: z.literal(true) }).strict(),
+]);
+const ContextMessageSchema = z.union([
+  z.object({
+    id: EntityIdSchema,
+    from: z.string(),
+    fromTruncated: z.literal(true).optional(),
+    at: IsoTimestamp,
+    text: z.string(),
+    truncated: z.literal(true).optional(),
+    replyTo: EntityIdSchema.optional(),
+    toMe: z.literal(true).optional(),
+  }).strict(),
+  z.object({
+    id: EntityIdSchema,
+    from: z.string(),
+    fromTruncated: z.literal(true).optional(),
+    at: IsoTimestamp,
+    redacted: z.literal(true),
+  }).strict(),
+]);
+const NullableString = z.string().nullable().optional();
+
+export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.object({
+  schemaVersion: z.literal('tm8.entity-context.v2'),
+  id: EntityIdSchema,
+  kind: z.string().min(1),
+  title: z.string(),
+  version: z.number().int().nonnegative(),
+  status: z.string(),
+  asOfSeq: z.number().int().nonnegative(),
+  parent: ContextRefSchema.nullable().optional(),
+  priority: NullableString,
+  gate: z.union([
+    z.literal('none'),
+    z.object({
+      kind: z.literal('pr_merged'),
+      prs: z.array(z.object({ url: z.string(), state: z.string(), ci: z.string().nullable() }).strict()),
+      more: z.literal(true).optional(),
+    }).strict(),
+  ]).optional(),
+  assignees: z.array(z.object({
+    id: EntityIdSchema,
+    name: z.string(),
+    you: z.literal(true).optional(),
+    by: z.string().optional(),
+    at: IsoTimestamp.optional(),
+  }).strict()).optional(),
+  assignment: z.object({
+    text: z.string(),
+    bytes: z.number().int().nonnegative(),
+    complete: z.boolean(),
+    offset: z.number().int().nonnegative().optional(),
+    expand: z.string().optional(),
+    expandOp: ContextExpandOpSchema.optional(),
+  }).strict().optional(),
+  acceptance: z.array(z.object({ id: z.string(), done: z.boolean(), text: z.string() }).strict()).optional(),
+  blockers: z.array(z.object({
+    id: EntityIdSchema,
+    title: z.string(),
+    status: z.string(),
+    resolved: z.literal(false),
+    titleTruncated: z.literal(true).optional(),
+    deleted: z.literal(true).optional(),
+  }).strict()).optional(),
+  children: z.array(ContextRefSchema).optional(),
+  outline: z.array(z.object({
+    level: z.number().int().min(1),
+    text: z.string(),
+    offset: z.number().int().nonnegative(),
+  }).strict()).optional(),
+  outlineTruncated: z.literal(true).optional(),
+  teammate: NullableString,
+  agentTool: NullableString,
+  model: NullableString,
+  checkoutBranch: NullableString,
+  startedAt: NullableString,
+  exitedAt: NullableString,
+  endedKind: NullableString,
+  endedReason: NullableString,
+  tasks: z.array(ContextRefSchema).optional(),
+  runtimeState: NullableString,
+  turnState: NullableString,
+  turnCount: z.number().int().nonnegative().nullable().optional(),
+  lastTurnAt: NullableString,
+  mode: NullableString,
+  projectId: NullableString,
+  anchor: ContextRefSchema.optional(),
+  parentMessage: ContextRefSchema.nullable().optional(),
+  attachments: z.array(z.object({
+    id: EntityIdSchema,
+    name: z.string(),
+    bytes: z.number().int().nonnegative().nullable(),
+  }).strict()).optional(),
+  connections: z.array(z.object({
+    type: z.string().min(1),
+    dir: z.enum(['out', 'in']),
+    other: ContextRefSchema,
+    resolved: z.boolean().optional(),
+  }).strict()).optional(),
+  messages: z.array(ContextMessageSchema).optional(),
+  omitted: z.array(z.object({
+    section: z.string().min(1),
+    kept: z.number().int().nonnegative(),
+    more: z.boolean(),
+    totalAtLeast: z.number().int().nonnegative().optional(),
+    reason: z.enum(['budget', 'rowLimit', 'fetchLimit']),
+    expand: z.string().optional(),
+    expandOp: ContextExpandOpSchema.optional(),
+  }).strict()),
+  notLoaded: z.array(z.object({
+    section: z.string().min(1),
+    expand: z.string().optional(),
+    expandOp: ContextExpandOpSchema.optional(),
+  }).strict()),
+  errors: z.array(z.object({ section: z.string().min(1), code: z.string().min(1), retry: z.boolean() }).strict()),
+  budget: z.object({
+    requested: z.number().int().positive(),
+    used: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+
+/** What `entities.context` returns: v1, or v2 when `schema=v2` asked for it. */
+export const EntityContextResultSchema: z.ZodType<EntityContextResult> = z.union([
+  EntityContextViewSchema,
+  EntityContextV2ViewSchema,
+]);
 
 const OperationNameSchema = z.custom<OperationName>(isOperationName, 'must be a catalogued operation name');
 

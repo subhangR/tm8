@@ -461,7 +461,7 @@ describe('S2 select-before-load', () => {
 // ===========================================================================
 
 describe('S3 the v2 DTO', () => {
-  it.fails('[c904 §5.1 · c761 §10.1] budget.used is the minified DTO length and ≤ requested, for every fixture (S3)', async () => {
+  it('[c904 §5.1 · c761 §10.1] budget.used is the minified DTO length and ≤ requested, for every fixture (S3a)', async () => {
     for (const fixture of FIXTURES) {
       const r = await v2(fixture.id);
       expect(r.view.schemaVersion, fixture.name).toBe('tm8.entity-context.v2');
@@ -470,7 +470,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c761 §10.1] size gate: fixed core ≤ 1.5 KB, ref rows ≤ 200 B + title, message rows ≤ 200 B + text (S3)', async () => {
+  it('[c761 §10.1] size gate: fixed core ≤ 1.5 KB, ref rows ≤ 200 B + title, message rows ≤ 200 B + text (S3a)', async () => {
     for (const fixture of [...FIXTURES, { name: 'G (gated)', id: F.G }, { name: 'U (unreadable parent)', id: F.U }]) {
       const { view } = await v2(fixture.id);
       expect(fixedCore(view), `${fixture.name} fixed core`).toBeLessThanOrEqual(FIXED_CORE_MAX);
@@ -506,7 +506,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c904 §5.2 · c761 §10.3] assignment and acceptance are never absent; bodies ≤ ceiling arrive complete (S3)', async () => {
+  it('[c904 §5.2 · c761 §10.3] assignment and acceptance are never absent; bodies ≤ ceiling arrive complete (S3a)', async () => {
     for (const fixture of SMALL_BODIES) {
       const { view } = await v2(fixture.id);
       expect(view.assignment, fixture.name).toEqual({ text: fixture.body, bytes: bytes(fixture.body!), complete: true });
@@ -520,7 +520,7 @@ describe('S3 the v2 DTO', () => {
     expect(p.view.assignment?.complete).toBe(true);
   });
 
-  it.fails('[c904 §5.5 · c761 §10.2] no false empties: P shows all 10 children, open first then most recent (S3)', async () => {
+  it('[c904 §5.5 · c761 §10.2] no false empties: P shows all 10 children, open first then most recent (S3a)', async () => {
     const { view } = await v2(F.P);
     const kept = view.children ?? [];
     const entry = view.omitted.find((o) => o.section === 'children');
@@ -538,7 +538,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c761 §10.2] a running session shows its working_on task; connections are never silently 0 (S3)', async () => {
+  it('[c761 §10.2] a running session shows its working_on task; connections are never silently 0 (S3a)', async () => {
     const { view } = await v2(F.WS);
     expect(view.kind).toBe('work_session');
     expect(view.tasks).toEqual([
@@ -554,7 +554,7 @@ describe('S3 the v2 DTO', () => {
     expect(types).toEqual(expect.arrayContaining(['working_on']));
   });
 
-  it.fails('[c761 §3.2] per-kind messages: chat keeps the latest 10 of 12 at ≤500 chars, oldest→newest (S3)', async () => {
+  it('[c761 §3.2] per-kind messages: chat keeps the latest 10 of 12 at ≤500 chars, oldest→newest (S3a)', async () => {
     const { view } = await v2(F.C);
     const messages = view.messages ?? [];
     expect(messages).toHaveLength(LIMIT.coreMessages);
@@ -571,7 +571,7 @@ describe('S3 the v2 DTO', () => {
     expect(view.connections).toBeUndefined();
   });
 
-  it.fails('[c761 §3.2] per-kind messages: a task keeps the latest 3 at ≤280 chars (S3)', async () => {
+  it('[c761 §3.2] per-kind messages: a task keeps the latest 3 at ≤280 chars (S3a)', async () => {
     const { view } = await v2(F.P);
     expect((view.messages ?? []).map((m) => m.id)).toEqual([F.pMessage]);
     for (const m of view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.task);
@@ -580,7 +580,7 @@ describe('S3 the v2 DTO', () => {
     for (const m of ws.view.messages ?? []) expect([...(m.text ?? '')].length).toBeLessThanOrEqual(TEXT_CAP.core);
   });
 
-  it.fails('[c761 §3.2] a project is a card: children and edges notLoaded, no count query (S3)', async () => {
+  it('[c761 §3.2] a project is a card: children and edges notLoaded, no count query (S3a)', async () => {
     const r = await v2(F.PJ);
     expect(r.view.kind).toBe('project');
     expect(r.view.children).toBeUndefined();
@@ -631,7 +631,7 @@ describe('S3 the v2 DTO', () => {
     expect(bytes(result)).toBeLessThanOrEqual(1_536);
   });
 
-  it.fails('[c904 §5.6 · c761 §10.6] a hidden peer yields no row, no count, no more — no marker at all (S3)', async () => {
+  it('[c904 §5.6 · c761 §10.6] a hidden peer yields no row, no count, no more — no marker at all (S3a)', async () => {
     const r = await v2(F.P);
     expect(r.json).not.toContain(F.H);
     const children = r.view.omitted.find((o) => o.section === 'children');
@@ -643,12 +643,12 @@ describe('S3 the v2 DTO', () => {
     expect(page.view.children).toHaveLength(LIMIT.children);
   });
 
-  it.fails('[c904 §5.6 · c761 §10.6] a root-named unreadable parent renders {id, unreadable:true} (S3)', async () => {
+  it('[c904 §5.6 · c761 §10.6] a root-named unreadable parent renders {id, unreadable:true} (S3a)', async () => {
     const { view } = await v2(F.U);
     expect(view.parent).toEqual({ id: F.RP, unreadable: true });
   });
 
-  it.fails('[c761 §10.6] blockers and gate PRs appear in the core (S3)', async () => {
+  it('[c761 §10.6] blockers and gate PRs appear in the core (S3a)', async () => {
     const { view } = await v2(F.G);
     expect(view.blockers).toEqual([
       { id: F.B, title: 'Blocker: open dependency of G', status: 'open', resolved: false },
@@ -662,7 +662,7 @@ describe('S3 the v2 DTO', () => {
     expect(t.view.gate).toBe('none');
   });
 
-  it.fails('[c904 §5.6 · c761 §10.6] a failing list loader lands in errors[], never silently absent (S3)', async () => {
+  it('[c904 §5.6 · c761 §10.6] a failing list loader lands in errors[], never silently absent (S3a)', async () => {
     const control = await v2(F.G);
     expect(control.view.errors).toEqual([]);
     try {
@@ -682,7 +682,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c904 §5.6] a root, body or acceptance failure fails the whole read (S3)', async () => {
+  it('[c904 §5.6] a root, body or acceptance failure fails the whole read (S3a)', async () => {
     const control = await v2(F.T);
     expect(control.view.schemaVersion).toBe('tm8.entity-context.v2');
     for (const tag of ['root', 'assignment', 'acceptance']) {
@@ -707,7 +707,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c904 §5.7 · c761 §10.7] two reads at the same asOfSeq, as the same actor, are byte-identical (S3)', async () => {
+  it('[c904 §5.7 · c761 §10.7] two reads at the same asOfSeq, as the same actor, are byte-identical (S3a)', async () => {
     for (const fixture of FIXTURES) {
       const first = await v2(fixture.id);
       const second = await v2(fixture.id);
@@ -722,7 +722,7 @@ describe('S3 the v2 DTO', () => {
   // ca8d's snapshot builder is outside Module 2 — this becomes an `it` there.
   it.todo('[c904 §5.7 · c761 §10.7] the launch-snapshot DTO equals an immediate read (ca8d)');
 
-  it.fails('[c904 §5.8] under the v2 default, no statement runs for a section left in notLoaded[] (S3)', async () => {
+  it('[c904 §5.8] under the v2 default, no statement runs for a section left in notLoaded[] (S3a)', async () => {
     for (const fixture of [...FIXTURES, { name: 'G', id: F.G }]) {
       const r = await v2(fixture.id);
       expect(untagged(), fixture.name).toEqual([]);
@@ -737,7 +737,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c761 §10.5] v2 `--sections X` skips loading everything but X (S3)', async () => {
+  it('[c761 §10.5] v2 `--sections X` skips loading everything but X (S3a)', async () => {
     const hierarchy = await v2(F.P, 'sections=hierarchy');
     for (const section of ['messages', 'connections', 'actions', 'activity', 'assignment']) {
       for (const tag of SECTION_TAGS[section]!) expect(hierarchy.byTag[tag] ?? 0, `hierarchy read ran ${tag}`).toBe(0);
@@ -748,7 +748,7 @@ describe('S3 the v2 DTO', () => {
     }
   });
 
-  it.fails('[c761 §10.8] statements per call: v2 default < v1 default, and `--sections assignment` the fewest (S3)', async () => {
+  it('[c761 §10.8] statements per call: v2 default < v1 default, and `--sections assignment` the fewest (S3a)', async () => {
     const report: string[] = [];
     for (const fixture of FIXTURES) {
       const old = await v1(fixture.id);
@@ -765,7 +765,7 @@ describe('S3 the v2 DTO', () => {
     console.log(`\n[context-v2] statements and bytes, v1 vs v2\n| fixture | v1 stmts | v2 stmts | v2 assignment stmts | v1 bytes | v2 bytes |\n|---|---|---|---|---|---|\n${report.join('\n')}\n`);
   });
 
-  it.fails('[c904 §5.10] explicit `--sections hierarchy` returns the header, errors[], and a WORKING assignment expand (S3)', async () => {
+  it('[c904 §5.10] explicit `--sections hierarchy` returns the header, errors[], and a WORKING assignment expand (S3a)', async () => {
     const r = await v2(F.P, 'sections=hierarchy');
     assertPageShape(r.view, 'hierarchy');
     // The body is never shown as empty: it is absent AND advertised.
@@ -777,7 +777,7 @@ describe('S3 the v2 DTO', () => {
     expect(body.view.assignment).toEqual({ text: BODIES.P, bytes: bytes(BODIES.P), complete: true });
   });
 
-  it.fails('[c761 §3.2 · c904 §2.8] a message root: full body, anchor ref; its own expand is `entity context <message-id>` (S3)', async () => {
+  it('[c761 §3.2 · c904 §2.8] a message root: full body, anchor ref; its own expand is `entity context <message-id>` (S3a)', async () => {
     const chat = await v2(F.C);
     const cut = (chat.view.messages ?? []).find((m) => m.truncated);
     expect(cut).toBeDefined();
@@ -856,7 +856,7 @@ describe('S4 body ceiling and caller budget', () => {
     expect(a.expand).toBe(`tm8 entity context ${F.MB} --sections assignment --offset ${cut}`);
   });
 
-  it.fails('[c761 §3.2 · c904 §2.3] a cut doc carries its outline (≤ ~1 KB, truncated marker) (S4)', async () => {
+  it('[c761 §3.2 · c904 §2.3] a cut doc carries its outline (≤ ~1 KB, truncated marker) (S3a, ahead of S4)', async () => {
     const { view } = await v2(F.D);
     expect(view.assignment?.complete).toBe(false);
     expect(Array.isArray(view.outline)).toBe(true);
@@ -895,13 +895,13 @@ describe('S4 body ceiling and caller budget', () => {
     expect(retried.view.assignment?.text).toBe(BODIES.T);
   });
 
-  it.fails('[c904 §2.5] a caller budget never cuts the body: X at 16 KB and at 32 KB carries the same ceiling cut (S4)', async () => {
+  it('[c904 §2.5] a caller budget never cuts the body: X at 16 KB and at 32 KB carries the same ceiling cut (S3a, ahead of S4)', async () => {
     const small = await v2(F.X, 'totalBytes=16384');
     const large = await v2(F.X, 'totalBytes=32768');
     expect(large.view.assignment).toEqual(small.view.assignment);
   });
 
-  it.fails('[c904 §5.9] v2 rejects sectionBytes as a usage error; the same v2 read without it succeeds (S4)', async () => {
+  it('[c904 §5.9] v2 rejects sectionBytes as a usage error; the same v2 read without it succeeds (S3a, ahead of S4)', async () => {
     const control = await v2(F.T, 'totalBytes=4096');
     expect(control.view.schemaVersion).toBe('tm8.entity-context.v2');
     await expect(v2(F.T, 'totalBytes=4096&sectionBytes=1024')).rejects.toMatchObject({

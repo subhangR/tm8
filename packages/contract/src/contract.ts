@@ -6019,9 +6019,23 @@ export interface EntityFeedPage {
 
 export type EntityContextSection = 'summary' | 'hierarchy' | 'connections' | 'messages' | 'activity' | 'actions';
 
+/**
+ * The v2 section names (c904 §2.10). `summary` is accepted as an alias of
+ * `assignment`; `activity` is not a v2 section. v1 keeps `EntityContextSection`.
+ */
+export type EntityContextV2Section =
+  | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
+
 export interface EntityContextQuery {
-  sections?: EntityContextSection[];
+  /**
+   * Which DTO to return. Absent means v1 until the rollout step (M2/S5) flips
+   * the default; `v1` stays reachable after it.
+   */
+  schema?: 'v1' | 'v2';
+  /** v1 accepts `EntityContextSection`; v2 accepts `EntityContextV2Section`. */
+  sections?: Array<EntityContextSection | EntityContextV2Section>;
   totalBytes?: number;
+  /** v1 only. v2 budgets are total-only (c904 Q17). */
   sectionBytes?: number;
   /** `v2` returns the actions section as `ActionRows`; `v1` (default) as `PaletteAction[]`. */
   actionsSchema?: 'v1' | 'v2';
@@ -6046,6 +6060,173 @@ export interface EntityContextView {
   byteSize: number;
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// entities.context v2 — `tm8.entity-context.v2` (specs c761 §3, c904 §2)
+// ---------------------------------------------------------------------------
+
+/** The MCP twin of an `expand` string: the same read as an operation call. */
+export interface EntityContextExpandOp {
+  operation: OperationName;
+  params: Record<string, unknown>;
+}
+
+/**
+ * A reference row (parent, child, session task, connection endpoint). `title`
+ * is capped at 80 code points, the ellipsis included. A ref the root names but
+ * the caller cannot read is `{id, unreadable:true}` and nothing else.
+ */
+export type EntityContextRef =
+  | {
+      id: EntityId;
+      kind: string;
+      title: string;
+      status: string;
+      titleTruncated?: true;
+      deleted?: true;
+    }
+  | { id: EntityId; unreadable: true };
+
+/** An unresolved `depends_on` target (c761 §3.3). */
+export interface EntityContextBlocker {
+  id: EntityId;
+  title: string;
+  status: string;
+  resolved: false;
+  titleTruncated?: true;
+  deleted?: true;
+}
+
+export interface EntityContextAssignee {
+  id: EntityId;
+  name: string;
+  /** Only on the caller's own row. */
+  you?: true;
+  /** Who assigned it, and when; absent when the edge never recorded them. */
+  by?: string;
+  at?: string;
+}
+
+/** Latest-N, emitted oldest→newest. `text` and `from` carry their caps. */
+export type EntityContextMessage =
+  | {
+      id: EntityId;
+      from: string;
+      fromTruncated?: true;
+      at: string;
+      text: string;
+      truncated?: true;
+      replyTo?: EntityId;
+      toMe?: true;
+    }
+  | { id: EntityId; from: string; fromTruncated?: true; at: string; redacted: true };
+
+export interface EntityContextConnection {
+  type: string;
+  dir: 'out' | 'in';
+  other: EntityContextRef;
+  resolved?: boolean;
+}
+
+export type EntityContextGate =
+  | 'none'
+  | {
+      kind: 'pr_merged';
+      prs: Array<{ url: string; state: string; ci: string | null }>;
+      more?: true;
+    };
+
+export interface EntityContextAssignment {
+  text: string;
+  /** UTF-8 bytes of the WHOLE body, not of `text`. */
+  bytes: number;
+  complete: boolean;
+  offset?: number;
+  expand?: string;
+  expandOp?: EntityContextExpandOp;
+}
+
+export interface EntityContextOmitted {
+  section: string;
+  kept: number;
+  more: boolean;
+  totalAtLeast?: number;
+  reason: 'budget' | 'rowLimit' | 'fetchLimit';
+  /**
+   * The page that continues this list. Absent only while that page's consumer
+   * has not shipped (section cursors: M2/S3b) — never a dead pointer (c904 Q12).
+   */
+  expand?: string;
+  expandOp?: EntityContextExpandOp;
+}
+
+export interface EntityContextNotLoaded {
+  section: string;
+  /** Absent only while the expand's bounded consumer has not shipped (actions: #669). */
+  expand?: string;
+  expandOp?: EntityContextExpandOp;
+}
+
+export interface EntityContextError {
+  section: string;
+  code: string;
+  retry: boolean;
+}
+
+export interface EntityContextV2View {
+  schemaVersion: 'tm8.entity-context.v2';
+  id: EntityId;
+  kind: string;
+  title: string;
+  version: number;
+  status: string;
+  asOfSeq: number;
+  /** Nearest parent only; `null` for a root entity. */
+  parent?: EntityContextRef | null;
+  // task
+  priority?: string | null;
+  gate?: EntityContextGate;
+  assignees?: EntityContextAssignee[];
+  assignment?: EntityContextAssignment;
+  acceptance?: Array<{ id: string; done: boolean; text: string }>;
+  blockers?: EntityContextBlocker[];
+  children?: EntityContextRef[];
+  // doc
+  outline?: Array<{ level: number; text: string; offset: number }>;
+  outlineTruncated?: true;
+  // work_session
+  teammate?: string | null;
+  agentTool?: string | null;
+  model?: string | null;
+  checkoutBranch?: string | null;
+  startedAt?: string | null;
+  exitedAt?: string | null;
+  endedKind?: string | null;
+  endedReason?: string | null;
+  tasks?: EntityContextRef[];
+  // chat
+  runtimeState?: string | null;
+  turnState?: string | null;
+  turnCount?: number | null;
+  lastTurnAt?: string | null;
+  mode?: string | null;
+  // project
+  projectId?: string | null;
+  // message
+  anchor?: EntityContextRef;
+  parentMessage?: EntityContextRef | null;
+  attachments?: Array<{ id: EntityId; name: string; bytes: number | null }>;
+  // sections loaded only on request
+  connections?: EntityContextConnection[];
+  messages?: EntityContextMessage[];
+  omitted: EntityContextOmitted[];
+  notLoaded: EntityContextNotLoaded[];
+  errors: EntityContextError[];
+  budget: { requested: number; used: number };
+}
+
+/** `entities.context` answers v1 or v2, as `schema` selected. */
+export type EntityContextResult = EntityContextView | EntityContextV2View;
 
 export interface ClosedPromptPolicy {
   kernelTemplate: string;

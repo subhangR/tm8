@@ -2008,7 +2008,7 @@
       },
       "entities.context": {
         "requestSchema": "EntityContextQuerySchema",
-        "resultSchema": "EntityContextViewSchema"
+        "resultSchema": "EntityContextResultSchema"
       },
       "interactionProfiles.propose": {
         "requestSchema": "ProposeInteractionProfileInputSchema",
@@ -4646,7 +4646,7 @@
           "context"
         ],
         "inputSchemaRef": "EntityContextQuerySchema",
-        "resultSchemaRef": "EntityContextViewSchema",
+        "resultSchemaRef": "EntityContextResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
