@@ -76,6 +76,9 @@ create table public.form_responses (          -- one row per respondent attempt
   structure_version int not null,               -- which question set was answered
   answers         jsonb not null default '{}'::jsonb,                  -- { [questionKey]: Answer }
   questions_snapshot jsonb,                     -- frozen copy at submit (audit/rendering)
+  revision        int not null default 1,       -- 1 = first submit; amend → next revision
+  supersedes_id   uuid references public.form_responses(id),          -- previous revision
+  is_current      boolean not null default true, -- latest revision for (form, respondent)
   message_id      uuid references public.messages(id),                 -- the delivery message
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -99,6 +102,13 @@ Why questions and responses are side rows rather than entities: a single questio
 answer fails the T-L3 entity test (nobody discusses, links or reacts to one question).
 The *form* passes: it gets discussed, linked to tasks, badged for attention, and it
 needs a panel.
+
+Amend model: every submission is an immutable row, and an edit-and-resubmit inserts
+revision N+1 with `supersedes_id` pointing at revision N. It then flips `is_current`
+on the old row, all in the submit transaction. A partial unique index
+`(form_id, respondent_id) where is_current` enforces "one current response per member".
+The response limit counts respondents, not revisions. The full history stays
+queryable, which is what "check what I submitted" reads.
 
 Why `answers` is jsonb: its shape is per-question-type. The database is still the
 authority. `internal.validate_form_answers(form_id, answers, final bool)` runs in the
@@ -124,7 +134,7 @@ type FormSettings = {
   responses: 'per_member' | 'single' | 'unlimited'; // default 'per_member' (one per member, many members)
   respondents: 'humans' | 'anyone';                 // default 'humans' (agents refused)
   closeOnSubmit: boolean;          // default false (true only makes sense with 'single')
-  allowAmend: boolean;             // default false: submitted answers are immutable
+  allowAmend: boolean;             // default TRUE: a member can edit and resubmit (new revision, re-delivered)
   delivery: {                      // §7.3, where each submitted response goes
     target: 'requesting_session' | 'new_session';   // default 'requesting_session'
     onSessionNotLive: 'resume' | 'queue' | 'spawn_new'; // default 'resume'
@@ -215,7 +225,7 @@ context` (a `form` arm in `internal.entity_content`) and the response ops below.
 | `forms.questions.move` | `POST /forms/:id/questions/:key/move` | author/admin | `{after?: key}` (null means first) |
 | `forms.transition` | `POST /forms/:id/transition` | author/admin | `{to: open\|closed\|cancelled, reason?}` |
 | `forms.responses.save` | `PUT /forms/:id/responses/mine` | respondent | Upserts the caller's draft. Partial validation. |
-| `forms.responses.submit` | `POST /forms/:id/responses/submit` | respondent | `{answers?, responseVersion?}`. Full validation → stored → message → delivery (§7). Idempotent. |
+| `forms.responses.submit` | `POST /forms/:id/responses/submit` | respondent | `{answers?, responseVersion?}`. Full validation → stored → message → delivery (§7). Idempotent. If the caller already has a submitted response and `allowAmend`, it becomes a new revision. |
 | `forms.responses.list` | `GET /forms/:id/responses` | space member | Keyset-paged; `?respondent=me`, `?status=`. |
 | `forms.responses.get` | `GET /form-responses/:id` | space member | Answers, the questions snapshot, and delivery status per target. |
 | `forms.responses.mine` | `GET /form-responses?respondent=me` | self | "What have I submitted", across the whole space. |
@@ -270,7 +280,10 @@ Form: Pick the migration strategy
 </untrusted_data>
 ```
 
-Each answer shows both the key and the value, so the agent can use it directly. For
+Each answer shows both the key and the value, so the agent can use it directly.
+
+A resubmission carries `<response id=… revision="2" supersedes=…>`. Its body lists
+only the **changed** answers first, then the full set. For
 the full shape, the agent fetches the JSON.
 
 ### 7.3 Where a response goes
@@ -344,7 +357,8 @@ contract Zod schema before any call is made.
 
 - **Form panel** (`KindConfig` `form`, body block `questionnaire`):
   - **Fill** tab: the respondent view, with validation, autosave and "accept
-    recommended";
+    recommended". After submitting, it shows the member's answers with **Edit & resubmit**
+    and the revision history;
   - **Build** tab: author view, add/reorder/edit questions with live preview;
   - **Responses** tab: table view plus a per-response detail with the delivery status
     chip (`delivered` / `queued` / `spawned` / `cancelled`).
@@ -362,14 +376,14 @@ contract Zod schema before any call is made.
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Responses | One per member, many members (`per_member` default). Each response can go to the requesting session **or to a fresh session**. |
+| 1 | Responses | One per member, many members (`per_member` default); editable and resubmittable (see 8). Each response can go to the requesting session **or to a fresh session**. |
 | 2 | Respondents | Humans by default; a per-form switch allows agents. |
 | 3 | Session not live | Three modes: auto-**resume** (default), **queue** for the session, **spawn a new session**. |
 | 4 | Types | Five types in v1: single_choice, multi_choice, short_text, long_text, scale. Question and answer structure must be fully modular (registry), so more types are purely additive. |
 | 5 | Layout | (default) Optional sections on one page; no conditional logic. |
 | 6 | Choices | (default) `allowOther` write-in, `recommended` options, "accept recommended". |
 | 7 | Editing | Questions editable until the first submitted response, then frozen. |
-| 8 | Amend | (default) Submitted responses are immutable unless `allowAmend`. |
+| 8 | Amend | One response per member by default, but the member **can edit and resubmit** (`allowAmend` default true). Each resubmission is a new revision, delivered again, and history is kept. |
 | 9 | Expiry | Not needed for now. |
 | 10 | Visibility | Space-visible. |
 | 11 | UI surfaces | Form panel, session tile chip, pending-forms banner at the top of the session panel. |
