@@ -685,6 +685,13 @@ const formCommandShape = {
   clientMutationId: z.string().min(1),
 };
 
+/** The command envelope, as a type (mirrors `formCommandShape`). */
+export interface FormCommandContext {
+  actorId?: string;
+  workSessionId?: string;
+  clientMutationId: string;
+}
+
 /** A question as sent over the wire: structure checked, config left to SQL. */
 export const FormQuestionWireSchema = z.object({
   key: FormKeySchema,
@@ -712,7 +719,19 @@ export const FormSettingsPatchSchema = z.object({
 export type FormSettingsPatch = z.infer<typeof FormSettingsPatchSchema>;
 
 /** forms.create — the full spec in one call. */
-export const FormsCreateInputSchema = z.object({
+export interface FormsCreateInput extends FormCommandContext {
+  spaceId: string;
+  title: string;
+  description?: string;
+  sections?: FormSection[];
+  questions: FormQuestionWire[];
+  settings?: FormSettingsPatch;
+  open?: boolean;
+  forSession?: string;
+  attachTo?: string[];
+  parentId?: string;
+}
+export const FormsCreateInputSchema: z.ZodType<FormsCreateInput> = z.object({
   ...formCommandShape,
   spaceId: FormIdSchema,
   title: cpString(1, 300),
@@ -728,10 +747,16 @@ export const FormsCreateInputSchema = z.object({
   attachTo: z.array(z.string().uuid()).max(20).optional(),
   parentId: FormIdSchema.optional(),
 }).strict();
-export type FormsCreateInput = z.infer<typeof FormsCreateInputSchema>;
 
 /** forms.update — title, description, settings, sections (replaces the list). */
-export const FormsUpdateInputSchema = z.object({
+export interface FormsUpdateInput extends FormCommandContext {
+  expectedVersion: number;
+  title?: string;
+  description?: string | null;
+  settings?: FormSettingsPatch;
+  sections?: FormSection[];
+}
+export const FormsUpdateInputSchema: z.ZodType<FormsUpdateInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
   title: cpString(1, 300).optional(),
@@ -739,19 +764,31 @@ export const FormsUpdateInputSchema = z.object({
   settings: FormSettingsPatchSchema.optional(),
   sections: z.array(FormSectionSchema).max(50).optional(),
 }).strict();
-export type FormsUpdateInput = z.infer<typeof FormsUpdateInputSchema>;
 
 /** forms.questions.add — `after` omitted appends; `null` puts it first. */
-export const FormsQuestionsAddInputSchema = z.object({
+export interface FormsQuestionsAddInput extends FormCommandContext {
+  expectedVersion: number;
+  question: FormQuestionWire;
+  after?: string | null;
+}
+export const FormsQuestionsAddInputSchema: z.ZodType<FormsQuestionsAddInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
   question: FormQuestionWireSchema,
   after: FormKeySchema.nullable().optional(),
 }).strict();
-export type FormsQuestionsAddInput = z.infer<typeof FormsQuestionsAddInputSchema>;
 
 /** forms.questions.update — partial; `null` clears help/section. */
-export const FormsQuestionsUpdateInputSchema = z.object({
+export interface FormsQuestionsUpdateInput extends FormCommandContext {
+  expectedVersion: number;
+  type?: string;
+  title?: string;
+  help?: string | null;
+  required?: boolean;
+  section?: string | null;
+  config?: Record<string, unknown>;
+}
+export const FormsQuestionsUpdateInputSchema: z.ZodType<FormsQuestionsUpdateInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
   type: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/).optional(),
@@ -761,62 +798,80 @@ export const FormsQuestionsUpdateInputSchema = z.object({
   section: FormKeySchema.nullable().optional(),
   config: z.record(z.unknown()).optional(),
 }).strict();
-export type FormsQuestionsUpdateInput = z.infer<typeof FormsQuestionsUpdateInputSchema>;
 
-export const FormsQuestionsRemoveInputSchema = z.object({
+export interface FormsQuestionsRemoveInput extends FormCommandContext {
+  expectedVersion: number;
+}
+export const FormsQuestionsRemoveInputSchema: z.ZodType<FormsQuestionsRemoveInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
 }).strict();
-export type FormsQuestionsRemoveInput = z.infer<typeof FormsQuestionsRemoveInputSchema>;
 
 /** forms.questions.move — after `after`; omitted or `null` moves it first. */
-export const FormsQuestionsMoveInputSchema = z.object({
+export interface FormsQuestionsMoveInput extends FormCommandContext {
+  expectedVersion: number;
+  after?: string | null;
+}
+export const FormsQuestionsMoveInputSchema: z.ZodType<FormsQuestionsMoveInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
   after: FormKeySchema.nullable().optional(),
 }).strict();
-export type FormsQuestionsMoveInput = z.infer<typeof FormsQuestionsMoveInputSchema>;
 
 /** forms.transition — open (also reopen), close, cancel (§5). */
-export const FormsTransitionInputSchema = z.object({
+export interface FormsTransitionInput extends FormCommandContext {
+  expectedVersion: number;
+  to: 'open' | 'closed' | 'cancelled';
+  reason?: string;
+}
+export const FormsTransitionInputSchema: z.ZodType<FormsTransitionInput> = z.object({
   ...formCommandShape,
   expectedVersion: z.number().int().positive(),
   to: z.enum(['open', 'closed', 'cancelled']),
   reason: cpString(1, 1000).optional(),
 }).strict();
-export type FormsTransitionInput = z.infer<typeof FormsTransitionInputSchema>;
 
 /**
  * forms.responses.save — upsert the caller's draft (partial validation).
  * `amendOf` names the submitted revision being edited (needed only under
  * `unlimited`; per_member/single find it). `responseVersion` guards the draft.
  */
-export const FormsResponsesSaveInputSchema = z.object({
+export interface FormsResponsesSaveInput extends FormCommandContext {
+  answers: FormAnswers;
+  amendOf?: string;
+  responseVersion?: number;
+}
+export const FormsResponsesSaveInputSchema: z.ZodType<FormsResponsesSaveInput> = z.object({
   ...formCommandShape,
   answers: FormAnswersSchema,
   amendOf: z.string().uuid().optional(),
   responseVersion: z.number().int().positive().optional(),
 }).strict();
-export type FormsResponsesSaveInput = z.infer<typeof FormsResponsesSaveInputSchema>;
 
 /**
  * forms.responses.discard — delete the caller's own draft on the form.
  * Idempotent: no draft answers {discarded: false}.
  */
-export const FormsResponsesDiscardInputSchema = z.object({
+export interface FormsResponsesDiscardInput extends FormCommandContext {
+  responseVersion?: number;
+}
+export const FormsResponsesDiscardInputSchema: z.ZodType<FormsResponsesDiscardInput> = z.object({
   ...formCommandShape,
   responseVersion: z.number().int().positive().optional(),
 }).strict();
-export type FormsResponsesDiscardInput = z.infer<typeof FormsResponsesDiscardInputSchema>;
 
 /** forms.responses.submit — full validation, store, message, delivery row. */
-export const FormsResponsesSubmitInputSchema = z.object({
+export interface FormsResponsesSubmitInput extends FormCommandContext {
+  answers?: FormAnswers;
+  amendOf?: string;
+  responseVersion?: number;
+}
+export const FormsResponsesSubmitInputSchema: z.ZodType<FormsResponsesSubmitInput> = z.object({
   ...formCommandShape,
   answers: FormAnswersSchema.optional(),
   amendOf: z.string().uuid().optional(),
   responseVersion: z.number().int().positive().optional(),
 }).strict();
-export type FormsResponsesSubmitInput = z.infer<typeof FormsResponsesSubmitInputSchema>;
 
 // -- Views (advisor ruling W1-R1: one shape, owned here, mirrored by the UI) --
 

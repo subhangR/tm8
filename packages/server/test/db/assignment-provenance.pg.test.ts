@@ -349,6 +349,14 @@ describe.sequential('task assignment provenance (129)', () => {
     // `set_work_session_sharing` at their 187 signatures. No assertion here
     // reads any of them.
     database.apply(['202_work_session_sharing_provenance.sql']);
+    // 209 (Forms W1): `entity-read.ts` and the projector now join
+    // `public.forms` and call 209's form_*_json / form_settings_effective arms,
+    // so a tranche that stops before 209 has no such table. Same shape as
+    // every line above. 209 is additive here: new tables, functions and
+    // triggers, the append-only edge_types widening, and `entity_content`
+    // re-created at its 194 body plus a form arm. No assertion here reads any
+    // of it.
+    database.apply(['209_forms_foundation.sql']);
   }, 180_000);
 
   afterAll(async () => {

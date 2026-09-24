@@ -559,7 +559,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 120 -> 121 (2026-09-23): skills.scan binds SkillScanInputSchema. MEASURED on the merged tree.
     // 121 -> 125 (2026-09-23 F4): create/edit/equip/unequip bind local schemas. MEASURED.
     // 125 -> 126 (Jev lane F): launch.suggest binds LaunchSuggestInputSchema. MEASURED.
-    expect(inputSchemas.bound).toHaveLength(136) // +1: entities.commands.tick binds TickCriteriaInputSchema (bug 01a0d2f1). +7: the SC-3 space/node credential commands bind. +2: service-key put and delete bind (Jev lane K).
+    expect(inputSchemas.bound).toHaveLength(146) /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +1: entities.commands.tick binds TickCriteriaInputSchema (bug 01a0d2f1). +7: the SC-3 space/node credential commands bind. +2: service-key put and delete bind (Jev lane K).
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',

@@ -416,6 +416,27 @@ const JEV_NET_NEW_OPERATIONS = [
   'launch.suggest',
 ] as const;
 
+/**
+ * Forms W1 (211): the thirteen forms.* operations, registered unconditionally
+ * by `registerW2FormHandlers` — SQL doors and RLS reads, no runtime to gate on.
+ * Net-new — no replacements.
+ */
+const FORMS_NET_NEW_OPERATIONS = [
+  'forms.create',
+  'forms.questions.add',
+  'forms.questions.move',
+  'forms.questions.remove',
+  'forms.questions.update',
+  'forms.responses.discard',
+  'forms.responses.get',
+  'forms.responses.list',
+  'forms.responses.mine',
+  'forms.responses.save',
+  'forms.responses.submit',
+  'forms.transition',
+  'forms.update',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -431,6 +452,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...CONTAINER_NET_NEW_OPERATIONS,
   ...SKILLS_NET_NEW_OPERATIONS,
   ...JEV_NET_NEW_OPERATIONS,
+  ...FORMS_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -588,7 +610,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + WORKFLOW_NET_NEW_OPERATIONS.length
         + CONTAINER_NET_NEW_OPERATIONS.length
         + SKILLS_NET_NEW_OPERATIONS.length
-        + JEV_NET_NEW_OPERATIONS.length,
+        + JEV_NET_NEW_OPERATIONS.length
+        + FORMS_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -757,7 +780,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
     // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(136); // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(146); /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long

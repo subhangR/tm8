@@ -263,6 +263,21 @@ const COMMANDLESS_OPERATIONS = [
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',
+      // Forms W1 backend: the thirteen rows ship `cmd: null`; the `tm8 form`
+      // noun (a CLI lane stacked on this one) takes them out of this set.
+      'forms.create',
+      'forms.questions.add',
+      'forms.questions.move',
+      'forms.questions.remove',
+      'forms.questions.update',
+      'forms.responses.discard',
+      'forms.responses.get',
+      'forms.responses.list',
+      'forms.responses.mine',
+      'forms.responses.save',
+      'forms.responses.submit',
+      'forms.transition',
+      'forms.update',
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
@@ -649,6 +664,14 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'containers.unexpose': 'ContainersUnexposeInputSchema',
   'containers.snapshot': 'ContainersSnapshotInputSchema',
   'containers.pools.set': 'ContainersPoolsSetInputSchema',
+  // Forms (211): the six form mutations carry a REQUIRED expectedVersion. The
+  // respondent ops version against the RESPONSE (responseVersion), not a guard.
+  'forms.update': 'FormsUpdateInputSchema',
+  'forms.questions.add': 'FormsQuestionsAddInputSchema',
+  'forms.questions.update': 'FormsQuestionsUpdateInputSchema',
+  'forms.questions.remove': 'FormsQuestionsRemoveInputSchema',
+  'forms.questions.move': 'FormsQuestionsMoveInputSchema',
+  'forms.transition': 'FormsTransitionInputSchema',
 };
 
 /**
@@ -696,7 +719,18 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
  * and it is why this is not a `skip` — a skip whose subject gets fixed stops
  * testing anything without ever going red, so it decays silently. This cannot.
  */
-const PENDING_AMENDMENT: OperationName[] = [];
+const PENDING_AMENDMENT: OperationName[] = [
+  // Forms W1 backend: the rows exist with `cmd: null` until the `tm8 form`
+  // noun lands (a separate CLI lane stacked on this one). That lane advertises
+  // `--expect-version` and DELISTS these six — the exact-set assertion makes
+  // forgetting either half go red.
+  'forms.update',
+  'forms.questions.add',
+  'forms.questions.update',
+  'forms.questions.remove',
+  'forms.questions.move',
+  'forms.transition',
+];
 
 describe('version guards: the projection and the frozen DTOs agree, both directions', () => {
   it('the schema side of the join is real — introspection finds the guard DTOs', () => {
@@ -770,7 +804,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Every mapped guard DTO is required.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(32); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(swept).toBe(38); /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
