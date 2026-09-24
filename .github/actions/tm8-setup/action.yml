@@ -4,7 +4,7 @@
 #     with:
 #       postgres: "true"      # only in a job that declares the trust-auth postgres service
 #
-# Does, in the order ci.yml's `check` job did them: bun, node, [psql client],
+# Does, in the order ci.yml's `check` job did them: bun, node, [require psql],
 # git identity, [cluster-role pre-create], bun cache, `bun install --frozen-lockfile`.
 #
 # What it CANNOT do: declare `services:`. A composite action has no services, so
@@ -29,7 +29,7 @@ description: bun + node + bun cache + frozen install + git identity; optionally 
 
 inputs:
   postgres:
-    description: '"true" to install the psql client and pre-create the cluster-global roles. Needs a postgres service at pg-url.'
+    description: '"true" to require the psql client and pre-create the cluster-global roles. Needs a postgres service at pg-url.'
     required: false
     default: "false"
   pg-url:
@@ -57,10 +57,12 @@ runs:
 
     # The scratch-database helpers shell out to `psql` to apply migrations
     # (packages/server/test/db/w1-pg.ts, packages/cli/test/integration/harness.ts).
-    - name: Install postgres client
+    # The runner image ships psql (W4 dropped the apt-get install). Fail loudly if a
+    # future image drops it: a missing psql must be red, never a silent skip.
+    - name: Require postgres client
       if: inputs.postgres == 'true'
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      run: command -v psql && psql --version
 
     # packages/execution's worktree-manager suite runs `git merge` in a scratch
     # repository. A bare runner has no committer identity, so the merge dies with

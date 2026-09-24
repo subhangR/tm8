@@ -359,8 +359,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tm8-setup
-      - name: Install postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The runner image ships psql. Required here because migrations-check.sh
+      # only WARNS and skips the apply check when psql is missing.
+      - name: Require postgres client
+        run: command -v psql && psql --version
       - name: Migration gate
         run: bash tools/ci/migrations-check.sh
         env:
