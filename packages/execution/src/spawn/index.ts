@@ -28,6 +28,12 @@ export {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 export {
+  HARNESS_SURFACES,
+  harnessSurfaceEnv,
+  readInstalledClaudePlugins,
+  type HarnessSurface,
+} from './harness-surface.js';
+export {
   assertCodexNetworkFeatureList,
   assertCodexNetworkRuntimeVersion,
   MINIMUM_CODEX_LOOPBACK_PROXY_VERSION,
