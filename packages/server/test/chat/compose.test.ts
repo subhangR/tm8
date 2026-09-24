@@ -2,7 +2,12 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { ChatMode } from '@tm8/contract';
+import {
+  ORCHESTRATION_EDGE_TYPES,
+  ORCHESTRATION_NODE_KINDS,
+  parseNodeMentions,
+  type ChatMode,
+} from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
 import {
   chatAllowedTools,
@@ -206,8 +211,23 @@ describe('chat launch composition', () => {
     expect(craft).toContain('node → entity map');
     // Orchestrate carries the blueprint forward as the progress map.
     expect(base).toContain('keeps the blueprint row as its progress map');
-    // Budget: the craft guide rides in every chat's system prompt. ~1.1k tokens.
-    expect(craft.length).toBeLessThanOrEqual(4600);
+    // Budget: the craft guide rides in every chat's system prompt. ~1.2k tokens.
+    expect(craft.length).toBeLessThanOrEqual(4800);
+  });
+
+  /**
+   * DRIFT PINS. The vocabulary and the node-link spelling live in
+   * @tm8/contract (orchestration.ts); this prompt only teaches them. A type or
+   * kind added or renamed there and not here fails HERE, not in a craft thread
+   * that writes an edge the registry refuses or misreads a seeded node link.
+   */
+  it('teaches every edge type and node kind the contract defines, and its node-link spelling', () => {
+    const base = chatSystemPrompt(launch('craft'));
+    const craft = base.slice(base.indexOf('• CRAFT'));
+    for (const { type } of ORCHESTRATION_EDGE_TYPES) expect([type, craft.includes(type)]).toEqual([type, true]);
+    for (const { kind } of ORCHESTRATION_NODE_KINDS) expect([kind, craft.includes(kind)]).toEqual([kind, true]);
+    // The example link in the prompt parses with the same helper the UI seeds with.
+    expect(parseNodeMentions(craft)).toEqual([{ graphId: '<graph>', nodeId: 't-api', title: 'API design' }]);
   });
 
   /**
