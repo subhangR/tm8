@@ -369,7 +369,9 @@ describe('forms.responses.redeliver: send a cancelled delivery to a new session'
     expect(spawner.fresh()).toHaveLength(1);
     // (b): the teammate and the task come off the DELETED requester's rows.
     expect(spawner.fresh()[0]!.request).toMatchObject({ teamMemberId: w.teammate, taskIds: [task] });
-    expect(spawner.fresh()[0]!.firstTurn).toContain('<form_response');
+    const env = spawner.fresh()[0]!.firstTurn;
+    expect(env).toContain('kind="form_response"');
+    expect(env).toContain(`<fetch command="tm8 form response get ${view.id} --format json" />`);
     // Another pass finds nothing to cancel and nothing to spawn.
     await drain.drain({});
     expect((await delivery(view.id)).status).toBe('spawned');
@@ -398,26 +400,25 @@ describe('forms.responses.redeliver: send a cancelled delivery to a new session'
   });
 
   it('resume_unavailable → redeliver → spawned; the old error is kept as redelivered_from until it settles', async () => {
-    const { spawner, service, openForm, submit } = world({ hooks: false });
+    const { spawner, service, openForm, submit } = world();
     spawner.resumeError = new SpawnError('agent tool has no resume-by-id contract', 'invalid_input');
-    const session = await newSession({ status: 'failed' });
+    const session = await newSession();
     const form = await openForm(session);
+    await setStatus(session, 'failed');
     const view = await submit(form, { pick: { value: 'x' } });
-    const { drain } = world({ hooks: false });
-    void drain;
-    await sql(`update public.form_deliveries set status = 'cancelled', last_error = 'resume_unavailable: no resume'
-                where response_id = $1`, [view.id]);
+    await until(() => delivery(view.id), (r) => r.status === 'cancelled');
     // Redeliver with no drain hook: the row is pending with the old reason kept.
     const bare = new W2FormsService({ db, config: {} as FacadeDeps['config'], owner: async () => owner });
     await redeliver(bare, human(ID2), view.id);
     expect(await delivery(view.id)).toMatchObject({
-      status: 'pending', route_override: 'new_session', last_error: 'redelivered_from: resume_unavailable: no resume',
+      status: 'pending', route_override: 'new_session',
+      last_error: 'redelivered_from: resume_unavailable: agent tool has no resume-by-id contract',
       claimed_at: null, delivery_id: null, spawn_mutation_id: null,
     });
     // Then the click's drain spawns it.
     await redeliver(service, human(ID2), view.id);
     await until(() => delivery(view.id), (r) => r.status === 'spawned');
-    expect(spawner.resumes).toEqual([]);
+    expect(spawner.resumes).toEqual([session]);   // the one failed resume, before the redeliver
     expect(spawner.fresh()).toHaveLength(1);
   });
 
@@ -523,7 +524,7 @@ describe('forms.responses.redeliver: resume now, for a queued delivery', () => {
   });
 
   it('refuses a delivery that is not pending, and a deleted session', async () => {
-    const { drain, service, openForm, submit } = world();
+    const { service, openForm, submit } = world();
     const live = await newSession();
     const delivered = await submit(await openForm(live), { pick: { value: 'x' } });
     await until(() => delivery(delivered.id), (r) => r.status === 'delivered');
@@ -539,7 +540,6 @@ describe('forms.responses.redeliver: resume now, for a queued delivery', () => {
     const deleted = await refusal(redeliver(service, human(ID2), view.id, { to: 'resume' }));
     expect(deleted.code).toBe('conflict');
     expect(deleted.details).toMatchObject({ reason: 'session_deleted' });
-    void drain;
   });
 });
 
@@ -569,7 +569,10 @@ describe('forms.pendingForSessions', () => {
     expect((await pending(service, human(ID3), [s1])).sessions[0]!.forms[0]!.draft).toBeNull();
 
     await submit(form, { pick: { value: 'x' } });
-    expect((await pending(service, human(ID2), [s1])).sessions).toEqual([]);
+    // Hooks are off, so the answer itself is still queued on s1: listed, with no forms.
+    expect((await pending(service, human(ID2), [s1])).sessions).toEqual([
+      { workSessionId: s1, total: 0, queued: 1, forms: [] },
+    ]);
     // per_member: it still waits on everyone else.
     expect((await pending(service, human(ID3), [s1])).sessions[0]!.total).toBe(1);
   });
@@ -584,7 +587,9 @@ describe('forms.pendingForSessions', () => {
     await submit(single.formId, { pick: { value: 'x' } });
     await submit(unlimited, { pick: { value: 'x' } });
     expect((await pending(service, human(ID3), [s])).sessions[0]!.forms.map((f) => f.formId)).toEqual([unlimited]);
-    expect((await pending(service, human(ID2), [s])).sessions).toEqual([]);
+    expect((await pending(service, human(ID2), [s])).sessions).toEqual([
+      { workSessionId: s, total: 0, queued: 2, forms: [] },
+    ]);
   });
 
   it('an agent caller sees only forms that accept agents; closed and draft forms never wait', async () => {
