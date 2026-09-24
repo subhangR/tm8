@@ -755,40 +755,40 @@
 }
 .crf-nav__focus { border-right: 1px solid var(--pn-line); border-radius: var(--pn-r-sm) 0 0 var(--pn-r-sm); margin-right: 2px; }
 
-/* The intentional clip: a fade on the edge the plan continues past, and a
-   nudge that pans toward it. */
+/* The intentional clip: a text-free fade on the edge the plan continues
+   past, and a small chevron nudge pinned high in that gutter. */
+.crf-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+}
+
+.crf-fade--right { right: 0; background: linear-gradient(to right, transparent, var(--pn-paper)); }
+.crf-fade--left { left: 0; background: linear-gradient(to left, transparent, var(--pn-paper)); }
+
 .crf-more {
   position: absolute;
   top: 60px;
-  bottom: 56px;
-  width: 44px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border: none;
-  padding: 0 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--pn-line);
+  border-radius: 50%;
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+  color: var(--pn-ink-2);
   font: inherit;
-  font-size: var(--pn-fs-micro);
-  font-weight: 700;
-  color: var(--pn-ink-3);
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.crf-more--right {
-  right: 0;
-  justify-content: flex-end;
-  background: linear-gradient(to right, transparent, var(--pn-paper) 85%);
-}
-
-.crf-more--left {
-  left: 0;
-  justify-content: flex-start;
-  background: linear-gradient(to left, transparent, var(--pn-paper) 85%);
-}
-
-.crf-more span[aria-hidden] { font-size: 18px; line-height: 1; }
-.crf-more:hover { color: var(--pn-brand); }
-.crf-more__word { writing-mode: vertical-rl; letter-spacing: 0.1em; text-transform: uppercase; font-size: var(--pn-fs-tick); }
+.crf-more--right { right: 6px; }
+.crf-more--left { left: 6px; top: 104px; }
+.crf-more:hover { color: var(--pn-brand); border-color: var(--pn-brand); }
 
 .crf-minimap {
   position: absolute;
