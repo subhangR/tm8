@@ -226,6 +226,11 @@ describe('chat launch composition', () => {
     const craft = base.slice(base.indexOf('• CRAFT'));
     for (const { type } of ORCHESTRATION_EDGE_TYPES) expect([type, craft.includes(type)]).toEqual([type, true]);
     for (const { kind } of ORCHESTRATION_NODE_KINDS) expect([kind, craft.includes(kind)]).toEqual([kind, true]);
+    // Materialize creates only the kinds the contract flags `materializable`;
+    // the rest are named — recomputed here from the same flag — as confirm-only.
+    const confirmOnly = ORCHESTRATION_NODE_KINDS.filter((k) => !k.materializable).map((k) => k.kind);
+    const listed = /\. ([a-z_, ]+) specs are confirmed by the human, never created/.exec(craft)?.[1]?.split(', ') ?? [];
+    expect(listed).toEqual(confirmOnly);
     // The example link in the prompt parses with the same helper the UI seeds with.
     expect(parseNodeMentions(craft)).toEqual([{ graphId: '<graph>', nodeId: 't-api', title: 'API design' }]);
   });

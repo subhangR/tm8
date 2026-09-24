@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { BLUEPRINT_NODE_URI, CollabError, type ChatMode } from '@tm8/contract';
+import { BLUEPRINT_NODE_URI, CollabError, confirmOnlyNodeKinds, type ChatMode } from '@tm8/contract';
 import {
   ClaudeHeadlessAdapter,
   type AgentRuntime as ExecutionAgentRuntime,
@@ -140,6 +140,13 @@ function defaultMcpCliPath(): string {
   return join(dirname(require.resolve('@tm8/mcp')), 'cli.js');
 }
 
+/**
+ * The node kinds materialize never creates — read off the contract's
+ * `materializable` flag so the craft prompt, the studio's pre-flight and the
+ * contract name the same list.
+ */
+const CONFIRM_ONLY_KINDS = confirmOnlyNodeKinds();
+
 /** Fixed presentation order for the mode guide in the system prompt. */
 const MODE_ORDER: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft'];
 
@@ -177,7 +184,7 @@ const MODE_GUIDE: Record<ChatMode, readonly string[]> = {
     'Example, “add CSV export”: t-research produces d-export-spec; t-api and t-ui consume d-export-spec; t-ui depends_on t-api; t-review consumes d-export-spec and depends_on t-api and t-ui; t-research and t-api assigned_to tm-backend, t-ui assigned_to tm-frontend, t-review assigned_to tm-lead (all refs). Phases: research → build → review.',
     'Work in passes: the first patch sketches the skeleton — phases, tasks, owners, key outputs; later patches refine inputs, context and hints. One guarded patch per turn, patched under expectedVersion so a lost update is refused, never clobbered. After each patch, say in a line or two what changed, then re-read the row and check its `content.findings` — fix every error and warning (dependency_cycle, task_unassigned, input_without_producer, orphan_spec, endpoint_mismatch …) or say why one stands. When the goal is ambiguous (scope, owner, what “done” produces), ask one or two sharp questions instead of inventing structure.',
     `A turn may point at a node as [API design](${BLUEPRINT_NODE_URI}<graph>/t-api) — blueprint row <graph>, node t-api. Answer about that node, and patch only it unless asked for more.`,
-    'Materialize nothing until approval lands in this thread. On approval, materialize the row yourself: (1) re-read it; if its findings carry an error, say so and stop. (2) entities.create in dependency order — prerequisites before dependents; each task elaborated from its spec into a real description and acceptance criteria naming what it produces; each output a task produces (doc, artifact, memory) as a stub that keeps its spec title and says it is pending, to be written by its producing task; a team_member spec only once the human picks or confirms one. (3) edges.create one real edge per blueprint edge — same type, same direction. (4) After each batch, write the mapping back: entities.patch the row with `content.link` {nodeId: createdId} under expectedVersion — each node gains `ref` and keeps its spec. (5) Dispatch only the ready frontier — tasks whose depends_on prerequisites are done — with tm8_delegate to their owners. (6) Reply here with the node → entity map and what you dispatched.',
+    'Materialize nothing until approval lands in this thread. On approval, materialize the row yourself: (1) re-read it; if its findings carry an error, say so and stop. (2) entities.create in dependency order — prerequisites before dependents; each task elaborated from its spec into a real description and acceptance criteria naming what it produces; each output a task produces (doc, artifact, memory) as a stub that keeps its spec title and says it is pending, to be written by its producing task. ' + CONFIRM_ONLY_KINDS.join(', ') + ' specs are confirmed by the human, never created: ask which existing one to ref. (3) edges.create one real edge per blueprint edge — same type, same direction. (4) After each batch, write the mapping back: entities.patch the row with `content.link` {nodeId: createdId} under expectedVersion — each node gains `ref` and keeps its spec. (5) Dispatch only the ready frontier — tasks whose depends_on prerequisites are done — with tm8_delegate to their owners. (6) Reply here with the node → entity map and what you dispatched.',
   ],
 };
 
