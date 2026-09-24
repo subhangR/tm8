@@ -162,20 +162,24 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
-  -- Forms (209/211). Settings with defaults applied; sections and questions
-  -- only for a form row (the arms return '[]' for any other id).
+  -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
+  -- list read, so a form row carries its question COUNT; the questions and
+  -- sections themselves are content and load in hydrateDetail.
   frm.title as form_title, frm.status as form_status, frm.description as form_description,
   case when frm.entity_id is not null then internal.form_settings_effective(frm.settings) end as form_settings,
   frm.structure_version as form_structure_version,
   frm.opened_at as form_opened_at, frm.closed_at as form_closed_at,
-  case when frm.entity_id is not null then internal.form_sections_json(frm.entity_id) end as form_sections,
-  case when frm.entity_id is not null then internal.form_questions_json(frm.entity_id) end as form_questions,
+  case when frm.entity_id is not null then
+    (select count(*)::int from public.form_questions fq where fq.form_id = frm.entity_id)
+  end as form_question_count,
   -- canEdit for a form is the SAME rule the 211 doors enforce (author or
   -- space admin), evaluated under the viewer's claims: the actor the door
   -- would resolve is coalesce(actor claim, the viewer's member row).
+  -- A cancelled form is terminal: every edit door refuses it.
   case when frm.entity_id is not null then
-    e.created_by = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
-    or internal.is_space_admin(e.space_id)
+    frm.status <> 'cancelled'
+    and (e.created_by = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
+         or internal.is_space_admin(e.space_id))
   end as form_can_edit,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
@@ -553,8 +557,7 @@ export interface EntityRow {
   form_structure_version?: number | null;
   form_opened_at?: Date | string | null;
   form_closed_at?: Date | string | null;
-  form_sections?: FormSectionRow[] | null;
-  form_questions?: FormQuestionRow[] | null;
+  form_question_count?: number | null;
   form_can_edit?: boolean | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
@@ -1835,7 +1838,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'form',
         status: (row.form_status ?? 'draft') as FormStatus,
-        questionCount: Array.isArray(row.form_questions) ? row.form_questions.length : 0,
+        questionCount: Number(row.form_question_count ?? 0),
       };
     case 'chat':
       // Who it is with, what it is running, and whether it is busy. The two
@@ -2220,7 +2223,8 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   }
   // A form's edit doors (211) admit its author or a space admin. The row
   // carries that answer for THIS viewer (form_can_edit, computed under the
-  // viewer's claims), so the Build control and the door cannot disagree.
+  // viewer's claims), so the Build control and the door cannot disagree —
+  // false on a cancelled form, which no door will edit.
   // Absent (a row built without the column) is a closed door, never open.
   if (row.kind === 'form') {
     return { ...base, canEdit: live && row.form_can_edit === true };
@@ -2509,16 +2513,17 @@ export function contentOf(row: EntityRow): EntityContent {
         files: row.drawing_files ?? {},
       };
     case 'form':
-      // Everything the form panel renders in one read: settings with defaults
-      // applied, sections and questions in order. Responses page separately.
+      // The row facts; `hydrateDetail` adds the sections and questions in
+      // order, so a detail read renders the panel in one call while a list row
+      // never pays for the question set. Responses page separately.
       return {
         kind: 'form',
         status: (row.form_status ?? 'draft') as FormStatus,
         description: row.form_description ?? null,
         settings: row.form_settings ?? DEFAULT_FORM_SETTINGS,
         structureVersion: Number(row.form_structure_version ?? 1),
-        sections: row.form_sections ?? [],
-        questions: row.form_questions ?? [],
+        sections: [],
+        questions: [],
         openedAt: isoOrNull(row.form_opened_at ?? null),
         closedAt: isoOrNull(row.form_closed_at ?? null),
       };
@@ -2769,6 +2774,16 @@ export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
 ): Promise<{ state: EntityState; content: EntityContent }> {
   if (row.deleted_at) return { state, content };
+  if (content.kind === 'form') {
+    const [structure] = await q.query<{ sections: FormSectionRow[]; questions: FormQuestionRow[] }>(
+      `select internal.form_sections_json($1) as sections, internal.form_questions_json($1) as questions`,
+      [row.id],
+    );
+    return {
+      state,
+      content: { ...content, sections: structure?.sections ?? [], questions: structure?.questions ?? [] },
+    };
+  }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(
       "select dst_id from public.edges where src_id = $1 and type = 'equips' order by created_at, id", [row.id],

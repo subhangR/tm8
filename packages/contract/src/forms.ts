@@ -457,6 +457,19 @@ export const FormStatusSchema = z.enum(['draft', 'open', 'closed', 'cancelled'])
 export type FormStatus = z.infer<typeof FormStatusSchema>;
 
 /**
+ * The lifecycle (§5) — the targets `forms.transition` accepts from each
+ * status. Mirrors `public.transition_form` (211); the UI and actions.list
+ * import it rather than restating it. Closing a form is not cancelling it:
+ * `cancelled` is reachable from draft and open only.
+ */
+export const FORM_TRANSITIONS: Readonly<Record<FormStatus, readonly FormStatus[]>> = {
+  draft: ['open', 'cancelled'],
+  open: ['closed', 'cancelled'],
+  closed: ['open'],
+  cancelled: [],
+};
+
+/**
  * A question as STORED and read back (`internal.form_questions_json`):
  * config as written, plus its position. Not re-validated through the
  * registry on read — the database already did that on write.

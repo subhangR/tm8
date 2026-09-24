@@ -373,6 +373,9 @@ describe('forms.update and canEdit agree (author or space admin)', () => {
     const e = await refusal(call(service.update, 'forms.update', human(ID2), { formId: id },
       { clientMutationId: cmid(), expectedVersion: await version(id), title: 'x' }));
     expect(e.code).toBe('form_not_open');
+    // ...and the capability says so, for the author and the admin alike (#730 gates Build on it).
+    expect((await detailFor(id, human(ID2))).capabilities.canEdit).toBe(false);
+    expect((await detailFor(id, OWNER)).capabilities.canEdit).toBe(false);
   });
 });
 

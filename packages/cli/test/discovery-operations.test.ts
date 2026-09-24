@@ -694,8 +694,9 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
 };
 
 /**
- * Direction-B rows still awaiting an amendment. **Currently EMPTY — the class
- * is closed.**
+ * Direction-B rows still awaiting an amendment. The six forms.* rows below are
+ * the only entries (the `tm8 form` noun lane closes them); before them the
+ * class was closed.
  *
  * All six are fixed, and none of the flag names was invented. The FROZEN SCHEMA
  * is the authority for whether a guard exists — `WithdrawHandoffInput` really

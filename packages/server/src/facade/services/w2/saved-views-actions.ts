@@ -15,6 +15,8 @@ import {
   type PaletteAction,
   type SavedView,
   type SavedViewInput,
+  FORM_TRANSITIONS,
+  type FormStatus,
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
@@ -301,8 +303,10 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'form' && row.form_can_edit === true
         && row.form_status !== 'cancelled' && row.form_frozen !== true;
     case 'forms.transition':
-      // draft -> open|cancelled, open -> closed|cancelled, closed -> open.
-      return live && row.kind === 'form' && row.form_can_edit === true && row.form_status !== 'cancelled';
+      // Offered exactly when FORM_TRANSITIONS (the contract's copy of 211's
+      // lifecycle) names a target from this status.
+      return live && row.kind === 'form' && row.form_can_edit === true
+        && (FORM_TRANSITIONS[row.form_status as FormStatus]?.length ?? 0) > 0;
     case 'forms.responses.save':
     case 'forms.responses.submit':
       return live && row.kind === 'form' && row.form_status === 'open' && row.form_can_respond === true;

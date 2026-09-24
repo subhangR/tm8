@@ -186,6 +186,23 @@ async function loadResponseView(q: Querier, id: string): Promise<FormResponseVie
   return (await viewsOf(q, rows))[0]!;
 }
 
+/**
+ * The respondent entities that are the caller in this space — the same
+ * fallback `internal.form_is_caller` uses: the bound actor, else the caller
+ * identity's member row. Resolved once so the keyset indexes apply.
+ */
+async function callerRespondentIds(q: Querier, spaceId: string): Promise<string[]> {
+  const rows = await q.query<{ ids: string[] | null }>(
+    `select array_remove(array[
+              internal.actor_id(),
+              (select m.entity_id from public.members m
+                where m.space_id = $1 and m.identity_id = internal.identity_id())
+            ], null)::text[] as ids`,
+    [spaceId],
+  );
+  return rows[0]?.ids ?? [];
+}
+
 /** The form, readable by the caller, or not_found. */
 async function readableForm(q: Querier, formId: string): Promise<{ space_id: string }> {
   const rows = await q.query<{ space_id: string }>(
@@ -414,7 +431,7 @@ export class W2FormsService {
   }> {
     const form = (await q.query<{ title: string; structure_version: number; mode: string }>(
       `select title, structure_version,
-              coalesce(settings->>'responses', 'per_member') as mode
+              internal.form_settings_effective(settings)->>'responses' as mode
          from public.forms where entity_id = $1`, [formId]))[0];
     const questions = (await q.query<{ key: string; type: string; title: string; required: boolean; config: Record<string, unknown> }>(
       `select key, type, title, required, config from public.form_questions
@@ -479,7 +496,7 @@ export class W2FormsService {
     const fp = fingerprint('forms.responses.list', { formId, respondent, lineageKey });
 
     return this.deps.db.tx(claims, async (q): Promise<FormResponsePage> => {
-      await readableForm(q, formId);
+      const space = await readableForm(q, formId);
       const values: unknown[] = [formId];
       const where = ['r.form_id = $1'];
       let order: string;
@@ -497,17 +514,28 @@ export class W2FormsService {
         };
       } else {
         if (respondent === 'me') {
-          // RLS already hides every other member's draft (209).
-          where.push(`(r.is_current or r.status = 'draft')`, `internal.form_is_caller(r.respondent_id)`);
+          // The caller's rows: current revision plus the draft (RLS already
+          // hides every other member's draft, 209). A draft has no
+          // submitted_at, so this branch keys on created_at for it.
+          values.push(await callerRespondentIds(q, space.space_id));
+          where.push(`(r.is_current or r.status = 'draft')`, `r.respondent_id = any($${values.length}::uuid[])`);
+          key = MICROS('coalesce(r.submitted_at, r.created_at)');
+          order = 'coalesce(r.submitted_at, r.created_at) desc, r.id desc';
+          after = (k) => {
+            values.push(cursorPart(k[1], 'iso'), cursorPart(k[2], 'uuid'));
+            return `(coalesce(r.submitted_at, r.created_at), r.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`;
+          };
         } else {
+          // Every current row is submitted: keyed on form_responses_current_page
+          // (form_id, submitted_at, id) WHERE is_current.
           where.push('r.is_current');
+          key = MICROS('r.submitted_at');
+          order = 'r.submitted_at desc, r.id desc';
+          after = (k) => {
+            values.push(cursorPart(k[1], 'iso'), cursorPart(k[2], 'uuid'));
+            return `(r.submitted_at, r.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`;
+          };
         }
-        key = MICROS('coalesce(r.submitted_at, r.created_at)');
-        order = 'coalesce(r.submitted_at, r.created_at) desc, r.id desc';
-        after = (k) => {
-          values.push(cursorPart(k[1], 'iso'), cursorPart(k[2], 'uuid'));
-          return `(coalesce(r.submitted_at, r.created_at), r.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`;
-        };
       }
       if (cursor) {
         const decoded = decodeCursor(cursor);
@@ -540,15 +568,18 @@ export class W2FormsService {
     const { claims } = await this.access(ctx, false);
     const fp = fingerprint('forms.responses.mine', { spaceId });
     return this.deps.db.tx(claims, async (q): Promise<FormResponsePage> => {
-      const values: unknown[] = [spaceId];
-      const where = [`r.space_id = $1`, `r.status = 'submitted'`, `internal.form_is_caller(r.respondent_id)`];
+      // Keyed on form_responses_mine_page (space_id, respondent_id,
+      // submitted_at, id) WHERE submitted: the caller's respondent ids are
+      // resolved once, not tested row by row.
+      const values: unknown[] = [spaceId, await callerRespondentIds(q, spaceId)];
+      const where = [`r.space_id = $1`, `r.respondent_id = any($2::uuid[])`, `r.status = 'submitted'`];
       if (cursor) {
         const decoded = decodeCursor(cursor);
         if (decoded.k[0] !== fp || decoded.k.length !== 3) {
           throw new CollabError('invalid_cursor', 'form responses cursor does not match this query');
         }
         values.push(cursorPart(decoded.k[1], 'iso'), cursorPart(decoded.k[2], 'uuid'));
-        where.push(`(r.submitted_at, r.id) < ($2::timestamptz, $3::uuid)`);
+        where.push(`(r.submitted_at, r.id) < ($3::timestamptz, $4::uuid)`);
       }
       const rows = await q.query<ResponseRow>(
         `select ${RESPONSE_COLUMNS}, ${MICROS('r.submitted_at')} as cursor_at ${RESPONSE_FROM}
