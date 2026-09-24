@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CollabError } from '@tm8/contract';
+import { CollabError, type OperationName } from '@tm8/contract';
 import type { PtyHostService } from '@tm8/execution';
 import { CredentialSessionLauncher } from '@tm8/execution';
 
@@ -36,6 +36,10 @@ import {
 import { DbSpaceCredentialStore } from '../../src/credentials/space-credential-store.js';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import { registerCredentialHandlers } from '../../src/facade/handlers/w2/credentials.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import type { RequestContext } from '../../src/http/types.js';
 import type {
   CommandRunner,
   CredentialBinaryResolver,
@@ -684,5 +688,61 @@ describe('I6 — a connected finish whose promote fails marks the credential sta
     expect(await credentialStatus(credential.id)).toBe('stale');
     expect(outcome).toMatchObject({ stored: false, probe: { connected: false, status: 'stale' } });
     expect(outcome.spaceCredential?.status).toBe('stale');
+  });
+});
+
+describe('composition — the mounted delete closes a login through the session service registry', () => {
+  it('credentials.space.delete kills and stamps the registered login terminal and empties its registry entry', async () => {
+    let sessions: W2CredentialSessionsService | undefined;
+    // Capture the handler-built service; its timer is not wanted in a test.
+    const sweep = vi
+      .spyOn(W2CredentialSessionsService.prototype, 'startSweep')
+      .mockImplementation(function (this: W2CredentialSessionsService) { sessions = this; });
+    try {
+      const deps = {
+        db,
+        config: { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024, databaseUrl: undefined },
+        owner: async () => ({ identityId: A, accountId: '', username: A, isNodeAdmin: false, isOwner: false }),
+      } as unknown as FacadeDeps;
+      const registry = new HandlerRegistry();
+      registerCredentialHandlers(registry, deps, {
+        launcher: new CredentialSessionLauncher({ pty, env: { PATH: '/usr/bin:/bin', HOME: '/home/tm8' } }),
+        dataDir,
+        probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
+      });
+      expect(sessions).toBeDefined();
+      // The vendor CLI need not be installed where this runs.
+      (sessions as unknown as { binaryResolver: CredentialBinaryResolver }).binaryResolver = BINARY_PRESENT;
+
+      const call = (opName: OperationName, identityId: string, init: { params?: Record<string, string>; body?: unknown }) =>
+        Promise.resolve(registry.get(opName)!({
+          op: { name: opName, method: 'POST', path: '/test', kind: 'command', status: 'v1' },
+          opName,
+          params: init.params ?? {},
+          query: new URLSearchParams(),
+          body: init.body,
+          requestId: randomUUID(),
+          identity: { kind: 'bearer', identityId, authKind: 'browser', nodeAdmin: false },
+          headers: {},
+          method: 'POST',
+          path: '/test',
+        } as RequestContext));
+
+      const started = (await call('credentials.loginSessions.start', A, {
+        body: { spaceId: ids.S!, provider: 'anthropic', spaceCredential: { label: label('A composed') } },
+      })) as { workSessionId: string; spaceCredential: { id: string } };
+      expect(sessions!.liveSessionIds()).toContain(started.workSessionId);
+      events = [];
+
+      await call('credentials.space.delete', ADM, { params: { credentialId: started.spaceCredential.id } });
+
+      expect(events).toContain(`kill:${started.workSessionId}`);
+      expect(live.has(started.workSessionId)).toBe(false);
+      expect((await row(started.workSessionId))!.finished_at).not.toBeNull();
+      expect(sessions!.liveSessionIds()).not.toContain(started.workSessionId);
+      expect(await credentialStatus(started.spaceCredential.id)).toBe('revoked');
+    } finally {
+      sweep.mockRestore();
+    }
   });
 });
