@@ -28,11 +28,33 @@ import { queryCollection } from '../../src/facade/handlers/collections.js';
 const SPACE_ID = '00000000-0000-7000-8000-0000000005c1';
 const PREDICATE = `ws.session_kind is distinct from 'credential'`;
 
-/** Records every statement the handler issues; answers all of them empty. */
+/**
+ * Records every statement the handler issues; answers all of them empty EXCEPT
+ * the page probe, which comes back FULL.
+ *
+ * Full on purpose: a short first page is its own total and the executor skips
+ * the count (see `pageIsWholeMatch`), which would leave the count — the half
+ * of this file that matters — unexercised. `limit: 1` below plus two probe
+ * rows is the smallest page that still has to be counted.
+ */
 function recordingQuerier(seen: string[]): Querier {
   return {
     query: async <R>(sql: string): Promise<R[]> => {
       seen.push(sql);
+      if (sql.includes(' as __sort')) {
+        return [1, 2].map((n) => ({
+          id: `00000000-0000-7000-8000-00000000000${n}`,
+          space_id: SPACE_ID,
+          kind: 'work_session',
+          visibility: 'space',
+          activity_at: '2026-09-24T10:00:00.000Z',
+          created_at: '2026-09-24T10:00:00.000Z',
+          updated_at: '2026-09-24T10:00:00.000Z',
+          deleted_at: null,
+          __sort: '2026-09-24T10:00:00.000Z',
+          __sort_cursor: '2026-09-24T10:00:00.000Z',
+        })) as unknown as R[];
+      }
       return [] as R[];
     },
     rpc: async <T>(): Promise<T> => ({}) as T,
@@ -46,6 +68,7 @@ describe('collections.query excludes credential login terminals', () => {
       spaceId: SPACE_ID,
       kinds: ['work_session'],
       filters: { category: ['to_do'] },
+      limit: 1,
     } as unknown as CollectionQuery;
 
     await queryCollection(recordingQuerier(seen), query, 'viewer-1');
@@ -71,10 +94,16 @@ describe('collections.query excludes credential login terminals', () => {
     const seen: string[] = [];
     await queryCollection(
       recordingQuerier(seen),
-      { spaceId: SPACE_ID } as unknown as CollectionQuery,
+      { spaceId: SPACE_ID, limit: 1 } as unknown as CollectionQuery,
       'viewer-1',
     );
-    expect(seen.filter((sql) => sql.includes(PREDICATE))).toHaveLength(seen.length);
-    expect(seen.length).toBeGreaterThan(1);
+    // Both statements that select FROM the query's WHERE carry it; the rest
+    // of `seen` is the assembler's per-id batch loads for the full page.
+    const page = seen.filter((sql) => sql.includes(' as __sort'));
+    const counts = seen.filter((sql) => sql.includes('count(*)::int as total'));
+    expect(page).toHaveLength(1);
+    expect(counts).toHaveLength(1);
+    expect(page[0]).toContain(PREDICATE);
+    expect(counts[0]).toContain(PREDICATE);
   });
 });

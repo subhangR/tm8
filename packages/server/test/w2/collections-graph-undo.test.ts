@@ -21,6 +21,11 @@ const OTHER_ID = '00000000-0000-7000-8000-000000000505';
 const EDGE_ID = '00000000-0000-7000-8000-000000000506';
 const PR_ID = '00000000-0000-7000-8000-000000000507';
 
+/** Two probe rows: fills a `limit: 1` page, so the executor must count. */
+function fullPage(): Array<EntityRow & { __sort: string; __sort_cursor: string }> {
+  return [taskRow(ROOT_ID, 'Root', null, 1), taskRow(OTHER_ID, 'Other', null, 2)];
+}
+
 function taskRow(id: string, title: string, parentId: string | null, position: number): EntityRow & { __sort: string; __sort_cursor: string } {
   const timestamp = `2026-07-2${position + 1}T10:00:00.000Z`;
   return {
@@ -288,11 +293,13 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     const q: Querier = {
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
         captured.push({ sql, params });
-        return [];
+        // A FULL page (limit 1, two probe rows): a short first page is its own
+        // total and issues no count — see `pageIsWholeMatch`.
+        return (sql.includes(' as __sort') ? fullPage() : []) as R[];
       },
       rpc: async <T>(): Promise<T> => ({}) as T,
     };
-    await queryCollection(q, { spaceId: SPACE_ID, filters: { terms: ['Scoped', 'tsc'] } }, 'g05-owner');
+    await queryCollection(q, { spaceId: SPACE_ID, filters: { terms: ['Scoped', 'tsc'] }, limit: 1 }, 'g05-owner');
     const pageRead = captured.find((call) => call.sql.includes(' as __sort'));
     const totalRead = captured.find((call) => call.sql.includes('count(*)::int as total'));
     for (const read of [pageRead, totalRead]) {
@@ -310,13 +317,13 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     const q: Querier = {
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
         captured.push({ sql, params });
-        return [];
+        return (sql.includes(' as __sort') ? fullPage() : []) as R[];
       },
       rpc: async <T>(): Promise<T> => ({}) as T,
     };
     await queryCollection(
       q,
-      { spaceId: SPACE_ID, kinds: ['doc'], filters: { titleContains: '  50% Plan ' } },
+      { spaceId: SPACE_ID, kinds: ['doc'], filters: { titleContains: '  50% Plan ' }, limit: 1 },
       'g05-owner',
     );
     const pageRead = captured.find((call) => call.sql.includes(' as __sort'));

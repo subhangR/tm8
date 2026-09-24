@@ -683,7 +683,9 @@ export async function queryCollection(
       ? encodeCursor([fingerprint, sortKeyOf(last, sortName), last.id])
       : null,
     // THE TRUE SIZE OF THE MATCH — phase 7's counts ruling. See `queryTotal`.
-    total: await queryTotal(q, baseWhere, p.values.slice(0, baseParamCount)),
+    total: pageIsWholeMatch(query.cursor, rows.length, fetchLimit)
+      ? pageRows.length
+      : await queryTotal(q, baseWhere, p.values.slice(0, baseParamCount)),
   };
 
   // The query as resolved, so re-running it is reproducible.
@@ -725,6 +727,31 @@ export async function queryCollection(
     }
   }
   return { query: resolved, page, groups };
+}
+
+/**
+ * True when the page just fetched IS the whole match, so its length is the
+ * exact `Page.total` and the aggregate would only recount it.
+ *
+ * Both conditions are required. No cursor: the page's WHERE is then exactly
+ * `baseWhere`, the WHERE the count runs. Fewer rows than were asked for: the
+ * `limit n+1` probe came back short, so the result set was exhausted. Under
+ * those two, `count(*)` over the same FROM and WHERE counts the same rows —
+ * and it would pay the whole predicate a second time to do it.
+ *
+ * That second payment is not small. Under RLS a predicate that reaches
+ * `public.messages` (`mentionedActorId`, `needsActorId`) is a full scan with
+ * two `entity_readable()` calls per row whichever statement runs it, so on
+ * `spaces.home` the three preset counts were a third of the request's
+ * Postgres time — measured on a prod copy 2026-09-24, as `tm8_app`: 1.83 s of
+ * 5.57 s — for presets that are nearly always one short page.
+ */
+export function pageIsWholeMatch(
+  cursor: string | undefined | null,
+  fetchedRows: number,
+  fetchLimit: number,
+): boolean {
+  return !cursor && fetchedRows < fetchLimit;
 }
 
 /**
