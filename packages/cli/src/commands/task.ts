@@ -51,6 +51,8 @@ import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, successReceipt, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * The six statuses `task transition` documents, in the frozen contract
  * spelling — `in_review`, not `in-review` and not `inReview`.
@@ -93,13 +95,21 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
     throw new CliError('`tm8 task complete` requires --expect-version <n>', EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <task-id>`',
+      hint: 'read the current version with `tm8 entity context <task-id>` (its first line)',
     });
   }
   const completerIds = cmd.options.values('by');
+  // A tm8-spawned session knows its own actor id; name it, so an agent does not
+  // guess one from its harness (an email, a name) and reach the wire with it.
+  const self = process.env.TM8_TEAM_MEMBER_ID?.trim();
+  const byHint = self ? `your team-member id is ${self}: --by ${self}` : 'completion records who completed the task; --by is repeatable';
   if (completerIds.length === 0) {
-    throw new CliError('`tm8 task complete` requires at least one --by <actor-id>', EXIT_USAGE, {
-      hint: 'completion records who completed the task; --by is repeatable',
+    throw new CliError('`tm8 task complete` requires at least one --by <actor-id>', EXIT_USAGE, { hint: byHint });
+  }
+  const notIds = completerIds.filter((by) => !UUID_RE.test(by));
+  if (notIds.length > 0) {
+    throw new CliError(`--by expects an actor id (a uuid), got ${notIds.map((by) => JSON.stringify(by)).join(', ')}`, EXIT_USAGE, {
+      hint: byHint,
     });
   }
 
@@ -245,7 +255,7 @@ async function taskGate(cmd: CommandContext): Promise<ExitCode> {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
     throw new CliError('`tm8 task gate` requires --expect-version <n>', EXIT_USAGE, {
-      hint: 'read the current version with `tm8 entity get <task-id>`',
+      hint: 'read the current version with `tm8 entity context <task-id>` (its first line)',
     });
   }
 

@@ -403,6 +403,20 @@ describe('task complete', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('refuses a non-uuid --by locally, naming the session\'s own team-member id', async () => {
+    const prev = process.env.TM8_TEAM_MEMBER_ID;
+    process.env.TM8_TEAM_MEMBER_ID = ACTOR;
+    try {
+      const r = await drive(['task', 'complete', TASK, '--expect-version', '7', '--by', 'someone@example.com']);
+      expect(r.code).toBe(2);
+      expect(seen).toHaveLength(0);
+      expect(r.stderr).toContain('--by expects an actor id (a uuid), got "someone@example.com"');
+      expect(r.stderr).toContain(`--by ${ACTOR}`);
+    } finally {
+      if (prev === undefined) delete process.env.TM8_TEAM_MEMBER_ID; else process.env.TM8_TEAM_MEMBER_ID = prev;
+    }
+  });
+
   it('sends expectedVersion as a number and every --by as a completerId', async () => {
     await drive(['task', 'complete', TASK, '--expect-version', '7', '--by', ACTOR, '--by', OTHER]);
     expect(seen[0]?.body).toMatchObject({ expectedVersion: 7, completerIds: [ACTOR, OTHER] });
