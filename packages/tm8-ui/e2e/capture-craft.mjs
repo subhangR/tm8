@@ -147,7 +147,8 @@ await page.keyboard.press('Escape');
 
 // ---- 7. NARROW WINDOW: the inspector overlays the canvas. ------------------
 await page.setViewportSize({ width: 1180, height: 820 });
-await page.locator('[data-testid="crf-node"]').first().click();
+await page.getByTestId('crf-zoom-fit').click().catch(() => {});
+await page.locator('[data-testid="crf-node"]').first().click().catch(() => {});
 await page.waitForTimeout(400);
 console.log('NARROW', await page.evaluate(() => ({
   overlay: document.querySelector('[data-testid="crf-detail"]')?.hasAttribute('data-overlay'),
