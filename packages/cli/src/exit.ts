@@ -43,7 +43,11 @@ export const EXIT_PAYLOAD_TOO_LARGE = 9;
 export const EXIT_PROTOCOL = 10;
 /** 11 — `--wait settled` only: stored, but a requested delivery is incomplete/non-delivered. */
 export const EXIT_UNSETTLED = 11;
-/** 13 — `event watch --until-match` only: `--timeout` expired before a matching event arrived. */
+/**
+ * 13 — a bounded wait's `--timeout` expired before what it waited for arrived:
+ * `event watch --until-match` (no matching event) and `form wait` (no new
+ * response). Same sentence, two waits; its meaning for `event watch` is unchanged.
+ */
 export const EXIT_WAIT_TIMEOUT = 13;
 /**
  * 14 — `event watch --until-match` only: a matching event WAS found, but via
@@ -54,6 +58,13 @@ export const EXIT_WAIT_TIMEOUT = 13;
  * its own is not a code this table can own.)
  */
 export const EXIT_MATCHED_VIA_POLL = 14;
+/**
+ * 15 — `form wait` only: the form reached `closed` or `cancelled` before a NEW
+ * response was submitted. Distinct from 0 (answered) and 13 (timed out) so an
+ * agent can branch without parsing: re-waiting on a terminal form is pointless.
+ * The output carries the status (and a cancel reason when one was given).
+ */
+export const EXIT_FORM_TERMINAL = 15;
 /** 130 — interrupted (SIGINT). */
 export const EXIT_INTERRUPTED = 130;
 
@@ -74,8 +85,9 @@ export const EXIT_MEANING = {
   9: 'payload too large',
   10: 'other Server/protocol failure',
   11: 'stored, but one or more requested work-session deliveries are incomplete or non-delivered (--wait settled only)',
-  13: 'no matching event arrived before --timeout expired (event watch --until-match only)',
+  13: 'no matching event arrived before --timeout expired (event watch --until-match); for form wait, no new response did',
   14: 'matched, but via the events.poll fallback after the event socket was lost (event watch --until-match only)',
+  15: 'the form closed or was cancelled before a new response arrived (form wait only)',
   130: 'interrupted',
 } as const;
 

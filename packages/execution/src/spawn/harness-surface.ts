@@ -31,6 +31,7 @@
 // needs the operator's plugins or connectors.
 
 import { readFileSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -159,6 +160,45 @@ export function equippedClaudePlugins(
   return [...names].sort();
 }
 
+/** Which link of the precedence chain chose a lane's surface. */
+export type HarnessSurfaceSource = 'launch' | 'env' | 'inherited' | 'persona' | 'default';
+
+/**
+ * `manifest.launch.harness` for a lane tm8 manages (design 01a0d348 §3.6):
+ * the surface and who chose it, and under `minimal` everything the lane's
+ * flags turn on or off — plugins (`pluginDecisions`), the MCP servers kept
+ * under `--strict-mcp-config` (names only: a server config can carry a
+ * token), and the bundled skills `skillOverrides` turns off. Built from the
+ * same values `buildAgentCommand` reads, so the record and argv agree.
+ */
+export function laneHarnessRecord(
+  launch: {
+    harnessSurface?: HarnessSurface;
+    harnessSurfaceSource?: HarnessSurfaceSource;
+    mcpServers?: Record<string, unknown>;
+  },
+  plugins: HarnessPluginDecisions | null,
+): {
+  surface: HarnessSurface;
+  surfaceSource: HarnessSurfaceSource;
+  plugins?: HarnessPluginDecisions;
+  mcpServers?: { name: string; source: 'persona' }[];
+  skillOverrides?: { off: { name: string; source: 'builtin-trim' }[] };
+} {
+  const surface = launch.harnessSurface ?? 'minimal';
+  const surfaceSource = launch.harnessSurfaceSource ?? 'default';
+  if (surface === 'inherit') return { surface, surfaceSource };
+  return {
+    surface,
+    surfaceSource,
+    ...(plugins ? { plugins } : {}),
+    mcpServers: Object.keys(launch.mcpServers ?? {}).sort().map((name) => ({ name, source: 'persona' as const })),
+    skillOverrides: {
+      off: Object.keys(laneSkillOverrides()).map((name) => ({ name, source: 'builtin-trim' as const })),
+    },
+  };
+}
+
 /**
  * The `--mcp-config` a `minimal` lane runs under `--strict-mcp-config`: empty
  * unless the teammate opted MCP servers back in (`capabilities.launch.mcpServers`,
@@ -190,6 +230,20 @@ function readJson(path: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The one Claude config home a claude-code launch reads plugins from: the
+ * member's credential home when they have one, otherwise the node's
+ * (`CLAUDE_CONFIG_DIR`, else `~/.claude`). Never a union: spawn loads exactly
+ * one home, so the launch menu (skills.preview) and the lane's deny-list both
+ * resolve through here and agree.
+ */
+export function claudePluginConfigDir(
+  memberConfigDir: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string {
+  return memberConfigDir || env.CLAUDE_CONFIG_DIR?.trim() || join(env.HOME ?? homedir(), '.claude');
 }
 
 /**

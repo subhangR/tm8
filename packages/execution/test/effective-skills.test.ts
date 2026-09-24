@@ -32,6 +32,20 @@ describe('effective native equipment', () => {
     expect(result.native.map(row => row.loadPointer)).toEqual(['/demo', '/sub:demo', '/p:demo']);
     expect(result.skipped.map(row => row.entityId)).toEqual(['legacy', 'synced']);
   });
+  it('never gives ~/.agents skills a native pointer under claude-code (the CLI does not load that dir)', () => {
+    const row = file('agents-user', '/home/test/.agents/skills/demo/SKILL.md', { provider: 'agents', level: 'user' });
+    const claude = effective([row]);
+    expect(claude.native).toEqual([]);
+    expect(claude.indexed).toMatchObject([{ entityId: 'agents-user', native: false, loadPointer: '/home/test/.agents/skills/demo/SKILL.md' }]);
+    // Codex does load ~/.agents/skills natively; unchanged.
+    expect(effective([row], { agentTool: 'codex' }).native.map(e => e.loadPointer)).toEqual(['$demo']);
+  });
+  it('names a synced plugin skill /<name>:<skill> while matching the launch allow set by <name>@synced', () => {
+    const row = file('synced-plugin', '/home/test/.claude/plugins/synced/b/sales/skills/demo/SKILL.md', { level: 'plugin', loaderMetadata: { enabled: true, pluginName: 'sales@synced' } });
+    expect(effective([row]).native.map(e => e.loadPointer)).toEqual(['/sales:demo']);
+    expect(effective([row], { launchEnabledPlugins: ['sales@synced'] }).native.map(e => e.loadPointer)).toEqual(['/sales:demo']);
+    expect(effective([row], { launchEnabledPlugins: ['sales@other-market'] }).native).toEqual([]);
+  });
   it('does not invent native plugin or additional-directory availability', () => {
     const result = effective([
       file('disabled', '/home/test/.claude/plugins/p/skills/demo/SKILL.md', { level: 'plugin', loaderMetadata: { enabled: false, pluginName: 'p' } }),

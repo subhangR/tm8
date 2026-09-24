@@ -455,9 +455,117 @@ export interface SpawnContext {
    * manifest so a truncated persona is visible rather than merely smaller.
    */
   droppedSkills?: string[];
+  /**
+   * What the loader knows about the launch context that the rendered texts do
+   * not carry: whether a selection replaced the defaults, how each injected
+   * memory entered the set, and every default the selection left out (design
+   * 01a0d348 §6). Absent from contexts that predate it.
+   */
+  contextAudit?: SpawnContextAudit;
+}
+
+export interface SpawnContextAudit {
+  /** True when `selection` replaced the edge-driven memory and skill defaults. */
+  selected: boolean;
+  /** One per `teamMember.memoryIds` entry, same order. */
+  memoryVia: ContextVia[];
+  /** Skills that are in the session only because the selection named them. */
+  selectionOnlySkillIds?: string[];
+  /** Defaults the selection left out, and other loader-side drops. */
+  dropped: ContextDrop[];
+  /**
+   * Legacy `team_members.memories` jsonb entries a selection replaced. They
+   * have no entity id, so they are counted here rather than listed.
+   */
+  legacyMemoriesDropped?: number;
 }
 
 export type ManifestSkillContext = SkillIndexEntry;
+
+// --- the launch-context audit (design 01a0d348 §6) ----------------------------
+
+export type ContextGroupName = 'memories' | 'skills' | 'references' | 'teammates';
+
+/**
+ * How an entry entered the launch set. `requested` is an id the spawn named
+ * directly without a selection (`tm8 session spawn --memory`).
+ */
+export type ContextVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested';
+
+export interface ContextGroupAudit {
+  /**
+   * `selected`: the launch sent this group as an exact set. `default`: the
+   * edge-driven defaults `loadSpawnContext` computes.
+   */
+  mode: 'selected' | 'default';
+  /**
+   * Why the defaults were used. `no-selection`: the launch sent no selection;
+   * `not-selectable`: selection cannot name this group yet.
+   */
+  reason?: 'no-selection' | 'not-selectable';
+  /** Linked rows beyond the spawn read; declared as `omitted` in the prompt. */
+  unread?: number;
+  /** See `SpawnContextAudit.legacyMemoriesDropped`. */
+  legacyDropped?: number;
+}
+
+export interface ContextEntryRecord {
+  entityId: string;
+  kind: string;
+  group: ContextGroupName;
+  via: ContextVia;
+  /** 1-based position in its group: the selected order, else edge order. */
+  rank: number;
+  /** Memories are injected whole; everything else is an index line. */
+  state: 'expanded' | 'collapsed';
+  /** UTF-8 bytes of the entry as the prompt renders it. */
+  bytes: number;
+  /** Edge type, for references and teammates. */
+  link?: string;
+}
+
+export type ContextDropReason =
+  | 'not-selected'
+  | 'byte-budget'
+  | 'task-name-collision'
+  | 'native-shadowed'
+  | 'count-cap';
+
+export interface ContextDrop {
+  entityId: string;
+  kind: string;
+  group: ContextGroupName;
+  reason: ContextDropReason;
+  level?: 'body' | 'header' | 'entry';
+}
+
+/**
+ * `manifest.context`. `memoryIds` keeps its PREFIX RULE (see
+ * `Tm8Manifest.context`); the rest is the audit of what the launch carried.
+ */
+export interface ManifestContext {
+  memoryIds?: string[];
+  groups?: Record<ContextGroupName, ContextGroupAudit>;
+  entries?: ContextEntryRecord[];
+  dropped?: ContextDrop[];
+}
+
+/** `manifest.launch.harness` (design 01a0d348 §3.6). */
+export interface LaunchHarnessRecord {
+  surface: 'minimal' | 'inherit';
+  /**
+   * Which link of the precedence chain chose the surface: the launch UI's
+   * pick, the node env (`TM8_HARNESS_SURFACE`), a pick inherited from the
+   * resumed or parent session, the persona, or the lane default.
+   */
+  surfaceSource: 'launch' | 'env' | 'inherited' | 'persona' | 'default';
+  /** Every installed plugin's fate; absent when the home has no plugins. */
+  plugins?: import('./harness-surface.js').HarnessPluginDecisions;
+  /** MCP servers the lane runs with (names only; configs are not recorded). */
+  mcpServers?: { name: string; source: 'persona' }[];
+  /** Skills the lane's flag-level `skillOverrides` turns off. */
+  skillOverrides?: { off: { name: string; source: 'builtin-trim' | 'plugin-unselected' }[] };
+}
 
 export interface CreateWorkSessionInput {
   spaceId: string;
@@ -990,6 +1098,17 @@ export interface Tm8Manifest {
     command: string;
     /** The Ask Jev run this launch came from, when it came from one. Absent otherwise — never null. */
     jevRunId?: string;
+    /**
+     * The launch UI's harness pick (or the one a resume replays), when there
+     * was one; claude-code lanes only. See `ResolvedLaunchConfig.harnessChoice`.
+     */
+    harnessChoice?: { surface?: 'minimal' | 'inherit'; plugins?: string[] };
+    /**
+     * What the lane's harness actually turned on and off, and why (design
+     * 01a0d348 §3.6). Written for every claude-code lane; absent for other
+     * tools, whose surface is not managed.
+     */
+    harness?: LaunchHarnessRecord;
   };
 
   session: {
@@ -1023,7 +1142,7 @@ export interface Tm8Manifest {
    * pairing explicitly instead. `[]` means recorded and none injected; absent
    * means the manifest predates this field.
    */
-  context?: { memoryIds: string[] };
+  context?: ManifestContext;
 
   /**
    * Present for coordinated modes — the concrete return path, and since 176
@@ -1089,6 +1208,21 @@ export interface SpawnRequest {
   plugins?: string[];
   /** S12: untrusted projects require per-spawn consent. */
   confirmUntrusted?: boolean;
+  /**
+   * The recorded launch posture to inherit, INSTEAD of reading the parent's.
+   * A server-side spawn on another session's behalf (Forms W2 spawn_new) must
+   * never exceed THAT session's access mode or credentials, and its parent may
+   * have launched wider. `undefined` keeps the parent inheritance; `null`
+   * inherits nothing.
+   */
+  inheritPosture?: SessionLaunchPosture | null;
+  /**
+   * Text appended to the composed first user turn, after the task assignment
+   * (Forms W2: the form_response envelope a spawned session starts with).
+   * Called once the session id exists, with the bytes the turn has left under
+   * the combinedInitialInjection budget; the result must fit them.
+   */
+  firstTurnAppendix?: (sessionId: string, maxBytes: number) => string;
   clientMutationId?: string | null;
   /** Terminal geometry from the browser, so the agent's TUI boots at the right width. */
   cols?: number;

@@ -1,5 +1,5 @@
-import { serializeSkillIndex, type PromptSkill } from './skill-index.js';
-export { serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
+import { serializeMemoryEntry, serializeSkillIndex, type PromptSkill } from './skill-index.js';
+export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
 /**
  * `@tm8/prompt` — the ONE agent-prompt composer, shared by the spawn path and
  * the CLI.
@@ -889,7 +889,7 @@ export function composePrompt(
   const memory = strings(agent.memory);
   if (memory.length > 0) {
     s.push('  <memory>');
-    for (const m of memory) s.push(`    <entry>${esc(m)}</entry>`);
+    for (const m of memory) s.push(`    ${serializeMemoryEntry(m)}`);
     s.push('  </memory>');
   }
 

@@ -161,8 +161,11 @@ export function formGuide(): GuideSection[] {
     {
       title: 'waiting for an answer',
       lines: [
-        'tm8 form wait <form-id> [--timeout <seconds>] — W2: blocks until a response arrives (not in this build)',
-        'meanwhile the answer arrives in your session as a message; or poll `tm8 form response list <form-id>`',
+        'the answer arrives in your session as a message; to BLOCK on it instead: create, then wait',
+        '  tm8 form create --title "<title>" --question \'<key>:single_choice:<question>:<a>*,<b>\'   # prints the form id',
+        '  tm8 form wait <form-id> --timeout 600   # --timeout <seconds>: default 600, cap 3600',
+        'exit 0 answered (prints the response) · 15 the form closed or was cancelled first · 13 timed out (stderr: the resume command)',
+        'chain waits with --since <response-id> (the one just printed): an amend or the next member\'s answer is "new"',
       ],
     },
   ];

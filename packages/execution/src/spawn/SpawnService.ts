@@ -16,7 +16,14 @@ import type {
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
-import { composePrompt, primaryContextBudgetV2, PROMPT_VERSION_V2, type PromptRuntime } from '@tm8/prompt';
+import {
+  BYTE_BUDGETS,
+  composePrompt,
+  primaryContextBudgetV2,
+  PROMPT_VERSION_V2,
+  utf8Bytes,
+  type PromptRuntime,
+} from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -26,6 +33,7 @@ import {
 } from './codex-network-preflight.js';
 import {
   buildAgentCommand,
+  childLaunchPosture,
   composeEnv,
   composeManifest,
   resolveAgentBinary,
@@ -40,7 +48,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { equippedClaudePlugins, harnessSurfaceEnv, pluginDecisions, readInstalledClaudePlugins } from './harness-surface.js';
+import { claudePluginConfigDir, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -158,6 +166,10 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
       'PTY killed, exit code not observed',
   },
 };
+
+/** Why a session became live: see `SpawnService.onSessionLive`. */
+export type SessionLiveCause = 'spawn' | 'resume' | 'running' | 'idle';
+export type SessionLiveListener = (sessionId: string, cause: SessionLiveCause) => void | Promise<void>;
 
 export interface SpawnServiceOptions {
   graph: GraphPort;
@@ -405,6 +417,38 @@ function endingFromPtyExit(
   };
 }
 
+/**
+ * The first user turn: the composed task, plus the caller's appendix. The
+ * appendix is offered only the bytes the combined budget has left, so a large
+ * task turn shrinks the appendix and never the reverse; one that ignores its
+ * allowance refuses the launch rather than being clipped (§8.1).
+ */
+function firstTurn(
+  envelope: { system: string; task: string },
+  sessionId: string,
+  request: SpawnRequest,
+): string {
+  if (!request.firstTurnAppendix) return envelope.task;
+  const used = utf8Bytes(`${envelope.system}\n\n${envelope.task}\n\n`);
+  const room = BYTE_BUDGETS.combinedInitialInjection - used;
+  const appendix = room > 0 ? request.firstTurnAppendix(sessionId, room) : '';
+  if (!appendix) {
+    throw new SpawnError(
+      `the first turn has no room for its appendix (${String(room)} bytes left)`,
+      'invalid_input',
+      { sessionId, room },
+    );
+  }
+  if (utf8Bytes(appendix) > room) {
+    throw new SpawnError(
+      `the first-turn appendix is ${String(utf8Bytes(appendix))} bytes, over the ${String(room)} left`,
+      'invalid_input',
+      { sessionId, room },
+    );
+  }
+  return `${envelope.task}\n\n${appendix}`;
+}
+
 export class SpawnService {
   private readonly graph: GraphPort;
   private readonly pty: PtyHostService;
@@ -456,6 +500,9 @@ export class SpawnService {
   /** Failed spawn terminal writes retried for this process lifetime. Startup
    * ghost reconciliation is the second line of defence after a node restart. */
   private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
+  private readonly sessionLiveListeners = new Set<SessionLiveListener>();
 
   constructor(options: SpawnServiceOptions) {
     this.graph = options.graph;
@@ -821,15 +868,22 @@ export class SpawnService {
    * resolution `recordManifest` records. Empty (no read at all) for any other
    * tool, for `inherit`, and under an operator `TM8_AGENT_CMD` wrapper.
    */
+  /**
+   * Whether tm8 shapes this lane's harness surface at all, and so records it
+   * as `launch.harness`: a claude-code lane not run through an operator
+   * `TM8_AGENT_CMD` wrapper, which replaces the whole command line.
+   */
+  private managesClaudeHarness(launch: ResolvedLaunchConfig): boolean {
+    return launch.agentTool === 'claude-code' && !this.env.TM8_AGENT_CMD?.trim();
+  }
+
   private installedClaudePluginsFor(
     launch: ResolvedLaunchConfig,
     credentialConfigDir: string | undefined,
   ): string[] {
     if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
     if (this.env.TM8_AGENT_CMD?.trim()) return [];
-    const configDir =
-      credentialConfigDir ?? this.env.CLAUDE_CONFIG_DIR ?? join(this.env.HOME ?? homedir(), '.claude');
-    return readInstalledClaudePlugins(configDir);
+    return readInstalledClaudePlugins(claudePluginConfigDir(credentialConfigDir, this.env));
   }
 
   /**
@@ -1179,7 +1233,13 @@ export class SpawnService {
       ...(request.selection ? { selection: request.selection } : {}),
     });
 
-    const inherited = await this.inheritedPosture(auth, request);
+    // A child inherits its parent's posture but not its harness pick; only a
+    // resume replays the pick, because only a resume is the same launch. An
+    // explicit inheritPosture (Forms W2) is the requester's OWN recorded launch
+    // replayed, so it keeps its pick: dropping a plugin allow set could widen it.
+    const inherited = request.inheritPosture !== undefined
+      ? request.inheritPosture
+      : childLaunchPosture(await this.inheritedPosture(auth, request));
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
@@ -1370,21 +1430,10 @@ export class SpawnService {
       // plugin registry of the config home the child will actually use.
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
+      // The command is built INSIDE composeManifest, after the skill index is
+      // trimmed, from the plugins of the skills that survived (F2).
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
-      const harnessPlugins = installedPlugins.length > 0
-        ? pluginDecisions(installedPlugins, {
-          launchPick: launch.harnessChoice?.plugins ?? null,
-          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
-          effective: effectivePlugins,
-        })
-        : null;
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        claudeSessionId: nativeSessionId,
-        sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: installedPlugins,
-        equippedClaudePlugins: effectivePlugins,
-      });
+      let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -1398,9 +1447,14 @@ export class SpawnService {
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
-        command: baseCommand,
+        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+          claudeSessionId: nativeSessionId,
+          sandboxUnavailable: sandbox.unavailable,
+          installedClaudePlugins: installedPlugins,
+          equippedClaudePlugins: effectiveClaudePlugins,
+        })),
         sandboxDegraded: sandbox.degradedReason,
-        harnessPlugins,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
         baseUrl: this.baseUrl,
       });
 
@@ -1429,8 +1483,8 @@ export class SpawnService {
       // matches (native-session.ts). Claude needs none: its id is pre-minted.
       const task =
         launch.agentTool === 'codex'
-          ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : envelope.task;
+          ? `${firstTurn(envelope, sessionId, request)}\n<tm8_session_id>${sessionId}</tm8_session_id>`
+          : firstTurn(envelope, sessionId, request);
       // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
       // prompt that is already in the process cannot be lost to a boot race. The
       // alternative — launch an idle REPL and type the task into the TUI once it
@@ -1580,6 +1634,7 @@ export class SpawnService {
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
+      this.notifySessionLive(sessionId, 'spawn');
 
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
@@ -2142,19 +2197,7 @@ export class SpawnService {
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
-      const harnessPlugins = installedPlugins.length > 0
-        ? pluginDecisions(installedPlugins, {
-          launchPick: launch.harnessChoice?.plugins ?? null,
-          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
-          effective: effectivePlugins,
-        })
-        : null;
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: installedPlugins,
-        equippedClaudePlugins: effectivePlugins,
-      });
+      let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -2165,9 +2208,13 @@ export class SpawnService {
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
-        command: baseCommand,
+        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+          sandboxUnavailable: sandbox.unavailable,
+          installedClaudePlugins: installedPlugins,
+          equippedClaudePlugins: effectiveClaudePlugins,
+        })),
         sandboxDegraded: sandbox.degradedReason,
-        harnessPlugins,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
@@ -2236,6 +2283,7 @@ export class SpawnService {
       }
 
       this.logger?.info('SpawnService: session resumed', { sessionId, cwd, reused });
+      this.notifySessionLive(sessionId, 'resume');
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
@@ -3016,6 +3064,37 @@ export class SpawnService {
    * may render it as a specific question. Distinguishing the two needs a
    * structured signal from the agent, which this repo does not have.
    */
+  /**
+   * Subscribe to "this session is live and can take a turn": after a resume
+   * succeeds, after a spawn's first turn settles, and on each running/idle
+   * activity transition this service writes. It is what a server-side OUTBOX
+   * drains on (Forms W2: `form_deliveries` queued for a session that was not
+   * live), so a queued answer arrives as the resumed session's next turn.
+   *
+   * Fire-and-forget, after the transition is written: a listener never delays,
+   * and never fails, the lifecycle write it observes. Returns an unsubscribe.
+   */
+  onSessionLive(listener: SessionLiveListener): () => void {
+    this.sessionLiveListeners.add(listener);
+    return () => { this.sessionLiveListeners.delete(listener); };
+  }
+
+  private notifySessionLive(sessionId: string, cause: SessionLiveCause): void {
+    for (const listener of this.sessionLiveListeners) {
+      try {
+        void Promise.resolve(listener(sessionId, cause)).catch((error: unknown) => {
+          this.logger?.warn?.('SpawnService: session-live listener failed', {
+            sessionId, cause, error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: session-live listener threw', {
+          sessionId, cause, error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   handlePtyActivity = async (sessionId: string, activity: PtyActivity): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     // No claims ⇒ nothing can be written (see the sessionAuth docstring). Unlike
@@ -3032,6 +3111,7 @@ export class SpawnService {
         sessionId,
         status: activity === 'idle' ? 'idle' : 'running',
       });
+      this.notifySessionLive(sessionId, activity === 'idle' ? 'idle' : 'running');
     } catch (error) {
       // Deliberately NOT `loud`. A failed exit transition leaves a ghost that
       // corrupts the concurrency cap forever; a failed activity transition

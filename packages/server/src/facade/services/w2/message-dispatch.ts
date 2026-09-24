@@ -67,6 +67,19 @@ export interface DispatchableRoute {
   readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
   readonly rollingControlMaxBytes: number;
   readonly sessionInputAllowed: boolean;
+  /**
+   * The attempt this copy is, when the caller owns an outbox that counts them
+   * (forms, 214). `session_message_deliveries` is UNIQUE per (message, target,
+   * attempt_no), so a caller that claims attempt N can never reserve it twice.
+   * Absent: attempt 1, as every other producer has always sent.
+   */
+  readonly attemptNo?: number;
+  /**
+   * A caller-owned `tm8.session-input` renderer for this copy (the forms
+   * `form_response` kind). Absent: the incoming-message envelope. Either way
+   * the size check, reservation and settlement below are the same.
+   */
+  readonly renderEnvelope?: (deliveryAttemptId: string) => string;
 }
 
 export interface MessageDeliveryPort {
@@ -76,6 +89,7 @@ export interface MessageDeliveryPort {
     content: string;
     mode: 'send' | 'paste';
     requestId: string;
+    attemptNo?: number;
   }): Promise<({ deliveryId: string } & Record<string, unknown>) | null | undefined>;
   adapter: {
     dispatch(attempt: Record<string, unknown>): Promise<unknown>;
@@ -204,13 +218,15 @@ export async function dispatchSessionMessages(
     const parent = route.threadParentMessageId
       ? parentsById.get(route.threadParentMessageId)
       : undefined;
-    const render = (deliveryAttemptId: string): string =>
-      incomingMessageInjection({
+    const attemptNo = route.attemptNo ?? 1;
+    const render = (deliveryAttemptId: string): string => route.renderEnvelope
+      ? route.renderEnvelope(deliveryAttemptId)
+      : incomingMessageInjection({
         kind: route.addressingKind,
         messageId: route.targetMessageId,
         messageBatchId: route.messageBatchId,
         deliveryAttemptId,
-        deliveryAttemptNo: 1,
+        deliveryAttemptNo: attemptNo,
         senderActorId: route.senderActorId,
         senderActorKind: route.senderActorKind,
         senderAttribution,
@@ -242,6 +258,7 @@ export async function dispatchSessionMessages(
         content: reason,
         mode: 'send',
         requestId,
+        ...(route.attemptNo === undefined ? {} : { attemptNo }),
       });
       // Null means SQL already wrote a terminal reservation-time refusal (for
       // example `session_not_live`). There is nothing left to settle.
@@ -288,6 +305,7 @@ export async function dispatchSessionMessages(
         content: preview,
         mode: 'send',
         requestId,
+        ...(route.attemptNo === undefined ? {} : { attemptNo }),
       });
       if (!reservation) {
         record(route, 'undelivered', { reason: REFUSED_AT_RESERVATION });

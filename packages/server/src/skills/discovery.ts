@@ -77,6 +77,24 @@ export async function discoverSkillFiles(roots: SkillRoots): Promise<DiscoveryRe
         await tree(join(path, 'skills'), base);
       }
     }
+    // claude.ai-synced plugins: plugins/synced/<bucket>/<name>/, listed by the
+    // bucket's manifest.json. Keyed `<name>@synced` (pluginName and root), the
+    // id the CLI's enabledPlugins uses and the one readInstalledClaudePlugins
+    // and launch.harness.plugins record. Synced plugins load unless settings
+    // turn that id off explicitly.
+    const syncedPlugins = join(home, '.claude/plugins/synced');
+    result.scanRoots.push(syncedPlugins);
+    for (const bucket of await entries(syncedPlugins)) if (bucket.isDirectory() && !bucket.name.startsWith('.')) {
+      let manifest: { plugins?: unknown } = {};
+      try { manifest = JSON.parse(await readFile(join(syncedPlugins, bucket.name, 'manifest.json'), 'utf8')); } catch { /* no manifest, no plugins */ }
+      for (const item of Array.isArray(manifest.plugins) ? manifest.plugins : []) {
+        const name = (item as { name?: unknown })?.name;
+        if (typeof name !== 'string' || !name || name.startsWith('.') || name.includes('/') || name.includes('\\')) continue;
+        const key = `${name}@synced`;
+        const enabledPlugins = settings.enabledPlugins as Record<string, unknown> | undefined;
+        await tree(join(syncedPlugins, bucket.name, name, 'skills'), { provider: 'claude', level: 'plugin', root: key, pluginName: key, scanRoot: syncedPlugins, enabled: enabledPlugins?.[key] !== false });
+      }
+    }
   }
   for (const codexHome of new Set([...roots.homes.map(h => join(h, '.codex')), ...(roots.codexHomes ?? [])])) {
     const path = join(codexHome, 'skills');

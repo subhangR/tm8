@@ -187,7 +187,7 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 188 -> 189 (187): `session share`, one catalog-driven command over the
     // new execution.sessions.share row. `doctor` is still absent from the
     // catalog, which is what this test is actually about.
-    expect(COMMAND_PATHS).toHaveLength(215); /* +16 tm8 form commands: 13 catalog rows + close|cancel|reopen aliases (Forms W1 CLI). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +7 tm8 skill commands (2026-09-23). MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(216); /* +1 tm8 form wait: CLI-only sugar, no catalog row (Forms W2). MEASURED. */ /* +16 tm8 form commands: 13 catalog rows + close|cancel|reopen aliases (Forms W1 CLI). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +7 tm8 skill commands (2026-09-23). MEASURED.
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

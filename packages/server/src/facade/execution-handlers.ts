@@ -47,6 +47,7 @@ import {
   type RecordCommandInput,
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
+  type ContextDrop,
   type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
@@ -209,7 +210,8 @@ interface MemoryRow {
 function renderMemories(
   rows: MemoryRow[],
   requestedIds: string[],
-): { texts: string[]; ids: string[] } {
+  requestedVia: 'selection' | 'requested' = 'requested',
+): { texts: string[]; ids: string[]; via: Array<'teammate' | 'task' | 'selection' | 'requested'> } {
   const render = (r: MemoryRow): string => {
     const marks: string[] = [];
     if (r.superseded) marks.push('superseded');
@@ -223,11 +225,14 @@ function renderMemories(
   // memories in injection order. It is NOT index-aligned with the manifest's
   // `agent.memory`, which may also carry the legacy jsonb remainder (no ids).
   const ids: string[] = [];
+  // How each id entered the set, for the manifest's context audit.
+  const via: Array<'teammate' | 'task' | 'selection' | 'requested'> = [];
   // 1. The persona's own working set.
   for (const r of rows) {
     if (!r.remembered || r.superseded) continue;
     out.push(render(r));
     ids.push(r.entity_id);
+    via.push('teammate');
     emitted.add(r.entity_id);
   }
   // 2. Task working sets (D9): what the spawn tasks remember, after the
@@ -237,6 +242,7 @@ function renderMemories(
     if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
     out.push(render(r));
     ids.push(r.entity_id);
+    via.push('task');
     emitted.add(r.entity_id);
   }
   // 3. Requested extras follow the caller's order, after both sets.
@@ -246,9 +252,10 @@ function renderMemories(
     if (!row) continue; // absence already refused upstream
     out.push(render(row));
     ids.push(row.entity_id);
+    via.push(requestedVia);
     emitted.add(id);
   }
-  return { texts: out, ids };
+  return { texts: out, ids, via };
 }
 
 /**
@@ -432,7 +439,34 @@ export class DbGraphPort implements GraphPort {
           `${selection ? 'selection.memoryIds' : 'memoryIds'} not found in this space (or not memory entities): ${missing.join(', ')}`,
         );
       }
-      const injectedMemories = renderMemories(memoryRows, requestedIds);
+      const injectedMemories = renderMemories(memoryRows, requestedIds, selection ? 'selection' : 'requested');
+      // A selection REPLACES the defaults, so every default it left out is an
+      // explicit removal, recorded as `not-selected` — the memory half of the
+      // audit skills already had. The defaults are exactly what the no-selection
+      // path injects: the teammate's and the tasks' `remembers`, minus
+      // superseded. Read under the same RLS, in this transaction.
+      const memoryDrops: ContextDrop[] = [];
+      if (selection) {
+        const defaults = await q.query<{ entity_id: string }>(
+          `select m.entity_id
+             from public.memories m
+             join public.entities e on e.id = m.entity_id and e.deleted_at is null
+            where e.space_id = $2
+              and exists (select 1 from public.edges r
+                           where r.type = 'remembers' and r.dst_id = m.entity_id
+                             and (r.src_id = $1 or r.src_id = any($3::uuid[])))
+              and not exists (select 1 from public.edges s
+                               where s.type = 'supersedes' and s.dst_id = m.entity_id)
+            order by m.created_at, m.entity_id`,
+          [input.teamMemberId, input.spaceId, spawnTaskIds],
+        );
+        const kept = new Set(injectedMemories.ids);
+        for (const row of defaults) {
+          if (!kept.has(row.entity_id)) {
+            memoryDrops.push({ entityId: row.entity_id, kind: 'memory', group: 'memories', reason: 'not-selected' });
+          }
+        }
+      }
 
       // 176 — WHAT THE PARENT IS, not merely that there is one.
       //
@@ -512,10 +546,12 @@ export class DbGraphPort implements GraphPort {
       // audited as `not-selected`, so a smaller index is explained, not silent.
       let skillEquips = equipped;
       let skippedSkills: SkippedSkill[] | undefined;
+      let selectionOnlySkillIds: string[] = [];
       if (selection) {
         const wanted = [...new Set(selection.skillIds)];
         const byId = new Map(equipped.map((row) => [row.entityId, row]));
-        for (const row of await loadSkillsById(q, input.spaceId, wanted.filter((id) => !byId.has(id)))) {
+        selectionOnlySkillIds = wanted.filter((id) => !byId.has(id));
+        for (const row of await loadSkillsById(q, input.spaceId, selectionOnlySkillIds)) {
           byId.set(row.entityId, row);
         }
         skillEquips = wanted.flatMap((id) => {
@@ -718,6 +754,16 @@ export class DbGraphPort implements GraphPort {
         ...(skippedSkills ? { skippedSkills } : {}),
         skillsScannedAt,
         droppedSkills: [],
+        contextAudit: {
+          selected: selection !== undefined,
+          memoryVia: injectedMemories.via,
+          ...(selectionOnlySkillIds.length > 0 ? { selectionOnlySkillIds } : {}),
+          dropped: memoryDrops,
+          // A selection replaces the legacy jsonb remainder too; it has no ids.
+          ...(selection && Array.isArray(member.memories) && member.memories.length > 0
+            ? { legacyMemoriesDropped: member.memories.length }
+            : {}),
+        },
       };
     });
   }
@@ -1062,43 +1108,7 @@ export class DbGraphPort implements GraphPort {
       [sessionId],
     );
     const row = rows[0];
-    if (!row) return null;
-    const storedCredentialSources =
-      typeof row.credential_sources === 'object' &&
-      row.credential_sources !== null &&
-      !Array.isArray(row.credential_sources)
-        ? (row.credential_sources as Record<string, unknown>)
-        : {};
-    // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
-    // manifest is a stored JSON document and an unrecognised posture in one must
-    // fall through to the ordinary precedence chain, not launch on a value
-    // nothing maps.
-    return {
-      accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
-      permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
-      credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
-      // The login-terminal table's canonical provider order is the runtime key
-      // set too; reading the JSON object once avoids another SQL-side list.
-      credentialSources: Object.fromEntries(
-        CREDENTIAL_PROVIDERS.map((provider) => [
-          provider,
-          storedCredentialSources[provider] ?? null,
-        ]),
-      ) as SessionLaunchPosture['credentialSources'],
-      // The EXACT ids a child and a resume inherit (A4). Narrowed downstream,
-      // where a `space` source without a well-formed id refuses (M8a).
-      spaceCredentialIds:
-        typeof row.space_credential_ids === 'object' &&
-        row.space_credential_ids !== null &&
-        !Array.isArray(row.space_credential_ids)
-          ? (row.space_credential_ids as Record<string, unknown>)
-          : null,
-      // The launch UI's explicit harness pick, when there was one. Stored JSON,
-      // narrowed downstream like every other posture field.
-      ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
-        ? { harnessChoice: row.harness_choice as Record<string, unknown> }
-        : {}),
-    };
+    return row ? sessionLaunchPostureFromRecord(row) : null;
   }
 
   async resumeWorkSession(
@@ -3249,4 +3259,55 @@ function registerHandlers(
       headers: { 'cache-control': 'no-store' },
     });
   });
+}
+
+/**
+ * A recorded manifest's `launch` posture, as resume and child inheritance read
+ * it. Shared with the Forms W2 spawn (form-delivery-spawn.ts), which reads the
+ * same columns as the definer so a deleted requester still has its posture.
+ */
+export function sessionLaunchPostureFromRecord(row: {
+  access_mode: string | null;
+  permission_mode: string | null;
+  credential_source: string | null;
+  credential_sources: unknown;
+  space_credential_ids: unknown;
+  harness_choice: unknown;
+}): SessionLaunchPosture {
+  const storedCredentialSources =
+    typeof row.credential_sources === 'object' &&
+    row.credential_sources !== null &&
+    !Array.isArray(row.credential_sources)
+      ? (row.credential_sources as Record<string, unknown>)
+      : {};
+  // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
+  // manifest is a stored JSON document and an unrecognised posture in one must
+  // fall through to the ordinary precedence chain, not launch on a value
+  // nothing maps.
+  return {
+    accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
+    permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
+    credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
+    // The login-terminal table's canonical provider order is the runtime key
+    // set too; reading the JSON object once avoids another SQL-side list.
+    credentialSources: Object.fromEntries(
+      CREDENTIAL_PROVIDERS.map((provider) => [
+        provider,
+        storedCredentialSources[provider] ?? null,
+      ]),
+    ) as SessionLaunchPosture['credentialSources'],
+    // The EXACT ids a child and a resume inherit (A4). Narrowed downstream,
+    // where a `space` source without a well-formed id refuses (M8a).
+    spaceCredentialIds:
+      typeof row.space_credential_ids === 'object' &&
+      row.space_credential_ids !== null &&
+      !Array.isArray(row.space_credential_ids)
+        ? (row.space_credential_ids as Record<string, unknown>)
+        : null,
+    // The launch UI's explicit harness pick, when there was one. Stored JSON,
+    // narrowed downstream like every other posture field.
+    ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
+      ? { harnessChoice: row.harness_choice as Record<string, unknown> }
+      : {}),
+  };
 }

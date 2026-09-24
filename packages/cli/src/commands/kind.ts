@@ -18,6 +18,8 @@
  * There is deliberately NO `kind delete`: §4.14 does not define one, and a
  * custom kind with live rows cannot be removed without a story for those rows.
  */
+import { CORE_KIND_INFO, coreKindInfo, KIND_GROUPS } from '@tm8/contract';
+
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -90,7 +92,7 @@ async function kindList(cmd: CommandContext): Promise<ExitCode> {
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entityKinds.list', {
     params: { spaceId },
   });
-  cmd.out.data(data, renderKinds);
+  cmd.out.data(describeKinds(data), renderKinds);
   return EXIT_OK;
 }
 
@@ -157,25 +159,93 @@ interface KindRow {
   kind?: unknown;
   origin?: unknown;
   fieldSchema?: unknown;
+  group?: unknown;
+  summary?: unknown;
+  createWith?: unknown;
 }
 
-/**
- * The human view renders from the SAME DTO json emits, and always keeps the
- * kind name — that is the id a follow-up `tm8 kind update` needs.
- */
-function renderKinds(dto: unknown): string {
-  const rows = Array.isArray((dto as { kinds?: unknown })?.kinds)
-    ? ((dto as { kinds: KindRow[] }).kinds)
+function rowsOf(dto: unknown): KindRow[] {
+  return Array.isArray((dto as { kinds?: unknown })?.kinds)
+    ? (dto as { kinds: KindRow[] }).kinds
     : Array.isArray(dto)
       ? (dto as KindRow[])
       : [];
+}
+
+/**
+ * The registry row plus what the kind is FOR: a group, one line of purpose and
+ * the command that creates one. Core kinds read it from `CORE_KIND_INFO`; a
+ * custom kind's purpose is its fields, and it is always made by `entity create`.
+ * Added to the json rows too, so `--format json` readers get the same answers.
+ */
+function describe(row: KindRow): KindRow {
+  const kind = String(row.kind);
+  const info = coreKindInfo(kind);
+  if (info) return { ...row, group: info.group, summary: info.summary, createWith: info.createWith };
+  const custom = kind.startsWith('c:');
+  return {
+    ...row,
+    group: custom ? 'custom' : 'other',
+    summary: custom ? fieldsSummary(row.fieldSchema) : 'no description yet',
+    createWith: [`entity create ${kind}`],
+  };
+}
+
+function fieldsSummary(schema: unknown): string {
+  const fields = Array.isArray(schema) ? (schema as Array<{ name?: unknown; type?: unknown }>) : [];
+  if (fields.length === 0) return 'a custom kind with no fields';
+  const list = fields.map((f) => `${String(f.name)} (${String(f.type)})`).join(', ');
+  return `custom kind, ${fields.length} field${fields.length === 1 ? '' : 's'}: ${list}`;
+}
+
+function describeKinds(dto: unknown): unknown {
+  if (Array.isArray(dto)) return (dto as KindRow[]).map(describe);
+  const kinds = (dto as { kinds?: unknown })?.kinds;
+  return Array.isArray(kinds) ? { ...(dto as object), kinds: (kinds as KindRow[]).map(describe) } : dto;
+}
+
+/** Within a group, the catalog's own order (task before loop), then by name. */
+const CATALOG_ORDER = Object.keys(CORE_KIND_INFO);
+function catalogRank(kind: string): number {
+  const i = CATALOG_ORDER.indexOf(kind);
+  return i === -1 ? CATALOG_ORDER.length : i;
+}
+
+const EXTRA_GROUPS = [
+  { group: 'custom', title: 'Custom' },
+  { group: 'other', title: 'Other' },
+];
+
+/**
+ * The human view renders from the SAME DTO json emits, grouped, one kind per
+ * line with its purpose and the command that creates it. The kind name leads
+ * every line: it is the value `--kind` and `kind update` take.
+ */
+function renderKinds(dto: unknown): string {
+  const rows = rowsOf(dto);
   if (rows.length === 0) return 'no entity kinds';
-  return rows
-    .map((r) => {
-      const fields = Array.isArray(r.fieldSchema) ? r.fieldSchema.length : 0;
-      return `${String(r.kind)}  ${String(r.origin ?? '')}  ${fields} field${fields === 1 ? '' : 's'}`.trim();
-    })
-    .join('\n');
+  const custom = rows.filter((r) => String(r.kind).startsWith('c:')).length;
+  const width = Math.max(...rows.map((r) => String(r.kind).length)) + 2;
+  const out = [
+    `${rows.length} entity kinds in this space (${rows.length - custom} core, ${custom} custom).`,
+    'Every entity has an id, a kind, a title, a version, a parent of its own kind and typed edges.',
+  ];
+  for (const { group, title } of [...KIND_GROUPS, ...EXTRA_GROUPS]) {
+    const members = rows
+      .filter((r) => r.group === group)
+      .sort((a, b) => catalogRank(String(a.kind)) - catalogRank(String(b.kind)) || String(a.kind).localeCompare(String(b.kind)));
+    if (members.length === 0) continue;
+    out.push('', title);
+    for (const r of members) {
+      const make = Array.isArray(r.createWith) ? r.createWith.map((c) => `tm8 ${String(c)}`).join(' | ') : '';
+      out.push(`  ${String(r.kind).padEnd(width)}${String(r.summary)}${make ? `  → ${make}` : ''}`);
+    }
+  }
+  out.push(
+    '',
+    'Find entities of a kind: tm8 entity query --kind <kind>. Read one: tm8 entity context <id>.',
+  );
+  return out.join('\n');
 }
 
 function renderKind(dto: unknown): string {

@@ -21,6 +21,7 @@ import {
   pluginDecisions,
   pluginSettings,
   readInstalledClaudePlugins,
+  claudePluginConfigDir,
 } from '../src/spawn/harness-surface.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
@@ -128,14 +129,16 @@ describe('resolveLaunchConfig per-launch harness pick', () => {
     const inherited = {
       accessMode: null,
       permissionMode: null,
-      harnessChoice: { surface: 'inherit', plugins: ['sales', 3] } as Record<string, unknown>,
+      harnessChoice: { surface: 'minimal', plugins: ['sales', 3] } as Record<string, unknown>,
     };
     const resumed = resolveLaunchConfig(REQUEST, persona, {}, inherited);
-    expect(resumed.harnessSurface).toBe('inherit');
+    expect(resumed.harnessSurface).toBe('minimal');
     expect(resumed.plugins).toEqual(['sales']);
-    expect(resumed.harnessChoice).toEqual({ surface: 'inherit', plugins: ['sales'] });
-    expect(resolveLaunchConfig(REQUEST, persona, { TM8_HARNESS_SURFACE: 'minimal' }, inherited).harnessSurface)
-      .toBe('minimal');
+    expect(resumed.harnessChoice).toEqual({ surface: 'minimal', plugins: ['sales'] });
+    // Under a node-forced `inherit` the plugin pick has no effect, so it is not replayed.
+    const forced = resolveLaunchConfig(REQUEST, persona, { TM8_HARNESS_SURFACE: 'inherit' }, inherited);
+    expect(forced.harnessSurface).toBe('inherit');
+    expect(forced.harnessChoice).toEqual({ surface: 'minimal' });
     // Junk in the stored document falls through to the ordinary chain.
     expect('harnessChoice' in resolveLaunchConfig(REQUEST, persona, {}, {
       accessMode: null, permissionMode: null, harnessChoice: { surface: 'everything' },
@@ -334,5 +337,13 @@ describe('readInstalledClaudePlugins', () => {
     dir = await mkdtemp(join(tmpdir(), 'tm8-plugins-'));
     expect(readInstalledClaudePlugins(dir)).toEqual([]);
     expect(readInstalledClaudePlugins(join(dir, 'missing'))).toEqual([]);
+  });
+});
+
+describe('claudePluginConfigDir', () => {
+  it('uses the member home when given, else CLAUDE_CONFIG_DIR, else ~/.claude — one home, never a union', () => {
+    expect(claudePluginConfigDir('/cred/anthropic', { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/cred/anthropic');
+    expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/node');
+    expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: ' ', HOME: '/h' })).toBe('/h/.claude');
   });
 });

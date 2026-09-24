@@ -22,7 +22,18 @@ scan normally happens when `projects.link` establishes the space association.
 
 `frontmatter` preserves parsed SKILL.md keys unchanged. `loader_metadata` carries
 `openai` (the whole sidecar), `enabled`, `codexDisabled`, `legacyCommand`, and
-optional `pluginName`. Disabled plugins remain discoverable. Description metadata
+optional `pluginName`. Disabled plugins remain discoverable.
+
+Plugin keys (`pluginName`, also the `root_ref`) are stable contract, matched
+against the CLI's `enabledPlugins` ids by `isPluginAllowed`:
+- marketplace plugins (`.claude/plugins/marketplaces/<market>/plugins/<name>/`)
+  use the bare `<name>`;
+- claude.ai-synced plugins (`.claude/plugins/synced/<bucket>/<name>/`, listed by
+  the bucket's `manifest.json`) use `<name>@synced`, the same id
+  `readInstalledClaudePlugins` and `launch.harness.plugins` record. They are
+  enabled unless `settings.json` sets `enabledPlugins["<name>@synced"]` to false.
+Either way the native load pointer is `/<name>:<skill>` (the `@…` suffix is not
+part of the CLI namespace). Description metadata
 uses description, then when_to_use, then the first body paragraph. Full bodies
 never enter the write RPC. `scannedAt` is returned on every scan and stored as
 `last_seen_at` when observed; marking missing preserves the last observation time.
