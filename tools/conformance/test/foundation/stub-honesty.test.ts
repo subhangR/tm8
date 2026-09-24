@@ -34,7 +34,7 @@ describe('W1 stub route and honesty oracle', () => {
     // 2026-09-23 (filesystem skills INTEGRATED WITH main): skills.scan/list/show/preview, all v1 HTTP (3 GET/read, 1 POST/command). MEASURED on the merged tree.
     // 2026-09-23 F4 (#648): skills.roots/create/edit/equip/unequip, all mounted v1 HTTP. MEASURED on the merged tree.
     // 206 -> 207 (Jev lane F): launch.suggest. MEASURED.
-    expect(http).toHaveLength(223); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 space/node credentials (SC-3). +3 service keys (Jev lane K). MEASURED.
+    expect(http).toHaveLength(236); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 space/node credentials (SC-3). +3 service keys (Jev lane K). MEASURED.
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

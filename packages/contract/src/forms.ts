@@ -457,6 +457,19 @@ export const FormStatusSchema = z.enum(['draft', 'open', 'closed', 'cancelled'])
 export type FormStatus = z.infer<typeof FormStatusSchema>;
 
 /**
+ * The lifecycle (§5) — the targets `forms.transition` accepts from each
+ * status. Mirrors `public.transition_form` (211); the UI and actions.list
+ * import it rather than restating it. Closing a form is not cancelling it:
+ * `cancelled` is reachable from draft and open only.
+ */
+export const FORM_TRANSITIONS: Readonly<Record<FormStatus, readonly FormStatus[]>> = {
+  draft: ['open', 'cancelled'],
+  open: ['closed', 'cancelled'],
+  closed: ['open'],
+  cancelled: [],
+};
+
+/**
  * A question as STORED and read back (`internal.form_questions_json`):
  * config as written, plus its position. Not re-validated through the
  * registry on read — the database already did that on write.
@@ -664,3 +677,269 @@ export function renderFormResponseText(input: {
   lines.push(...all);
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// The forms.* operations (FORMS-DESIGN §6, W1): request bodies and views.
+//
+// Request bodies carry questions RAW (`FormQuestionWireSchema`): structure
+// only, config as written. The database is the authority on a question's
+// config (its type's SQL arm) and answers it as a 422 with issues, so the
+// server never runs an author-supplied `pattern` through JS RegExp on the
+// request path (W0 ReDoS note). CLI and UI validate early with
+// `FormSpecSchema` / `FormQuestionSchema` above.
+// ---------------------------------------------------------------------------
+
+const FormIdSchema = z.string().min(1);
+
+/** The command envelope every forms.* mutation carries. */
+const formCommandShape = {
+  actorId: FormIdSchema.optional(),
+  workSessionId: FormIdSchema.optional(),
+  clientMutationId: z.string().min(1),
+};
+
+/** The command envelope, as a type (mirrors `formCommandShape`). */
+export interface FormCommandContext {
+  actorId?: string;
+  workSessionId?: string;
+  clientMutationId: string;
+}
+
+/** A question as sent over the wire: structure checked, config left to SQL. */
+export const FormQuestionWireSchema = z.object({
+  key: FormKeySchema,
+  type: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/, 'type is a lowercase identifier'),
+  title: cpString(1, 500),
+  help: cpString(0, 4000).optional(),
+  required: z.boolean().optional(),
+  section: FormKeySchema.optional(),
+  config: z.record(z.unknown()).optional(),
+}).strict();
+export type FormQuestionWire = z.infer<typeof FormQuestionWireSchema>;
+
+/** Settings as sent: sparse, every key optional (defaults apply on read). */
+export const FormSettingsPatchSchema = z.object({
+  responses: FormResponsesModeSchema.optional(),
+  respondents: z.enum(['humans', 'anyone']).optional(),
+  closeOnSubmit: z.boolean().optional(),
+  allowAmend: z.boolean().optional(),
+  delivery: z.object({
+    target: z.enum(['requesting_session', 'new_session']).optional(),
+    onSessionNotLive: z.enum(['resume', 'queue', 'spawn_new']).optional(),
+  }).strict().optional(),
+  attentionPoints: z.number().int().min(1).max(100).optional(),
+}).strict();
+export type FormSettingsPatch = z.infer<typeof FormSettingsPatchSchema>;
+
+/** forms.create — the full spec in one call. */
+export interface FormsCreateInput extends FormCommandContext {
+  spaceId: string;
+  title: string;
+  description?: string;
+  sections?: FormSection[];
+  questions: FormQuestionWire[];
+  settings?: FormSettingsPatch;
+  open?: boolean;
+  forSession?: string;
+  attachTo?: string[];
+  parentId?: string;
+}
+export const FormsCreateInputSchema: z.ZodType<FormsCreateInput> = z.object({
+  ...formCommandShape,
+  spaceId: FormIdSchema,
+  title: cpString(1, 300),
+  description: cpString(0, 8000).optional(),
+  sections: z.array(FormSectionSchema).max(50).optional(),
+  questions: z.array(FormQuestionWireSchema).max(200),
+  settings: FormSettingsPatchSchema.optional(),
+  /** Agents default to open, humans to draft (§5). */
+  open: z.boolean().optional(),
+  /** A human naming the session the answers go to (§3.2). */
+  forSession: z.string().uuid().optional(),
+  /** Tasks to attach to, beyond the requesting session's working_on tasks. */
+  attachTo: z.array(z.string().uuid()).max(20).optional(),
+  parentId: FormIdSchema.optional(),
+}).strict();
+
+/** forms.update — title, description, settings, sections (replaces the list). */
+export interface FormsUpdateInput extends FormCommandContext {
+  expectedVersion: number;
+  title?: string;
+  description?: string | null;
+  settings?: FormSettingsPatch;
+  sections?: FormSection[];
+}
+export const FormsUpdateInputSchema: z.ZodType<FormsUpdateInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+  title: cpString(1, 300).optional(),
+  description: cpString(0, 8000).nullable().optional(),
+  settings: FormSettingsPatchSchema.optional(),
+  sections: z.array(FormSectionSchema).max(50).optional(),
+}).strict();
+
+/** forms.questions.add — `after` omitted appends; `null` puts it first. */
+export interface FormsQuestionsAddInput extends FormCommandContext {
+  expectedVersion: number;
+  question: FormQuestionWire;
+  after?: string | null;
+}
+export const FormsQuestionsAddInputSchema: z.ZodType<FormsQuestionsAddInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+  question: FormQuestionWireSchema,
+  after: FormKeySchema.nullable().optional(),
+}).strict();
+
+/** forms.questions.update — partial; `null` clears help/section. */
+export interface FormsQuestionsUpdateInput extends FormCommandContext {
+  expectedVersion: number;
+  type?: string;
+  title?: string;
+  help?: string | null;
+  required?: boolean;
+  section?: string | null;
+  config?: Record<string, unknown>;
+}
+export const FormsQuestionsUpdateInputSchema: z.ZodType<FormsQuestionsUpdateInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+  type: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/).optional(),
+  title: cpString(1, 500).optional(),
+  help: cpString(0, 4000).nullable().optional(),
+  required: z.boolean().optional(),
+  section: FormKeySchema.nullable().optional(),
+  config: z.record(z.unknown()).optional(),
+}).strict();
+
+export interface FormsQuestionsRemoveInput extends FormCommandContext {
+  expectedVersion: number;
+}
+export const FormsQuestionsRemoveInputSchema: z.ZodType<FormsQuestionsRemoveInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
+/** forms.questions.move — after `after`; omitted or `null` moves it first. */
+export interface FormsQuestionsMoveInput extends FormCommandContext {
+  expectedVersion: number;
+  after?: string | null;
+}
+export const FormsQuestionsMoveInputSchema: z.ZodType<FormsQuestionsMoveInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+  after: FormKeySchema.nullable().optional(),
+}).strict();
+
+/** forms.transition — open (also reopen), close, cancel (§5). */
+export interface FormsTransitionInput extends FormCommandContext {
+  expectedVersion: number;
+  to: 'open' | 'closed' | 'cancelled';
+  reason?: string;
+}
+export const FormsTransitionInputSchema: z.ZodType<FormsTransitionInput> = z.object({
+  ...formCommandShape,
+  expectedVersion: z.number().int().positive(),
+  to: z.enum(['open', 'closed', 'cancelled']),
+  reason: cpString(1, 1000).optional(),
+}).strict();
+
+/**
+ * forms.responses.save — upsert the caller's draft (partial validation).
+ * `amendOf` names the submitted revision being edited (needed only under
+ * `unlimited`; per_member/single find it). `responseVersion` guards the draft.
+ */
+export interface FormsResponsesSaveInput extends FormCommandContext {
+  answers: FormAnswers;
+  amendOf?: string;
+  responseVersion?: number;
+}
+export const FormsResponsesSaveInputSchema: z.ZodType<FormsResponsesSaveInput> = z.object({
+  ...formCommandShape,
+  answers: FormAnswersSchema,
+  amendOf: z.string().uuid().optional(),
+  responseVersion: z.number().int().positive().optional(),
+}).strict();
+
+/**
+ * forms.responses.discard — delete the caller's own draft on the form.
+ * Idempotent: no draft answers {discarded: false}.
+ */
+export interface FormsResponsesDiscardInput extends FormCommandContext {
+  responseVersion?: number;
+}
+export const FormsResponsesDiscardInputSchema: z.ZodType<FormsResponsesDiscardInput> = z.object({
+  ...formCommandShape,
+  responseVersion: z.number().int().positive().optional(),
+}).strict();
+
+/** forms.responses.submit — full validation, store, message, delivery row. */
+export interface FormsResponsesSubmitInput extends FormCommandContext {
+  answers?: FormAnswers;
+  amendOf?: string;
+  responseVersion?: number;
+}
+export const FormsResponsesSubmitInputSchema: z.ZodType<FormsResponsesSubmitInput> = z.object({
+  ...formCommandShape,
+  answers: FormAnswersSchema.optional(),
+  amendOf: z.string().uuid().optional(),
+  responseVersion: z.number().int().positive().optional(),
+}).strict();
+
+// -- Views (advisor ruling W1-R1: one shape, owned here, mirrored by the UI) --
+
+/** What `internal.form_snapshot` freezes at submit. */
+export const FormSnapshotSchema = z.object({
+  structureVersion: z.number().int().positive(),
+  sections: z.array(FormSectionRowSchema),
+  questions: z.array(FormQuestionRowSchema),
+});
+export type FormSnapshot = z.infer<typeof FormSnapshotSchema>;
+
+export const FormDeliveryStatusSchema = z.enum(['pending', 'delivered', 'spawned', 'cancelled']);
+export type FormDeliveryStatus = z.infer<typeof FormDeliveryStatusSchema>;
+
+export const FormDeliveryViewSchema = z.object({
+  workSessionId: z.string(),
+  status: FormDeliveryStatusSchema,
+  spawnedSessionId: z.string().nullable(),
+  lastError: z.string().nullable(),
+  attempts: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+export type FormDeliveryView = z.infer<typeof FormDeliveryViewSchema>;
+
+export const FormResponseStatusSchema = z.enum(['draft', 'submitted']);
+export type FormResponseStatus = z.infer<typeof FormResponseStatusSchema>;
+
+export const FormResponseViewSchema = z.object({
+  id: z.string(),
+  formId: z.string(),
+  respondentId: z.string(),
+  /** Display name, resolved server-side. */
+  respondentName: z.string().nullable(),
+  status: FormResponseStatusSchema,
+  revision: z.number().int().positive(),
+  supersedesId: z.string().nullable(),
+  lineageKey: z.string(),
+  isCurrent: z.boolean(),
+  structureVersion: z.number().int().positive(),
+  answers: FormAnswersSchema,
+  questionsSnapshot: FormSnapshotSchema.nullable(),
+  /** The delivery message (jump to the timeline). */
+  messageId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  submittedAt: z.string().nullable(),
+  version: z.number().int().positive(),
+  /** [] for drafts. */
+  deliveries: z.array(FormDeliveryViewSchema),
+});
+export type FormResponseView = z.infer<typeof FormResponseViewSchema>;
+
+/** forms.responses.list / forms.responses.mine: a keyset page. */
+export const FormResponsePageSchema = z.object({
+  items: z.array(FormResponseViewSchema),
+  nextCursor: z.string().nullable(),
+});
+export type FormResponsePage = z.infer<typeof FormResponsePageSchema>;

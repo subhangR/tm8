@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:7e8dc5880b7c4886f63a139f11ed30563537a2b1e5a3badfa4aa3124f1100776",
+  "catalogDigest": "sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942",
   "catalog": {
-    "total": 225,
-    "v1": 223,
+    "total": 238,
+    "v1": 236,
     "reserved": 2,
-    "http": 223,
+    "http": 236,
     "ws": 1,
-    "registerableV1Http": 221,
+    "registerableV1Http": 234,
     "methods": {
-      "GET": 75,
-      "POST": 108,
-      "PATCH": 14,
-      "DELETE": 14,
-      "PUT": 12,
+      "GET": 78,
+      "POST": 113,
+      "PATCH": 16,
+      "DELETE": 16,
+      "PUT": 13,
       "WS": 2
     },
     "kinds": {
-      "read": 79,
-      "command": 144,
+      "read": 82,
+      "command": 154,
       "stream": 2
     },
-    "uniqueNames": 225,
-    "uniqueBindings": 224
+    "uniqueNames": 238,
+    "uniqueBindings": 237
   },
   "reservedOperations": [
     "search.query",
@@ -1384,6 +1384,97 @@
         "source": "server-router"
       },
       {
+        "operation": "forms.create",
+        "method": "POST",
+        "path": "/v2/forms",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.update",
+        "method": "PATCH",
+        "path": "/v2/forms/:formId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.add",
+        "method": "POST",
+        "path": "/v2/forms/:formId/questions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.update",
+        "method": "PATCH",
+        "path": "/v2/forms/:formId/questions/:questionKey",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.remove",
+        "method": "DELETE",
+        "path": "/v2/forms/:formId/questions/:questionKey",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.questions.move",
+        "method": "POST",
+        "path": "/v2/forms/:formId/questions/:questionKey/move",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.transition",
+        "method": "POST",
+        "path": "/v2/forms/:formId/transition",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.save",
+        "method": "PUT",
+        "path": "/v2/forms/:formId/responses/mine",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.discard",
+        "method": "DELETE",
+        "path": "/v2/forms/:formId/responses/mine",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.submit",
+        "method": "POST",
+        "path": "/v2/forms/:formId/responses/submit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.list",
+        "method": "GET",
+        "path": "/v2/forms/:formId/responses",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.get",
+        "method": "GET",
+        "path": "/v2/form-responses/:responseId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "forms.responses.mine",
+        "method": "GET",
+        "path": "/v2/form-responses",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "identity.profile.update",
         "method": "POST",
         "path": "/v2/identity/profile",
@@ -1979,7 +2070,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 193
+    "unimplementedV1Http": 206
   },
   "schemas": {
     "additive": {
@@ -4970,6 +5061,224 @@
         "intentTags": [
           "artifacts",
           "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.create",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.create",
+        "intentTags": [
+          "forms",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.update",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.update",
+        "intentTags": [
+          "forms",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.add",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.add",
+        "intentTags": [
+          "forms",
+          "questions",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.update",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.update",
+        "intentTags": [
+          "forms",
+          "questions",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.remove",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.remove",
+        "intentTags": [
+          "forms",
+          "questions",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.questions.move",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.questions.move",
+        "intentTags": [
+          "forms",
+          "questions",
+          "move"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.transition",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.transition",
+        "intentTags": [
+          "forms",
+          "transition"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.save",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.save",
+        "intentTags": [
+          "forms",
+          "responses",
+          "save"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.discard",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.discard",
+        "intentTags": [
+          "forms",
+          "responses",
+          "discard"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.submit",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.submit",
+        "intentTags": [
+          "forms",
+          "responses",
+          "submit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.list",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.list",
+        "intentTags": [
+          "forms",
+          "responses",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.get",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.get",
+        "intentTags": [
+          "forms",
+          "responses",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "forms.responses.mine",
+        "noun": "form",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/forms.responses.mine",
+        "intentTags": [
+          "forms",
+          "responses",
+          "mine"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

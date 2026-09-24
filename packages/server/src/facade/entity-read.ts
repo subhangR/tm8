@@ -59,7 +59,7 @@ import type {
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
-import { checkGraphCoherence, plainExcerpt } from '@tm8/contract';
+import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -162,6 +162,25 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
+  -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
+  -- list read, so a form row carries its question COUNT; the questions and
+  -- sections themselves are content and load in hydrateDetail.
+  frm.title as form_title, frm.status as form_status, frm.description as form_description,
+  case when frm.entity_id is not null then internal.form_settings_effective(frm.settings) end as form_settings,
+  frm.structure_version as form_structure_version,
+  frm.opened_at as form_opened_at, frm.closed_at as form_closed_at,
+  case when frm.entity_id is not null then
+    (select count(*)::int from public.form_questions fq where fq.form_id = frm.entity_id)
+  end as form_question_count,
+  -- canEdit for a form is the SAME rule the 211 doors enforce (author or
+  -- space admin), evaluated under the viewer's claims: the actor the door
+  -- would resolve is coalesce(actor claim, the viewer's member row).
+  -- A cancelled form is terminal: every edit door refuses it.
+  case when frm.entity_id is not null then
+    frm.status <> 'cancelled'
+    and (e.created_by = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
+         or internal.is_space_admin(e.space_id))
+  end as form_can_edit,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -352,6 +371,7 @@ export const ENTITY_FROM = `
   ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
+  left join public.forms frm              on frm.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -530,6 +550,15 @@ export interface EntityRow {
   drawing_elements: unknown[] | null;
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
+  form_title?: string | null;
+  form_status?: string | null;
+  form_description?: string | null;
+  form_settings?: FormSettings | null;
+  form_structure_version?: number | null;
+  form_opened_at?: Date | string | null;
+  form_closed_at?: Date | string | null;
+  form_question_count?: number | null;
+  form_can_edit?: boolean | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1430,6 +1459,9 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'form':
+      // MIRRORS the projector twin.
+      return row.form_title ?? 'Form';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -1511,6 +1543,9 @@ function excerptOf(row: EntityRow): string | undefined {
       // The format is the one row-level fact about a canvas; the picture
       // itself cannot be a text excerpt. MIRRORS the projector twin.
       return excerpt(row.drawing_format);
+    case 'form':
+      // The description says what is being asked. MIRRORS the projector twin.
+      return excerpt(row.form_description ?? null);
     default:
       return undefined;
   }
@@ -1797,6 +1832,13 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         kind: 'drawing',
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
+      };
+    case 'form':
+      // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
+      return {
+        kind: 'form',
+        status: (row.form_status ?? 'draft') as FormStatus,
+        questionCount: Number(row.form_question_count ?? 0),
       };
     case 'chat':
       // Who it is with, what it is running, and whether it is busy. The two
@@ -2179,6 +2221,14 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'message') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false };
   }
+  // A form's edit doors (211) admit its author or a space admin. The row
+  // carries that answer for THIS viewer (form_can_edit, computed under the
+  // viewer's claims), so the Build control and the door cannot disagree —
+  // false on a cancelled form, which no door will edit.
+  // Absent (a row built without the column) is a closed door, never open.
+  if (row.kind === 'form') {
+    return { ...base, canEdit: live && row.form_can_edit === true };
+  }
   // A session is still not deletable and has no children — it is born from a
   // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
   // computed it, which since 085 is true for a live session and means exactly
@@ -2471,6 +2521,21 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'form':
+      // The row facts; `hydrateDetail` adds the sections and questions in
+      // order, so a detail read renders the panel in one call while a list row
+      // never pays for the question set. Responses page separately.
+      return {
+        kind: 'form',
+        status: (row.form_status ?? 'draft') as FormStatus,
+        description: row.form_description ?? null,
+        settings: row.form_settings ?? DEFAULT_FORM_SETTINGS,
+        structureVersion: Number(row.form_structure_version ?? 1),
+        sections: [],
+        questions: [],
+        openedAt: isoOrNull(row.form_opened_at ?? null),
+        closedAt: isoOrNull(row.form_closed_at ?? null),
+      };
     case 'container': {
       const status = ctrStatusOf(row.ctr_status);
       const surfaces = ctrSurfacesOf(row.ctr_surfaces);
@@ -2718,6 +2783,16 @@ export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
 ): Promise<{ state: EntityState; content: EntityContent }> {
   if (row.deleted_at) return { state, content };
+  if (content.kind === 'form') {
+    const [structure] = await q.query<{ sections: FormSectionRow[]; questions: FormQuestionRow[] }>(
+      `select internal.form_sections_json($1) as sections, internal.form_questions_json($1) as questions`,
+      [row.id],
+    );
+    return {
+      state,
+      content: { ...content, sections: structure?.sections ?? [], questions: structure?.questions ?? [] },
+    };
+  }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(
       "select dst_id from public.edges where src_id = $1 and type = 'equips' order by created_at, id", [row.id],

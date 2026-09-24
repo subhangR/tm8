@@ -39,6 +39,7 @@ import {
   type EntityCounters,
   type EntityAttentionSummary,
   type EntityKind,
+  type FormStatus,
   type CustomEntityState,
   type EntityState,
   type EntitySummary,
@@ -325,6 +326,10 @@ interface SummaryRow {
   drawing_title: string | null;
   drawing_format: string | null;
   drawing_element_count: number | null;
+  form_title: string | null;
+  form_status: string | null;
+  form_description: string | null;
+  form_question_count: number | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -485,6 +490,11 @@ select
   -- The element COUNT only: a scene is the largest payload any kind carries
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
+  -- Forms (209/211): status and question COUNT only; the questions are content.
+  frm.title          as form_title,
+  frm.status         as form_status,
+  frm.description    as form_description,
+  (select count(*)::int from public.form_questions fq where fq.form_id = frm.entity_id) as form_question_count,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -555,6 +565,7 @@ left join lateral (
 ) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
+left join public.forms frm            on frm.entity_id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -1040,6 +1051,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'drawing':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.drawing_title ?? 'Drawing';
+      case 'form':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.form_title ?? 'Form';
       case 'chat':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
         // the empty-string fallback (the column defaults to '').
@@ -1093,6 +1107,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'loop' ? r.loop_schedule
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
+      : r.kind === 'form' ? r.form_description
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1371,6 +1386,13 @@ export class PgEntityProjector implements EntityProjector {
           kind: 'drawing',
           format: r.drawing_format ?? 'excalidraw',
           elementCount: r.drawing_element_count ?? 0,
+        };
+      case 'form':
+        // MIRRORS entity-read.ts stateOf: lifecycle status and question count.
+        return {
+          kind: 'form',
+          status: (r.form_status ?? 'draft') as FormStatus,
+          questionCount: r.form_question_count ?? 0,
         };
       case 'chat':
         // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
