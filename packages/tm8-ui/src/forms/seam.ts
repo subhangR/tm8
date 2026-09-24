@@ -132,11 +132,15 @@ export interface FormStructureInput {
   expectedVersion: number;
 }
 
-/** The lifecycle (§5): which statuses each status may move to. */
+/**
+ * The lifecycle (§5): which statuses each status may move to. Cancel only
+ * from draft or open; a closed form can only reopen (the server refuses
+ * closed → cancelled). Import the contract's table once Backend exports it.
+ */
 export const FORM_TRANSITIONS: Readonly<Record<FormStatus, readonly ('open' | 'closed' | 'cancelled')[]>> = {
   draft: ['open', 'cancelled'],
   open: ['closed', 'cancelled'],
-  closed: ['open', 'cancelled'],
+  closed: ['open'],
   cancelled: [],
 };
 

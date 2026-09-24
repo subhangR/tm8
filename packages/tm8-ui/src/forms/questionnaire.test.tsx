@@ -224,6 +224,12 @@ describe('Build', () => {
     expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('a closed form can only reopen: no cancel (§5)', async () => {
+    await mount(FORM_FIXTURE_IDS.retro, 'build');
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Cancel form' })).toBeNull();
+  });
+
   it('moves the form through its lifecycle', async () => {
     await mount(FORM_FIXTURE_IDS.onboarding, 'build');
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
