@@ -388,7 +388,9 @@ describe('every dimensioned value names its dimension, on EVERY surface', () => 
     // names `--timeout <seconds>` for `--until-match`.
     // 6 -> 7 (Forms W1 CLI): the `form` noun shard's guide points at
     // `tm8 form wait <form-id> [--timeout <seconds>]` (W2). MEASURED.
-    expect(mentioning).toBe(7);
+    // 7 -> 8 (Forms W2): the `form wait` command shard documents
+    // `--timeout <seconds>` (default 600, cap 3600). MEASURED.
+    expect(mentioning).toBe(8);
   });
 
   it('`--limit` is rendered as a count, never a bare <n>', () => {
