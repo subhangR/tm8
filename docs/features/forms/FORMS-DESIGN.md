@@ -1,7 +1,7 @@
 # Forms — design (v1, decisions settled)
 
-**Status:** APPROVED for implementation (2026-09-24). §3–§7 reflect the W0 foundation as
-merged in PR #725. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
+**Status:** APPROVED for implementation (2026-09-24). §3–§8 reflect the code as merged:
+W0 #725, and W1 #730/#734/#736. Task `01a0d308-b1d4-70d6-9fbf-e9d924157638`.
 Section 11 records the owner's decisions. Where this doc and §11 disagree, §11 wins.
 Nothing here is built yet.
 
@@ -272,6 +272,9 @@ draft ──open──▶ open ──submit (closeOnSubmit)──▶ closed
   waiting never hangs forever.
 - **Opening** raises an attention request on the form (`reason = "Form: <title>"`).
   Submitting resolves it.
+  As merged, the **first** submit resolves it, even under `per_member`. Whether it
+  should stay open, or be tracked per member, is an open owner question (D-W1-13), and
+  W3 implements the answer.
 
 ## 6. API: operation catalog `forms.*`
 
@@ -279,23 +282,42 @@ Every operation goes through the `SECURITY DEFINER` RPC catalog, the ledger (`cl
 and `expectedVersion` where it mutates the form. Reads use `entities.get`/`entity
 context` (a `form` arm in `internal.entity_content`) and the response ops below.
 
+All paths carry the `/v2` prefix. Params are `:formId`, `:questionKey`, `:responseId`
+(D-W1-4). Form mutations take the form's `expectedVersion`. Response ops take
+`amendOf` and `responseVersion` (the **response's** version), never the form's
+`expectedVersion` (D-W1-5).
+
 | Op | Method/path | Who | Notes |
 |---|---|---|---|
-| `forms.create` | `POST /forms` | any | Full spec in one call: `{title, description?, sections?, questions[], settings?, open?, forSession?, attachTo?[]}`. Returns the form plus its `url`. |
-| `forms.update` | `PATCH /forms/:id` | author/admin | Title, description, settings, sections. `expectedVersion`. |
-| `forms.questions.add` | `POST /forms/:id/questions` | author/admin | `{question, after?: key}` |
-| `forms.questions.update` | `PATCH /forms/:id/questions/:key` | author/admin | partial |
-| `forms.questions.remove` | `DELETE /forms/:id/questions/:key` | author/admin | |
-| `forms.questions.move` | `POST /forms/:id/questions/:key/move` | author/admin | `{after?: key}` (null means first) |
-| `forms.transition` | `POST /forms/:id/transition` | author/admin | `{to: open\|closed\|cancelled, reason?}` |
-| `forms.responses.save` | `PUT /forms/:id/responses/mine` | respondent | Upserts the caller's draft. Partial validation. |
-| `forms.responses.submit` | `POST /forms/:id/responses/submit` | respondent | `{answers?, responseVersion?}`. Full validation → stored → message → delivery (§7). Idempotent. If the caller already has a submitted response and `allowAmend`, it becomes a new revision. |
-| `forms.responses.list` | `GET /forms/:id/responses` | space member | Keyset-paged; `?respondent=me`, `?status=`. |
-| `forms.responses.get` | `GET /form-responses/:id` | space member | Answers, the questions snapshot, and delivery status per target. |
-| `forms.responses.mine` | `GET /form-responses?respondent=me` | self | "What have I submitted", across the whole space. |
+| `forms.create` | `POST /v2/forms` | any | Full spec in one call: `{title, description?, sections?, questions[], settings?, open?, forSession?, attachTo?[]}`. Returns the form plus its `url`. |
+| `forms.update` | `PATCH /v2/forms/:formId` | author/admin | Title, description, settings, sections. `expectedVersion`. |
+| `forms.questions.add` | `POST /v2/forms/:formId/questions` | author/admin | `{question, after?: key}` |
+| `forms.questions.update` | `PATCH /v2/forms/:formId/questions/:questionKey` | author/admin | partial |
+| `forms.questions.remove` | `DELETE /v2/forms/:formId/questions/:questionKey` | author/admin | |
+| `forms.questions.move` | `POST /v2/forms/:formId/questions/:questionKey/move` | author/admin | `{after?: key}` (null means first) |
+| `forms.transition` | `POST /v2/forms/:formId/transition` | author/admin | `{to: open\|closed\|cancelled, reason?}`. Allowed moves are listed in `FORM_TRANSITIONS`. |
+| `forms.responses.save` | `PUT /v2/forms/:formId/responses/mine` | respondent | Upserts the caller's draft (`amendOf?`, `responseVersion?`). |
+| `forms.responses.submit` | `POST /v2/forms/:formId/responses/submit` | respondent | `{answers?, amendOf?, responseVersion?}`. Full validation → stored → message (§7). Idempotent. With `allowAmend`, a resubmission becomes a new revision. |
+| `forms.responses.discard` | `DELETE /v2/forms/:formId/responses/mine` | respondent | `{clientMutationId, responseVersion?}`. Idempotent (`{discarded: bool}`), and `409 version_conflict` on mismatch. |
+| `forms.responses.list` | `GET /v2/forms/:formId/responses` | space member | `{cursor, limit (default 50, max 200), respondent?: 'me', lineageKey?}`. By default it returns **current** submitted revisions, newest first. `lineageKey` returns that chain's history in revision order. `respondent=me` returns the caller's current revision plus their draft. |
+| `forms.responses.get` | `GET /v2/form-responses/:responseId` | space member | Answers, the questions snapshot, and delivery status per target. |
+| `forms.responses.mine` | `GET /v2/form-responses?spaceId=` | self | `spaceId` is required. Returns every submitted revision of the caller: "what have I submitted". |
 
-Twelve operations in total. Actions (`tm8 action list`) get cases in
+Thirteen operations in total (merged in #734, migration `211_forms_ops`; `210` was
+skipped for the closed dry run #726). Actions (`tm8 action list`) get cases in
 `structurallyAvailable` per form status, so agents discover `submit`/`close` from state.
+
+**Wire and validation split (D-W1-7/8):**
+- The view schemas live in `packages/contract/src/forms.ts`: `FormResponseView`,
+  `FormDeliveryView`, `FormSnapshot`, `FormResponsePage` and `FORM_TRANSITIONS`.
+  `questionsSnapshot` is `{structureVersion, sections, questions}`.
+- Questions travel raw (`FormQuestionWireSchema`). The server validates config and
+  answers **only in SQL** (422 `details.issues`). The CLI and UI validate client-side
+  with the contract registry. The split is deliberate: the server never runs
+  author-supplied regex in JS (ReDoS).
+
+**Reads (D-W1-12):** a list-read form row carries only a question count. Sections and
+questions load on detail reads (`hydrateDetail`, and the SQL `entity_content` arm).
 
 Errors: the closed taxonomy, carried from SQL by SQLSTATE class `TF`.
 
@@ -307,7 +329,8 @@ Errors: the closed taxonomy, carried from SQL by SQLSTATE class `TF`.
 | TFL01 | `409 form_response_limit` |
 | TFR01 | `403 form_respondent_not_allowed` |
 | TFD01 | `409 conflict`: a draft is in flight for another target, and the error names the draft |
-| 40001 | `409 version_conflict`: the amended revision is no longer current |
+| TFC01 | `409 conflict`: the question key or position is taken, or the transition is invalid (`form_transition_invalid`) |
+| 40001 | `409 version_conflict`: the amended revision is no longer current, or the submit basis drifted |
 
 Drafts: one draft per member per form. Under `unlimited`, an amend draft blocks
 starting a new chain (TFD01) until it is submitted or discarded. This is accepted for
@@ -329,6 +352,13 @@ Lock scope:
 - the form row `FOR NO KEY UPDATE`, plus the draft row and the superseded row;
 - not `FOR SHARE`, which would deadlock on the `closeOnSubmit` upgrade;
 - not `FOR UPDATE`, which would block the FK `KEY SHARE` that draft saves take.
+
+Message body (D-W1-10):
+- Rendered in TS by `renderFormResponseText`, from a basis read inside the submit
+  transaction.
+- The basis is re-checked under the form lock, and drift returns `40001`.
+- Written by `internal.form_post_message`, with **no delivery routes**; W2 owns
+  delivery.
 
 Steps:
 1. Lock the form, assert `status='open'`, and check the respondent against the
@@ -413,23 +443,27 @@ form reaches a terminal state, then prints the response. It is a CLI loop over t
 change feed and `forms.responses.list`, not a new operation. The primary path stays
 PTY injection. The agent keeps working or idles, and the answer arrives as a turn.
 
-## 8. CLI (`tm8 form …`)
+## 8. CLI (`tm8 form …`) — merged in #736
 
 ```
 tm8 form create --title "…" --spec form.json|-   # full JSON spec (agents)
-tm8 form create --title "…" \
+tm8 form create --title "…" [--draft] \
+    --section 'plan:Plan[:strategy,risks]' \
     --question 'strategy:single_choice:Which approach?:online_backfill*,dual_write,big_bang' \
     --question 'risks:long_text:Anything to watch for?' --optional risks
-tm8 form question add|update|remove|move <form-id> …
-tm8 form open|close|cancel <form-id> [--expect-version N]
-tm8 form fill <form-id>                          # optional interactive TTY fill (not a v1 requirement)
+tm8 form question add|update|remove|move <form-id> …   # update: --required true|false, --config
+tm8 form open|close|reopen|cancel <form-id> [--expect-version N]
 tm8 form submit <form-id> --answers answers.json|-
-tm8 form wait <form-id> [--timeout S]
+tm8 form response save|discard <form-id> …
 tm8 form response list <form-id> | get <response-id> | mine
+tm8 form wait <form-id> [--timeout S]            # W2
 ```
 
-Both the `--question` shorthand and `--spec` JSON validate client-side against the
-contract Zod schema before any call is made.
+The `--question` shorthand is `key:type:title[:options]`. Its fourth segment is always
+the option list (`*` marks the recommended option). Any other config goes through
+`--spec` or `question update --config`. Both paths validate client-side against the
+contract registry before any call is made. `tm8 help form` is generated from the
+registry and is enough on its own to author a form.
 
 ## 9. MCP and agent guidance
 
