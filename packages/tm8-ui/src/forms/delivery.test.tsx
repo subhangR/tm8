@@ -17,7 +17,7 @@ describe('readDelivery', () => {
     ['queued', d({}), 'queued', 'resume'],
     ['retrying (attempts)', d({ attempts: 2 }), 'retrying', 'resume'],
     ['retrying (error)', d({ lastError: 'pty busy' }), 'retrying', 'resume'],
-    ['a redelivered row is queued, not retrying', d({ lastError: 'redelivered_from: ws0' }), 'queued', 'resume'],
+    ['a row sent to a new session reads redelivering, even with old attempts', d({ attempts: 3, lastError: 'redelivered_from: session_deleted' }), 'redelivering', null],
     ['delivered', d({ status: 'delivered', attempts: 1 }), 'delivered', null],
     ['unverified', d({ status: 'delivered', lastError: 'delivery_unverified: no echo' }), 'unverified', null],
     ['spawned', d({ status: 'spawned', spawnedSessionId: 'ws2' }), 'spawned', null],
@@ -95,6 +95,13 @@ describe('DeliveryNote', () => {
     render(<DeliveryNote delivery={d({ status: 'cancelled', lastError: 'session_deleted' })} />);
     expect((screen.getByRole('button', { name: 'Send to a new session' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getAllByText(/lacks forms\.responses\.redeliver/).length).toBeGreaterThan(0);
+  });
+
+  it('a pending row sent to a new session says so, with the old reason, and offers no door', () => {
+    render(<DeliveryNote delivery={d({ attempts: 2, lastError: 'redelivered_from: session_deleted' })} redeliver={async () => {}} />);
+    expect(screen.getByTestId('delivery-chip').textContent).toBe('Sending to new session');
+    expect(screen.getByTestId('delivery-note').textContent).toMatch(/Sending to a new session \(before: the session was deleted\)/);
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('a redelivered row says so', () => {

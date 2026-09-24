@@ -29,10 +29,16 @@ export interface FormsListQuery {
   limit?: number;
 }
 
-/** `forms.responses.redeliver` (agent-guidance PR). `to` defaults to new_session. */
+/**
+ * `forms.responses.redeliver` (#766). `deliverySessionId` names the DELIVERY
+ * row's session; `workSessionId` in a command body is the CALLER's session
+ * context, never the row. `to` defaults to new_session.
+ * Mirrors the contract's `FormsResponsesRedeliverInput` until #766 lands on
+ * main; the rebase then imports it so a shape drift fails tsc.
+ */
 export interface FormsRedeliverInput {
-  workSessionId?: string;
   to?: 'new_session' | 'resume';
+  deliverySessionId?: string;
 }
 
 export interface FormsOps {

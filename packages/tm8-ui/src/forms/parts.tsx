@@ -37,6 +37,7 @@ export function FormStatusChip({ status }: { status: FormStatus }) {
 export const DELIVERY_CHIP: Record<DeliveryState, { tone: PillTone; word: string }> = {
   queued: { tone: 'wait', word: 'Queued' },
   retrying: { tone: 'wait', word: 'Retrying' },
+  redelivering: { tone: 'info', word: 'Sending to new session' },
   delivered: { tone: 'run', word: 'Delivered' },
   unverified: { tone: 'wait', word: 'Unverified' },
   spawned: { tone: 'info', word: 'New session' },
@@ -115,6 +116,9 @@ export function DeliveryNote({
       break;
     case 'retrying':
       text = <>Delivery is being retried{delivery.attempts > 0 ? ` (attempt ${delivery.attempts})` : ''}{reading.error ? `: ${reading.error}` : ''}.</>;
+      break;
+    case 'redelivering':
+      text = <>Sending to a new session (before: {reading.reason}).</>;
       break;
     case 'unverified':
       text = <>Sent, but the session didn’t confirm it arrived{reading.error ? ` (${reading.error})` : ''}.</>;

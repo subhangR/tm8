@@ -210,7 +210,7 @@ export function createRealFormsPort(deps: RealFormsPortDeps): FormsPort {
 
     ...(ops.redeliver ? {
       async redeliver(responseId: string, workSessionId: string, to: 'resume' | 'new_session') {
-        await mapped(ops.redeliver!(responseId, { workSessionId, to }));
+        await mapped(ops.redeliver!(responseId, { deliverySessionId: workSessionId, to }));
       },
     } : {}),
 

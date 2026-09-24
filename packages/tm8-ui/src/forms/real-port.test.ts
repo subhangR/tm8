@@ -214,10 +214,10 @@ describe('redeliver', () => {
     expect(setup().port.redeliver).toBeUndefined();
   });
 
-  it('sends workSessionId and `to` for the response', async () => {
+  it('names the delivery row with deliverySessionId (workSessionId is the caller context), and `to`', async () => {
     const { port, ops } = setup({ withRedeliver: true });
     await port.redeliver!('r1', 'ws1', 'new_session');
-    expect(ops.calls[ops.calls.length - 1]).toEqual({ op: 'redeliver', args: ['r1', { workSessionId: 'ws1', to: 'new_session' }] });
+    expect(ops.calls[ops.calls.length - 1]).toEqual({ op: 'redeliver', args: ['r1', { deliverySessionId: 'ws1', to: 'new_session' }] });
   });
 });
 
