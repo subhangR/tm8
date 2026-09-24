@@ -396,6 +396,21 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
     expect(stored[0]!.graph).not.toContain('task_unassigned');
     expect(stored[0]!.versions).not.toContain('task_unassigned');
 
+    /* A client that echoes the read back cannot persist a finding: passthrough
+       members of a graph patch never reach the row. */
+    await service.patchEntity(request('entities.patch', {
+      params: { id },
+      body: { clientMutationId: 'craft-findings-echo', expectedVersion: 1,
+        content: { nodes, edges, findings: [{ code: 'forged', severity: 'error', message: 'x', nodes: [], edges: [] }] } },
+    }));
+    const echoed = await database.query<{ row: string }>(
+      `select to_jsonb(g)::text row from public.graphs g where entity_id = $1`, [id]);
+    expect(echoed[0]!.row).not.toContain('forged');
+    expect(echoed[0]!.row).not.toContain('findings');
+    const reread = await asApp(database, fixture.identityId, (q) => buildUniversalDetail(q, id, fixture.identityId));
+    expect(((reread.content as Record<string, any>)['findings'] as { code: string }[])
+      .some((f) => f.code === 'forged')).toBe(false);
+
     /* A non-entity graph type carries no findings at all. */
     const mermaid = await service.createEntity(request('entities.create', { body: {
       clientMutationId: 'craft-findings-mermaid', spaceId: fixture.spaceId, kind: 'graph', title: 'Sketch',
