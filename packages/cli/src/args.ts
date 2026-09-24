@@ -578,3 +578,4 @@ export async function readJsonSource(raw: string, io: SourceIo = defaultIo): Pro
     );
   }
 }
+// W2 proof: cli-only
