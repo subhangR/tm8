@@ -27,7 +27,6 @@ export type {
   MemberRecord,
   PasswordAlgorithm,
   SpaceId,
-  StoredCredential,
   SystemDeliveryPrincipal,
   SystemDeliveryPrincipalBinding,
   SystemDeliveryPrincipalClaims,

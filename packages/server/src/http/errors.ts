@@ -18,7 +18,6 @@ import type { ServerResponse } from 'node:http';
 import {
   CollabError,
   ERROR_STATUS,
-  RETRYABLE_BY_DEFAULT,
   isCollabError,
   type CommandErrorCode,
   type WireErrorBody,
@@ -188,4 +187,4 @@ export function notImplemented(opName: string): CollabError {
   return new CollabError('not_implemented', `operation ${opName} is not implemented on this node`);
 }
 
-export { CollabError, RETRYABLE_BY_DEFAULT };
+export { CollabError };

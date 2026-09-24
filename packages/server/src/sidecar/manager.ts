@@ -44,7 +44,7 @@ import {
   stopPostmaster,
   type ClusterTarget,
 } from './cluster.js';
-import { PINNED_PG_MAJOR, resolveSidecarConfig, type ResolvedSidecarConfig } from './config.js';
+import type { ResolvedSidecarConfig } from './config.js';
 import { SidecarError, asSidecarError } from './errors.js';
 import { isTcpPortOpen, waitForReady, type ProbeTarget, type WaitForReadyOptions } from './health.js';
 import { chooseClusterDir, readMajorAt } from './layout.js';
@@ -436,27 +436,3 @@ export class PostgresSidecarManager implements SidecarManager {
 function defaultRunMigrations(logger: SidecarLogger) {
   return (cfg: ResolvedSidecarConfig) => runSchemaMigrations(cfg, { logger });
 }
-
-export interface EnsureSidecarOptions extends SidecarManagerDeps {
-  readonly env?: NodeJS.ProcessEnv;
-  /** Test-only override of the pinned major. */
-  readonly pgMajor?: number;
-  readonly repoRoot?: string;
-}
-
-/**
- * One-call boot for tm8-server: resolve config, then run the state machine to
- * RUNNING. This is the entry point the server's startup sequence uses so that
- * nobody ever hand-starts Postgres again.
- */
-export async function ensureSidecar(opts: EnsureSidecarOptions = {}): Promise<SidecarManager> {
-  const config = await resolveSidecarConfig(opts.env ?? process.env, {
-    ...(opts.pgMajor === undefined ? {} : { pgMajor: opts.pgMajor }),
-    ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
-  });
-  const manager = new PostgresSidecarManager(config, opts);
-  await manager.ensureStarted();
-  return manager;
-}
-
-export { PINNED_PG_MAJOR };

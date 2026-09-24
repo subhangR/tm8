@@ -41,7 +41,7 @@ import {
   hashToken,
   parseToken,
 } from './crypto.js';
-import { forbidden, invalidInput, invariantViolation, notFound, unauthenticated } from './errors.js';
+import { forbidden, invalidInput, notFound, unauthenticated } from './errors.js';
 
 export interface BootstrapOwnerInput {
   username?: string;
@@ -486,13 +486,4 @@ function constantTimeEqualHex(a: string, b: string): boolean {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
-}
-
-/** Exported for the store implementations, which must agree on the invariant. */
-export function assertSingleOwner(owners: readonly Account[]): void {
-  if (owners.length > 1) {
-    throw invariantViolation('node has more than one owner account', {
-      accountIds: owners.map((o) => o.id),
-    });
-  }
 }
