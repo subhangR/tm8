@@ -54,6 +54,14 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '53400': 'limit_exceeded',
   '54000': 'payload_too_large',
   '0A000': 'not_implemented',
+  // Forms (migration 209). Custom class TF, one SQLSTATE per refusal, so the
+  // code is still decided by SQLSTATE alone. TFD01 is a second draft in flight.
+  TFA01: 'form_answers_invalid',
+  TFN01: 'form_not_open',
+  TFS01: 'form_structure_frozen',
+  TFL01: 'form_response_limit',
+  TFR01: 'form_respondent_not_allowed',
+  TFD01: 'conflict',
 };
 
 /** Translate a driver error carrying a SQLSTATE into the taxonomy. */

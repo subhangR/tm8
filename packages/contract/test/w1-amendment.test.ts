@@ -235,6 +235,9 @@ describe('W1 frozen-row schema amendments', () => {
       // Creatable through the ordinary envelope, unlike `chat`/`container`:
       // nothing runtime stands behind a drawing, only its detail row.
       'drawing',
+      // 2026-09-24: `form` — a question set with revisioned responses (209).
+      // Not creatable through entities.create: `forms.create` is its door.
+      'form',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

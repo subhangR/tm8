@@ -260,7 +260,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // the number that was here. No other unmerged branch adds a kind: the one
     // holding migrations 187..193 (feat/architecture_security) seeds no
     // entity_kinds row.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(24);
+    // 24 -> 25 (2026-09-24): `form` (migration 209, Forms W0). MEASURED on
+    // this tree by counting the `core(` rows in kind-dispositions.ts.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(25);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',

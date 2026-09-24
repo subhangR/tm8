@@ -99,11 +99,11 @@ const BLANK_UNCHANGED =
 /** Where a refusal belongs. The server answers in prose, so the only honest
  *  routing is to read which field it names; anything it does not name is a
  *  statement about the write as a whole and belongs beside the button. */
-export function refusalField(detail: string): 'globalId' | 'form' {
-  return /global[\s_-]?id/i.test(detail) ? 'globalId' : 'form';
+export function refusalField(detail: string): 'globalId' | 'whole' {
+  return /global[\s_-]?id/i.test(detail) ? 'globalId' : 'whole';
 }
 
-type Problem = { where: 'globalId' | 'form'; text: string };
+type Problem = { where: 'globalId' | 'whole'; text: string };
 
 type SaveState =
   | { phase: 'idle' }
@@ -176,7 +176,7 @@ export function IdentityProfileSection({ identity, spaceId, onSave, onSaved }: I
     }
     setProblem(null);
     if (Object.keys(input).length === 0) {
-      setProblem({ where: 'form', text: 'Nothing changed — there is nothing to save.' });
+      setProblem({ where: 'whole', text: 'Nothing changed — there is nothing to save.' });
       return;
     }
     setSave({ phase: 'saving' });
@@ -207,9 +207,9 @@ export function IdentityProfileSection({ identity, spaceId, onSave, onSaved }: I
             tone: 'saved',
             testId: 'profile-saved',
           }
-        : refusedAt === 'form'
+        : refusedAt === 'whole'
           ? { text: refusalText, tone: 'problem', testId: 'profile-refused' }
-          : problem?.where === 'form'
+          : problem?.where === 'whole'
             ? { text: problem.text, tone: 'problem', testId: 'profile-problem' }
             : dirty
               ? { text: 'Unsaved changes.', tone: 'quiet' }
