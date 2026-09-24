@@ -2124,8 +2124,16 @@ export const CredentialsLoginSessionStartInputSchema:
     // There is deliberately no command/args/flags field: see the DTO.
     cols: TerminalDimSchema,
     rows: TerminalDimSchema,
+    spaceCredential: z.union([
+      z.object({ label: SpaceCredentialLabelSchema }).strict(),
+      z.object({ credentialId: z.string().uuid() }).strict(),
+    ]).optional(),
     clientMutationId: z.string().min(1).optional(),
-  }).strict();
+  }).strict().refine(
+    // 206: a space login exists for the two vendor CLIs a login terminal runs.
+    (input) => input.spaceCredential === undefined || input.provider === 'anthropic' || input.provider === 'openai',
+    { message: 'a space login exists only for anthropic and openai', path: ['provider'] },
+  );
 
 export const CredentialsLoginSessionStartResultSchema:
   z.ZodType<CredentialsLoginSessionStartResult> = z.object({
@@ -2134,6 +2142,7 @@ export const CredentialsLoginSessionStartResultSchema:
     provider: CredentialProviderNameSchema,
     expiresAt: IsoTimestamp,
     command: z.string().min(1),
+    spaceCredential: SpaceCredentialViewSchema.optional(),
   }).strict();
 
 export const CredentialsLoginSessionFinishInputSchema:
@@ -2154,6 +2163,7 @@ export const CredentialsLoginSessionFinishResultSchema:
     status: CredentialStatusSchema,
     stored: z.boolean(),
     terminated: z.boolean(),
+    spaceCredential: SpaceCredentialViewSchema.optional(),
   }).strict();
 
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({

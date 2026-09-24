@@ -100,7 +100,11 @@ import {
   createVendorProbe,
   type SpaceCredentialProbe,
 } from '../../../credentials/space-credential-probe.js';
-import { SpaceCredentialCatalogService } from '../../services/w2/space-credential-catalog.js';
+import {
+  SpaceCredentialCatalogService,
+  spaceCredentialViewOf,
+} from '../../services/w2/space-credential-catalog.js';
+import { SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
 
 /**
  * The session kinds that may reach `credentials.*`.
@@ -287,10 +291,16 @@ export function registerCredentialHandlers(
     db: deps.db,
     dataDir: credentials.dataDir,
   });
+  // One instance for the login service and delete, so a promote and a home
+  // removal are serialised by the same per-credential lock (M6).
+  const spaceHomes = new SpaceLoginHomes({ dataDir: credentials.dataDir });
+  const spaceStore = new DbSpaceCredentialStore({ db: deps.db, dataDir: credentials.dataDir });
   const sessions = new W2CredentialSessionsService({
     db: deps.db,
     launcher: credentials.launcher,
     dataDir: credentials.dataDir,
+    spaceStore,
+    spaceHomes,
     storeGitCredential: ({ claims, login, token }) =>
       gitHubStore.store(claims, { login, token }),
   });
@@ -318,9 +328,13 @@ export function registerCredentialHandlers(
         provider: body.provider,
         ...(body.cols === undefined ? {} : { cols: body.cols }),
         ...(body.rows === undefined ? {} : { rows: body.rows }),
+        ...(body.spaceCredential === undefined ? {} : { spaceCredential: body.spaceCredential }),
       },
       await principalFor(deps, ctx),
-    );
+    ).then(({ spaceCredential, ...started }) => ({
+      ...started,
+      ...(spaceCredential ? { spaceCredential: spaceCredentialViewOf(spaceCredential) } : {}),
+    }));
   };
 
   const finishLogin: OperationHandler = async (ctx) => {
@@ -341,6 +355,7 @@ export function registerCredentialHandlers(
       status: finished.probe.status,
       stored: finished.stored,
       terminated: finished.terminated,
+      ...(finished.spaceCredential ? { spaceCredential: spaceCredentialViewOf(finished.spaceCredential) } : {}),
     };
   };
 
@@ -392,9 +407,13 @@ export function registerCredentialHandlers(
   // -- space credentials (SC-3): shared by a space, managed per D11 in SQL.
   const spaceCatalog = new SpaceCredentialCatalogService({
     db: deps.db,
-    store: new DbSpaceCredentialStore({ db: deps.db, dataDir: credentials.dataDir }),
+    store: spaceStore,
     probe: credentials.probeSpaceCredential ?? createVendorProbe(),
     terminals: credentials.launcher,
+    // A login terminal is closed through the login registry — killed, then
+    // stamped — and its home removed under the promote lock (SC-4).
+    closeLogin: (claims, workSessionId) => sessions.closeSpaceLogin(claims, workSessionId),
+    removeLoginHome: (home) => spaceHomes.remove(home),
     env,
   });
   const claimsOf = async (ctx: RequestContext) => (await principalFor(deps, ctx)).claims;

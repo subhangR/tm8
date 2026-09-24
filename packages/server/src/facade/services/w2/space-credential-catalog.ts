@@ -71,6 +71,13 @@ export interface SpaceCredentialCatalogOptions {
    * sealed bytes are dropped by the revoke itself.
    */
   removeLoginHome?: (home: SpaceCredentialHomeKey) => Promise<void>;
+  /**
+   * Close one login terminal onto the (now revoked) credential: kill it, and
+   * only then `finish_space_credential_login(ws, false)`. SC-4's login
+   * registry provides it, so a terminal this node started is closed through
+   * the same entry its sweep would use. Absent, delete kills and stamps here.
+   */
+  closeLogin?: (claims: DbClaims, workSessionId: string) => Promise<'closed' | 'kill_failed'>;
   /** The server environment, read for one boolean per provider. Never forwarded. */
   env?: Readonly<Record<string, string | undefined>>;
 }
@@ -81,6 +88,7 @@ export class SpaceCredentialCatalogService {
   private readonly probe: SpaceCredentialProbe;
   private readonly terminals: CredentialTerminalPort;
   private readonly removeLoginHome: (home: SpaceCredentialHomeKey) => Promise<void>;
+  private readonly closeLogin: SpaceCredentialCatalogOptions['closeLogin'] | null;
   private readonly env: Readonly<Record<string, string | undefined>>;
 
   constructor(options: SpaceCredentialCatalogOptions) {
@@ -89,12 +97,13 @@ export class SpaceCredentialCatalogService {
     this.probe = options.probe;
     this.terminals = options.terminals;
     this.removeLoginHome = options.removeLoginHome ?? (async () => undefined);
+    this.closeLogin = options.closeLogin ?? null;
     this.env = options.env ?? process.env;
   }
 
   async list(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceListView> {
     const rows = await this.store.list(claims, spaceId);
-    return { spaceId, credentials: rows.map(viewOf) };
+    return { spaceId, credentials: rows.map(spaceCredentialViewOf) };
   }
 
   /** D1: any member. The vendor is asked first; a refused key is never stored (I6). */
@@ -118,7 +127,7 @@ export class SpaceCredentialCatalogService {
     }
     const displayLogin = await this.probeOrRefuse(input.provider, input.secret);
     try {
-      return viewOf(await this.store.create(claims, {
+      return spaceCredentialViewOf(await this.store.create(claims, {
         spaceId,
         provider: input.provider,
         shape: input.shape,
@@ -172,18 +181,18 @@ export class SpaceCredentialCatalogService {
     }
     const displayLogin = await this.probeOrRefuse(current.provider, secret);
     try {
-      return viewOf(await this.store.rekey(claims, credentialId, secret, displayLogin));
+      return spaceCredentialViewOf(await this.store.rekey(claims, credentialId, secret, displayLogin));
     } catch (error) {
       throw storeError(error);
     }
   }
 
   async rename(claims: DbClaims, credentialId: string, label: string): Promise<SpaceCredentialView> {
-    return viewOf(await this.store.rename(claims, credentialId, label));
+    return spaceCredentialViewOf(await this.store.rename(claims, credentialId, label));
   }
 
   async setDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredentialView> {
-    return viewOf(await this.store.setDefault(claims, credentialId));
+    return spaceCredentialViewOf(await this.store.setDefault(claims, credentialId));
   }
 
   /**
@@ -214,7 +223,24 @@ export class SpaceCredentialCatalogService {
 
     // 3. Kill every PTY first — login terminals and agent sessions alike.
     const killedLogins: string[] = [];
-    for (const login of live?.loginTerminals ?? []) {
+    // 3+4 for a login terminal, through the login registry: kill, then stamp.
+    for (const login of this.closeLogin ? live?.loginTerminals ?? [] : []) {
+      try {
+        if ((await this.closeLogin!(claims, login.workSessionId)) === 'kill_failed') {
+          failures.push({
+            step: 'loginSession',
+            sessionId: login.workSessionId,
+            reason: 'the PTY host could not kill this login terminal',
+          });
+          continue;
+        }
+      } catch (error) {
+        failures.push({ step: 'loginSession', sessionId: login.workSessionId, reason: reasonOf(error) });
+        continue;
+      }
+      terminatedLoginSessionIds.push(login.workSessionId);
+    }
+    for (const login of this.closeLogin ? [] : live?.loginTerminals ?? []) {
       if (this.terminals.terminate(login.workSessionId) === 'error') {
         failures.push({
           step: 'loginSession',
@@ -339,7 +365,7 @@ export class SpaceCredentialCatalogService {
 
 }
 
-function viewOf(row: SpaceCredential): SpaceCredentialView {
+export function spaceCredentialViewOf(row: SpaceCredential): SpaceCredentialView {
   return {
     id: row.id,
     spaceId: row.spaceId,

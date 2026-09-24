@@ -47,8 +47,19 @@ export const CREDENTIAL_DIRECTORY_MODE = 0o700;
  */
 const IDENTITY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
+/**
+ * Names under `<dataDir>/credentials/` that are not member homes: `spaces` is
+ * the space-credential root (SC-4). An identity id equal to one would put a
+ * member's vendor config inside it.
+ */
+const RESERVED_IDENTITY_IDS = new Set(['spaces']);
+
 function assertSafeIdentityId(identityId: string): void {
-  if (!IDENTITY_ID_RE.test(identityId) || identityId.includes('..')) {
+  if (
+    !IDENTITY_ID_RE.test(identityId) ||
+    identityId.includes('..') ||
+    RESERVED_IDENTITY_IDS.has(identityId)
+  ) {
     // `invariant_violation`, not `invalid_input`: the identity id is
     // server-resolved, so a value that fails this is a SERVER bug and must not
     // read to a client as "you sent something wrong". (`internal` is not in the

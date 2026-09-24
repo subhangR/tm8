@@ -33,6 +33,7 @@ import type { CredentialProviderName, OperationName } from '@tm8/contract';
 import {
   CredentialsDeleteResultSchema,
   CredentialsLoginSessionFinishResultSchema,
+  CredentialsLoginSessionStartInputSchema,
   CredentialsLoginSessionStartResultSchema,
   CredentialsStatusViewSchema,
   OPERATIONS,
@@ -49,6 +50,7 @@ import {
 } from '../../src/facade/handlers/w2/credentials.js';
 import { W2CredentialCatalogService } from '../../src/facade/services/w2/credential-catalog.js';
 import { W2CredentialSessionsService } from '../../src/facade/services/w2/credential-sessions.js';
+import { spaceCredentialViewOf } from '../../src/facade/services/w2/space-credential-catalog.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
@@ -1041,5 +1043,43 @@ describe('the login session operations answer their contract shapes', () => {
     expect(typeof finished.stored).toBe('boolean');
     // No verified GitHub login means the persistence path must not run.
     expect(finished.stored).toBe(false);
+  });
+});
+
+describe('SC-4 — a space login is the same start, with a spaceCredential target', () => {
+  const SPACE = '00000000-0000-4000-8000-000000000001';
+  const CREDENTIAL = '00000000-0000-4000-8000-000000000002';
+  const parse = (body: unknown) => CredentialsLoginSessionStartInputSchema.safeParse(body);
+
+  it('takes exactly one of a label (a new credential) or a credentialId (log in again)', () => {
+    expect(parse({ spaceId: SPACE, provider: 'anthropic', spaceCredential: { label: 'Team Claude' } }).success).toBe(true);
+    expect(parse({ spaceId: SPACE, provider: 'openai', spaceCredential: { credentialId: CREDENTIAL } }).success).toBe(true);
+    expect(parse({ spaceId: SPACE, provider: 'anthropic', spaceCredential: { label: 'x', credentialId: CREDENTIAL } }).success).toBe(false);
+    expect(parse({ spaceId: SPACE, provider: 'anthropic', spaceCredential: {} }).success).toBe(false);
+    expect(parse({ spaceId: SPACE, provider: 'anthropic', spaceCredential: { credentialId: 'not-a-uuid' } }).success).toBe(false);
+    // An account id is never a field here (I1).
+    expect(parse({ spaceId: SPACE, provider: 'anthropic', spaceCredential: { label: 'x', accountId: CREDENTIAL } }).success).toBe(false);
+  });
+
+  it('refuses a space login for a provider no login terminal exists for', () => {
+    expect(parse({ spaceId: SPACE, provider: 'github', spaceCredential: { label: 'x' } }).success).toBe(false);
+    // Control: the member's own github login is untouched.
+    expect(parse({ spaceId: SPACE, provider: 'github' }).success).toBe(true);
+  });
+
+  it('returns the credential as the metadata-only view: the store row does not fit it, its view does', () => {
+    const stored = {
+      id: CREDENTIAL, spaceId: SPACE, provider: 'anthropic' as const, shape: 'login' as const,
+      label: 'Team Claude', isDefault: false, status: 'pending' as const, createdByAccountId: null,
+      displayLogin: null, keyHint: null, pendingExpiresAt: '2026-09-24T00:00:00.000Z',
+      createdAt: '2026-09-24T00:00:00.000Z', updatedAt: '2026-09-24T00:00:00.000Z',
+      lastUsedAt: null, lastProbeAt: null,
+    };
+    const base = {
+      workSessionId: CREDENTIAL, spaceId: SPACE, provider: 'anthropic', expiresAt: '2026-09-24T00:00:00.000Z',
+      command: 'claude auth login',
+    };
+    expect(CredentialsLoginSessionStartResultSchema.safeParse({ ...base, spaceCredential: stored }).success).toBe(false);
+    expect(CredentialsLoginSessionStartResultSchema.safeParse({ ...base, spaceCredential: spaceCredentialViewOf(stored) }).success).toBe(true);
   });
 });
