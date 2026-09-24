@@ -1,6 +1,7 @@
 /**
  * `tm8.receipt.v1` — the phase-1 CLI projection (spec doc 01a0cf2e), unit
- * level: the pure projection per op, the Output modes, the mode resolver, and
+ * level: the pure projection per op, a Server-built receipt (phase 2), the
+ * Output modes, the mode resolver, and
  * the two commands a scratch Server cannot run (`session spawn|terminate`),
  * driven against a stub Server. The eight others also run against a REAL
  * Server in `test/integration/receipt.test.ts`.
@@ -311,6 +312,48 @@ describe('passthrough (§9.13) and limits', () => {
   });
 });
 
+// ── phase 2: a receipt the Server built (spec 01a0d044 §4.1, D3.1) ───────────
+
+const SERVER_NOOP = {
+  schemaVersion: 'tm8.receipt.v1', ok: true, op: 'entity.update', id: TASK, kind: 'task', title: TYPICAL_TITLE,
+  version: { from: 2, to: 2 }, status: { to: 'working' }, changed: [], refs: [],
+  warnings: [{ code: 'no_change', message: 'the write matched the stored values' }],
+};
+
+describe('successReceipt: a server receipt (phase 2)', () => {
+  it('is taken as it stands — server from/changed kept, --expect-version never overrides them', () => {
+    const r = successReceipt('entity.update', SERVER_NOOP, { expectedVersion: 7 });
+    expect(r).toEqual(SERVER_NOOP);
+  });
+
+  it('adds only the CLI\'s own facts: chained refs, verified warnings, --mutation-id', () => {
+    const ref = { kind: 'edge', type: 'created_in', id: 'e1', to: SESSION };
+    const warning = { code: 'session_link_failed', message: 'x' };
+    const r = successReceipt('entity.update', SERVER_NOOP, { refs: [ref], warnings: [warning], mutationId: 'm-1' });
+    expect(r.refs).toEqual([ref]);
+    expect(r.warnings).toEqual([...SERVER_NOOP.warnings, warning]);
+    expect(r.mutationId).toBe('m-1');
+    expect(SERVER_NOOP.refs).toEqual([]); // the response object is not mutated
+  });
+
+  it('human: a verified no-op prints NO CHANGE (reason), once; a moved status prints from→to', () => {
+    const line = renderReceiptHuman(successReceipt('entity.update', SERVER_NOOP));
+    expect(line).toContain('v2→v2 working');
+    expect(line).toContain('NO CHANGE (the write matched the stored values)');
+    expect(line).not.toContain('WARNING no_change');
+    const moved = renderReceiptHuman(successReceipt('task.transition',
+      { ...SERVER_NOOP, op: 'task.transition', version: { from: 2, to: 3 }, status: { from: 'open', to: 'working' }, changed: ['state.status'], warnings: [] }));
+    expect(moved).toContain('v2→v3 open→working');
+    expect(moved).not.toContain('NO CHANGE');
+  });
+
+  it('human: the projection never prints NO CHANGE (it has no changed field)', () => {
+    const projected = successReceipt('task.transition', commandResult(taskDetail({ version: 2 }), [taskDetail()]));
+    expect(projected.changed).toBeUndefined();
+    expect(renderReceiptHuman(projected)).not.toContain('NO CHANGE');
+  });
+});
+
 describe('human line (§4.4)', () => {
   it('one line, the same facts', () => {
     const r = successReceipt('task.complete', commandResult(taskDetail({ status: 'done', outgoing: [{ type: 'completed_by', edges: [completedBy] }] })), { expectedVersion: 2, completerIds: [ME] });
@@ -386,6 +429,17 @@ describe('Output.mutation', () => {
     expect(human.stderr).toBe('');
   });
 
+  it('--quiet silences the deprecation notice; it is a note, not a warning', () => {
+    let stderr = '';
+    const out = createOutput({
+      format: 'json', receipts: 'deprecated', quiet: true,
+      streams: { stdout: () => {}, stderr: (c) => { stderr += c; } },
+    });
+    const dto = commandResult(taskDetail({ version: 2 }), [taskDetail()]);
+    out.mutation('task.transition', dto, () => '', () => successReceipt('task.transition', dto));
+    expect(stderr).toBe('');
+  });
+
   it('deprecated mode keeps today\'s render, --terse included', () => {
     expect(render('deprecated', 'json', 'terse').stdout).toBe(render('full', 'json', 'terse').stdout);
   });
@@ -421,7 +475,7 @@ describe('resolveReceiptMode (D5.1)', () => {
 
 // ── commands against a stub Server: spawn, terminate, link-pr chaining ──────
 
-interface Seen { method: string; pathname: string; body: unknown }
+interface Seen { method: string; pathname: string; search: string; body: unknown }
 let server: Server;
 let baseUrl = '';
 let seen: Seen[] = [];
@@ -434,7 +488,7 @@ beforeAll(async () => {
     req.on('end', () => {
       const url = new URL(req.url ?? '/', 'http://x');
       const raw = Buffer.concat(chunks).toString('utf8');
-      seen.push({ method: req.method ?? '', pathname: url.pathname, body: raw ? JSON.parse(raw) : undefined });
+      seen.push({ method: req.method ?? '', pathname: url.pathname, search: url.search, body: raw ? JSON.parse(raw) : undefined });
       const key = Object.keys(replies).find((k) => url.pathname.includes(k));
       res.setHeader('content-type', 'application/json');
       res.statusCode = key === undefined ? 404 : 200;
@@ -524,13 +578,42 @@ describe('commands, receipt mode', () => {
     expect(JSON.parse(r.stdout)).toMatchObject({ op: 'session.terminate', status: { to: 'exited' }, ended: 'terminated' });
   });
 
-  it('task link-pr still posts created_in from the FULL result in receipt mode (§9.9)', async () => {
+  it('task link-pr asks for a server receipt, and chains created_in from its refs (§9.9, phase 2)', async () => {
+    const serverReceipt = {
+      schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.link-pr', id: TASK, kind: 'task', title: TYPICAL_TITLE,
+      version: { from: 2, to: 3 }, changed: ['edge:tracks'],
+      refs: [
+        { kind: 'pull_request', id: PR, url: 'https://github.com/subhangR/tm8/pull/653' },
+        { kind: 'edge', type: 'tracks', id: '01a0cf19-fd30-7000-8000-00000000c1e1', to: PR },
+      ],
+      warnings: [],
+    };
+    replies = {
+      '/commands/link-pr': serverReceipt,
+      '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
+    };
+    const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
+    expect(r.code, r.stderr).toBe(0);
+    expect(seen[0]?.search).toBe('?return=receipt');
+    expect(seen.find((s) => s.pathname === '/v2/edges')?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
+    expect(JSON.parse(r.stdout)).toEqual(serverReceipt);
+  });
+
+  it('--full never asks for a receipt', async () => {
+    replies = { '/commands/link-pr': commandResult(taskDetail(), [taskDetail(), prSummary]) };
+    const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'full');
+    expect(r.code, r.stderr).toBe(0);
+    expect(seen[0]?.search).toBe('');
+  });
+
+  it('an older Server ignores ?return=receipt: the full result is projected, and link-pr still chains (§9.9)', async () => {
     replies = {
       '/commands/link-pr': commandResult(taskDetail({ outgoing: [{ type: 'tracks', edges: [tracks] }] }), [taskDetail(), prSummary]),
       '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
     };
     const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
     expect(r.code, r.stderr).toBe(0);
+    expect(seen[0]?.search).toBe('?return=receipt'); // asked, and was ignored
     const claim = seen.find((s) => s.pathname === '/v2/edges');
     expect(claim?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
     expect((JSON.parse(r.stdout) as Receipt).refs).toContainEqual(expect.objectContaining({ kind: 'pull_request', id: PR }));

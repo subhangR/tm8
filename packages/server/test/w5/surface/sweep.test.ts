@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(193); // 192 -> 193: 210_space_credential_shares (SC-8), rebased onto 211_forms_ops — the ledger keys by filename, so 210 applies after 211. MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
+    expect(server.appliedMigrations.length).toBe(194); // 193 -> 194: 210_space_credential_shares (SC-8), merged after 212 at the merge position — the ledger keys by filename, so on a DB that already has 211 and 212, 210 applies after them. MEASURED: ls db/migrations/*.sql | wc -l -> 194, duplicate prefixes -> 0. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened

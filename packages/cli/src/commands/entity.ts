@@ -63,7 +63,14 @@ import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { commandDiscovery } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
-import { callerMutationId, successReceipt, type ReceiptRef, type ReceiptWarning } from '../receipt.js';
+import {
+  callerMutationId,
+  isServerReceipt,
+  receiptQuery,
+  successReceipt,
+  type ReceiptRef,
+  type ReceiptWarning,
+} from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { renderContextBrief } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
@@ -745,7 +752,10 @@ async function linkCreatedInSession(
   // explicit claim wins outright rather than racing the inferred one.
   if (explicitConnections.some((c) => c.type === 'created_in')) return {};
 
-  const entityId = (created as { entity?: { id?: unknown } } | null)?.entity?.id;
+  // A server receipt names the new row as `id`; the full result as `entity.id`.
+  const entityId = isServerReceipt(created)
+    ? created.id
+    : (created as { entity?: { id?: unknown } } | null)?.entity?.id;
   if (typeof entityId !== 'string' || entityId === '') return {};
   if (entityId === sessionId) return {}; // nothing is born in itself
 
@@ -833,6 +843,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'entity.create', { mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
+      query: receiptQuery('entity.create', cmd.out.receipts),
       body: withActor(cmd, body),
     }));
   // After the create has landed, never before it — see linkCreatedInSession.
@@ -875,6 +886,7 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     () =>
       observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.patch', {
         params: { id },
+        query: receiptQuery('entity.update', cmd.out.receipts),
         body: withActor(cmd, body),
       }),
   );

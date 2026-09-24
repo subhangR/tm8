@@ -460,8 +460,59 @@ export interface EventPollPage {
   nextCursor?: unknown;
 }
 
-/** The fallback's transport seam — injected so the loop is testable dry. */
-export type EventPoller = (sinceSeq: string) => Promise<EventPollPage>;
+/**
+ * The fallback's transport seam — injected so the loop is testable dry.
+ * `entityId` is the server-side `?entity=` filter (one id per call): the SCOPED
+ * poll, carrying the watch's own `--entity` selectors (change-feed spec §4).
+ */
+export type EventPoller = (sinceSeq: string, entityId?: string) => Promise<EventPollPage>;
+
+const ENTITY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A cursor value as a page carries it, or undefined when it carries none. */
+function seqOf(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : undefined;
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  return undefined;
+}
+
+/**
+ * One fallback round: the scoped poll for each `--entity` selector (or one
+ * unscoped poll without any), merged into ascending seq order.
+ *
+ * Every call reads from the same `sinceSeq`, and a filtered page examines the
+ * same window an unfiltered one would, so the pages agree on `nextCursor`. If
+ * rows landed between the calls they may not: only events at or below the
+ * SMALLEST cursor are considered, and the next round resumes from it, so a
+ * later match on one page can never be printed ahead of an earlier one another
+ * page has not examined yet.
+ */
+export async function pollRound(
+  poll: EventPoller,
+  sinceSeq: string,
+  entityIds: readonly string[],
+): Promise<{ items: Array<Record<string, unknown>>; nextCursor: string | undefined }> {
+  // The server refuses a malformed `?entity=`; an id that is not an entity id
+  // can only ever be matched (never) locally, so such a watch polls unscoped.
+  const scoped = entityIds.length > 0 && entityIds.every((id) => ENTITY_ID_RE.test(id));
+  const pages = !scoped
+    ? [await poll(sinceSeq)]
+    : await Promise.all(entityIds.map((id) => poll(sinceSeq, id)));
+  const cursors = pages.map((p) => seqOf(p.nextCursor));
+  const bound = cursors.some((c) => c === undefined) ? undefined : Math.min(...(cursors as number[]));
+  const bySeq = new Map<string, Record<string, unknown>>();
+  const unsequenced: Array<Record<string, unknown>> = [];
+  for (const page of pages) {
+    for (const raw of Array.isArray(page.items) ? page.items : []) {
+      const event = (raw ?? {}) as Record<string, unknown>;
+      const seq = seqOf(event['seq']);
+      if (seq === undefined) unsequenced.push(event);
+      else if (bound === undefined || seq <= bound) bySeq.set(String(seq), event);
+    }
+  }
+  const items = [...bySeq.values()].sort((a, b) => seqOf(a['seq'])! - seqOf(b['seq'])!);
+  return { items: [...items, ...unsequenced], nextCursor: bound === undefined ? undefined : String(bound) };
+}
 
 /**
  * How often the poll fallback re-asks. 1.5s: fast enough that a wait feels
@@ -552,18 +603,20 @@ export async function runWatch(opts: {
       return EXIT_RETRYABLE;
     }
     out.warn(
-      `\`tm8 event watch\`: the socket was lost — continuing this wait over events.poll from seq ${lastSeq}`,
+      `\`tm8 event watch\`: the socket was lost — continuing this wait over events.poll from seq ${lastSeq}` +
+        (request.entityIds.length === 0 ? '' : ` (scoped to --entity ${request.entityIds.join(', ')})`),
     );
     let anyPollAnswered = false;
     const interval = opts.pollIntervalMs ?? FALLBACK_POLL_INTERVAL_MS;
     for (;;) {
       if (interrupted) return EXIT_INTERRUPTED;
       try {
-        const page = await opts.poll(lastSeq);
+        // The SCOPED poll, with the watch's own selectors: `--entity` narrows
+        // on the server, and the same local predicate the stream applies
+        // (`--type`, `--entity`) still decides what matches.
+        const page = await pollRound(opts.poll, lastSeq, request.entityIds);
         anyPollAnswered = true;
-        const items = Array.isArray(page.items) ? page.items : [];
-        for (const raw of items) {
-          const event = (raw ?? {}) as Record<string, unknown>;
+        for (const event of page.items) {
           const seq = event['seq'];
           if (typeof seq === 'number' || typeof seq === 'string') lastSeq = String(seq);
           if (matches(event, request)) {
@@ -572,9 +625,7 @@ export async function runWatch(opts: {
           }
         }
         // The cursor covers rows the mapper skipped, so progress never stalls.
-        if (typeof page.nextCursor === 'string' || typeof page.nextCursor === 'number') {
-          lastSeq = String(page.nextCursor);
-        }
+        if (page.nextCursor !== undefined) lastSeq = page.nextCursor;
       } catch {
         // The node is (still) unreachable. The deadline decides, not this poll.
       }
@@ -760,10 +811,10 @@ async function eventWatch(cmd: CommandContext): Promise<ExitCode> {
   // one. `events.poll` is exempt from the read-cache by construction, so a
   // revalidation-style loop can never be served its own cached answer.
   const client = clientFor(cmd.ctx);
-  const poll: EventPoller = async (sinceSeq) =>
+  const poll: EventPoller = async (sinceSeq, entityId) =>
     await client.invoke<EventPollPage>('events.poll', {
       params: { spaceId: request.spaceId },
-      query: { since: sinceSeq },
+      query: { since: sinceSeq, ...(entityId === undefined ? {} : { entity: entityId }) },
     });
 
   return await runWatch({
@@ -1013,13 +1064,17 @@ function quote(text: string | null | undefined): string {
   return JSON.stringify(text ?? '');
 }
 
-/** One entity, one line — every field of the entry appears. */
-function renderChangeEntry(entry: EventChangeEntry): string[] {
+/**
+ * One entity, one line — every field of the entry appears. An absent
+ * `parentId` is the one `--subtree` root, spelled out from the scope.
+ */
+function renderChangeEntry(entry: EventChangeEntry, subtreeRoot: string | undefined): string[] {
+  const parent = entry.parentId === undefined ? (subtreeRoot ?? '-') : (entry.parentId ?? '-');
   const parts = [
     entry.kind,
     entry.id,
     entry.title === null ? '(deleted)' : quote(entry.title),
-    `parent ${entry.parentId ?? '-'}`,
+    `parent ${parent}`,
     entry.v === null ? 'v-' : `v${String(entry.v)}`,
   ];
   if (entry.status !== undefined) parts.push(`status:${entry.status}`);
@@ -1043,7 +1098,7 @@ function renderChangeEntry(entry: EventChangeEntry): string[] {
     const rest = entry.messagesTotal !== undefined
       ? `+${String(entry.messagesTotal - shown)} more`
       : `+≥${String((entry.messagesTotalAtLeast ?? shown) - shown)} more`;
-    lines.push(`  … ${String(shown)} shown, ${rest} — ${entry.messagesNext ?? 'tm8 entity feed <anchor-id>'}`);
+    lines.push(`  … ${String(shown)} shown, ${rest} — ${entry.messagesNext ?? `tm8 entity context ${entry.id} --sections messages`}`);
   }
   return lines;
 }
@@ -1069,7 +1124,8 @@ export function renderChanges(view: EventChangesView, flags: ChangesFlags): stri
   if (view.events !== undefined) {
     for (const row of view.events) lines.push(renderThinRow(row));
   } else {
-    for (const entry of view.changed ?? []) lines.push(...renderChangeEntry(entry));
+    const root = view.scope?.subtree?.length === 1 ? view.scope.subtree[0] : undefined;
+    for (const entry of view.changed ?? []) lines.push(...renderChangeEntry(entry, root));
   }
   if (view.unresolved.length > 0) lines.push(`unresolved: ${view.unresolved.join(' ')}`);
 

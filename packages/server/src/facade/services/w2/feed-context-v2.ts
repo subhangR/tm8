@@ -304,6 +304,16 @@ function pageExpand(
 }
 
 /**
+ * The `--sections messages` expand that continues an anchor's messages after
+ * one message (its `created_at` in MICROS form, and its id) — the same cursor
+ * this section's own pager mints, so `events.changes` `messagesNext` pages
+ * exactly as a context read would.
+ */
+export function messagesSectionExpand(anchorId: string, atMicros: string, messageId: string): string {
+  return pageExpand(anchorId, 'messages', null, [atMicros, messageId]).expand;
+}
+
+/**
  * The expand that continues a list after its first `kept` rows (in load
  * order). Built lazily so a budget trim (c904 §2.7) re-points it at the last
  * row it actually kept. `kept = 0` is the section's first page.

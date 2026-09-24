@@ -13,13 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   EVENT_CHANGES_MIN_TOTAL_BYTES,
+  getOperation,
   isCollabError,
+  type EntityContextV2View,
   type EventChangeEntry,
   type EventChangesView,
 } from '@tm8/contract';
 
-import { HandlerRegistry } from '../../src/facade/index.js';
-import { W2FeedContextService } from '../../src/facade/services/w2/feed-context.js';
+import { HandlerRegistry, registerFacadeHandlers } from '../../src/facade/index.js';
 import { registerEventHandlers } from '../../src/events/handlers.js';
 import {
   byteLength,
@@ -43,7 +44,6 @@ async function read(query: Record<string, string>): Promise<EventChangesView> {
   return feed.read(f.spaceId, req(query), f.claims());
 }
 
-type FeedItems = Array<{ itemKind: string; message?: { id: string } }>;
 
 function entry(view: EventChangesView, id: string): EventChangeEntry | undefined {
   return view.changed?.find((e) => e.id === id);
@@ -79,7 +79,7 @@ afterAll(async () => {
 });
 
 describe('acceptance 1 — fixture size (a subtree of 11 tasks, 500 events, 6 changed)', () => {
-  it('the digest is ≤ 2 KB minified and the unchanged poll is ≤ 100 B', async () => {
+  it('the digest is ≤ 3 KB minified (§6.1 re-baselined) and the unchanged poll is ≤ 100 B', async () => {
     const root = await f.createTask('Work on: tm8 context research: complete notebook, data and evidence');
     const children: string[] = [];
     for (let i = 0; i < 10; i++) children.push(await f.createTask(`Research child ${String(i)}: a realistic task title`, root));
@@ -108,14 +108,20 @@ describe('acceptance 1 — fixture size (a subtree of 11 tasks, 500 events, 6 ch
     expect(new Set(view.changed?.map((e) => e.id))).toEqual(
       new Set([root, children[0], children[1], children[2], children[3], children[4]]),
     );
-    // SPEC DEVIATION, flagged in the PR: §6.1 targets ≤ 2 KB, from the §7
-    // estimate (~1,700 B). Measured, the agreed field set does not fit it: each
-    // entity's mandatory fields cost ~230–330 B minified, and ONE anchor with 3
-    // new messages plus its `messagesNext` costs ~1 KB. This fixture measures
-    // ~2.8 KB; the live window 146233–146732 measured 3,268 B for 9 entities.
-    // The bound below is the measured one, so a REGRESSION still fails; the
-    // 2 KB target is an open decision, not silently re-baselined here.
+    // §6.1 is RE-BASELINED to 3 KB (spec doc 01a0d044 §6.1, step 4): the
+    // trims (parentId omitted under the one --subtree root, status only when it
+    // moved, messagesNext on the context's section cursor) took this fixture
+    // from 2,797 B to the figure logged above; the rest is the agreed field set
+    // — one anchor with 3 new messages plus its `messagesNext` alone is ~1 KB.
     expect(bytes).toBeLessThanOrEqual(3072);
+    // The trims themselves: the root's children carry no parentId, and only
+    // entities whose status moved carry one.
+    for (const e of view.changed!) {
+      if (e.id === root) expect(e.parentId).toBeNull();
+      else expect(e).not.toHaveProperty('parentId');
+    }
+    expect(view.changed!.filter((e) => e.status !== undefined).map((e) => e.id).sort())
+      .toEqual([children[0], children[2]].sort());
 
     const quiet = await read({ subtree: root, after: String(view.through) });
     const quietBytes = byteLength(quiet);
@@ -290,20 +296,25 @@ describe('acceptance 12 — message caps', () => {
     expect(e.messagesMore).toBe(true);
     expect(e.changes).toContain('message');
 
-    // `messagesNext` is a command that works: its cursor continues the feed
-    // right after the last message shown.
+    // `messagesNext` is the context's own messages-section expand (#687), and it
+    // works: its cursor continues right after the last message shown.
     const next = e.messagesNext!;
-    const match = /^tm8 entity feed ([0-9a-f-]{36}) --order newest --cursor (\S+)$/.exec(next);
+    const match = /^tm8 entity context ([0-9a-f-]{36}) --sections messages --cursor (\S+)$/.exec(next);
     expect(match, next).not.toBeNull();
-    const service = new W2FeedContextService({ db: f.db, owner: testOwner } as never);
-    const page = (await service.feed({
-      params: { id: match![1] },
-      query: new URLSearchParams({ order: 'newest', cursor: match![2]! }),
-      requestId: `req_${randomUUID()}`,
-      identity: { kind: 'auto-owner' },
-    } as never)) as { data?: { items: FeedItems }; items?: FeedItems };
-    const ids = (page.data?.items ?? page.items ?? []).filter((i) => i.itemKind === 'message').map((i) => i.message!.id);
-    expect(ids.slice(0, 4)).toEqual([posted[3], posted[2], posted[1], posted[0]]);
+    expect(match![1]).toBe(task);
+    const registry = new HandlerRegistry();
+    registerFacadeHandlers(registry, { db: f.db, config: {} as never, owner: testOwner });
+    const op = getOperation('entities.context');
+    const result = (await registry.get('entities.context')!({
+      op, opName: 'entities.context', params: { id: match![1] },
+      query: new URLSearchParams({ schema: 'v2', sections: 'messages', cursor: match![2]! }),
+      body: undefined, requestId: `req_${randomUUID()}`, identity: { kind: 'auto-owner' },
+      headers: {}, method: op.method, path: op.path,
+    } as never)) as EntityContextV2View | { data: EntityContextV2View };
+    const page = 'data' in result ? result.data : result;
+    // The next page (a task's is 3 wide, listed oldest→newest) is exactly the
+    // three messages before the last one shown — none repeated, none skipped.
+    expect(page.messages?.map((m) => m.id)).toEqual([posted[1], posted[2], posted[3]]);
   });
 
   it('a chat anchor lists the newest 10', async () => {
@@ -394,7 +405,7 @@ describe('acceptance 14 / 15 and the §3.3 floor — groups, progress, the worst
     expect(2 * worstBytes + envelope).toBeLessThanOrEqual(EVENT_CHANGES_MIN_TOTAL_BYTES);
   });
 
-  it('§3.3 — measures the multi-byte worst case (reported; the refusal, not an overrun, covers it)', async () => {
+  it('§3.3 — the multi-byte worst case FITS the 8,192 floor: titles and excerpts are cut in bytes, not refused', async () => {
     const a = await f.createSession('会'.repeat(200));
     const b = await f.createSession('議'.repeat(200));
     const at = await f.head();
@@ -410,9 +421,22 @@ describe('acceptance 14 / 15 and the §3.3 floor — groups, progress, the worst
     const big = await read({ anchor: `${a},${b}`, after: String(at), totalBytes: '32768' });
     const cjkWorst = Math.max(...big.changed!.map((e) => byteLength(e)));
     console.info(`[floor] worst single entity (10 message rows, 3-byte CJK): ${String(cjkWorst)} B; at the 8,192 floor: ${refused ?? `fits (${String(byteLength(view))} B)`}`);
-    // Whatever the measurement, the page is never over budget and never partial.
-    if (view !== undefined) expect(byteLength(view)).toBeLessThanOrEqual(EVENT_CHANGES_MIN_TOTAL_BYTES);
-    else expect(refused).toBe('digest_group_too_large');
+    expect(refused).toBeUndefined();
+    expect(byteLength(view)).toBeLessThanOrEqual(EVENT_CHANGES_MIN_TOTAL_BYTES);
+    expect(view!.changed!.map((e) => e.id).sort()).toEqual([a, b].sort());
+    expect(view!.through).toBeGreaterThan(view!.since);
+    for (const e of view!.changed!) {
+      // Nothing dropped: every row and field is there, only shorter, and marked.
+      expect(e.messages).toHaveLength(10);
+      expect(Buffer.byteLength(e.title!, 'utf8')).toBeLessThanOrEqual(80);
+      for (const m of e.messages!) {
+        expect(m.truncated).toBe(true);
+        expect(m.excerpt.endsWith('…')).toBe(true);
+        expect(Buffer.byteLength(m.excerpt, 'utf8')).toBeLessThanOrEqual(120);
+      }
+    }
+    // A budget with room for them keeps them whole.
+    for (const e of big.changed!) expect(e.messages![0]!.excerpt.length).toBeGreaterThan(100);
   });
 
   it('acceptance 15 — a forced oversize group is refused: no partial output, cursor not advanced', async () => {

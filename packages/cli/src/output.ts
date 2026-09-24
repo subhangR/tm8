@@ -117,9 +117,8 @@ export class Output {
   mutation<T>(op: ReceiptOp, dto: T, human: HumanRenderer<T>, receipt: () => Receipt): void {
     if (this.receipts !== 'receipt') {
       this.data(dto, human);
-      if (this.receipts === 'deprecated' && this.format !== 'human') {
-        this.streams.stderr(`${deprecationNotice(op)}\n`);
-      }
+      // A note, not a warning: `--quiet` silences it like any other note.
+      if (this.receipts === 'deprecated' && this.format !== 'human') this.note(deprecationNotice(op));
       return;
     }
     this.assertNoBytes();

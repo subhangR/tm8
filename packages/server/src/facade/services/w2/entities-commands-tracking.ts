@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import {
   CollabError,
   GraphContentInputSchema,
+  applyGraphLinks,
+  graphNodeKey,
   DrawingContentInputSchema,
   decodeCursor,
   encodeCursor,
@@ -55,6 +57,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
+import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1080,6 +1083,50 @@ function softGraphContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
+/**
+ * THE MATERIALIZE WRITE-BACK: `content.link = {nodeId: entityId}` sets `ref` on
+ * each named node and keeps its `spec` — the node now reads as MATERIALIZED.
+ * Strictly additive: a patch without `link` takes the unchanged path above.
+ * Every unknown node id and every non-entity-id value is refused BY NAME,
+ * with the ids the row does carry, so a typo can never read as a link landed.
+ */
+function linkNodes(graphId: string, nodes: readonly unknown[], link: Record<string, unknown>): unknown[] {
+  const result = applyGraphLinks(nodes.map((n) => (n && typeof n === 'object' ? n : {}) as Record<string, unknown>), link);
+  if (result.unknownKeys.length > 0) {
+    const known = nodes.map((n, i) => graphNodeKey((n && typeof n === 'object' ? n : {}) as Record<string, unknown>, i));
+    throw new CollabError('invalid_input',
+      `graph ${graphId} has no node ${result.unknownKeys.join(', ')}; its nodes: ${known.length > 0 ? known.join(', ') : 'none'}`,
+      { details: { reason: 'unknown_node', unknown: result.unknownKeys, known } });
+  }
+  if (result.invalidRefs.length > 0) {
+    throw new CollabError('invalid_input',
+      `graph link: ${result.invalidRefs.join(', ')} must map to an entity id`,
+      { details: { reason: 'invalid_ref', nodes: result.invalidRefs } });
+  }
+  return result.nodes;
+}
+
+/**
+ * The stored nodes a `link`-only patch merges into — read WITH the version, and
+ * refused unless it is the version the caller expects. The RPC re-checks under
+ * its row lock; this check is what stops a caller whose `expectedVersion` is
+ * AHEAD of the row we read from writing nodes merged into a stale copy.
+ */
+async function storedGraphNodes(q: Querier, id: string, expectedVersion: number): Promise<unknown[]> {
+  const rows = await q.query<{ version: number; nodes: unknown }>(
+    `select e.version, g.nodes from public.entities e join public.graphs g on g.entity_id = e.id
+      where e.id = $1 and e.deleted_at is null`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) throw new CollabError('not_found', `no such graph: ${id}`);
+  if (row.version !== expectedVersion) {
+    throw new CollabError('version_conflict', `version conflict on ${id}`,
+      { details: { entityId: id, currentVersion: row.version } });
+  }
+  return Array.isArray(row.nodes) ? row.nodes : [];
+}
+
 function softDrawingContent(content: Record<string, unknown>) {
   const parsed = DrawingContentInputSchema.safeParse(content);
   if (!parsed.success) {
@@ -1205,7 +1252,7 @@ export class W2EntitiesCommandsTrackingService {
     return this.deps.db.tx(claimsFor(owner, ctx), (q) => buildUniversalDetail(q, id, owner.identityId));
   };
 
-  readonly createEntity = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const input = ctx.body as CreateEntityInput;
     const envelope = commandEnvelope(ctx);
@@ -1307,9 +1354,10 @@ export class W2EntitiesCommandsTrackingService {
           // through; it must never grow into a program schema. The same 056
           // posture as memory/loop: zero new catalog rows.
           const graph = softGraphContent(content);
+          const nodes = graph.link === undefined ? graph.nodes : linkNodes('new graph', graph.nodes ?? [], graph.link);
           raw = await q.rpc('create_graph_entity', [input.spaceId, input.title, envelope.actorId ?? null,
             graph.graphType ?? 'entity',
-            JSON.stringify(graph.nodes ?? []), JSON.stringify(graph.edges ?? []),
+            JSON.stringify(nodes ?? []), JSON.stringify(graph.edges ?? []),
             JSON.stringify(graph.layout ?? {}), graph.source ?? null,
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
@@ -1338,11 +1386,12 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
-      return commandResult(q, raw, owner.identityId);
+      const receipt = wantsReceipt(ctx) ? await buildReceipt(q, 'entity.create', raw) : undefined;
+      return receipt ?? commandResult(q, raw, owner.identityId);
     });
   };
 
-  readonly patchEntity = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly patchEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as PatchEntityInput;
@@ -1358,6 +1407,7 @@ export class W2EntitiesCommandsTrackingService {
         // rather than by taking the kind out of the set (085).
         if (kind !== 'work_session') assertGenericLifecycle(kind, 'entities.patch');
         assertPatchContentMembers(kind, input.title, content);
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         let raw: RpcCommandResult;
         switch (kind) {
           case 'task':
@@ -1466,9 +1516,12 @@ export class W2EntitiesCommandsTrackingService {
             // the one-guarded-patch-per-turn crafting flow), and an explicit
             // `source: null` is the clear signal, the loop pattern exactly.
             const graph = softGraphContent(content);
+            const nodes = graph.link === undefined
+              ? graph.nodes
+              : linkNodes(id, graph.nodes ?? await storedGraphNodes(q, id, input.expectedVersion), graph.link);
             raw = await q.rpc('update_graph_entity', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, graph.graphType ?? null,
-              graph.nodes === undefined ? null : JSON.stringify(graph.nodes),
+              nodes === undefined ? null : JSON.stringify(nodes),
               graph.edges === undefined ? null : JSON.stringify(graph.edges),
               graph.layout === undefined || graph.layout === null ? null : JSON.stringify(graph.layout),
               graph.source ?? null, graph.source === null,
@@ -1521,7 +1574,8 @@ export class W2EntitiesCommandsTrackingService {
               envelope.actorId ?? null, content.fields === undefined ? null : JSON.stringify(content.fields),
               envelope.clientMutationId ?? null]);
         }
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'entity.update', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
@@ -1568,7 +1622,7 @@ export class W2EntitiesCommandsTrackingService {
    * An id the task does not carry is refused BY NAME with the ids it does
    * carry — never dropped — so a typo cannot read as a tick that landed.
    */
-  readonly tickCriteria = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly tickCriteria = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as TickCriteriaInput;
@@ -1602,12 +1656,14 @@ export class W2EntitiesCommandsTrackingService {
           // Already in the asked state: keep its stamp, it is still true.
           return c?.done === done ? c : { ...rest, done };
         });
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('update_task_content', [id, input.expectedVersion,
           envelope.actorId ?? null, null, null, null, null, null,
           JSON.stringify(acceptanceCriteria({ acceptanceCriteria: merged }, envelope.actorId ?? null)),
           null, null, false, null, false,
           envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.tick', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
@@ -1965,7 +2021,7 @@ export class W2EntitiesCommandsTrackingService {
     });
   };
 
-  readonly linkPr = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly linkPr = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as LinkPrInput;
@@ -1973,17 +2029,19 @@ export class W2EntitiesCommandsTrackingService {
     const parsed = parseProviderUrl(input.url, 'pull_request');
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('link_pull_request', [id, input.url,
           parsed.provider, parsed.repo, Number(parsed.identifier), input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.link-pr', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       normalizeReason(error);
     }
   };
 
-  readonly linkCommit = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly linkCommit = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as LinkCommitInput;
@@ -1991,10 +2049,12 @@ export class W2EntitiesCommandsTrackingService {
     const parsed = parseProviderUrl(input.url, 'commit');
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('link_commit', [id, input.url,
           parsed.provider, parsed.repo, parsed.identifier, input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.link-commit', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       normalizeReason(error);
