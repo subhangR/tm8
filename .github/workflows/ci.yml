@@ -7,6 +7,8 @@
 # a stage named on its own that would skip turns the job red.
 #
 # Jobs:
+#   changes          which modules this run affects (tools/ci/changes.sh; Wave 2)
+#   ci-scripts       the affected / changes / ci-ok table tests
 #   typecheck        every scoped `tsc -b` project + the UI typecheck
 #   test-server x4   packages/server, sharded            (postgres)
 #   test-cli         packages/cli                        (postgres)
@@ -14,7 +16,14 @@
 #   test-ui x2       packages/tm8-ui, sharded
 #   test-small       packages/contract, packages/jev, tools/conformance
 #   migrations       clean apply of db/migrations on its own password-auth postgres
-#   ci-ok            the one stable check name; red unless every job above succeeded
+#   ci-ok            the one stable check name (tools/ci/ci-ok.sh)
+#
+# PATH FILTERING (Wave 2). On pull_request, `changes` diffs the PR merge commit
+# (HEAD^1..HEAD) through tools/ci/affected.sh and each test job runs only when its
+# module is affected; typecheck and ci-scripts always run. push, schedule and
+# workflow_dispatch are ALL, and so is any error inside changes.sh (loudly: a
+# ::warning:: and reason "fallback: <why>"). ci-shadow.yml calls this file with
+# force_all: true to run the full gate beside the filtered one.
 #
 # BUILD LISTS ARE LITERAL. A test job's `typecheck:<project>` stages are its build
 # step (`tsc -b` emits dist), and `tsc -b <pkg>` alone does NOT build everything
@@ -45,15 +54,26 @@ on:
   schedule:
     # Nightly full run of main (schedule only ever runs on the default branch).
     - cron: "17 3 * * *"
+  # ci-shadow.yml's full gate. Inside a called workflow `github.event_name` is the
+  # CALLER's (pull_request), so force_all is what tells changes.sh to emit ALL.
+  workflow_call:
+    inputs:
+      force_all:
+        description: Run every job whatever the diff (ci-shadow.yml's full gate).
+        type: boolean
+        default: false
 
 # Only a pull_request run is ever cancelled, by a newer push to the same PR.
 # cancel-in-progress:false alone is not enough to protect main: GitHub still
 # replaces a PENDING run in the same group, so three quick merges would drop the
 # middle one. Every non-PR run therefore gets a group of its own (its run_id).
 # github.workflow is part of the key because groups are repo-wide, not
-# per-workflow.
+# per-workflow. Inside a workflow_call `github.workflow` is the CALLER's name, so
+# the 'full'/'filtered' part keeps ci-shadow's call ("ci-shadow-full-<ref>") apart
+# from its caller ("ci-shadow-<ref>", which would otherwise deadlock) and from this
+# file's own PR run ("ci-filtered-<ref>").
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ inputs.force_all && 'full' || 'filtered' }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # node / bun versions live in ONE place: the tm8-setup composite's input defaults.
@@ -63,6 +83,57 @@ env:
   TM8_VITEST_JSON_DIR: vitest-reports
 
 jobs:
+  # Which modules this run must test. tools/ci/changes.sh: on pull_request (not the shadow)
+  # it diffs the PR merge commit HEAD^1..HEAD through tools/ci/affected.sh; every other event
+  # is ALL. Any error inside it is ALL too, with a ::warning:: naming the reason. Only a
+  # failure of the job itself leaves it non-success, which skips every gated job below and
+  # makes ci-ok red — never skip-green.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      all: ${{ steps.affected.outputs.all }}
+      modules: ${{ steps.affected.outputs.modules }}
+      reason: ${{ steps.affected.outputs.reason }}
+      typecheck: ${{ steps.affected.outputs.typecheck }}
+      server: ${{ steps.affected.outputs.server }}
+      cli: ${{ steps.affected.outputs.cli }}
+      execution: ${{ steps.affected.outputs.execution }}
+      ui: ${{ steps.affected.outputs.ui }}
+      small: ${{ steps.affected.outputs.small }}
+      migrations: ${{ steps.affected.outputs.migrations }}
+    steps:
+      # depth 2: the merge commit and both its parents, which is all HEAD^1..HEAD reads
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Affected modules
+        id: affected
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_ALL: ${{ inputs.force_all }}
+          EXPECTED_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bash tools/ci/changes.sh > "$RUNNER_TEMP/affected"
+          cat "$RUNNER_TEMP/affected"
+          cat "$RUNNER_TEMP/affected" >> "$GITHUB_OUTPUT"
+
+  # The table tests of the scripts this workflow's gating depends on (W2-4). Every run,
+  # required by ci-ok: it is what stops a MODULE_OF/EXTRA_EDGES or ci-ok regression merging.
+  ci-scripts:
+    name: ci scripts (affected / changes / ci-ok table tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: affected.sh table test
+        run: bash tools/ci/affected.test.sh
+      - name: changes.sh + ci-ok.sh table test
+        run: bash tools/ci/ci-ok.test.sh
+
+  # Always runs, gated on nothing: every module's build depends on it.
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
@@ -77,6 +148,8 @@ jobs:
 
   test-server:
     name: test-server (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -132,6 +205,8 @@ jobs:
 
   test-cli:
     name: test-cli
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -171,6 +246,8 @@ jobs:
 
   test-execution:
     name: test-execution
+    needs: changes
+    if: needs.changes.outputs.execution == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -190,6 +267,8 @@ jobs:
 
   test-ui:
     name: test-ui (${{ matrix.shard }}/2)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -213,6 +292,8 @@ jobs:
 
   test-small:
     name: test-small
+    needs: changes
+    if: needs.changes.outputs.small == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -233,6 +314,8 @@ jobs:
 
   migrations:
     name: migrations apply clean
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -270,20 +353,28 @@ jobs:
 
   # The one check to require. `if: always()` — never `!cancelled()`, under which a
   # cancelled run leaves this job skipped, and a skipped check reads as passing.
-  # In Wave 1 nothing is path-filtered, so every needed job must be `success`;
-  # skipped, failure and cancelled are all red. No needed job may carry a
-  # job-level `if:`. N is pinned so that dropping a job from `needs` is red too:
-  # it must equal the number of jobs above.
+  # The verdict is tools/ci/ci-ok.sh (table-tested in ci-scripts): red unless
+  # `changes` succeeded with a non-empty, parseable module set, and every job whose
+  # module is affected succeeded. A skipped job passes ONLY when its module is
+  # unaffected; failure and cancelled are always red. Non-PR events and the shadow
+  # must be all=true. The needs list is pinned in ci-ok.sh (PINNED_COUNT and its job
+  # map), so dropping or adding a job here without it is red too.
   ci-ok:
     name: ci-ok
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [typecheck, test-server, test-cli, test-execution, test-ui, test-small, migrations]
+    needs: [changes, ci-scripts, typecheck, test-server, test-cli, test-execution, test-ui, test-small, migrations]
     steps:
-      - name: Every job succeeded
+      - uses: actions/checkout@v4
+      - name: Verdict
+        # needs and inputs reach the script through env only, never inlined in run:
         env:
           NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_ALL: ${{ inputs.force_all }}
+        # An unspecified `run` shell is `bash -e` WITHOUT pipefail: without the set,
+        # tee's status would be the step's and a red verdict would pass.
         run: |
-          printf '%s\n' "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          printf '%s\n' "$NEEDS" | jq -e 'length == 7 and all(.[]; .result == "success")' >/dev/null
+          set -o pipefail
+          bash tools/ci/ci-ok.sh | tee -a "$GITHUB_STEP_SUMMARY"
