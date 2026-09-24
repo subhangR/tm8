@@ -333,6 +333,13 @@ interface SpineRow {
   version: number | null;
   category: string | null;
   deleted: boolean;
+  /**
+   * Written by the transaction that CREATED the entity: its `created_at` is that
+   * transaction's `now()`, and so is the row's own `occurred_at`. NOT
+   * `version === 1` — an entity that was never edited keeps version 1 through
+   * every status move, so version 1 says nothing about creation.
+   */
+  creating: boolean;
 }
 
 interface MessageRef {
@@ -350,12 +357,22 @@ export interface Accumulator {
   firstSeq: number;
   lastSeq: number;
   firstAt: string;
+  /** `occurred_at` of the last row that touched this entity in the window. */
+  lastAt: string;
   changes: string[];
   actors: string[];
   spine: SpineRow[];
   statusVerb: boolean;
   created: boolean;
   messages: MessageRef[];
+}
+
+/** Two timestamps (a captured payload string, a row `occurred_at`) name the same instant, to the millisecond. */
+function sameInstant(a: unknown, b: string): boolean {
+  if (typeof a !== 'string' || a === '') return false;
+  const x = new Date(a).getTime();
+  const y = new Date(b).getTime();
+  return Number.isFinite(x) && x === y;
 }
 
 function pushUnique(list: string[], value: string | null): void {
@@ -389,12 +406,13 @@ export function accumulate(
     let a = acc.get(id);
     if (a === undefined) {
       a = {
-        id, kind: null, firstSeq: row.seq, lastSeq: row.seq, firstAt: row.occurredAt,
+        id, kind: null, firstSeq: row.seq, lastSeq: row.seq, firstAt: row.occurredAt, lastAt: row.occurredAt,
         changes: [], actors: [], spine: [], statusVerb: false, created: false, messages: [],
       };
       acc.set(id, a);
     }
     a.lastSeq = row.seq;
+    a.lastAt = row.occurredAt;
     return a;
   };
 
@@ -409,6 +427,7 @@ export function accumulate(
         a.spine.push({
           seq: row.seq,
           at: row.occurredAt,
+          creating: sameInstant(row.payload['created_at'], row.occurredAt),
           version: num(row.payload['version']),
           category: str(row.payload['status_category']),
           deleted: row.type === 'entity.deleted',
@@ -456,14 +475,15 @@ export function accumulate(
 export function spineChanges(a: Accumulator): string[] {
   const out: string[] = [];
   const rows = a.spine.filter((r) => !r.deleted);
-  if (a.created || rows[0]?.version === 1) out.push('created');
+  const creating = rows[0]?.creating === true;
+  if (a.created || creating) out.push('created');
   let statusSeen = false;
   const bumps: string[] = [];
   const statusTx = new Set<string>();
   rows.forEach((row, i) => {
     const prev = rows[i - 1];
     if (prev === undefined) {
-      if (row.version === 1) return;
+      if (row.creating) return;
       // A status move writes the spine row (status only, version unchanged)
       // and, in the same transaction, the detail snapshot's version bump. A
       // content edit writes only the bump. So a first row followed in its own
@@ -488,7 +508,7 @@ export function spineChanges(a: Accumulator): string[] {
     } else if (row.version !== prev.version) {
       // The version bumps that CREATING an entity writes (detail rows inserted
       // in the same transaction) are part of `created`, not an edit.
-      const createdTx = out[0] === 'created' && rows[0]!.at === row.at;
+      const createdTx = row.creating;
       if (!createdTx) bumps.push(row.at);
     }
   });
@@ -848,7 +868,11 @@ export class PgChangeFeed {
       const state = s.state as { kind: string; status?: string; endedKind?: string | null; endedReason?: string | null };
       if (s.kind === 'work_session' && (state.status === 'exited' || state.status === 'failed')) {
         const at = ended.get(a.id);
-        if (at !== undefined && at >= a.firstAt) {
+        // Ended INSIDE this window: between the first and last row that touched
+        // the session here. A session that crashed after the window must not be
+        // reported as crashing in it (measured on the live window).
+        const endedMs = at === undefined ? NaN : new Date(at).getTime();
+        if (endedMs >= new Date(a.firstAt).getTime() && endedMs <= new Date(a.lastAt).getTime()) {
           const reason = state.endedReason ? `: ${truncate(state.endedReason, EVENT_CHANGES_TITLE_CHARS)}` : '';
           const label = `status:running→${state.status}(${state.endedKind ?? 'unknown'}${reason})`;
           changes = [label, ...changes.filter((c) => c !== 'updated' && !c.startsWith('status'))];

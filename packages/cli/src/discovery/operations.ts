@@ -2744,7 +2744,7 @@ export const CATALOG_DIGEST =
   // regenerated conformance manifest's catalogDigest.
   // Re-measured 2026-09-23, SC-3: + credentials.space.* and node.credentials.*.
   // Read out of the failing digest test and matched to the regenerated manifest.
-  'sha256:5144c9bcc5d0cff45a03ee3c0c86219c489953bab58156e54d8b474856288bc0';
+  'sha256:c259c4841f92fbcf33c913bf41284282d771c428c60fdf5fdf4c1da70063a091'; // Re-measured (change feed step 3): + events.changes; matched to the regenerated manifest.
 
 export const GRAMMAR_VERSION = '2';
 
