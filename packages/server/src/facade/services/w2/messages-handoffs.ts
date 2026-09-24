@@ -21,7 +21,7 @@ import {
   type SendHandoffInput,
   type WithdrawHandoffInput,
 } from '@tm8/contract';
-import { incomingMessageInjection, utf8Bytes, type IncomingMessageFacts } from '@tm8/prompt';
+import type { IncomingMessageFacts } from '@tm8/prompt';
 
 import { MICROS } from '../../entity-read.js';
 import type { DbClaims, Querier } from '../../../db/types.js';

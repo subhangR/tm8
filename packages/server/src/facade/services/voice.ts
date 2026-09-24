@@ -25,7 +25,7 @@
  * and the roster events can name members directly.
  */
 
-import { CollabError, type CreateVoiceTokenInput, type VoiceTokenGrant } from '@tm8/contract';
+import { CollabError, type VoiceTokenGrant } from '@tm8/contract';
 
 import type { LiveKitConfig } from '../../http/config.js';
 import type { RequestContext } from '../../http/types.js';

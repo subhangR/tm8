@@ -73,7 +73,6 @@ import type {
   ExecutionDispatchInput,
   ExecutionDispatchResult,
   ExecutionLiveness,
-  ExecutionPromptInput,
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
   ExecutionSpawnInput,
@@ -98,7 +97,6 @@ import { DbGitHubCredentialStore } from '../credentials/github-credential-store.
 import { spaceCredentialPort } from '../credentials/space-credential-port.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
-import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { projectLaunchContext } from './launch-context.js';
