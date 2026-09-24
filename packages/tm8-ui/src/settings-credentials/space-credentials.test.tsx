@@ -14,6 +14,8 @@
  * - I5 / t5-2: the key is never rendered or logged, and the field is emptied
  *   on save — and on failure
  * - login_open with a past expires_at reads "expired: close it"
+ * - add by login (SC-4): a label first, the terminal, the result read from the
+ *   probed row (I6); "Log in again" is the only close (N1); Delete stays
  * - Node: env-key presence and the fallback toggle for a node admin only
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -25,9 +27,9 @@ import type {
   NodeCredentialsStatusView,
   SpaceCredentialView,
 } from '@tm8/contract';
-import { SpaceCredentialsSection, SPACE_LOGIN_STUB_REASON } from './SpaceCredentialsSection';
+import { SpaceCredentialsSection } from './SpaceCredentialsSection';
 import { NodeCredentialsSection, NODE_POLICY_ADMIN_ONLY } from './NodeCredentialsSection';
-import type { SpaceCredentialsPort, SpaceCredentialsViewer } from './space-port';
+import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginTarget } from './space-port';
 import { isSpaceAdminRole, spaceCredentialsPortFromSeam } from './space-port';
 import {
   afterDeleteNotice,
@@ -36,6 +38,8 @@ import {
   labelTakenReason,
   loginOpenNoticeOf,
   noDefaultNotice,
+  spaceLoginOutcome,
+  spaceLoginStartFailureOf,
   toggleSource,
   validateSecret,
 } from './space-credentials-model';
@@ -128,7 +132,24 @@ function fakePort(opts: {
     }),
     nodeStatus: vi.fn(async () => structuredClone(NODE_STATUS)),
     setNodePolicy: vi.fn(async (provider: SpaceCredentialView['provider'], allowNode: boolean | null) => ({ provider, allowNode })),
+    startLogin: vi.fn(async (provider: 'anthropic' | 'openai', target: SpaceLoginTarget) => {
+      let cred: SpaceCredentialView;
+      if (target.credentialId) {
+        cred = rows.find((r) => r.id === target.credentialId)!;
+      } else {
+        cred = row({ id: `l-${rows.length + 1}`, provider, shape: 'login', label: target.label!, status: 'pending', keyHint: null });
+        rows = [...rows, cred];
+      }
+      openLogin = cred.id;
+      return { workSessionId: 'ws-1', spaceId: 'space-1', provider, expiresAt: '2026-09-24T12:15:00.000Z', command: 'claude auth login', spaceCredential: cred };
+    }),
+    finishLogin: vi.fn(async (workSessionId: string) => {
+      rows = rows.map((r) => (r.id === openLogin ? { ...r, status: 'active' as const, displayLogin: 'team@example.com' } : r));
+      const cred = rows.find((r) => r.id === openLogin)!;
+      return { workSessionId, provider: cred.provider, connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active' as const, stored: true, terminated: true, spaceCredential: cred };
+    }),
   } satisfies SpaceCredentialsPort;
+  let openLogin: string | null = null;
   return port;
 }
 
@@ -426,13 +447,148 @@ describe('login_open — an expired terminal reads "expired: close it"', () => {
   });
 });
 
-describe('Add by login — a marked stub until SC-4', () => {
-  it('is drawn aria-disabled with its reason, for the model vendors only', async () => {
-    await mount(fakePort());
-    const stub = screen.getByTestId('space-cred-login-stub-anthropic');
-    expect(stub.getAttribute('aria-disabled')).toBe('true');
-    expect(stub.getAttribute('title')).toBe(SPACE_LOGIN_STUB_REASON);
-    expect(screen.queryByTestId('space-cred-login-stub-github')).toBeNull();
+describe('Add by login (SC-4) — label first, terminal, result from the probed row', () => {
+  const ADMIN: SpaceCredentialsViewer = { accountId: ME, isSpaceAdmin: true, isNodeAdmin: false };
+  const loginOpen = (expiresAt: string, credentialId = 'c-pending') =>
+    new CollabError('conflict', 'a login onto this credential is already open', { details: { reason: 'login_open', expiresAt, credentialId } });
+
+  it('needs a label, starts a SPACE login with only that label, opens the terminal and shows the held row (A7)', async () => {
+    const port = fakePort();
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    const open = screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }) as HTMLButtonElement;
+    expect(open.disabled).toBe(true);
+    expect(screen.getByTestId('space-cred-login-form-anthropic').textContent).toMatch(/needs its label first/);
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Max plan' } });
+    fireEvent.click(open);
+    await screen.findByTestId('credential-login-terminal');
+    // I1: the target is the label alone — no account id rides along.
+    expect(port.startLogin).toHaveBeenCalledWith('anthropic', { label: 'Max plan' });
+    expect(screen.getByTestId('credential-login-terminal').textContent).toMatch(/new space credential “Max plan”\. It belongs to the space, not your account/);
+    expect((await screen.findByTestId('space-cred-row-l-5')).textContent).toContain('login not finished');
+  });
+
+  it('finishing reads the outcome from the returned credential row', async () => {
+    const port = fakePort();
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Max plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }));
+    fireEvent.click(await screen.findByTestId('credential-finish-login'));
+    expect((await screen.findByTestId('space-cred-notice')).textContent).toBe('Logged in as team@example.com: “Max plan” is ready to launch with.');
+    expect(port.finishLogin).toHaveBeenCalledWith('ws-1');
+    expect(screen.queryByTestId('credential-login-terminal')).toBeNull();
+    expect(screen.getByTestId('space-cred-row-l-5').textContent).toContain('active');
+  });
+
+  it('a label a pending login holds is refused before the call, with the A7 reason', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT, PENDING] });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Held label' } });
+    expect((screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('space-cred-login-form-anthropic').textContent).toMatch(/a login that has not finished is holding it/);
+    expect(port.startLogin).not.toHaveBeenCalled();
+  });
+
+  it('conflict is split by details.reason: label_taken gets the A7 copy, never the login_open copy', async () => {
+    const port = fakePort();
+    port.startLogin.mockRejectedValueOnce(new CollabError('conflict', 'that label is taken', { details: { reason: 'label_taken', label: 'Raced' } }));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Raced' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }));
+    expect((await screen.findByTestId('space-login-label-taken')).textContent).toMatch(/“Raced” is taken/);
+    expect(screen.queryByTestId('space-login-open-anthropic')).toBeNull();
+    expect(screen.queryByTestId('credential-login-terminal')).toBeNull();
+  });
+
+  it('N1: an EXPIRED login_open is closed only by starting again onto that credential — never finish, never delete', async () => {
+    const port = fakePort({ viewer: ADMIN, rows: [MINE_DEFAULT, PENDING] });
+    port.startLogin.mockRejectedValueOnce(loginOpen('2026-01-01T00:00:00.000Z'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Log in again Held label' }));
+    const refusal = await screen.findByTestId('space-login-open-anthropic');
+    expect(refusal.textContent).toMatch(/expired at 2026-01-01 00:00 UTC but was never closed: close it/);
+    // Abandoning stays possible: Delete is still on the pending row.
+    expect(screen.getByRole('button', { name: 'Delete Held label' })).toBeTruthy();
+    fireEvent.click(within(refusal).getByTestId('space-login-reclaim'));
+    await screen.findByTestId('credential-login-terminal');
+    expect(port.startLogin.mock.calls).toEqual([
+      ['anthropic', { credentialId: 'c-pending' }],
+      ['anthropic', { credentialId: 'c-pending' }],
+    ]);
+    expect(port.finishLogin).not.toHaveBeenCalled();
+    expect(port.remove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('credential-login-terminal').textContent).toMatch(/Logging in again onto the space credential “Held label”/);
+    expect(screen.getByRole('button', { name: 'Delete Held label' })).toBeTruthy();
+  });
+
+  it('a pending row whose login_open has expired keeps Delete as the way out, and Delete is a delete', async () => {
+    const port = fakePort({ viewer: ADMIN, rows: [MINE_DEFAULT, PENDING] });
+    port.startLogin.mockRejectedValueOnce(loginOpen('2026-01-01T00:00:00.000Z'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Log in again Held label' }));
+    await screen.findByTestId('space-login-reclaim');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Held label' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Held label' }));
+    await waitFor(() => expect(port.remove).toHaveBeenCalledWith('c-pending'));
+    expect(port.startLogin).toHaveBeenCalledTimes(1);
+    expect(port.finishLogin).not.toHaveBeenCalled();
+  });
+
+  it('a LIVE login_open offers no close: it names when it ends', async () => {
+    const port = fakePort({ viewer: ADMIN, rows: [MINE_DEFAULT, PENDING] });
+    port.startLogin.mockRejectedValueOnce(loginOpen('2999-01-01T00:00:00.000Z'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Log in again Held label' }));
+    expect((await screen.findByTestId('space-login-open-anthropic')).textContent).toMatch(/already open until 2999-01-01 00:00 UTC/);
+    expect(screen.queryByTestId('space-login-reclaim')).toBeNull();
+  });
+
+  it('an expired login_open on a credential the viewer may not manage names who can close it', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT, PENDING] });
+    port.startLogin.mockRejectedValueOnce(loginOpen('2026-01-01T00:00:00.000Z'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) by login' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) login'), { target: { value: 'Fresh' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude (Anthropic) login terminal' }));
+    expect((await screen.findByTestId('space-login-open-anthropic')).textContent).toMatch(/Only its creator or a space admin can close it/);
+    expect(screen.queryByTestId('space-login-reclaim')).toBeNull();
+  });
+
+  it('"Log in again" is drawn only for login credentials the viewer manages; GitHub has no login', async () => {
+    await mount(fakePort({ rows: [MINE_DEFAULT, PENDING, row({ id: 'c-mylogin', label: 'My login', shape: 'login', keyHint: null }), GITHUB] }));
+    expect(screen.getByRole('button', { name: 'Log in again My login' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Log in again Held label' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Log in again Team Claude' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add GitHub by login' })).toBeNull();
+  });
+
+  it('a re-login refused to a non-manager reads as a refusal, with no probe spinner', async () => {
+    const port = fakePort({ rows: [row({ id: 'c-mylogin', label: 'My login', shape: 'login', keyHint: null })] });
+    port.startLogin.mockRejectedValueOnce(new CollabError('forbidden', 'only the creator or a space admin can log in again onto this credential'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Log in again My login' }));
+    expect((await screen.findByTestId('space-cred-failure-refused')).textContent).toBe('Refused: only the creator or a space admin can log in again onto this credential');
+    expect(screen.queryByTestId('space-cred-probe')).toBeNull();
+  });
+
+  it('the outcome follows the probed row (I6), not `connected`', () => {
+    const base = { workSessionId: 'ws', provider: 'anthropic' as const, login: null, authMethod: null, status: 'active' as const, stored: true, terminated: true };
+    const cred = row({ label: 'L', shape: 'login' });
+    expect(spaceLoginOutcome({ ...base, connected: true, spaceCredential: { ...cred, status: 'pending' } })).toMatch(/“L” is still pending/);
+    expect(spaceLoginOutcome({ ...base, connected: false, spaceCredential: cred })).toMatch(/did not complete, so “L” keeps the login it already had/);
+    expect(spaceLoginOutcome({ ...base, connected: true, spaceCredential: { ...cred, status: 'stale' } })).toMatch(/its check failed/);
+    expect(spaceLoginOutcome({ ...base, connected: true, spaceCredential: { ...cred, isDefault: true } })).toMatch(/^Logged in: “L” is ready to launch with\. It is the Claude \(Anthropic\) default\.$/);
+    expect(spaceLoginOutcome({ ...base, connected: true })).toMatch(/did not say which space credential/);
+  });
+
+  it('classifies start refusals by reason and code', () => {
+    expect(spaceLoginStartFailureOf(new CollabError('conflict', 'x', { details: { reason: 'label_taken', label: 'Held label' } }), 'anthropic', [PENDING]))
+      .toEqual({ kind: 'label_taken', text: expect.stringMatching(/a login that has not finished is holding it/) });
+    expect(spaceLoginStartFailureOf(new CollabError('not_found', 'x'), 'anthropic', []).kind).toBe('failure');
+    expect(spaceLoginStartFailureOf(loginOpen('2026-01-01T00:00:00.000Z'), 'anthropic', [])).toMatchObject({ kind: 'login_open', notice: { expired: true, credentialId: 'c-pending' } });
   });
 });
 
@@ -485,6 +641,8 @@ describe('the seam adapter', () => {
           remove: record('remove'), policy: record('policy'), setPolicy: record('setPolicy'),
         },
         node: { status: record('status'), setPolicy: record('nodeSetPolicy') },
+        startLogin: record('startLogin'),
+        finishLogin: record('finishLogin'),
       },
     } as unknown as Parameters<typeof spaceCredentialsPortFromSeam>[0];
     const port = spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner');
@@ -494,5 +652,13 @@ describe('the seam adapter', () => {
     await port.setPolicy('openai', ['space']);
     expect(calls[0]).toEqual(['create', 'space-1', { provider: 'anthropic', shape: 'api_key', label: 'L', secret: KEY }]);
     expect(calls[1]).toEqual(['setPolicy', 'space-1', 'openai', ['space']]);
+    await port.startLogin('openai', { label: 'Codex login' });
+    await port.startLogin('anthropic', { credentialId: 'c-mine' });
+    await port.finishLogin('ws-9');
+    expect(calls.slice(2)).toEqual([
+      ['startLogin', 'space-1', 'openai', { label: 'Codex login' }],
+      ['startLogin', 'space-1', 'anthropic', { credentialId: 'c-mine' }],
+      ['finishLogin', 'ws-9'],
+    ]);
   });
 });

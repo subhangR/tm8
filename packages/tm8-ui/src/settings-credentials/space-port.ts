@@ -12,9 +12,18 @@
  *
  * No method here takes or returns a secret except the two that SEND one
  * (`create`, `rekey`), and their answers are metadata only (I5).
+ *
+ * A SPACE LOGIN (SC-4) rides the member login ops with a `spaceCredential`
+ * target. There is no separate close: an EXPIRED terminal still holding a
+ * credential is reclaimed server-side by starting again onto that credential
+ * (`{ credentialId }`), which kills the PTY before stamping it failed (N1).
+ * Nothing here closes a login by finishing it as a success or by deleting.
  */
 import type {
   CredentialPolicySource,
+  CredentialsLoginSessionFinishResult,
+  CredentialsLoginSessionStartInput,
+  CredentialsLoginSessionStartResult,
   CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult,
   CredentialsSpacePolicySetResult,
@@ -23,9 +32,16 @@ import type {
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
+  EntityId,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+
+/** The two vendors a login terminal runs (206); GitHub is token-only. */
+export type SpaceLoginProvider = 'anthropic' | 'openai';
+
+/** `{ label }`: a new pending credential (any member). `{ credentialId }`: log in again (creator or admin). */
+export type SpaceLoginTarget = NonNullable<CredentialsLoginSessionStartInput['spaceCredential']>;
 
 /** Who is looking — decides which controls are drawn, never what is allowed. */
 export interface SpaceCredentialsViewer {
@@ -50,6 +66,8 @@ export interface SpaceCredentialsPort {
   ): Promise<CredentialsSpacePolicySetResult>;
   nodeStatus(): Promise<NodeCredentialsStatusView>;
   setNodePolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
+  startLogin(provider: SpaceLoginProvider, target: SpaceLoginTarget): Promise<CredentialsLoginSessionStartResult>;
+  finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
 }
 
 /**
@@ -88,5 +106,7 @@ export function spaceCredentialsPortFromSeam(
     setPolicy: (provider, allowedSources) => seam.credentials.space.setPolicy(spaceId, provider, allowedSources),
     nodeStatus: () => seam.credentials.node.status(),
     setNodePolicy: (provider, allowNode) => seam.credentials.node.setPolicy(provider, allowNode),
+    startLogin: (provider, target) => seam.credentials.startLogin(spaceId, provider, target),
+    finishLogin: (workSessionId) => seam.credentials.finishLogin(workSessionId as EntityId),
   };
 }

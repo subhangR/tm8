@@ -2469,7 +2469,7 @@ export function GateApp(props: GateAppProps = {}) {
                   ? {
                       ...(spaceCredentialsPort
                         ? {
-                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} />,
+                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />,
                             'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
                           }
                         : {}),

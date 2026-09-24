@@ -17,9 +17,16 @@
  * in the page waiting to be re-sent. Nothing here renders a secret; the list
  * carries at most `keyHint`, the last four characters.
  *
- * ADD BY LOGIN is a STUB: the space login terminal is SC-4, not built yet. The
- * button is drawn disabled with that reason so nobody mistakes its absence for
- * an oversight. `loginOpenNoticeOf` and `labelTakenReason` are ready for it.
+ * ADD BY LOGIN (SC-4, Claude and Codex only): any member names a label and a
+ * login terminal opens (the member Connect terminal); the label is held by a
+ * pending row until the login finishes or expires (A7). "Log in again" is the
+ * creator's or an admin's re-login onto a login credential. The result is read
+ * from the credential row the probed finish returns (I6).
+ *
+ * CLOSING AN EXPIRED LOGIN (N1) is "Log in again": starting onto that
+ * credential, which the server turns into kill-then-stamp-failed before it
+ * opens the new terminal. It is never a finish-as-success and never a delete.
+ * Abandoning a pending login is Delete, which stays on the row.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type {
@@ -29,7 +36,7 @@ import type {
   SpaceCredentialView,
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
-import type { SpaceCredentialsPort, SpaceCredentialsViewer } from './space-port';
+import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, SpaceLoginTarget } from './space-port';
 import {
   SOURCE_WORD,
   SPACE_CREDENTIAL_PROVIDERS,
@@ -47,21 +54,28 @@ import {
   noDefaultNotice,
   pasteShapeOf,
   toggleSource,
+  spaceLoginOutcome,
+  spaceLoginStartFailureOf,
   validateSecret,
   type SpaceCredentialFailure,
+  type SpaceLoginStartFailure,
 } from './space-credentials-model';
+import { LoginTerminalPanel, type PendingLogin } from './CredentialsProviderBlock';
 import './credentials.css';
 import './space-credentials.css';
-
-export const SPACE_LOGIN_STUB_REASON =
-  'Adding by login needs the space login terminal (SC-4), which is not built yet. Add an API key instead.';
 
 export interface SpaceCredentialsSectionProps {
   port: SpaceCredentialsPort;
   heading?: string;
+  /** Same-origin route prefix for the node that hosts a login terminal. */
+  serverBaseUrl?: string;
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials' }: SpaceCredentialsSectionProps) {
+function isLoginProvider(provider: SpaceCredentialProviderName): provider is SpaceLoginProvider {
+  return provider === 'anthropic' || provider === 'openai';
+}
+
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
@@ -125,6 +139,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials' }:
                 viewer={viewer}
                 policy={policy}
                 port={port}
+                serverBaseUrl={serverBaseUrl}
                 onChanged={async (message) => {
                   setNotice(message ?? null);
                   await reload().catch((err: unknown) => setLoadError(failureOf(err).text));
@@ -145,6 +160,7 @@ function ProviderGroup({
   viewer,
   policy,
   port,
+  serverBaseUrl,
   onChanged,
   onPolicy,
 }: {
@@ -154,11 +170,59 @@ function ProviderGroup({
   viewer: SpaceCredentialsViewer | null;
   policy: CredentialsSpacePolicyView | null;
   port: SpaceCredentialsPort;
+  serverBaseUrl?: string;
   onChanged(message?: string): Promise<void>;
   onPolicy(next: CredentialsSpacePolicyView): void;
 }) {
   const name = SPACE_PROVIDER_NAME[provider];
   const missingDefault = noDefaultNotice(provider, rows);
+  const [login, setLogin] = useState<(PendingLogin & { lede: string }) | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginFailure, setLoginFailure] = useState<SpaceLoginStartFailure | null>(null);
+
+  async function startLogin(target: SpaceLoginTarget) {
+    if (!isLoginProvider(provider)) return;
+    setLoginBusy(true);
+    setLoginFailure(null);
+    try {
+      const started = await port.startLogin(provider, target);
+      const label = started.spaceCredential?.label ?? target.label ?? allRows.find((r) => r.id === target.credentialId)?.label ?? '';
+      setLogin({
+        provider,
+        workSessionId: started.workSessionId,
+        expiresAt: started.expiresAt,
+        command: started.command,
+        lede: target.credentialId
+          ? `Logging in again onto the space credential “${label}”. Follow the terminal prompts, then press “I’ve finished signing in”. Until it completes, “${label}” keeps the login it had.`
+          : `Logging in for the new space credential “${label}”. It belongs to the space, not your account. Follow the terminal prompts, then press “I’ve finished signing in”.`,
+      });
+      // A new label is now a pending row holding that label (A7): show it.
+      if (!target.credentialId) await onChanged();
+    } catch (err) {
+      const failure = spaceLoginStartFailureOf(err, provider, allRows);
+      setLoginFailure(failure);
+      if ((err as { code?: unknown })?.code === 'not_found') await onChanged();
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  async function finishLogin(open: PendingLogin) {
+    setLoginBusy(true);
+    try {
+      const result = await port.finishLogin(open.workSessionId);
+      setLogin(null);
+      await onChanged(spaceLoginOutcome(result));
+    } catch (err) {
+      setLoginFailure({ kind: 'failure', failure: failureOf(err) });
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  const loginControls = isLoginProvider(provider)
+    ? { busy: loginBusy || login !== null, start: (target: SpaceLoginTarget) => void startLogin(target) }
+    : null;
   return (
     <section className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={name}>
       <h4 className="set-spc__group-title">{name}</h4>
@@ -172,11 +236,23 @@ function ProviderGroup({
       ) : (
         <ul className="set-spc__list">
           {rows.map((row) => (
-            <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} />
+            <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls} />
           ))}
         </ul>
       )}
-      <AddByKey provider={provider} rows={allRows} port={port} onChanged={onChanged} />
+      <AddByKey provider={provider} rows={allRows} port={port} onChanged={onChanged} login={loginControls} />
+      {loginFailure ? (
+        <LoginStartFailure failure={loginFailure} provider={provider} allRows={allRows} viewer={viewer} login={loginControls} />
+      ) : null}
+      {login ? (
+        <LoginTerminalPanel
+          login={login}
+          lede={login.lede}
+          serverBaseUrl={serverBaseUrl}
+          busy={loginBusy}
+          onFinish={() => void finishLogin(login)}
+        />
+      ) : null}
       <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
     </section>
   );
@@ -188,12 +264,14 @@ function CredentialRow({
   viewer,
   port,
   onChanged,
+  login,
 }: {
   row: SpaceCredentialView;
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
   port: SpaceCredentialsPort;
   onChanged(message?: string): Promise<void>;
+  login: LoginControls | null;
 }) {
   const manage = canManage(row, viewer);
   const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete'>('idle');
@@ -256,6 +334,13 @@ function CredentialRow({
             onClick={() => { setDraft(row.label); setFailure(null); setMode(mode === 'rename' ? 'idle' : 'rename'); }}>
             Rename
           </button>
+          {!pasted && login ? (
+            <button type="button" className="cred-action" aria-label={`Log in again ${row.label}`}
+              disabled={busy !== null || login.busy}
+              onClick={() => login.start({ credentialId: row.id })}>
+              Log in again
+            </button>
+          ) : null}
           {pasted ? (
             <button type="button" className="cred-action" aria-label={`Replace ${SPACE_SECRET_NOUN[row.provider]} ${row.label}`} disabled={busy !== null}
               onClick={() => { setDraft(''); setFailure(null); setMode(mode === 'rekey' ? 'idle' : 'rekey'); }}>
@@ -334,15 +419,20 @@ function AddByKey({
   rows,
   port,
   onChanged,
+  login,
 }: {
   provider: SpaceCredentialProviderName;
   rows: SpaceCredentialView[];
   port: SpaceCredentialsPort;
   onChanged(message?: string): Promise<void>;
+  login: LoginControls | null;
 }) {
   const noun = SPACE_SECRET_NOUN[provider];
   const name = SPACE_PROVIDER_NAME[provider];
   const [open, setOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginLabel, setLoginLabel] = useState('');
+  const loginTaken = labelTakenReason(provider, loginLabel, rows);
   const [label, setLabel] = useState('');
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState<null | 'probe'>(null);
@@ -380,18 +470,36 @@ function AddByKey({
     <div className="set-spc__add">
       <div className="cred-card__actions">
         <button type="button" className="cred-action cred-action--primary" aria-label={`Add ${name} ${noun}`}
-          aria-expanded={open} onClick={() => { setOpen(!open); setFailure(null); }}>
+          aria-expanded={open} onClick={() => { setOpen(!open); setLoginOpen(false); setFailure(null); }}>
           + Add {noun}
         </button>
-        {provider !== 'github' ? (
-          <button type="button" className="cred-action" aria-disabled="true" aria-label={`Add ${name} by login`}
-            title={SPACE_LOGIN_STUB_REASON} data-testid={`space-cred-login-stub-${provider}`}
-            onClick={(e) => e.preventDefault()}>
+        {login ? (
+          <button type="button" className="cred-action" aria-label={`Add ${name} by login`} aria-expanded={loginOpen}
+            onClick={() => { setLoginOpen(!loginOpen); setOpen(false); }}>
             + Add by login
           </button>
         ) : null}
-        {provider !== 'github' ? <span className="set-spc__why">{SPACE_LOGIN_STUB_REASON}</span> : null}
       </div>
+      {login && loginOpen ? (
+        <form className="set-spc__form" data-testid={`space-cred-login-form-${provider}`} onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          const label = loginLabel.trim();
+          if (!label || loginTaken || login.busy) return;
+          setLoginOpen(false);
+          setLoginLabel('');
+          login.start({ label });
+        }}>
+          <input className="set-spc__input" aria-label={`Label for the new ${name} login`} placeholder="Label, e.g. Max plan"
+            value={loginLabel} maxLength={80} onChange={(e) => setLoginLabel(e.target.value)} />
+          <button type="submit" className="cred-action cred-action--primary" aria-label={`Open ${name} login terminal`}
+            disabled={login.busy || !loginLabel.trim() || loginTaken !== null}>
+            Open login terminal
+          </button>
+          <span className="set-spc__why">
+            {loginTaken ?? 'A login needs its label first: the label is held for this login until it finishes or expires.'}
+          </span>
+        </form>
+      ) : null}
       {open ? (
         <form className="set-spc__form set-spc__form--add" onSubmit={(e) => void submit(e)} data-testid={`space-cred-add-${provider}`}>
           <input className="set-spc__input" aria-label={`Label for the new ${name} ${noun}`} placeholder="Label, e.g. Team budget"
@@ -408,6 +516,57 @@ function AddByKey({
         </form>
       ) : null}
       <BusyAndFailure busy={busy} failure={failure} provider={provider} />
+    </div>
+  );
+}
+
+interface LoginControls {
+  /** A start is in flight, or a login terminal is already open in this group. */
+  busy: boolean;
+  start(target: SpaceLoginTarget): void;
+}
+
+/**
+ * A refused start. `login_open` past its expiry offers "Log in again" onto the
+ * credential it names, to its creator or an admin only (N1): that start is the
+ * close. Before expiry, nothing here can close another member's terminal.
+ */
+function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
+  failure: SpaceLoginStartFailure;
+  provider: SpaceCredentialProviderName;
+  allRows: SpaceCredentialView[];
+  viewer: SpaceCredentialsViewer | null;
+  login: LoginControls | null;
+}) {
+  if (failure.kind === 'label_taken') {
+    return <p className="set-spc__fail set-spc__fail--invalid" role="alert" data-testid="space-login-label-taken">{failure.text}</p>;
+  }
+  if (failure.kind === 'failure') {
+    return (
+      <p className={`set-spc__fail set-spc__fail--${failure.failure.kind}`} role="alert" data-testid={`space-cred-failure-${failure.failure.kind}`}>
+        {failure.failure.text}
+      </p>
+    );
+  }
+  const { notice } = failure;
+  const held = notice.credentialId ? allRows.find((r) => r.id === notice.credentialId) ?? null : null;
+  // An unknown row is not refused here: the server answers for it (D11).
+  const mayClose = held === null || canManage(held, viewer);
+  return (
+    <div className="set-spc__fail" role="alert" data-testid={`space-login-open-${provider}`}>
+      <span>{notice.text}</span>
+      {notice.expired && notice.credentialId && login ? (
+        mayClose ? (
+          <button type="button" className="cred-action cred-action--primary" disabled={login.busy}
+            aria-label={`Close the expired login and log in again${held ? ` ${held.label}` : ''}`}
+            data-testid="space-login-reclaim"
+            onClick={() => login.start({ credentialId: notice.credentialId! })}>
+            Log in again
+          </button>
+        ) : (
+          <span className="set-spc__why"> Only its creator or a space admin can close it.</span>
+        )
+      ) : null}
     </div>
   );
 }
