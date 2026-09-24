@@ -21,6 +21,7 @@ import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { RelevanceLevel } from './launch-suggest.js';
+import type { CoherenceFinding } from './orchestration.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -806,7 +807,13 @@ export type CoreEntityContent =
    */
   | { kind: 'chat' }
   | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
-      layout: Record<string, { x: number; y: number }>; source: string | null }
+      layout: Record<string, { x: number; y: number }>; source: string | null;
+      /**
+       * Coherence findings (`checkGraphCoherence`), DERIVED ON READ for an
+       * 'entity' graph — never stored, never snapshotted, never hashed. Absent
+       * on other graph types. The craft agent reads it after each patch.
+       */
+      findings?: CoherenceFinding[] }
   /**
    * The whole Excalidraw scene in one row (194 D2).
    *
@@ -6692,6 +6699,9 @@ export const EVENT_CHANGES_CHAT_MESSAGE_CAP = 10;
 /** Title and excerpt bounds. */
 export const EVENT_CHANGES_TITLE_CHARS = 80;
 export const EVENT_CHANGES_EXCERPT_CHARS = 120;
+// A first group that exceeds the budget only because its titles/excerpts are
+// multi-byte is cut to fit in UTF-8 bytes (marked `truncated`) before it is
+// refused with `digest_group_too_large`.
 
 /**
  * `details.reason` values an `events.changes` refusal carries. `CommandErrorCode`
@@ -6737,9 +6747,13 @@ export interface EventChangeEntry {
   kind: string;
   /** Null only for a hard-deleted entity reported from its captured spine. */
   title: string | null;
-  parentId: EntityId | null;
+  /**
+   * Absent when it is the one `--subtree` root the request named (every direct
+   * child would repeat it); `null` means no parent.
+   */
+  parentId?: EntityId | null;
   v: number | null;
-  /** Tasks and work sessions only. */
+  /** Tasks and work sessions only, and only when this window created the entity or moved its status. */
   status?: string;
   /** The last examined seq that changed this entity. */
   lastSeq: number;
@@ -6754,6 +6768,7 @@ export interface EventChangeEntry {
   messagesTotalAtLeast?: number;
   /** Rows were trimmed to the per-anchor cap; `messagesNext` pages the rest. */
   messagesMore?: boolean;
+  /** `tm8 entity context <anchor-id> --sections messages --cursor <c>`: the context's own messages-section cursor. */
   messagesNext?: string;
 }
 

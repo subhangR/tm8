@@ -48,7 +48,7 @@ import {
   withActor,
 } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
-import { callerMutationId, successReceipt, type ReceiptWarning } from '../receipt.js';
+import { callerMutationId, receiptQuery, receiptRefId, successReceipt, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,6 +76,7 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'task.transition', { id, mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.work', {
       params: { id },
+      query: receiptQuery('task.transition', cmd.out.receipts),
       body: withActor(cmd, { clientMutationId: mutationId, status }),
     }));
   cmd.out.mutation('task.transition', data, renderCommandResult, () =>
@@ -120,6 +121,7 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
     () =>
       observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.complete', {
         params: { id },
+        query: receiptQuery('task.complete', cmd.out.receipts),
         body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, completerIds }),
       }),
   );
@@ -164,6 +166,7 @@ async function taskTick(cmd: CommandContext): Promise<ExitCode> {
     () =>
       observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.tick', {
         params: { id },
+        query: receiptQuery('task.tick', cmd.out.receipts),
         body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, criterionIds, done }),
       }),
   );
@@ -204,14 +207,19 @@ async function claimLinkedArtifactSession(
   if (sessionId === undefined) return {};
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return {};
 
+  // A server receipt names the artifact in `refs` (§9.9); the full result in `patches`.
+  const fromRefs = receiptRefId(data, artifactKind);
   const patches = (data as { patches?: unknown } | null)?.patches;
-  if (!Array.isArray(patches)) return {};
-  const artifact = patches.find(
-    (p): p is { id: string; kind: string } =>
-      typeof p === 'object' && p !== null &&
-      (p as { kind?: unknown }).kind === artifactKind &&
-      typeof (p as { id?: unknown }).id === 'string',
-  );
+  const artifact = fromRefs !== undefined
+    ? { id: fromRefs }
+    : Array.isArray(patches)
+      ? patches.find(
+        (p): p is { id: string; kind: string } =>
+          typeof p === 'object' && p !== null &&
+          (p as { kind?: unknown }).kind === artifactKind &&
+          typeof (p as { id?: unknown }).id === 'string',
+      )
+      : undefined;
   if (artifact === undefined) return {};
 
   try {
@@ -257,12 +265,13 @@ function linker(
     const data = await withErrorReceipt(cmd, errorInput(cmd, op, { id, mutationId }), () =>
       observedInvoke<unknown>(clientFor(cmd.ctx), operation, {
         params: { id },
+        query: receiptQuery(op, cmd.out.receipts),
         body: withActor(cmd, body),
       }));
     // After the link has landed, never before it — see claimLinkedArtifactSession.
-    // The claim reads the artifact id from the FULL result, so it works the
-    // same whatever the caller asked to print (§9.9); the receipt is projected
-    // only after it, at render time.
+    // The claim reads the artifact id from the Server's receipt refs, or from
+    // the full result's patches when the Server predates receipts, so it works
+    // the same whatever the caller asked to print (§9.9).
     const claim = await claimLinkedArtifactSession(cmd, data, artifactKind);
     // The claim's own edge is not a ref here, unlike `entity create`'s: the
     // spec's link-pr receipt is the artifact and its `tracks` edge (§5), and

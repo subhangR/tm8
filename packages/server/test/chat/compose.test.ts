@@ -2,7 +2,12 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { ChatMode } from '@tm8/contract';
+import {
+  ORCHESTRATION_EDGE_TYPES,
+  ORCHESTRATION_NODE_KINDS,
+  parseNodeMentions,
+  type ChatMode,
+} from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
 import {
   chatAllowedTools,
@@ -154,11 +159,75 @@ describe('chat launch composition', () => {
     expect(base).toContain('Approve → dispatch');
     expect(base).toContain('edits are real writes');
     expect(base).toContain('ORCHESTRATE coordinates');
-    expect(base).toContain('CRAFT sketches a blueprint');
+    expect(base).toContain('CRAFT designs an orchestration plan');
     expect(base).toContain('Materialize nothing until approval lands in this thread');
     expect(base).toContain('One guarded patch per turn');
     // No variant denies a capability the mode now has.
     expect(/it may not|it has no|Do not mutate anything/.test(base)).toBe(false);
+  });
+
+  /**
+   * CRAFT GRAMMAR v2. The first real blueprints in the space used one edge type
+   * (`depends_on`) for everything — outputs modelled as dependencies, no owner
+   * on any task — because the prompt defined no vocabulary. These pins are the
+   * grammar a craft agent now acts on, and the budget keeps it from bloating
+   * the mode-independent prompt every chat launches with.
+   */
+  it('teaches craft the orchestration grammar, the self-check and materialize, within budget', () => {
+    const base = chatSystemPrompt(launch('craft'));
+    const craft = base.slice(base.indexOf('• CRAFT'));
+    // Node kinds and meaningful slugs.
+    expect(craft).toContain('spec.kind is one of task, team_member, doc, artifact, memory, skill');
+    expect(craft).toContain('kind-prefixed slug');
+    // The vocabulary, every edge written as the sentence "src type dst".
+    expect(craft).toContain('reads as the sentence “src type dst”');
+    for (const sentence of [
+      't-api assigned_to tm-backend',
+      't-research produces d-spec',
+      't-api consumes d-spec',
+      't-ui depends_on t-api',
+      't-api remembers m-conventions',
+      't-api equips s-e2e',
+    ]) expect(craft).toContain(sentence);
+    // Names Foundations deliberately left out of the canonical set are only
+    // ever mentioned as absent.
+    expect(craft).toContain('there is no “blocks”');
+    expect(craft).not.toMatch(/uses_skill|\breviews\b|\bfeeds\b/);
+    // Composition rules, the worked example, passes and the self-check.
+    expect(craft).toContain('every task has exactly one assigned_to owner');
+    expect(craft).toContain('ref what exists instead of duplicating it');
+    expect(craft).toContain('list the Space’s existing ones of that kind (tm8_read collections.query by kinds)');
+    expect(craft).toContain('says it is pending');
+    expect(craft).toContain('Example, “add CSV export”');
+    expect(craft).toContain('the first patch sketches the skeleton');
+    expect(craft).toContain('One guarded patch per turn');
+    expect(craft).toContain('`content.findings`');
+    expect(craft).toContain('ask one or two sharp questions instead of inventing structure');
+    // Materialize: approval-gated, 1:1 edges, mapping via content.link, ready frontier.
+    expect(craft).toContain('Materialize nothing until approval lands in this thread');
+    expect(craft).toContain('same type, same direction');
+    expect(craft).toContain('`content.link` {nodeId: createdId}');
+    expect(craft).toContain('Dispatch only the ready frontier');
+    expect(craft).toContain('node → entity map');
+    // Orchestrate carries the blueprint forward as the progress map.
+    expect(base).toContain('keeps the blueprint row as its progress map');
+    // Budget: the craft guide rides in every chat's system prompt. ~1.2k tokens.
+    expect(craft.length).toBeLessThanOrEqual(4800);
+  });
+
+  /**
+   * DRIFT PINS. The vocabulary and the node-link spelling live in
+   * @tm8/contract (orchestration.ts); this prompt only teaches them. A type or
+   * kind added or renamed there and not here fails HERE, not in a craft thread
+   * that writes an edge the registry refuses or misreads a seeded node link.
+   */
+  it('teaches every edge type and node kind the contract defines, and its node-link spelling', () => {
+    const base = chatSystemPrompt(launch('craft'));
+    const craft = base.slice(base.indexOf('• CRAFT'));
+    for (const { type } of ORCHESTRATION_EDGE_TYPES) expect([type, craft.includes(type)]).toEqual([type, true]);
+    for (const { kind } of ORCHESTRATION_NODE_KINDS) expect([kind, craft.includes(kind)]).toEqual([kind, true]);
+    // The example link in the prompt parses with the same helper the UI seeds with.
+    expect(parseNodeMentions(craft)).toEqual([{ graphId: '<graph>', nodeId: 't-api', title: 'API design' }]);
   });
 
   /**
