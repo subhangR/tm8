@@ -2457,6 +2457,33 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['form', 'response', 'mine', 'history'],
     examples: ['tm8 form response mine --limit <count>'],
   },
+  'forms.responses.redeliver': {
+    cmd: ['form', 'response', 'redeliver'],
+    syn: 'tm8 form response redeliver <response-id> [--to new_session|resume] [--session <work-session-id>] [--mutation-id <id>]',
+    sum: 'Send a cancelled delivery to a new session, or resume the session a queued one waits for',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['form', 'response', 'redeliver', 'delivery', 'resume', 'spawn', 'new session'],
+    notes: [
+      '--to new_session (default): only a CANCELLED delivery (session deleted, resume unavailable, spawn failed); a fresh session for the same teammate and task gets the answer as its first turn',
+      '--to resume: only a PENDING (queued) delivery whose session still exists; the server resumes that session and delivers on resume',
+      'the respondent, the form\'s author or a space admin; --session names the delivery when a response has more than one',
+    ],
+    examples: ['tm8 form response redeliver <response-id>', 'tm8 form response redeliver <response-id> --to resume'],
+  },
+  'forms.pendingForSessions': {
+    cmd: ['form', 'pending'],
+    syn: 'tm8 form pending <work-session-id>... [--space <space-id>]',
+    sum: 'List the open forms each session is waiting on you to answer, and its queued answers',
+    authz: 'space',
+    input: 'none',
+    tags: ['form', 'pending', 'waiting', 'session', 'queued', 'inbox'],
+    notes: [
+      'at most 100 session ids per call; a session with nothing waiting and nothing queued is left out',
+      'a form waits until YOU submit (per_member, unlimited) or anyone submits (single); a saved draft still waits',
+    ],
+    examples: ['tm8 form pending <work-session-id>'],
+  },
 
   // ── containers (TM8-CONTAINERS-DESIGN §14) ───────────────────────────────
   //
@@ -2948,7 +2975,8 @@ export const CATALOG_DIGEST =
   // Read out of the failing digest test and matched to the regenerated manifest.
   // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
   // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942';
+  // Re-measured (Forms W3): + forms.responses.redeliver, forms.pendingForSessions. RECOMPUTED.
+  'sha256:8bbaf9591423a0881001d6b45c74c7cbf1e4d4885ed251e5572d17b5253a2fc4';
 
 export const GRAMMAR_VERSION = '2';
 

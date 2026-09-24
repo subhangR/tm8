@@ -59,7 +59,8 @@ export const V2_RULE_SCOPE =
 export const V2_RULE_DISCOVERY =
   'Discover commands with `tm8 help --format json`, then only the noun you need; ' +
   'never assume a command from an earlier session. Before a mutation, ' +
-  '`tm8 action list --for <id>` gives the allowed operations and current version.';
+  '`tm8 action list --for <id>` gives the allowed operations and current version. ' +
+  'To ask a human a question, use `tm8 form create` (see `tm8 help form`), not prose.';
 
 const REPORT_TO_TASK = '`tm8 message send --to <task-id> "<body>"`';
 const REPORT_TO_TASK_AND_COORDINATOR =

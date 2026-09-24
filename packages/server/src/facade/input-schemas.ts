@@ -48,6 +48,7 @@ import {
   FormsQuestionsRemoveInputSchema,
   FormsQuestionsUpdateInputSchema,
   FormsResponsesDiscardInputSchema,
+  FormsResponsesRedeliverInputSchema,
   FormsResponsesSaveInputSchema,
   FormsResponsesSubmitInputSchema,
   FormsTransitionInputSchema,
@@ -333,6 +334,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'forms.responses.save': FormsResponsesSaveInputSchema,
   'forms.responses.submit': FormsResponsesSubmitInputSchema,
   'forms.responses.discard': FormsResponsesDiscardInputSchema,
+  'forms.responses.redeliver': FormsResponsesRedeliverInputSchema,
 
   // files (AM-2 §2)
   'files.uploadInit': FileUploadInitInputSchema,

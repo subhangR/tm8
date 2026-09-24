@@ -405,3 +405,70 @@ describe('memory tools', () => {
       .toEqual(['both', 'scope-hit', 'body-hit']);
   });
 });
+
+describe('form_create (FORMS-DESIGN §9)', () => {
+  const QUESTIONS = [{
+    key: 'pick', type: 'single_choice', title: 'Which approach?',
+    config: { options: [{ value: 'a', label: 'A', recommended: true }, { value: 'b', label: 'B' }] },
+  }];
+
+  function recording() {
+    const calls: Array<{ operation: string; body: unknown }> = [];
+    const t: CatalogTransport = {
+      invoke: async (operation, options) => {
+        calls.push({ operation, body: options?.body });
+        if (operation === 'forms.create') {
+          return {
+            entity: { id: 'form-1', version: 2, content: { status: 'open' } },
+            url: '/#/s/space-a/e/form-1', requestingSessionId: 'session-1', attachedTo: [],
+          };
+        }
+        return { id: 'task-1', kind: 'task', spaceId: 'space-a' };
+      },
+    };
+    return { calls, router: new Tm8ToolRouter(t, { mode: 'build', spaceId: 'space-a' }) };
+  }
+
+  it('creates the form OPEN with the raw spec and returns a typed result', async () => {
+    const { calls, router } = recording();
+    const result = await router.call('form_create', { spaceId: 'space-a', title: 'Pick', questions: QUESTIONS });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      tool: 'form_create', formId: 'form-1', version: 2, status: 'open',
+      url: '/#/s/space-a/e/form-1', requestingSessionId: 'session-1', attachedTo: [],
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      operation: 'forms.create',
+      body: { spaceId: 'space-a', title: 'Pick', questions: QUESTIONS, open: true, clientMutationId: expect.any(String) },
+    });
+  });
+
+  it('checks the spec against the contract registry and sends nothing when it fails', async () => {
+    const { calls, router } = recording();
+    const result = await router.call('form_create', {
+      spaceId: 'space-a', title: 'Pick',
+      questions: [{ key: 'pick', type: 'single_choice', title: 'Which?', config: { options: [] } },
+        { key: 'pick', type: 'nope', title: 'Again' }],
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.structuredContent)).toContain('invalid_input');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a Space other than the thread\'s', async () => {
+    const { calls, router } = recording();
+    const result = await router.call('form_create', { spaceId: 'space-b', title: 'Pick', questions: QUESTIONS });
+    expect(result.isError).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it('publishes a typed schema whose question types are the registry\'s', () => {
+    const tool = DIRECT_TOOLS.find((t) => t.name === 'form_create')!;
+    const questions = (tool.inputSchema.properties as Record<string, any>).questions;
+    expect(questions.items.properties.type.enum).toEqual(
+      ['single_choice', 'multi_choice', 'short_text', 'long_text', 'scale'],
+    );
+    expect(tool.inputSchema.required).toEqual(['spaceId', 'title', 'questions']);
+  });
+});

@@ -1,6 +1,6 @@
 /**
- * `tm8 form …` — the thirteen forms.* operations (FORMS-DESIGN §6, §8; advisor
- * rulings W1-R1..R4).
+ * `tm8 form …` — the fifteen forms.* operations (FORMS-DESIGN §6, §8; advisor
+ * rulings W1-R1..R4; W3's redeliver and pending).
  *
  *   form create                    forms.create
  *   form update                    forms.update
@@ -9,6 +9,8 @@
  *   form submit                    forms.responses.submit
  *   form response save|discard     forms.responses.save|discard
  *   form response list|get|mine    forms.responses.list|get|mine
+ *   form response redeliver        forms.responses.redeliver (W3: new session / resume now)
+ *   form pending                   forms.pendingForSessions (W3: what waits on me)
  *   form wait                      a CLI loop over events.changes + the reads
  *                                  (W2, §7.4) — see `./form-wait.ts`
  *
@@ -22,8 +24,14 @@
  * the caller's RESPONSE (`--response-version`, optional). A respondent is never
  * asked for the form's version.
  */
-import type { FormQuestionRef, FormResponsePage, FormResponseView } from '@tm8/contract';
-import { FORM_TRANSITIONS, renderFormResponseText } from '@tm8/contract';
+import type {
+  FormQuestionRef,
+  FormResponsePage,
+  FormResponseView,
+  FormsPendingForSessionsResult,
+  FormsResponsesRedeliverResult,
+} from '@tm8/contract';
+import { FORM_TRANSITIONS, FORMS_PENDING_MAX_SESSIONS, renderFormResponseText } from '@tm8/contract';
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -415,7 +423,67 @@ async function responseMine(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `form response redeliver`: "Send to a new session" for a cancelled delivery
+ * (the default), or `--to resume` — "Resume now" for a queued one.
+ */
+async function responseRedeliver(cmd: CommandContext): Promise<ExitCode> {
+  const responseId = positional(cmd, 0, 'form response redeliver', '<response-id>');
+  const to = cmd.options.value('to') ?? 'new_session';
+  if (to !== 'new_session' && to !== 'resume') {
+    throw new CliError(`--to accepts new_session or resume, got ${JSON.stringify(to)}`, EXIT_USAGE);
+  }
+  const session = cmd.options.value('session');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'forms.responses.redeliver', {
+    params: { responseId },
+    body: { ...envelope(cmd), to, ...(session === undefined ? {} : { deliverySessionId: session }) },
+  });
+  cmd.out.data(data, renderRedelivered);
+  return EXIT_OK;
+}
+
+/** `form pending <session-id>…`: the forms each session is waiting on the caller for. */
+async function formPending(cmd: CommandContext): Promise<ExitCode> {
+  const sessionIds = cmd.args.flatMap((a) => a.split(',')).map((a) => a.trim()).filter(Boolean);
+  if (sessionIds.length === 0) {
+    throw new CliError('tm8 form pending requires at least one <session-id>', EXIT_USAGE, { hint: 'tm8 help form pending' });
+  }
+  if (sessionIds.length > FORMS_PENDING_MAX_SESSIONS) {
+    throw new CliError(`tm8 form pending reads at most ${FORMS_PENDING_MAX_SESSIONS} sessions per call`, EXIT_USAGE);
+  }
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'forms.pendingForSessions', {
+    query: { spaceId: requireSpace(cmd.ctx), sessionIds: [...new Set(sessionIds)].join(',') },
+  });
+  cmd.out.data(data, renderPending);
+  return EXIT_OK;
+}
+
 // ── human renderings (the same DTO --format json emits) ────────────────────
+
+export function renderRedelivered(dto: unknown): string {
+  const r = (dto ?? {}) as Partial<FormsResponsesRedeliverResult>;
+  const what = r.to === 'resume' ? 'resume of session' : 'new session for the delivery to';
+  return r.redelivered
+    ? `queued ${what} ${String(r.workSessionId)} (response ${String(r.responseId)}, now ${String(r.status)})\n` +
+      `next: tm8 form response get ${String(r.responseId)}`
+    : `already routed: response ${String(r.responseId)} → session ${String(r.workSessionId)} is ${String(r.status)}`;
+}
+
+export function renderPending(dto: unknown): string {
+  const sessions = ((dto ?? {}) as Partial<FormsPendingForSessionsResult>).sessions ?? [];
+  if (sessions.length === 0) return 'nothing waiting';
+  const lines: string[] = [];
+  for (const s of sessions) {
+    lines.push(`session ${s.workSessionId}: ${s.total} form${s.total === 1 ? '' : 's'} waiting` +
+      (s.queued > 0 ? ` · ${s.queued} answer${s.queued === 1 ? '' : 's'} queued` : ''));
+    for (const f of s.forms) {
+      lines.push(`  ${f.formId}  v${f.version}  ${f.questionCount} question${f.questionCount === 1 ? '' : 's'}` +
+        `${f.draft ? '  draft saved' : ''}  ${JSON.stringify(f.title)}`);
+    }
+    if (s.total > s.forms.length) lines.push(`  … and ${s.total - s.forms.length} more`);
+  }
+  return lines.join('\n');
+}
 
 interface FormEntity {
   id?: unknown;
@@ -507,5 +575,7 @@ export const FORM_COMMANDS: CommandModule[] = [
   { path: ['form', 'response', 'list'], run: responseList },
   { path: ['form', 'response', 'get'], run: responseGet },
   { path: ['form', 'response', 'mine'], run: responseMine },
+  { path: ['form', 'response', 'redeliver'], run: responseRedeliver },
+  { path: ['form', 'pending'], run: formPending },
   { path: ['form', 'wait'], run: formWait },
 ];
