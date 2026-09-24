@@ -959,10 +959,10 @@ async function waitOver(
   argv: readonly string[],
   opts: {
     timeoutMs: number;
-    poll?: (since: string) => Promise<{ items?: unknown; nextCursor?: unknown }>;
+    poll?: (since: string, entity?: string) => Promise<{ items?: unknown; nextCursor?: unknown }>;
     drive?: (s: FakeSocket) => void;
   },
-): Promise<Ran & { polls: string[] }> {
+): Promise<Ran & { polls: string[]; scopes: Array<string | undefined> }> {
   const { runWatch, watchRequestFrom } = await import('../src/commands/event.js');
   let stdout = '';
   let stderr = '';
@@ -975,6 +975,7 @@ async function waitOver(
     },
   };
   const polls: string[] = [];
+  const scopes: Array<string | undefined> = [];
   const inv = parseInvocation(argv);
   const out = createOutput({ format: inv.globals.format, quiet: inv.globals.quiet, streams });
   const ctx = resolveContext({
@@ -991,15 +992,16 @@ async function waitOver(
     poll:
       opts.poll === undefined
         ? undefined
-        : async (since: string) => {
+        : async (since: string, entity?: string) => {
             polls.push(since);
-            return await opts.poll!(since);
+            scopes.push(entity);
+            return await opts.poll!(since, entity);
           },
     pollIntervalMs: 5,
   });
   await new Promise((resolve) => setImmediate(resolve));
   opts.drive?.(socket);
-  return { code: await running, stdout, stderr, polls };
+  return { code: await running, stdout, stderr, polls, scopes };
 }
 
 describe('tm8 event watch --until-match — waiting is one call (F7)', () => {
@@ -1103,6 +1105,98 @@ describe('tm8 event watch --until-match — waiting is one call (F7)', () => {
       drive: (s) => s.serverClose(1006),
     });
     expect(dead.code).toBe(7); // every poll failed: nothing was learned, and 13 would claim it was
+  });
+
+  it('without --entity the fallback polls UNSCOPED, exactly as before', async () => {
+    const r = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7', '--format', 'jsonl'], {
+      timeoutMs: 5_000,
+      poll: async () => ({ items: [WIRE_EVENT], nextCursor: '9' }),
+      drive: (s) => s.serverClose(1006),
+    });
+    expect(r.code).toBe(14);
+    expect(r.scopes).toEqual([undefined]);
+  });
+
+  describe('the fallback is the SCOPED poll, with the watch\'s own selectors (change-feed spec §4)', () => {
+    const E1 = '01a0d385-0000-7000-8000-000000000001';
+    const E2 = '01a0d385-0000-7000-8000-000000000002';
+    const on = (id: string, seq: number, type = 'entity.upsert'): Record<string, unknown> =>
+      ({ ...WIRE_EVENT, seq, type, entity: { id, title: 'T' } });
+
+    it('one server-filtered poll per --entity, merged in seq order: the EARLIEST match wins, exit 14', async () => {
+      const r = await waitOver(
+        new FakeSocket(),
+        ['event', 'watch', '--space', SPACE, '--after', '7', '--entity', E1, '--entity', E2, '--type', 'entity.deleted', '--format', 'jsonl'],
+        {
+          timeoutMs: 5_000,
+          poll: async (_since, entity) => entity === E1
+            ? { items: [on(E1, 10), on(E1, 13, 'entity.deleted')], nextCursor: '20' }
+            : { items: [on(E2, 11, 'entity.deleted')], nextCursor: '20' },
+          drive: (s) => s.serverClose(1006),
+        },
+      );
+      expect(r.code).toBe(14);
+      expect([...r.scopes].sort()).toEqual([E1, E2]); // scoped, one call per selector, same cursor
+      expect(r.polls).toEqual(['7', '7']);
+      const printed = r.stdout.trim().split('\n');
+      expect(printed).toHaveLength(1);
+      expect(JSON.parse(printed[0]!)).toMatchObject({ seq: 11, type: 'entity.deleted' });
+      expect(r.stderr).toMatch(/scoped to --entity/);
+    });
+
+    it('pages that disagree on their cursor are cut at the SMALLER one — a later match never jumps an unexamined earlier one', async () => {
+      let round = 0;
+      const r = await waitOver(
+        new FakeSocket(),
+        ['event', 'watch', '--space', SPACE, '--after', '7', '--entity', E1, '--entity', E2, '--format', 'jsonl'],
+        {
+          timeoutMs: 5_000,
+          poll: async (since, entity) => {
+            if (entity === E2) round++;
+            if (since === '7') {
+              // E1's page examined only through 9; E2's (read later) through 12.
+              return entity === E1 ? { items: [], nextCursor: '9' } : { items: [on(E2, 12)], nextCursor: '12' };
+            }
+            return entity === E1 ? { items: [on(E1, 10)], nextCursor: '12' } : { items: [on(E2, 12)], nextCursor: '12' };
+          },
+          drive: (s) => s.serverClose(1006),
+        },
+      );
+      expect(r.code).toBe(14);
+      expect(round).toBe(2); // round 1 held seq 12 back; round 2 resumed from 9
+      expect(r.polls).toEqual(['7', '7', '9', '9']);
+      expect(JSON.parse(r.stdout.trim())).toMatchObject({ seq: 10 });
+    });
+
+    it('quiet scoped polls still advance and end in 13; failing scoped polls end in 7', async () => {
+      const quiet = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7', '--entity', E1], {
+        timeoutMs: 40,
+        poll: async () => ({ items: [], nextCursor: '20' }),
+        drive: (s) => s.serverClose(1006),
+      });
+      expect(quiet.code).toBe(13);
+      expect(quiet.scopes.every((e) => e === E1)).toBe(true);
+      expect(quiet.polls[1]).toBe('20');
+
+      const dead = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7', '--entity', E1], {
+        timeoutMs: 40,
+        poll: async () => {
+          throw new Error('ECONNREFUSED');
+        },
+        drive: (s) => s.serverClose(1006),
+      });
+      expect(dead.code).toBe(7);
+    });
+
+    it('an --entity that is not an entity id cannot be a server-side subject: that watch polls unscoped', async () => {
+      const r = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7', '--entity', 'not-a-uuid'], {
+        timeoutMs: 40,
+        poll: async () => ({ items: [WIRE_EVENT], nextCursor: '9' }),
+        drive: (s) => s.serverClose(1006),
+      });
+      expect(r.code).toBe(13); // answered, nothing can match
+      expect(r.scopes.every((e) => e === undefined)).toBe(true);
+    });
   });
 
   it('a socket that never OPENS is the same repair path as one that dropped', async () => {
