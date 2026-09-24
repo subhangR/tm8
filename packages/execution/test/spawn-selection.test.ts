@@ -6,7 +6,7 @@
 // and, afterwards, what the #646 byte budget dropped (`byte-budget`). Without
 // either field, nothing it produces changes by a single byte.
 
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -111,6 +111,51 @@ describe('SpawnService', () => {
     await service().spawn({ identityId: 'i' }, { ...REQUEST, selection: SELECTION, jevRunId: RUN_ID });
     expect(graph.spawnContextInputs[0]?.selection).toEqual(SELECTION);
     expect(graph.manifests[0]?.manifest.launch.jevRunId).toBe(RUN_ID);
+  });
+
+  // A minimal claude lane allowlists the plugins its equipped plugin skills live
+  // in. Under a selection the loader's equip set IS the selection, so Jev's
+  // picks decide which plugins come back — not the persona's standing equips.
+  describe('plugin allowlist follows the selection', () => {
+    const SALES_SKILL: ResolvedSkillRow = {
+      entityId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'call-prep', depth: 0, description: '',
+      provider: 'claude', level: 'plugin', loaderMetadata: { pluginName: 'sales', enabled: true },
+    };
+    async function claudeLaunch(options: { skillEquips: ResolvedSkillRow[]; skippedSkills?: SpawnContext['skippedSkills'] }) {
+      const configDir = join(dataDir, 'claude-home');
+      await mkdir(join(configDir, 'plugins', 'synced', 'bucket'), { recursive: true });
+      await writeFile(
+        join(configDir, 'plugins', 'synced', 'bucket', 'manifest.json'),
+        JSON.stringify({ plugins: [{ name: 'sales' }, { name: 'marketing' }] }),
+      );
+      // A stub `claude` on PATH: the spawn preflight only checks it exists, and
+      // CI has no real one. The PTY is mocked, so it never runs.
+      const binDir = join(dataDir, 'bin');
+      await mkdir(binDir, { recursive: true });
+      await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      graph = new FakeGraph({ workingDir: projectDir, ...options });
+      await new SpawnService({
+        graph, pty, baseUrl: 'http://127.0.0.1:4611', dataDir,
+        env: { PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: configDir },
+        bootSettlementMs: 25,
+      }).spawn({ identityId: 'i' }, { ...REQUEST, selection: SELECTION });
+      return graph.manifests[0]!.manifest.launch.command;
+    }
+
+    it('a selection that leaves an equipped plugin skill unticked keeps its plugin off', async () => {
+      const command = await claudeLaunch({
+        skillEquips: [],
+        skippedSkills: [{ entityId: SALES_SKILL.entityId, name: SALES_SKILL.name, reason: 'not-selected' }],
+      });
+      expect(command).toContain('"sales@synced":false');
+      expect(command).toContain('"marketing@synced":false');
+    });
+
+    it('a selected plugin skill, equipped or not, turns its plugin on', async () => {
+      const command = await claudeLaunch({ skillEquips: [SALES_SKILL] });
+      expect(command).toContain('"sales@synced":true');
+      expect(command).toContain('"marketing@synced":false');
+    });
   });
 
   it('without selection the loader input carries no selection key at all', async () => {

@@ -44,6 +44,10 @@ export interface FakeGraphOptions {
   memories?: unknown[];
   /** Skills already resolved across the ancestor chain. Default: none. */
   skills?: SpawnContext['skills'];
+  /** The loader's exact equip set, e.g. what a Jev selection resolved to. */
+  skillEquips?: SpawnContext['skillEquips'];
+  /** What the loader recorded as left out (`not-selected`, …). */
+  skippedSkills?: SpawnContext['skippedSkills'];
   /** Replaces the resolved profile snapshot, e.g. to opt into prompt v2. */
   profileSnapshot?: Record<string, unknown>;
   /** What `loadTaskContextSnapshot` answers; an Error makes it reject. */
@@ -96,6 +100,8 @@ export class FakeGraph implements GraphPort {
       // database, and a resume can change it mid-test.
       parentKind: this.parentKind,
       ...(this.options.skills ? { skills: this.options.skills } : {}),
+      ...(this.options.skillEquips ? { skillEquips: this.options.skillEquips } : {}),
+      ...(this.options.skippedSkills ? { skippedSkills: this.options.skippedSkills } : {}),
       project:
         this.options.withProject === false
           ? null

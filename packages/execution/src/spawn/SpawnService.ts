@@ -40,7 +40,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
+import { equippedClaudePlugins, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1362,6 +1362,7 @@ export class SpawnService {
         claudeSessionId: nativeSessionId,
         sandboxUnavailable: sandbox.unavailable,
         installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+        equippedClaudePlugins: equippedClaudePlugins(context.skillEquips ?? context.skills ?? []),
       });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
@@ -2119,6 +2120,7 @@ export class SpawnService {
       const baseCommand = buildAgentCommand(launch, this.env, {
         sandboxUnavailable: sandbox.unavailable,
         installedClaudePlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+        equippedClaudePlugins: equippedClaudePlugins(context.skillEquips ?? context.skills ?? []),
       });
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),

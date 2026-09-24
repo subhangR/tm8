@@ -14,8 +14,11 @@ import {
   type ResolvedLaunchConfig,
 } from '../src/spawn/manifest.js';
 import {
-  disabledPluginSettings,
+  asMcpServers,
+  equippedClaudePlugins,
   harnessSurfaceEnv,
+  laneSkillOverrides,
+  pluginSettings,
   readInstalledClaudePlugins,
 } from '../src/spawn/harness-surface.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -33,6 +36,8 @@ const LAUNCH: ResolvedLaunchConfig = {
 
 const BARE = "claude --permission-mode acceptEdits --model 'opus' --session-id 'uuid-1'";
 const STRICT_MCP = `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`;
+/** The bundled-skill trim every minimal lane carries, pinned in full. */
+const SKILL_OVERRIDES = `"skillOverrides":{"claude-api":"off","dataviz":"off","fewer-permission-prompts":"off","init":"off","keybindings-help":"off","loop":"off","run":"off","schedule":"off","update-config":"off"}`;
 const INSTALLED = ['marketing@synced', 'sales@synced', 'rust-analyzer-lsp@claude-plugins-official'];
 
 function context(capabilities: Record<string, unknown> = {}): SpawnContext {
@@ -73,6 +78,11 @@ describe('resolveLaunchConfig harness surface', () => {
     );
     expect(launch.harnessSurface).toBe('inherit');
     expect(launch.plugins).toEqual(['sales', 'x@y']);
+    expect(launch.mcpServers).toBeUndefined();
+    expect(
+      resolveLaunchConfig(REQUEST, context({ launch: { mcpServers: { l: { type: 'http', url: 'u' }, bad: 3 } } }), {})
+        .mcpServers,
+    ).toEqual({ l: { type: 'http', url: 'u' } });
     expect(
       resolveLaunchConfig(REQUEST, context({ launch: { harnessSurface: 'everything' } }), {})
         .harnessSurface,
@@ -95,7 +105,7 @@ describe('buildAgentCommand harness surface', () => {
     });
     expect(cmd).toBe(
       `${BARE} ${STRICT_MCP} --settings '{"enabledPlugins":{"marketing@synced":false,` +
-        `"rust-analyzer-lsp@claude-plugins-official":false,"sales@synced":false}}'`,
+        `"rust-analyzer-lsp@claude-plugins-official":false,"sales@synced":false},${SKILL_OVERRIDES}}'`,
     );
     // Never the two blunt instruments: they drop user permissions/hooks and
     // every repo skill respectively.
@@ -103,15 +113,48 @@ describe('buildAgentCommand harness surface', () => {
     expect(cmd).not.toContain('--disable-slash-commands');
   });
 
-  it('minimal with no installed plugins emits no --settings at all', () => {
-    expect(buildAgentCommand(LAUNCH, {}, { claudeSessionId: 'uuid-1' })).toBe(`${BARE} ${STRICT_MCP}`);
+  it('minimal with no installed plugins emits only the bundled-skill trim', () => {
+    expect(buildAgentCommand(LAUNCH, {}, { claudeSessionId: 'uuid-1' })).toBe(
+      `${BARE} ${STRICT_MCP} --settings '{${SKILL_OVERRIDES}}'`,
+    );
+  });
+
+  it('trims only bundled skills lanes never use, keeping the review and workflow ones', () => {
+    const off = Object.keys(laneSkillOverrides());
+    for (const kept of ['code-review', 'simplify', 'security-review', 'workflow-authoring']) {
+      expect(off).not.toContain(kept);
+    }
+    expect(buildAgentCommand({ ...LAUNCH, harnessSurface: 'inherit' })).not.toContain('skillOverrides');
   });
 
   it('keeps allowlisted plugins by bare name or full id', () => {
     const cmd = buildAgentCommand({ ...LAUNCH, plugins: ['sales', 'rust-analyzer-lsp@claude-plugins-official'] }, {}, {
       installedClaudePlugins: INSTALLED,
     });
-    expect(cmd).toContain(`--settings '{"enabledPlugins":{"marketing@synced":false}}'`);
+    expect(cmd).toContain(
+      `--settings '{"enabledPlugins":{"marketing@synced":false,` +
+        `"rust-analyzer-lsp@claude-plugins-official":true,"sales@synced":true},${SKILL_OVERRIDES}}'`,
+    );
+  });
+
+  it('keeps the plugin of an equipped plugin skill without a persona allowlist', () => {
+    const cmd = buildAgentCommand(LAUNCH, {}, {
+      installedClaudePlugins: INSTALLED,
+      equippedClaudePlugins: ['sales'],
+    });
+    expect(cmd).toContain('"sales@synced":true');
+    expect(cmd).toContain('"marketing@synced":false');
+  });
+
+  it('emits opted-in MCP servers as the strict --mcp-config', () => {
+    const cmd = buildAgentCommand(
+      { ...LAUNCH, mcpServers: { linear: { type: 'http', url: 'https://mcp.linear.app/mcp' } } },
+      {},
+      {},
+    );
+    expect(cmd).toContain(
+      `--strict-mcp-config --mcp-config '{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}'`,
+    );
   });
 
   it('inherit leaves the argv exactly as the bare command', () => {
@@ -149,12 +192,35 @@ describe('harnessSurfaceEnv', () => {
   });
 });
 
-describe('disabledPluginSettings', () => {
-  it('is sorted and excludes the allowlist', () => {
-    expect(disabledPluginSettings(['b@m', 'a@m', 'c@synced'], ['c'])).toEqual({
+describe('pluginSettings', () => {
+  it('is sorted, disables the rest and explicitly enables the allowlist', () => {
+    expect(pluginSettings(['b@m', 'a@m', 'c@synced'], ['c', 'not-installed'])).toEqual({
       'a@m': false,
       'b@m': false,
+      'c@synced': true,
     });
+  });
+});
+
+describe('equippedClaudePlugins', () => {
+  it('names the plugins of live claude plugin-level equips only', () => {
+    expect(
+      equippedClaudePlugins([
+        { provider: 'claude', level: 'plugin', loaderMetadata: { pluginName: 'sales' } },
+        { provider: 'claude', level: 'plugin', loaderMetadata: { pluginName: 'sales' } },
+        { provider: 'claude', level: 'plugin', missing: true, loaderMetadata: { pluginName: 'gone' } },
+        { provider: 'codex', level: 'plugin', loaderMetadata: { pluginName: 'codex-only' } },
+        { provider: 'claude', level: 'user', loaderMetadata: { pluginName: 'anthropic-skills' } },
+        { provider: 'claude', level: 'plugin', loaderMetadata: {} },
+      ]),
+    ).toEqual(['sales']);
+  });
+});
+
+describe('asMcpServers', () => {
+  it('keeps object-valued entries only', () => {
+    expect(asMcpServers({ a: { command: 'x' }, b: 'nope', ' ': {}, c: [1] })).toEqual({ a: { command: 'x' } });
+    expect(asMcpServers(['x'])).toBeNull();
   });
 });
 
