@@ -54,6 +54,7 @@ function record(overrides: Partial<SessionLaunchRecord> = {}): SessionLaunchReco
       ],
       hiddenCount: 2,
       unlinkedMemories: ['legacy note'],
+      unlinkedSkillCount: 1,
     },
     ...overrides,
   };
@@ -88,6 +89,7 @@ describe('LaunchContextSection', () => {
       "2 more not shown: you can't read them, or they were deleted",
     );
     expect(getByTestId('launch-context-memory-text').textContent).toContain('legacy note');
+    expect(getByTestId('launch-context-facts').textContent).toContain('File-only skills1');
   });
 
   it('shows the launch facts and the declared harness, and never a credential id', () => {

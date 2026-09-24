@@ -5674,6 +5674,12 @@ export interface SessionLaunchContext {
    * record carries the same text.
    */
   unlinkedMemories: string[];
+  /**
+   * Skills the launch indexed that have no graph entity (e.g. found on the
+   * filesystem only), so there is no row to show. Counted so nothing drops
+   * silently.
+   */
+  unlinkedSkillCount: number;
 }
 
 /**

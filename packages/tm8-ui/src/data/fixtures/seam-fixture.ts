@@ -638,6 +638,7 @@ function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
       ],
       hiddenCount: 0,
       unlinkedMemories: [],
+      unlinkedSkillCount: 0,
     },
   };
 }

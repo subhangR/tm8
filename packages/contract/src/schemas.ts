@@ -3470,6 +3470,7 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     }).strict()),
     hiddenCount: z.number().int().nonnegative(),
     unlinkedMemories: z.array(z.string()),
+    unlinkedSkillCount: z.number().int().nonnegative(),
   }).strict().nullable(),
 }).strict();
 

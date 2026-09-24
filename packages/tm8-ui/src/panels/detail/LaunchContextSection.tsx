@@ -59,7 +59,13 @@ export function LaunchContextSection({
 
   const titles = new Map(context.entries.map((e) => [e.entityId, e.title]));
   const count = context.entries.length + context.unlinkedMemories.length + context.hiddenCount;
-  const facts = launchContextFacts(record.manifest).filter(hasValue);
+  const facts = [
+    ...launchContextFacts(record.manifest).filter(hasValue),
+    // No graph entity, so no row; counted so nothing drops silently.
+    ...(context.unlinkedSkillCount > 0
+      ? [{ label: 'File-only skills', value: String(context.unlinkedSkillCount), mono: true }]
+      : []),
+  ];
   // The declared harness is the teammate's own configuration: shown only when
   // the viewer can read that teammate, i.e. when its row came back.
   const teammateVisible = context.entries.some((e) => e.role === 'teammate');

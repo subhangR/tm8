@@ -217,7 +217,7 @@ describe('projectLaunchContext', () => {
       { identityId: fixture.memberIdentity },
       { agent: { teamMemberId: fixture.stranger, memory: ['secret one', 'secret two'] } },
     );
-    expect(result).toEqual({ entries: [], hiddenCount: 3, unlinkedMemories: [] });
+    expect(result).toEqual({ entries: [], hiddenCount: 3, unlinkedMemories: [], unlinkedSkillCount: 0 });
     expect(JSON.stringify(result)).not.toContain('secret');
   });
 
@@ -238,7 +238,8 @@ describe('projectLaunchContext', () => {
       ],
       effectiveSkills: {
         native: [{ entityId: fixture.skillNative, viaTaskId: fixture.taskA }],
-        indexed: [{ entityId: fixture.skillIndexed }],
+        // The second has no graph entity (filesystem only): counted, not a row.
+        indexed: [{ entityId: fixture.skillIndexed }, { name: 'local-only' }],
         skipped: [],
       },
     });
@@ -256,6 +257,7 @@ describe('projectLaunchContext', () => {
     ]);
     expect(byId.get(fixture.file)).toMatchObject({ role: 'attachment', viaTaskId: fixture.taskA });
     expect(result.hiddenCount).toBe(2); // the foreign task and the deleted one
+    expect(result.unlinkedSkillCount).toBe(1);
   });
 
   it('gives a viewer outside the space no names and no Jev ratings', async () => {

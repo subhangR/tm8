@@ -28,13 +28,15 @@ export async function projectLaunchContext(
   claims: DbClaims,
   manifest: Record<string, unknown>,
 ): Promise<SessionLaunchContext> {
-  const candidates = collectCandidates(manifest);
+  const { candidates, unlinkedSkillCount } = collectCandidates(manifest);
   const memoryIds = memoryIdsOf(manifest);
   const unlinkedMemories = unlinkedMemoriesOf(manifest, memoryIds);
 
   const ids = [...new Set(candidates.map((c) => c.entityId))];
   // No teammate to check them against: text-only memories are counted, not shown.
-  if (ids.length === 0) return { entries: [], hiddenCount: unlinkedMemories.length, unlinkedMemories: [] };
+  if (ids.length === 0) {
+    return { entries: [], hiddenCount: unlinkedMemories.length, unlinkedMemories: [], unlinkedSkillCount };
+  }
 
   const taskIds = candidates.filter((c) => c.role === 'task').map((c) => c.entityId);
   const teamMemberId = candidates.find((c) => c.role === 'teammate')?.entityId ?? null;
@@ -120,8 +122,8 @@ export async function projectLaunchContext(
   // are the teammate's memories, so they show only to a viewer who can read
   // the teammate, and are otherwise counted like any other hidden entry.
   return teammateVisible
-    ? { entries, hiddenCount: hidden.size, unlinkedMemories }
-    : { entries, hiddenCount: hidden.size + unlinkedMemories.length, unlinkedMemories: [] };
+    ? { entries, hiddenCount: hidden.size, unlinkedMemories, unlinkedSkillCount }
+    : { entries, hiddenCount: hidden.size + unlinkedMemories.length, unlinkedMemories: [], unlinkedSkillCount };
 }
 
 interface Candidate {
@@ -149,8 +151,12 @@ function arrayOf(value: unknown): unknown[] {
 }
 
 /** In display order: teammate, tasks, memories, skills, then what the tasks carried, then the coordinator. */
-function collectCandidates(manifest: Record<string, unknown>): Candidate[] {
+function collectCandidates(manifest: Record<string, unknown>): {
+  candidates: Candidate[];
+  unlinkedSkillCount: number;
+} {
   const out: Candidate[] = [];
+  let unlinkedSkillCount = 0;
   const add = (
     entityId: unknown,
     role: LaunchContextRole,
@@ -180,6 +186,10 @@ function collectCandidates(manifest: Record<string, unknown>): Candidate[] {
   for (const [value, load] of skillRows) {
     const skill = recordOf(value);
     if (!skill) continue;
+    if (!isId(skill.entityId)) {
+      unlinkedSkillCount += 1;
+      continue;
+    }
     const viaTaskId = isId(skill.viaTaskId) ? skill.viaTaskId : null;
     add(skill.entityId, 'skill', viaTaskId ? 'task' : 'teammate', viaTaskId, load);
   }
@@ -195,7 +205,7 @@ function collectCandidates(manifest: Record<string, unknown>): Candidate[] {
     }
   }
   add(recordOf(manifest.coordinator)?.sessionId, 'coordinator', 'launch');
-  return out;
+  return { candidates: out, unlinkedSkillCount };
 }
 
 function memoryIdsOf(manifest: Record<string, unknown>): string[] | null {
