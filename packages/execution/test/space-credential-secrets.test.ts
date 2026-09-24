@@ -9,11 +9,14 @@
 //   - the re-seed on resume, which writes the key read NOW over whatever
 //     survived, so a rekey never leaves the old secret behind (D7).
 //
-// It also pins composeEnv's GitHub isolation for `github: 'space'` (design §7).
+// It also pins composeEnv's GitHub isolation for `github: 'space'` (design §7),
+// and (SC-6, D10) that real git and gh run in that environment act as the
+// space token's account and never as the node's own gh login.
 
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -138,5 +141,105 @@ describe('GitHub isolation with a space source (design §7)', () => {
     expect(env.GIT_CONFIG_KEY_0).toBe('credential.https://github.com.helper');
     expect(env.GIT_CONFIG_VALUE_0).toBe('');
     expect(Object.values(env)).not.toContain(NODE_GH);
+  });
+
+  // t6-1 (SC-6, D10). The node's own gh login lives where HOME points
+  // ($HOME/.config/gh/hosts.yml, or GH_CONFIG_DIR), its git identity and
+  // credential helper in $HOME/.gitconfig, and this fleet also exports
+  // GIT_AUTHOR_NAME. HOME is a process basic the child keeps, so the proof is
+  // what REAL git and gh do in the composed environment, not the key set.
+  describe('t6-1: the node gh login is not used — real git and gh act as the space token\'s account', () => {
+    let nodeHome: string;
+    let repo: string;
+    const NODE_LOGIN = 'node-machine-login';
+    const NODE_OAUTH = `gho_${'M'.repeat(36)}`;
+
+    beforeEach(async () => {
+      nodeHome = await mkdtemp(join(tmpdir(), 'tm8-sc6-node-home-'));
+      await mkdir(join(nodeHome, '.config', 'gh'), { recursive: true });
+      await writeFile(join(nodeHome, '.config', 'gh', 'hosts.yml'),
+        `github.com:\n    user: ${NODE_LOGIN}\n    oauth_token: ${NODE_OAUTH}\n    git_protocol: https\n`);
+      await writeFile(join(nodeHome, '.gitconfig'), [
+        '[user]',
+        `\tname = ${NODE_LOGIN}`,
+        '\temail = node@machine.invalid',
+        '[credential "https://github.com"]',
+        `\thelper = "!f() { echo username=${NODE_LOGIN}; echo password=${NODE_OAUTH}; }; f"`,
+        '',
+      ].join('\n'));
+      repo = await mkdtemp(join(tmpdir(), 'tm8-sc6-repo-'));
+    });
+
+    afterEach(async () => {
+      await rm(nodeHome, { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
+    });
+
+    const nodeParent = (): NodeJS.ProcessEnv => ({
+      HOME: nodeHome,
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      GH_TOKEN: NODE_GH,
+      GITHUB_TOKEN: NODE_GH,
+      GH_CONFIG_DIR: join(nodeHome, '.config', 'gh'),
+      XDG_CONFIG_HOME: join(nodeHome, '.config'),
+      GIT_AUTHOR_NAME: NODE_LOGIN,
+      GIT_AUTHOR_EMAIL: 'node@machine.invalid',
+    });
+
+    const spaceEnv = () => composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', nodeParent(), undefined, undefined, undefined,
+      { provider: 'github', login: 'space-bot', token: SPACE_GH }, 'space');
+
+    it('the composed env names the space account and carries no node gh lookup path', () => {
+      const env = spaceEnv();
+      expect(env.HOME).toBe(nodeHome);
+      expect(env.GH_CONFIG_DIR).toBeUndefined();
+      expect(env.XDG_CONFIG_HOME).toBeUndefined();
+      expect(env.TM8_GIT_LOGIN).toBe('space-bot');
+      expect(env.GIT_AUTHOR_NAME).toBe('space-bot');
+      expect(env.GIT_COMMITTER_NAME).toBe('space-bot');
+      expect(env.GIT_AUTHOR_EMAIL).toBe('space-bot@users.noreply.github.com');
+      expect(env.GIT_COMMITTER_EMAIL).toBe('space-bot@users.noreply.github.com');
+      for (const value of Object.values(env)) {
+        expect(value).not.toContain(NODE_GH);
+        expect(value).not.toContain(NODE_OAUTH);
+        expect(value).not.toContain(NODE_LOGIN);
+      }
+    });
+
+    it('git: a commit is authored and committed by the space account, and credential fill answers the space token', () => {
+      const env = spaceEnv();
+      execFileSync('git', ['init', '-q', repo], { env });
+      execFileSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'sc6'], { env });
+      const who = execFileSync('git', ['-C', repo, 'log', '-1', '--format=%an <%ae>|%cn <%ce>'], { env, encoding: 'utf8' }).trim();
+      expect(who).toBe('space-bot <space-bot@users.noreply.github.com>|space-bot <space-bot@users.noreply.github.com>');
+
+      const fill = execFileSync('git', ['credential', 'fill'], {
+        env, input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8',
+      });
+      expect(fill).toContain('username=space-bot');
+      expect(fill).toContain(`password=${SPACE_GH}`);
+      expect(fill).not.toContain(NODE_OAUTH);
+      expect(fill).not.toContain(NODE_LOGIN);
+
+      // Control: the SAME node home without the space token gives the node's
+      // helper — so the assertion above is the isolation, not an empty home.
+      const control = execFileSync('git', ['credential', 'fill'], {
+        env: { PATH: env.PATH, HOME: nodeHome, GIT_TERMINAL_PROMPT: '0' },
+        input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8',
+      });
+      expect(control).toContain(`password=${NODE_OAUTH}`);
+    });
+
+    const hasGh = (process.env.PATH ?? '').split(delimiter)
+      .some((dir) => spawnSync('test', ['-x', join(dir, 'gh')]).status === 0);
+
+    it.skipIf(!hasGh)('gh: `gh auth token` is the space token, not the node login in $HOME/.config/gh', () => {
+      const env = spaceEnv();
+      expect(execFileSync('gh', ['auth', 'token'], { env, encoding: 'utf8' }).trim()).toBe(SPACE_GH);
+      // Control: the node home alone answers the node's login.
+      expect(execFileSync('gh', ['auth', 'token'], {
+        env: { PATH: env.PATH, HOME: nodeHome }, encoding: 'utf8',
+      }).trim()).toBe(NODE_OAUTH);
+    });
   });
 });

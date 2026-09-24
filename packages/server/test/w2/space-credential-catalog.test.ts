@@ -230,6 +230,12 @@ describe('t3-3: the vendor probe', () => {
       .toEqual({ ok: true, displayLogin: null });
     expect(await createVendorProbe({ fetch: fetchAnswering(200, { login: ' octocat ' }) })({ provider: 'github', secret: SECRET }))
       .toEqual({ ok: true, displayLogin: 'octocat' });
+    // D10: a GitHub 200 that names no login is no usable verdict — the token
+    // would have no account to author commits as, so nothing is stored.
+    for (const body of [{}, { login: '  ' }, { login: 7 }]) {
+      expect(await createVendorProbe({ fetch: fetchAnswering(200, body) })({ provider: 'github', secret: SECRET }))
+        .toEqual({ ok: false, reason: 'unreachable', detail: 'no account login in the GitHub response' });
+    }
   });
 
   it('t3-10: a transport error that QUOTES the secret is reported by its name only', async () => {

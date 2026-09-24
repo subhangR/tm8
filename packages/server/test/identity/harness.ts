@@ -13,6 +13,7 @@ import {
   ManualClock,
   SequentialIds,
   type IdentityService,
+  type IdentityServiceOptions,
   type MemberRecord,
   type PasswordHasher,
   type TeamMemberRecord,
@@ -46,7 +47,7 @@ export interface Harness {
   persona(ownerMemberId: string, spaceId: string, opts?: Partial<TeamMemberRecord>): TeamMemberRecord;
 }
 
-export function makeHarness(): Harness {
+export function makeHarness(options: Pick<IdentityServiceOptions, 'spaceCredentialContainment'> = {}): Harness {
   const repo = new InMemoryIdentityRepository();
   const clock = new ManualClock('2026-01-01T00:00:00.000Z');
   const hasher = new FakeHasher();
@@ -55,6 +56,7 @@ export function makeHarness(): Harness {
     clock,
     ids: new SequentialIds(),
     hasher,
+    ...options,
   });
 
   let seq = 0;
