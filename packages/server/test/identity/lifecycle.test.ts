@@ -185,24 +185,28 @@ describe('account lifecycle (R6)', () => {
   // SC-6 (design 01a0cfa8 §5): disable also kills what the account launched
   // on space credentials. The real lookup and kill are pinned against 206 in
   // test/db/space-credential-member-containment.pg.test.ts; this pins the
-  // wiring and the ORDER — the tokens are dead before the lookup runs, so the
-  // account (or an agent it minted) cannot launch one more in between.
+  // wiring and the ORDER — the tokens are revoked before the lookup runs, so
+  // the account (or an agent it minted) cannot launch one more in between.
+  // The order is read off the repository's session rows, not verifyToken:
+  // verifyToken already refuses a disabled account, whatever the order.
   it('SC-6: disable calls the space-credential containment for that account, after its tokens are revoked', async () => {
-    const seen: Array<{ accountId: string; tokenAlive: boolean }> = [];
-    let token = '';
+    const seen: Array<{ accountId: string; unrevokedSessions: number }> = [];
     const h = makeHarness({
       spaceCredentialContainment: {
         async killSessionsLaunchedBy(accountId) {
-          const tokenAlive = await h.service.verifyToken(token).then(() => true, () => false);
-          seen.push({ accountId, tokenAlive });
+          const unrevokedSessions = (await h.repo.listAuthSessions(accountId, true))
+            .filter((s) => s.revokedAt === null).length;
+          seen.push({ accountId, unrevokedSessions });
         },
       },
     });
     const owner = await h.service.bootstrapOwner();
-    token = (await h.service.issueSession({ accountId: owner.id, kind: 'cli' })).token;
+    await h.service.issueSession({ accountId: owner.id, kind: 'cli' });
+    await h.service.issueSession({ accountId: owner.id, kind: 'browser' });
+    expect((await h.repo.listAuthSessions(owner.id, true)).filter((s) => s.revokedAt === null)).toHaveLength(2);
 
     await h.service.disableAccount(owner.id);
-    expect(seen).toEqual([{ accountId: owner.id, tokenAlive: false }]);
+    expect(seen).toEqual([{ accountId: owner.id, unrevokedSessions: 0 }]);
 
     // Enabling kills nothing and restores nothing.
     await h.service.enableAccount(owner.id);

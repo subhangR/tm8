@@ -2,14 +2,21 @@
  * SC-6 — MEMBER CONTAINMENT for space credentials (design 01a0cfa8 §5):
  * "sessions that member launched on space credentials are killed".
  *
- * There is no member-removal operation yet, so this is the TS equivalent of
- * `internal.kill_space_credential_sessions_for_member(space, account)`: the
- * lookup is 206's `member_space_credential_sessions` (human-only, node admin /
- * space admin / self), and the kill is this node's PTY host. It is wired into
- * `IdentityService.disableAccount` (every space) and takes a space id for the
- * future removal op (that space only). A member who is gone but whose session
- * survived anyway cannot bring it back: the resume path re-checks membership
- * before it re-points anything (T2).
+ * There is no member-removal operation yet. The plan offered a SQL function
+ * (`internal.kill_space_credential_sessions_for_member`) or a TS equivalent;
+ * this is the TS equivalent, and no such SQL function exists, because SQL
+ * cannot reach a PTY. The lookup is 206's `member_space_credential_sessions`
+ * (human-only, node admin / space admin / self), and the kill is this node's
+ * PTY host. It is wired into `IdentityService.disableAccount` (every space)
+ * and takes a space id for the future removal op (that space only). A member
+ * who is gone but whose session survived anyway cannot bring it back: the
+ * resume path re-checks membership before it re-points anything (T2).
+ *
+ * DORMANT until a member-removal or account-disable path is composed.
+ * `IdentityServiceImpl` has no production composition, no catalog operation
+ * disables an account, and none removes a space member, so nothing in
+ * production calls this yet. The composition that adds one of those paths
+ * must pass `spaceCredentialContainment`.
  *
  * WHO "LAUNCHED" A SESSION (PLAN v2.1, C2/C3). The key is ONLY
  * `session_space_credentials.launcher_account_id` — the account whose claims
