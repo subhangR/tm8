@@ -83,12 +83,19 @@ interface Ran {
   stderr: string;
 }
 
-async function drive(modules: readonly CommandModule[], argv: readonly string[]): Promise<Ran> {
+async function drive(
+  modules: readonly CommandModule[],
+  argv: readonly string[],
+  // Sees stdout as it is written, for a caller that must act on a line before
+  // the command returns (the live-watch readiness probe).
+  tap?: (stdoutSoFar: string) => void,
+): Promise<Ran> {
   let stdout = '';
   let stderr = '';
   const streams = {
     stdout: (c: string | Uint8Array) => {
       stdout += typeof c === 'string' ? c : Buffer.from(c).toString('utf8');
+      tap?.(stdout);
     },
     stderr: (c: string) => {
       stderr += c;
@@ -225,19 +232,95 @@ describe('events.subscribe — the catalog\'s only WS row, now a real subscripti
     const spaceId = created.space?.id ?? created.id;
     expect(spaceId, `no space id in ${mk.stdout}`).toBeTruthy();
 
+    const createTask = async (title: string): Promise<string> => {
+      const res = await fetch(new URL(bindPath('entities.create', { spaceId: spaceId! }), server.baseUrl), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ spaceId, kind: 'task', title, clientMutationId: randomUUID() }),
+      });
+      const text = await res.text();
+      expect(res.status, `create ${title}: ${text}`).toBe(201);
+      const id = (JSON.parse(text) as { data?: { entity?: { id?: string } } }).data?.entity?.id;
+      expect(id, `no entity id in ${text}`).toBeTruthy();
+      return id!;
+    };
+
+    // The ids of `entity.upsert` events, in stream order, from COMPLETE jsonl
+    // lines only. Parsed, never substring-matched: an id can appear inside
+    // another event's payload.
+    const upsertIds = (stdoutSoFar: string): string[] =>
+      stdoutSoFar
+        .split('\n')
+        .slice(0, -1)
+        .filter((l) => l.trim() !== '')
+        .flatMap((l) => {
+          let e: { type?: unknown; entity?: { id?: unknown } };
+          try {
+            e = JSON.parse(l) as typeof e;
+          } catch {
+            return []; // not an event line; the full-stdout parse below will say so
+          }
+          return e.type === 'entity.upsert' && typeof e.entity?.id === 'string' ? [e.entity.id] : [];
+        });
+
     const { EVENT_COMMANDS } = await import('../../src/commands/event.js');
-    const watching = drive(EVENT_COMMANDS, [
-      'event', 'watch', '--space', spaceId!, '--timeout', '10', '--format', 'jsonl',
-    ]);
-    // Let the subscribe frame land before anything is created, so what arrives
-    // cannot be retained history.
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const res = await fetch(new URL(bindPath('entities.create', { spaceId: spaceId! }), server.baseUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spaceId, kind: 'task', title: 'live watch target', clientMutationId: randomUUID() }),
+    const WATCH_SECONDS = 25;
+    const PROBE_BUDGET_MS = 12_000;
+    let seen: string[] = [];
+    let settled = false;
+    let targetId: string | undefined;
+    // EARLY EXIT on the watch's own Ctrl-C path once the target is seen, so
+    // `--timeout` bounds only the failure path. The watch's SIGINT listener is
+    // invoked DIRECTLY — never `process.emit`, which would also run the test
+    // runner's own listeners.
+    const foreignSigint = new Set(process.listeners('SIGINT'));
+    let interrupted = false;
+    const stopIfTargetSeen = (): void => {
+      if (interrupted || settled || targetId === undefined || !seen.includes(targetId)) return;
+      const mine = process.listeners('SIGINT').filter((l) => !foreignSigint.has(l));
+      if (mine.length !== 1) return; // not unambiguous: let --timeout end it
+      interrupted = true;
+      (mine[0] as () => void)();
+    };
+    const watchEndsBy = Date.now() + WATCH_SECONDS * 1_000;
+    const watching = drive(
+      EVENT_COMMANDS,
+      ['event', 'watch', '--space', spaceId!, '--timeout', String(WATCH_SECONDS), '--format', 'jsonl'],
+      (so) => {
+        seen = upsertIds(so);
+        stopIfTargetSeen();
+      },
+    ).finally(() => {
+      settled = true;
     });
-    expect(res.status, `seed: ${await res.clone().text()}`).toBe(201);
+
+    // READINESS, not a fixed sleep. The node sends no success ack for a
+    // subscribe (WorkspaceControlAck is `control.refused` only), and it seeds
+    // the live cursor at the high-water mark AFTER an awaited read, so an event
+    // created before that seed is correctly never pushed. A delivered PROBE is
+    // the only client-visible proof that the cursor is seeded: the pump refuses
+    // to deliver for an unseeded (connection, Space). Sequential on purpose —
+    // one create in flight at a time, from the same client as the target.
+    // Racing `watching`: a refused subscribe settles the watch, and the loop
+    // stops instead of spinning out its budget.
+    const probes: string[] = [];
+    const readyBy = Date.now() + PROBE_BUDGET_MS;
+    const probeSeen = (): boolean => probes.some((id) => seen.includes(id));
+    while (!settled && Date.now() < readyBy && !probeSeen()) {
+      probes.push(await createTask(`live watch probe ${probes.length}`));
+      if (probeSeen()) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const live = probeSeen();
+
+    // Created strictly after a delivered probe, so a miss from here on is a
+    // DELIVERY defect, not an ordering artefact of this test.
+    let targetBudgetMs = 0;
+    if (live && !settled) {
+      targetBudgetMs = watchEndsBy - Date.now();
+      targetId = await createTask('live watch target');
+      stopIfTargetSeen(); // it may have arrived before the create returned
+    }
 
     const r = await watching;
     measured['events.subscribe.liveExit'] = r.code;
@@ -252,15 +335,28 @@ describe('events.subscribe — the catalog\'s only WS row, now a real subscripti
       return;
     }
 
+    const diag =
+      `exit=${r.code} earlyExit=${interrupted} probes=${probes.length} target=${targetId}\n` +
+      `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`;
+    expect(live, `subscription never went live: no probe delivered within ${PROBE_BUDGET_MS}ms\n${diag}`).toBe(true);
+
     const lines = r.stdout.trim().split('\n').filter((l) => l !== '');
     const events = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
     measured['events.subscribe.liveEventCount'] = events.length;
     measured['events.subscribe.liveTypes'] = [...new Set(events.map((e) => String(e['type'])))];
 
-    // NOT a bare `length > 0`: a subscribe that (per the server author's own
-    // disclosed caveat) still seeds its cursor at 0 would push retained history
-    // and satisfy that. This asserts the SEEDED entity specifically.
-    expect(events.some((e) => String(e['type']).startsWith('entity.'))).toBe(true);
+    // THE TARGET, BY ID — not `some(type startsWith 'entity.')`, which a probe
+    // (or retained history from a cursor seeded at 0) satisfies on its own. And
+    // AFTER every delivered probe in stream order, since it was created after
+    // the last one.
+    const ids = upsertIds(`${r.stdout.trim()}\n`);
+    const targetAt = targetId === undefined ? -1 : ids.indexOf(targetId);
+    const lastProbeAt = Math.max(...probes.map((id) => ids.lastIndexOf(id)));
+    expect(
+      targetAt,
+      `target created after a delivered probe was NOT delivered within the watch's remaining ${targetBudgetMs}ms\n${diag}`,
+    ).toBeGreaterThanOrEqual(0);
+    expect(targetAt, `target delivered before a probe created earlier\n${diag}`).toBeGreaterThan(lastProbeAt);
 
     // THE DISCRIMINATION, measured against the real socket: not one line on
     // stdout is a control frame. An ack rendered as an event is the naive-client
