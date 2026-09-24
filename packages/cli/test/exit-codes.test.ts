@@ -79,7 +79,7 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
   const codes = Object.keys(ERROR_STATUS) as CommandErrorCode[];
 
   it('covers every CommandErrorCode the contract defines', () => {
-    expect(codes.length).toBe(14);
+    expect(codes.length).toBe(19); // +5 forms (FORMS-DESIGN §6)
     for (const code of codes) {
       const exit = exitCodeForCommandError(code);
       expect(isExitCode(exit), `${code} -> ${exit}`).toBe(true);
@@ -104,6 +104,11 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
       limit_exceeded: 7,
       not_implemented: 8,
       upstream_unavailable: 7,
+      form_answers_invalid: 2,
+      form_not_open: 6,
+      form_structure_frozen: 6,
+      form_response_limit: 6,
+      form_respondent_not_allowed: 4,
     });
   });
 });

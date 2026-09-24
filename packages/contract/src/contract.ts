@@ -19,6 +19,7 @@
 
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
+import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -62,7 +63,11 @@ export type CoreEntityKind =
   // and `format` is a SLUG, not a closed list, so a second canvas format
   // later costs no migration (135's R3 lesson). Phase 1 is single-writer and
   // refuses embedded images; both are rulings, not omissions.
-  | 'drawing';
+  | 'drawing'
+  // Forms (migration 209, FORMS-DESIGN v3): a question set an agent asks a
+  // human, with validated, revisioned responses delivered back to the
+  // requesting session. Born only from `forms.create` (W1).
+  | 'form';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -479,6 +484,8 @@ export type CoreEntityState =
    * scene is the largest payload any kind carries.
    */
   | { kind: 'drawing'; format: string; elementCount: number }
+  /** A form's row facts (209): where it is in its lifecycle, and how long. */
+  | { kind: 'form'; status: FormStatus; questionCount: number }
   /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
@@ -814,6 +821,14 @@ export type CoreEntityContent =
    */
   | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
       appState: Record<string, unknown>; files: Record<string, unknown> }
+  /**
+   * A form (209), everything its panel needs in one read: settings with
+   * defaults applied, and sections and questions in order. Responses are not
+   * content — they page through `forms.responses.*`.
+   */
+  | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
+      structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
+      openedAt: string | null; closedAt: string | null }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
@@ -1580,7 +1595,13 @@ export type CommandErrorCode =
   | 'payload_too_large' | 'rate_limited' | 'limit_exceeded'
   | 'not_implemented' | 'upstream_unavailable'
   /** c904 §2.5: the never-drop core does not fit the caller's `totalBytes`. */
-  | 'context_budget_too_small';
+  | 'context_budget_too_small'
+  /**
+   * Forms (FORMS-DESIGN §6). `form_answers_invalid` carries
+   * `FormAnswersInvalidDetails` ({reason, issues[{key, code, message}]}).
+   */
+  | 'form_answers_invalid' | 'form_not_open' | 'form_structure_frozen'
+  | 'form_response_limit' | 'form_respondent_not_allowed';
 
 export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   invalid_input: 400, invalid_cursor: 400,
@@ -1589,6 +1610,8 @@ export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
   not_implemented: 501, upstream_unavailable: 503,
   context_budget_too_small: 422,
+  form_answers_invalid: 422, form_not_open: 409, form_structure_frozen: 409,
+  form_response_limit: 409, form_respondent_not_allowed: 403,
 };
 
 export const RETRYABLE_BY_DEFAULT = new Set<CommandErrorCode>(['rate_limited', 'limit_exceeded', 'upstream_unavailable']);
@@ -2491,6 +2514,9 @@ export type CreatableEntityKind = Exclude<
   // produce a container record with no machine behind it — a row that
   // renders, lists and counts while every verb on it fails.
   | 'container'
+  // `form` is born ONLY from `forms.create`, which writes its questions,
+  // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
+  | 'form'
 >;
 
 export interface CreateEntityInput extends CommandContext {

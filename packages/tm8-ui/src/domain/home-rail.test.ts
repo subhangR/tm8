@@ -75,7 +75,7 @@ describe('the Home icon rail', () => {
   });
 
   it('seats each group exactly as ruled', () => {
-    expect(kindsOf('work')).toEqual(['chat', 'task', 'work_session', 'project']);
+    expect(kindsOf('work')).toEqual(['chat', 'task', 'work_session', 'form', 'project']);
     expect(kindsOf('agents')).toEqual(['team_member', 'skill', 'memory']);
     expect(kindsOf('content')).toEqual(['doc', 'drawing', 'artifact', 'file']);
     expect(kindsOf('structure')).toEqual(['collection', 'graph']);

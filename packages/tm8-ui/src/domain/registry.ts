@@ -1863,6 +1863,40 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
+   * -- form (migration 209: a question set an agent asks a human) --
+   *
+   * THE HONEST MINIMUM, the way `chat` shipped its Wave 1 row: Forms W0 lands
+   * the data model and `registry.test.ts` asserts totality over
+   * `CoreEntityKindSchema`, so a kind with no row is a build failure. Forms W1
+   * (frontend) replaces this with the `questionnaire` body and its Fill /
+   * Build / Responses tabs.
+   *
+   * `quickCreate` is off: a form is born from `forms.create` with its whole
+   * question set, never from a bare title.
+   */
+  {
+    kind: 'form',
+    label: 'Form',
+    labelPlural: 'Forms',
+    icon: '☑',
+    iconArt: KIND_ART.form,
+    slug: 'forms',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree'],
+    chip: { glyph: '☑', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'FORM' }, COLLECTIONS_BLOCK],
+    },
+  },
+
+  /*
    * -- chat (migration 176: a conversation with a teammate, as an entity) --
    *
    * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a

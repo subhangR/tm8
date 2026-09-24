@@ -65,6 +65,13 @@ export const EXIT_BY_COMMAND_ERROR: Record<CommandErrorCode, ExitCode> = {
   // c904 §2.5: the caller asked for a budget the core cannot fit; the error's
   // `details.next` is the retry, so it is answered like a usage error.
   context_budget_too_small: EXIT_USAGE,
+  // Forms (FORMS-DESIGN §6): bad answers are fixed by the caller (usage);
+  // a closed, frozen or full form is the graph refusing against its truth.
+  form_answers_invalid: EXIT_USAGE,
+  form_not_open: EXIT_CONFLICT,
+  form_structure_frozen: EXIT_CONFLICT,
+  form_response_limit: EXIT_CONFLICT,
+  form_respondent_not_allowed: EXIT_FORBIDDEN,
 };
 
 /** The 7-code W0 subset → §7.6. Exhaustive by type. */

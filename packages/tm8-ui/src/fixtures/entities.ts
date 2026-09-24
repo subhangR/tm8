@@ -1089,6 +1089,19 @@ export const drawingLoginFlow = summary({
   state: { kind: 'drawing', format: 'excalidraw', elementCount: 6 },
 });
 
+/**
+ * Form — a question set an agent asked a human (migration 209, Forms W0).
+ * Open, with two questions: the smallest form whose list row says anything.
+ */
+export const formMigrationStrategy = summary({
+  id: 'form-migration-strategy',
+  kind: 'form',
+  title: 'Pick the migration strategy',
+  excerpt: 'Which approach? · Anything to watch for?',
+  createdBy: ada,
+  state: { kind: 'form', status: 'open', questionCount: 2 },
+});
+
 export const artifactPulseBoard = summary({
   id: 'artifact-pulse-board',
   kind: 'artifact',
@@ -1309,6 +1322,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual, artifactPulseBoard, drawingLoginFlow,
+  formMigrationStrategy,
   ...containerFixtures,
 ];
 
@@ -1833,6 +1847,35 @@ export const fixtureDetails: Record<string, EntityDetail> = {
    * out: they are optional members the library defaults, nothing here asserts
    * them, and including them would put raw hex in `src/` for no gain (§14).
    */
+  // A form's content is its whole question set, in order, with settings at
+  // their defaults except the ones this form chose (FORMS-DESIGN §3).
+  [formMigrationStrategy.id]: detail(formMigrationStrategy, {
+    content: {
+      kind: 'form',
+      status: 'open',
+      description: 'The billing table needs a new column before Friday.',
+      settings: {
+        responses: 'single', respondents: 'humans', closeOnSubmit: true, allowAmend: true,
+        delivery: { target: 'requesting_session', onSessionNotLive: 'resume' }, attentionPoints: 60,
+      },
+      structureVersion: 1,
+      sections: [],
+      questions: [
+        {
+          key: 'strategy', type: 'single_choice', title: 'Which approach?', required: true, position: 0,
+          config: {
+            options: [
+              { value: 'online_backfill', label: 'Online backfill', recommended: true },
+              { value: 'dual_write', label: 'Dual write' },
+            ],
+          },
+        },
+        { key: 'risks', type: 'long_text', title: 'Anything to watch for?', required: false, position: 1, config: {} },
+      ],
+      openedAt: '2026-09-24T10:00:00.000Z',
+      closedAt: null,
+    },
+  }),
   [drawingLoginFlow.id]: detail(drawingLoginFlow, {
     content: {
       kind: 'drawing',
