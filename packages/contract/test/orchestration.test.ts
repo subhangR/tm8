@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ORCHESTRATION_EDGE_TYPES,
+  ORCHESTRATION_NODE_KINDS,
+  confirmOnlyNodeKinds,
   BLUEPRINT_NODE_URI,
   applyGraphLinks,
   blueprintNodeRef,
@@ -37,6 +39,11 @@ describe('vocabulary', () => {
     for (const t of ORCHESTRATION_EDGE_TYPES) {
       expect(t.registry).toEqual({ type: t.type, reverse: false });
     }
+  });
+
+  it('the orchestrator creates tasks and their outputs only; teammates, people and skills are confirmed by the human', () => {
+    expect(ORCHESTRATION_NODE_KINDS.filter((k) => k.materializable).map((k) => k.kind)).toEqual(['task', 'doc', 'artifact', 'memory']);
+    expect(confirmOnlyNodeKinds()).toEqual(['team_member', 'member', 'skill']);
   });
 
   it('orders flow by the DATA, not by the stored direction (consumes/depends_on rank dst first)', () => {

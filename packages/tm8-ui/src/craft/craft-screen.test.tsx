@@ -5,12 +5,15 @@
  *
  * What these cases pin:
  *  · the route mounts the studio (tab wiring end to end);
- *  · the empty space says so, and “+ New graph” creates + selects a real row
- *    (entities.create through the seam — zero new catalog ops);
+ *  · the empty space TEACHES, and “＋ New blueprint” (in the header's graph
+ *    popover) creates + selects a real row (entities.create through the seam
+ *    — zero new catalog ops);
  *  · the canvas renders the ROW: a patched content lands as cards/lines after
  *    the durable entity.upsert event, with NO other read path (R1);
- *  · spec cards are marked, dangling edges are counted, an unknown graphType
- *    says so honestly.
+ *  · spec cards are marked, dangling edges surface as a finding, an unknown
+ *    graphType says so honestly;
+ *  · the ONE studio header (blueprint › conversation, views, Orchestrate with
+ *    its pre-flight), node selection → inspector, and the composer seed.
  *
  * jsdom loads no stylesheets (the recurring law), so nothing here claims
  * colour or geometry — presence, structure and text only; pixels are the
@@ -55,6 +58,16 @@ afterEach(() => {
   cleanup();
 });
 
+/** The ＋ rows live in the header popovers now — open one, press its ＋. */
+function pressNewGraph(view: ReturnType<typeof render>) {
+  fireEvent.click(view.getByTestId('crf-picker'));
+  fireEvent.click(view.getByTestId('crf-new'));
+}
+function pressNewChat(view: ReturnType<typeof render>) {
+  fireEvent.click(view.getByTestId('crf-chat-picker'));
+  fireEvent.click(view.getByTestId('crf-new-chat'));
+}
+
 async function mountStudio() {
   const seam = createFixtureSeam();
   await seam.openSpace(SPACE);
@@ -77,13 +90,15 @@ describe('the craft studio', () => {
   it('says the space has no graphs, then creates and selects one', async () => {
     const { view } = await mountStudio();
     await waitFor(() => view.getByTestId('crf-no-graph'));
+    /* The empty state TEACHES: what a blueprint is, and prompts to start. */
+    expect(view.getByTestId('crf-no-graph').textContent).toContain('Nothing is created until you press Orchestrate');
+    expect(view.getAllByTestId('crf-example').length).toBeGreaterThan(0);
 
-    fireEvent.click(view.getByTestId('crf-new'));
+    pressNewGraph(view);
     /* The create is a real seam write: the picker gains the row and the
        canvas flips from “no graph” to the empty-blueprint invitation. */
     await waitFor(() => view.getByTestId('crf-empty'));
-    const picker = view.getByTestId('crf-picker') as HTMLSelectElement;
-    expect(picker.options[picker.selectedIndex]?.text).toBe('Untitled graph');
+    await waitFor(() => expect(view.getByTestId('crf-picker').textContent).toContain('Untitled graph'));
     view.unmount();
   });
 
@@ -121,12 +136,14 @@ describe('the craft studio', () => {
     const canvas = view.getByTestId('crf-canvas');
     expect(canvas.textContent).toContain('Ship API');
     expect(canvas.textContent).toContain('Ship UI');
-    /* Specs are flagged as intent; the relation label is humanised. */
+    /* Specs are flagged as intent; the relation reads ALONG the drawn arrow:
+       "b depends_on a" is drawn a → b, so the arrow says "blocks". */
     expect(canvas.textContent).toContain('REST');
-    expect(canvas.textContent?.toLowerCase()).toContain('depends');
-    /* The edge naming a key no node carries is COUNTED, never silently gone. */
-    await waitFor(() => view.getByTestId('crf-dangling'));
-    expect(view.getByTestId('crf-dangling').textContent).toContain('1 edge');
+    expect(canvas.querySelectorAll('.crf-node--spec')).toHaveLength(2);
+    expect(canvas.textContent).toContain('blocks');
+    /* The edge naming a key no node carries is a FINDING, never silently gone. */
+    await waitFor(() => view.getByTestId('crf-issues'));
+    expect(view.getByTestId('crf-issues').getAttribute('aria-label')).toContain('1 error');
 
     /* LIVE CONSTRUCTION READS AS MOTION: the NEXT patch's additions carry the
        fresh marker (class only — jsdom sees no styles; the glow itself is the
@@ -156,11 +173,14 @@ describe('the craft studio', () => {
      * on an idle box and widens with any other async work on this screen.
      */
     const freshCells = await waitFor(() => {
-      const cells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
+      const cells = view.getByTestId('crf-canvas').querySelectorAll('.crf-node--marked');
       expect(cells).toHaveLength(1);
       return cells;
     });
     expect(freshCells[0]!.textContent).toContain('Ship docs');
+    /* And the change is SAID, durably, over the canvas — the strip names it
+       and its entry selects the node. */
+    expect(view.getByTestId('crf-diff-summary').textContent).toContain('+1 node');
     view.unmount();
   });
 
@@ -218,14 +238,20 @@ describe('the two-pane studio', () => {
     view.unmount();
   });
 
-  it('puts the conversation picker and ＋ on the chat pane, and the graph picker on the canvas', async () => {
+  it('puts the blueprint and the conversation on ONE header, each ＋ inside its own list', async () => {
     const { view } = await mountStudio();
     await waitFor(() => view.getByTestId('crf-chat-picker'));
-    /* Both panes carry a header, each naming the pane beneath it. */
-    expect(view.getByTestId('crf-chat-picker')).toBeTruthy();
-    expect(view.getByTestId('crf-new-chat')).toBeTruthy();
-    expect(view.getByTestId('crf-picker')).toBeTruthy();
+    /* One header names the hierarchy: this blueprint › the chat about it. */
+    const head = view.getByTestId('crf-head');
+    expect(head.contains(view.getByTestId('crf-picker'))).toBe(true);
+    expect(head.contains(view.getByTestId('crf-chat-picker'))).toBe(true);
+    /* No bare ＋ glyphs on the header — each lives in the list it adds to. */
+    expect(view.queryByTestId('crf-new')).toBeNull();
+    expect(view.queryByTestId('crf-new-chat')).toBeNull();
+    fireEvent.click(view.getByTestId('crf-picker'));
     expect(view.getByTestId('crf-new')).toBeTruthy();
+    fireEvent.click(view.getByTestId('crf-chat-picker'));
+    expect(view.getByTestId('crf-new-chat')).toBeTruthy();
     /* And the divider between them is a real separator, not a border. */
     expect(view.getByTestId('panel-resizer-left')).toBeTruthy();
     view.unmount();
@@ -320,7 +346,7 @@ describe('the two-pane studio', () => {
     /* A blueprint has to exist for the conversation to be resolved AGAINST —
        with none selected the resolve stands aside and the chat keeps its own
        cold-start, which is a different case from the one under test. */
-    fireEvent.click(view.getByTestId('crf-new'));
+    pressNewGraph(view);
     await waitFor(() => view.getByTestId('crf-empty'));
     /* Resolved to the composer: the fixture's threads are anchored elsewhere
        and are not craft-mode, so this blueprint has none of its own.
@@ -339,7 +365,7 @@ describe('the two-pane studio', () => {
     /* The send created a thread and the chat screen selected it ITSELF. */
     await waitFor(() => expect(view.queryByText('New craft conversation')).toBeNull());
 
-    fireEvent.click(view.getByTestId('crf-new-chat'));
+    pressNewChat(view);
     await waitFor(() => expect(view.getByText('New craft conversation')).toBeTruthy());
     view.unmount();
   });
@@ -370,15 +396,15 @@ describe('the two-pane studio', () => {
     view.unmount();
   });
 
-  it('puts Orchestrate on the blueprint row, beside the graph it acts on', async () => {
+  it('puts Orchestrate on the studio header, beside the blueprint it acts on', async () => {
     const { view } = await mountStudio();
     const orchestrate = await waitFor(() => view.getByTestId('crf-orchestrate'));
-
-    /* Not on a banner above both panes: it rides the CANVAS pane's header,
-       which is the row naming the very blueprint `selectedId` refers to. */
-    const head = orchestrate.closest('.crf-pane-head');
+    const head = orchestrate.closest('[data-testid="crf-head"]');
     expect(head).not.toBeNull();
     expect(head?.querySelector('[data-testid="crf-picker"]')).not.toBeNull();
+    /* No blueprint ⇒ nothing to orchestrate, and it says why. */
+    expect((orchestrate as HTMLButtonElement).disabled).toBe(true);
+    expect(orchestrate.getAttribute('title')).toContain('blueprint');
     view.unmount();
   });
 

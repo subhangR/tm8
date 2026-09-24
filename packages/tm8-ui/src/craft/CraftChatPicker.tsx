@@ -1,6 +1,8 @@
 /**
- * CRAFT CHAT PICKER — the conversation selector, on the chat pane's own
- * header rather than in a column of its own.
+ * CRAFT CHAT PICKER — the conversation selector, the SECOND crumb of the
+ * studio's one header (blueprint › conversation). It used to head the chat
+ * pane while the graph `<select>` headed the canvas: two unrelated pickers
+ * for what is one hierarchy — this blueprint, and the chats about it.
  *
  * WHY A POPOVER AND NOT A `<select>`. The rows carry four facts each —
  * title, preview, mode and teammate/model — plus a day grouping and a find
@@ -115,7 +117,7 @@ export function CraftChatPicker({
   }, [open]);
 
   return (
-    <div className="crf-pane-head" ref={wrapRef}>
+    <div className="crf-crumb crf-crumb--chat" ref={wrapRef}>
       <button
         type="button"
         className="crf-pick"
@@ -125,24 +127,11 @@ export function CraftChatPicker({
         title={current ? current.title : 'Choose a craft conversation'}
         onClick={() => setOpen((was) => !was)}
       >
+        <span className="crf-pick__title">{current ? current.title : 'New craft conversation'}</span>
+        {current ? <span className="crf-pick__meta">{current.config.teammateLabel}</span> : null}
         <span className="crf-pick__caret" aria-hidden>
           ▾
         </span>
-        <span className="crf-pick__title">{current ? current.title : 'New craft conversation'}</span>
-        {current ? <span className="crf-pick__meta">{current.config.teammateLabel}</span> : null}
-      </button>
-      <button
-        type="button"
-        className="crf-pane-head__plus"
-        data-testid="crf-new-chat"
-        aria-label="New craft chat"
-        title="Start a new craft conversation on this blueprint"
-        onClick={() => {
-          setOpen(false);
-          onNewChat();
-        }}
-      >
-        <span aria-hidden>＋</span>
       </button>
 
       {open ? (
@@ -158,6 +147,20 @@ export function CraftChatPicker({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="crf-pop__list">
+            {/* ＋ LIVES IN THE LIST IT ADDS TO. It used to be a second button
+                on the pane header beside a second ＋ for graphs — two
+                identical glyphs, a pane apart, doing different things. */}
+            <button
+              type="button"
+              className="crf-pop__row crf-pop__row--new"
+              data-testid="crf-new-chat"
+              onClick={() => {
+                setOpen(false);
+                onNewChat();
+              }}
+            >
+              <span className="crf-pop__row-title">＋ New conversation about this blueprint</span>
+            </button>
             {groups.length === 0 ? (
               <p className="crf-pop__hollow" data-testid="crf-chat-empty">
                 {query.trim()

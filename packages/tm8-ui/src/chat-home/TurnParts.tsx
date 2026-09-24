@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { type ChatEntityResolver } from './EntityChip';
@@ -38,6 +38,21 @@ export interface TurnPartsProps {
   /** Which of the ledger's turns this is. Required to mean anything with
    *  `ledger`; ignored without it. */
   turnMessageId?: EntityId | undefined;
+  /**
+   * A HOST's one-line note under a tool call — Craft names the blueprint
+   * nodes a patching call changed. Called for plain tool calls only; null ⇒
+   * nothing extra. Never a box and never the payload (the no-tool-boxes law):
+   * the host renders a sentence, not the call.
+   */
+  toolNote?: ((call: ToolNoteInput) => ReactNode) | undefined;
+}
+
+/** What a host's `toolNote` sees of one call. */
+export interface ToolNoteInput {
+  name: string;
+  args: unknown;
+  result?: unknown;
+  state: 'running' | 'completed' | 'error';
 }
 
 /** A tool call with nothing to show for itself — everything except the
@@ -63,6 +78,7 @@ export function TurnParts({
   assetHref,
   ledger,
   turnMessageId,
+  toolNote,
 }: TurnPartsProps) {
   const projected = useMemo(() => projectTurnParts(parts), [parts]);
   /**
@@ -156,7 +172,8 @@ export function TurnParts({
           const create = createsBySeq.get(part.seq);
           const transition = transitionsBySeq.get(part.seq);
           const readsHere = part.seq === readAnchorSeq && readPairs.length > 0;
-          if (!create && !transition && !readsHere) return null;
+          const note = toolNote?.({ name: part.name, args: part.args, result: part.result, state: part.state }) ?? null;
+          if (!create && !transition && !readsHere && note == null) return null;
           return (
             <div className="tch-ledger" key={part.seq}>
               {readsHere && turnLedger ? (
@@ -182,6 +199,7 @@ export function TurnParts({
                   onOpenEntity={onOpenEntity}
                 />
               ) : null}
+              {note}
             </div>
           );
         }
