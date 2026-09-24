@@ -181,6 +181,22 @@ expect 0 "the same skip under a group name stays a reported skip" "SKIP  test pa
 run "$NEW_CHECK" "$WORK/o" conformance_plain_vitest --only test:tools/conformance --shard 1/2
 expect 0 "shardability is keyed to the script, not a name list" "bun run test --shard=1/2 @/tools/conformance"
 
+# TM8_VITEST_JSON_DIR: an opt-in second reporter. Part 1 runs without it, so the
+# no-env path is already proven byte-identical; these pin what it adds.
+TM8_VITEST_JSON_DIR=.vj run "$NEW_CHECK" "$WORK/o" - --only test:packages/cli,test:tools/conformance
+expect 0 "json reports: unsharded, one file per package, default reporter kept" \
+  "^  \[stub\] bun run test --reporter=default --reporter=json --outputFile.json=/.*/\.vj/packages-cli\.json @/packages/cli$" \
+  "^  \[stub\] bun run test --reporter=default --reporter=json --outputFile.json=/.*/\.vj/tools-conformance\.json @/tools/conformance$"
+TM8_VITEST_JSON_DIR=.vj run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 3/4
+expect 0 "json reports: a shard names its own file" \
+  "^  \[stub\] bun run test --shard=3/4 --reporter=default --reporter=json --outputFile.json=/.*/\.vj/packages-server\.shard-3-4\.json @/packages/server$"
+TM8_VITEST_JSON_DIR=.vj TRACE_SHARD_FILES=0 run "$NEW_CHECK" "$WORK/o" - --only test:packages/server --shard 4/4
+expect 1 "json reports do not weaken the empty-shard check" "passed no test files"
+for bad_dir in /tmp/tm8-vj ../vj a/../../vj; do
+  TM8_VITEST_JSON_DIR="$bad_dir" run "$NEW_CHECK" "$WORK/o" - --only test:packages/cli
+  expect 2 "refused: TM8_VITEST_JSON_DIR=$bad_dir (never writes outside the repo)" -- "\[stub\]"
+done
+
 for bad_args in "--only typechek" "--only test:packages/nope" "--only ," "--only" \
                 "--only test:packages/server --fast" "--fast --only test:packages/server" \
                 "--only test:packages/server --no-install" "--only migrations --no-migrations" \
