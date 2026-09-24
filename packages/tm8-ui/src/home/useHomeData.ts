@@ -19,10 +19,9 @@
  * actually reach the seam, and this hook passes one), `liveIds`, and
  * `livenessOf`, which is THE verdict and is never recomputed here.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EntitySummary, NotificationItem } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
-import { getKind } from '../domain';
 import { activityRowOf, appendActivity, type ActivityRow } from './home-activity';
 import { assignableKinds, liveKinds } from './home-model';
 

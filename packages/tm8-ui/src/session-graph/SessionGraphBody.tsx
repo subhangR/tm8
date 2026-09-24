@@ -38,7 +38,6 @@ import {
   FOLD_AT,
   HUB_DEGREE,
   buildSessionGraph,
-  foldId,
   summarize,
   type Cell,
   type SessionGraph,

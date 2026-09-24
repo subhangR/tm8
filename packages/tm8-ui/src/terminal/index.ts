@@ -46,7 +46,6 @@ export { ReservedToolbarSeam } from './ReservedToolbarSeam';
 export {
   presentSession,
   presentationStyle,
-  sessionStyle,
   type LivenessTone,
   type PresentationInput,
   type PresentationStyle,
@@ -55,7 +54,6 @@ export {
 export { toSessionRow, type SessionRow } from './session-row';
 export {
   createScriptedActivitySource,
-  useTerminalActivity,
   useTerminalActivityMap,
   type ActivitySource,
   type ScriptedActivitySource,
