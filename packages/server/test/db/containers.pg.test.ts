@@ -249,9 +249,13 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('containers');
   const files = migrationFiles();
   const containers = containersMigration(files);
-  database.apply(files.filter((f) => f !== containers));
+  // Everything BEFORE it, seed, then it and everything after — the order an
+  // upgrade really runs. Holding it back while applying later migrations
+  // broke once a later one (218) rewrote policies on the tables it creates.
+  const at = files.indexOf(containers);
+  database.apply(files.slice(0, at));
   fixture = await seedPre177(database);
-  database.apply([containers]);
+  database.apply(files.slice(at));
 });
 
 afterAll(async () => {

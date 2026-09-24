@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(196); // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
+    expect(server.appliedMigrations.length).toBe(197); // 196 -> 197: 218_rls_membership_once_per_statement (#770). MEASURED. // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
