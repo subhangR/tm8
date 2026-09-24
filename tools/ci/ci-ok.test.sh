@@ -9,6 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 CHANGES="${CHANGES:-$HERE/changes.sh}"   # overridable: mutation proofs
 CIOK="${CIOK:-$HERE/ci-ok.sh}"
+CIYML="${CIYML:-$REPO/.github/workflows/ci.yml}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -29,6 +30,22 @@ L3=$(bash "$HERE/affected.sh" --all 2>/dev/null | sed -n 's/^modules=//p')
 OUT="changes.sh MODULES=$L1"$'\n'"ci-ok.sh KNOWN=$L2"$'\n'"affected.sh --all=$L3"
 [[ -n $L1 && $L1 == "$L2" && $L2 == "$L3" ]]
 report "changes.sh MODULES == ci-ok.sh KNOWN == affected.sh --all modules" $? "lists differ"
+
+# ---- every ci.yml job is one ci-ok needs and one ci-ok.sh JOBS key ------------------------
+# The pinned count only catches a job DROPPED from needs. A job ADDED to ci.yml but not to
+# needs leaves the count alone, and ci-ok would stay green while it is red. So the expected
+# set is READ from ci.yml: its top-level jobs keys minus ci-ok == ci-ok's needs == ci-ok.sh's
+# JOBS keys, and PINNED_COUNT is their size. Keep ci-ok's needs a one-line [..] list: any
+# other form reads as empty here, which is red.
+Y_JOBS=$(awk '/^jobs:/ {j=1; next} j && /^[^ #]/ {j=0} j && /^  [A-Za-z0-9_-]+:/ {sub(/^  /,""); sub(/:.*/,""); print}' "$CIYML" \
+  | grep -vx ci-ok | sort | jq -R . | jq -sc .)
+Y_NEEDS=$(awk '/^  ci-ok:/ {c=1; next} c && /^  [A-Za-z0-9_-]+:/ {c=0} c && /^    needs: *\[/ {sub(/^    needs: *\[/,""); sub(/\].*/,""); print}' "$CIYML" \
+  | tr ',' '\n' | tr -d ' ' | grep -v '^$' | sort | jq -R . | jq -sc .)
+S_JOBS=$(sed -n "/^JOBS='{/,/^}'/p" "$CIOK" | sed "1s/^JOBS='//; \$s/'\$//" | jq -c 'keys | sort')
+S_PIN=$(sed -n 's/^PINNED_COUNT=//p' "$CIOK")
+OUT="ci.yml jobs - ci-ok=$Y_JOBS"$'\n'"ci-ok needs=$Y_NEEDS"$'\n'"ci-ok.sh JOBS=$S_JOBS"$'\n'"PINNED_COUNT=$S_PIN"
+[[ $Y_JOBS != "[]" && $Y_JOBS == "$Y_NEEDS" && $Y_NEEDS == "$S_JOBS" && $S_PIN == "$(jq length <<<"$S_JOBS")" ]]
+report "ci.yml jobs (minus ci-ok) == ci-ok needs == ci-ok.sh JOBS keys, PINNED_COUNT their size" $? "job sets differ"
 
 # ==== changes.sh ==========================================================================
 # A repo whose HEAD is a two-parent merge commit, the shape of refs/pull/N/merge.
@@ -65,12 +82,17 @@ GOOD=$(stub good "if [[ \$1 == --all ]]; then exec bash '$HERE/affected.sh' --al
 
 ch() { # <affected> <event> [force] [expected_sha] [pr_head]: run changes.sh in $G
   rm -f "$ARGS"
-  OUT=$(cd "$G" && AFFECTED=$1 EVENT_NAME=$2 FORCE_ALL=${3:-} EXPECTED_SHA=${4-$MERGE} PR_HEAD_SHA=${5-$PR_HEAD} \
+  OUT=$(cd "${CHDIR:-$G}" && AFFECTED=$1 EVENT_NAME=$2 FORCE_ALL=${3:-} EXPECTED_SHA=${4-$MERGE} PR_HEAD_SHA=${5-$PR_HEAD} \
         bash "$CHANGES" 2>"$TMP/err")
   RC=$?
 }
 is_all() { grep -qx 'all=true' <<<"$OUT" && grep -Fqx "modules=$ALL_MODULES" <<<"$OUT" && [[ $RC == 0 ]]; }
-is_fallback() { is_all && grep -q '^reason=fallback: ' <<<"$OUT" && grep -q '::warning' "$TMP/err"; }
+# exactly one warning and one clean block: a nested fallback (F1) prints two warnings and a
+# reason that swallowed the first block
+is_fallback() {
+  is_all && [[ $(grep -c '' <<<"$OUT") == 13 && $(grep -c '^reason=fallback: ' <<<"$OUT") == 1 ]] \
+    && [[ $(grep -c '::warning' "$TMP/err") == 1 ]] && ! grep -qF 'modules=[' <<<"$(grep '^reason=' <<<"$OUT")"
+}
 called_with() { [[ -f $ARGS && $(cat "$ARGS") == "$1" ]]; }
 
 ch "$GOOD" pull_request
@@ -106,6 +128,10 @@ ch "$GOOD" pull_request "" "$ONE"
 is_fallback
 report "HEAD is a one-parent commit -> fallback ALL" $? "want fallback"
 git -C "$G" checkout -q main
+mkdir -p "$TMP/norepo"
+CHDIR="$TMP/norepo" GIT_CEILING_DIRECTORIES="$TMP" ch "$GOOD" pull_request
+is_fallback && grep -q '^reason=fallback: error at line [0-9]*: head=' <<<"$OUT"
+report "not a git repo (git fails inside \$(...)) -> ONE fallback, clean reason" $? "want one warning, one clean reason"
 
 ch "$(stub exit1 "echo '$NARROW'" 'exit 1')" pull_request
 is_fallback

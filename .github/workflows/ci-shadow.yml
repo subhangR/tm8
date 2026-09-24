@@ -30,13 +30,18 @@
 # All distinct: the shadow never cancels (or deadlocks with) the real run, and a new push
 # cancels only the older run of the same kind.
 #
-# Secrets/permissions: ci.yml reads no secrets, so no `secrets: inherit`. No `permissions:`
-# here, so the called jobs get the repository default, exactly as ci.yml's own run does.
+# The changes job logs github.workflow, so these names can be read off a run.
+#
+# Secrets/permissions: ci.yml reads no secrets, so no `secrets: inherit`. contents: read
+# here and in ci.yml; a called workflow can only narrow its caller's token, never widen it.
 
 name: ci-shadow
 
 on:
   pull_request:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
