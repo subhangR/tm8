@@ -22,6 +22,7 @@ import {
   SHA256_HEX_RE,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
+import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import type { SameShape } from './launch-suggest.js';
 import type {
   ArtifactsCreateInput, ArtifactsPreviewStartInput,
@@ -168,6 +169,8 @@ export const CoreEntityKindSchema = z.enum([
   'container',
   // Drawings (194): an Excalidraw canvas as an entity.
   'drawing',
+  // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
+  'form',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -591,6 +594,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     format: z.string().min(1),
     elementCount: z.number().int().nonnegative(),
   }).strict(),
+  // 209 — a form's lifecycle status and its question count.
+  z.object({
+    kind: z.literal('form'),
+    status: FormStatusSchema,
+    questionCount: z.number().int().nonnegative(),
+  }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -973,6 +982,18 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     appState: z.record(z.unknown()),
     files: z.record(z.unknown()),
   }).passthrough(),
+  // 209 — a form: settings (defaults applied), sections and questions in order.
+  z.object({
+    kind: z.literal('form'),
+    status: FormStatusSchema,
+    description: z.string().nullable(),
+    settings: FormSettingsSchema,
+    structureVersion: z.number().int().positive(),
+    sections: z.array(FormSectionRowSchema),
+    questions: z.array(FormQuestionRowSchema),
+    openedAt: z.string().nullable(),
+    closedAt: z.string().nullable(),
+  }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -2238,7 +2259,9 @@ export const CreatableEntityKindSchema = z.union([
   // is: each is born only from its own door — `chat.start` and
   // `containers.create` — which supply a runtime binding a generic create
   // could not. A generic create would make a record with nothing behind it.
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container']),
+  // `form` likewise: `forms.create` writes its questions and requesting
+  // session in the same call (FORMS-DESIGN §6).
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form']),
   CustomEntityKindSchema,
 ]);
 
@@ -4435,6 +4458,8 @@ export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
   'context_budget_too_small',
+  'form_answers_invalid', 'form_not_open', 'form_structure_frozen',
+  'form_response_limit', 'form_respondent_not_allowed',
 ]);
 
 export const ErrorCodeSchema: z.ZodType<ErrorCode> = z.enum([

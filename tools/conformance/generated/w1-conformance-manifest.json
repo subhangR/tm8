@@ -6714,6 +6714,39 @@
         "migration": {
           "strategy": "container-detail"
         }
+      },
+      "form": {
+        "kind": "form",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "forms"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "form-lifecycle",
+          "genericCreate": false,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "form-detail"
+        }
       }
     },
     "custom": {

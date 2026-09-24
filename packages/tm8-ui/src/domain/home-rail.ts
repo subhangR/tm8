@@ -109,7 +109,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // where work in this space starts, and a chat is what spawns the
     // `work_session` two rows down. `project` closes the group as the thing
     // all three hang off.
-    kinds: ['chat', 'task', 'work_session', 'project'],
+    //
+    // `form` (209) follows `work_session` because a session is what asks one:
+    // it is the question an agent is waiting on a human to answer, mid-work.
+    kinds: ['chat', 'task', 'work_session', 'form', 'project'],
   },
   {
     id: 'agents',

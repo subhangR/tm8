@@ -251,7 +251,7 @@ describe('a refusal renders beside the field it concerns', () => {
     expect(refusalField('conflict: global id already bound')).toBe('globalId');
     expect(refusalField('globalId is already taken')).toBe('globalId');
     expect(refusalField('global_id conflict')).toBe('globalId');
-    expect(refusalField('rate limited, try again')).toBe('form');
+    expect(refusalField('rate limited, try again')).toBe('whole');
   });
 
   it('the client-side globalId refusal renders INSIDE the globalId field', async () => {

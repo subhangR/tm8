@@ -54,10 +54,11 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // then `chat` joined with migration 176 (Chat as an Entity) → 22.
     // then `container` joined with migration 177 (Containers P0) → 23.
     // then `drawing` joined with migration 194 (the Excalidraw canvas) → 24.
+    // then `form` joined with migration 209 (Forms W0) → 25.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(24);
+    expect(CORE_KINDS.length).toBe(25);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

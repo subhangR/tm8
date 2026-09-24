@@ -30,6 +30,7 @@ export type CapabilityProfile =
   | 'worktree-lifecycle'
   | 'artifact-lifecycle'
   | 'container-lifecycle'
+  | 'form-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -56,6 +57,7 @@ export type MigrationStrategy =
   | 'chat-detail'
   | 'container-detail'
   | 'drawing-detail'
+  | 'form-detail'
   | 'custom-registry'
   | 'none';
 
@@ -203,6 +205,25 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         reactions: true,
         connections: true,
         lifecycleOperations: ['execution.spawn'],
+      };
+    case 'form-lifecycle':
+      // Everything generic EXCEPT creation (FORMS-DESIGN §6, migration 209):
+      // a form is born only from `forms.create`, which writes its questions,
+      // sections and requesting-session edge in one call — `form` is excluded
+      // from CreatableEntityKind. The `forms.*` operations land in W1, which
+      // lists them here with the catalog rows.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: true,
+        genericMove: true,
+        genericHierarchy: true,
+        genericDeleteRestore: true,
+        genericPoints: true,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [],
       };
     case 'artifact-lifecycle':
       // Everything generic EXCEPT creation, mirroring worktree: an artifact
@@ -453,6 +474,15 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'container-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'container-detail' },
+  }),
+  // Forms (FORMS-DESIGN v3, migration 209). A question set an agent asks a
+  // human. Born only from `forms.create` (W1), so not generically creatable;
+  // everything else rides the envelope. `registered-not-default`: a form is
+  // asked on purpose, it is not a container things get filed into.
+  form: core('form', 'forms', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'form-lifecycle' },
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'form-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

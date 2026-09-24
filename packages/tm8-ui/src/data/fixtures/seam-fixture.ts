@@ -754,6 +754,25 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         // Always empty in phase 1: the doors refuse a non-empty files map.
         files: {},
       };
+    case 'form':
+      // One optional long-text question: enough for a panel to render a
+      // question set, with every setting at its default (FORMS-DESIGN §3.3).
+      return {
+        kind: 'form',
+        status: state.status,
+        description: null,
+        settings: {
+          responses: 'per_member', respondents: 'humans', closeOnSubmit: false, allowAmend: true,
+          delivery: { target: 'requesting_session', onSessionNotLive: 'resume' }, attentionPoints: 60,
+        },
+        structureVersion: 1,
+        sections: [],
+        questions: [
+          { key: 'notes', type: 'long_text', title: 'Anything to add?', required: false, position: 0, config: {} },
+        ],
+        openedAt: null,
+        closedAt: null,
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };

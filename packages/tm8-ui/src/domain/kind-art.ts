@@ -205,6 +205,18 @@ export const KIND_ART = {
     'M2.6 14c1.6-1.5 3.1.6 4.7-.7',
   ],
 
+  /**
+   * A clipboard with a list on it (`clipboard-list`, the kind's registry
+   * icon, 209). The clip is what separates it from `doc`'s sheet: a form is
+   * a sheet somebody hands you to fill in.
+   */
+  form: [
+    'M5.6 3.2H4.4a1.2 1.2 0 0 0-1.2 1.2v8.4a1.2 1.2 0 0 0 1.2 1.2h7.2a1.2 1.2 0 0 0 1.2-1.2V4.4a1.2 1.2 0 0 0-1.2-1.2h-1.2',
+    'M6.2 2h3.6v2.4H6.2z',
+    'M5.6 7.6h.8M8 7.6h2.6',
+    'M5.6 10.4h.8M8 10.4h2.6',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 
