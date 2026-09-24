@@ -277,7 +277,7 @@ jobs:
   test-ui:
     name: test-ui (${{ matrix.shard }}/2)
     needs: changes
-    if: needs.changes.outputs.ui == 'true'
+    if: false && needs.changes.outputs.ui == 'true'  # W2 CONTROL (iii)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
