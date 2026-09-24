@@ -15,7 +15,7 @@ trap 'rm -rf "$TMP"' EXIT
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 unset GITHUB_STEP_SUMMARY
 
-ALL_MODULES='["typecheck","server","cli","execution","ui","small","migrations","mcp","prompt","pty-protocol"]'
+ALL_MODULES='["typecheck","server","cli","execution","ui","small","migrations"]'
 PASS=0 FAIL=0
 report() { # <name> <ok:0|1> <detail>
   if [[ $2 == 0 ]]; then PASS=$((PASS + 1)); echo "ok   $1"
@@ -108,9 +108,6 @@ execution=false
 ui=true
 small=false
 migrations=false
-mcp=false
-prompt=false
-pty-protocol=false
 reason=changed nodes: packages/tm8-ui'
 GOOD=$(stub good "if [[ \$1 == --all ]]; then exec bash '$HERE/affected.sh' --all; fi" "cat <<'EOF'" "$NARROW" "EOF")
 
@@ -124,7 +121,7 @@ is_all() { grep -qx 'all=true' <<<"$OUT" && grep -Fqx "modules=$ALL_MODULES" <<<
 # exactly one warning and one clean block: a nested fallback (F1) prints two warnings and a
 # reason that swallowed the first block
 is_fallback() {
-  is_all && [[ $(grep -c '' <<<"$OUT") == 13 && $(grep -c '^reason=fallback: ' <<<"$OUT") == 1 ]] \
+  is_all && [[ $(grep -c '' <<<"$OUT") == $((3 + $(jq length <<<"$ALL_MODULES"))) && $(grep -c '^reason=fallback: ' <<<"$OUT") == 1 ]] \
     && [[ $(grep -c '::warning' "$TMP/err") == 1 ]] && ! grep -qF 'modules=[' <<<"$(grep '^reason=' <<<"$OUT")"
 }
 called_with() { [[ -f $ARGS && $(cat "$ARGS") == "$1" ]]; }
@@ -242,7 +239,9 @@ ok GREEN "docs-only: every test job skipped" "$DOCS"
 ok GREEN "all=true, everything success" "$FULL"
 ok GREEN "push, all=true" "$FULL" push
 ok GREEN "shadow (force_all), all=true" "$FULL" pull_request true
-ok GREEN "mcp affected, no job yet (NO_JOB)" "$(needs false '["typecheck","server","cli","small","mcp"]')"
+# an mcp change (CI split W3): mcp is not a module, its closure lands on small and its dependents
+ok GREEN "mcp change: typecheck, server, cli, small" "$(needs false '["typecheck","server","cli","small"]')"
+ok RED "mcp as a module name (folded into small by W3)" "$(edit "$UI" '.changes.outputs.modules = "[\"typecheck\",\"mcp\"]"')"
 ok GREEN "unaffected job ran anyway and passed" "$(edit "$UI" '."test-cli".result = "success"')"
 
 ok RED "CONTROL changes failed, gated jobs skipped" \
@@ -276,10 +275,21 @@ ok RED "an unpinned job in needs" "$(edit "$UI" '.extra = {result: "success"}')"
 ok RED "NEEDS empty" ""
 ok RED "NEEDS not JSON" "nope"
 # NO_JOB must never shadow a real job
-sed 's/^NO_JOB=.*/NO_JOB='"'"'["mcp","prompt","pty-protocol","ui"]'"'"'/' "$CIOK" >"$TMP/ci-ok-nojob.sh"
+sed 's/^NO_JOB=.*/NO_JOB='"'"'["ui"]'"'"'/' "$CIOK" >"$TMP/ci-ok-nojob.sh"
 OUT=$(NEEDS=$UI EVENT_NAME=pull_request bash "$TMP/ci-ok-nojob.sh" 2>&1); RC=$?
 [[ $RC != 0 ]] && grep -q 'NO_JOB lists ui' <<<"$OUT"
 report "ci-ok RED: NO_JOB naming a module that has a job" $? "want red"
+# NO_JOB is empty since W3; prove its green path still works for the next new module, and
+# that the same module without NO_JOB is red
+sed 's/^KNOWN=.*/KNOWN='"'"'["typecheck","server","cli","execution","ui","small","migrations","newmod"]'"'"'/' "$CIOK" >"$TMP/ci-ok-new.sh"
+NEW=$(edit "$UI" '.changes.outputs.modules = "[\"typecheck\",\"ui\",\"newmod\"]"')
+OUT=$(NEEDS=$NEW EVENT_NAME=pull_request bash "$TMP/ci-ok-new.sh" 2>&1); RC=$?
+[[ $RC != 0 ]] && grep -q 'module newmod is affected but has no job' <<<"$OUT"
+report "ci-ok RED: a known module with no job and not in NO_JOB" $? "want red"
+sed -i 's/^NO_JOB=.*/NO_JOB='"'"'["newmod"]'"'"'/' "$TMP/ci-ok-new.sh"
+OUT=$(NEEDS=$NEW EVENT_NAME=pull_request bash "$TMP/ci-ok-new.sh" 2>&1); RC=$?
+[[ $RC == 0 && $(tail -n 1 <<<"$OUT") == "ci-ok: GREEN" ]]
+report "ci-ok GREEN: the same module listed in NO_JOB" $? "want green (rc=$RC)"
 
 echo
 echo "ci-ok.test.sh: $PASS passed, $FAIL failed"

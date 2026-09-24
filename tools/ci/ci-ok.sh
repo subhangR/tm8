@@ -38,8 +38,8 @@ JOBS='{
   "migrations": "migrations"
 }'
 PINNED_COUNT=9
-KNOWN='["typecheck","server","cli","execution","ui","small","migrations","mcp","prompt","pty-protocol"]'
-NO_JOB='["mcp","prompt","pty-protocol"]'   # Wave 3 gives these jobs (or folds them into small)
+KNOWN='["typecheck","server","cli","execution","ui","small","migrations"]'
+NO_JOB='[]'   # empty since W3 folded mcp, prompt, pty-protocol into small; keep for the next new module
 
 [[ -n ${NEEDS:-} ]] || { printf "RED: NEEDS is empty\nci-ok: RED\n"; exit 1; }
 
