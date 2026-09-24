@@ -44,6 +44,12 @@ import { initials, legendRows, truncate } from './presentation';
  * type: the card title is 12.5px and must paint at ≥ 11px, so 11 / 12.5 ≈ 0.88.
  */
 export const FIT_FLOOR = 0.88;
+/**
+ * …unless the WHOLE plan fits at this scale or better, in which case the
+ * opening view shows all of it: a plan that nearly fits reads better whole
+ * at 8.8px titles than clipped at 11px (coordinator review of #744).
+ */
+export const FIT_ACCEPT = 0.7;
 /** GRAPH.md §1: below this the canvas drops hints and labels. Must stay < FIT_FLOOR. */
 export const LOD_FAR_BELOW = 0.55;
 const MIN_K = 0.2;
@@ -160,7 +166,7 @@ export function BlueprintCanvas({
     (box: Box, floor: number): Camera | null => {
       if (size.w <= 0 || size.h <= 0) return null;
       const k0 = fitK(box);
-      const k = clampK(Math.max(k0, Math.min(floor, FIT_CEIL)));
+      const k = clampK(floor > 0 && k0 >= FIT_ACCEPT ? k0 : Math.max(k0, Math.min(floor, FIT_CEIL)));
       /* Solve in the USABLE band (between the overlays), then express the
          camera's corner in full-pane terms. */
       const viewW = usable.w / k;
@@ -411,6 +417,15 @@ export function BlueprintCanvas({
     && bounds.minX + bounds.width <= camera.x + size.w / camera.k + 1
     && bounds.minY + bounds.height <= camera.y + size.h / camera.k + 1
   );
+  /* The clip is INTENTIONAL at the legible zoom — say so at the edge it
+     happened on, with a fade and a nudge that pans toward the rest. */
+  const viewRight = camera ? camera.x + size.w / camera.k : 0;
+  const moreRight = !!camera && bounds.minX + bounds.width > viewRight + 8;
+  const moreLeft = !!camera && bounds.minX < camera.x - 8;
+  const nudge = (dir: 1 | -1) => {
+    if (!camera) return;
+    move({ ...camera, x: camera.x + dir * (size.w / camera.k) * 0.7 });
+  };
   const firstKey = readingOrder(view)[0]?.key ?? null;
   const tabKey = selected && view.cards.some((c) => c.key === selected) ? selected : firstKey;
 
@@ -552,6 +567,18 @@ export function BlueprintCanvas({
             <kbd className="crf-find__key" aria-hidden>f</kbd>
           )}
         </div>
+      ) : null}
+
+      {chrome && moreLeft ? (
+        <button type="button" className="crf-more crf-more--left" data-testid="crf-more-left" aria-label="Show more of the plan to the left" onClick={() => nudge(-1)}>
+          <span aria-hidden>‹</span>
+        </button>
+      ) : null}
+      {chrome && moreRight ? (
+        <button type="button" className="crf-more crf-more--right" data-testid="crf-more-right" aria-label="Show more of the plan to the right" onClick={() => nudge(1)}>
+          <span className="crf-more__word">more</span>
+          <span aria-hidden>›</span>
+        </button>
       ) : null}
 
       {chrome ? <Legend /> : null}

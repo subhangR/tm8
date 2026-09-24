@@ -170,13 +170,15 @@ export interface OrchestrateProps {
   findings: readonly CoherenceFinding[];
   /** What would be created: spec counts by kind label, e.g. [['Tasks', 5], ['Docs', 2]]. */
   plan: readonly (readonly [string, number])[];
+  /** Specs Orchestrate does NOT create — teammates, skills — for the human to confirm, by name. */
+  confirm?: readonly { label: string; names: readonly string[] }[];
   disabledReason: string | null;
   approving: boolean;
   onApprove(): void;
   onShowNode(key: string): void;
 }
 
-export function OrchestrateButton({ findings, plan, disabledReason, approving, onApprove, onShowNode }: OrchestrateProps) {
+export function OrchestrateButton({ findings, plan, confirm = [], disabledReason, approving, onApprove, onShowNode }: OrchestrateProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   useDismiss(open, () => setOpen(false), ref);
@@ -204,8 +206,19 @@ export function OrchestrateButton({ findings, plan, disabledReason, approving, o
           <div className="crf-pre__head">
             <strong>Pre-flight</strong>
             <span className="crf-pre__sum">
-              {plan.length > 0 ? `Will create ${plan.map(([label, n]) => `${n} ${label.toLowerCase()}`).join(', ')}` : 'Nothing new to create — every node already exists.'}
+              {plan.length > 0 ? `Will create ${plan.map(([label, n]) => `${n} ${label.toLowerCase()}`).join(', ')}.` : 'Nothing new to create — every node already exists.'}
             </span>
+            {confirm.length > 0 ? (
+              <div className="crf-pre__confirm" data-testid="crf-preflight-confirm">
+                {confirm.map((group) => (
+                  <p key={group.label}>
+                    <strong>{`${group.names.length} ${group.label.toLowerCase()} to confirm:`}</strong>
+                    {' '}
+                    {group.names.join(', ')}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="crf-pop__list">
             {findings.length === 0 ? (
