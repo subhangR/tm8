@@ -16,7 +16,7 @@
  * stored: the entity's version moved past the pinned one, or, for artifacts
  * and files, the body ref did.
  */
-import { SELECTION_HEADER_KINDS, type SelectionHeader } from '@tm8/contract';
+import { SELECTION_HEADER_KINDS, type EntityHeaderView, type SelectionHeader } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
 import { titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -64,6 +64,8 @@ interface HeaderRow {
   header_summary: string | null;
   header_keywords: string[] | null;
   header_stale: boolean | null;
+  header_version: number | null;
+  header_pinned_version: number | null;
 }
 
 const L = HEADER_TEXT_LIMIT;
@@ -116,6 +118,8 @@ const HEADER_SQL = `
          eh.when_to_use as header_when_to_use,
          eh.summary as header_summary,
          eh.keywords as header_keywords,
+         eh.version as header_version,
+         eh.pinned_version as header_pinned_version,
          case when eh.entity_id is null then null else (
            eh.pinned_version <> e.version
            or (e.kind = 'artifact' and eh.pinned_ref is distinct from art.current_revision_id::text)
@@ -179,21 +183,48 @@ function authoredOf(row: HeaderRow): AuthoredHeader | null {
   };
 }
 
-/**
- * Headers for `ids`, keyed by id, in the caller's transaction. Ids that are
- * unreadable, deleted, in another space or of a kind with no header are absent.
- */
-export async function resolveHeaders(q: Querier, spaceId: string, ids: readonly string[]): Promise<Map<string, SelectionHeader>> {
+/** One resolved header per readable row, with the row it came from. */
+async function resolveRows(
+  q: Querier,
+  spaceId: string,
+  ids: readonly string[],
+): Promise<Array<{ row: HeaderRow; header: SelectionHeader }>> {
   const wanted = [...new Set(ids)];
-  const out = new Map<string, SelectionHeader>();
-  if (wanted.length === 0) return out;
+  if (wanted.length === 0) return [];
   const rows = await q.query<HeaderRow>(HEADER_SQL, [spaceId, wanted, [...SELECTION_HEADER_KINDS]]);
+  const out: Array<{ row: HeaderRow; header: SelectionHeader }> = [];
   for (const row of rows) {
     const facts = factsOf(row);
     if (!facts) continue;
     // `titleOf` reads only the kind and that kind's own name column, all selected above.
     const name = titleOf({ ...row, deleted_at: null } as unknown as EntityRow);
-    out.set(row.id, deriveHeader({ id: row.id, name }, facts, authoredOf(row)));
+    out.push({ row, header: deriveHeader({ id: row.id, name }, facts, authoredOf(row)) });
   }
   return out;
+}
+
+/**
+ * Headers for `ids`, keyed by id, in the caller's transaction. Ids that are
+ * unreadable, deleted, in another space or of a kind with no header are absent.
+ */
+export async function resolveHeaders(q: Querier, spaceId: string, ids: readonly string[]): Promise<Map<string, SelectionHeader>> {
+  return new Map((await resolveRows(q, spaceId, ids)).map(({ row, header }) => [row.id, header]));
+}
+
+/**
+ * `resolveHeaders` for an entity read (`entities.get`, `entities.context`,
+ * the header commands' result): the same header, plus the authored row's own
+ * `version` (0 when there is none) and `pinnedVersion`, which a caller needs
+ * to write it next.
+ */
+export async function resolveHeaderViews(
+  q: Querier,
+  spaceId: string,
+  ids: readonly string[],
+): Promise<Map<string, EntityHeaderView>> {
+  return new Map((await resolveRows(q, spaceId, ids)).map(({ row, header }) => [row.id, {
+    ...header,
+    version: row.header_version == null ? 0 : Number(row.header_version),
+    pinnedVersion: row.header_pinned_version == null ? null : Number(row.header_pinned_version),
+  }]));
 }

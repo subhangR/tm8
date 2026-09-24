@@ -106,6 +106,11 @@ export const OPERATIONS = [
   { name: 'entities.get',            method: 'GET',    path: '/v2/entities/:id',                            kind: 'read',    status: 'v1' },
   { name: 'entities.create',         method: 'POST',   path: '/v2/entities',                                kind: 'command', status: 'v1' },
   { name: 'entities.patch',          method: 'PATCH',  path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
+  // The authored selection header (headers design 01a0d31e §9.2): its own
+  // door, not a `content.header` patch member, because the header has its own
+  // version and never moves `entities.version` (migration 216).
+  { name: 'entities.header.set',     method: 'PUT',    path: '/v2/entities/:id/header',                     kind: 'command', status: 'v1' },
+  { name: 'entities.header.clear',   method: 'DELETE', path: '/v2/entities/:id/header',                     kind: 'command', status: 'v1' },
   { name: 'attentionRequests.list',  method: 'GET',    path: '/v2/attention-requests',                      kind: 'read',    status: 'v1' },
   { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
   { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },

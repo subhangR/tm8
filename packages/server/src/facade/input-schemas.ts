@@ -104,6 +104,8 @@ import {
   FileUploadInitInputSchema,
   GateTaskInputSchema,
   TickCriteriaInputSchema,
+  SetEntityHeaderInputSchema,
+  ClearEntityHeaderInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
   IdentityProfileUpdateInputSchema,
@@ -246,6 +248,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // unbound, so an unexpected field is refused instead of ignored.
   'voice.token.create': CreateVoiceTokenInputSchema,
   'entities.patch': PatchEntityInputSchema,
+  'entities.header.set': SetEntityHeaderInputSchema,
+  'entities.header.clear': ClearEntityHeaderInputSchema,
   'attentionRequests.create': CreateAttentionRequestInputSchema,
   'attentionRequests.update': UpdateAttentionRequestInputSchema,
   'attentionRequests.resolveEntity': ResolveEntityAttentionInputSchema,

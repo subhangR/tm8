@@ -9,6 +9,7 @@ import {
   decodeCursor,
   encodeCursor,
   isCollabError,
+  SELECTION_HEADER_KINDS,
   type ActivityItem,
   type ActorSummary,
   type AttentionRequest,
@@ -30,6 +31,10 @@ import {
   type Page,
   type PatchEntityInput,
   type TickCriteriaInput,
+  type ClearEntityHeaderInput,
+  type EntityHeaderResult,
+  type EntityHeaderView,
+  type SetEntityHeaderInput,
   type PullInput,
   type ReactionInput,
   type ResolveEntityAttentionInput,
@@ -38,6 +43,8 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
+import { resolveHeaderViews } from '../../../headers/resolve.js';
+import { clearEntityHeader, createHeaderMutationId, setEntityHeader } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -905,6 +912,41 @@ async function attentionMutationResult(
   return { request, entity, affectedCount: Number(raw.affectedCount) };
 }
 
+const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
+
+/** The entity's resolved header, under the caller's RLS; undefined for a kind with none. */
+async function headerOf(q: Querier, detail: EntityDetail): Promise<EntityHeaderView | undefined> {
+  if (!HEADER_KINDS.has(detail.kind)) return undefined;
+  return (await resolveHeaderViews(q, detail.spaceId, [detail.id])).get(detail.id);
+}
+
+/**
+ * An entity read carries `header` only when one is AUTHORED (version > 0).
+ * A native or derived header is recomputed from fields the read already
+ * carries (a task's derived summary is its own description), so showing it
+ * would only add bytes; and until someone writes a header, every read stays
+ * byte-identical (headers design §9.5). No `header` means header version 0.
+ */
+const authored = (header: EntityHeaderView | undefined): EntityHeaderView | undefined =>
+  header && header.version > 0 ? header : undefined;
+
+/** `entities.get`'s detail, with `header` when one is authored. */
+async function withHeader(q: Querier, detail: EntityDetail): Promise<EntityDetail> {
+  const header = authored(await headerOf(q, detail));
+  return header ? { ...detail, header } : detail;
+}
+
+/**
+ * A header command's result: the command result, and the header now in
+ * effect — after a clear, the native/derived one, at version 0.
+ */
+async function headerResult(q: Querier, id: string, result: CommandResult): Promise<EntityHeaderResult> {
+  const header = result.entity ? await headerOf(q, result.entity) : undefined;
+  if (!result.entity || !header) throw new CollabError('not_found', `no readable entity with a header: ${id}`);
+  const own = authored(header);
+  return { ...result, entity: own ? { ...result.entity, header: own } : result.entity, header };
+}
+
 async function commandResult(
   q: Querier,
   raw: RpcCommandResult,
@@ -1249,7 +1291,7 @@ export class W2EntitiesCommandsTrackingService {
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
-    return this.deps.db.tx(claimsFor(owner, ctx), (q) => buildUniversalDetail(q, id, owner.identityId));
+    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId)));
   };
 
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
@@ -1386,6 +1428,12 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
+      // An authored header rides the create's transaction: the entity and its
+      // header land together or not at all (headers design §3.1).
+      if (input.header && raw.entity?.id) {
+        await setEntityHeader(q, raw.entity.id, input.header, 0, envelope.actorId ?? null,
+          createHeaderMutationId(envelope.clientMutationId));
+      }
       const receipt = wantsReceipt(ctx) ? await buildReceipt(q, 'entity.create', raw) : undefined;
       return receipt ?? commandResult(q, raw, owner.identityId);
     });
@@ -1580,6 +1628,40 @@ export class W2EntitiesCommandsTrackingService {
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
     }
+  };
+
+  /**
+   * `entities.header.set` — write an entity's authored selection header
+   * (migration 216's `set_entity_header`). The header has its own version;
+   * `entities.version` never moves, so a header write can never fail an
+   * in-flight body edit or un-pin a verification.
+   */
+  readonly setHeader = async (ctx: RequestContext): Promise<EntityHeaderResult> => {
+    const owner = await this.deps.owner();
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as SetEntityHeaderInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await setEntityHeader(q, id, input, input.expectedVersion, envelope.actorId ?? null,
+        envelope.clientMutationId ?? null);
+      return headerResult(q, id, await commandResult(q, raw, owner.identityId));
+    });
+  };
+
+  /**
+   * `entities.header.clear` — remove the authored header, so the entity falls
+   * back to its native/derived one. The header's expected version is required.
+   */
+  readonly clearHeader = async (ctx: RequestContext): Promise<EntityHeaderResult> => {
+    const owner = await this.deps.owner();
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as ClearEntityHeaderInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await clearEntityHeader(q, id, input.expectedVersion, envelope.actorId ?? null,
+        envelope.clientMutationId ?? null);
+      return headerResult(q, id, await commandResult(q, raw, owner.identityId));
+    });
   };
 
   /** A version conflict owes the caller the `current` it lost to; anything else passes through. */

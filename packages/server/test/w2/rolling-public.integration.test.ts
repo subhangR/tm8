@@ -350,6 +350,9 @@ const GIT_NET_NEW_OPERATIONS = [
   'entities.commands.gate',
   // bug 01a0d2f1: tick acceptance criteria by id — joins the G02 entities seam.
   'entities.commands.tick',
+  // headers I4: the authored selection header's two doors join the G02 entities seam.
+  'entities.header.set',
+  'entities.header.clear',
   'projects.contention',
   'projects.branches.list',
   // 2026-08-12 (Git UI landing): the six execution.git* rows — the session
@@ -594,7 +597,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // same number from the component lists, so this literal cannot drift alone.
     // MEASURED from this assertion's own failing run.
     // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
-    expect(registry.size).toBe(202); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(registry.size).toBe(204); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -780,7 +783,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
     // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(146); /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(148); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -957,8 +960,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
-    expect(health).toMatchObject({ ok: true, /* +13 forms.* (Forms W1). MEASURED. */ operations: 236, implemented: 234 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
-    expect(harness.production.server.registry.size).toBe(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(health).toMatchObject({ ok: true, /* +13 forms.* (Forms W1). MEASURED. */ operations: 238, implemented: 236 }); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(harness.production.server.registry.size).toBe(236); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -985,7 +988,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // residual asserted above stays empty. MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): nine skills.* rows. MEASURED.
-    expect(registered.size + residual.length).toBe(234); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655): registerable v1 HTTP. MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(registered.size + residual.length).toBe(236); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655): registerable v1 HTTP. MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

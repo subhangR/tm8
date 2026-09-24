@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942",
+  "catalogDigest": "sha256:41d9d861be92e6f6a4491c218557a6c10d1483c0d4285677d1152d8080b33378",
   "catalog": {
-    "total": 238,
-    "v1": 236,
+    "total": 240,
+    "v1": 238,
     "reserved": 2,
-    "http": 236,
+    "http": 238,
     "ws": 1,
-    "registerableV1Http": 234,
+    "registerableV1Http": 236,
     "methods": {
       "GET": 78,
       "POST": 113,
       "PATCH": 16,
-      "DELETE": 16,
-      "PUT": 13,
+      "DELETE": 17,
+      "PUT": 14,
       "WS": 2
     },
     "kinds": {
       "read": 82,
-      "command": 154,
+      "command": 156,
       "stream": 2
     },
-    "uniqueNames": 238,
-    "uniqueBindings": 237
+    "uniqueNames": 240,
+    "uniqueBindings": 239
   },
   "reservedOperations": [
     "search.query",
@@ -512,6 +512,20 @@
         "operation": "entities.patch",
         "method": "PATCH",
         "path": "/v2/entities/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.header.set",
+        "method": "PUT",
+        "path": "/v2/entities/:id/header",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.header.clear",
+        "method": "DELETE",
+        "path": "/v2/entities/:id/header",
         "status": "registered",
         "source": "server-router"
       },
@@ -2070,7 +2084,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 206
+    "unimplementedV1Http": 208
   },
   "schemas": {
     "additive": {
@@ -2978,6 +2992,40 @@
           "patch"
         ],
         "inputSchemaRef": "PatchEntityInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.header.set",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.header.set",
+        "intentTags": [
+          "entities",
+          "header",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.header.clear",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.header.clear",
+        "intentTags": [
+          "entities",
+          "header",
+          "clear"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

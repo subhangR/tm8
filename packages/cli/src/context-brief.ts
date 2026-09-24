@@ -68,10 +68,31 @@ function gateText(gate: unknown): string[] {
   ];
 }
 
+/**
+ * A header as text. Its text is graph content, so it prints inside an
+ * `untrusted_data` block, never as bare lines a reader could take as
+ * instructions; the control fields (source, version, stale) print outside.
+ */
+export function renderHeaderLines(header: Record<string, unknown>): string[] {
+  const version = Number(header['version'] ?? 0);
+  const keywords = Array.isArray(header['keywords']) ? header['keywords'].map(String) : [];
+  return [
+    `header: ${String(header['source'] ?? '-')}`
+      + (version > 0 ? ` v${version}` : ' (none authored: --expect-version 0)')
+      + (header['stale'] === true ? ` · stale (written for v${String(header['pinnedVersion'])})` : '')
+      + (header['bytes'] == null ? '' : ` · body ${String(header['bytes'])} B`),
+    '<untrusted_data type="entry-header">',
+    ...(header['whenToUse'] == null ? [] : [`when to use: ${String(header['whenToUse'])}`]),
+    ...(header['summary'] == null ? [] : [`summary: ${String(header['summary'])}`]),
+    ...(keywords.length === 0 ? [] : [`keywords: ${keywords.join(', ')}`]),
+    '</untrusted_data>',
+  ];
+}
+
 /** Keys rendered by name below; anything else falls through to `key: value`. */
 const KNOWN = new Set([
   'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq', 'priority', 'gate', 'assignees',
-  'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
+  'header', 'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
   'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'budget',
 ]);
 
@@ -98,6 +119,7 @@ export function renderContextBrief(view: Row): string {
       + (a['by'] !== undefined ? ` · by ${str(a['by'])}` : '')
       + (a['at'] !== undefined ? ` ${minute(a['at'])}` : ''));
   }
+  if (isRow(view['header'])) out.push(...renderHeaderLines(view['header']));
   if ('parent' in view) out.push(`parent: ${view['parent'] === null ? 'none' : refLine(view['parent'])}`);
   if (view['anchor'] !== undefined) out.push(`anchor: ${refLine(view['anchor'])}`);
   if ('parentMessage' in view) out.push(`reply to: ${view['parentMessage'] === null ? 'none' : refLine(view['parentMessage'])}`);

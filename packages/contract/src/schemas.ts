@@ -23,6 +23,16 @@ import {
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
+import {
+  AUTHORED_HEADER_LIMITS,
+  SELECTION_HEADER_KINDS,
+  SELECTION_HEADER_SOURCES,
+  type ClearEntityHeaderInput,
+  type EntityHeaderResult,
+  type EntityHeaderView,
+  type HeaderTextInput,
+  type SetEntityHeaderInput,
+} from './selection-header.js';
 import type { SameShape } from './launch-suggest.js';
 import type {
   ArtifactsCreateInput, ArtifactsPreviewStartInput,
@@ -1054,12 +1064,29 @@ export const HierarchySchema: z.ZodType<Hierarchy> = z.lazy(() => z.object({
   path: z.array(EntitySummarySchema),
 }).strict());
 
+/** The resolved selection header plus its authored bookkeeping (selection-header.ts). */
+export const EntityHeaderViewSchema: z.ZodType<EntityHeaderView> = z.object({
+  entityId: EntityIdSchema,
+  kind: z.enum(SELECTION_HEADER_KINDS),
+  name: z.string(),
+  whenToUse: z.string().nullable(),
+  summary: z.string().nullable(),
+  keywords: z.array(z.string()),
+  source: z.enum(SELECTION_HEADER_SOURCES),
+  stale: z.boolean(),
+  bytes: z.number().int().nonnegative().nullable(),
+  loadPointer: z.string().nullable(),
+  version: z.number().int().nonnegative(),
+  pinnedVersion: z.number().int().positive().nullable(),
+}).strict();
+
 export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object({
   ...entitySummaryShape(),
   content: EntityContentSchema,
   hierarchy: HierarchySchema,
   connections: ConnectionsSchema,
   capabilities: EntityCapabilitiesSchema,
+  header: EntityHeaderViewSchema.optional(),
 }).strict());
 
 // ---------------------------------------------------------------------------
@@ -1637,6 +1664,18 @@ const commandContextShape = {
 
 export const CommandContextSchema: z.ZodType<CommandContext> =
   z.object(commandContextShape).strict();
+
+/**
+ * Authored header text. The bounds are migration 216's, checked on the
+ * untrimmed text here only as an early refusal; the RPC trims and re-checks,
+ * and refuses a header with neither `whenToUse` nor `summary`.
+ */
+const headerTextShape = {
+  whenToUse: z.string().min(1).max(AUTHORED_HEADER_LIMITS.whenToUse).nullable().optional(),
+  summary: z.string().min(1).max(AUTHORED_HEADER_LIMITS.summary).nullable().optional(),
+  keywords: z.array(z.string().min(1).max(AUTHORED_HEADER_LIMITS.keyword)).max(AUTHORED_HEADER_LIMITS.keywords).optional(),
+};
+export const HeaderTextInputSchema: z.ZodType<HeaderTextInput> = z.object(headerTextShape).strict();
 
 export const ServerConnectionNameSchema = z.string()
   .min(1)
@@ -2283,6 +2322,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   content: z.record(z.unknown()).optional(),
   attachTo: attachToSchema.optional(),
   connections: uniqueArray(InitialConnectionInputSchema).optional(),
+  header: HeaderTextInputSchema.optional(),
 }).strict() as z.ZodType<CreateEntityInput>;
 
 export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
@@ -2308,6 +2348,7 @@ export const ArtifactsCreateInputSchema: z.ZodType<ArtifactsCreateInput> = z.obj
   sourceWorkSessionId: EntityIdSchema.nullable().optional(),
   parentId: EntityIdSchema.nullable().optional(),
   position: z.number().optional(),
+  header: HeaderTextInputSchema.optional(),
 }).strict();
 
 export const ArtifactsPublishInputSchema: z.ZodType<ArtifactsPublishInput> = z.object({
@@ -2561,6 +2602,26 @@ export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
   expectedVersion: z.number().finite(),
   gate: z.enum(['none', 'pr_merged']),
 }).strict();
+
+export const SetEntityHeaderInputSchema: z.ZodType<SetEntityHeaderInput> = z.object({
+  ...commandContextShape,
+  ...headerTextShape,
+  expectedVersion: z.number().int().nonnegative().optional(),
+}).strict();
+
+export const ClearEntityHeaderInputSchema: z.ZodType<ClearEntityHeaderInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
+export const EntityHeaderResultSchema: z.ZodType<EntityHeaderResult> = z.lazy(() => z.object({
+  entity: EntityDetailSchema.optional(),
+  edge: EdgeViewSchema.optional(),
+  activity: ActivityItemSchema.optional(),
+  patches: z.array(EntitySummarySchema),
+  undo: UndoTokenSchema.optional(),
+  header: EntityHeaderViewSchema,
+}).strict());
 
 export const TickCriteriaInputSchema: z.ZodType<TickCriteriaInput> = z.object({
   ...commandContextShape,
@@ -3936,6 +3997,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   }).strict().optional(),
   acceptance: z.array(z.object({ id: z.string(), done: z.boolean(), text: z.string() }).strict()).optional(),
   acceptanceWrite: z.object({ write: z.string(), writeOp: ContextExpandOpSchema }).strict().optional(),
+  header: EntityHeaderViewSchema.optional(),
   blockers: z.array(z.object({
     id: EntityIdSchema,
     title: z.string(),

@@ -105,6 +105,8 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
       'entities.create',
       'entities.delete',
       'entities.get',
+      'entities.header.clear',
+      'entities.header.set',
       'entities.hierarchy',
       'entities.move',
       'entities.patch',

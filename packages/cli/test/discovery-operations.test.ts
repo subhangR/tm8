@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 238; /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 240; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 234, /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 236, /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
 
@@ -611,6 +611,8 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'entities.commands.complete': 'CompleteTaskInputSchema',
   'entities.commands.gate': 'GateTaskInputSchema',
   'entities.commands.tick': 'TickCriteriaInputSchema',
+  'entities.header.set': 'SetEntityHeaderInputSchema',
+  'entities.header.clear': 'ClearEntityHeaderInputSchema',
   'messages.edit': 'PatchMessageInputSchema',
   'messages.delete': 'DeleteMessageInputSchema',
   'messages.attachments.add': 'AddMessageAttachmentsInputSchema',
@@ -780,10 +782,11 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       const flags = syntax === null ? [] : guardFlagsIn(syntax);
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
-    // Every mapped guard DTO is required.
+    // Every mapped guard DTO is required, but one: entities.header.set's
+    // expectedVersion is optional (an unguarded header write), so it is not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(38); /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
+    expect(swept).toBe(39); /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -836,6 +839,8 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['entities.commands.complete', '--expect-version', 'expectedVersion'],
     ['entities.commands.gate', '--expect-version', 'expectedVersion'],
     ['entities.commands.tick', '--expect-version', 'expectedVersion'],
+    ['entities.header.set', '--expect-version', 'expectedVersion'],
+    ['entities.header.clear', '--expect-version', 'expectedVersion'],
     ['messages.edit', '--expect-version', 'expectedVersion'],
     ['messages.delete', '--expect-version', 'expectedVersion'],
     ['messages.attachments.add', '--expect-version', 'expectedVersion'],
@@ -924,7 +929,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(39); /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(actual.length).toBe(41); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

@@ -20,6 +20,7 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
+import { headerAuthorable } from '../../../headers/derive.js';
 import type { RequestContext } from '../../../http/types.js';
 import { actorOf, loadActors } from '../../entity-read.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -238,6 +239,10 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live;
     case 'entities.patch':
       return live && EDITABLE_KINDS.has(row.kind);
+    // The header doors refuse any other kind (216); the edit right is theirs.
+    case 'entities.header.set':
+    case 'entities.header.clear':
+      return live && headerAuthorable(row.kind);
     case 'entities.move':
       return live && MOVABLE_KINDS.has(row.kind);
     case 'entities.delete':

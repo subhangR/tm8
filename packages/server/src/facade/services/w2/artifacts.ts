@@ -34,6 +34,7 @@ import { raw } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, requireParam, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
+import { createHeaderMutationId, setEntityHeader } from '../../../headers/write.js';
 
 /**
  * Preview capability TTL (design §9.5: 10 minutes). The RPC also enforces a
@@ -255,6 +256,11 @@ export class W2ArtifactsService {
         input.position ?? null,
         input.clientMutationId,
       ]);
+      // An authored header rides the create's transaction (headers design §3.1).
+      if (input.header && rpc.entity?.id) {
+        await setEntityHeader(q, rpc.entity.id, input.header, 0, envelope.actorId ?? null,
+          createHeaderMutationId(input.clientMutationId));
+      }
       return toCommandResult(q, rpc, viewerIdentityId);
     });
   };

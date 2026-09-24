@@ -22,6 +22,7 @@ import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
+import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -692,6 +693,13 @@ export interface EntityDetail extends EntitySummary {
   hierarchy: Hierarchy;
   connections: Connections;
   capabilities: EntityCapabilities;
+  /**
+   * The entity's AUTHORED selection header, on `entities.get` and on the
+   * result of `entities.header.set/clear`. Absent when none is authored (the
+   * header version is then 0): a native/derived header restates fields the
+   * detail already carries. Header text is graph content: untrusted.
+   */
+  header?: EntityHeaderView;
 }
 
 /**
@@ -2588,6 +2596,12 @@ export interface CreateEntityInput extends CommandContext {
   content?: Record<string, unknown>;
   attachTo?: { entityId: EntityId; edgeType: 'attached_to' | 'relates_to' };
   connections?: InitialConnectionInput[];
+  /**
+   * An authored selection header, written in the same transaction as the
+   * entity (`entities.header.set` semantics). Only kinds that can carry one
+   * (team_member, doc, artifact, drawing, file, task, collection) accept it.
+   */
+  header?: HeaderTextInput;
 }
 
 /** Atomic initial edge created in the same transaction as its source entity. */
@@ -6412,6 +6426,13 @@ export interface EntityContextV2View {
    * operation call.
    */
   acceptanceWrite?: { write: string; writeOp: EntityContextExpandOp };
+  /**
+   * The AUTHORED selection header (headers design 01a0d31e §7), on the
+   * default read. Core: never trimmed. Absent when none is authored, so the
+   * header version is 0; its `version` is what `tm8 entity header set|clear
+   * --expect-version` takes.
+   */
+  header?: EntityHeaderView;
   blockers?: EntityContextBlocker[];
   children?: EntityContextRef[];
   // doc

@@ -46,6 +46,7 @@ import { createHash } from 'node:crypto';
 
 import {
   CollabError,
+  SELECTION_HEADER_KINDS,
   decodeCursor,
   encodeCursor,
   type EntityContextAssignee,
@@ -60,9 +61,11 @@ import {
   type EntityContextOmitted,
   type EntityContextRef,
   type EntityContextV2View,
+  type EntityHeaderView,
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
+import { resolveHeaderViews } from '../../../headers/resolve.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 
@@ -95,6 +98,8 @@ const ELLIPSIS = '…';
  * `actions.list` with no schema is still the unpaged v1 inventory (M2/S5).
  */
 export const ADVERTISE_ACTIONS_EXPAND = true;
+
+const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
 
 /** The v2 section names; `summary` is accepted as an alias of `assignment`. */
 export type V2Section = 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
@@ -134,6 +139,13 @@ export interface ContextV2LoadPlan {
   readonly explicit: boolean;
   /** Body + acceptance (+ outline). No statement of its own: it rides the root row. */
   readonly assignment: boolean;
+  /**
+   * The selection header, on the default read of a kind that resolves one
+   * (`SELECTION_HEADER_KINDS`), shown when authored. Core: it is how a reader
+   * decides whether the body is worth loading, and its `version` is what a
+   * header write takes.
+   */
+  readonly header: boolean;
   readonly parent: boolean;
   readonly assignees: boolean;
   readonly gate: boolean;
@@ -170,6 +182,7 @@ export function v2LoadPlan(
     return {
       explicit: false,
       assignment: loaded.has('assignment'),
+      header: HEADER_KINDS.has(kind),
       parent: kind !== 'message',
       assignees: isTask,
       gate: isTask,
@@ -187,6 +200,7 @@ export function v2LoadPlan(
   return {
     explicit: true,
     assignment: has('assignment'),
+    header: false,
     // A `--cursor` page is the section's rows only (c761 §3.5): no parent ref.
     parent: has('hierarchy') && after === null,
     assignees: false,
@@ -632,6 +646,7 @@ function errorOf(section: string, error: unknown): EntityContextError {
 interface Loaded {
   root: EntityRow;
   parent: EntityContextRef | null | undefined;
+  header?: EntityHeaderView;
   assignees?: EntityContextAssignee[];
   gate?: EntityContextGate;
   blockers?: EntityContextBlocker[];
@@ -754,6 +769,16 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     } else {
       loaded.parent = null;
     }
+  }
+
+  if (plan.header) {
+    // Core, like the root: a failure fails the read. Under the caller's RLS,
+    // so a header is exactly as visible as its entity. Only an AUTHORED header
+    // is shown: a derived one restates the body this read already carries (a
+    // task's is its own description), and an entity nobody has written a
+    // header for reads byte-identical to before (headers design §9.5).
+    const header = (await resolveHeaderViews(taggedQuerier(q, 'header'), root.space_id, [id])).get(id);
+    if (header && header.version > 0) loaded.header = header;
   }
 
   if (plan.assignees) {
@@ -1168,6 +1193,7 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
     ...header,
     status,
     ...kindFields,
+    ...(loaded.header ? { header: loaded.header } : {}),
     ...(plan.parent ? { parent: loaded.parent ?? null } : {}),
     ...(plan.messageCard
       ? {
@@ -1274,7 +1300,7 @@ function cutAtCeiling(view: View, id: string, messagesAreCore: boolean, pagers: 
 /** The never-drop sections a view carries, for the 422's `details.core`. */
 function coreSections(view: View, messagesAreCore: boolean): string[] {
   const core = ['root'];
-  for (const key of ['assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
+  for (const key of ['header', 'assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
     if (view[key] !== undefined) core.push(key);
   }
   if (messagesAreCore && view.messages !== undefined) core.push('messages');

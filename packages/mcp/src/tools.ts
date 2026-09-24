@@ -141,6 +141,12 @@ const ACT_GUIDES = [
   guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },
   }),
+  guide('entities.header.set', 'Write an entity\'s selection header (whenToUse ≤ 400, summary ≤ 600, keywords ≤ 12); the whole header is replaced. expectedVersion is the HEADER\'s version (0 = none yet), never the entity\'s.', {
+    params: { id: '<entity-id>' }, body: { expectedVersion: 0, whenToUse: '<when to pick it>', summary: '<what it is>' },
+  }),
+  guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one.', {
+    params: { id: '<entity-id>' }, body: { expectedVersion: 1 },
+  }),
   guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id; the Server merges them into the stored list.', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, criterionIds: ['<criterion-id>'] },
   }),

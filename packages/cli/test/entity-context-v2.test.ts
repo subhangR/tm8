@@ -413,6 +413,25 @@ describe('S5 rendering and rollout', () => {
     expect(text).toContain(String(V2_TASK.asOfSeq));
   });
 
+  it('[headers T3] the brief prints the header, its text only inside an untrusted_data block', async () => {
+    reply = ok({
+      ...V2_TASK,
+      header: {
+        entityId: ENT, kind: 'task', name: V2_TASK.title, whenToUse: 'Pick when budgets matter', summary: null,
+        keywords: [], source: 'authored', stale: true, bytes: 40211, loadPointer: `tm8 entity context ${ENT}`,
+        version: 2, pinnedVersion: 1,
+      },
+    });
+    const r = await drive(['entity', 'context', ENT]);
+    expect(r.code).toBe(0);
+    const lines = r.stdout.split('\n');
+    expect(lines).toContain('header: authored v2 · stale (written for v1) · body 40211 B');
+    const open = lines.indexOf('<untrusted_data type="entry-header">');
+    expect(lines.slice(open + 1, open + 3)).toEqual(['when to use: Pick when budgets matter', '</untrusted_data>']);
+    // Rendered by name, never again as a `header: [object]` fallthrough line.
+    expect(r.stdout).not.toContain('[object Object]');
+  });
+
   it('[c761 §10.9] the text brief says "errors: none" rather than omitting the line (S5)', async () => {
     reply = ok({ ...V2_TASK, errors: [] });
     const r = await drive(['entity', 'context', ENT]);

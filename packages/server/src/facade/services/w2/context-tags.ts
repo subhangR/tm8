@@ -21,6 +21,8 @@ export const CONTEXT_LOAD_TAGS = [
   // v2 only (M2/S3a): each v2 section loader has its own tag, so the
   // statement counter can prove what the v2 default does NOT load.
   'assignees', 'blockers', 'gate', 'tasks', 'connections',
+  // The selection header (headers design T3): one statement, header kinds only.
+  'header',
 ] as const;
 export type ContextLoadTag = (typeof CONTEXT_LOAD_TAGS)[number];
 

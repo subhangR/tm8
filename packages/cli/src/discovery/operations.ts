@@ -800,7 +800,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.create': {
     cmd: ['entity', 'create'],
-    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--mutation-id <id>]',
+    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
@@ -810,9 +810,11 @@ const ROWS: Record<OperationName, Row> = {
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
+      '--when-to-use / --summary / --keyword write the selection header in the same transaction (team_member, doc, artifact, drawing, file, task, collection); later changes go through `tm8 entity header set`',
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
     ],
   },
@@ -824,6 +826,37 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     ver: 'expectedVersion',
     tags: ['edit', 'rename', 'patch'],
+  },
+  'entities.header.set': {
+    cmd: ['entity', 'header', 'set'],
+    syn: 'tm8 entity header set <entity-id> [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Write the selection header an agent or Jev reads to decide whether to load an entity',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['header', 'summary', 'when-to-use', 'keywords', 'describe', 'selection'],
+    notes: [
+      'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; at least one of --when-to-use (≤ 400 chars) and --summary (≤ 600) is required, --keyword up to 12 × ≤ 40 chars',
+      '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; no `header` there means 0), never the entity\'s; a header write never moves the entity version',
+      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection; skills and memories carry their own header and refuse',
+      're-saving unchanged text re-pins a stale header to the current body ("mark current")',
+    ],
+    examples: [
+      'tm8 entity header set <entity-id> --when-to-use "<when an agent should load it>" --summary "<what it contains>" --expect-version 0',
+    ],
+  },
+  'entities.header.clear': {
+    cmd: ['entity', 'header', 'clear'],
+    syn: 'tm8 entity header clear <entity-id> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Remove an entity\'s authored selection header; it falls back to the derived one',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['header', 'selection'],
+    notes: [
+      '--expect-version is the header\'s own version (`header.version` in `tm8 entity context <entity-id>`)',
+    ],
+    examples: ['tm8 entity header clear <entity-id> --expect-version <n>'],
   },
   'attentionRequests.create': {
     cmd: ['entity', 'attention'],
@@ -2222,7 +2255,7 @@ const ROWS: Record<OperationName, Row> = {
     // flag IFF its `ver:` is `expectedVersion`) turns a stray one red. The
     // revision-mode flags live on the `artifacts.publish` row's syntax and are
     // named in the note below so the shared command help still documents them.
-    syn: 'tm8 artifact publish <dir> [--space <space-id>] [--name <name>] [--description <text>] [--entrypoint <path>] [--mutation-id <id>]',
+    syn: 'tm8 artifact publish <dir> [--space <space-id>] [--name <name>] [--description <text>] [--entrypoint <path>] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     sum: 'Publish a directory of HTML/JS/CSS as a NEW artifact with its first immutable bundle revision',
     authz: 'space',
     input: 'bound',
@@ -2230,6 +2263,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       '`artifact publish` is a composition: it walks the directory, builds and hashes the strict model-agnostic manifest, then calls artifacts.create (or artifacts.publish with --artifact + --expect-version)',
       'to publish a FURTHER revision of an existing artifact instead of creating a new one, pass `--artifact <artifact-id>` and `--expect-version <n>` together',
+      '--when-to-use / --summary / --keyword write the new artifact\'s selection header in the same transaction; for an existing artifact use `tm8 entity header set`',
       'blob upload wiring is Phase-1-incomplete: the Server may answer unknown_blob (invalid_input) because a referenced blob is not yet stored; that refusal is surfaced honestly rather than pre-swallowed',
     ],
     examples: ['tm8 artifact publish ./site --name "My App" --space <space-id>'],
@@ -2948,7 +2982,8 @@ export const CATALOG_DIGEST =
   // Read out of the failing digest test and matched to the regenerated manifest.
   // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
   // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:476b28a7ba49534b894f3708d2cc9d2f96579bee1c021f152aff9cdcb1b13942';
+  // Re-measured (headers I4): + entities.header.set/clear; matched to the regenerated manifest.
+  'sha256:41d9d861be92e6f6a4491c218557a6c10d1483c0d4285677d1152d8080b33378';
 
 export const GRAMMAR_VERSION = '2';
 

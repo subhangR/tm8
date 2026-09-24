@@ -10,7 +10,7 @@
  * Text cuts count characters (code points), the same unit Postgres `left()`
  * counts, so a cut made in SQL and a cut made here agree.
  */
-import type { SelectionHeader, SelectionHeaderKind, SelectionHeaderSource } from '@tm8/contract';
+import { SELECTION_HEADER_KINDS, type SelectionHeader, type SelectionHeaderKind, type SelectionHeaderSource } from '@tm8/contract';
 
 /** Characters of header text that may leave the server (Jev design 01a0cb80 §9). */
 export const HEADER_TEXT_LIMIT = 600;
@@ -134,6 +134,15 @@ function kindFields(facts: HeaderFacts): Fields {
 
 /** Skills and memories have a purpose-written header of their own; an authored row never overrides it. */
 const AUTHORABLE = (kind: SelectionHeaderKind): boolean => kind !== 'skill' && kind !== 'memory';
+
+/**
+ * Whether an entity of `kind` may carry an authored header: migration 216's
+ * `internal.header_kind_allowed`, which entity-headers.pg.test.ts pins to
+ * `SELECTION_HEADER_KINDS` less skill and memory.
+ */
+export function headerAuthorable(kind: string): boolean {
+  return (SELECTION_HEADER_KINDS as readonly string[]).includes(kind) && AUTHORABLE(kind as SelectionHeaderKind);
+}
 
 /** One entity's header: authored → native → derived, per field. */
 export function deriveHeader(

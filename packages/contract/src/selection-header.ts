@@ -11,7 +11,7 @@
  * Header text is graph content: wherever it enters a prompt it rides inside an
  * `untrusted_data` block, never as instructions.
  */
-import type { EntityId } from './contract.js';
+import type { CommandContext, CommandResult, EntityId } from './contract.js';
 
 /** Where a header's text came from. */
 export type SelectionHeaderSource =
@@ -79,4 +79,67 @@ export interface SelectionHeader {
   bytes: number | null;
   /** The exact command that fetches the body; null when the body is always injected. */
   loadPointer: string | null;
+}
+
+/**
+ * Authored-header bounds, enforced by `set_entity_header` (migration 216) and
+ * mirrored in the input schema so a caller learns them before the round trip.
+ * Text is trimmed first; a field that trims to nothing is refused, not dropped.
+ */
+export const AUTHORED_HEADER_LIMITS = {
+  whenToUse: 400,
+  summary: 600,
+  keywords: 12,
+  keyword: 40,
+} as const;
+
+/**
+ * The header an entity read carries (`entities.get`, `entities.context`, and
+ * the result of `entities.header.set/clear`): the resolved `SelectionHeader`,
+ * plus the authored row's own bookkeeping so a caller can write it next.
+ */
+export interface EntityHeaderView extends SelectionHeader {
+  /**
+   * The authored header's OWN version, never `entities.version`: the value
+   * `entities.header.set/clear` take as `expectedVersion`. 0 when no authored
+   * header exists (the header shown is native or derived).
+   */
+  version: number;
+  /** The entity version the authored header was written against; null when not authored. */
+  pinnedVersion: number | null;
+}
+
+/**
+ * The text of an authored header. The WHOLE header is written: an absent or
+ * null field is removed, so a set with only `summary` leaves no `whenToUse`.
+ * At least one of `whenToUse` and `summary` is required.
+ */
+export interface HeaderTextInput {
+  whenToUse?: string | null;
+  summary?: string | null;
+  keywords?: string[];
+}
+
+/**
+ * PUT /v2/entities/:id/header — write (create or replace) an entity's authored
+ * header and re-pin it to the entity's current version. Never moves
+ * `entities.version`. `expectedVersion` is the HEADER's version (0 = "no header
+ * yet"); omitted, the write is unguarded.
+ */
+export interface SetEntityHeaderInput extends CommandContext, HeaderTextInput {
+  expectedVersion?: number;
+}
+
+/**
+ * DELETE /v2/entities/:id/header — remove the authored header; the entity falls
+ * back to its native/derived header. `expectedVersion` (the header's) is
+ * required: a clear is never blind.
+ */
+export interface ClearEntityHeaderInput extends CommandContext {
+  expectedVersion: number;
+}
+
+/** The result of `entities.header.set/clear`: the command result, and the header now in effect. */
+export interface EntityHeaderResult extends CommandResult {
+  header: EntityHeaderView;
 }
