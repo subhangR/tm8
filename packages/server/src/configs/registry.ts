@@ -245,7 +245,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
 };
 
 export const CODE_CONSTANTS: readonly CodeConstant[] = [
-  { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Hard byte ceilings on every prompt tm8 injects, and the <context_index> sub-caps inside the combined ceiling (referenceIndex, rosterIndex). A profile may choose smaller, never larger.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
+  { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Byte budgets. The hard ceilings (manifest, kernel, assignmentSnapshot, combinedInitialInjection, handoffEnvelope, incomingMessageInjection) are never larger on any profile. The context sub-caps (memoryInjection, referenceIndex, rosterIndex) are node defaults a profile may reallocate, up or down, through contextBudgets.* within combinedInitialInjection, checked at profile save.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
   { name: 'INDEX_DERIVED_HEADER_CHARS', group: 'Prompt budgets', summary: 'Characters a DERIVED whenToUse or summary keeps in the <context_index> (per field; the entry declares the cut in clipped="…"). Authored and native header text is never cut there; Jev keeps its own 600.', definedIn: 'packages/prompt/src/context-index.ts', read: () => INDEX_DERIVED_HEADER_CHARS },
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },

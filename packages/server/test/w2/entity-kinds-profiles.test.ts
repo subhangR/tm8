@@ -387,6 +387,23 @@ describe('W2.G12 entity-kind/profile handlers', () => {
     expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile']);
   });
 
+  it('lets a profile raise a sub-cap above its node default when the budgets still fit, and refuses it naming the overrun when not', async () => {
+    const db = new FakeDb(async () => [], async () => PROFILE);
+    const registry = registryFor(db);
+    // references 12 KiB (default 8 KiB) + memories 8 KiB + a 10 KiB baseline = 30 KiB: fits.
+    const raised = { ...DRAFT, contextBudgets: { references: 12_288, memories: 8192 } };
+    await registry.get('interactionProfiles.propose')!(
+      context('interactionProfiles.propose', { clientMutationId: 'cmid-raised', spaceId: SPACE_ID, draft: raised }),
+    );
+    expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile']);
+    // references 16 KiB + the 12 KiB memory default + 10 KiB: 6 KiB over.
+    const tooHigh = { ...DRAFT, contextBudgets: { references: 16_384 } };
+    await expect(registry.get('interactionProfiles.propose')!(
+      context('interactionProfiles.propose', { clientMutationId: 'cmid-too-high', spaceId: SPACE_ID, draft: tooHigh }),
+    )).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('6144 bytes over the 32768-byte') });
+    expect(db.rpcCalls).toHaveLength(1);
+  });
+
   it('takes Teammate authorship from the authenticated bearer context, not the strict DTO', async () => {
     const db = new FakeDb(async () => [], async (fn, args) => {
       expect(fn).toBe('propose_interaction_profile');

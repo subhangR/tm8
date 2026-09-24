@@ -15,7 +15,13 @@
  * it is excerpted with a cursor by its own caller and declares `truncated`.
  */
 
-/** The hard ceilings. A validated Interaction Profile may choose smaller. */
+/**
+ * The hard ceilings — a validated Interaction Profile may choose smaller,
+ * never larger — plus the `<context_index>` sub-caps (`referenceIndex`,
+ * `rosterIndex`, `memoryInjection`). Those are node DEFAULTS: a profile's
+ * `contextBudgets` may reallocate them up or down inside
+ * `combinedInitialInjection`, and the save-time fit check (§10 Q5.6) bounds it.
+ */
 export const BYTE_BUDGETS = {
   /** Agent-facing bootstrap manifest (§5.1). */
   manifest: 4096,
