@@ -12,12 +12,17 @@
 // `minimal` (the default) strips that surface. It does NOT use
 // `--setting-sources` — that also drops the user's permissions and hooks — and
 // it does NOT use `--disable-slash-commands`, which disables every skill,
-// including the repo's own. It turns off exactly three things:
+// including the repo's own. It turns off exactly these:
 //   - MCP servers: `--strict-mcp-config` with an empty config. Under strict
 //     mode claude.ai connectors are not loaded at all. tm8 lanes reach tm8
-//     through the `tm8` CLI, so tm8 owns no MCP server a lane needs.
+//     through the `tm8` CLI, so tm8 owns no MCP server a lane needs. A
+//     persona's `capabilities.launch.mcpServers` is the explicit opt-in.
 //   - Plugins: every plugin found in the lane's config home that is not on
-//     the allowlist is set `false` in a flag-level `enabledPlugins`.
+//     the allowlist is set `false` in a flag-level `enabledPlugins`; every one
+//     that is (persona `plugins`, or the plugin of an equipped plugin skill)
+//     is set `true`.
+//   - Bundled skills lanes never use: `skillOverrides` off per name (see
+//     `LANE_BUNDLED_SKILLS_OFF`).
 //   - The harness Artifact tool: `CLAUDE_CODE_DISABLE_ARTIFACT=1`. tm8 lanes
 //     publish with `tm8 artifact publish`; the harness tool publishes outside
 //     tm8, and its prompt tells agents not to use it.
@@ -37,6 +42,31 @@ export function asHarnessSurface(value: unknown): HarnessSurface | null {
   return typeof value === 'string' && (HARNESS_SURFACES as readonly string[]).includes(value.trim())
     ? (value.trim() as HarnessSurface)
     : null;
+}
+
+/**
+ * Bundled Claude Code skills a `minimal` lane turns off with `skillOverrides`.
+ * Lanes made 0 Skill calls across 89 transcripts (7d), and these are the ones
+ * no lane work needs. Kept on purpose: code-review, simplify, security-review,
+ * and workflow-authoring (the Workflow tool requires loading it first).
+ * `disableBundledSkills` was rejected because it drops those too; `skillOverrides`
+ * is per exact name ("*" is not a wildcard).
+ */
+export const LANE_BUNDLED_SKILLS_OFF: readonly string[] = [
+  'claude-api',
+  'dataviz',
+  'fewer-permission-prompts',
+  'init',
+  'keybindings-help',
+  'loop',
+  'run',
+  'schedule',
+  'update-config',
+];
+
+/** The flag-level `skillOverrides` a `minimal` lane runs with. */
+export function laneSkillOverrides(): Record<string, 'off'> {
+  return Object.fromEntries(LANE_BUNDLED_SKILLS_OFF.map((name) => [name, 'off' as const]));
 }
 
 /** The empty MCP config a `minimal` lane runs under `--strict-mcp-config`. */
@@ -61,14 +91,57 @@ export function isPluginAllowed(pluginId: string, allowlist: readonly string[]):
   return allowlist.some((entry) => entry === pluginId || entry === name);
 }
 
-/** The flag-level `enabledPlugins` that turns off every non-allowlisted plugin. */
-export function disabledPluginSettings(
+/**
+ * The flag-level `enabledPlugins` for a `minimal` lane: every installed plugin
+ * off unless allowlisted, and every allowlisted one explicitly on. The `true`
+ * is the opt-in half — without it a plugin the user config leaves disabled
+ * would stay off even though the teammate asked for it. Explicit flag-level
+ * `false` beats the synced plugins' default-on (measured, claude 2.1.280).
+ */
+export function pluginSettings(
   installed: readonly string[],
   allowlist: readonly string[],
-): Record<string, false> {
-  const out: Record<string, false> = {};
-  for (const id of [...installed].sort()) {
-    if (!isPluginAllowed(id, allowlist)) out[id] = false;
+): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const id of [...installed].sort()) out[id] = isPluginAllowed(id, allowlist);
+  return out;
+}
+
+/**
+ * The plugins a lane's equipped skills live in. Equipping a Claude plugin
+ * skill is choosing its plugin: without this the deny-list would turn the
+ * plugin off and leave the skill's `/plugin:name` pointer aimed at nothing.
+ */
+export function equippedClaudePlugins(
+  rows: readonly { provider?: string | null; level?: string | null; missing?: boolean; loaderMetadata?: Record<string, unknown> | null }[],
+): string[] {
+  const names = new Set<string>();
+  for (const row of rows) {
+    const name = row.loaderMetadata?.pluginName;
+    if (row.level === 'plugin' && row.provider === 'claude' && row.missing !== true && typeof name === 'string' && name !== '') {
+      names.add(name);
+    }
+  }
+  return [...names].sort();
+}
+
+/**
+ * The `--mcp-config` a `minimal` lane runs under `--strict-mcp-config`: empty
+ * unless the teammate opted MCP servers back in (`capabilities.launch.mcpServers`,
+ * the same `{ name: serverConfig }` shape as a `.mcp.json` `mcpServers` block).
+ */
+export function minimalMcpConfig(servers: Record<string, unknown> | undefined): string {
+  return servers && Object.keys(servers).length > 0
+    ? JSON.stringify({ mcpServers: servers })
+    : MINIMAL_MCP_CONFIG;
+}
+
+/** Narrow a stored `mcpServers` bag: keep only object-valued entries. */
+export function asMcpServers(value: unknown): Record<string, Record<string, unknown>> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [name, config] of Object.entries(value)) {
+    if (name.trim() !== '' && isRecord(config)) out[name.trim()] = config;
   }
   return out;
 }

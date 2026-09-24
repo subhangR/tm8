@@ -15,7 +15,7 @@ import {
   withAgentResume,
   type ResolvedLaunchConfig,
 } from '../src/spawn/manifest.js';
-import { readHintHookPath } from '../src/spawn/harness-surface.js';
+import { laneSkillOverrides, readHintHookPath } from '../src/spawn/harness-surface.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
 const HOOK = readHintHookPath();
@@ -182,11 +182,11 @@ describe('read-hint spawn settings', () => {
       installedClaudePlugins: ['sales@synced'],
     });
     expect(cmd.match(/--settings/g)).toHaveLength(1);
-    expect(settingsOf(cmd)).toEqual({ enabledPlugins: { 'sales@synced': false }, hooks: HOOKS });
+    expect(settingsOf(cmd)).toEqual({ enabledPlugins: { 'sales@synced': false }, skillOverrides: laneSkillOverrides(), hooks: HOOKS });
     expect(cmd).toBe(
       "claude --permission-mode acceptEdits --model 'opus' --session-id 'uuid-1' " +
         `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '` +
-        JSON.stringify({ enabledPlugins: { 'sales@synced': false }, hooks: HOOKS }).replace(/'/g, `'\\''`) +
+        JSON.stringify({ enabledPlugins: { 'sales@synced': false }, skillOverrides: laneSkillOverrides(), hooks: HOOKS }).replace(/'/g, `'\\''`) +
         "'",
     );
   });
@@ -197,13 +197,13 @@ describe('read-hint spawn settings', () => {
     });
     expect(settingsOf(inherit)).toEqual({ hooks: HOOKS });
     expect(inherit).not.toContain('--strict-mcp-config');
-    expect(buildAgentCommand({ ...LAUNCH, readHints: false })).not.toContain('--settings');
+    expect(buildAgentCommand({ ...LAUNCH, harnessSurface: 'inherit', readHints: false })).not.toContain('--settings');
   });
 
   it('survives resume', () => {
     const base = buildAgentCommand({ ...LAUNCH, readHints: true });
     const resumed = withAgentResume(base, '<sys/>', LAUNCH, 'uuid-9', {});
     expect(resumed.startsWith(base)).toBe(true);
-    expect(settingsOf(resumed)).toEqual({ hooks: HOOKS });
+    expect(settingsOf(resumed)).toEqual({ skillOverrides: laneSkillOverrides(), hooks: HOOKS });
   });
 });

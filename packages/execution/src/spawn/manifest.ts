@@ -1,10 +1,12 @@
 import { computeEffectiveSkills } from './effective-skills.js';
 import {
   asHarnessSurface,
+  asMcpServers,
   asReadHints,
-  disabledPluginSettings,
+  laneSkillOverrides,
+  minimalMcpConfig,
+  pluginSettings,
   readHintHookSettings,
-  MINIMAL_MCP_CONFIG,
   type HarnessSurface,
 } from './harness-surface.js';
 import { composePrompt, BYTE_BUDGETS, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
@@ -242,6 +244,12 @@ export interface ResolvedLaunchConfig {
    */
   plugins?: string[];
   /**
+   * MCP servers a `minimal` lane keeps, `{ name: serverConfig }` as in a
+   * `.mcp.json` `mcpServers` block. Emitted as the lane's `--mcp-config`
+   * under `--strict-mcp-config`. Absent means none.
+   */
+  mcpServers?: Record<string, Record<string, unknown>>;
+  /**
    * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
    * after a large repository read. OFF by default — the hook ships dark until
    * the A/B in doc 01a0d2e9 has run, and `TM8_READ_HINTS=on` (node) or
@@ -254,11 +262,13 @@ export interface ResolvedLaunchConfig {
 /**
  * A teammate's launch preferences, read from `capabilities.launch` on the
  * persona — a stored JSON bag, so every field is narrowed, never cast:
- *   { "launch": { "harnessSurface": "inherit", "plugins": ["sales"] } }
+ *   { "launch": { "harnessSurface": "inherit", "plugins": ["sales"],
+ *                 "mcpServers": { "linear": { "type": "http", "url": "…" } } } }
  */
 function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
   harnessSurface: HarnessSurface | null;
   plugins: string[] | null;
+  mcpServers: Record<string, Record<string, unknown>> | null;
   readHints: boolean | null;
 } {
   const raw = capabilities?.launch;
@@ -271,6 +281,7 @@ function memberLaunchPreferences(capabilities: Record<string, unknown> | null | 
   return {
     harnessSurface: asHarnessSurface(launch.harnessSurface),
     plugins,
+    mcpServers: asMcpServers(launch.mcpServers),
     readHints: asReadHints(launch.readHints),
   };
 }
@@ -467,6 +478,9 @@ export function resolveLaunchConfig(
     spaceCredentialIds,
     harnessSurface,
     plugins: preferences.plugins ?? [],
+    ...(preferences.mcpServers && Object.keys(preferences.mcpServers).length > 0
+      ? { mcpServers: preferences.mcpServers }
+      : {}),
     readHints,
   };
 }
@@ -829,6 +843,12 @@ export function buildAgentCommand(
      * than read here so this function stays pure.
      */
     installedClaudePlugins?: readonly string[];
+    /**
+     * Plugin names the lane's equipped skills live in (`equippedClaudePlugins`).
+     * Allowlisted alongside `launch.plugins`: equipping a plugin skill is
+     * choosing its plugin.
+     */
+    equippedClaudePlugins?: readonly string[];
   } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
@@ -867,9 +887,13 @@ export function buildAgentCommand(
   if (launch.harnessSurface !== 'inherit') {
     // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
     // builds on this same base command, so these flags survive `--resume`.
-    args.push('--strict-mcp-config', '--mcp-config', shellQuote(MINIMAL_MCP_CONFIG));
-    const disabled = disabledPluginSettings(opts.installedClaudePlugins ?? [], launch.plugins ?? []);
-    if (Object.keys(disabled).length > 0) settings.enabledPlugins = disabled;
+    args.push('--strict-mcp-config', '--mcp-config', shellQuote(minimalMcpConfig(launch.mcpServers)));
+    const plugins = pluginSettings(opts.installedClaudePlugins ?? [], [
+      ...(launch.plugins ?? []),
+      ...(opts.equippedClaudePlugins ?? []),
+    ]);
+    if (Object.keys(plugins).length > 0) settings.enabledPlugins = plugins;
+    settings.skillOverrides = laneSkillOverrides();
   }
   // Flag-level hooks merge with the user's own hooks rather than replace them.
   if (launch.readHints === true) settings.hooks = readHintHookSettings();
