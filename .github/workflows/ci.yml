@@ -124,6 +124,7 @@ jobs:
           # ci-shadow's call this prints the CALLER's name, "ci-shadow"
           WORKFLOW: ${{ github.workflow }}
         run: |
+          exit 1  # W2 CONTROL (ii)
           echo "github.workflow=$WORKFLOW force_all=$FORCE_ALL event=$EVENT_NAME"
           bash tools/ci/changes.sh > "$RUNNER_TEMP/affected"
           cat "$RUNNER_TEMP/affected"
