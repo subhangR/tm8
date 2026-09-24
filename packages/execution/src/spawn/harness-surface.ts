@@ -31,6 +31,7 @@
 // needs the operator's plugins or connectors.
 
 import { readFileSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -229,6 +230,20 @@ function readJson(path: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The one Claude config home a claude-code launch reads plugins from: the
+ * member's credential home when they have one, otherwise the node's
+ * (`CLAUDE_CONFIG_DIR`, else `~/.claude`). Never a union: spawn loads exactly
+ * one home, so the launch menu (skills.preview) and the lane's deny-list both
+ * resolve through here and agree.
+ */
+export function claudePluginConfigDir(
+  memberConfigDir: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string {
+  return memberConfigDir || env.CLAUDE_CONFIG_DIR?.trim() || join(env.HOME ?? homedir(), '.claude');
 }
 
 /**

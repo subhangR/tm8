@@ -21,6 +21,7 @@ import {
   pluginDecisions,
   pluginSettings,
   readInstalledClaudePlugins,
+  claudePluginConfigDir,
 } from '../src/spawn/harness-surface.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
@@ -336,5 +337,13 @@ describe('readInstalledClaudePlugins', () => {
     dir = await mkdtemp(join(tmpdir(), 'tm8-plugins-'));
     expect(readInstalledClaudePlugins(dir)).toEqual([]);
     expect(readInstalledClaudePlugins(join(dir, 'missing'))).toEqual([]);
+  });
+});
+
+describe('claudePluginConfigDir', () => {
+  it('uses the member home when given, else CLAUDE_CONFIG_DIR, else ~/.claude — one home, never a union', () => {
+    expect(claudePluginConfigDir('/cred/anthropic', { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/cred/anthropic');
+    expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: '/node', HOME: '/h' })).toBe('/node');
+    expect(claudePluginConfigDir(undefined, { CLAUDE_CONFIG_DIR: ' ', HOME: '/h' })).toBe('/h/.claude');
   });
 });

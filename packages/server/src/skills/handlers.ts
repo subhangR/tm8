@@ -1,7 +1,5 @@
-import { computeEffectiveSkills, readInstalledClaudePlugins } from '@tm8/execution';
+import { claudePluginConfigDir, computeEffectiveSkills, readInstalledClaudePlugins } from '@tm8/execution';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { credentialConfigDir } from '../credentials/agent-credential-home.js';
 import { serializeSkillIndexEntry } from '@tm8/prompt';
 import type { SkillPreviewResult } from '@tm8/contract';
@@ -16,18 +14,15 @@ import { W2EntitiesCommandsTrackingService } from '../facade/services/w2/entitie
 import { scanSpaceSkills } from './service.js';
 export const SkillScanInputSchema = z.object({ root: z.string().uuid().optional(), all: z.boolean().optional(), clientMutationId: z.string().optional(), actorId: z.string().uuid().optional() }).strict().refine(value => !(value.root && value.all), { message: 'root and all are mutually exclusive' });
 /**
- * The Claude plugins a claude-code launch by `identityId` could load: the
- * caller's own credential home (used when they connected Anthropic) plus the
- * node's config home (`CLAUDE_CONFIG_DIR`, else `~/.claude`). The same reader
- * spawn uses for the lean lane's deny-list, so the menu and the launch agree.
+ * The Claude plugins a claude-code launch by `identityId` would load. Follows
+ * spawn's rule through the same helper (`claudePluginConfigDir`): the caller's
+ * credential home when it exists (they connected Anthropic), otherwise the
+ * node's config home. Not a union, so the menu never offers a plugin the
+ * launch's home does not carry.
  */
 export function installedPluginsFor(dataDir: string, identityId: string, env: NodeJS.ProcessEnv = process.env): string[] {
-  const ids = new Set<string>();
   const member = credentialConfigDir(dataDir, identityId, 'anthropic');
-  if (existsSync(member)) for (const id of readInstalledClaudePlugins(member)) ids.add(id);
-  const node = env.CLAUDE_CONFIG_DIR?.trim() || join(env.HOME ?? homedir(), '.claude');
-  for (const id of readInstalledClaudePlugins(node)) ids.add(id);
-  return [...ids].sort();
+  return readInstalledClaudePlugins(claudePluginConfigDir(existsSync(member) ? member : undefined, env));
 }
 
 export function registerSkillHandlers(

@@ -41,7 +41,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
+import { claudePluginConfigDir, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -834,9 +834,7 @@ export class SpawnService {
   ): string[] {
     if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
     if (this.env.TM8_AGENT_CMD?.trim()) return [];
-    const configDir =
-      credentialConfigDir ?? this.env.CLAUDE_CONFIG_DIR ?? join(this.env.HOME ?? homedir(), '.claude');
-    return readInstalledClaudePlugins(configDir);
+    return readInstalledClaudePlugins(claudePluginConfigDir(credentialConfigDir, this.env));
   }
 
   /**
