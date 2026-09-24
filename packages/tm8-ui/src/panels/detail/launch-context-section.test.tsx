@@ -100,11 +100,12 @@ describe('LaunchContextSection', () => {
     expect(facts).toContain('Ask Jev');
     expect(facts).not.toContain('cred-should-not-show');
     const harness = getByTestId('launch-context-harness').textContent ?? '';
-    expect(harness).toContain('HARNESS · DECLARED');
-    expect(harness).toContain('sales');
-    expect(harness).toContain('MCP serversgithub');
+    // Nothing recorded: every row names its source.
+    expect(harness).toContain('Harness surfaceminimal (declared)');
+    expect(harness).toContain('Pluginssales (declared)');
+    expect(harness).toContain('MCP serversgithub (declared)');
     expect(harness).not.toContain('gh-mcp');
-    expect(harness).toContain('Bundled skillstrimmed');
+    expect(harness).toContain('Bundled skillstrimmed (declared)');
     expect(harness).toContain('Native skills1');
     expect(harness).toContain('Indexed skills2');
   });
@@ -129,9 +130,10 @@ describe('LaunchContextSection', () => {
     });
     const { getByTestId, unmount } = render(<LaunchContextSection state={{ phase: 'ready', record: recorded }} />);
     const harness = getByTestId('launch-context-harness').textContent ?? '';
-    expect(harness).toMatch(/^HARNESS(?! · DECLARED)/);
-    expect(harness).toContain('Harness surfaceinherit');
+    // #731-era record: plugins only, so the surface is the pick, tagged.
+    expect(harness).toContain('Harness surfaceinherit (picked)');
     expect(harness).toContain('Pluginsfigma@market');
+    expect(harness).toContain('MCP serversgithub (declared)');
     expect(harness).toContain('Plugins deniedslack@market (not allowlisted)');
     expect(harness).not.toContain('sales');
     unmount();
@@ -140,10 +142,38 @@ describe('LaunchContextSection', () => {
     const picked = record({
       manifest: { ...base.manifest, launch: { ...launch, harnessChoice: { plugins: [] } } },
     });
-    const pickedText = render(<LaunchContextSection state={{ phase: 'ready', record: picked }} />)
+    const { getByTestId: getPicked, unmount: unmount2 } = render(<LaunchContextSection state={{ phase: 'ready', record: picked }} />);
+    const pickedText = getPicked('launch-context-harness').textContent ?? '';
+    expect(pickedText).toContain('Pluginsnone (picked)');
+    unmount2();
+  });
+
+  it('shows the recorded surface, MCP servers and bundled-skill trim once launch.harness carries them', () => {
+    const base = record();
+    const launch = base.manifest!.launch as Record<string, unknown>;
+    const full = record({
+      manifest: {
+        ...base.manifest,
+        launch: {
+          ...launch,
+          harnessChoice: { surface: 'inherit' },
+          harness: {
+            surface: 'minimal',
+            surfaceSource: 'env',
+            plugins: { allowed: [], denied: [] },
+            mcpServers: [{ name: 'linear', source: 'persona' }],
+            skillOverrides: { off: [{ name: 'init', source: 'builtin-trim' }, { name: 'loop', source: 'builtin-trim' }] },
+          },
+        },
+      },
+    });
+    const text = render(<LaunchContextSection state={{ phase: 'ready', record: full }} />)
       .getByTestId('launch-context-harness').textContent ?? '';
-    expect(pickedText).toContain('HARNESS · DECLARED');
-    expect(pickedText).toContain('Pluginsnone');
+    expect(text).toContain('Harness surfaceminimal (env)');
+    expect(text).toContain('MCP serverslinear');
+    expect(text).not.toContain('github');
+    expect(text).toContain('Bundled skillstrimmed (2 off)');
+    expect(text).not.toMatch(/\((declared|picked)\)/);
   });
 
   it("hides the declared harness when the viewer cannot read the teammate", () => {

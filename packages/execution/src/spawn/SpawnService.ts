@@ -26,6 +26,7 @@ import {
 } from './codex-network-preflight.js';
 import {
   buildAgentCommand,
+  childLaunchPosture,
   composeEnv,
   composeManifest,
   resolveAgentBinary,
@@ -40,7 +41,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { equippedClaudePlugins, harnessSurfaceEnv, pluginDecisions, readInstalledClaudePlugins } from './harness-surface.js';
+import { harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -818,6 +819,15 @@ export class SpawnService {
    * resolution `recordManifest` records. Empty (no read at all) for any other
    * tool, for `inherit`, and under an operator `TM8_AGENT_CMD` wrapper.
    */
+  /**
+   * Whether tm8 shapes this lane's harness surface at all, and so records it
+   * as `launch.harness`: a claude-code lane not run through an operator
+   * `TM8_AGENT_CMD` wrapper, which replaces the whole command line.
+   */
+  private managesClaudeHarness(launch: ResolvedLaunchConfig): boolean {
+    return launch.agentTool === 'claude-code' && !this.env.TM8_AGENT_CMD?.trim();
+  }
+
   private installedClaudePluginsFor(
     launch: ResolvedLaunchConfig,
     credentialConfigDir: string | undefined,
@@ -1176,7 +1186,9 @@ export class SpawnService {
       ...(request.selection ? { selection: request.selection } : {}),
     });
 
-    const inherited = await this.inheritedPosture(auth, request);
+    // A child inherits its parent's posture but not its harness pick; only a
+    // resume replays the pick, because only a resume is the same launch.
+    const inherited = childLaunchPosture(await this.inheritedPosture(auth, request));
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
@@ -1367,21 +1379,10 @@ export class SpawnService {
       // plugin registry of the config home the child will actually use.
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
+      // The command is built INSIDE composeManifest, after the skill index is
+      // trimmed, from the plugins of the skills that survived (F2).
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
-      const harnessPlugins = installedPlugins.length > 0
-        ? pluginDecisions(installedPlugins, {
-          launchPick: launch.harnessChoice?.plugins ?? null,
-          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
-          effective: effectivePlugins,
-        })
-        : null;
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        claudeSessionId: nativeSessionId,
-        sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: installedPlugins,
-        equippedClaudePlugins: effectivePlugins,
-      });
+      let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -1395,9 +1396,14 @@ export class SpawnService {
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
-        command: baseCommand,
+        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+          claudeSessionId: nativeSessionId,
+          sandboxUnavailable: sandbox.unavailable,
+          installedClaudePlugins: installedPlugins,
+          equippedClaudePlugins: effectiveClaudePlugins,
+        })),
         sandboxDegraded: sandbox.degradedReason,
-        harnessPlugins,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
         baseUrl: this.baseUrl,
       });
 
@@ -2140,19 +2146,7 @@ export class SpawnService {
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const effectivePlugins = equippedClaudePlugins(context.skillEquips ?? context.skills ?? []);
-      const harnessPlugins = installedPlugins.length > 0
-        ? pluginDecisions(installedPlugins, {
-          launchPick: launch.harnessChoice?.plugins ?? null,
-          persona: launch.harnessChoice?.plugins ? launch.personaPlugins ?? [] : launch.plugins ?? [],
-          effective: effectivePlugins,
-        })
-        : null;
-      const baseCommand = buildAgentCommand(launch, this.env, {
-        sandboxUnavailable: sandbox.unavailable,
-        installedClaudePlugins: installedPlugins,
-        equippedClaudePlugins: effectivePlugins,
-      });
+      let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
@@ -2163,9 +2157,13 @@ export class SpawnService {
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
-        command: baseCommand,
+        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+          sandboxUnavailable: sandbox.unavailable,
+          installedClaudePlugins: installedPlugins,
+          equippedClaudePlugins: effectiveClaudePlugins,
+        })),
         sandboxDegraded: sandbox.degradedReason,
-        harnessPlugins,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
