@@ -212,7 +212,9 @@ describe('v2 projection (S3a)', () => {
 
   it('a chat keeps its messages as core: a tight budget does not trim them', async () => {
     const full = await v2(F.C);
-    const { view } = await v2(F.C, 'totalBytes=4096');
+    // Since S4 (#713) a core that cannot fit is a 422, never a trim.
+    await expect(v2(F.C, 'totalBytes=4096')).rejects.toMatchObject({ code: 'context_budget_too_small' });
+    const { view } = await v2(F.C, `totalBytes=${full.bytes}`);
     expect(view.messages).toEqual(full.view.messages);
     expect(view.omitted.filter((o) => o.reason === 'budget')).toEqual([]);
   });
