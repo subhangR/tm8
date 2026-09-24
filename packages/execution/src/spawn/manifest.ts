@@ -6,6 +6,7 @@ import {
   laneSkillOverrides,
   minimalMcpConfig,
   pluginSettings,
+  type HarnessPluginDecisions,
   readHintHookSettings,
   type HarnessSurface,
 } from './harness-surface.js';
@@ -250,6 +251,18 @@ export interface ResolvedLaunchConfig {
    */
   mcpServers?: Record<string, Record<string, unknown>>;
   /**
+   * The explicit harness pick from the launch UI (or inherited from the
+   * session this one resumes or was spawned by). Recorded on the manifest as
+   * `launch.harnessChoice` so it survives resume. Absent means no pick: the
+   * surface and plugins above came from the node env or the persona.
+   */
+  harnessChoice?: HarnessChoice;
+  /**
+   * The persona's `capabilities.launch.plugins`, kept ONLY when a launch pick
+   * replaced it — so the manifest can name what the pick removed.
+   */
+  personaPlugins?: string[];
+  /**
    * Install the lane read-hint hook (`harness/read-hint.mjs`): a short hint
    * after a large repository read. OFF by default — the hook ships dark until
    * the A/B in doc 01a0d2e9 has run, and `TM8_READ_HINTS=on` (node) or
@@ -257,6 +270,37 @@ export interface ResolvedLaunchConfig {
    * on. Absent here means off. Independent of `harnessSurface`.
    */
   readHints?: boolean;
+}
+
+/** An explicit per-launch harness pick; either half may be absent. */
+export interface HarnessChoice {
+  surface?: HarnessSurface;
+  plugins?: string[];
+}
+
+function asPluginList(value: unknown): string[] | null {
+  return Array.isArray(value)
+    ? value.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
+    : null;
+}
+
+/** The request's pick, else the recorded one; null when neither names anything. */
+function harnessChoiceOf(
+  request: SpawnRequest,
+  inherited: SessionLaunchPosture | null | undefined,
+): HarnessChoice | null {
+  const requested: HarnessChoice = {
+    ...(asHarnessSurface(request.harnessSurface) ? { surface: asHarnessSurface(request.harnessSurface)! } : {}),
+    ...(asPluginList(request.plugins) ? { plugins: asPluginList(request.plugins)! } : {}),
+  };
+  if (Object.keys(requested).length > 0) return requested;
+  const stored = inherited?.harnessChoice;
+  if (!stored || typeof stored !== 'object') return null;
+  const recorded: HarnessChoice = {
+    ...(asHarnessSurface(stored.surface) ? { surface: asHarnessSurface(stored.surface)! } : {}),
+    ...(asPluginList(stored.plugins) ? { plugins: asPluginList(stored.plugins)! } : {}),
+  };
+  return Object.keys(recorded).length > 0 ? recorded : null;
 }
 
 /**
@@ -275,9 +319,7 @@ export function memberLaunchPreferences(capabilities: Record<string, unknown> | 
   const launch = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)
     : {};
-  const plugins = Array.isArray(launch.plugins)
-    ? launch.plugins.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
-    : null;
+  const plugins = asPluginList(launch.plugins);
   return {
     harnessSurface: asHarnessSurface(launch.harnessSurface),
     plugins,
@@ -455,9 +497,18 @@ export function resolveLaunchConfig(
 
   // Operator env over persona over the lane default, like TM8_PERMISSION_MODE:
   // a node can flip every lane back to `inherit` without editing any persona.
+  // A pick in the launch UI outranks even the node env — it is a human's
+  // explicit choice for THIS launch. An inherited pick (resume, or a child of
+  // a session launched with one) ranks below the env, like accessMode.
   const preferences = memberLaunchPreferences(member.capabilities);
+  const choice = harnessChoiceOf(request, inherited);
+  const requestedSurface = asHarnessSurface(request.harnessSurface);
   const harnessSurface =
-    asHarnessSurface(env.TM8_HARNESS_SURFACE) ?? preferences.harnessSurface ?? 'minimal';
+    requestedSurface ??
+    asHarnessSurface(env.TM8_HARNESS_SURFACE) ??
+    choice?.surface ??
+    preferences.harnessSurface ??
+    'minimal';
   // Same precedence, but the default is OFF: this hook is an experiment that
   // has not been through its A/B yet, so merging it changes no lane. Turning
   // an arm on is `TM8_READ_HINTS=on` node-wide, or the persona's
@@ -477,7 +528,9 @@ export function resolveLaunchConfig(
     credentialSources,
     spaceCredentialIds,
     harnessSurface,
-    plugins: preferences.plugins ?? [],
+    plugins: choice?.plugins ?? preferences.plugins ?? [],
+    ...(choice ? { harnessChoice: choice } : {}),
+    ...(choice?.plugins && preferences.plugins?.length ? { personaPlugins: preferences.plugins } : {}),
     ...(preferences.mcpServers && Object.keys(preferences.mcpServers).length > 0
       ? { mcpServers: preferences.mcpServers }
       : {}),
@@ -1622,6 +1675,12 @@ export interface ComposeManifestInput {
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
+  /**
+   * Every installed plugin's fate in a minimal claude lane, with its reason
+   * (`pluginDecisions`). Written as `launch.harness.plugins`; absent when the
+   * lane is not minimal or its config home has no plugins.
+   */
+  harnessPlugins?: HarnessPluginDecisions | null;
   now?: Date;
   agentConfigDir?: string;
   homeDir?: string;
@@ -1706,6 +1765,10 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // Passed through untouched; absent stays absent so a launch without
       // Ask Jev writes the same manifest it always did.
       ...(request.jevRunId ? { jevRunId: request.jevRunId } : {}),
+      // Absent unless the launch UI (or the session this one continues) picked
+      // a harness, so an ordinary launch writes the manifest it always wrote.
+      ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),
+      ...(input.harnessPlugins ? { harness: { plugins: input.harnessPlugins } } : {}),
     },
     session: {
       title: resolveSessionTitle(request, context),

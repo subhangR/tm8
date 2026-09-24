@@ -72,6 +72,15 @@ describe('manifest', () => {
   });
 });
 
+describe('manifest harnessChoice', () => {
+  const base: SpawnRequest = { spaceId: 'space', teamMemberId: 'persona' };
+  it('is written only when the launch picked a harness', () => {
+    expect('harnessChoice' in compose(base).launch).toBe(false);
+    expect((compose({ ...base, harnessSurface: 'inherit', plugins: ['sales'] }).launch as Record<string, unknown>).harnessChoice)
+      .toEqual({ surface: 'inherit', plugins: ['sales'] });
+  });
+});
+
 describe('SpawnService', () => {
   let dataDir: string;
   let projectDir: string;
@@ -121,6 +130,7 @@ describe('SpawnService', () => {
       entityId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'call-prep', depth: 0, description: '',
       provider: 'claude', level: 'plugin', loaderMetadata: { pluginName: 'sales', enabled: true },
     };
+    let lastLaunch: Record<string, unknown> = {};
     async function claudeLaunch(options: { skillEquips: ResolvedSkillRow[]; skippedSkills?: SpawnContext['skippedSkills'] }) {
       const configDir = join(dataDir, 'claude-home');
       await mkdir(join(configDir, 'plugins', 'synced', 'bucket'), { recursive: true });
@@ -139,6 +149,7 @@ describe('SpawnService', () => {
         env: { PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: configDir },
         bootSettlementMs: 25,
       }).spawn({ identityId: 'i' }, { ...REQUEST, selection: SELECTION });
+      lastLaunch = graph.manifests[0]!.manifest.launch as Record<string, unknown>;
       return graph.manifests[0]!.manifest.launch.command;
     }
 
@@ -155,6 +166,13 @@ describe('SpawnService', () => {
       const command = await claudeLaunch({ skillEquips: [SALES_SKILL] });
       expect(command).toContain('"sales@synced":true');
       expect(command).toContain('"marketing@synced":false');
+      // The manifest records every plugin's fate, and it agrees with the argv.
+      expect(lastLaunch.harness).toEqual({
+        plugins: {
+          allowed: [{ id: 'sales@synced', source: 'effective-skill' }],
+          denied: [{ id: 'marketing@synced', because: 'not-chosen' }],
+        },
+      });
     });
   });
 

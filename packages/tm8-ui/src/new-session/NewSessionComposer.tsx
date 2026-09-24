@@ -153,6 +153,24 @@ export interface NewSessionComposerProps {
   credential: LaunchCredentialSource | null;
   onCredentialChange(next: LaunchCredentialSource | null): void;
 
+  /**
+   * THE HARNESS ROWS (··· menu): what a claude-code lane loads beyond the
+   * repo. `harnessApplies` false renders both rows disabled with the reason —
+   * other tools have no such surface. Optional, so a host that does not wire
+   * them renders them disabled rather than failing to compile.
+   */
+  harnessApplies?: boolean;
+  /** `null` is the teammate's default; nothing is sent. */
+  harnessSurface?: 'minimal' | 'inherit' | null;
+  onHarnessChange?(next: 'minimal' | 'inherit' | null): void;
+  /** Installed plugin ids (`name@marketplace`); null while unknown. */
+  installedPlugins?: readonly string[] | null;
+  /** Why the Plugins list is empty or absent, in words; null when it has rows. */
+  installedPluginsNote?: string | null;
+  /** `null` is the teammate's list; an array is this launch's exact pick. */
+  plugins?: readonly string[] | null;
+  onPluginsChange?(next: readonly string[] | null): void;
+
   mode: LaunchMode;
   onModeChange(next: LaunchMode): void;
 
@@ -166,7 +184,7 @@ export interface NewSessionComposerProps {
 }
 
 type MenuName = 'workdir' | 'dots' | 'model' | 'perm' | 'team';
-type SubName = 'cred' | 'mode';
+type SubName = 'cred' | 'mode' | 'harness' | 'plugins';
 
 /**
  * The postures this surface offers, of the domain's five. The canvas draws
@@ -187,6 +205,19 @@ const MODE_OPTIONS = LAUNCH_MODES.filter((m) => m.id === 'worker' || m.id === 'c
 
 const NO_CREDENTIAL_PROVIDER_REASON =
   'This agent tool has no personal credential provider, so there is nothing to choose.';
+
+const HARNESS_NOT_APPLICABLE_REASON =
+  'Only Claude Code lanes have a harness to choose; this agent tool ignores it.';
+
+const PLUGINS_UNDER_FULL_REASON =
+  'Full already loads every plugin the account has installed.';
+
+/** The harness choices, in the menu's order. `null` is the teammate's default. */
+const HARNESS_OPTIONS: readonly { value: 'minimal' | 'inherit' | null; label: string; hint: string }[] = [
+  { value: null, label: 'Teammate default', hint: 'Whatever this teammate is configured for — lean unless it says otherwise' },
+  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only · no claude.ai connectors' },
+  { value: 'inherit', label: 'Full', hint: 'Every plugin, connector and skill the account has installed' },
+];
 
 const EFFORT_NOT_TUNABLE_REASON =
   'This model takes no reasoning-effort setting, so there is no stop to pick.';
@@ -258,6 +289,13 @@ export function NewSessionComposer({
   credentialProviderLabel,
   credential,
   onCredentialChange,
+  harnessApplies = false,
+  harnessSurface = null,
+  onHarnessChange,
+  installedPlugins = null,
+  installedPluginsNote = null,
+  plugins = null,
+  onPluginsChange,
   mode,
   onModeChange,
   skillOptions,
@@ -339,6 +377,16 @@ export function NewSessionComposer({
   const copyDef = WORKDIR_MODE_OPTIONS.find((option) => option.id === workdirMode);
 
   const credShort = credential === null ? 'Auto' : credential === 'member' ? 'Mine' : 'Node’s';
+  const harnessShort = HARNESS_OPTIONS.find((o) => o.value === harnessSurface)?.label ?? 'Teammate default';
+  const harnessEnabled = harnessApplies && Boolean(onHarnessChange);
+  const pluginsEnabled = harnessEnabled && harnessSurface !== 'inherit' && Boolean(onPluginsChange);
+  const pluginsShort = plugins === null ? 'Teammate’s' : plugins.length === 0 ? 'None' : `${plugins.length} on`;
+  /* A tick toggles membership in the explicit pick; the first tick turns
+     "the teammate's list" into an explicit list starting from nothing. */
+  const togglePlugin = (id: string) => {
+    const current = plugins ?? [];
+    onPluginsChange?.(current.includes(id) ? current.filter((p) => p !== id) : [...current, id].sort());
+  };
   /* The stops cycle: the model's own list, ascending, wrapping. No unpinned
      step — the OWNER'S RULING (2026-09-07): the dial always names a real stop,
      seeded at High by the state hook. An effort the list no longer contains
@@ -491,6 +539,99 @@ export function NewSessionComposer({
                         <span className="nsx-menu__check" aria-hidden="true">{credential === option.value ? '✓' : ''}</span>
                       </button>
                     ))}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="nsx-menu__row"
+                  aria-expanded={sub === 'harness'}
+                  aria-disabled={harnessEnabled ? undefined : true}
+                  title={harnessEnabled ? undefined : HARNESS_NOT_APPLICABLE_REASON}
+                  data-testid="nsx-harness-row"
+                  onClick={stopThen(() => {
+                    if (!harnessEnabled) return;
+                    setSub((current) => (current === 'harness' ? null : 'harness'));
+                  })}
+                >
+                  <span>Harness</span>
+                  <span className="nsx-menu__val">{`${harnessShort} ▸`}</span>
+                </button>
+                {sub === 'harness' ? (
+                  <div className="nsx-menu__subsec">
+                    {HARNESS_OPTIONS.map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={harnessSurface === option.value}
+                        className="nsx-menu__item"
+                        onClick={stopThen(() => onHarnessChange?.(option.value))}
+                      >
+                        <span className="nsx-menu__body">
+                          <span className="nsx-menu__name nsx-menu__name--plain">{option.label}</span>
+                          <span className="nsx-menu__sub">{option.hint}</span>
+                        </span>
+                        <span className="nsx-menu__check" aria-hidden="true">{harnessSurface === option.value ? '✓' : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="nsx-menu__row"
+                  aria-expanded={sub === 'plugins'}
+                  aria-disabled={pluginsEnabled ? undefined : true}
+                  title={pluginsEnabled ? undefined : harnessEnabled ? PLUGINS_UNDER_FULL_REASON : HARNESS_NOT_APPLICABLE_REASON}
+                  data-testid="nsx-plugins-row"
+                  onClick={stopThen(() => {
+                    if (!pluginsEnabled) return;
+                    setSub((current) => (current === 'plugins' ? null : 'plugins'));
+                  })}
+                >
+                  <span>Plugins</span>
+                  <span className="nsx-menu__val">{`${harnessSurface === 'inherit' ? 'All' : pluginsShort} ▸`}</span>
+                </button>
+                {sub === 'plugins' ? (
+                  <div className="nsx-menu__subsec" data-testid="nsx-plugins-menu">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={plugins === null}
+                      className="nsx-menu__item"
+                      onClick={stopThen(() => onPluginsChange?.(null))}
+                    >
+                      <span className="nsx-menu__body">
+                        <span className="nsx-menu__name nsx-menu__name--plain">Teammate’s plugins</span>
+                        <span className="nsx-menu__sub">The teammate’s list, plus the plugins of its equipped skills</span>
+                      </span>
+                      <span className="nsx-menu__check" aria-hidden="true">{plugins === null ? '✓' : ''}</span>
+                    </button>
+                    {(installedPlugins ?? []).map((id) => {
+                      const [name, marketplace] = id.split('@');
+                      const on = plugins?.includes(id) === true;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={on}
+                          className="nsx-menu__item"
+                          data-testid={`nsx-plugin-${id}`}
+                          onClick={stopThen(() => togglePlugin(id))}
+                        >
+                          <span className="nsx-menu__body">
+                            <span className="nsx-menu__name nsx-menu__name--plain">{name}</span>
+                            {marketplace ? <span className="nsx-menu__sub">{marketplace}</span> : null}
+                          </span>
+                          <span className="nsx-menu__check" aria-hidden="true">{on ? '✓' : ''}</span>
+                        </button>
+                      );
+                    })}
+                    {installedPluginsNote ? (
+                      <div className="nsx-menu__note" role="note">{installedPluginsNote}</div>
+                    ) : null}
                   </div>
                 ) : null}
 

@@ -262,3 +262,69 @@ describe('the title and the commit', () => {
     expect(props.onSubmit).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('the ··· harness rows', () => {
+  const HARNESS: Partial<NewSessionComposerProps> = {
+    harnessApplies: true,
+    harnessSurface: null,
+    onHarnessChange: vi.fn(),
+    installedPlugins: ['marketing@synced', 'sales@synced'],
+    installedPluginsNote: null,
+    plugins: null,
+    onPluginsChange: vi.fn(),
+  };
+
+  it('states the teammate default on both rows and picks a harness through its callback', () => {
+    const { getByTestId, getByText, props } = renderComposer(HARNESS);
+    fireEvent.click(getByTestId('nsx-dots'));
+    expect(getByTestId('nsx-harness-row').textContent).toContain('Teammate default');
+    expect(getByTestId('nsx-plugins-row').textContent).toContain('Teammate’s');
+    fireEvent.click(getByTestId('nsx-harness-row'));
+    fireEvent.click(getByText('Full'));
+    expect(props.onHarnessChange).toHaveBeenCalledWith('inherit');
+  });
+
+  it('lists the installed plugins and a tick starts an explicit pick from nothing', () => {
+    const { getByTestId, props } = renderComposer(HARNESS);
+    fireEvent.click(getByTestId('nsx-dots'));
+    fireEvent.click(getByTestId('nsx-plugins-row'));
+    expect(getByTestId('nsx-plugins-menu').textContent).toContain('marketing');
+    fireEvent.click(getByTestId('nsx-plugin-sales@synced'));
+    expect(props.onPluginsChange).toHaveBeenCalledWith(['sales@synced']);
+  });
+
+  it('an explicit pick unticks and states its count', () => {
+    const { getByTestId, props } = renderComposer({ ...HARNESS, plugins: ['sales@synced'] });
+    fireEvent.click(getByTestId('nsx-dots'));
+    expect(getByTestId('nsx-plugins-row').textContent).toContain('1 on');
+    fireEvent.click(getByTestId('nsx-plugins-row'));
+    fireEvent.click(getByTestId('nsx-plugin-sales@synced'));
+    expect(props.onPluginsChange).toHaveBeenCalledWith([]);
+  });
+
+  it('Full refuses the Plugins row WITH the reason', () => {
+    const { getByTestId } = renderComposer({ ...HARNESS, harnessSurface: 'inherit' });
+    fireEvent.click(getByTestId('nsx-dots'));
+    const row = getByTestId('nsx-plugins-row');
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect(row.getAttribute('title')).toContain('Full already loads every plugin');
+    fireEvent.click(row);
+    expect(() => getByTestId('nsx-plugins-menu')).toThrow();
+  });
+
+  it('a non-Claude tool refuses both rows WITH the reason', () => {
+    const { getByTestId } = renderComposer({ ...HARNESS, harnessApplies: false });
+    fireEvent.click(getByTestId('nsx-dots'));
+    expect(getByTestId('nsx-harness-row').getAttribute('title')).toContain('Only Claude Code lanes');
+    expect(getByTestId('nsx-plugins-row').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('an empty or unreadable list says why instead of rendering blank', () => {
+    const { getByTestId } = renderComposer({
+      ...HARNESS, installedPlugins: null, installedPluginsNote: 'This node cannot list its installed plugins here.',
+    });
+    fireEvent.click(getByTestId('nsx-dots'));
+    fireEvent.click(getByTestId('nsx-plugins-row'));
+    expect(getByTestId('nsx-plugins-menu').textContent).toContain('cannot list its installed plugins');
+  });
+});

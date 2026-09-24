@@ -325,6 +325,11 @@ export interface SessionLaunchPosture {
    * source with no usable id here refuses rather than re-resolving (M8a).
    */
   spaceCredentialIds?: Partial<Record<string, unknown>> | null;
+  /**
+   * `launch.harnessChoice` — the explicit harness pick the session was
+   * launched with, if any. Stored JSON, so narrowed by the resolver.
+   */
+  harnessChoice?: Record<string, unknown> | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -1049,6 +1054,14 @@ export interface SpawnRequest {
    * `launch.jevRunId` and otherwise never interpreted by execution.
    */
   jevRunId?: string;
+  /**
+   * The launch UI's harness pick for a claude-code lane (`ExecutionSpawnInput`
+   * carries the contract). Outranks the node env and the persona; recorded as
+   * `launch.harnessChoice`. Absent means no pick.
+   */
+  harnessSurface?: 'minimal' | 'inherit';
+  /** The launch UI's plugin pick: REPLACES the persona's list for this launch. */
+  plugins?: string[];
   /** S12: untrusted projects require per-spawn consent. */
   confirmUntrusted?: boolean;
   clientMutationId?: string | null;

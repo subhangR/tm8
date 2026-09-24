@@ -107,6 +107,40 @@ export function pluginSettings(
   return out;
 }
 
+/** Why a plugin is on in a minimal lane. */
+export type PluginAllowSource = 'launch' | 'effective-skill' | 'persona';
+/** Why a plugin is off: removed from the persona list by a launch pick, or never chosen. */
+export type PluginDenyReason = 'launch-pick' | 'not-chosen';
+
+export interface HarnessPluginDecisions {
+  allowed: { id: string; source: PluginAllowSource }[];
+  denied: { id: string; because: PluginDenyReason }[];
+}
+
+/**
+ * Every installed plugin's fate in a `minimal` lane, WITH the reason — the
+ * manifest's `launch.harness.plugins`, so no trim is silent. Mirrors exactly
+ * the allowlist `buildAgentCommand` applies: the launch pick (else the
+ * persona list) plus the plugins of the lane's effective skills. A persona
+ * plugin a launch pick left out is denied `launch-pick`, not `not-chosen`.
+ */
+export function pluginDecisions(
+  installed: readonly string[],
+  lists: { launchPick: readonly string[] | null; persona: readonly string[]; effective: readonly string[] },
+): HarnessPluginDecisions {
+  const out: HarnessPluginDecisions = { allowed: [], denied: [] };
+  for (const id of [...installed].sort()) {
+    const source: PluginAllowSource | null =
+      lists.launchPick !== null && isPluginAllowed(id, lists.launchPick) ? 'launch'
+        : isPluginAllowed(id, lists.effective) ? 'effective-skill'
+          : lists.launchPick === null && isPluginAllowed(id, lists.persona) ? 'persona'
+            : null;
+    if (source) out.allowed.push({ id, source });
+    else out.denied.push({ id, because: lists.launchPick !== null && isPluginAllowed(id, lists.persona) ? 'launch-pick' : 'not-chosen' });
+  }
+  return out;
+}
+
 /**
  * The plugins a lane's equipped skills live in. Equipping a Claude plugin
  * skill is choosing its plugin: without this the deny-list would turn the

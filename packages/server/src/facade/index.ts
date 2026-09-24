@@ -1,4 +1,4 @@
-import { registerSkillHandlers } from '../skills/handlers.js';
+import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
@@ -186,7 +186,12 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
-  registerSkillHandlers(registry, facade);
+  // skills.preview also lists the Claude plugins a launch could load (the
+  // launch ··· menu's Plugins row); that needs the credential root.
+  const credentialRoot = deps.credentials?.dataDir;
+  registerSkillHandlers(registry, facade, credentialRoot
+    ? { installedPluginsFor: (identityId) => installedPluginsFor(credentialRoot, identityId) }
+    : {});
   registerSkillMutations(registry, facade);
   // launch.suggest (Jev, UI-only advice). One registration; see jev/handlers.ts.
   registerJevHandlers(registry, facade, deps.resolveJevAdvisor ? { resolveAdvisor: deps.resolveJevAdvisor } : {});

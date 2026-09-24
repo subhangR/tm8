@@ -1036,13 +1036,15 @@ export class DbGraphPort implements GraphPort {
       credential_source: string | null;
       credential_sources: unknown;
       space_credential_ids: unknown;
+      harness_choice: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
               sm.manifest #>  '{launch,credentialSources}' as credential_sources,
-              sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids
+              sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids,
+              sm.manifest #>  '{launch,harnessChoice}'     as harness_choice
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -1079,6 +1081,11 @@ export class DbGraphPort implements GraphPort {
         !Array.isArray(row.space_credential_ids)
           ? (row.space_credential_ids as Record<string, unknown>)
           : null,
+      // The launch UI's explicit harness pick, when there was one. Stored JSON,
+      // narrowed downstream like every other posture field.
+      ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
+        ? { harnessChoice: row.harness_choice as Record<string, unknown> }
+        : {}),
     };
   }
 
@@ -2908,6 +2915,8 @@ function registerHandlers(
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
+      ...(input.harnessSurface ? { harnessSurface: input.harnessSurface } : {}),
+      ...(input.plugins ? { plugins: input.plugins } : {}),
       // Spread rather than `?? undefined` so an absent geometry stays ABSENT:
       // PtyHostService's clampDim falls back to 80x24 on any falsy value, and
       // an explicit `cols: undefined` would read the same way — but only the
