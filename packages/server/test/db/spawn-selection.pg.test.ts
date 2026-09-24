@@ -248,16 +248,19 @@ describe('each selection group is independent (design 01a0d348 §5.1)', () => {
 describe('a resume replaying the launch selection', () => {
   it('leaves out ids that no longer resolve, recorded unavailable, instead of refusing the resume', async () => {
     const context = await load({
-      selection: { memoryIds: [ids.mA, ids.mDeleted], skillIds: [ids.sElsewhere] },
+      selection: { memoryIds: [ids.mA, ids.mDeleted], skillIds: [ids.sElsewhere], referenceIds: [ids.mB] },
       selectionReplay: true,
     });
     expect(context.teamMember.memories).toEqual(['selected A']);
     expect(context.skillEquips).toEqual([]);
+    expect(context.references).toEqual([]);
     const audit = manifestOf(context).context!;
-    expect(audit.groups).toMatchObject({ memories: { mode: 'selected' }, skills: { mode: 'selected' } });
+    expect(audit.groups).toMatchObject({ memories: { mode: 'selected' }, skills: { mode: 'selected' }, references: { mode: 'selected' } });
+    // The real kind when the entity is still readable here; else 'unknown'.
     expect(audit.dropped?.filter((d) => d.reason === 'unavailable')).toEqual([
-      { entityId: ids.mDeleted, kind: 'memory', group: 'memories', reason: 'unavailable' },
-      { entityId: ids.sElsewhere, kind: 'skill', group: 'skills', reason: 'unavailable' },
+      { entityId: ids.mDeleted, kind: 'unknown', group: 'memories', reason: 'unavailable' },
+      { entityId: ids.sElsewhere, kind: 'unknown', group: 'skills', reason: 'unavailable' },
+      { entityId: ids.mB, kind: 'memory', group: 'references', reason: 'unavailable' },
     ]);
   });
 });
@@ -356,6 +359,11 @@ describe('a task dressed by the attach palette', () => {
       { entityId: ids.freeDoc, kind: 'doc', group: 'references', reason: 'not-rendered', level: 'entry' },
       { entityId: ids.task, kind: 'task', group: 'references', reason: 'not-rendered', level: 'entry' },
     ]);
+    // Each id lands in exactly one place: the de-selected doc is still named
+    // by the snapshot's identity list, but it is not a context entry.
+    const entryIds = new Set(audit.entries?.map((e) => e.entityId));
+    expect(audit.dropped?.filter((d) => entryIds.has(d.entityId))).toEqual([]);
+    expect(audit.entries?.map((e) => e.entityId)).not.toContain(ids.doc);
     // Memories and skills were not selected: their defaults stand.
     expect(context.teamMember.memories).toContain('palette memory');
     expect(context.skillEquips?.map((s) => s.entityId)).toContain(ids.sTask);

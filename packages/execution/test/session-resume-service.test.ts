@@ -241,10 +241,22 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
   });
 
-  it('never half-applies a malformed recorded selection', () => {
-    expect(replayedSelection({ accessMode: null, permissionMode: null, selection: { memoryIds: ['not-a-uuid'] } })).toEqual({});
-    expect(replayedSelection({ accessMode: null, permissionMode: null, selection: {}, selectionReasons: { memories: 'x' } })).toEqual({});
+  it('never half-applies a malformed recorded selection, and flags it', () => {
+    const posture = { accessMode: null, permissionMode: null };
+    expect(replayedSelection({ ...posture, selection: { memoryIds: ['not-a-uuid'] } })).toEqual({ invalid: true });
+    expect(replayedSelection({ ...posture, selection: { memoryIds: [] }, selectionReasons: { skills: 'x' } })).toEqual({ invalid: true });
+    const tooMany = Array.from({ length: 241 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect(replayedSelection({ ...posture, selection: { skillIds: tooMany } })).toEqual({ invalid: true });
+    expect(replayedSelection(posture)).toEqual({});
     expect(replayedSelection(null)).toEqual({});
+  });
+
+  it('a resume whose recorded selection is malformed loads the defaults and audits replay-invalid', async () => {
+    graph.postures.set(SESSION_ID, { accessMode: null, permissionMode: null, selection: { memoryIds: 'nope' } });
+    graph.resumeReplayed = true;
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+    expect(graph.spawnContextInputs.at(-1)).not.toHaveProperty('selection');
+    expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'replay-invalid' });
   });
 
   it('does not boot a second child on a ledger replay', async () => {

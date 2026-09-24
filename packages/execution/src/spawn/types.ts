@@ -540,9 +540,10 @@ export interface ContextGroupAudit {
    * Why the defaults were used. `no-selection`: the launch did not select this
    * group and said nothing more; `not-selectable`: selection cannot name this
    * group; otherwise the client's own `selectionReasons` entry (an enum,
-   * validated at the wire, audit-only).
+   * validated at the wire, audit-only). `replay-invalid`: a resume found the
+   * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable' | SpawnSelectionDefaultReason;
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
   /** Linked rows beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
@@ -579,7 +580,8 @@ export type ContextDropReason =
   /**
    * A resume replayed the launch's selection, and this id no longer resolves
    * (deleted, moved, or unreadable to the resumer). The rest of the selection
-   * still replays.
+   * still replays. `kind` is the entity's kind when it is still readable,
+   * else `'unknown'`.
    */
   | 'unavailable';
 
@@ -1254,6 +1256,11 @@ export interface SpawnRequest {
   selection?: SpawnSelection;
   /** Why unselected groups kept their defaults; audit-only (`ExecutionSpawnInput.selectionReasons`). */
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /**
+   * Set by resume only, never from the wire: the recorded selection could not
+   * be parsed, so every group loaded its defaults. Audited as `replay-invalid`.
+   */
+  selectionReplayInvalid?: true;
   /**
    * The Ask Jev run this launch came from. Written to the manifest as
    * `launch.jevRunId` and otherwise never interpreted by execution.

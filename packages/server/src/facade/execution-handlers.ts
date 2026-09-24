@@ -287,7 +287,7 @@ async function invalidSelectionIds(
   q: Querier,
   spaceId: string,
   selection: SpawnSelection,
-): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[] }> {
+): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; kinds: ReadonlyMap<string, string> }> {
   const memoryIds = selection.memoryIds ?? [];
   const skillIds = selection.skillIds ?? [];
   const referenceIds = selection.referenceIds ?? [];
@@ -303,8 +303,14 @@ async function invalidSelectionIds(
   const badMemoryIds = bad(memoryIds, (kind) => kind === 'memory');
   const badSkillIds = bad(skillIds, (kind) => kind === 'skill');
   const badReferenceIds = bad(referenceIds, (kind) => REFERENCE_KINDS.has(kind ?? ''));
-  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds };
+  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, kinds };
 }
+
+/**
+ * `ContextDrop.kind` for an `unavailable` id whose entity cannot be read at
+ * all (deleted, in another space, or hidden by RLS): there is no kind to tell.
+ */
+export const UNAVAILABLE_KIND = 'unknown';
 
 /**
  * A resume's replayed selection with every id that no longer resolves left
@@ -318,10 +324,14 @@ async function pruneReplayedSelection(
   selection: SpawnSelection,
 ): Promise<{ selection: SpawnSelection; dropped: ContextDrop[] }> {
   const bad = await invalidSelectionIds(q, spaceId, selection);
+  // The entity's real kind when it is still live and readable here (a kind
+  // that no longer fits its group); otherwise `UNAVAILABLE_KIND`.
+  const drop = (group: ContextDrop['group']) => (entityId: string): ContextDrop =>
+    ({ entityId, kind: bad.kinds.get(entityId) ?? UNAVAILABLE_KIND, group, reason: 'unavailable' });
   const dropped: ContextDrop[] = [
-    ...bad.memoryIds.map((entityId) => ({ entityId, kind: 'memory', group: 'memories' as const, reason: 'unavailable' as const })),
-    ...bad.skillIds.map((entityId) => ({ entityId, kind: 'skill', group: 'skills' as const, reason: 'unavailable' as const })),
-    ...bad.referenceIds.map((entityId) => ({ entityId, kind: 'reference', group: 'references' as const, reason: 'unavailable' as const })),
+    ...bad.memoryIds.map(drop('memories')),
+    ...bad.skillIds.map(drop('skills')),
+    ...bad.referenceIds.map(drop('references')),
   ];
   const keep = (ids: string[] | undefined, gone: string[]): string[] | undefined =>
     ids === undefined ? undefined : ids.filter((id) => !gone.includes(id));

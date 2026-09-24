@@ -1917,6 +1917,7 @@ export class SpawnService {
       clientMutationId: request.clientMutationId ?? null,
       ...(launchSelection.selection ? { selection: launchSelection.selection } : {}),
       ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
+      ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -3299,17 +3300,22 @@ export class SpawnService {
 /**
  * The selection a session was launched with, from its recorded manifest, for
  * resume to replay. Stored JSON, so it is parsed with the contract's own
- * schemas: a malformed record is not replayed (the resume then loads the
- * defaults, and its audit says `no-selection`), never half-applied.
+ * schemas. A malformed (or over-ceiling) record is never half-applied: the
+ * resume loads the defaults and `invalid` makes its audit say
+ * `replay-invalid`, so it is never misread as a launch that selected nothing.
  */
 export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
   selection?: SpawnSelection;
   selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
+  invalid?: true;
 } {
+  const hasSelection = posture?.selection !== undefined;
+  const hasReasons = posture?.selectionReasons !== undefined;
   const selection = SpawnSelectionSchema.safeParse(posture?.selection);
   const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true };
   return {
-    ...(posture?.selection !== undefined && selection.success ? { selection: selection.data } : {}),
-    ...(posture?.selectionReasons !== undefined && reasons.success ? { selectionReasons: reasons.data } : {}),
+    ...(hasSelection && selection.success ? { selection: selection.data } : {}),
+    ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };
 }

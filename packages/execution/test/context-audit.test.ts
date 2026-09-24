@@ -250,6 +250,55 @@ describe('manifest.context: entries, dropped, groups', () => {
     expect(manifest.context?.entries?.map((e) => e.entityId)).toEqual(['doc-kept']);
     expect(JSON.stringify(manifest.context)).not.toContain('Quarterly Plan');
   });
+
+  it('puts every id in exactly one place: a de-selected snapshot row is only not-selected; an unread kept default is count-cap', () => {
+    const context = ctx({
+      tasks: [{
+        id: 'task-1', version: 1, title: 'T', description: '', priority: 'low', status: 'open', acceptanceCriteria: [],
+        attachments: [{ fileEntityId: 'file-unticked', name: 'a.txt', mime: 'text/plain' }],
+        linked: [
+          { entityId: 'doc-kept', kind: 'doc', link: 'attached_to', title: 'kept' },
+          { entityId: 'doc-unticked', kind: 'doc', link: 'attached_to', title: 'gone' },
+          { entityId: 'run-1', kind: 'work_session', link: 'relates_to', title: null },
+        ],
+        // One more link than the spawn read: 'doc-unread' is past LINKED_ROW_CAP.
+        linkedTotal: 4,
+      }],
+      references: [
+        { entityId: 'doc-kept', kind: 'doc', title: 'kept', via: 'linked', link: 'attached_to' },
+        { entityId: 'doc-unread', kind: 'doc', title: 'unread', via: 'linked', link: 'relates_to' },
+      ],
+      contextAudit: {
+        selectedGroups: ['references'],
+        memoryVia: [],
+        dropped: [
+          { entityId: 'doc-unticked', kind: 'doc', group: 'references', reason: 'not-selected' },
+          { entityId: 'file-unticked', kind: 'file', group: 'references', reason: 'not-selected' },
+        ],
+      },
+    });
+    const audit = compose(context, { req: { ...request, selection: { referenceIds: ['doc-kept', 'doc-unread'] } } }).manifest.context!;
+    // A session link is not a selectable kind: it stays an entry.
+    expect(audit.entries?.map((e) => e.entityId)).toEqual(['doc-kept', 'run-1']);
+    expect(audit.dropped).toEqual([
+      { entityId: 'doc-unticked', kind: 'doc', group: 'references', reason: 'not-selected' },
+      { entityId: 'file-unticked', kind: 'file', group: 'references', reason: 'not-selected' },
+      { entityId: 'doc-unread', kind: 'doc', group: 'references', reason: 'count-cap', level: 'entry' },
+    ]);
+    const entryIds = new Set(audit.entries?.map((e) => e.entityId));
+    expect(audit.dropped?.filter((d) => entryIds.has(d.entityId))).toEqual([]);
+    expect(new Set(audit.dropped?.map((d) => d.entityId)).size).toBe(audit.dropped?.length);
+  });
+
+  it('a resume that could not parse the recorded selection says replay-invalid, never no-selection', () => {
+    const { manifest } = compose(ctx(), { req: { ...request, selectionReplayInvalid: true } });
+    expect(manifest.context?.groups).toMatchObject({
+      memories: { mode: 'default', reason: 'replay-invalid' },
+      skills: { mode: 'default', reason: 'replay-invalid' },
+      references: { mode: 'default', reason: 'replay-invalid' },
+      teammates: { mode: 'default', reason: 'not-selectable' },
+    });
+  });
 });
 
 describe('#731 follow-ups: when a harness pick applies', () => {
