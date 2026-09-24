@@ -612,6 +612,33 @@ function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
       unavailableReason: null,
     },
     recordedAt: new Date(FIXTURE_BASE_MS - 60_000).toISOString(),
+    // What the server projects from the manifest above for this viewer.
+    launchContext: {
+      entries: [
+        {
+          entityId: '01900000-0000-7000-8000-0000000000b1',
+          role: 'teammate',
+          kind: 'team_member',
+          title: 'Draco',
+          source: 'launch',
+          viaTaskId: null,
+          skillLoad: null,
+          jev: null,
+        },
+        {
+          entityId: '01900000-0000-7000-8000-0000000000aa',
+          role: 'task',
+          kind: 'task',
+          title: 'Wire the DEBUG surface',
+          source: 'launch',
+          viaTaskId: null,
+          skillLoad: null,
+          jev: null,
+        },
+      ],
+      hiddenCount: 0,
+      unlinkedMemories: [],
+    },
   };
 }
 
@@ -2877,6 +2904,7 @@ export function createFixtureSeam(): FixtureSeam {
           envVarNames: [],
           prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
           recordedAt: null,
+          launchContext: null,
         });
       }
       return clone(fixtureLaunchRecord(workSessionId));

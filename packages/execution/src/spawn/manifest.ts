@@ -1795,6 +1795,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     }),
     effectiveSkills,
     ...(context.droppedSkills?.length ? { droppedSkills: context.droppedSkills } : {}),
+    // Absent when the context predates memory ids, so such a spawn writes the
+    // manifest it always wrote.
+    ...(member.memoryIds ? { context: { memoryIds: [...member.memoryIds] } } : {}),
     coordinator: coordinatorSessionId
       ? { sessionId: coordinatorSessionId, kind: resolveCoordinatorKind(context.parentKind) }
       : null,

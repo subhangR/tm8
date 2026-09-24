@@ -100,6 +100,7 @@ import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
@@ -205,7 +206,10 @@ interface MemoryRow {
  * requested id is different: the caller named THAT memory, so it is injected
  * with its `[superseded]` marker instead of second-guessing the request.
  */
-function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
+function renderMemories(
+  rows: MemoryRow[],
+  requestedIds: string[],
+): { texts: string[]; ids: string[] } {
   const render = (r: MemoryRow): string => {
     const marks: string[] = [];
     if (r.superseded) marks.push('superseded');
@@ -215,10 +219,15 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   };
   const emitted = new Set<string>();
   const out: string[] = [];
+  // `ids` is built in the same pushes as `out`, so it is exactly the injected
+  // memories in injection order. It is NOT index-aligned with the manifest's
+  // `agent.memory`, which may also carry the legacy jsonb remainder (no ids).
+  const ids: string[] = [];
   // 1. The persona's own working set.
   for (const r of rows) {
     if (!r.remembered || r.superseded) continue;
     out.push(render(r));
+    ids.push(r.entity_id);
     emitted.add(r.entity_id);
   }
   // 2. Task working sets (D9): what the spawn tasks remember, after the
@@ -227,6 +236,7 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   for (const r of rows) {
     if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
     out.push(render(r));
+    ids.push(r.entity_id);
     emitted.add(r.entity_id);
   }
   // 3. Requested extras follow the caller's order, after both sets.
@@ -235,9 +245,10 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
     const row = rows.find((r) => r.entity_id === id);
     if (!row) continue; // absence already refused upstream
     out.push(render(row));
+    ids.push(row.entity_id);
     emitted.add(id);
   }
-  return out;
+  return { texts: out, ids };
 }
 
 /**
@@ -643,9 +654,10 @@ export class DbGraphPort implements GraphPort {
           // Graph working set first; any legacy jsonb remainder (pre-084
           // writers) rides along so no entry silently vanishes mid-cutover.
           memories: [
-            ...injectedMemories,
+            ...injectedMemories.texts,
             ...(!selection && Array.isArray(member.memories) ? member.memories : []),
           ],
+          memoryIds: injectedMemories.ids,
           model: member.model,
           agentTool: member.agent_tool,
           mode: (member.mode as SpawnContext['teamMember']['mode']) ?? null,
@@ -2696,6 +2708,7 @@ function registerHandlers(
         envVarNames: [],
         prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
         recordedAt: null,
+        launchContext: null,
       };
       return json(empty);
     }
@@ -2728,6 +2741,7 @@ function registerHandlers(
       },
       recordedAt:
         row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      launchContext: manifest ? await projectLaunchContext(db, claims, manifest) : null,
     };
     return json(result);
   });

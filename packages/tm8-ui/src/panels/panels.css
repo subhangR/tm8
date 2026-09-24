@@ -1018,6 +1018,54 @@
   background: var(--pn-x-hairline-soft);
 }
 
+/* LAUNCH CONTEXT — a session's launch selections, atop its Connections tab. */
+.cv2-root .pn-launch__badge {
+  color: var(--pn-ink-3);
+  border-style: dashed;
+}
+.cv2-root .pn-launch__badge[data-source='jev'] {
+  border-style: solid;
+}
+.cv2-root .pn-launch__text {
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+.cv2-root .pn-launch__note {
+  list-style: none;
+  margin: 0;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-launch__facts {
+  margin-top: 8px;
+}
+.cv2-root .pn-launch__facts dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+}
+.cv2-root .pn-launch__fact {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 11px;
+}
+.cv2-root .pn-launch__fact dt {
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-launch__fact dd {
+  margin: 0;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+.cv2-root .pn-launch__mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+}
+
 .cv2-root .pn-foot {
   flex: none;
   height: 28px;

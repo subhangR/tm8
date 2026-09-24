@@ -348,6 +348,12 @@ export interface TeamMemberContext {
   role: string;
   identity: string;
   memories: unknown[];
+  /**
+   * The memory ENTITIES injected into `memories`, in injection order. Not
+   * index-aligned with `memories`: that list may end with the legacy jsonb
+   * remainder, which has no ids. Absent from contexts that predate it.
+   */
+  memoryIds?: string[];
   model: string | null;
   agentTool: string | null;
   mode: AgentMode | null;
@@ -999,6 +1005,14 @@ export interface Tm8Manifest {
   effectiveSkills?: EffectiveSkills;
   /** Names omitted by relevance selection or the serialized index byte budget. */
   droppedSkills?: string[];
+
+  /**
+   * The launch-context audit (design 01a0d348 §6). Only `memoryIds` so far:
+   * the memory entities injected into `agent.memory`, in injection order. Look
+   * memories up BY ID — this is not index-aligned with `agent.memory`, which
+   * can also carry legacy id-less strings. Absent on manifests that predate it.
+   */
+  context?: { memoryIds: string[] };
 
   /**
    * Present for coordinated modes — the concrete return path, and since 176

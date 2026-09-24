@@ -21,6 +21,8 @@ import type {
   EntityId,
   ExecutionSpawnInput,
   InteractionProfileStatus,
+  LaunchContextRole,
+  LaunchContextSource,
   LaunchModelEffort,
   ProjectId,
   SpawnWorkdir,
@@ -1122,6 +1124,92 @@ export function describeLaunchManifest(
   });
 
   return { facts, command: readText(launch, 'command'), tasks };
+}
+
+/** What each LAUNCH CONTEXT row was in the launch. */
+export const LAUNCH_CONTEXT_ROLE_LABEL: Record<LaunchContextRole, string> = {
+  teammate: 'teammate',
+  task: 'task',
+  memory: 'memory',
+  skill: 'skill',
+  reference: 'reference',
+  attachment: 'attachment',
+  coordinator: 'coordinator',
+};
+
+/** Where a LAUNCH CONTEXT row came from: the one provenance badge each row carries. */
+export const LAUNCH_CONTEXT_SOURCE_LABEL: Record<LaunchContextSource, { text: string; title: string }> = {
+  launch: { text: 'launch', title: 'Named on the launch itself' },
+  teammate: { text: 'teammate', title: "From the teammate's own graph" },
+  task: { text: 'task', title: 'Came in through a launch task' },
+  jev: { text: 'Jev', title: 'Suggested by Ask Jev' },
+  requested: { text: 'requested', title: 'Named by id at launch' },
+};
+
+/**
+ * The launch facts the Connections tab's LAUNCH CONTEXT section shows: the
+ * choices made for this launch, not the whole debug record. Credentials say
+ * which KIND of source each provider ran on and nothing more.
+ */
+export function launchContextFacts(manifest: Record<string, unknown> | null): ManifestFact[] {
+  const launch = readObject(manifest, 'launch');
+  const profile = readObject(manifest, 'interactionProfile');
+  const effective = readObject(launch, 'effectiveCredentialSources');
+  const requested = readObject(launch, 'credentialSources');
+  const credentials: ManifestFact[] = [];
+  for (const provider of CREDENTIAL_FACT_PROVIDERS) {
+    const source = readText(effective, provider) ?? readText(requested, provider);
+    if (source !== 'member' && source !== 'space' && source !== 'node') continue;
+    credentials.push({ label: `${CREDENTIAL_FACT_NAME[provider]} credential`, value: LAUNCH_SOURCE_WORD[source], mono: false });
+  }
+  return [
+    { label: 'Tool', value: readText(launch, 'tool'), mono: true },
+    { label: 'Model', value: readText(launch, 'model'), mono: true },
+    { label: 'Effort', value: readText(launch, 'reasoningEffort'), mono: true },
+    { label: 'Permission', value: readText(launch, 'permissionMode'), mono: true },
+    { label: 'Access', value: readText(launch, 'accessMode'), mono: true },
+    { label: 'Agent mode', value: readText(manifest, 'mode'), mono: true },
+    {
+      label: 'Interaction profile',
+      value: joinParts([readText(profile, 'templateKey'), bracket(readText(profile, 'source'))], ' '),
+      mono: true,
+    },
+    ...credentials,
+    ...(readText(launch, 'jevRunId') !== null ? [{ label: 'Ask Jev', value: 'used', mono: false }] : []),
+  ];
+}
+
+/**
+ * The harness surface as the TEAMMATE DECLARED it (`capabilities.launch`:
+ * surface, plugins, MCP servers), plus how the launch's skills loaded. Plugins
+ * a lane gets from its equipment are not in the manifest. Declared, not effective: the stored
+ * manifest does not yet record what the harness actually allowed — design
+ * 01a0d348 §6 (I2) adds `launch.harness` for that.
+ */
+export function declaredHarnessFacts(manifest: Record<string, unknown> | null): ManifestFact[] {
+  const declared = readObject(readObject(readObject(manifest, 'agent'), 'capabilities'), 'launch');
+  const effective = readObject(manifest, 'effectiveSkills');
+  const plugins = readArray(declared, 'plugins').filter((p): p is string => typeof p === 'string');
+  const facts: ManifestFact[] = [];
+  // Only a Claude lane has a harness surface (`harness-surface.ts`).
+  if (readText(readObject(manifest, 'launch'), 'tool')?.startsWith('claude')) {
+    const surface = readText(declared, 'harnessSurface');
+    const mcpServers = Object.keys(readObject(declared, 'mcpServers') ?? {});
+    facts.push(
+      { label: 'Harness surface', value: surface ?? 'minimal (default)', mono: true },
+      { label: 'Plugins', value: plugins.length > 0 ? plugins.join(', ') : 'none', mono: true },
+      { label: 'MCP servers', value: mcpServers.length > 0 ? mcpServers.join(', ') : 'none', mono: true },
+      // A minimal lane switches off the bundled skills lanes never use.
+      { label: 'Bundled skills', value: surface === 'inherit' ? 'all' : 'trimmed', mono: false },
+    );
+  }
+  if (effective !== null) {
+    facts.push(
+      { label: 'Native skills', value: String(readArray(effective, 'native').length), mono: true },
+      { label: 'Indexed skills', value: String(readArray(effective, 'indexed').length), mono: true },
+    );
+  }
+  return facts;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {

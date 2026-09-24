@@ -170,6 +170,7 @@ describe('with selection', () => {
   it('memories are EXACTLY the selected ones, in the selected order', async () => {
     const context = await load({ selection: { memoryIds: [ids.mB, ids.mA], skillIds: [] } });
     expect(context.teamMember.memories).toEqual(['selected B', 'selected A']);
+    expect(manifestOf(context).context).toEqual({ memoryIds: [ids.mB, ids.mA] });
   });
 
   it('skills are EXACTLY the selected ones; an unequipped one rides this session with no edge written', async () => {
@@ -207,6 +208,9 @@ describe('without selection', () => {
   it('is the load it always was: working set, task set, legacy remainder, equipped skills, no not-selected audit', async () => {
     const context = await load();
     expect(context.teamMember.memories).toEqual(['working set memory', 'task memory', 'legacy jsonb note']);
+    // Ids for the injected entities only, in injection order: the legacy
+    // jsonb note has none, so these are NOT index-aligned with agent.memory.
+    expect(manifestOf(context).context).toEqual({ memoryIds: [ids.mWorking, ids.mTask] });
     expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sEquipped, ids.sInherited]);
     expect('skippedSkills' in context).toBe(false);
   });

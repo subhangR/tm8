@@ -3454,6 +3454,23 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unavailableReason: z.enum(['not_recorded']).nullable(),
   }).strict(),
   recordedAt: z.string().nullable(),
+  launchContext: z.object({
+    entries: z.array(z.object({
+      entityId: EntityIdSchema,
+      role: z.enum(['teammate', 'task', 'memory', 'skill', 'reference', 'attachment', 'coordinator']),
+      kind: z.string(),
+      title: z.string(),
+      source: z.enum(['launch', 'teammate', 'task', 'jev', 'requested']),
+      viaTaskId: EntityIdSchema.nullable(),
+      skillLoad: z.enum(['native', 'indexed']).nullable(),
+      jev: z.object({
+        level: z.enum(['irrelevant', 'background', 'useful', 'critical']),
+        score: z.number(),
+      }).strict().nullable(),
+    }).strict()),
+    hiddenCount: z.number().int().nonnegative(),
+    unlinkedMemories: z.array(z.string()),
+  }).strict().nullable(),
 }).strict();
 
 /**
