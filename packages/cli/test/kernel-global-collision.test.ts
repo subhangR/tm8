@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(225); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(rows.length).toBe(238); /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -430,6 +430,11 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // settings only, `cmd: null`), so allowNode reaches the wire only from the UI
   // seam — there is no CLI flag to collide with. Same shape as `all` above.
   allowNode: 'no CLI flag: node.credentials.policy.set is a commandless human-settings row; the node settings screen sets it (2026-09-23)',
+  // Forms W1 backend: every forms.* row is `cmd: null` until the `tm8 form`
+  // noun lands (a CLI lane stacked on this one), so these reach the wire only
+  // from the UI seam today. That lane replaces both lines with its spelling.
+  open: 'no CLI flag yet: forms.create is commandless until the tm8 form noun lands (Forms W1, 2026-09-24)',
+  required: 'no CLI flag yet: forms.questions.update is commandless until the tm8 form noun lands (Forms W1, 2026-09-24)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 

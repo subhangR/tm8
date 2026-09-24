@@ -227,6 +227,7 @@ function nounForOperation(operation: OperationName): string {
     case 'skills': return 'skill';
     case 'voice': return 'voice';
     case 'artifacts': return 'artifact';
+    case 'forms': return 'form';
     // A noun is required even though all four `credentials.*` rows are
     // deliberately `cmd: null` — the manifest groups by noun regardless of
     // whether the noun has any invocable command today, and that is the right
@@ -389,7 +390,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 222 -> 223 (change feed step 3): events.changes, one GET read. MEASURED.
   // 223 -> 224 (bug 01a0d2f1): entities.commands.tick, one POST command. MEASURED.
   // 224 -> 225 (task 01a0d350): spaces.configs, one GET read. MEASURED.
-  assertEqual(names.length, 225, 'catalog total');
+  // 225 -> 238 (Forms W1): the thirteen forms.* rows (§6's twelve + responses.discard). MEASURED.
+  assertEqual(names.length, 238, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -405,7 +407,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 220 -> 221 (change feed step 3): events.changes ships v1. MEASURED.
   // 221 -> 222 (bug 01a0d2f1): entities.commands.tick ships v1. MEASURED.
   // 222 -> 223 (task 01a0d350): spaces.configs ships v1. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 223, 'v1 total');
+  // 223 -> 236 (Forms W1): all thirteen forms.* rows ship v1. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 236, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -442,7 +445,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // GET 73 -> 74 (change feed step 3): events.changes. MEASURED.
   // POST 107 -> 108 (bug 01a0d2f1): entities.commands.tick. MEASURED.
   // GET 74 -> 75 (task 01a0d350): spaces.configs. MEASURED.
-  assertEqual(methods, { GET: 75, POST: 108, PATCH: 14, DELETE: 14, PUT: 12, WS: 2 }, 'method accounting');
+  // GET 75 -> 78, POST 108 -> 113, PATCH 14 -> 16, DELETE 14 -> 16, PUT 12 -> 13 (Forms W1). MEASURED.
+  assertEqual(methods, { GET: 78, POST: 113, PATCH: 16, DELETE: 16, PUT: 13, WS: 2 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
   // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
@@ -454,7 +458,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // read 77 -> 78 (change feed step 3): events.changes. MEASURED.
   // command 143 -> 144 (bug 01a0d2f1): entities.commands.tick. MEASURED.
   // read 78 -> 79 (task 01a0d350): spaces.configs. MEASURED.
-  assertEqual(kinds, { read: 79, command: 144, stream: 2 }, 'kind accounting');
+  // read 79 -> 82, command 144 -> 154 (Forms W1): three reads, ten commands. MEASURED.
+  assertEqual(kinds, { read: 82, command: 154, stream: 2 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
@@ -469,7 +474,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 220 -> 221 (change feed step 3): events.changes mounts one GET route. MEASURED.
   // 221 -> 222 (bug 01a0d2f1): entities.commands.tick is mounted. MEASURED.
   // 222 -> 223 (task 01a0d350): spaces.configs is mounted. MEASURED.
-  assertEqual(router.http.length, 223, 'server router HTTP total');
+  // 223 -> 236 (Forms W1): thirteen forms.* routes. MEASURED.
+  assertEqual(router.http.length, 236, 'server router HTTP total');
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

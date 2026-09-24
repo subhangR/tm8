@@ -107,6 +107,8 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     preIndexed = preTarget;
 
     database.apply([MIGRATION]);
+    // 209 (Forms W1): the entity reads now join `public.forms`.
+    database.apply(['209_forms_foundation.sql']);
   }, 300_000);
 
   afterAll(async () => {

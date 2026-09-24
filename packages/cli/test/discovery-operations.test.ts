@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 225; /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 238; /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 221, composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 234, /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
 
@@ -263,6 +263,21 @@ const COMMANDLESS_OPERATIONS = [
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',
+      // Forms W1 backend: the thirteen rows ship `cmd: null`; the `tm8 form`
+      // noun (a CLI lane stacked on this one) takes them out of this set.
+      'forms.create',
+      'forms.questions.add',
+      'forms.questions.move',
+      'forms.questions.remove',
+      'forms.questions.update',
+      'forms.responses.discard',
+      'forms.responses.get',
+      'forms.responses.list',
+      'forms.responses.mine',
+      'forms.responses.save',
+      'forms.responses.submit',
+      'forms.transition',
+      'forms.update',
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
@@ -649,6 +664,14 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'containers.unexpose': 'ContainersUnexposeInputSchema',
   'containers.snapshot': 'ContainersSnapshotInputSchema',
   'containers.pools.set': 'ContainersPoolsSetInputSchema',
+  // Forms (211): the six form mutations carry a REQUIRED expectedVersion. The
+  // respondent ops version against the RESPONSE (responseVersion), not a guard.
+  'forms.update': 'FormsUpdateInputSchema',
+  'forms.questions.add': 'FormsQuestionsAddInputSchema',
+  'forms.questions.update': 'FormsQuestionsUpdateInputSchema',
+  'forms.questions.remove': 'FormsQuestionsRemoveInputSchema',
+  'forms.questions.move': 'FormsQuestionsMoveInputSchema',
+  'forms.transition': 'FormsTransitionInputSchema',
 };
 
 /**
@@ -671,8 +694,9 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
 };
 
 /**
- * Direction-B rows still awaiting an amendment. **Currently EMPTY — the class
- * is closed.**
+ * Direction-B rows still awaiting an amendment. The six forms.* rows below are
+ * the only entries (the `tm8 form` noun lane closes them); before them the
+ * class was closed.
  *
  * All six are fixed, and none of the flag names was invented. The FROZEN SCHEMA
  * is the authority for whether a guard exists — `WithdrawHandoffInput` really
@@ -696,7 +720,18 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
  * and it is why this is not a `skip` — a skip whose subject gets fixed stops
  * testing anything without ever going red, so it decays silently. This cannot.
  */
-const PENDING_AMENDMENT: OperationName[] = [];
+const PENDING_AMENDMENT: OperationName[] = [
+  // Forms W1 backend: the rows exist with `cmd: null` until the `tm8 form`
+  // noun lands (a separate CLI lane stacked on this one). That lane advertises
+  // `--expect-version` and DELISTS these six — the exact-set assertion makes
+  // forgetting either half go red.
+  'forms.update',
+  'forms.questions.add',
+  'forms.questions.update',
+  'forms.questions.remove',
+  'forms.questions.move',
+  'forms.transition',
+];
 
 describe('version guards: the projection and the frozen DTOs agree, both directions', () => {
   it('the schema side of the join is real — introspection finds the guard DTOs', () => {
@@ -770,7 +805,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Every mapped guard DTO is required.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(32); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(swept).toBe(38); /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
