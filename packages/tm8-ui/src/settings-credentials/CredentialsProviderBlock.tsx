@@ -30,7 +30,7 @@ export interface CredentialsProviderBlockProps {
 }
 
 /** A login terminal that has been opened and not yet harvested. */
-interface PendingLogin {
+export interface PendingLogin {
   provider: CredentialProviderName;
   workSessionId: string;
   expiresAt: string;
@@ -437,23 +437,27 @@ function OutcomeNotice({ outcome }: { outcome: Outcome }) {
 /**
  * Login is an ordinary PTY work_session, hosted by the existing terminal
  * module. The test-build placeholder says plainly when live bytes are disabled.
+ * Settings → Space credentials mounts this same panel for a space login, with
+ * its own `lede` naming the credential being logged into.
  */
-function LoginTerminalPanel({
+export function LoginTerminalPanel({
   login,
   serverBaseUrl,
   busy,
   onFinish,
+  lede,
 }: {
   login: PendingLogin;
   serverBaseUrl?: string;
   busy: boolean;
   onFinish: () => void;
+  lede?: string;
 }) {
   const provider = presentationOf(login.provider);
   return (
     <div className="cred-terminal" data-testid="credential-login-terminal">
       <span className="cred-intro">
-        {`Signing in to ${provider.name}. Follow the terminal prompts, then press “I’ve finished signing in”.`}
+        {lede ?? `Signing in to ${provider.name}. Follow the terminal prompts, then press “I’ve finished signing in”.`}
       </span>
       <span className="cred-notice__why" data-testid="credential-login-expiry">
         {`This terminal runs \`${login.command}\` and expires at ${login.expiresAt}.`}

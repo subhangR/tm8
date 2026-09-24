@@ -126,6 +126,7 @@ import type {
   CredentialProviderName,
   CredentialsDeleteResult,
   CredentialsLoginSessionFinishResult,
+  CredentialsLoginSessionStartInput,
   CredentialsLoginSessionStartResult,
   CredentialsStatusView,
   CredentialsServiceKeyDeleteResult,
@@ -1200,10 +1201,15 @@ export interface Seam {
      * credential can be revoked while a session it opened refuses to die.
      */
     disconnect(provider: CredentialProviderName): Promise<CredentialsDeleteResult>;
-    /** Opens the login PTY. The answer names a work_session to host. */
+    /**
+     * Opens the login PTY. The answer names a work_session to host.
+     * `spaceCredential` makes it a SPACE login (SC-4): `{ label }` opens a new
+     * pending space credential, `{ credentialId }` logs in again onto one.
+     */
     startLogin(
       spaceId: SpaceId,
       provider: CredentialProviderName,
+      spaceCredential?: CredentialsLoginSessionStartInput['spaceCredential'],
     ): Promise<CredentialsLoginSessionStartResult>;
     /** Harvests what the terminal achieved. `connected` and `stored` differ. */
     finishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult>;

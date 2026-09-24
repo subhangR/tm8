@@ -8,6 +8,7 @@
  */
 import type {
   CredentialPolicySource,
+  CredentialsLoginSessionFinishResult,
   CredentialsSpacePolicyView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
@@ -160,12 +161,16 @@ export function failureOf(err: unknown): SpaceCredentialFailure {
 
 /**
  * A login onto a credential is already open (`login_open`). The server quotes
- * its `expiresAt` even when that moment has PASSED — an abandoned terminal is
- * never swept by itself — so past means "expired: close it", not "wait".
+ * its `expiresAt` even when that moment has PASSED, so past means "expired:
+ * close it", not "wait". The close is starting again onto `credentialId`: the
+ * server reclaims an expired terminal for its creator or a space admin (N1).
+ * An unexpired terminal someone else opened cannot be closed from here.
  */
 export interface LoginOpenNotice {
   expired: boolean;
   expiresAt: string;
+  /** The credential the open login is holding, when the refusal names it. */
+  credentialId: string | null;
   text: string;
 }
 
@@ -173,20 +178,85 @@ export function loginOpenNoticeOf(err: unknown, now: Date = new Date()): LoginOp
   const details = (err as { details?: Record<string, unknown> })?.details;
   if (details?.reason !== 'login_open' || typeof details.expiresAt !== 'string') return null;
   const expiresAt = details.expiresAt;
+  const credentialId = typeof details.credentialId === 'string' ? details.credentialId : null;
   const at = Date.parse(expiresAt);
   if (Number.isNaN(at)) return null;
   if (at < now.getTime()) {
     return {
       expired: true,
       expiresAt,
-      text: `An earlier login onto this credential expired at ${formatWhen(expiresAt)} but was never closed: close it, then start again.`,
+      credentialId,
+      text: `An earlier login onto this credential expired at ${formatWhen(expiresAt)} but was never closed: close it by logging in again, which ends that terminal and opens a fresh one.`,
     };
   }
   return {
     expired: false,
     expiresAt,
-    text: `A login onto this credential is already open until ${formatWhen(expiresAt)}. Finish it there, or wait for it to expire.`,
+    credentialId,
+    text: `A login onto this credential is already open until ${formatWhen(expiresAt)}. Whoever opened it can finish it; after that time, you can log in again.`,
   };
+}
+
+/**
+ * How a refused space-login start reads. `conflict` means two different
+ * things, told apart ONLY by `details.reason`: a login already open on the
+ * credential, or a label taken (A7). The code alone never picks the copy.
+ */
+export type SpaceLoginStartFailure =
+  | { kind: 'login_open'; notice: LoginOpenNotice }
+  | { kind: 'label_taken'; text: string }
+  | { kind: 'failure'; failure: SpaceCredentialFailure };
+
+export function spaceLoginStartFailureOf(
+  err: unknown,
+  provider: SpaceCredentialProviderName,
+  rows: readonly SpaceCredentialView[],
+  now: Date = new Date(),
+): SpaceLoginStartFailure {
+  const code = (err as { code?: unknown })?.code;
+  const details = (err as { details?: Record<string, unknown> })?.details;
+  const open = loginOpenNoticeOf(err, now);
+  if (open) return { kind: 'login_open', notice: open };
+  if (details?.reason === 'label_taken') {
+    const label = typeof details.label === 'string' ? details.label : '';
+    return {
+      kind: 'label_taken',
+      text: labelTakenReason(provider, label, rows)
+        ?? `“${label}” is taken: another ${SPACE_PROVIDER_NAME[provider]} credential in this space, or a login that has not finished, already holds it. Pick another label.`,
+    };
+  }
+  if (code === 'not_found') {
+    return { kind: 'failure', failure: { kind: 'failed', text: 'That credential is no longer in this space. The list has been re-read.' } };
+  }
+  return { kind: 'failure', failure: failureOf(err) };
+}
+
+/**
+ * What a finished space login achieved. Read from the credential row the
+ * PROBED finish returned (I6), never from `connected` alone: a re-login that
+ * failed leaves an active credential active, and a new login that failed
+ * leaves its row pending until `pendingExpiresAt` sweeps it.
+ */
+export function spaceLoginOutcome(result: CredentialsLoginSessionFinishResult): string {
+  const cred = result.spaceCredential;
+  if (!cred) {
+    return 'The login ended, but the server did not say which space credential it wrote. The list has been re-read.';
+  }
+  const name = `“${cred.label}”`;
+  if (cred.status === 'active' && result.connected) {
+    const as = cred.displayLogin ? ` as ${cred.displayLogin}` : '';
+    return `Logged in${as}: ${name} is ready to launch with.${cred.isDefault ? ` It is the ${SPACE_PROVIDER_NAME[cred.provider]} default.` : ''}`;
+  }
+  if (cred.status === 'active') {
+    return `That login did not complete, so ${name} keeps the login it already had.`;
+  }
+  if (cred.status === 'pending') {
+    return `That login did not complete, so ${name} is still pending and launches cannot use it. Log in again, or delete it; an unfinished login is removed when it expires.`;
+  }
+  if (cred.status === 'stale') {
+    return `${name} is stored, but its check failed, so launches may be refused. Log in again to replace it.`;
+  }
+  return `${name} is no longer usable. The list has been re-read.`;
 }
 
 /** The sources a provider's space policy allows. `null` policy means all three. */

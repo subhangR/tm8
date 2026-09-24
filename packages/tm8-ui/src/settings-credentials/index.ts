@@ -48,7 +48,6 @@ export {
 } from './port';
 export {
   SpaceCredentialsSection,
-  SPACE_LOGIN_STUB_REASON,
   type SpaceCredentialsSectionProps,
 } from './SpaceCredentialsSection';
 export {
@@ -61,5 +60,7 @@ export {
   isSpaceAdminRole,
   type SpaceCredentialsPort,
   type SpaceCredentialsViewer,
+  type SpaceLoginProvider,
+  type SpaceLoginTarget,
 } from './space-port';
 export * from './space-credentials-model';

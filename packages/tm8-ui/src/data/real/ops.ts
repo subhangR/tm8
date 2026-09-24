@@ -64,6 +64,7 @@ import {
   type CredentialProviderName,
   type CredentialsDeleteResult,
   type CredentialsLoginSessionFinishResult,
+  type CredentialsLoginSessionStartInput,
   type CredentialsLoginSessionStartResult,
   type CredentialsStatusView,
   type CredentialsServiceKeyDeleteResult,
@@ -434,11 +435,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     credentialsStartLogin(
       spaceId: SpaceId,
       provider: CredentialProviderName,
+      spaceCredential?: CredentialsLoginSessionStartInput['spaceCredential'],
     ): Promise<CredentialsLoginSessionStartResult> {
       return http.call<CredentialsLoginSessionStartResult>('credentials.loginSessions.start', {
         body: withMeasuredGeometry({
           spaceId,
           provider,
+          ...(spaceCredential ? { spaceCredential } : {}),
           clientMutationId: newId('credlogin'),
         }),
       });

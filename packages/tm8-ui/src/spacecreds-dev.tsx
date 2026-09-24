@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { CollabError } from '@tm8/contract';
 import type {
   CredentialsSpacePolicyView,
   EntityId,
@@ -47,7 +48,7 @@ function row(over: Partial<SpaceCredentialView> & Pick<SpaceCredentialView, 'id'
 const rows: SpaceCredentialView[] = [
   row({ id: 'c-team', provider: 'anthropic', label: 'Team Claude', isDefault: true, lastUsedAt: '2026-09-23T21:04:00.000Z' }),
   row({ id: 'c-batch', provider: 'anthropic', label: 'Batch Claude', createdByAccountId: 'acct-other', lastUsedAt: '2026-09-22T16:40:00.000Z' }),
-  row({ id: 'c-login', provider: 'anthropic', label: 'Max plan login', status: 'pending', createdByAccountId: 'acct-other' }),
+  row({ id: 'c-login', provider: 'anthropic', shape: 'login', label: 'Max plan login', status: 'pending', createdByAccountId: 'acct-other' }),
   row({ id: 'o-shared', provider: 'openai', label: 'Shared Codex', status: 'stale', createdByAccountId: null }),
   row({ id: 'g-bot', provider: 'github', label: 'Release bot', isDefault: true, displayLogin: 'tm8-release-bot' }),
 ];
@@ -78,7 +79,29 @@ const port: SpaceCredentialsPort = {
     ],
   }),
   setNodePolicy: async (provider, allowNode) => ({ provider, allowNode }),
-} as SpaceCredentialsPort;
+  // The first re-login onto the pending row meets the terminal an earlier
+  // login left open past its expiry (login_open); "Log in again" reclaims it.
+  startLogin: async (provider, target) => {
+    if (target.credentialId === 'c-login' && reclaimRefusals++ === 0) {
+      throw new CollabError('conflict', 'a login onto this credential is already open', {
+        details: { reason: 'login_open', expiresAt: '2026-09-23T11:00:00.000Z', credentialId: 'c-login' },
+      });
+    }
+    const cred = target.credentialId
+      ? rows.find((r) => r.id === target.credentialId)!
+      : row({ id: `l-${rows.length}`, provider, shape: 'login', label: target.label!, status: 'pending' });
+    if (!target.credentialId) rows.push(cred);
+    openLogin = cred.id;
+    return { workSessionId: 'ws-login', spaceId: SPACE, provider, expiresAt: '2026-09-24T12:15:00.000Z', command: provider === 'anthropic' ? 'claude auth login' : 'codex login', spaceCredential: cred };
+  },
+  finishLogin: async (workSessionId) => {
+    const i = rows.findIndex((r) => r.id === openLogin);
+    rows[i] = { ...rows[i]!, status: 'active', displayLogin: 'team@example.com' };
+    return { workSessionId, provider: rows[i]!.provider, connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active', stored: true, terminated: true, spaceCredential: rows[i] };
+  },
+};
+let reclaimRefusals = 0;
+let openLogin: string | null = null;
 
 const SESSION = '01a0d0aa-0000-7000-8000-000000000001';
 const launchRecord = {
