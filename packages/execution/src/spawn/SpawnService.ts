@@ -2480,8 +2480,9 @@ export class SpawnService {
    * stopped and a plain "Stopped by request." still means a terminate. The
    * texts are fixed strings: no credential label, id or secret reaches them (I5).
    *
-   * The space key's per-session copy is scrubbed here too: the exit path that
-   * would have scrubbed it is the one `kill()` skips.
+   * The space key's per-session copy is scrubbed by `killThenRecordEnding`
+   * after the kill, before the ending is written, so it is gone even when the
+   * transition then fails.
    *
    * Never throws. A transition that fails after a successful kill is returned
    * as `recorded: false` with a reason, for the caller's `failures`.
@@ -2509,10 +2510,8 @@ export class SpawnService {
         `credential containment killed session ${sessionId} but FAILED to record its ending — ` +
           `sqlstate=${sqlState}. Expect a ghost session until the next boot reconciliation.`,
       );
-      await this.scrubSpaceSecrets(sessionId);
       return { outcome: 'killed', recorded: false, reason: `transition_failed: ${sqlState}` };
     }
-    if (result.outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
     if (result.outcome === 'killed' && !result.recorded) {
       // A live PTY with no captured claims: not a session this service
       // spawned. Nothing can authorise its row's write from here.
@@ -2534,6 +2533,14 @@ export class SpawnService {
    * onExit will NOT fire for it and the exit sink will not run. So the
    * transition is written here explicitly rather than left to the exit path.
    *
+   * The same skipped exit path is the one that scrubs a space API key's
+   * per-session copy (`handlePtyExit`), so a `killed` scrubs it here, before
+   * anything that can fail: a stopped session must not keep a copy of a space
+   * secret on disk until the next boot sweep. The conversation state stays,
+   * and a resume re-seeds the key from the credential as it reads NOW.
+   * `not_found` scrubs nothing: a process that exited on its own was scrubbed
+   * by its own exit.
+   *
    * Returns without writing when the kill failed (`error`), when there was
    * nothing to kill and the caller asked to `skip` that, or when there are no
    * claims to write under. A transition that throws propagates.
@@ -2554,6 +2561,7 @@ export class SpawnService {
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
+    if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
     if (outcome === 'not_found' && ending.onNotFound === 'skip') return { outcome, recorded: false };
     if (auth === undefined) return { outcome, recorded: false };
 

@@ -517,6 +517,151 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     });
   });
 
+  // A stop kills the PTY with `kill()`, which finalizes the entry so the late
+  // onExit never reaches `handlePtyExit` — the exit path that scrubs. The stop
+  // path (`killThenRecordEnding`, shared by terminate and credential
+  // containment) scrubs instead, before the ending is written.
+  describe('a stop — terminate or a credential containment — takes the space key off the disk', () => {
+    /** A codex session on the space OpenAI key, with a rollout to keep. */
+    async function codexOnSpaceKey(svc: SpawnService): Promise<{ sessionId: string; home: string; rollout: string }> {
+      const { sessionId } = await svc.spawn(A, {
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        model: 'gpt-5.5',
+        agentTool: 'codex',
+        credentialSources: { openai: 'space' },
+      });
+      const home = join(dataDir, 'credentials', 'sessions', sessionId, 'openai');
+      await mkdir(join(home, 'sessions'), { recursive: true });
+      const rollout = join(home, 'sessions', 'rollout.jsonl');
+      await writeFile(rollout, '{"turn":1}\n', 'utf8');
+      // Control: the key is on disk while the session runs.
+      expect(await readFile(join(home, 'auth.json'), 'utf8')).toContain(OAI_KEY);
+      return { sessionId, home, rollout };
+    }
+
+    /** `spyPty`, with `kill` answering as the PTY host does for a live session. */
+    function spyPtyKilled() {
+      const spies = spyPty();
+      spies.kill.mockImplementation(() => {
+        events.push('kill');
+        return 'killed';
+      });
+      return spies;
+    }
+
+    it('a containment kill removes auth.json, keeps the rollout, and records the ending', async () => {
+      spyPtyKilled();
+      const svc = service(new FakeSpacePort(events, new Set(['identity-A'])));
+      const { sessionId, home, rollout } = await codexOnSpaceKey(svc);
+
+      const result = await svc.containCredentialSession(sessionId, 'space_credential_deleted');
+
+      expect(result).toEqual({ outcome: 'killed', recorded: true });
+      await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
+      expect(graph.statusesFor(sessionId).at(-1)).toBe('exited');
+    });
+
+    it('a containment whose transition FAILS still removes auth.json (killed, recorded: false)', async () => {
+      spyPtyKilled();
+      const svc = service(new FakeSpacePort(events, new Set(['identity-A'])));
+      const { sessionId, home } = await codexOnSpaceKey(svc);
+      vi.spyOn(graph, 'transition').mockRejectedValueOnce(Object.assign(new Error('denied'), { code: '42501' }));
+
+      const result = await svc.containCredentialSession(sessionId, 'member_removed');
+
+      expect(result).toEqual({ outcome: 'killed', recorded: false, reason: 'transition_failed: 42501' });
+      await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(JSON.stringify(logs)).not.toContain(OAI_KEY);
+    });
+
+    it('a kill that FAILS leaves the key where it is: the process may still be reading it', async () => {
+      const { kill } = spyPty();
+      kill.mockImplementation(() => 'error');
+      const svc = service(new FakeSpacePort(events, new Set(['identity-A'])));
+      const { sessionId, home } = await codexOnSpaceKey(svc);
+
+      expect(await svc.containCredentialSession(sessionId, 'space_credential_deleted')).toEqual({
+        outcome: 'error',
+        recorded: false,
+      });
+      expect(await readFile(join(home, 'auth.json'), 'utf8')).toContain(OAI_KEY);
+    });
+
+    it('terminate removes auth.json and keeps the rollout', async () => {
+      spyPtyKilled();
+      const svc = service(new FakeSpacePort(events, new Set(['identity-A'])));
+      const { sessionId, home, rollout } = await codexOnSpaceKey(svc);
+
+      const result = await svc.terminate(A, sessionId);
+
+      expect(result.outcome).toBe('killed');
+      await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await stat(home)).isDirectory()).toBe(true);
+      expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
+    });
+
+    it('a resume after terminate re-seeds the key from the live credential and launches — the scrub does not break resume', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A']));
+      const { spawnIfAbsent } = spyPtyKilled();
+      const svc = service(port);
+      const { sessionId } = await svc.spawn(A, {
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        credentialSources: { anthropic: 'space' },
+      });
+      const home = join(dataDir, 'credentials', 'sessions', sessionId, 'anthropic');
+      const configPath = join(home, '.claude.json');
+      await mkdir(join(home, 'projects', 'p'), { recursive: true });
+      const transcript = join(home, 'projects', 'p', 'conversation.jsonl');
+      await writeFile(transcript, '{"turn":1}\n', 'utf8');
+      expect(await readFile(configPath, 'utf8')).toContain(ANT_KEY.slice(-20));
+
+      await svc.terminate(A, sessionId);
+      // The stop scrubbed the approved key suffix and kept the conversation.
+      expect(await readFile(configPath, 'utf8')).not.toContain(ANT_KEY.slice(-20));
+      expect(await readFile(transcript, 'utf8')).toBe('{"turn":1}\n');
+
+      // The session as the graph now reads it: exited, launched by A on ANT.
+      graph.resumeInfo = {
+        sessionId,
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        parentSessionId: null,
+        projectId: null,
+        taskIds: [],
+        workdirMode: 'scratch',
+        workdirPath: null,
+        mode: 'worker',
+        model: 'claude-opus-5',
+        agentTool: 'claude-code',
+        title: 'terminated, then resumed',
+        status: 'exited',
+        nativeSessionId: '55555555-5555-4555-8555-555555555555',
+        agentConfigDir: null,
+      };
+      graph.postures.set(sessionId, {
+        credentialSources: { anthropic: 'space' },
+        spaceCredentialIds: { anthropic: ANT },
+      } as SessionLaunchPosture);
+      port.recorded.set(sessionId, [{ provider: 'anthropic', spaceCredentialId: ANT }]);
+      port.launcher.set(sessionId, 'identity-A');
+      spawnIfAbsent.mockClear();
+
+      await svc.resume(A, { sessionId });
+
+      // Launched, on the same per-session home, with the key read NOW.
+      expect(spawnIfAbsent).toHaveBeenCalledTimes(1);
+      const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+      expect(env.CLAUDE_CONFIG_DIR).toBe(home);
+      expect(env.ANTHROPIC_API_KEY).toBe(ANT_KEY);
+      const reseeded = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+      expect(reseeded.customApiKeyResponses).toEqual({ approved: [ANT_KEY.slice(-20)], rejected: [] });
+      expect(await readFile(transcript, 'utf8')).toBe('{"turn":1}\n');
+    });
+  });
+
   it('a space GitHub token reaches the child as GH_TOKEN/GITHUB_TOKEN with the machine helper reset (design §7)', async () => {
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     port.githubToken = { id: GH, token: GH_TOKEN, login: 'space-bot' };

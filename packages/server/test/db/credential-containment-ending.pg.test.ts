@@ -343,7 +343,7 @@ describe('gh-3 — a contained row stops counting against the cap, and a resume 
   });
 });
 
-describe('gh-4 — one transition, no stomp, terminate unchanged, no secret', () => {
+describe('gh-4 — one transition, no stomp, terminate distinct, no secret', () => {
   it('kill first: the late onExit really fires and writes nothing — exactly one transition', async () => {
     const key = await anthropicKey();
     const sessionId = await liveAgentSession(A, { anthropic: key });
@@ -410,7 +410,7 @@ describe('gh-4 — one transition, no stomp, terminate unchanged, no secret', ()
     }
   });
 
-  it('terminate is unchanged: its own ending, under the caller, distinct from a containment', async () => {
+  it('terminate keeps its own ending, under the caller, distinct from a containment', async () => {
     const sessionId = await liveAgentSession(A);
     const transitions = countTransitions();
 
