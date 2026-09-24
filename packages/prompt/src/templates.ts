@@ -16,7 +16,7 @@
  * model, where a shell-shaped string is what the model will actually type. Both
  * are reproduced exactly as frozen.
  */
-import { assertWithinBudget } from './budgets.js';
+import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { escapeAttr, untrustedData } from './escape.js';
 
 /** The closed set of `<trusted_control>` type attributes, in §14 order. */
@@ -560,6 +560,119 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
   return assertWithinBudget(
     'incomingMessageInjection',
     `${control}\n${data}${attachmentNames}${parent}`,
+  );
+}
+
+// -- Forms §7.2: a submitted response, or a form notice -----------------------
+
+/**
+ * `form_response` carries one submitted response; `form_cancelled` tells the
+ * requesting session its form was cancelled, so an agent waiting on it never
+ * hangs (FORMS-DESIGN §5).
+ */
+export type FormSessionInputKind = 'form_response' | 'form_cancelled';
+
+export interface FormSessionInputFacts {
+  kind: FormSessionInputKind;
+  messageId: string;
+  messageBatchId: string;
+  deliveryAttemptId: string;
+  deliveryAttemptNo: number;
+  /** The respondent (or, for a notice, whoever cancelled). */
+  senderActorId: string;
+  senderActorKind: string;
+  destinationSessionId: string;
+  formId: string;
+  formStatus: string;
+  structureVersion: number | string;
+  /** The form's own copy of the message: what a reply threads under. */
+  sourceMessageId: string;
+  /** Absent on a notice. */
+  response?: {
+    id: string;
+    submittedAt: string | null;
+    answered: number;
+    of: number;
+    /** Present with `supersedesId` on a resubmission (revision ≥ 2). */
+    revision?: number | null;
+    supersedesId?: string | null;
+  };
+  /**
+   * The stored, plain-text message body. AUTHOR TEXT: answers and the form's
+   * title are untrusted, so this renders only inside `untrusted_data`.
+   */
+  body: string;
+  /** Already cut upstream (the 10k message cap). */
+  truncated?: boolean;
+  /**
+   * The target profile's envelope ceiling. The body is cut, by BYTES, until the
+   * envelope fits under both this and the incomingMessageInjection budget.
+   */
+  maxBytes?: number;
+}
+
+/** The fetch pointer an agent follows for the full, structured answer. */
+export function formFetchCommand(f: Pick<FormSessionInputFacts, 'kind' | 'formId' | 'response'>): string {
+  return f.kind === 'form_response' && f.response
+    ? `tm8 form response get ${f.response.id} --format json`
+    : `tm8 entity get ${f.formId} --format json`;
+}
+
+function formEnvelope(f: FormSessionInputFacts, body: string, truncated: boolean): string {
+  const fetch = formFetchCommand(f);
+  const r = f.response;
+  const amend = r && r.revision !== undefined && r.revision !== null && r.revision > 1
+    ? ` revision="${attr(r.revision)}" supersedes="${attr(r.supersedesId)}"`
+    : '';
+  const control = [
+    `<trusted_control type="tm8.session-input" version="1" kind="${f.kind}" message_id="${attr(f.messageId)}" message_batch_id="${attr(f.messageBatchId)}" delivery_attempt_id="${attr(f.deliveryAttemptId)}">`,
+    // `verified`: the stored author is the caller the submit (or cancel) door
+    // authenticated, never a claim carried in a body.
+    `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" attribution="verified" />`,
+    `  <to session_id="${attr(f.destinationSessionId)}" />`,
+    // The title is author text: it is in the untrusted body, never inline here.
+    `  <form id="${attr(f.formId)}" title_ref="untrusted" structure_version="${attr(f.structureVersion)}" status="${attr(f.formStatus)}" />`,
+    ...(r
+      ? [`  <response id="${attr(r.id)}" submitted_at="${attr(r.submittedAt)}" answered="${attr(r.answered)}" of="${attr(r.of)}"${amend} />`]
+      : []),
+    `  <fetch command="${attr(fetch)}" />`,
+    `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.formId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
+    `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
+    '</trusted_control>',
+  ].join('\n');
+  const data = untrustedData({
+    type: f.kind === 'form_response' ? 'form-response' : 'form-notice',
+    body,
+    truncated,
+    fetchRef: fetch,
+  });
+  return `${control}\n${data}`;
+}
+
+/**
+ * The §7.2 envelope. Never over budget: where the incoming-message template
+ * throws and the delivery is refused permanently, a form response is cut to
+ * fit — by UTF-8 bytes, on a code-point boundary, measured on the ESCAPED
+ * envelope — and declares `truncated="true"` beside its fetch pointer. The
+ * answer is stored in full either way; the agent fetches it.
+ */
+export function formSessionInputInjection(f: FormSessionInputFacts): string {
+  const cap = Math.min(f.maxBytes ?? BYTE_BUDGETS.incomingMessageInjection, BYTE_BUDGETS.incomingMessageInjection);
+  const full = formEnvelope(f, f.body, f.truncated === true);
+  if (utf8Bytes(full) <= cap) return full;
+  const points = Array.from(f.body);
+  const marker = '\n… truncated to fit; fetch the full response.';
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const text = points.slice(0, mid).join('') + marker;
+    if (utf8Bytes(formEnvelope(f, text, true)) <= cap) lo = mid;
+    else hi = mid - 1;
+  }
+  return assertWithinBudget(
+    'incomingMessageInjection',
+    formEnvelope(f, points.slice(0, lo).join('') + marker, true),
   );
 }
 

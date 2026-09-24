@@ -50,6 +50,7 @@ import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
+import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
 import {
   dispatchSessionMessages,
   type DispatchableRoute,
@@ -346,6 +347,25 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }
     : undefined;
 
+  /**
+   * Forms W2 (214): the form_deliveries drain. Built here because it needs the
+   * delivery seam, which reaches no handler through FacadeDeps. It runs under
+   * the node owner's claims — the server delivers, resumes and spawns, not the
+   * respondent (coordinator ruling) — and is driven four ways: the submit and
+   * cancel post-commit hooks, drain-on-live below, and the backstop tick.
+   */
+  const formDelivery = db && owner
+    ? new FormDeliveryDrain({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'forms-delivery' };
+        },
+        ...(delivery ? { delivery: delivery.messageDelivery as unknown as MessageDeliveryPort } : {}),
+      })
+    : undefined;
+  if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
+
   if (db) {
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     registerFacadeHandlers(registry, {
@@ -362,6 +382,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       ...(credentials ? { credentials } : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
+      ...(formDelivery
+        ? { formDelivery: { onResponseSubmitted: formDelivery.onResponseSubmitted, onFormCancelled: formDelivery.onFormCancelled } }
+        : {}),
       // launch.suggest's Jev key, chosen PER REQUEST (Lane K): the caller's own
       // TypeSafe key from Settings → agent credentials, else this node's
       // TYPESAFE_API_KEY, else none — and every group answers `no_key`
@@ -858,6 +881,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...nudgeDispatch('task-nudges'),
       }),
     );
+    // Forms W2 (214): the backstop for the hooks above — a restart, a lost
+    // hook, or a session that went live through a path that fired none.
+    if (formDelivery) scheduler.register(createFormDeliveryJob({ drain: formDelivery }));
     // Migration 205's online subject_ids backfill. It runs on every node that
     // applied 205 — until it finishes, the change feed refuses windows below
     // the watermark — and each batch is its own short transaction.

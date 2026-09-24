@@ -887,7 +887,7 @@ function outcomeForStored(stored: StoredDelivery): W2DeliveryOutcome {
  */
 export interface W2ExecutionDeliveryWiring {
   readonly messageDelivery: {
-    readonly reserve: (intent: MessageDeliveryReservationIntent) => Promise<ReservedMessageDelivery | null>;
+    readonly reserve: (intent: W2DeliveryReservationIntent) => Promise<ReservedMessageDelivery | null>;
     readonly adapter: PreReservedMessageDeliveryAdapter;
     readonly principalFor: (reservation: ReservedMessageDelivery) => unknown;
   };

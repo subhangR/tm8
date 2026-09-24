@@ -149,6 +149,10 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
   },
 };
 
+/** Why a session became live: see `SpawnService.onSessionLive`. */
+export type SessionLiveCause = 'spawn' | 'resume' | 'running' | 'idle';
+export type SessionLiveListener = (sessionId: string, cause: SessionLiveCause) => void | Promise<void>;
+
 export interface SpawnServiceOptions {
   graph: GraphPort;
   pty: PtyHostService;
@@ -446,6 +450,9 @@ export class SpawnService {
   /** Failed spawn terminal writes retried for this process lifetime. Startup
    * ghost reconciliation is the second line of defence after a node restart. */
   private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
+  private readonly sessionLiveListeners = new Set<SessionLiveListener>();
 
   constructor(options: SpawnServiceOptions) {
     this.graph = options.graph;
@@ -1570,6 +1577,7 @@ export class SpawnService {
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
+      this.notifySessionLive(sessionId, 'spawn');
 
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
@@ -2226,6 +2234,7 @@ export class SpawnService {
       }
 
       this.logger?.info('SpawnService: session resumed', { sessionId, cwd, reused });
+      this.notifySessionLive(sessionId, 'resume');
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
@@ -3006,6 +3015,37 @@ export class SpawnService {
    * may render it as a specific question. Distinguishing the two needs a
    * structured signal from the agent, which this repo does not have.
    */
+  /**
+   * Subscribe to "this session is live and can take a turn": after a resume
+   * succeeds, after a spawn's first turn settles, and on each running/idle
+   * activity transition this service writes. It is what a server-side OUTBOX
+   * drains on (Forms W2: `form_deliveries` queued for a session that was not
+   * live), so a queued answer arrives as the resumed session's next turn.
+   *
+   * Fire-and-forget, after the transition is written: a listener never delays,
+   * and never fails, the lifecycle write it observes. Returns an unsubscribe.
+   */
+  onSessionLive(listener: SessionLiveListener): () => void {
+    this.sessionLiveListeners.add(listener);
+    return () => { this.sessionLiveListeners.delete(listener); };
+  }
+
+  private notifySessionLive(sessionId: string, cause: SessionLiveCause): void {
+    for (const listener of this.sessionLiveListeners) {
+      try {
+        void Promise.resolve(listener(sessionId, cause)).catch((error: unknown) => {
+          this.logger?.warn?.('SpawnService: session-live listener failed', {
+            sessionId, cause, error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: session-live listener threw', {
+          sessionId, cause, error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   handlePtyActivity = async (sessionId: string, activity: PtyActivity): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     // No claims ⇒ nothing can be written (see the sessionAuth docstring). Unlike
@@ -3022,6 +3062,7 @@ export class SpawnService {
         sessionId,
         status: activity === 'idle' ? 'idle' : 'running',
       });
+      this.notifySessionLive(sessionId, activity === 'idle' ? 'idle' : 'running');
     } catch (error) {
       // Deliberately NOT `loud`. A failed exit transition leaves a ghost that
       // corrupts the concurrency cap forever; a failed activity transition

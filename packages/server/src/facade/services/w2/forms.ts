@@ -19,9 +19,9 @@
  * in-process JS RegExp on the request path (ReDoS, W0 note). The renderer
  * only formats already-shaped answers.
  *
- * W2 SEAM: delivery is not here. Submit leaves a `form_deliveries` row
- * (pending) and the session-anchored message; `onResponseSubmitted` is the
- * post-commit hook W2's drain plugs into.
+ * DELIVERY is not here. Submit leaves a `form_deliveries` row (pending) and
+ * the session-anchored message; W2's drain (./form-delivery.ts, migration 214)
+ * plugs into the post-commit `onResponseSubmitted` and `onFormCancelled` hooks.
  */
 import { createHash } from 'node:crypto';
 
@@ -72,6 +72,12 @@ export interface FormResponseSubmitted {
 export interface W2FormsServiceOptions {
   /** W2's delivery drain. Called after the submit transaction commits. */
   readonly onResponseSubmitted?: (event: FormResponseSubmitted) => void | Promise<void>;
+  /**
+   * W2: after a cancel commits, deliver its `form_cancelled` notice to the
+   * requesting session (214 queues it). Best-effort, and re-fired by a replay,
+   * like the submit hook: the outbox is the durable path.
+   */
+  readonly onFormCancelled?: (event: { formId: string }) => void | Promise<void>;
 }
 
 interface SaveRpcResult { formId: string; responseId: string }
@@ -338,9 +344,17 @@ export class W2FormsService {
   readonly transition: OperationHandler = async (ctx) => {
     const formId = requireUuidParam(ctx, 'formId');
     const input = ctx.body as FormsTransitionInput;
-    return this.formCommand(ctx, 'transition_form', (a) => [
+    const result = await this.formCommand(ctx, 'transition_form', (a) => [
       formId, input.expectedVersion, input.to, input.reason ?? null, a, input.clientMutationId,
     ]);
+    if (input.to === 'cancelled' && this.options.onFormCancelled) {
+      try {
+        await this.options.onFormCancelled({ formId });
+      } catch (error) {
+        console.error('[forms] onFormCancelled hook failed', error);
+      }
+    }
+    return result;
   };
 
   private async formCommand(
