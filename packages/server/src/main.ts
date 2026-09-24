@@ -49,6 +49,7 @@ import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
+import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import {
   dispatchSessionMessages,
   type DispatchableRoute,
@@ -796,6 +797,26 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    const nudgeDispatch = (source: string) => (delivery
+      ? {
+          dispatch: async ({ routes, workSessionId }: {
+            routes: unknown;
+            workSessionId: string;
+          }) => {
+            await dispatchSessionMessages({
+              routes: Array.isArray(routes) ? (routes as DispatchableRoute[]) : [],
+              parentsById: new Map(),
+              requestId: `${source}:${workSessionId}`,
+              // A loop is not a session, so there is no authoring session and
+              // attribution is `recorded_only` — the same value 019 derives for
+              // any writer that is not an agent.
+              sourceWorkSessionId: null,
+              senderAttribution: 'recorded_only',
+              delivery: delivery.messageDelivery as unknown as MessageDeliveryPort,
+            });
+          },
+        }
+      : {});
     // Tier 3 forge closed loops: the WATCHER, which is the complement of the
     // queue drainer above. It decides for itself what to poll (the watch
     // list) and turns semantic changes into messages in the owning session.
@@ -817,26 +838,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         // message does. Absent when there is no execution runtime: the nudge is
         // still stored, it is simply never injected — the honest degraded mode,
         // and the same one `registerFacadeHandlers` takes above.
-        ...(delivery
-          ? {
-              dispatch: async ({ routes, workSessionId }: {
-                routes: unknown;
-                workSessionId: string;
-              }) => {
-                await dispatchSessionMessages({
-                  routes: Array.isArray(routes) ? (routes as DispatchableRoute[]) : [],
-                  parentsById: new Map(),
-                  requestId: `forge-watcher:${workSessionId}`,
-                  // The watcher is not a session, so there is no authoring
-                  // session and attribution is `recorded_only` — the same value
-                  // 019 derives for any writer that is not an agent.
-                  sourceWorkSessionId: null,
-                  senderAttribution: 'recorded_only',
-                  delivery: delivery.messageDelivery as unknown as MessageDeliveryPort,
-                });
-              },
-            }
-          : {}),
+        ...nudgeDispatch('forge-watcher'),
+      }),
+    );
+    // Prompt v2 §4 task-keyed loops (207): today only task_state — a live
+    // session whose task is cancelled, completed by someone else, or whose
+    // teammate is unassigned is told to stop and report. No provider calls.
+    scheduler.register(
+      createTaskNudgeJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'task-nudges',
+          };
+        },
+        ...nudgeDispatch('task-nudges'),
       }),
     );
     // Migration 205's online subject_ids backfill. It runs on every node that

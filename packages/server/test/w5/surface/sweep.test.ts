@@ -1067,7 +1067,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   rebased onto main AFTER #678 took 206, so 205 fills the one gap the SC-1
     //   comment above reserved and the chain is contiguous 1..206 again.
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(188);
+    // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
+    //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
+    expect(server.appliedMigrations.length).toBe(189);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
