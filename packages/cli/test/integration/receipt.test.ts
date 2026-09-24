@@ -31,7 +31,7 @@ const agent = (extra: Record<string, string> = {}): Record<string, string> => ({
   ...extra,
 });
 
-const FORBIDDEN_KEYS = ['hierarchy', 'connections', 'content', 'capabilities', 'patches', 'entity', 'changed'];
+const FORBIDDEN_KEYS = ['hierarchy', 'connections', 'content', 'capabilities', 'patches', 'entity'];
 const TYPICAL_BUDGET = 500;
 const WORST_BUDGET = 640;
 const LONG_TITLE =
@@ -125,7 +125,12 @@ function receiptOf(r: { code: number; stdout: string; stderr: string }, budget =
   return parsed;
 }
 
-/** §9.1 common fields on an entity-shaped receipt, and §9.2 phase-1 honesty. */
+/**
+ * §9.1 common fields on an entity-shaped receipt. Phase 2 (spec 01a0d044
+ * §4.1): the Server builds the receipt from its own before/after read, so a
+ * fresh write always carries `version.from` and `changed`, and `from` agrees
+ * with `--expect-version` whenever one was passed. A create has no before.
+ */
 function expectEntityHead(receipt: Json, op: string, id: string, expectedVersion?: number): void {
   expect(receipt.op).toBe(op);
   expect(receipt.id).toBe(id);
@@ -134,10 +139,14 @@ function expectEntityHead(receipt: Json, op: string, id: string, expectedVersion
   expect(Array.from(String(receipt.title)).length).toBeLessThanOrEqual(80);
   const version = receipt.version as { from?: number; to: number };
   expect(typeof version.to).toBe('number');
-  if (expectedVersion === undefined) expect(version).not.toHaveProperty('from');
-  else expect(version.from).toBe(expectedVersion);
-  if (receipt.status !== undefined) expect(receipt.status).not.toHaveProperty('from');
-  expect(receipt).not.toHaveProperty('changed');
+  if (expectedVersion !== undefined) expect(version.from).toBe(expectedVersion);
+  if (op === 'entity.create') {
+    expect(version).not.toHaveProperty('from');
+    expect(receipt).not.toHaveProperty('changed');
+  } else {
+    expect(typeof version.from).toBe('number');
+    expect(Array.isArray(receipt.changed)).toBe(true);
+  }
   expect(Array.isArray(receipt.refs)).toBe(true);
 }
 
@@ -158,15 +167,30 @@ describe('success receipts, per op (§9.1, §9.2)', () => {
     const receipt = receiptOf(r);
     expectEntityHead(receipt, 'entity.update', id, v);
     expect(receipt.title).toBe('Receipt fixture updated');
+    expect(receipt.version).toEqual({ from: v, to: v + 1 });
+    expect(receipt.changed).toEqual(['title']);
     expect(receipt.refs).toEqual([]);
   }, 120_000);
 
-  it('task transition: no --expect-version, so no version.from; never status.from', async () => {
+  it('entity update to the stored value: a server-verified no-op, changed:[] and NO CHANGE (§9.3)', async () => {
+    const id = await createFull('task', 'Receipt fixture no-op');
+    const v = await versionOf(id);
+    const json = receiptOf(await cli(['entity', 'update', id, '--expect-version', String(v), '--title', 'Receipt fixture no-op', '--format', 'json'], server, agent()));
+    expect(json.changed).toEqual([]);
+    expect(json.version).toEqual({ from: v, to: v });
+    expect((json.warnings as Json[]).map((w) => w.code)).toEqual(['no_change']);
+    const human = await cli(['entity', 'update', id, '--expect-version', String(v), '--title', 'Receipt fixture no-op'], server, agent());
+    expect(human.code, human.stderr).toBe(0);
+    expect(human.stdout).toContain('NO CHANGE (');
+  }, 120_000);
+
+  it('task transition: the Server supplies version.from and status.from, and names the change', async () => {
     const id = await createFull('task', 'Receipt fixture transition');
     const r = await cli(['task', 'transition', id, 'working', '--format', 'json'], server, agent());
     const receipt = receiptOf(r);
     expectEntityHead(receipt, 'task.transition', id);
-    expect(receipt.status).toEqual({ to: 'working' });
+    expect(receipt.status).toEqual({ from: 'open', to: 'working' });
+    expect(receipt.changed).toContain('state.status');
   }, 120_000);
 
   it('task complete: gate, completed_by ref to the completer, version.from', async () => {
@@ -175,7 +199,8 @@ describe('success receipts, per op (§9.1, §9.2)', () => {
     const r = await cli(['task', 'complete', id, '--expect-version', String(v), '--by', memberId, '--format', 'json'], server, agent());
     const receipt = receiptOf(r);
     expectEntityHead(receipt, 'task.complete', id, v);
-    expect((receipt.status as Json).to).toBe('done');
+    expect(receipt.status).toEqual({ from: 'open', to: 'done' });
+    expect(receipt.changed).toEqual(expect.arrayContaining(['state.status', 'edge:completed_by']));
     expect(receipt.gate).toEqual({ kind: 'none', result: 'passed' });
     const refs = receipt.refs as Json[];
     expect(refs).toContainEqual(expect.objectContaining({ kind: 'edge', type: 'completed_by', to: memberId }));
@@ -235,6 +260,7 @@ describe('success receipts, per op (§9.1, §9.2)', () => {
     expect(r.stdout.trimEnd()).not.toContain('\n');
     expect(r.stdout).toContain(id);
     expect(r.stdout).toContain(`v${v}→v${v + 1}`);
+    expect(r.stdout).not.toContain('NO CHANGE');
     expect(r.stdout).toContain('"Receipt fixture human 2"');
   }, 120_000);
 });
@@ -295,10 +321,16 @@ describe('expansion and compat (§9.10, §9.11)', () => {
   it('--terse is a no-op on receipts; jsonl prints the same single line', async () => {
     const id = await createFull('task', 'Receipt fixture terse');
     const mutationId = randomUUID();
+    // All three are replays of one landed write, so they compare like for
+    // like: a first call's receipt carries from/changed, a replay's cannot.
+    await cli(['task', 'transition', id, 'blocked', '--mutation-id', mutationId, '--format', 'json', '--full'], server, agent());
     const plain = await cli(['task', 'transition', id, 'blocked', '--mutation-id', mutationId, '--format', 'json'], server, agent());
     const terse = await cli(['task', 'transition', id, 'blocked', '--mutation-id', mutationId, '--format', 'json', '--terse'], server, agent());
     const jsonl = await cli(['task', 'transition', id, 'blocked', '--mutation-id', mutationId, '--format', 'jsonl'], server, agent());
-    receiptOf(plain);
+    const replay = receiptOf(plain);
+    // A replay wrote nothing: never reported as a no-op, never given a from.
+    expect(replay).not.toHaveProperty('changed');
+    expect((replay.warnings as Json[]).map((w) => w.code)).toEqual(['no_write_observed']);
     expect(terse.stdout).toBe(plain.stdout);
     expect(jsonl.stdout).toBe(plain.stdout);
   }, 120_000);
@@ -406,6 +438,45 @@ describe('byte measurements (reported, and each receipt budget-asserted)', () =>
       record('message send --reply-to', fixture, r2);
     }
 
+    // Server response, not printed bytes (spec 01a0d044 §10): the same write
+    // with and without ?return=receipt, each on its own fresh fixture, timed
+    // at the HTTP call. responseChars is the whole response body.
+    const wire: string[] = [];
+    const call = async (method: string, path: string, body: Json, receipt: boolean): Promise<{ chars: number; ms: number }> => {
+      const url = new URL(path + (receipt ? '?return=receipt' : ''), server.baseUrl);
+      const t0 = performance.now();
+      const res = await fetch(url, {
+        method, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...body, clientMutationId: randomUUID() }),
+      });
+      const text = await res.text();
+      const ms = performance.now() - t0;
+      expect(res.status, text).toBeLessThan(300);
+      if (receipt) expect(JSON.parse(text).data.schemaVersion).toBe('tm8.receipt.v1');
+      return { chars: text.length, ms };
+    };
+    const RUNS = 5;
+    for (const op of ['entity update', 'task complete'] as const) {
+      const per = { full: [] as { chars: number; ms: number }[], receipt: [] as { chars: number; ms: number }[] };
+      for (let i = 0; i < RUNS; i++) {
+        for (const mode of ['full', 'receipt'] as const) {
+          const id = await createFull('task', 'Receipt fixture B (delete me)');
+          const v = await versionOf(id);
+          per[mode].push(op === 'entity update'
+            ? await call('PATCH', `/v2/entities/${id}`, { expectedVersion: v, title: `measured ${i}` }, mode === 'receipt')
+            : await call('POST', `/v2/entities/${id}/commands/complete`, { expectedVersion: v, completerIds: [memberId] }, mode === 'receipt'));
+        }
+      }
+      const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+      for (const mode of ['full', 'receipt'] as const) {
+        wire.push(`| ${op} | ${mode} | ${median(per[mode].map((x) => x.chars))} | ${median(per[mode].map((x) => x.ms)).toFixed(1)} | ${per[mode].map((x) => x.ms.toFixed(1)).join(', ')} |`);
+      }
+    }
+
+    process.stderr.write(
+      ['', `| op | response | responseChars (median of ${RUNS}) | durationMs (median) | durationMs (all runs) |`,
+        '|---|---|---|---|---|', ...wire, ''].join('\n'),
+    );
     process.stderr.write(
       ['', '| command | fixture | before: agent json (terse default) | --full | receipt json | receipt human |',
         '|---|---|---|---|---|---|', ...rows, ''].join('\n'),

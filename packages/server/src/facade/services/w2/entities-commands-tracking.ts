@@ -55,6 +55,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
+import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1205,7 +1206,7 @@ export class W2EntitiesCommandsTrackingService {
     return this.deps.db.tx(claimsFor(owner, ctx), (q) => buildUniversalDetail(q, id, owner.identityId));
   };
 
-  readonly createEntity = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const input = ctx.body as CreateEntityInput;
     const envelope = commandEnvelope(ctx);
@@ -1338,11 +1339,12 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
-      return commandResult(q, raw, owner.identityId);
+      const receipt = wantsReceipt(ctx) ? await buildReceipt(q, 'entity.create', raw) : undefined;
+      return receipt ?? commandResult(q, raw, owner.identityId);
     });
   };
 
-  readonly patchEntity = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly patchEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as PatchEntityInput;
@@ -1358,6 +1360,7 @@ export class W2EntitiesCommandsTrackingService {
         // rather than by taking the kind out of the set (085).
         if (kind !== 'work_session') assertGenericLifecycle(kind, 'entities.patch');
         assertPatchContentMembers(kind, input.title, content);
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         let raw: RpcCommandResult;
         switch (kind) {
           case 'task':
@@ -1521,7 +1524,8 @@ export class W2EntitiesCommandsTrackingService {
               envelope.actorId ?? null, content.fields === undefined ? null : JSON.stringify(content.fields),
               envelope.clientMutationId ?? null]);
         }
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'entity.update', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
@@ -1568,7 +1572,7 @@ export class W2EntitiesCommandsTrackingService {
    * An id the task does not carry is refused BY NAME with the ids it does
    * carry — never dropped — so a typo cannot read as a tick that landed.
    */
-  readonly tickCriteria = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly tickCriteria = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as TickCriteriaInput;
@@ -1602,12 +1606,14 @@ export class W2EntitiesCommandsTrackingService {
           // Already in the asked state: keep its stamp, it is still true.
           return c?.done === done ? c : { ...rest, done };
         });
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('update_task_content', [id, input.expectedVersion,
           envelope.actorId ?? null, null, null, null, null, null,
           JSON.stringify(acceptanceCriteria({ acceptanceCriteria: merged }, envelope.actorId ?? null)),
           null, null, false, null, false,
           envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.tick', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
@@ -1965,7 +1971,7 @@ export class W2EntitiesCommandsTrackingService {
     });
   };
 
-  readonly linkPr = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly linkPr = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as LinkPrInput;
@@ -1973,17 +1979,19 @@ export class W2EntitiesCommandsTrackingService {
     const parsed = parseProviderUrl(input.url, 'pull_request');
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('link_pull_request', [id, input.url,
           parsed.provider, parsed.repo, Number(parsed.identifier), input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.link-pr', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       normalizeReason(error);
     }
   };
 
-  readonly linkCommit = async (ctx: RequestContext): Promise<CommandResult> => {
+  readonly linkCommit = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as LinkCommitInput;
@@ -1991,10 +1999,12 @@ export class W2EntitiesCommandsTrackingService {
     const parsed = parseProviderUrl(input.url, 'commit');
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = await q.rpc<RpcCommandResult>('link_commit', [id, input.url,
           parsed.provider, parsed.repo, parsed.identifier, input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
-        return commandResult(q, raw, owner.identityId);
+        const receipt = before ? await buildReceipt(q, 'task.link-commit', raw, { before }) : undefined;
+        return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
       normalizeReason(error);

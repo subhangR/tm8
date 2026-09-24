@@ -344,6 +344,11 @@ const GROUP_SCHEMA: Record<string, unknown> = {
       description: 'Exact operation request body from the discovered template.',
       additionalProperties: true,
     },
+    full: {
+      type: 'boolean',
+      description: 'Entity writes (create, patch, work, complete, tick, link-pr, link-commit) return a compact '
+        + 'tm8.receipt.v1 by default. Pass true for the full command result instead.',
+    },
     expandOp: {
       type: 'object',
       description: 'Instead of operation/params/query: an expandOp copied verbatim from an entities.context '
@@ -655,6 +660,23 @@ const QUERY_DEFAULTS: Partial<Record<OperationName, Record<string, QueryValue>>>
 };
 
 /**
+ * Entity writes whose Server builds a `tm8.receipt.v1` on `?return=receipt`
+ * (spec 01a0d044 §8 item 2). An MCP caller gets the receipt by default — the
+ * full `CommandResult` re-sends the whole entity, its connections and patch
+ * summaries, 15–80k chars a call — and `full: true` restores it. A Server that
+ * predates receipts ignores the query and answers in full, as before.
+ */
+const RECEIPT_OPERATIONS: ReadonlySet<OperationName> = new Set<OperationName>([
+  'entities.create',
+  'entities.patch',
+  'entities.commands.work',
+  'entities.commands.complete',
+  'entities.commands.tick',
+  'entities.commands.linkPr',
+  'entities.commands.linkCommit',
+]);
+
+/**
  * An `expandOp` (c904 §2.8 / Q19) is the MCP twin of an `expand` string:
  * `{operation, params}`, with the path parameter and the query in ONE record.
  * It is split here by the operation's own catalog path — `:id` names a path
@@ -696,7 +718,9 @@ function expandOpArguments(args: Record<string, unknown>): Record<string, unknow
 function invokeOptions(args: Record<string, unknown>, operation: OperationName): CatalogInvokeOptions {
   const params = stringRecord(args.params, 'params');
   const given = queryRecord(args.query);
-  const defaults = QUERY_DEFAULTS[operation];
+  if (args.full !== undefined && typeof args.full !== 'boolean') throw new ToolInputError('full must be a boolean');
+  const receipt = RECEIPT_OPERATIONS.has(operation) && args.full !== true ? { return: 'receipt' } : undefined;
+  const defaults = receipt ? { ...QUERY_DEFAULTS[operation], ...receipt } : QUERY_DEFAULTS[operation];
   const query = defaults ? { ...defaults, ...given } : given;
   let body = optionalObject(args.body, 'body');
   if (REQUIRES_MUTATION_ID.has(operation)) {

@@ -21,6 +21,7 @@ import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
 import { enrichVersionConflict, toCommandResult, type RpcCommandResult } from './entities.js';
 import { loadActivity } from './activity.js';
+import { buildReceipt, receiptSnapshot, wantsReceipt } from '../receipt.js';
 
 export function commandsWork(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
@@ -30,6 +31,7 @@ export function commandsWork(deps: FacadeDeps): OperationHandler {
     const input = ctx.body as WorkInput;
 
     return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
       const raw = await q.rpc<RpcCommandResult>('set_work_state', [
         id,
         input.status,
@@ -60,7 +62,8 @@ export function commandsWork(deps: FacadeDeps): OperationHandler {
         envelope.clientMutationId ?? null,
         input.note === null,
       ]);
-      return toCommandResult(q, raw, owner.identityId);
+      const receipt = before ? await buildReceipt(q, 'task.transition', raw, { before }) : undefined;
+      return receipt ?? toCommandResult(q, raw, owner.identityId);
     });
   };
 }
@@ -112,6 +115,9 @@ export function commandsComplete(deps: FacadeDeps): OperationHandler {
           'select kind from public.entities where id = $1',
           [id],
         );
+        // A session's envelope is not a receipt kind; `receiptSnapshot`
+        // answers undefined for it and the full result goes back.
+        const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
         const raw = rows[0]?.kind === 'work_session'
           ? await q.rpc<RpcCommandResult>('set_session_done', [
               id,
@@ -126,7 +132,10 @@ export function commandsComplete(deps: FacadeDeps): OperationHandler {
               envelope.actorId ?? null,
               envelope.clientMutationId ?? null,
             ]);
-        return toCommandResult(q, raw, owner.identityId);
+        const receipt = before
+          ? await buildReceipt(q, 'task.complete', raw, { before, completerIds: input.completerIds ?? [] })
+          : undefined;
+        return receipt ?? toCommandResult(q, raw, owner.identityId);
       });
 
     try {
