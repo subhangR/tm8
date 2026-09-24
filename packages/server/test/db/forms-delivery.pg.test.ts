@@ -18,9 +18,11 @@ import { PgDb } from '../../src/db/client.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import {
   dispatchNotLiveDelivery,
+  doorTruncationSuffix,
   FormDeliveryDrain,
   SPAWN_MODE_STUBS,
   type ClaimedFormDelivery,
+  type NotLiveHandlers,
 } from '../../src/facade/services/w2/form-delivery.js';
 import { W2FormsService } from '../../src/facade/services/w2/forms.js';
 import type { MessageDeliveryPort } from '../../src/facade/services/w2/message-dispatch.js';
@@ -48,7 +50,7 @@ class FakeTerminal {
   reserves: Array<{ messageId: string; target: string; attemptNo: number }> = [];
   injections: Injection[] = [];
   /** How dispatch settles: delivered, a failure, or held (never settles). */
-  outcome: 'delivered' | 'failed_retryable' | 'hold' = 'delivered';
+  outcome: 'delivered' | 'failed_retryable' | 'unknown' | 'hold' = 'delivered';
 
   port(): MessageDeliveryPort {
     return {
@@ -75,7 +77,8 @@ class FakeTerminal {
           await sql(`update public.session_message_deliveries
                         set status = $2, settled_at = now(), failure_reason = $3
                       where delivery_id = $1`,
-            [attempt.deliveryId, this.outcome, this.outcome === 'delivered' ? null : 'pty_busy']);
+            [attempt.deliveryId, this.outcome,
+              this.outcome === 'delivered' ? null : this.outcome === 'unknown' ? 'submit_unverified' : 'pty_busy']);
         },
         reject: async (attempt) => {
           await sql(`update public.session_message_deliveries set status = 'dispatching', claimed_at = now()
@@ -142,13 +145,14 @@ const setStatus = (session: string, status: string) => database.transaction(asyn
   await c.query(`update public.work_sessions set status = $2 where entity_id = $1`, [session, status]);
 });
 
-function world(opts: { hooks?: boolean } = {}) {
+function world(opts: { hooks?: boolean; notLive?: NotLiveHandlers } = {}) {
   const terminal = new FakeTerminal();
   const deps: FacadeDeps = { db, config: {} as FacadeDeps['config'], owner: async () => owner };
   const drain = new FormDeliveryDrain({
     db,
     claims: async () => ({ identityId: owner.identityId, nodeAdmin: true, requestId: 'forms-delivery-test' }),
     delivery: terminal.port(),
+    ...(opts.notLive ? { notLive: opts.notLive } : {}),
   });
   const service = new W2FormsService(deps, opts.hooks === false ? {} : {
     onResponseSubmitted: drain.onResponseSubmitted,
@@ -260,6 +264,19 @@ describe('live injection', () => {
       .toEqual([{ source_anchor_id: form, addressing_kind: 'anchored_message' }]);
   });
 
+  it('a body the submit door cut at 10k renders truncated="true"', async () => {
+    const { terminal, drain, openForm, submit } = world({ hooks: false });
+    const session = await newSession();
+    const form = await openForm(session);
+    const view = await submit(form, { pick: { value: 'x' } });
+    // As 211 stores a cut body: the text, then its own fetch pointer.
+    await sql(`update public.messages set body = body || $2 where entity_id = $1`,
+      [view.messageId, doorTruncationSuffix(view.id)]);
+    await drain.drain({ responseId: view.id });
+    const c = terminal.for(view.messageId!)[0]!.content;
+    expect(c).toContain(`truncated="true" fetch_ref="tm8 form response get ${view.id} --format json"`);
+  });
+
   it('a failed attempt goes back to pending with its error; the next drain retries as attempt 2', async () => {
     const { terminal, drain, openForm, submit } = world();
     terminal.outcome = 'failed_retryable';
@@ -306,6 +323,44 @@ describe('exactly once', () => {
     const row = await delivery(view.id);
     expect(row.status).toBe('pending');
     expect(row.delivery_id).toBe(terminal.for(view.messageId!)[0]!.deliveryId);
+  });
+
+  it('an unknown outcome is at most once: settled delivered, flagged unverified, never re-injected', async () => {
+    const { terminal, drain, openForm, submit } = world();
+    terminal.outcome = 'unknown';
+    const session = await newSession();
+    const form = await openForm(session);
+    const view = await submit(form, { pick: { value: 'x' } });
+    const row = await until(() => delivery(view.id), (r) => r.status === 'delivered');
+    expect(row).toMatchObject({ status: 'delivered', last_error: 'delivery_unverified: submit_unverified' });
+    terminal.outcome = 'delivered';
+    await drain.drain();
+    await drain.onSessionLive(session);
+    expect(terminal.reserves.filter((r) => r.messageId === view.messageId)).toHaveLength(1);
+  });
+
+  it('a claim that died before reserve (a restart) is re-claimed once after its lease, and injected once', async () => {
+    const { terminal, drain, openForm, submit } = world({ hooks: false });
+    const session = await newSession();
+    const form = await openForm(session);
+    const view = await submit(form, { pick: { value: 'x' } });
+    const claims = { identityId: owner.identityId, nodeAdmin: true, requestId: 'crashed-drain' };
+    // The crashed process: it claimed, then died before reserve().
+    const claimed = await db.rpc<{ items: unknown[] }>(claims, 'public.claim_form_deliveries',
+      [view.id, null, 25, 120, []]);
+    expect(claimed.items).toHaveLength(1);
+    // Inside the lease nobody else may take it.
+    await drain.drain();
+    expect(terminal.reserves).toHaveLength(0);
+    await sql(`update public.form_deliveries set claimed_at = now() - interval '10 minutes' where response_id = $1`,
+      [view.id]);
+    await Promise.all([drain.drain(), drain.drain(), drain.drain()]);
+    await until(() => delivery(view.id), (r) => r.status === 'delivered');
+    await drain.drain();
+    expect(terminal.reserves.filter((r) => r.messageId === view.messageId)).toEqual([
+      { messageId: view.messageId, target: session, attemptNo: 2 },
+    ]);
+    expect(terminal.for(view.messageId!)).toHaveLength(1);
   });
 
   it('a reservation made before a crash is adopted, not repeated', async () => {
@@ -368,6 +423,34 @@ describe('deleted session', () => {
     expect(await sql(`select status from public.form_responses where id = $1`, [view.id]))
       .toEqual([{ status: 'submitted' }]);
   });
+
+  for (const [label, settings] of [
+    ['spawn_new', { delivery: { onSessionNotLive: 'spawn_new' } }],
+    ['target new_session', { delivery: { target: 'new_session' } }],
+  ] as const) {
+    it(`deleted before submit, ${label}: the row stays pending and the seam claims it as a route`, async () => {
+      const seen: ClaimedFormDelivery[] = [];
+      const handler = async (row: ClaimedFormDelivery) => {
+        seen.push(row);
+        return { kind: 'left_pending' as const, reason: 'test' };
+      };
+      const { terminal, drain, openForm, submit } = world({
+        hooks: false, notLive: { spawn_new: handler, new_session: handler },
+      });
+      const session = await newSession();
+      const form = await openForm(session, settings);
+      await setStatus(session, 'exited');
+      await sql(`update public.entities set deleted_at = now() where id = $1`, [session]);
+      const view = await submit(form, { pick: { value: 'x' } });
+      expect(await delivery(view.id)).toMatchObject({ status: 'pending', last_error: null, work_session_id: session });
+      await drain.drain({ responseId: view.id });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ purpose: 'route', responseId: view.id, workSessionId: session, route: null });
+      expect(terminal.reserves).toHaveLength(0);
+      // Released by left_pending: still pending, claimable again.
+      expect(await delivery(view.id)).toMatchObject({ status: 'pending', claimed_at: null });
+    });
+  }
 
   it('deleted before submit: the submit records a cancelled row (default resume mode)', async () => {
     const { openForm, submit } = world();

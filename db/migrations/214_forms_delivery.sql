@@ -21,8 +21,11 @@
 --      so every door that posts the notice gets one, and 211 is not copied.
 --   C. A session deleted BEFORE submit: 211's internal.form_requesting_session
 --      filters deleted sessions, so the door writes no delivery row at all. A
---      trigger on the submit records it as `cancelled/session_deleted`, so the
---      response shows why it went nowhere (§7.3: "Send to a new session").
+--      trigger on the submit writes the row the mode calls for: for a
+--      resume/queue delivery to the requesting session, `cancelled/
+--      session_deleted` (§7.3: "Send to a new session"); for spawn_new or a
+--      new_session target, `pending`, because a deleted session can still get a
+--      new one (decision 3) and the seam claims it.
 --   D. `claim_form_deliveries` — THE claim, used by the post-commit hook (one
 --      response), the drain-on-live hook (one session) and the backstop tick
 --      (everything). Reconcile, cancel the deleted, then claim with
@@ -159,6 +162,8 @@ create or replace function internal.form_delivery_deleted_session() returns trig
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   deleted_session uuid;
+  delivery jsonb;
+  dies boolean;
 begin
   if new.status <> 'submitted' then return null; end if;
   if tg_op = 'UPDATE' and old.status = 'submitted' then return null; end if;
@@ -170,8 +175,16 @@ begin
      and ws.deleted_at is not null
    limit 1;
   if deleted_session is not null then
+    select internal.form_settings_effective(f.settings) -> 'delivery' into delivery
+      from public.forms f where f.entity_id = new.form_id;
+    -- The same rule as the claim's step 2: only resume/queue to the requesting
+    -- session dies with it.
+    dies := delivery ->> 'target' = 'requesting_session'
+            and delivery ->> 'onSessionNotLive' in ('resume', 'queue');
     insert into public.form_deliveries(response_id, work_session_id, status, last_error)
-    values (new.id, deleted_session, 'cancelled', 'session_deleted')
+    values (new.id, deleted_session,
+            case when dies then 'cancelled' else 'pending' end,
+            case when dies then 'session_deleted' end)
     on conflict (response_id, work_session_id) do nothing;
   end if;
   return null;
@@ -195,7 +208,8 @@ execute function internal.form_delivery_deleted_session();
 create or replace function internal.form_delivery_permanent_reason(p_reason text)
 returns boolean language sql immutable set search_path = public, internal, pg_temp as $$
   select coalesce(p_reason, '') in (
-    'delivery_envelope_budget_exceeded', 'delivery_envelope_render_failed', 'session_input_not_allowed')
+    'delivery_envelope_budget_exceeded', 'delivery_envelope_render_failed', 'session_input_not_allowed',
+    'self_delivery')
 $$;
 
 -- The ceiling on attempts for one (response, session). A session that keeps
@@ -204,18 +218,27 @@ create or replace function internal.form_delivery_max_attempts()
 returns integer language sql immutable as $$ select 10 $$;
 
 -- Apply one session_message_deliveries outcome to the outbox row that holds it.
--- `delivered` settles; anything else frees the row for the next live drain.
+-- `delivered` settles. `unknown` ALSO settles delivered, AT MOST ONCE (advisor
+-- ruling M2): it includes submit_unverified, where the bytes reached the PTY
+-- and only the confirmation is missing, so a retry could hand the agent the
+-- same answer twice. The durable copy is on the session timeline and the
+-- envelope's fetch pointer recovers it; last_error says it was unverified.
+-- Every other outcome (failed_*, expired, cancelled: never written) frees the
+-- row for the next live drain.
 create or replace function internal.form_delivery_apply(
   p_delivery_id uuid, p_status text, p_reason text
 ) returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  note text := case when p_status = 'unknown'
+                    then left('delivery_unverified: ' || coalesce(p_reason, 'unknown'), 200) end;
 begin
   if p_status in ('pending', 'dispatching') then return; end if;
-  if p_status = 'delivered' then
+  if p_status in ('delivered', 'unknown') then
     update public.form_deliveries
-       set status = 'delivered', claimed_at = null, last_error = null
+       set status = 'delivered', claimed_at = null, last_error = note
      where delivery_id = p_delivery_id and status = 'pending';
     update public.form_notices
-       set status = 'delivered', claimed_at = null, last_error = null
+       set status = 'delivered', claimed_at = null, last_error = note
      where delivery_id = p_delivery_id and status = 'pending';
     return;
   end if;
@@ -285,11 +308,11 @@ begin
        and internal.is_space_member(fr.space_id)
        and (p_response_id is null or d.response_id = p_response_id)
        and (p_work_session_id is null or d.work_session_id = p_work_session_id)
-       and ((s.status in ('pending', 'dispatching', 'delivered')
+       and ((s.status in ('pending', 'dispatching', 'delivered', 'unknown')
              and d.delivery_id is distinct from s.delivery_id)
             or (d.delivery_id = s.delivery_id and s.status not in ('pending', 'dispatching')))
   loop
-    if r.status in ('pending', 'dispatching', 'delivered') then
+    if r.status in ('pending', 'dispatching', 'delivered', 'unknown') then
       update public.form_deliveries set delivery_id = r.delivery_id
        where response_id = r.response_id and work_session_id = r.work_session_id and status = 'pending';
       adopted := adopted + 1;
@@ -313,11 +336,11 @@ begin
        and internal.is_space_member(fe.space_id)
        and p_response_id is null
        and (p_work_session_id is null or fn.work_session_id = p_work_session_id)
-       and ((s.status in ('pending', 'dispatching', 'delivered')
+       and ((s.status in ('pending', 'dispatching', 'delivered', 'unknown')
              and fn.delivery_id is distinct from s.delivery_id)
             or (fn.delivery_id = s.delivery_id and s.status not in ('pending', 'dispatching')))
   loop
-    if n.status in ('pending', 'dispatching', 'delivered') then
+    if n.status in ('pending', 'dispatching', 'delivered', 'unknown') then
       update public.form_notices set delivery_id = n.delivery_id
        where message_id = n.message_id and status = 'pending';
     end if;

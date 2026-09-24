@@ -21,7 +21,10 @@
  * reach the terminal once.
  *
  * Settlement is ASYNC and not here: a row turns `delivered` only when its
- * session_message_deliveries row settles `delivered` (214 F's trigger).
+ * session_message_deliveries row settles `delivered` (214 F's trigger) — or
+ * `unknown`, which is AT MOST ONCE: the bytes may have reached the PTY, so it
+ * settles delivered with `last_error = delivery_unverified: …` rather than
+ * risk handing the agent the same answer twice.
  *
  * THE SEAM. A claimed row whose session is not live — or whose target is a new
  * session — goes to `dispatchNotLiveDelivery`, which switches on
@@ -291,6 +294,8 @@ export class FormDeliveryDrain {
           }
         : {}),
       body: route.body,
+      // The submit door cut the stored body at 10k and appended its pointer (211).
+      truncated: item.responseId !== null && route.body.endsWith(doorTruncationSuffix(item.responseId)),
       maxBytes: route.rollingControlMaxBytes,
     };
     const [disposition] = await dispatchSessionMessages({
@@ -380,6 +385,11 @@ export function createFormDeliveryJob(options: {
 }
 
 // -- parsing -------------------------------------------------------------------
+
+/** What 211's submit door appends to a body it cut (`p_truncated`). */
+export function doorTruncationSuffix(responseId: string): string {
+  return `\n… truncated. Full response: tm8 form response get ${responseId} --format json`;
+}
 
 function keyOf(item: ClaimedFormDelivery): string {
   return item.kind === 'response' ? item.responseId ?? item.messageId : item.messageId;
