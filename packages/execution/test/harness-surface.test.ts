@@ -128,14 +128,16 @@ describe('resolveLaunchConfig per-launch harness pick', () => {
     const inherited = {
       accessMode: null,
       permissionMode: null,
-      harnessChoice: { surface: 'inherit', plugins: ['sales', 3] } as Record<string, unknown>,
+      harnessChoice: { surface: 'minimal', plugins: ['sales', 3] } as Record<string, unknown>,
     };
     const resumed = resolveLaunchConfig(REQUEST, persona, {}, inherited);
-    expect(resumed.harnessSurface).toBe('inherit');
+    expect(resumed.harnessSurface).toBe('minimal');
     expect(resumed.plugins).toEqual(['sales']);
-    expect(resumed.harnessChoice).toEqual({ surface: 'inherit', plugins: ['sales'] });
-    expect(resolveLaunchConfig(REQUEST, persona, { TM8_HARNESS_SURFACE: 'minimal' }, inherited).harnessSurface)
-      .toBe('minimal');
+    expect(resumed.harnessChoice).toEqual({ surface: 'minimal', plugins: ['sales'] });
+    // Under a node-forced `inherit` the plugin pick has no effect, so it is not replayed.
+    const forced = resolveLaunchConfig(REQUEST, persona, { TM8_HARNESS_SURFACE: 'inherit' }, inherited);
+    expect(forced.harnessSurface).toBe('inherit');
+    expect(forced.harnessChoice).toEqual({ surface: 'minimal' });
     // Junk in the stored document falls through to the ordinary chain.
     expect('harnessChoice' in resolveLaunchConfig(REQUEST, persona, {}, {
       accessMode: null, permissionMode: null, harnessChoice: { surface: 'everything' },

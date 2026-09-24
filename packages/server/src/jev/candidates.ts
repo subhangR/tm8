@@ -15,19 +15,26 @@
  * Text limits (§9 — what leaves the server): memory statements and personas
  * are cut at 600 characters, and a skill is its name and description — its
  * body is never selected, let alone sent.
+ *
+ * Each loader's SQL chooses the POOL (sources, order, the 240 cap, `total`);
+ * the text comes from the header module — `jevText(resolveHeaders(ids))` — so
+ * no loader builds its own snippet (headers design 01a0d31e §7).
  */
 import type { RankedEntityKind, RankedEntitySource } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
 import { fail } from '../http/errors.js';
+import { clip, HEADER_TEXT_LIMIT } from '../headers/derive.js';
+import { jevText } from '../headers/render.js';
+import { resolveHeaders } from '../headers/resolve.js';
 import { loadSkillEquipment } from '../skills/equipment.js';
 import type { JevSubject } from './port.js';
 
 /** 4 chunks of 60, each one parallel Jev call (§4.1). */
 export const CANDIDATE_LIMIT = 240;
 /** Characters of a memory statement, a persona, or a skill description that may leave the server (§9). */
-export const TEXT_LIMIT = 600;
+export const TEXT_LIMIT = HEADER_TEXT_LIMIT;
 
 export interface Candidate {
   entityId: string;
@@ -53,7 +60,6 @@ export interface LoadedSubject {
   taskId: string | null;
 }
 
-const clip = (text: string | null | undefined, limit = TEXT_LIMIT): string => [...(text ?? '')].slice(0, limit).join('');
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 // ---------------------------------------------------------------------------
@@ -172,8 +178,8 @@ export async function requireTeammate(q: Querier, spaceId: string, teamMemberId:
  * inherits from its ancestors, which is what it would actually carry.
  */
 export async function loadTeammates(q: Querier, spaceId: string): Promise<CandidateSet> {
-  const rows = await q.query<{ id: string; name: string; role: string | null; persona: string | null; total: string | number }>(
-    `select e.id, tm.name, tm.role, left(tm.identity, ${TEXT_LIMIT}) as persona, count(*) over () as total
+  const rows = await q.query<{ id: string; total: string | number }>(
+    `select e.id, count(*) over () as total
        from public.team_members tm
        join public.entities e on e.id = tm.entity_id
       where e.space_id = $1 and e.kind = 'team_member' and e.deleted_at is null
@@ -197,12 +203,15 @@ export async function loadTeammates(q: Querier, spaceId: string): Promise<Candid
     [spaceId, rows.map((row) => row.id)],
   );
   const equipped = new Map(skills.map((row) => [row.root, row.names]));
-  const items = rows.map((row): Candidate => {
-    const names = equipped.get(row.id) ?? [];
-    const parts = [row.role?.trim() ? `${row.name} — ${row.role.trim()}.` : `${row.name}.`];
-    if (names.length > 0) parts.push(`Equipped with: ${names.join(', ')}.`);
-    if (row.persona?.trim()) parts.push(clip(row.persona));
-    return { entityId: row.id, kind: 'team_member', title: row.name, text: parts.join(' '), sources: ['space'] };
+  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const items = rows.flatMap((row): Candidate[] => {
+    const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
+    if (!header) return [];
+    const text = jevText(header, { limit: TEXT_LIMIT, equippedSkills: equipped.get(row.id) ?? [] });
+    return [{ entityId: row.id, kind: 'team_member', title: header.name, text, sources: ['space'] }];
   });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
 }
@@ -223,9 +232,9 @@ export async function loadMemories(
   teamMemberId: string,
   taskId: string | null,
 ): Promise<CandidateSet> {
-  const rows = await q.query<{ id: string; statement: string; from_teammate: boolean; from_task: boolean; total: string | number }>(
+  const rows = await q.query<{ id: string; from_teammate: boolean; from_task: boolean; total: string | number }>(
     `with pool as (
-       select m.entity_id as id, left(m.statement, ${TEXT_LIMIT}) as statement, e.updated_at,
+       select m.entity_id as id, e.updated_at,
               exists (select 1 from public.edges r
                        where r.type = 'remembers' and r.src_id = $2 and r.dst_id = m.entity_id) as from_teammate,
               ($3::uuid is not null and exists (select 1 from public.edges r
@@ -236,23 +245,32 @@ export async function loadMemories(
           and not exists (select 1 from public.edges s
                            where s.type = 'supersedes' and s.dst_id = m.entity_id)
      )
-     select id, statement, from_teammate, from_task, count(*) over () as total
+     select id, from_teammate, from_task, count(*) over () as total
        from pool
       order by (from_teammate or from_task) desc, updated_at desc, id
       limit ${CANDIDATE_LIMIT}`,
     [spaceId, teamMemberId, taskId],
   );
-  const items = rows.map((row): Candidate => ({
-    entityId: row.id,
-    kind: 'memory',
-    title: clip(oneLine(row.statement), 120) || 'Memory',
-    text: clip(row.statement),
-    sources: [
-      ...(row.from_teammate ? ['teammate' as const] : []),
-      ...(row.from_task ? ['task' as const] : []),
-      'space',
-    ],
-  }));
+  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const items = rows.flatMap((row): Candidate[] => {
+    const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
+    if (!header) return [];
+    return [{
+      entityId: row.id,
+      kind: 'memory',
+      // The statement's first 600 characters, on one line, cut to 120.
+      title: clip(oneLine(clip(header.summary)), 120) || 'Memory',
+      text: jevText(header, { limit: TEXT_LIMIT }),
+      sources: [
+        ...(row.from_teammate ? ['teammate' as const] : []),
+        ...(row.from_task ? ['task' as const] : []),
+        'space',
+      ],
+    }];
+  });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
 }
 
@@ -272,10 +290,8 @@ export async function loadSkills(q: Querier, spaceId: string, teamMemberId: stri
   for (const row of await loadSkillEquipment(q, spaceId, teamMemberId)) {
     if (!row.missing) direct.set(row.entityId, row.depth === 0 ? 'teammate' : 'inherited');
   }
-  const rows = await q.query<{ id: string; name: string; description: string | null; total: string | number }>(
-    `select sk.entity_id as id, sk.name,
-            left(coalesce(nullif(sk.description, ''), sk.frontmatter ->> 'when_to_use', ''), ${TEXT_LIMIT}) as description,
-            count(*) over () as total
+  const rows = await q.query<{ id: string; total: string | number }>(
+    `select sk.entity_id as id, count(*) over () as total
        from public.skills sk
        join public.entities se on se.id = sk.entity_id and se.kind = 'skill' and se.deleted_at is null
       where se.space_id = $1 and not sk.missing
@@ -283,16 +299,21 @@ export async function loadSkills(q: Querier, spaceId: string, teamMemberId: stri
       limit ${CANDIDATE_LIMIT}`,
     [spaceId, [...direct.keys()]],
   );
-  const items = rows.map((row): Candidate => {
-    const description = clip(row.description);
+  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const items = rows.flatMap((row): Candidate[] => {
+    const header = headers.get(row.id);
+    // The pool query and `resolveHeaders` read separate READ COMMITTED
+    // snapshots, so an entity deleted between them has no header: it is
+    // dropped here and shows only as `considered` < the pool's rows.
+    if (!header) return [];
     const source = direct.get(row.id);
-    return {
+    return [{
       entityId: row.id,
       kind: 'skill',
-      title: row.name,
-      text: description ? `${row.name}: ${description}` : row.name,
+      title: header.name,
+      text: jevText(header, { limit: TEXT_LIMIT }),
       sources: source ? [source, 'space'] : ['space'],
-    };
+    }];
   });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
 }

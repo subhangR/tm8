@@ -105,7 +105,8 @@ export function LaunchContextSection({
       ) : null}
       <FactStrip label="LAUNCH" facts={facts} testId="launch-context-facts" />
       <FactStrip
-        label={harness.recorded ? 'HARNESS' : 'HARNESS · DECLARED'}
+        // Rows not taken from the record name their own source.
+        label="HARNESS"
         facts={harnessFacts}
         testId="launch-context-harness"
       />

@@ -996,9 +996,14 @@ describe('composeManifest', () => {
       context: context({ memories: ['a', 'b', 'legacy'], memoryIds: ['mem-a', 'mem-b'] }),
     });
     expect(withIds.agent.memory).toEqual(['a', 'b', 'legacy']);
-    expect(withIds.context).toEqual({ memoryIds: ['mem-a', 'mem-b'] });
-    expect(composeManifest({ ...input, context: context({ memoryIds: [] }) }).context).toEqual({ memoryIds: [] });
-    expect(composeManifest({ ...input, context: context() }).context).toBeUndefined();
+    expect(withIds.context?.memoryIds).toEqual(['mem-a', 'mem-b']);
+    // One expanded entry per id, sized as the prompt renders it; the legacy text has no entry.
+    expect(withIds.context?.entries?.filter((e) => e.group === 'memories')).toEqual([
+      { entityId: 'mem-a', kind: 'memory', group: 'memories', via: 'teammate', state: 'expanded', bytes: '<entry>a</entry>'.length, rank: 1 },
+      { entityId: 'mem-b', kind: 'memory', group: 'memories', via: 'teammate', state: 'expanded', bytes: '<entry>b</entry>'.length, rank: 2 },
+    ]);
+    expect(composeManifest({ ...input, context: context({ memoryIds: [] }) }).context?.memoryIds).toEqual([]);
+    expect(composeManifest({ ...input, context: context() }).context?.memoryIds).toBeUndefined();
   });
 
   it('requires and preserves the parent return route for coordinated modes', () => {

@@ -66,6 +66,20 @@ describe('a spawn on a requester\'s behalf', () => {
     expect(result.manifest.launch).toMatchObject({ accessMode: 'plan', permissionMode: 'readOnly' });
   });
 
+  it('keeps the requester\'s own harness pick — an explicit inheritPosture is not stripped like a parent\'s', async () => {
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      parentSessionId: PARENT_ID,
+      inheritPosture: {
+        accessMode: 'plan', permissionMode: 'readOnly',
+        harnessChoice: { surface: 'minimal', plugins: ['sales'] },
+      },
+    });
+
+    expect(result.manifest.launch.harnessChoice).toEqual({ surface: 'minimal', plugins: ['sales'] });
+  });
+
   it('appends the envelope to the first turn, addressed to the minted session id', async () => {
     const seen: Array<{ sessionId: string; maxBytes: number }> = [];
     const result = await service.spawn(AUTH, {

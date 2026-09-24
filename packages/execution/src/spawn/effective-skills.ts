@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { EffectiveSkills, SkillIndexEntry } from '@tm8/contract';
+import { isPluginAllowed } from './harness-surface.js';
 import { resolveSkills, type ResolvedSkillRow } from './skills.js';
 
 export interface EffectiveSkillsInput {
@@ -12,6 +13,15 @@ export interface EffectiveSkillsInput {
   /** Actual provider config directory (credential homes can differ from OS home). */
   agentConfigDir?: string;
   homeDir?: string;
+  /**
+   * Installed plugin ids THIS launch turns on, when the launch decides plugin
+   * enablement (a `minimal` claude lane with plugins in its config home: the
+   * flag-level `enabledPlugins` sets every installed plugin explicitly). A
+   * plugin skill is native exactly when its plugin is in this list, whatever
+   * the user's settings say. Absent, the scan's `enabled` flag (the user's
+   * settings) decides, which is what an `inherit` lane runs with.
+   */
+  launchEnabledPlugins?: readonly string[];
 }
 const within = (child: string, parent: string): boolean => {
   const rel = relative(resolve(parent), resolve(child));
@@ -55,7 +65,11 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
       // Additional directories need a launch-time --add-dir fact. An equipped row
       // alone cannot prove they were passed, so session-scoped files use paths.
       if (level === 'plugin') {
-        native = metadata.enabled === true && within(path, resolve(config, 'plugins')) && typeof metadata.pluginName === 'string';
+        const pluginName = metadata.pluginName;
+        const enabled = input.launchEnabledPlugins
+          ? typeof pluginName === 'string' && input.launchEnabledPlugins.some((id) => isPluginAllowed(id, [pluginName]))
+          : metadata.enabled === true;
+        native = enabled && within(path, resolve(config, 'plugins')) && typeof pluginName === 'string';
         qualifier = `${metadata.pluginName ?? row.root?.ref ?? 'plugin'}:`;
       }
     }
