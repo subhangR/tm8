@@ -51,7 +51,7 @@ import {
 import { parseInvocation, splitCommandPath } from '../../src/args.js';
 import { resolveContext } from '../../src/context.js';
 import { errorLines, exitCodeFor } from '../../src/errors.js';
-import { CliError, EXIT_USAGE } from '../../src/exit.js';
+import { CliError, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '../../src/exit.js';
 import { createOutput } from '../../src/output.js';
 import { ledger, resolveAvailability } from '../../src/discovery/availability.js';
 import type { CommandModule } from '../../src/run.js';
@@ -338,6 +338,10 @@ describe('events.subscribe — the catalog\'s only WS row, now a real subscripti
     const diag =
       `exit=${r.code} earlyExit=${interrupted} probes=${probes.length} target=${targetId}\n` +
       `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`;
+    // The watch ended the way this test ended it: on its own SIGINT path once
+    // the target was seen, or on `--timeout` otherwise. Any other code is a
+    // verdict the watch reached on its own, and the stream above is suspect.
+    expect(r.code, diag).toBe(interrupted ? EXIT_INTERRUPTED : EXIT_OK);
     expect(live, `subscription never went live: no probe delivered within ${PROBE_BUDGET_MS}ms\n${diag}`).toBe(true);
 
     const lines = r.stdout.trim().split('\n').filter((l) => l !== '');
