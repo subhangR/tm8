@@ -348,6 +348,17 @@ const LINKED_NAME_MAX_CHARS = 120;
 /** The one kind referenced by id alone (task decision 2, 01a0cfb0). */
 const ID_ONLY_KIND = 'work_session';
 
+/**
+ * One linked entity's control line, exactly as the assignment snapshot renders
+ * it. Exported so the launch manifest's byte accounting measures the rendered
+ * line, not an estimate.
+ */
+export function serializeLinkedEntity(item: TaskLinkedEntity): string {
+  return `    <entity id="${attr(item.entityId)}" kind="${attr(item.kind)}" link="${attr(item.link)}"` +
+    (item.kind === ID_ONLY_KIND ? ' reference="id_only"' : '') +
+    ' />';
+}
+
 function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
   control: string[];
   names: string;
@@ -370,10 +381,7 @@ function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
   return {
     control: [
       open,
-      ...shown.map((item) =>
-        `    <entity id="${attr(item.entityId)}" kind="${attr(item.kind)}" link="${attr(item.link)}"` +
-        (item.kind === ID_ONLY_KIND ? ' reference="id_only"' : '') +
-        ' />'),
+      ...shown.map(serializeLinkedEntity),
       '  </linked>',
     ],
     names: named.length === 0 ? '' : untrustedData({ type: 'linked-names', body: JSON.stringify(named) }),
@@ -484,8 +492,13 @@ const PARENT_EXCERPT_MAX_CHARS = 1500;
  * budget — where the dispatch loop's only move is to skip the delivery, which
  * is the exact silent drop this element exists to end.
  */
-const ATTACHMENT_MANIFEST_MAX = 16;
+export const ATTACHMENT_MANIFEST_MAX = 16;
 const ATTACHMENT_NAME_MAX_CHARS = 200;
+
+/** One attached file's control line, as rendered; see `serializeLinkedEntity`. */
+export function serializeAttachmentEntry(file: Pick<SessionInputAttachment, 'fileEntityId' | 'mime'>): string {
+  return `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`;
+}
 
 function attachmentManifest(all: readonly SessionInputAttachment[]): {
   control: string[];
@@ -507,8 +520,7 @@ function attachmentManifest(all: readonly SessionInputAttachment[]): {
   return {
     control: [
       open,
-      ...shown.map((file) =>
-        `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`),
+      ...shown.map(serializeAttachmentEntry),
       '  </attachments>',
     ],
     names: untrustedData({ type: 'attachment-names', body: JSON.stringify(named) }),

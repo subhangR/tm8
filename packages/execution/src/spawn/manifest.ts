@@ -1,14 +1,19 @@
+import { buildManifestContext } from './context-audit.js';
 import { computeEffectiveSkills } from './effective-skills.js';
 import {
   asHarnessSurface,
   asMcpServers,
   asReadHints,
+  equippedClaudePlugins,
+  isPluginAllowed,
+  laneHarnessRecord,
   laneSkillOverrides,
+  pluginDecisions,
   minimalMcpConfig,
   pluginSettings,
-  type HarnessPluginDecisions,
   readHintHookSettings,
   type HarnessSurface,
+  type HarnessSurfaceSource,
 } from './harness-surface.js';
 import { composePrompt, BYTE_BUDGETS, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
@@ -240,6 +245,11 @@ export interface ResolvedLaunchConfig {
    */
   harnessSurface?: HarnessSurface;
   /**
+   * Which link of the precedence chain chose `harnessSurface`, recorded as
+   * `launch.harness.surfaceSource`. Absent means the lane default.
+   */
+  harnessSurfaceSource?: HarnessSurfaceSource;
+  /**
    * Plugins a `minimal` lane keeps: `<name>@<marketplace>` or a bare name.
    * Absent means none.
    */
@@ -301,6 +311,19 @@ function harnessChoiceOf(
     ...(asPluginList(stored.plugins) ? { plugins: asPluginList(stored.plugins)! } : {}),
   };
   return Object.keys(recorded).length > 0 ? recorded : null;
+}
+
+/**
+ * The posture a CHILD inherits from its parent: everything but the parent's
+ * harness pick. A pick in the launch UI is a human's choice for one launch of
+ * one teammate, and a child may run a different teammate — a parent launched
+ * with `plugins: []` must not empty the child's plugins. Resume, which
+ * continues the SAME launch, reads the recorded posture whole.
+ */
+export function childLaunchPosture(
+  parent: SessionLaunchPosture | null | undefined,
+): SessionLaunchPosture | null | undefined {
+  return parent?.harnessChoice ? { ...parent, harnessChoice: null } : parent;
 }
 
 /**
@@ -503,12 +526,22 @@ export function resolveLaunchConfig(
   const preferences = memberLaunchPreferences(member.capabilities);
   const choice = harnessChoiceOf(request, inherited);
   const requestedSurface = asHarnessSurface(request.harnessSurface);
-  const harnessSurface =
-    requestedSurface ??
-    asHarnessSurface(env.TM8_HARNESS_SURFACE) ??
-    choice?.surface ??
-    preferences.harnessSurface ??
-    'minimal';
+  const envSurface = asHarnessSurface(env.TM8_HARNESS_SURFACE);
+  const [harnessSurface, harnessSurfaceSource]: [HarnessSurface, HarnessSurfaceSource] =
+    requestedSurface ? [requestedSurface, 'launch']
+      : envSurface ? [envSurface, 'env']
+        : choice?.surface ? [choice.surface, 'inherited']
+          : preferences.harnessSurface ? [preferences.harnessSurface, 'persona']
+            : ['minimal', 'default'];
+  // A harness pick only means something to a claude-code lane, so no other
+  // tool records one (and none can hand one to a Claude child). Under a
+  // resolved `inherit` surface a plugin pick has no effect, so it is neither
+  // applied nor recorded: a later lean resume must not revive a stale pick.
+  const effectiveChoice: HarnessChoice | null =
+    agentTool !== 'claude-code' || !choice ? null
+      : harnessSurface === 'inherit' && choice.plugins
+        ? (choice.surface ? { surface: choice.surface } : null)
+        : choice;
   // Same precedence, but the default is OFF: this hook is an experiment that
   // has not been through its A/B yet, so merging it changes no lane. Turning
   // an arm on is `TM8_READ_HINTS=on` node-wide, or the persona's
@@ -528,9 +561,10 @@ export function resolveLaunchConfig(
     credentialSources,
     spaceCredentialIds,
     harnessSurface,
-    plugins: choice?.plugins ?? preferences.plugins ?? [],
-    ...(choice ? { harnessChoice: choice } : {}),
-    ...(choice?.plugins && preferences.plugins?.length ? { personaPlugins: preferences.plugins } : {}),
+    harnessSurfaceSource,
+    plugins: effectiveChoice?.plugins ?? preferences.plugins ?? [],
+    ...(effectiveChoice ? { harnessChoice: effectiveChoice } : {}),
+    ...(effectiveChoice?.plugins && preferences.plugins?.length ? { personaPlugins: preferences.plugins } : {}),
     ...(preferences.mcpServers && Object.keys(preferences.mcpServers).length > 0
       ? { mcpServers: preferences.mcpServers }
       : {}),
@@ -1671,16 +1705,26 @@ export interface ComposeManifestInput {
   commandNetwork?: CommandNetworkPolicy;
   interactionProfile?: import('./types.js').InteractionProfilePinContext;
   workdir: { mode: WorkdirMode; path: string };
-  command: string;
+  /**
+   * The base command line, or a builder for it. The builder is handed the
+   * plugins of the lane's POST-BUDGET effective skills (design 01a0d348 §3.1,
+   * F2), which only exist once the skill index has been trimmed here — so a
+   * plugin skill dropped as `byte-budget` or `native-shadowed` does not turn
+   * its plugin on. The prompt never renders the command, so building it after
+   * the trim changes no measured byte.
+   */
+  command: string | ((effectiveClaudePlugins: readonly string[]) => string);
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
   /**
-   * Every installed plugin's fate in a minimal claude lane, with its reason
-   * (`pluginDecisions`). Written as `launch.harness.plugins`; absent when the
-   * lane is not minimal or its config home has no plugins.
+   * Set for a claude-code lane whose harness tm8 manages (no operator
+   * `TM8_AGENT_CMD` wrapper): the plugin ids its config home carries (empty
+   * under `inherit`, where none are read). Recorded as `launch.harness`, and
+   * under `minimal` with plugins present it makes this launch's allow set the
+   * authority on which plugin skills are native. Absent: no harness record.
    */
-  harnessPlugins?: HarnessPluginDecisions | null;
+  harness?: { installedPlugins: readonly string[] } | null;
   now?: Date;
   agentConfigDir?: string;
   homeDir?: string;
@@ -1713,10 +1757,23 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   };
   const member = context.teamMember;
 
+  const equips = context.skillEquips ?? (context.skills ?? []).map(skill => ({ ...skill, depth: 0 }));
+  // F2: under `minimal` with plugins in the config home, the flag-level
+  // `enabledPlugins` names every installed plugin, so THIS launch decides which
+  // are on — not the user's settings the skill scan read. Before the trim the
+  // allow set is the launch/persona list plus the plugins of every equipped
+  // plugin skill; a plugin whose skills are all trimmed below is turned off,
+  // and none of its skills remain to be mis-rendered as native.
+  const installedPlugins = input.harness?.installedPlugins ?? [];
+  const decidesPlugins = launch.harnessSurface !== 'inherit' && installedPlugins.length > 0;
+  const preBudgetAllow = [...(launch.plugins ?? []), ...equippedClaudePlugins(equips)];
   const effectiveSkills = computeEffectiveSkills({
     agentTool: launch.agentTool, workdir: workdir.path, projectRoot: context.project?.workingDir ?? null,
-    equips: context.skillEquips ?? (context.skills ?? []).map(skill => ({ ...skill, depth: 0 })),
+    equips,
     scannedAt: context.skillsScannedAt, agentConfigDir: input.agentConfigDir, homeDir: input.homeDir,
+    ...(decidesPlugins
+      ? { launchEnabledPlugins: installedPlugins.filter(id => isPluginAllowed(id, preBudgetAllow)) }
+      : {}),
   });
   effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
   const manifest: Tm8Manifest = redactSecretsDeep({
@@ -1761,14 +1818,14 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
         : {}),
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
-      command,
+      // Set after the skill trim below, when the builder has its plugin list.
+      command: typeof command === 'string' ? command : '',
       // Passed through untouched; absent stays absent so a launch without
       // Ask Jev writes the same manifest it always did.
       ...(request.jevRunId ? { jevRunId: request.jevRunId } : {}),
       // Absent unless the launch UI (or the session this one continues) picked
       // a harness, so an ordinary launch writes the manifest it always wrote.
       ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),
-      ...(input.harnessPlugins ? { harness: { plugins: input.harnessPlugins } } : {}),
     },
     session: {
       title: resolveSessionTitle(request, context),
@@ -1824,6 +1881,39 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     audit.indexed = audit.indexed.filter(skill => kept.has(skill.entityId));
     audit.skipped.push(...dropped.map(skill => ({ entityId: skill.entityId, name: skill.name, hash: skill.hash, sourcePath: skill.sourcePath, reason: 'byte-budget' })));
   }
+
+  // F2: the plugin allow set follows the skills that SURVIVED the trim (and
+  // the native-shadow pass), so the argv and `launch.harness.plugins` are
+  // built from one list and cannot disagree.
+  const keptRows = new Map(equips.map(row => [row.entityId, row]));
+  const effectiveClaudePlugins = equippedClaudePlugins(
+    manifest.skills.flatMap(skill => keptRows.get(skill.entityId) ?? []),
+  );
+  if (typeof command !== 'string') {
+    manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins));
+  }
+  if (input.harness) {
+    const launchPick = launch.harnessChoice?.plugins ?? null;
+    const plugins = installedPlugins.length > 0
+      ? pluginDecisions(installedPlugins, {
+        launchPick,
+        persona: launchPick ? launch.personaPlugins ?? [] : launch.plugins ?? [],
+        effective: effectiveClaudePlugins,
+      })
+      : null;
+    manifest.launch.harness = laneHarnessRecord(launch, plugins);
+  }
+
+  // The launch-context audit (§6): ids and enums only, after every trim.
+  manifest.context = {
+    ...(manifest.context ?? {}),
+    ...buildManifestContext({
+      context,
+      skills: manifest.skills,
+      skippedSkills: manifest.effectiveSkills?.skipped ?? [],
+      requestSelected: request.selection !== undefined,
+    }),
+  };
   composePrompt(manifest, { sessionId, baseUrl });
   return manifest;
 }

@@ -170,7 +170,20 @@ describe('with selection', () => {
   it('memories are EXACTLY the selected ones, in the selected order', async () => {
     const context = await load({ selection: { memoryIds: [ids.mB, ids.mA], skillIds: [] } });
     expect(context.teamMember.memories).toEqual(['selected B', 'selected A']);
-    expect(manifestOf(context).context).toEqual({ memoryIds: [ids.mB, ids.mA] });
+    expect(manifestOf(context).context?.memoryIds).toEqual([ids.mB, ids.mA]);
+  });
+
+  it('every default memory the selection left out is recorded not-selected; a kept default is not', async () => {
+    const context = await load({ selection: { memoryIds: [ids.mWorking, ids.mA], skillIds: [] } });
+    const audit = manifestOf(context).context!;
+    // The teammate's working set and the task's set are the defaults; mWorking was kept.
+    expect(audit.dropped?.filter((d) => d.group === 'memories')).toEqual([
+      { entityId: ids.mTask, kind: 'memory', group: 'memories', reason: 'not-selected' },
+    ]);
+    expect(audit.groups?.memories).toEqual({ mode: 'selected', legacyDropped: 1 });
+    expect(audit.entries?.filter((e) => e.group === 'memories').map((e) => [e.entityId, e.via])).toEqual([
+      [ids.mWorking, 'selection'], [ids.mA, 'selection'],
+    ]);
   });
 
   it('skills are EXACTLY the selected ones; an unequipped one rides this session with no edge written', async () => {
@@ -210,7 +223,13 @@ describe('without selection', () => {
     expect(context.teamMember.memories).toEqual(['working set memory', 'task memory', 'legacy jsonb note']);
     // Ids for the injected entities only, in injection order: the legacy
     // jsonb note has none, so these are NOT index-aligned with agent.memory.
-    expect(manifestOf(context).context).toEqual({ memoryIds: [ids.mWorking, ids.mTask] });
+    const audit = manifestOf(context).context!;
+    expect(audit.memoryIds).toEqual([ids.mWorking, ids.mTask]);
+    expect(audit.entries?.filter((e) => e.group === 'memories').map((e) => [e.entityId, e.via])).toEqual([
+      [ids.mWorking, 'teammate'], [ids.mTask, 'task'],
+    ]);
+    expect(audit.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
+    expect(audit.dropped).toEqual([]);
     expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sEquipped, ids.sInherited]);
     expect('skippedSkills' in context).toBe(false);
   });

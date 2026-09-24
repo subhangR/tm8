@@ -45,10 +45,15 @@ describe('manifest', () => {
     expect(JSON.stringify({ ...withRun, launch })).toBe(JSON.stringify(compose(base)));
   });
 
-  it('absent jevRunId is ABSENT, not null — the baseline launch block is byte-identical', () => {
+  it('absent jevRunId is ABSENT, not null — the baseline is byte-identical apart from the groups audit', () => {
     const manifest = compose(base);
     expect('jevRunId' in manifest.launch).toBe(false);
-    expect(JSON.stringify(compose({ ...base, selection: SELECTION }))).toBe(JSON.stringify(manifest));
+    const selected = compose({ ...base, selection: SELECTION });
+    // The only difference a selection makes here is the recorded group mode.
+    expect(selected.context?.groups?.memories).toEqual({ mode: 'selected' });
+    expect(manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
+    const withoutGroups = (m: typeof manifest) => JSON.stringify({ ...m, context: { ...m.context, groups: null } });
+    expect(withoutGroups(selected)).toBe(withoutGroups(manifest));
   });
 
   it('audits the equipped skills a selection left out as not-selected; the byte budget still applies after', () => {
@@ -76,8 +81,11 @@ describe('manifest harnessChoice', () => {
   const base: SpawnRequest = { spaceId: 'space', teamMemberId: 'persona' };
   it('is written only when the launch picked a harness', () => {
     expect('harnessChoice' in compose(base).launch).toBe(false);
-    expect((compose({ ...base, harnessSurface: 'inherit', plugins: ['sales'] }).launch as Record<string, unknown>).harnessChoice)
-      .toEqual({ surface: 'inherit', plugins: ['sales'] });
+    expect(compose({ ...base, harnessSurface: 'minimal', plugins: ['sales'] }).launch.harnessChoice)
+      .toEqual({ surface: 'minimal', plugins: ['sales'] });
+    // A plugin pick under `inherit` does nothing, so only the surface is recorded.
+    expect(compose({ ...base, harnessSurface: 'inherit', plugins: ['sales'] }).launch.harnessChoice)
+      .toEqual({ surface: 'inherit' });
   });
 });
 
@@ -167,11 +175,14 @@ describe('SpawnService', () => {
       expect(command).toContain('"sales@synced":true');
       expect(command).toContain('"marketing@synced":false');
       // The manifest records every plugin's fate, and it agrees with the argv.
-      expect(lastLaunch.harness).toEqual({
+      expect(lastLaunch.harness).toMatchObject({
+        surface: 'minimal',
+        surfaceSource: 'default',
         plugins: {
           allowed: [{ id: 'sales@synced', source: 'effective-skill' }],
           denied: [{ id: 'marketing@synced', because: 'not-chosen' }],
         },
+        mcpServers: [],
       });
     });
   });

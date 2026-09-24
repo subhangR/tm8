@@ -20,7 +20,7 @@
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
-import { serializeSkillIndex } from './skill-index.js';
+import { serializeMemoryEntry, serializeSkillIndex } from './skill-index.js';
 import { coordinatorKindOf, type CoordinatorKind } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
@@ -293,7 +293,7 @@ export function composeWorkerPromptV2(
   const memory = strings(agent.memory);
   if (memory.length > 0) {
     s.push('<memory>');
-    for (const m of memory) s.push(`<entry>${esc(m)}</entry>`);
+    for (const m of memory) s.push(serializeMemoryEntry(m));
     s.push('</memory>');
   }
   s.push('<rules>');
