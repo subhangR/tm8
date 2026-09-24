@@ -941,7 +941,7 @@
 
 /* Connections tab: one row per connected ENTITY, its edge types trailing it.
    The peer chip leads because "what is this connected to" is the question;
-   the relation labels answer "how" without competing for the eye. */
+   the relation verbs answer "how" without competing for the eye. */
 .cv2-root .pn-peers {
   list-style: none;
   margin: 0;
@@ -950,40 +950,105 @@
   flex-direction: column;
   gap: 6px;
 }
+/* ONE LINE, ALWAYS. The row used to wrap, so a long title (a message body, a
+   PR title) filled the width and pushed its relations and its clock onto a
+   second line — every row two lines tall. Now the chip is the one thing that
+   gives: it shrinks and its title ends in an ellipsis, with the full title on
+   hover; the verbs and the clock keep their width. */
 .cv2-root .pn-peers__row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.cv2-root .pn-peers__row > .kit-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.cv2-root .pn-peers__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cv2-root .pn-peers__rels {
   display: flex;
+  flex: none;
   gap: 4px;
-  flex-wrap: wrap;
   align-items: center;
 }
+/* A verb, not a badge: plain quiet text, several joined by a middle dot. */
 .cv2-root .pn-peers__rel {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.4;
-  padding: 1px 5px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 3px;
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
-/* An unresolved HARD dependency is why something is blocked — it wears the
-   block ramp so it cannot be mistaken for any other relation. */
+.cv2-root .pn-peers__rel + .pn-peers__rel::before {
+  content: '·';
+  margin-right: 4px;
+  color: var(--pn-ink-4);
+}
+/* An unresolved HARD dependency is why something is blocked — it keeps a
+   block-ramp outline so it cannot be mistaken for any other relation. */
 .cv2-root .pn-peers__rel--hard {
   color: var(--pn-block);
-  border-color: var(--pn-block);
+  padding: 0 5px;
+  border: 1px solid var(--pn-block);
+  border-radius: 3px;
+}
+
+/* The messages posted on or from this entity, as ONE row — they are the
+   Discussion tab's content, summarised here rather than listed. Dashed, so it
+   reads as a pointer elsewhere and not as one more connection. */
+.cv2-root .pn-convo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-convo__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-convo__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .pn-convo__count {
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+.cv2-root .pn-convo__open {
+  flex: none;
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  font: inherit;
+  color: var(--pn-brand);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .pn-convo__open:hover { text-decoration: underline; }
+.cv2-root .pn-convo__open:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: var(--pn-r-xs);
 }
 /* WHEN the link was made, pushed to the row's trailing edge so the stamps form
    a column and the list can be read down as the descending sequence it is
-   sorted into. `margin-left:auto` inside a wrapping row keeps it last on the
-   line it lands on rather than forcing the relations to wrap around it. */
+   sorted into. `margin-left:auto` pins it to the row's end. */
 .cv2-root .pn-peers__when {
   flex: none;
   margin-left: auto;

@@ -219,3 +219,8 @@ export {
   sourcePolicyReason,
 } from './launch-sources';
 export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput } from './launch-sources';
+
+/* The Connections tab's words: one verb per edge type and direction, read from
+   the open entity's side, plus which edges are messages rather than links. */
+export { CONVERSATION_KIND, EDGE_VERBS, edgeVerb, edgeVerbBoth, isConversationEdge } from './edge-verbs';
+export type { EdgeDirection, EdgeVerb } from './edge-verbs';

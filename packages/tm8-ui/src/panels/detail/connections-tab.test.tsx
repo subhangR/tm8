@@ -2,7 +2,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import { CONVERSATION_KIND } from '../../domain';
 import { fixtureDetails } from '../../fixtures';
+import { countConnections } from '../EntityDetailPanel';
 import { ConnectionsTab } from './tabs';
 
 /**
@@ -15,8 +17,8 @@ import { ConnectionsTab } from './tabs';
 
 const self = Object.values(fixtureDetails).find((d) => d.deletedAt == null)!;
 
-function peer(id: string, title: string): EntitySummary {
-  return { ...(self as unknown as EntitySummary), id, title };
+function peer(id: string, title: string, kind?: string): EntitySummary {
+  return { ...(self as unknown as EntitySummary), id, title, ...(kind ? { kind } : {}) };
 }
 
 function group(
@@ -70,21 +72,34 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
     const alphaRow = [...rows].find((r) => r.textContent?.includes('Alpha'))!;
     const rels = [...alphaRow.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent);
     expect(rels).toHaveLength(2);
-    expect(rels.some((t) => t?.includes('depends on'))).toBe(true);
-    expect(rels.some((t) => t?.includes('relates to'))).toBe(true);
+    // The VERB, not the seam's label: the group labels above are deliberately
+    // lowercase ids, and neither may reach the row.
+    expect(rels).toContain('Depends on');
+    expect(rels).toContain('Related');
   });
 
-  it('keeps DIRECTION distinct — the same type in and out is two relations, not one', () => {
+  it('keeps DIRECTION distinct — the same type in and out is two relations, said in two verbs', () => {
     const detail = detailWith(
-      [group('blocks', 'blocks', 'outgoing', [{ id: 'e1', peer: alpha }])],
-      [group('blocks', 'blocks', 'incoming', [{ id: 'e2', peer: alpha }])],
+      [group('depends_on', 'depends_on', 'outgoing', [{ id: 'e1', peer: alpha }])],
+      [group('depends_on', 'depends_on (incoming)', 'incoming', [{ id: 'e2', peer: alpha }])],
     );
     const { container } = render(<ConnectionsTab detail={detail} />);
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
     const rels = [...container.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent);
-    expect(rels).toHaveLength(2);
-    expect(rels.some((t) => t?.startsWith('→'))).toBe(true);
-    expect(rels.some((t) => t?.startsWith('←'))).toBe(true);
+    expect(rels).toEqual(['Depends on', 'Needed by']);
+    // Direction is in the words — no arrow, no "(incoming)".
+    expect(container.textContent).not.toContain('(incoming)');
+    expect(container.textContent).not.toMatch(/[→←]/);
+  });
+
+  it('merges a two-way conversation into ONE relation when the verb row says they are one', () => {
+    const detail = detailWith(
+      [group('messaged', 'messaged', 'outgoing', [{ id: 'e1', peer: alpha }])],
+      [group('messaged', 'messaged (incoming)', 'incoming', [{ id: 'e2', peer: alpha }])],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    const rels = [...container.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent);
+    expect(rels).toEqual(['Talked with · 2']);
   });
 
   it('counts repeats of one relation rather than repeating the peer', () => {
@@ -314,5 +329,87 @@ describe('ConnectionsTab — read as a timeline', () => {
     // ...and the relation's hover reports both halves.
     expect(container.querySelector('.pn-peers__rel')!.getAttribute('title'))
       .toContain('linked, then updated');
+  });
+});
+
+/**
+ * MESSAGES ARE SUMMARISED, NOT LISTED. On the session this was reported from,
+ * 16 of 28 rows were messages it posted or received — the Discussion tab's
+ * content, listed a second time, one row each.
+ */
+describe('ConnectionsTab — messages as one summary row', () => {
+  const msg = (id: string) => peer(id, `Status update ${id}`, CONVERSATION_KIND);
+
+  function withMessages() {
+    return detailWith(
+      [group('relates_to', 'relates to', 'outgoing', [{ id: 'e0', peer: alpha }])],
+      [
+        timedGroup('authored_from', 'authored_from (incoming)', 'incoming', [
+          { id: 'a1', peer: msg('m1'), createdAt: '2026-09-24T10:00:00.000Z' },
+          { id: 'a2', peer: msg('m2'), createdAt: '2026-09-24T11:00:00.000Z' },
+        ]),
+        timedGroup('anchored_to', 'anchored_to (incoming)', 'incoming', [
+          // m2 is both written here and anchored here: one message, counted once.
+          { id: 'b2', peer: msg('m2'), createdAt: '2026-09-24T11:00:00.000Z' },
+          { id: 'b3', peer: msg('m3'), createdAt: '2026-09-24T12:07:00.000Z' },
+        ]),
+      ],
+    );
+  }
+
+  it('draws no row per message, and one summary with the counts', () => {
+    const { container } = render(<ConnectionsTab detail={withMessages()} />);
+    const rows = [...container.querySelectorAll('.pn-peers__row')];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain('Alpha');
+    expect(container.textContent).toContain('LINKED · 1');
+    const summary = container.querySelector('[data-testid="pn-convo"]')!;
+    expect(summary.textContent).toContain('3 messages');
+    expect(summary.textContent).toContain('2 sent from here');
+    expect(summary.textContent).toContain('1 posted here');
+  });
+
+  it('opens the Discussion tab from the summary, and draws no button without a way to', () => {
+    const onOpenDiscussion = vi.fn();
+    const { getByText, unmount } = render(
+      <ConnectionsTab detail={withMessages()} onOpenDiscussion={onOpenDiscussion} />,
+    );
+    fireEvent.click(getByText('Open Discussion →'));
+    expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
+    unmount();
+    const { container } = render(<ConnectionsTab detail={withMessages()} />);
+    expect(container.querySelector('.pn-convo__open')).toBeNull();
+  });
+
+  it('keeps a message that holds a REAL relation as a row', () => {
+    const evidence = msg('m9');
+    const detail = detailWith(
+      [],
+      [
+        group('verifies', 'verifies (incoming)', 'incoming', [{ id: 'v1', peer: evidence }]),
+        group('anchored_to', 'anchored_to (incoming)', 'incoming', [{ id: 'v2', peer: evidence }]),
+      ],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    const rows = container.querySelectorAll('.pn-peers__row');
+    expect(rows).toHaveLength(1);
+    // The row carries the relation that matters, not the traffic edge.
+    expect([...rows[0]!.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent)).toEqual(['Verified by']);
+    expect(container.querySelector('[data-testid="pn-convo"]')!.textContent).toContain('1 message');
+  });
+
+  it('is not "Nothing linked yet" when the only edges are messages', () => {
+    const detail = detailWith(
+      [],
+      [group('anchored_to', 'anchored_to (incoming)', 'incoming', [{ id: 'x1', peer: msg('m1') }])],
+    );
+    const { container } = render(<ConnectionsTab detail={detail} />);
+    expect(container.textContent).not.toContain('Nothing linked yet');
+    expect(container.querySelector('[data-testid="pn-convo"]')!.textContent).toBe('1 message · posted here');
+  });
+
+  it('leaves messages out of the tab-strip count, which counts what the tab lists', () => {
+    // 1 relates_to + 4 message edges; the count is the one connection.
+    expect(countConnections(withMessages())).toBe(1);
   });
 });
