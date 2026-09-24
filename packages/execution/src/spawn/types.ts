@@ -1203,6 +1203,21 @@ export interface SpawnRequest {
   plugins?: string[];
   /** S12: untrusted projects require per-spawn consent. */
   confirmUntrusted?: boolean;
+  /**
+   * The recorded launch posture to inherit, INSTEAD of reading the parent's.
+   * A server-side spawn on another session's behalf (Forms W2 spawn_new) must
+   * never exceed THAT session's access mode or credentials, and its parent may
+   * have launched wider. `undefined` keeps the parent inheritance; `null`
+   * inherits nothing.
+   */
+  inheritPosture?: SessionLaunchPosture | null;
+  /**
+   * Text appended to the composed first user turn, after the task assignment
+   * (Forms W2: the form_response envelope a spawned session starts with).
+   * Called once the session id exists, with the bytes the turn has left under
+   * the combinedInitialInjection budget; the result must fit them.
+   */
+  firstTurnAppendix?: (sessionId: string, maxBytes: number) => string;
   clientMutationId?: string | null;
   /** Terminal geometry from the browser, so the agent's TUI boots at the right width. */
   cols?: number;

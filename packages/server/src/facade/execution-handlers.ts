@@ -1108,43 +1108,7 @@ export class DbGraphPort implements GraphPort {
       [sessionId],
     );
     const row = rows[0];
-    if (!row) return null;
-    const storedCredentialSources =
-      typeof row.credential_sources === 'object' &&
-      row.credential_sources !== null &&
-      !Array.isArray(row.credential_sources)
-        ? (row.credential_sources as Record<string, unknown>)
-        : {};
-    // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
-    // manifest is a stored JSON document and an unrecognised posture in one must
-    // fall through to the ordinary precedence chain, not launch on a value
-    // nothing maps.
-    return {
-      accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
-      permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
-      credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
-      // The login-terminal table's canonical provider order is the runtime key
-      // set too; reading the JSON object once avoids another SQL-side list.
-      credentialSources: Object.fromEntries(
-        CREDENTIAL_PROVIDERS.map((provider) => [
-          provider,
-          storedCredentialSources[provider] ?? null,
-        ]),
-      ) as SessionLaunchPosture['credentialSources'],
-      // The EXACT ids a child and a resume inherit (A4). Narrowed downstream,
-      // where a `space` source without a well-formed id refuses (M8a).
-      spaceCredentialIds:
-        typeof row.space_credential_ids === 'object' &&
-        row.space_credential_ids !== null &&
-        !Array.isArray(row.space_credential_ids)
-          ? (row.space_credential_ids as Record<string, unknown>)
-          : null,
-      // The launch UI's explicit harness pick, when there was one. Stored JSON,
-      // narrowed downstream like every other posture field.
-      ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
-        ? { harnessChoice: row.harness_choice as Record<string, unknown> }
-        : {}),
-    };
+    return row ? sessionLaunchPostureFromRecord(row) : null;
   }
 
   async resumeWorkSession(
@@ -3295,4 +3259,55 @@ function registerHandlers(
       headers: { 'cache-control': 'no-store' },
     });
   });
+}
+
+/**
+ * A recorded manifest's `launch` posture, as resume and child inheritance read
+ * it. Shared with the Forms W2 spawn (form-delivery-spawn.ts), which reads the
+ * same columns as the definer so a deleted requester still has its posture.
+ */
+export function sessionLaunchPostureFromRecord(row: {
+  access_mode: string | null;
+  permission_mode: string | null;
+  credential_source: string | null;
+  credential_sources: unknown;
+  space_credential_ids: unknown;
+  harness_choice: unknown;
+}): SessionLaunchPosture {
+  const storedCredentialSources =
+    typeof row.credential_sources === 'object' &&
+    row.credential_sources !== null &&
+    !Array.isArray(row.credential_sources)
+      ? (row.credential_sources as Record<string, unknown>)
+      : {};
+  // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
+  // manifest is a stored JSON document and an unrecognised posture in one must
+  // fall through to the ordinary precedence chain, not launch on a value
+  // nothing maps.
+  return {
+    accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
+    permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
+    credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
+    // The login-terminal table's canonical provider order is the runtime key
+    // set too; reading the JSON object once avoids another SQL-side list.
+    credentialSources: Object.fromEntries(
+      CREDENTIAL_PROVIDERS.map((provider) => [
+        provider,
+        storedCredentialSources[provider] ?? null,
+      ]),
+    ) as SessionLaunchPosture['credentialSources'],
+    // The EXACT ids a child and a resume inherit (A4). Narrowed downstream,
+    // where a `space` source without a well-formed id refuses (M8a).
+    spaceCredentialIds:
+      typeof row.space_credential_ids === 'object' &&
+      row.space_credential_ids !== null &&
+      !Array.isArray(row.space_credential_ids)
+        ? (row.space_credential_ids as Record<string, unknown>)
+        : null,
+    // The launch UI's explicit harness pick, when there was one. Stored JSON,
+    // narrowed downstream like every other posture field.
+    ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
+      ? { harnessChoice: row.harness_choice as Record<string, unknown> }
+      : {}),
+  };
 }

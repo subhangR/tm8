@@ -51,6 +51,7 @@ import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
+import { createSpawnModeHandlers } from './facade/services/w2/form-delivery-spawn.js';
 import {
   dispatchSessionMessages,
   type DispatchableRoute,
@@ -362,6 +363,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'forms-delivery' };
         },
         ...(delivery ? { delivery: delivery.messageDelivery as unknown as MessageDeliveryPort } : {}),
+        // §7.3's spawn modes (215): resume, spawn_new, target=new_session. Only
+        // where this node can spawn; without it those rows wait like `queue`.
+        ...(execution ? { notLive: createSpawnModeHandlers({ spawner: execution.spawnService }) } : {}),
       })
     : undefined;
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));

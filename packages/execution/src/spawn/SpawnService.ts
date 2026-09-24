@@ -16,7 +16,14 @@ import type {
   PromptSettlementWaiter,
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
-import { composePrompt, primaryContextBudgetV2, PROMPT_VERSION_V2, type PromptRuntime } from '@tm8/prompt';
+import {
+  BYTE_BUDGETS,
+  composePrompt,
+  primaryContextBudgetV2,
+  PROMPT_VERSION_V2,
+  utf8Bytes,
+  type PromptRuntime,
+} from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -398,6 +405,38 @@ function endingFromPtyExit(
         ? 'Stopped unexpectedly, and no reason was reported. It can be resumed to try again.'
         : 'Stopped because it hit an error and could not continue. It can be resumed to try again.',
   };
+}
+
+/**
+ * The first user turn: the composed task, plus the caller's appendix. The
+ * appendix is offered only the bytes the combined budget has left, so a large
+ * task turn shrinks the appendix and never the reverse; one that ignores its
+ * allowance refuses the launch rather than being clipped (§8.1).
+ */
+function firstTurn(
+  envelope: { system: string; task: string },
+  sessionId: string,
+  request: SpawnRequest,
+): string {
+  if (!request.firstTurnAppendix) return envelope.task;
+  const used = utf8Bytes(`${envelope.system}\n\n${envelope.task}\n\n`);
+  const room = BYTE_BUDGETS.combinedInitialInjection - used;
+  const appendix = room > 0 ? request.firstTurnAppendix(sessionId, room) : '';
+  if (!appendix) {
+    throw new SpawnError(
+      `the first turn has no room for its appendix (${String(room)} bytes left)`,
+      'invalid_input',
+      { sessionId, room },
+    );
+  }
+  if (utf8Bytes(appendix) > room) {
+    throw new SpawnError(
+      `the first-turn appendix is ${String(utf8Bytes(appendix))} bytes, over the ${String(room)} left`,
+      'invalid_input',
+      { sessionId, room },
+    );
+  }
+  return `${envelope.task}\n\n${appendix}`;
 }
 
 export class SpawnService {
@@ -1185,8 +1224,12 @@ export class SpawnService {
     });
 
     // A child inherits its parent's posture but not its harness pick; only a
-    // resume replays the pick, because only a resume is the same launch.
-    const inherited = childLaunchPosture(await this.inheritedPosture(auth, request));
+    // resume replays the pick, because only a resume is the same launch. An
+    // explicit inheritPosture (Forms W2) is the requester's OWN recorded launch
+    // replayed, so it keeps its pick: dropping a plugin allow set could widen it.
+    const inherited = request.inheritPosture !== undefined
+      ? request.inheritPosture
+      : childLaunchPosture(await this.inheritedPosture(auth, request));
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
@@ -1430,8 +1473,8 @@ export class SpawnService {
       // matches (native-session.ts). Claude needs none: its id is pre-minted.
       const task =
         launch.agentTool === 'codex'
-          ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : envelope.task;
+          ? `${firstTurn(envelope, sessionId, request)}\n<tm8_session_id>${sessionId}</tm8_session_id>`
+          : firstTurn(envelope, sessionId, request);
       // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
       // prompt that is already in the process cannot be lost to a boot race. The
       // alternative — launch an idle REPL and type the task into the TUI once it
