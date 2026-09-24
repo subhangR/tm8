@@ -72,9 +72,10 @@ interface OperationGuide {
 }
 
 const READ_GUIDES = [
-  guide('entities.context', 'Bounded orientation read with hierarchy, recent messages and allowed actions.', {
+  guide('entities.context', 'Bounded orientation read (tm8.entity-context.v2: the narrow per-kind default). '
+    + 'Every omitted[]/notLoaded[] entry carries an expandOp: pass it back as {"expandOp": …} to read the rest. '
+    + 'query.schema "v1" returns the previous shape.', {
     params: { id: '<entity-id>' },
-    query: { sections: 'summary,hierarchy,connections,messages,actions' },
   }),
   guide('entities.get', 'Read one entity in full.', { params: { id: '<entity-id>' } }),
   guide('entities.feed', 'Page the merged message and activity timeline for an entity.', {
@@ -340,6 +341,17 @@ const GROUP_SCHEMA: Record<string, unknown> = {
       description: 'Exact operation request body from the discovered template.',
       additionalProperties: true,
     },
+    expandOp: {
+      type: 'object',
+      description: 'Instead of operation/params/query: an expandOp copied verbatim from an entities.context '
+        + 'omitted[] or notLoaded[] entry, e.g. {"operation":"entities.context","params":{"id":"<uuid>","sections":["messages"],"cursor":"<c>"}}.',
+      properties: {
+        operation: { type: 'string' },
+        params: { type: 'object', additionalProperties: true },
+      },
+      required: ['operation', 'params'],
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 };
@@ -452,7 +464,7 @@ export class Tm8ToolRouter {
         return success(overview(rawArguments, this.mode, this.hiddenTools, this.chatId));
       }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
-      const args = objectOf(rawArguments, 'tool arguments');
+      const args = expandOpArguments(objectOf(rawArguments, 'tool arguments'));
       const operation = optionalString(args.operation, 'operation');
       const directory = GROUPS[name];
       enforcePermission(this.mode, name, operation);
@@ -634,8 +646,49 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
  */
 const QUERY_DEFAULTS: Partial<Record<OperationName, Record<string, QueryValue>>> = {
   'actions.list': { schema: 'v2' },
-  'entities.context': { actionsSchema: 'v2' },
+  // c761 §9: MCP `entities.context` is v2 immediately; `schema: 'v1'` is the
+  // escape. `actionsSchema` shapes only v1's inline actions section.
+  'entities.context': { schema: 'v2', actionsSchema: 'v2' },
 };
+
+/**
+ * An `expandOp` (c904 §2.8 / Q19) is the MCP twin of an `expand` string:
+ * `{operation, params}`, with the path parameter and the query in ONE record.
+ * It is split here by the operation's own catalog path — `:id` names a path
+ * parameter, everything else is query — so a model passes it back verbatim
+ * instead of re-deriving the call. An array joins with commas and a number is
+ * stringified, exactly as the CLI spells the same flags.
+ */
+function expandOpArguments(args: Record<string, unknown>): Record<string, unknown> {
+  if (args.expandOp === undefined) return args;
+  for (const key of ['operation', 'params', 'query', 'body']) {
+    if (args[key] !== undefined) throw new ToolInputError(`expandOp replaces operation/params/query/body; pass it alone (got ${key})`);
+  }
+  const op = objectOf(args.expandOp, 'expandOp');
+  const operation = optionalString(op.operation, 'expandOp.operation');
+  if (!operation || !(OPERATIONS as readonly { name: string }[]).some((o) => o.name === operation)) {
+    throw new ToolInputError(`expandOp.operation is not a catalog operation: ${String(op.operation)}`);
+  }
+  const pathKeys = new Set([...getOperation(operation as OperationName).path.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1]!));
+  const params: Record<string, string> = {};
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(objectOf(op.params, 'expandOp.params'))) {
+    let text: string;
+    if (typeof value === 'string') text = value;
+    else if (typeof value === 'number' || typeof value === 'boolean') text = String(value);
+    else if (Array.isArray(value) && value.every((item) => typeof item === 'string')) text = value.join(',');
+    else throw new ToolInputError(`expandOp.params.${key} must be a string, number, boolean or string array`);
+    (pathKeys.has(key) ? params : query)[key] = text;
+  }
+  for (const key of pathKeys) {
+    if (params[key] === undefined) throw new ToolInputError(`expandOp.params.${key} is required by ${operation}`);
+  }
+  return {
+    operation,
+    ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(Object.keys(query).length > 0 ? { query } : {}),
+  };
+}
 
 function invokeOptions(args: Record<string, unknown>, operation: OperationName): CatalogInvokeOptions {
   const params = stringRecord(args.params, 'params');

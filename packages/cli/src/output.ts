@@ -83,14 +83,16 @@ export class Output {
    * The command's result. Exactly one of these per command in `human`/`json`;
    * `jsonl` callers use `line()` instead.
    */
-  data<T>(dto: T, human: HumanRenderer<T>, opts: { minify?: boolean } = {}): void {
+  data<T>(dto: T, human: HumanRenderer<T>, opts: { minify?: boolean; raw?: boolean } = {}): void {
     this.assertNoBytes();
     this.wroteStructured = true;
     if (this.format === 'human') {
       this.streams.stdout(`${human(dto)}\n`);
       return;
     }
-    const payload = this.render === 'terse' ? projectTerse(dto) : dto;
+    // `raw`: the DTO as the server sent it, never projected — for a shape
+    // whose bytes are themselves the contract (entity context v2).
+    const payload = this.render === 'terse' && !opts.raw ? projectTerse(dto) : dto;
     if (this.format === 'json') {
       // `minify`: the same JSON without indentation — for an agent-class
       // reader, where whitespace is paid for and read by nobody.

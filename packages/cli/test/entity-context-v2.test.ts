@@ -16,11 +16,10 @@
  * (the `entity.test.ts` pattern); the stub answers with a v2 DTO written from
  * the spec, so what is under test is only the CLI.
  *
- * Tests the CLI cannot pass yet are `it.fails`, naming the step that flips
- * them: S3 (`--schema`, section paging flags), S4 (`--offset`, the 422 → exit 2,
- * `--section-bytes` refusal), S5 (minified print, text brief, rollout). Every
- * negative test carries a positive control, so none of them "passes" today
- * merely because `--schema` is still an unknown option.
+ * Each step flipped its own `it.fails` to `it`: S3 (`--schema`, section paging
+ * flags), S4 (`--offset`, the 422 → exit 2, `--section-bytes` refusal), S5
+ * (minified print, text brief, rollout). Every negative test carries a
+ * positive control.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -314,14 +313,14 @@ describe('S4 body pages and caller budget', () => {
 // ============================================================================
 
 describe('S5 rendering and rollout', () => {
-  it.fails('[c904 §5.1 · c904 §2.2] agent-class --format json prints EXACTLY the minified DTO (S5)', async () => {
+  it('[c904 §5.1 · c904 §2.2] agent-class --format json prints EXACTLY the minified DTO (S5)', async () => {
     const r = await drive(['entity', 'context', ENT, '--schema', 'v2', '--format', 'json']);
     expect(r.code).toBe(0);
     expect(r.stdout).toBe(V2_MINIFIED);
     expect(Buffer.byteLength(r.stdout.trimEnd(), 'utf8')).toBe(Buffer.byteLength(JSON.stringify(V2_TASK), 'utf8'));
   });
 
-  it.fails('[c761 §8] --full and TM8_NO_TERSE_DEFAULT are no-ops for entity context (S5)', async () => {
+  it('[c761 §8] --full and TM8_NO_TERSE_DEFAULT are no-ops for entity context (S5)', async () => {
     const full = await drive(['entity', 'context', ENT, '--schema', 'v2', '--format', 'json', '--full']);
     expect(full.stdout).toBe(V2_MINIFIED);
     process.env.TM8_NO_TERSE_DEFAULT = '1';
@@ -329,7 +328,7 @@ describe('S5 rendering and rollout', () => {
     expect(killSwitch.stdout).toBe(V2_MINIFIED);
   });
 
-  it.fails('[c761 §9] agent-class --format json asks for v2 by default; --schema v1 is the escape (S5)', async () => {
+  it('[c761 §9] agent-class --format json asks for v2 by default; --schema v1 is the escape (S5)', async () => {
     const r = await drive(['entity', 'context', ENT, '--format', 'json']);
     expect(r.code).toBe(0);
     expect(seen.at(-1)?.query.get('schema')).toBe('v2');
@@ -339,7 +338,7 @@ describe('S5 rendering and rollout', () => {
     expect(seen.at(-1)?.query.get('schema') ?? 'v1').toBe('v1');
   });
 
-  it.fails('[c761 §9] non-agent --format json stays v1 for one release, with a stderr notice (S5)', async () => {
+  it('[c761 §9] non-agent --format json stays v1 for one release, with a stderr notice (S5)', async () => {
     process.env.TM8_JOURNAL_CLASS = 'human';
     reply = ok({ schemaVersion: 'tm8.entity-context.v1' });
     const r = await drive(['entity', 'context', ENT, '--format', 'json']);
@@ -349,7 +348,27 @@ describe('S5 rendering and rollout', () => {
     expect(r.stderr).toMatch(/--schema/);
   });
 
-  it.fails('[c761 §10.9 · c761 §4 Q20] the text brief is lossless on markers (S5)', async () => {
+  it('[c904 §2.8 · c761 §9] a server expand runs verbatim — no --schema — for a non-agent json caller too (S5)', async () => {
+    process.env.TM8_JOURNAL_CLASS = 'human';
+    for (const expand of [
+      V2_TASK.assignment.expand,
+      V2_TASK.omitted[0]!.expand,
+      `tm8 entity context ${ENT} --sections connections --edge-type in_project`,
+      `tm8 entity context ${ENT} --sections blockers`,
+    ]) {
+      seen = [];
+      const r = await drive([...expand.split(' ').slice(1), '--format', 'json']);
+      expect(r.code, expand).toBe(0);
+      expect(seen[0]?.query.get('schema'), expand).toBe('v2');
+      expect(r.stderr, expand).toBe('');
+    }
+    // A v1-only flag keeps v1 without --schema, as it always did.
+    seen = [];
+    await drive(['entity', 'context', ENT, '--format', 'json', '--section-bytes', '1024']);
+    expect(seen[0]?.query.get('schema')).toBeNull();
+  });
+
+  it('[c761 §10.9 · c761 §4 Q20] the text brief is lossless on markers (S5)', async () => {
     const r = await drive(['entity', 'context', ENT]);
     expect(r.code).toBe(0);
     const text = r.stdout;
@@ -379,7 +398,7 @@ describe('S5 rendering and rollout', () => {
     expect(text).toContain(String(V2_TASK.asOfSeq));
   });
 
-  it.fails('[c761 §10.9] the text brief says "errors: none" rather than omitting the line (S5)', async () => {
+  it('[c761 §10.9] the text brief says "errors: none" rather than omitting the line (S5)', async () => {
     reply = ok({ ...V2_TASK, errors: [] });
     const r = await drive(['entity', 'context', ENT]);
     expect(r.code).toBe(0);

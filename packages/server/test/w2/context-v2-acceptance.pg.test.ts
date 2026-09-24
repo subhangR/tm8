@@ -12,8 +12,9 @@
  * measured by S2's `context-statement-counter.ts` (the one counter the module
  * shares), never inferred from output.
  *
- * v2 is requested explicitly with `schema=v2` (the module plan keeps v2 behind
- * `--schema v2` / `schema=v2` until S5 flips the defaults). Tests the product
+ * v2 is requested explicitly with `schema=v2`. S5 made v2 the CLIENT default
+ * (the agent-class and text CLI, and MCP, send `schema=v2`); the HTTP default
+ * stays v1 for raw and non-agent callers until v1 is retired. Tests the product
  * cannot pass yet are `it.fails`, each naming the step that flips it to `it`:
  *   S2  select-before-load: every section loader tagged, only selected loaded
  *   S3  the v2 DTO, per-kind projection, omitted/notLoaded/errors, section paging
@@ -247,7 +248,7 @@ async function read<T>(id: string, query: string): Promise<Read<T>> {
 /** A v1 read — today's default, unchanged by Module 2. */
 const v1 = (id: string, query = ''): Promise<Read<Record<string, unknown>>> => read(id, query);
 
-/** A v2 read. `schema=v2` until S5 makes v2 the agent default. */
+/** A v2 read, as the CLI and MCP send it (`schema=v2`; the HTTP default is still v1). */
 const v2 = (id: string, query = ''): Promise<Read<V2>> =>
   read<V2>(id, query ? `schema=v2&${query}` : 'schema=v2');
 
@@ -263,8 +264,10 @@ const FLAG_TO_QUERY: Record<string, string> = {
  * Run an advertised `expand` VERBATIM (c904 §2.8: no placeholders, server-filled
  * cursor/offset). The CLI flags are translated one-for-one to the query the
  * CLI would send; an unknown flag fails the test rather than being dropped.
- * `schema=v2` is added until S5 — at S5 the verbatim string must yield v2 on
- * its own for an agent caller, which the CLI suite checks.
+ * `schema=v2` is added because the CLI adds it: since S5 a verbatim expand
+ * yields v2 for every `--format json` and text caller with no `--schema` flag
+ * (packages/cli/test/entity-context-v2.test.ts pins that argv → query). The
+ * HTTP default is v1, so this helper models the CLI's query, not a bare GET.
  */
 async function runExpand(expand: string): Promise<Read<V2>> {
   expect(expand, 'an expand never carries a placeholder').not.toMatch(/[<>]/);
@@ -281,7 +284,7 @@ async function runExpand(expand: string): Promise<Read<V2>> {
   return read<V2>(match[1]!, query.toString());
 }
 
-/** Run an `expandOp` (MCP, c904 Q19) through the registry. */
+/** Run an `expandOp` (MCP, c904 Q19) through the registry, with MCP's `schema=v2` default. */
 async function runExpandOp(op: V2ExpandOp): Promise<Read<V2>> {
   const { id, ...rest } = op.params as Record<string, unknown>;
   const query = new URLSearchParams({ schema: 'v2' });
@@ -650,16 +653,22 @@ describe('S3 the v2 DTO', () => {
     expect(all.map((m) => m.id).sort()).toEqual([...F.chatMessages].sort());
   });
 
-  // Still failing after S3b (#687): the expand is advertised, and actions.list
-  // now answers for the harness's owner, but this call names no `schema`, and
-  // the server default is still the unpaged v1 inventory (~11 KB). It flips
-  // when S5 makes v2 the actions.list default for agent callers.
-  it.fails('[c761 §10.4] the actions expand is advertised only in its bounded form and runs verbatim (S3 + #669 bounded action list)', async () => {
+  // S5: the expand is run as its callers run it, and every one of them asks
+  // for the bounded tm8.actions.v2 page: `tm8 action list` does for agent and
+  // text callers (packages/cli/test/action.test.ts), MCP defaults actions.list
+  // to schema v2 (packages/mcp/test/tools.test.ts), and the wire expandOp names
+  // `schema: 'v2'` itself. `actions.list` with NO schema stays the v1 inventory
+  // for raw-HTTP and non-agent `--format json` callers during the rollout
+  // release (c761 §9, with its stderr notice) — so it is not what runs here.
+  it('[c761 §10.4] the actions expand is advertised only in its bounded form and runs verbatim (S3 + #669 bounded action list)', async () => {
     const { view } = await v2(F.T);
     const actions = view.notLoaded.find((n) => n.section === 'actions');
     expect(actions?.expand).toBe(`tm8 action list --for ${F.T}`);
+    expect(actions?.expandOp).toEqual({ operation: 'actions.list', params: { contextEntityId: F.T, schema: 'v2' } });
     counter.reset();
-    const result = await call<unknown>('actions.list', {}, new URLSearchParams({ contextEntityId: F.T }));
+    const query = new URLSearchParams(actions!.expandOp!.params as Record<string, string>);
+    const result = await call<{ schema?: string }>('actions.list', {}, query);
+    expect(result.schema).toBe('tm8.actions.v2');
     // #669's CI gate: one bounded page ≤ 1.5 KB.
     expect(bytes(result)).toBeLessThanOrEqual(1_536);
   });

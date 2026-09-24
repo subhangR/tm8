@@ -78,10 +78,47 @@ describe('tool curation', () => {
         operation: 'entities.context',
         options: {
           params: { id: '019fa297-64e3-7000-8000-000000000001' },
-          query: { actionsSchema: 'v2', sections: 'summary,actions', tag: ['one', 'two'] },
+          query: { schema: 'v2', actionsSchema: 'v2', sections: 'summary,actions', tag: ['one', 'two'] },
         },
       },
     ]);
+  });
+
+  it('reads entities.context as v2 by default; schema "v1" is the escape (c761 §9)', async () => {
+    const transport = new RecordingTransport();
+    const router = new Tm8ToolRouter(transport);
+    const id = '019fa297-64e3-7000-8000-000000000001';
+    await router.call('tm8_read', { operation: 'entities.context', params: { id } });
+    await router.call('tm8_read', { operation: 'entities.context', params: { id }, query: { schema: 'v1' } });
+    expect(transport.calls.map((call) => call.options.query?.schema)).toEqual(['v2', 'v1']);
+  });
+
+  it('runs an expandOp passed back verbatim: path params split out by the catalog path (c904 Q19)', async () => {
+    const transport = new RecordingTransport();
+    const router = new Tm8ToolRouter(transport);
+    const id = '019fa297-64e3-7000-8000-000000000001';
+    const page = await router.call('tm8_read', {
+      expandOp: { operation: 'entities.context', params: { id, sections: ['assignment'], offset: 15342 } },
+    });
+    expect(page.isError).toBeUndefined();
+    await router.call('tm8_read', {
+      expandOp: { operation: 'actions.list', params: { contextEntityId: id, schema: 'v2' } },
+    });
+    expect(transport.calls).toEqual([
+      {
+        operation: 'entities.context',
+        options: { params: { id }, query: { schema: 'v2', actionsSchema: 'v2', sections: 'assignment', offset: '15342' } },
+      },
+      { operation: 'actions.list', options: { query: { schema: 'v2', contextEntityId: id } } },
+    ]);
+    const mixed = await router.call('tm8_read', {
+      operation: 'entities.context',
+      expandOp: { operation: 'entities.context', params: { id } },
+    });
+    expect(mixed.isError).toBe(true);
+    const missing = await router.call('tm8_read', { expandOp: { operation: 'entities.context', params: {} } });
+    expect(missing.isError).toBe(true);
+    expect(transport.calls).toHaveLength(2);
   });
 
   it('asks for tm8.actions.v2 rows by default, and honours a shape the model names', async () => {
