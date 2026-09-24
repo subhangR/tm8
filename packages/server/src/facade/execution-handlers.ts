@@ -266,6 +266,28 @@ function renderMemories(
  * it means that group's defaults.
  */
 export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
+  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds } =
+    await invalidSelectionIds(q, spaceId, selection);
+  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0) return;
+  const named = [
+    ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
+    ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
+    ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
+  ].join('; ');
+  throw fail(
+    'invalid_input',
+    'selection names entities that are not live memories/skills/references '
+      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
+    { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
+  );
+}
+
+/** Per group, the selected ids that are not live, readable entities of that group's kind in this space. */
+async function invalidSelectionIds(
+  q: Querier,
+  spaceId: string,
+  selection: SpawnSelection,
+): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[] }> {
   const memoryIds = selection.memoryIds ?? [];
   const skillIds = selection.skillIds ?? [];
   const referenceIds = selection.referenceIds ?? [];
@@ -281,18 +303,39 @@ export async function assertSelectionIds(q: Querier, spaceId: string, selection:
   const badMemoryIds = bad(memoryIds, (kind) => kind === 'memory');
   const badSkillIds = bad(skillIds, (kind) => kind === 'skill');
   const badReferenceIds = bad(referenceIds, (kind) => REFERENCE_KINDS.has(kind ?? ''));
-  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0) return;
-  const named = [
-    ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
-    ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
-    ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
-  ].join('; ');
-  throw fail(
-    'invalid_input',
-    'selection names entities that are not live memories/skills/references '
-      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
-    { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
-  );
+  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds };
+}
+
+/**
+ * A resume's replayed selection with every id that no longer resolves left
+ * out, and each one recorded `unavailable`. The groups stay exactly as the
+ * launch named them, so a group that was selected stays selected even when
+ * nothing in it survives.
+ */
+async function pruneReplayedSelection(
+  q: Querier,
+  spaceId: string,
+  selection: SpawnSelection,
+): Promise<{ selection: SpawnSelection; dropped: ContextDrop[] }> {
+  const bad = await invalidSelectionIds(q, spaceId, selection);
+  const dropped: ContextDrop[] = [
+    ...bad.memoryIds.map((entityId) => ({ entityId, kind: 'memory', group: 'memories' as const, reason: 'unavailable' as const })),
+    ...bad.skillIds.map((entityId) => ({ entityId, kind: 'skill', group: 'skills' as const, reason: 'unavailable' as const })),
+    ...bad.referenceIds.map((entityId) => ({ entityId, kind: 'reference', group: 'references' as const, reason: 'unavailable' as const })),
+  ];
+  const keep = (ids: string[] | undefined, gone: string[]): string[] | undefined =>
+    ids === undefined ? undefined : ids.filter((id) => !gone.includes(id));
+  const memoryIds = keep(selection.memoryIds, bad.memoryIds);
+  const skillIds = keep(selection.skillIds, bad.skillIds);
+  const referenceIds = keep(selection.referenceIds, bad.referenceIds);
+  return {
+    selection: {
+      ...(memoryIds ? { memoryIds } : {}),
+      ...(skillIds ? { skillIds } : {}),
+      ...(referenceIds ? { referenceIds } : {}),
+    },
+    dropped,
+  };
 }
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
@@ -434,8 +477,17 @@ export class DbGraphPort implements GraphPort {
       // the legacy jsonb remainder. Each selection group is independent: one
       // the selection omits keeps its defaults. Validated first, so a bad id
       // refuses by name.
-      const selection = input.selection;
-      if (selection) await assertSelectionIds(q, input.spaceId, selection);
+      // A resume's replay is pruned rather than refused (see
+      // `LoadSpawnContextInput.selectionReplay`); a launch's is refused by name.
+      let selection = input.selection;
+      const unavailableDrops: ContextDrop[] = [];
+      if (selection && input.selectionReplay) {
+        const pruned = await pruneReplayedSelection(q, input.spaceId, selection);
+        selection = pruned.selection;
+        unavailableDrops.push(...pruned.dropped);
+      } else if (selection) {
+        await assertSelectionIds(q, input.spaceId, selection);
+      }
       const selectedMemoryIds = selection?.memoryIds;
       const memoriesSelected = selectedMemoryIds !== undefined;
       const requestedIds = selectedMemoryIds ?? input.memoryIds ?? [];
@@ -867,7 +919,7 @@ export class DbGraphPort implements GraphPort {
           ],
           memoryVia: injectedMemories.via,
           ...(selectionOnlySkillIds.length > 0 ? { selectionOnlySkillIds } : {}),
-          dropped: [...memoryDrops, ...referenceDrops],
+          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops],
           // A memory selection replaces the legacy jsonb remainder too; it has no ids.
           ...(memoriesSelected && Array.isArray(member.memories) && member.memories.length > 0
             ? { legacyMemoriesDropped: member.memories.length }
@@ -1204,6 +1256,8 @@ export class DbGraphPort implements GraphPort {
       credential_sources: unknown;
       space_credential_ids: unknown;
       harness_choice: unknown;
+      selection: unknown;
+      selection_reasons: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
@@ -1211,7 +1265,9 @@ export class DbGraphPort implements GraphPort {
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
               sm.manifest #>  '{launch,credentialSources}' as credential_sources,
               sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids,
-              sm.manifest #>  '{launch,harnessChoice}'     as harness_choice
+              sm.manifest #>  '{launch,harnessChoice}'     as harness_choice,
+              sm.manifest #>  '{launch,selection}'         as selection,
+              sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -3386,6 +3442,9 @@ export function sessionLaunchPostureFromRecord(row: {
   credential_sources: unknown;
   space_credential_ids: unknown;
   harness_choice: unknown;
+  /** Resume's read carries these; the Forms spawn's does not (a new session never replays them). */
+  selection?: unknown;
+  selection_reasons?: unknown;
 }): SessionLaunchPosture {
   const storedCredentialSources =
     typeof row.credential_sources === 'object' &&
@@ -3422,5 +3481,9 @@ export function sessionLaunchPostureFromRecord(row: {
     ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
       ? { harnessChoice: row.harness_choice as Record<string, unknown> }
       : {}),
+    // The launch's selection, for resume to replay. Parsed there with the
+    // contract's own schemas; a malformed one is not replayed.
+    ...(row.selection != null ? { selection: row.selection } : {}),
+    ...(row.selection_reasons != null ? { selectionReasons: row.selection_reasons } : {}),
   };
 }

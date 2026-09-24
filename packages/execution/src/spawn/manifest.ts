@@ -1823,6 +1823,10 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // Passed through untouched; absent stays absent so a launch without
       // Ask Jev writes the same manifest it always did.
       ...(request.jevRunId ? { jevRunId: request.jevRunId } : {}),
+      // Recorded so resume replays the same sets and the same audit; absent
+      // when the launch sent none, so an ordinary manifest is unchanged.
+      ...(request.selection ? { selection: structuredClone(request.selection) } : {}),
+      ...(request.selectionReasons ? { selectionReasons: { ...request.selectionReasons } } : {}),
       // Absent unless the launch UI (or the session this one continues) picked
       // a harness, so an ordinary launch writes the manifest it always wrote.
       ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),

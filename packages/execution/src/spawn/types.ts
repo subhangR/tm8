@@ -290,6 +290,13 @@ export interface LoadSpawnContextInput {
    * existed.
    */
   selection?: SpawnSelection;
+  /**
+   * `selection` is a RESUME replaying the launch's recorded selection. An id
+   * that no longer resolves is then left out and recorded `unavailable`, not
+   * refused: the resumer did not choose it, and one deleted memory must not
+   * make a session impossible to resume.
+   */
+  selectionReplay?: boolean;
 }
 
 /**
@@ -339,6 +346,13 @@ export interface SessionLaunchPosture {
    * launched with, if any. Stored JSON, so narrowed by the resolver.
    */
   harnessChoice?: Record<string, unknown> | null;
+  /**
+   * `launch.selection` / `launch.selectionReasons`, which resume replays.
+   * Stored JSON, so they are read as `unknown` and parsed with the contract's
+   * own schemas before use. A child session never inherits them.
+   */
+  selection?: unknown;
+  selectionReasons?: unknown;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -561,7 +575,13 @@ export type ContextDropReason =
    * it: a selected reference that is not one of the tasks' own links, while
    * no context index renders references (design 01a0d348 §2.2).
    */
-  | 'not-rendered';
+  | 'not-rendered'
+  /**
+   * A resume replayed the launch's selection, and this id no longer resolves
+   * (deleted, moved, or unreadable to the resumer). The rest of the selection
+   * still replays.
+   */
+  | 'unavailable';
 
 export interface ContextDrop {
   entityId: string;
@@ -1130,6 +1150,13 @@ export interface Tm8Manifest {
     command: string;
     /** The Ask Jev run this launch came from, when it came from one. Absent otherwise — never null. */
     jevRunId?: string;
+    /**
+     * The launch's `selection` and `selectionReasons`, exactly as requested.
+     * Absent when the launch sent none. Resume replays them, so a resumed
+     * session carries the same sets and the same audit as its launch.
+     */
+    selection?: SpawnSelection;
+    selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
     /**
      * The launch UI's harness pick (or the one a resume replays), when there
      * was one; claude-code lanes only. See `ResolvedLaunchConfig.harnessChoice`.

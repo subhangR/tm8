@@ -245,6 +245,23 @@ describe('each selection group is independent (design 01a0d348 §5.1)', () => {
   });
 });
 
+describe('a resume replaying the launch selection', () => {
+  it('leaves out ids that no longer resolve, recorded unavailable, instead of refusing the resume', async () => {
+    const context = await load({
+      selection: { memoryIds: [ids.mA, ids.mDeleted], skillIds: [ids.sElsewhere] },
+      selectionReplay: true,
+    });
+    expect(context.teamMember.memories).toEqual(['selected A']);
+    expect(context.skillEquips).toEqual([]);
+    const audit = manifestOf(context).context!;
+    expect(audit.groups).toMatchObject({ memories: { mode: 'selected' }, skills: { mode: 'selected' } });
+    expect(audit.dropped?.filter((d) => d.reason === 'unavailable')).toEqual([
+      { entityId: ids.mDeleted, kind: 'memory', group: 'memories', reason: 'unavailable' },
+      { entityId: ids.sElsewhere, kind: 'skill', group: 'skills', reason: 'unavailable' },
+    ]);
+  });
+});
+
 describe('without selection', () => {
   it('is the load it always was: working set, task set, legacy remainder, equipped skills, no not-selected audit', async () => {
     const context = await load();
