@@ -122,7 +122,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // reachable through the `session` noun shard like its six git siblings.
     // 195 -> 196 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is reachable through the `session`
     // noun shard like its git siblings. MEASURED from this assertion's own failing run.
-    expect(wanted).toHaveLength(220); /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // 169 -> 194 (2026-09-03): +25 containers. MEASURED. +9 skills (2026-09-23).
+    expect(wanted).toHaveLength(221); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // 169 -> 194 (2026-09-03): +25 containers. MEASURED. +9 skills (2026-09-23).
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -134,7 +134,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     }
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(swept).toBe(223); /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(swept).toBe(224); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -223,7 +223,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
     }
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(seen.size).toBe(223); /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(seen.size).toBe(224); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 
@@ -502,5 +502,32 @@ describe('help router — an unknown verb on a known noun is a usage error, not 
     const bare = invoke(['entity']);
     expect(bare.code).toBe(0);
     expect(bare.stdout).toContain('tm8.help.noun.v1');
+  });
+});
+
+/**
+ * Bug 01a0d2f1: live agents told to "tick your acceptance criteria" found no
+ * route in help, then paid a 29.5 KB `entity get` to learn the write key.
+ * These pin the route from every door they tried.
+ */
+describe('acceptance criteria: help routes to `task tick` (bug 01a0d2f1)', () => {
+  it('--query ranks entities.commands.tick FIRST for the phrasings agents used', () => {
+    for (const q of ['tick acceptance criterion', 'mark acceptance criteria done', 'check off criteria']) {
+      const top = searchHelp(q).matches[0];
+      expect(top?.operation, q).toBe('entities.commands.tick');
+      expect(top?.command, q).toBe('task tick');
+    }
+  });
+
+  it('`tm8 help task complete` names the tick verb and where the ids live', () => {
+    const notes = commandHelp(['task', 'complete'])?.notes.join('\n') ?? '';
+    expect(notes).toContain('tm8 task tick <task-id> <criterion-id>... --expect-version <n>');
+    expect(notes).toContain('tm8 entity context <task-id>');
+  });
+
+  it('`tm8 help task tick` is a command shard with the merge-by-id syntax', () => {
+    const shard = commandHelp(['task', 'tick']);
+    expect(shard?.syntax).toContain('tm8 task tick <task-id> <criterion-id>... --expect-version <n> [--untick]');
+    expect(shard?.operations).toEqual(['entities.commands.tick']);
   });
 });

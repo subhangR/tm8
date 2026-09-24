@@ -71,7 +71,7 @@ function gateText(gate: unknown): string[] {
 /** Keys rendered by name below; anything else falls through to `key: value`. */
 const KNOWN = new Set([
   'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq', 'priority', 'gate', 'assignees',
-  'parent', 'assignment', 'acceptance', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
+  'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
   'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'budget',
 ]);
 
@@ -114,6 +114,8 @@ export function renderContextBrief(view: Row): string {
     const criteria = rows(view['acceptance']);
     out.push(`acceptance ${criteria.filter((c) => c['done'] === true).length}/${criteria.length}:`);
     for (const c of criteria) out.push(`  [${c['done'] === true ? 'x' : ' '}] ${str(c['id'])} ${str(c['text'])}`);
+    const write = view['acceptanceWrite'];
+    if (isRow(write)) out.push(`  tick: ${str(write['write'])}`);
   }
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
     if (view[key] === undefined) continue;

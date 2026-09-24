@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(223); /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(rows.length).toBe(224); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -406,6 +406,7 @@ const kebab = (s: string): string => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').to
  */
 const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   confirm: '--yes, the §7.5 destructive confirmation (interaction-profile activate|retire set body.confirm from it)',
+  done: '--untick, which sets done:false for `task tick`; ticking is the default (2026-09-24)',
   enabled: '--off, which sets enabled:false for `entity react`',
   isNodeAdmin: '--node-admin, which sets isNodeAdmin:true for `auth signup` (2026-08-02)',
   // execution.gitCommit is a deliberately COMMANDLESS catalog row (the CLI

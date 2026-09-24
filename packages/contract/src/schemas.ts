@@ -80,6 +80,7 @@ import type {
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
+  TickCriteriaInput,
   GraphEdgeView, GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -2529,6 +2530,13 @@ export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
   gate: z.enum(['none', 'pr_merged']),
 }).strict();
 
+export const TickCriteriaInputSchema: z.ZodType<TickCriteriaInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().finite(),
+  criterionIds: z.array(z.string().min(1)).min(1),
+  done: z.boolean().optional(),
+}).strict();
+
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -3875,6 +3883,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
     expandOp: ContextExpandOpSchema.optional(),
   }).strict().optional(),
   acceptance: z.array(z.object({ id: z.string(), done: z.boolean(), text: z.string() }).strict()).optional(),
+  acceptanceWrite: z.object({ write: z.string(), writeOp: ContextExpandOpSchema }).strict().optional(),
   blockers: z.array(z.object({
     id: EntityIdSchema,
     title: z.string(),

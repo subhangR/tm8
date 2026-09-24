@@ -141,6 +141,23 @@ describe('gate failures (§9.5)', () => {
     expect(r.next).toBe(`tm8 entity context ${TASK}`);
   });
 
+  it('bug 01a0d2f1: `next` is the filled-in tick — every unticked id, the version the read saw', () => {
+    const r = inBudget(errorReceipt(gateError('acceptance_criteria_incomplete'), input(), { criteria, version: 5 }));
+    const open = criteria.filter((c) => !c.done).map((c) => c.id);
+    expect(open).toHaveLength(12);
+    // ALL twelve ids, although incomplete[] shows ten: the command clears the gate.
+    expect(r.next).toBe(`tm8 task tick ${TASK} ${open.join(' ')} --expect-version 5`);
+    expect((r.error.incomplete as { id: string }[]).map((row) => row.id)).toEqual(open.slice(0, r.error.incomplete.length));
+  });
+
+  it('bug 01a0d2f1: no version or no ids from the read — `next` stays the read, never a guess', () => {
+    const noVersion = errorReceipt(gateError('acceptance_criteria_incomplete'), input(), { criteria });
+    expect(noVersion?.next).toBe(`tm8 entity context ${TASK}`);
+    const noIds = errorReceipt(gateError('acceptance_criteria_incomplete'), input(),
+      { criteria: [{ text: 'no id', done: false }], version: 5 });
+    expect(noIds?.next).toBe(`tm8 entity context ${TASK}`);
+  });
+
   it('two short criteria keep their full text and no truncated mark', () => {
     const short = [
       { text: 'Evidence archive verified by an independent re-run', done: false },
@@ -442,9 +459,12 @@ describe('commands: error receipts on stdout, stderr and exit unchanged (D4.1)',
     ]);
     expect(oneLine(r.stdout).error).toMatchObject({
       reason: 'acceptance_criteria_incomplete',
-      incomplete: [{ index: 0, text: criteria[0]!.text }, { index: 2, text: criteria[2]!.text }],
+      incomplete: [{ id: 'a', index: 0, text: criteria[0]!.text }, { id: 'c', index: 2, text: criteria[2]!.text }],
       incompleteCount: 2,
     });
+    // bug 01a0d2f1: the refusal carries the exact write that clears it.
+    expect(oneLine(r.stdout).next).toBe(`tm8 task tick ${TASK} a c --expect-version 2`);
+    expect(r.stderr).toContain(`tick them first: tm8 task tick ${TASK} <criterion-id>... --expect-version <n>`);
 
     // --full pays for no read.
     seen = [];

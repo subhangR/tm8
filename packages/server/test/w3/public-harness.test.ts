@@ -54,7 +54,7 @@ describe.sequential('W3 production-Server public harness', () => {
       // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
       // 197 -> 206 (2026-09-23): nine skills.* rows, all mounted. MEASURED off /health.
       // 206 -> 207 (2026-09-23, Jev lane F #655): launch.suggest, mounted as a placeholder. MEASURED from CI's failing run.
-      operations: 221, /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
+      operations: 222, /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -77,7 +77,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // first, which is the distinction these two pins exist to keep visible.
     // 193 -> 194 (2026-09-19, Changes screen Phase 1: execution.gitStage, one public v1 POST, mounted with a real facade handler. MEASURED from this file's own failing run, not derived.)
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): both new commands ship a real handler. MEASURED on the merged tree from this assertion's own failing run.
-    expect(body.implemented).toBe(219); // +10 SC-3 space/node credential ops, MEASURED; +3 service keys (Jev lane K), MEASURED; +1 launch.suggest placeholder (Jev lane F #655), MEASURED; +9 skills.* (2026-09-23), MEASURED; /* +1 events.changes (change feed step 3). MEASURED. */ // +24 (177): the container handlers
+    expect(body.implemented).toBe(220); // +10 SC-3 space/node credential ops, MEASURED; +3 service keys (Jev lane K), MEASURED; +1 launch.suggest placeholder (Jev lane F #655), MEASURED; +9 skills.* (2026-09-23), MEASURED; /* +1 events.changes (change feed step 3). MEASURED. */ // +24 (177): the container handlers /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

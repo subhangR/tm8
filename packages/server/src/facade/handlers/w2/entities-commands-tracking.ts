@@ -37,6 +37,7 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.commands.complete': commandsComplete(deps),
     'entities.commands.work': commandsWork(deps),
     'entities.commands.gate': commandsGate(deps),
+    'entities.commands.tick': service.tickCriteria,
     'entities.commands.pull': service.pull,
     'entities.commands.linkPr': service.linkPr,
     'entities.commands.linkCommit': service.linkCommit,

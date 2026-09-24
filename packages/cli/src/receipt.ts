@@ -48,6 +48,7 @@ export const ROW_CAP = 16;
 
 export const RECEIPT_OPS = [
   'task.complete',
+  'task.tick',
   'task.transition',
   'task.link-pr',
   'task.link-commit',
@@ -260,6 +261,17 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
       if (id !== undefined && to !== undefined && completers.has(to)) {
         refs.push({ kind: 'edge', type: 'completed_by', id, to });
       }
+    }
+  }
+
+  if (op === 'task.tick') {
+    // What is still open after this write: `open` empty means `task complete`
+    // at `version.to` clears the criteria gate.
+    const criteria = rec(entity.content).acceptanceCriteria;
+    if (Array.isArray(criteria)) {
+      const open = criteria.filter((c) => isRecord(c) && c.done !== true).map((c) => str(rec(c).id) ?? '');
+      receipt.acceptance = { done: criteria.length - open.length, total: criteria.length };
+      receipt.open = capped(open, 'open', receipt);
     }
   }
 

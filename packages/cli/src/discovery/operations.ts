@@ -943,9 +943,28 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['done', 'finish', 'complete'],
     notes: [
       'it alone checks acceptance criteria and writes completer relationships, activity, and awards',
+      'unticked criteria refuse it (acceptance_criteria_incomplete); tick them first with `tm8 task tick <task-id> <criterion-id>... --expect-version <n>` — ids are in the acceptance section of `tm8 entity context <task-id>`',
       '`task transition <id> done` is refused with invariant_violation / use_complete_command',
     ],
     examples: ['tm8 task complete <task-id> --expect-version <n> --by <actor-id>'],
+  },
+  'entities.commands.tick': {
+    cmd: ['task', 'tick'],
+    syn: 'tm8 task tick <task-id> <criterion-id>... --expect-version <n> [--untick] [--mutation-id <id>]',
+    sum: 'Tick (or --untick) acceptance criteria by id — the write the task complete criteria gate asks for',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['tick', 'untick', 'acceptance', 'criteria', 'criterion', 'checklist', 'check'],
+    notes: [
+      'merges by criterion id on the Server: criteria not named are left as stored, so the whole acceptanceCriteria list is never restated',
+      'an id the task does not carry is refused with the ids it does carry',
+      'ids and the version are in `tm8 entity context <task-id>` (acceptance, acceptanceWrite)',
+    ],
+    examples: [
+      'tm8 task tick <task-id> f1 f2 --expect-version <n>',
+      'tm8 task tick <task-id> f2 --untick --expect-version <n>',
+    ],
   },
   'entities.commands.work': {
     cmd: ['task', 'transition'],
@@ -2746,7 +2765,8 @@ export const CATALOG_DIGEST =
   // regenerated conformance manifest's catalogDigest.
   // Re-measured 2026-09-23, SC-3: + credentials.space.* and node.credentials.*.
   // Read out of the failing digest test and matched to the regenerated manifest.
-  'sha256:c259c4841f92fbcf33c913bf41284282d771c428c60fdf5fdf4c1da70063a091'; // Re-measured (change feed step 3): + events.changes; matched to the regenerated manifest.
+  // Re-measured (bug 01a0d2f1): + entities.commands.tick; matched to the regenerated manifest.
+  'sha256:1b1faa046bec1bba7a64797f80759ae65fb0f5d9d42313e237c80019287f1760';
 
 export const GRAMMAR_VERSION = '2';
 

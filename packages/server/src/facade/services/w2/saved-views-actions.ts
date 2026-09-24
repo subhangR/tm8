@@ -243,6 +243,7 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
     case 'entities.points.add':
       return live && (row.kind === 'member' || row.kind === 'team_member');
     case 'entities.commands.complete':
+    case 'entities.commands.tick':
       return live && row.kind === 'task' && row.work_status !== 'done';
     case 'entities.commands.work':
       return live && row.kind === 'task';
@@ -400,6 +401,7 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
         return [
           'entities.commands.complete',
           'messages.post',
+          'entities.commands.tick',
           'entities.commands.linkPr',
           'entities.commands.linkCommit',
           'entities.patch',
@@ -420,6 +422,7 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
         'execution.dispatch',
         'entities.context',
         'entities.commands.complete',
+        'entities.commands.tick',
       ];
     case 'message':
       return [

@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 223; // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 224; /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 219, composite: 1, internal: 1, reserved: 2 }); /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 220, composite: 1, internal: 1, reserved: 2 }); /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
 
@@ -346,6 +346,7 @@ describe('the CLI command projection', () => {
       'task import-issue',
       'task link-commit',
       'task link-pr',
+      'task tick',
       'task transition',
     ]);
   });
@@ -609,6 +610,7 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'entities.move': 'MoveEntityInputSchema',
   'entities.commands.complete': 'CompleteTaskInputSchema',
   'entities.commands.gate': 'GateTaskInputSchema',
+  'entities.commands.tick': 'TickCriteriaInputSchema',
   'messages.edit': 'PatchMessageInputSchema',
   'messages.delete': 'DeleteMessageInputSchema',
   'messages.attachments.add': 'AddMessageAttachmentsInputSchema',
@@ -768,7 +770,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Every mapped guard DTO is required.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(31);
+    expect(swept).toBe(32); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -820,6 +822,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['entities.move', '--expect-version', 'expectedVersion'],
     ['entities.commands.complete', '--expect-version', 'expectedVersion'],
     ['entities.commands.gate', '--expect-version', 'expectedVersion'],
+    ['entities.commands.tick', '--expect-version', 'expectedVersion'],
     ['messages.edit', '--expect-version', 'expectedVersion'],
     ['messages.delete', '--expect-version', 'expectedVersion'],
     ['messages.attachments.add', '--expect-version', 'expectedVersion'],
@@ -898,7 +901,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(32);
+    expect(actual.length).toBe(33); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

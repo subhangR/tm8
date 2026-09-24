@@ -127,6 +127,10 @@ export const OPERATIONS = [
   { name: 'entities.commands.linkPr',     method: 'POST', path: '/v2/entities/:id/commands/link-pr',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkCommit', method: 'POST', path: '/v2/entities/:id/commands/link-commit',    kind: 'command', status: 'v1' },
   { name: 'entities.commands.gate',       method: 'POST', path: '/v2/entities/:id/commands/gate',           kind: 'command', status: 'v1' },
+  // Tick (or untick) acceptance criteria BY ID — a merge the Server does, so a
+  // caller never restates the whole `acceptanceCriteria` array to change one
+  // `done`. The write `task complete`'s criteria gate asks for.
+  { name: 'entities.commands.tick',       method: 'POST', path: '/v2/entities/:id/commands/tick',           kind: 'command', status: 'v1' },
   { name: 'tracking.refresh',        method: 'POST',   path: '/v2/tracking/refresh',                        kind: 'command', status: 'v1' },
   // The forge WRITE door — one verb, guarded server-side (open + mergeable per
   // observed facts, CI not red, head unchanged), acting-member credential only.

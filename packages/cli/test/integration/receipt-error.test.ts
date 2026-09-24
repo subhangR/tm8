@@ -247,13 +247,32 @@ describe('gate failures (§9.5)', () => {
     expect(rows.map((row) => row.index)).toEqual([0, 2]);
     expect(rows[0]!.text).toBe(criteria[0]!.text);
     expect(Array.from(rows[1]!.text)).toHaveLength(80);
-    expect(receipt.next).toBe(`tm8 entity context ${id}`);
+    // Bug 01a0d2f1: `next` is the WRITE that clears the refusal, filled in —
+    // the criteria ids the Server minted and the version the read saw.
+    expect((rows as unknown as { id: string }[]).map((row) => row.id)).toEqual(['ac_1', 'ac_3']);
+    expect(receipt.next).toBe(`tm8 task tick ${id} ac_1 ac_3 --expect-version ${v}`);
 
-    // --full: the same refusal, no read.
+    // Run it VERBATIM, then complete at the version its receipt names: the
+    // whole tick-and-complete flow with no help call and no `entity get`.
+    const tick = await cli([...String(receipt.next).split(' ').slice(1), '--format', 'json'], server, agent());
+    expect(tick.code, tick.stderr).toBe(0);
+    const ticked = JSON.parse(tick.stdout) as Json;
+    expect(ticked).toMatchObject({ ok: true, op: 'task.tick', acceptance: { done: 3, total: 3 }, open: [] });
+    const to = (ticked.version as { to: number }).to;
+    const done = await cli(['task', 'complete', id, '--expect-version', String(to), '--by', memberId, '--format', 'json'], server, agent());
+    expect(done.code, done.stderr).toBe(0);
+    const flowChars = [r, tick, done].reduce((n, x) => n + x.stdout.length + x.stderr.length, 0);
+    sizes.push(`tick-and-complete flow (refusal -> next -> complete): ${flowChars} chars over 3 tm8 calls, 0 help calls`);
+
+    // --full: the same refusal, no read — and stderr still names the verb.
+    const again = await createFull('task', 'Error fixture gate criteria full');
+    const repatched = await cli(['entity', 'update', again, '--expect-version', String(await versionOf(again)), '--content', JSON.stringify({ acceptanceCriteria: criteria }), '--format', 'json', '--full'], server);
+    expect(repatched.code, repatched.stderr).toBe(0);
     wire = [];
-    const full = await cli(['task', 'complete', id, '--expect-version', String(v), '--by', memberId, '--format', 'json', '--full'], server, agent({ TM8_BASE_URL: proxyUrl }));
+    const full = await cli(['task', 'complete', again, '--expect-version', String(await versionOf(again)), '--by', memberId, '--format', 'json', '--full'], server, agent({ TM8_BASE_URL: proxyUrl }));
     expect(full.code).toBe(6);
     expect(wire).toHaveLength(1);
+    expect(full.stderr).toContain(`tick them first: tm8 task tick ${again} <criterion-id>...`);
   }, 120_000);
 
   it('pr_merged gate: gate_no_tracked_pr, then gate_pr_unmerged_or_ci_red with prs[]', async () => {

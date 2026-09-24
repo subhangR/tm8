@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:c259c4841f92fbcf33c913bf41284282d771c428c60fdf5fdf4c1da70063a091",
+  "catalogDigest": "sha256:1b1faa046bec1bba7a64797f80759ae65fb0f5d9d42313e237c80019287f1760",
   "catalog": {
-    "total": 223,
-    "v1": 221,
+    "total": 224,
+    "v1": 222,
     "reserved": 2,
-    "http": 221,
+    "http": 222,
     "ws": 1,
-    "registerableV1Http": 219,
+    "registerableV1Http": 220,
     "methods": {
       "GET": 74,
-      "POST": 107,
+      "POST": 108,
       "PATCH": 14,
       "DELETE": 14,
       "PUT": 12,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 78,
-      "command": 143,
+      "command": 144,
       "stream": 2
     },
-    "uniqueNames": 223,
-    "uniqueBindings": 222
+    "uniqueNames": 224,
+    "uniqueBindings": 223
   },
   "reservedOperations": [
     "search.query",
@@ -645,6 +645,13 @@
         "operation": "entities.commands.gate",
         "method": "POST",
         "path": "/v2/entities/:id/commands/gate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.tick",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/tick",
         "status": "registered",
         "source": "server-router"
       },
@@ -1965,7 +1972,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 191
+    "unimplementedV1Http": 192
   },
   "schemas": {
     "additive": {
@@ -3189,6 +3196,23 @@
           "entities",
           "commands",
           "gate"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.tick",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.tick",
+        "intentTags": [
+          "entities",
+          "commands",
+          "tick"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
