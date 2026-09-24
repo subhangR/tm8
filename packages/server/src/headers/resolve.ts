@@ -9,6 +9,12 @@
  *
  * Bodies never leave Postgres whole: text is cut in SQL to what the header
  * needs, and `bytes` is `octet_length` of the body a load would bring in.
+ *
+ * Authored headers (`entity_headers`, migration 216) are a left join in the
+ * same statement, under the same RLS (`internal.entity_readable`), so a header
+ * is exactly as visible as its entity. Staleness is computed here, never
+ * stored: the entity's version moved past the pinned one, or, for artifacts
+ * and files, the body ref did.
  */
 import { SELECTION_HEADER_KINDS, type SelectionHeader } from '@tm8/contract';
 
@@ -54,6 +60,10 @@ interface HeaderRow {
   collection_name: string | null;
   collection_description: string | null;
   collection_members: Record<string, number | string> | null;
+  header_when_to_use: string | null;
+  header_summary: string | null;
+  header_keywords: string[] | null;
+  header_stale: boolean | null;
 }
 
 const L = HEADER_TEXT_LIMIT;
@@ -102,7 +112,15 @@ const HEADER_SQL = `
               where ce.src_id = e.id and ce.type = 'contains'
               group by me.kind
            ) member
-         ) end as collection_members
+         ) end as collection_members,
+         eh.when_to_use as header_when_to_use,
+         eh.summary as header_summary,
+         eh.keywords as header_keywords,
+         case when eh.entity_id is null then null else (
+           eh.pinned_version <> e.version
+           or (e.kind = 'artifact' and eh.pinned_ref is distinct from art.current_revision_id::text)
+           or (e.kind = 'file' and eh.pinned_ref is distinct from f.checksum_sha256)
+         ) end as header_stale
     from public.entities e
     left join public.skills sk        on e.kind = 'skill'       and sk.entity_id = e.id
     left join public.memories memo    on e.kind = 'memory'      and memo.entity_id = e.id
@@ -114,6 +132,7 @@ const HEADER_SQL = `
     left join public.files f          on e.kind = 'file'        and f.entity_id = e.id
     left join public.tasks t          on e.kind = 'task'        and t.entity_id = e.id
     left join public.collections col  on e.kind = 'collection'  and col.entity_id = e.id
+    left join public.entity_headers eh on eh.entity_id = e.id
    where e.id = any($2::uuid[]) and e.space_id = $1 and e.deleted_at is null
      and e.kind = any($3::text[])`;
 
@@ -149,12 +168,15 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
   }
 }
 
-/**
- * Authored headers, keyed by entity id. The seam for `entity_headers` (I3):
- * until that table exists there are none, and every header is native or derived.
- */
-async function loadAuthored(_q: Querier, _spaceId: string, _ids: readonly string[]): Promise<Map<string, AuthoredHeader>> {
-  return new Map();
+/** The row's `entity_headers` columns, when it has one. */
+function authoredOf(row: HeaderRow): AuthoredHeader | null {
+  if (row.header_stale == null) return null;
+  return {
+    whenToUse: row.header_when_to_use,
+    summary: row.header_summary,
+    keywords: row.header_keywords ?? [],
+    stale: row.header_stale,
+  };
 }
 
 /**
@@ -166,13 +188,12 @@ export async function resolveHeaders(q: Querier, spaceId: string, ids: readonly 
   const out = new Map<string, SelectionHeader>();
   if (wanted.length === 0) return out;
   const rows = await q.query<HeaderRow>(HEADER_SQL, [spaceId, wanted, [...SELECTION_HEADER_KINDS]]);
-  const authored = await loadAuthored(q, spaceId, wanted);
   for (const row of rows) {
     const facts = factsOf(row);
     if (!facts) continue;
     // `titleOf` reads only the kind and that kind's own name column, all selected above.
     const name = titleOf({ ...row, deleted_at: null } as unknown as EntityRow);
-    out.set(row.id, deriveHeader({ id: row.id, name }, facts, authored.get(row.id)));
+    out.set(row.id, deriveHeader({ id: row.id, name }, facts, authoredOf(row)));
   }
   return out;
 }
