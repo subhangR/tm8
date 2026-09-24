@@ -55,6 +55,7 @@ import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
+import type { ReadAdmission } from './read-admission.js';
 import {
   isHandlerResult,
   type HandlerResult,
@@ -144,6 +145,12 @@ export interface FacadeServerOptions {
    * harness that legitimately floods `auth.login`.
    */
   readonly authRateLimiter?: AuthRateLimiter | null;
+  /**
+   * Caps concurrent catalog `kind: 'read'` operations below the pool size so
+   * a wave of reads cannot starve commands of a connection (read-admission.ts).
+   * Absent: no cap, the historical behaviour (tests, database-less nodes).
+   */
+  readonly readAdmission?: ReadAdmission;
 }
 
 export interface FacadeServer {
@@ -214,6 +221,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     // The base is a placeholder: only pathname + search are ever read from it.
     const url = new URL(req.url ?? '/', 'http://tm8.invalid');
     const pathname = url.pathname;
+    // Held for the whole of a catalog read, released however it ends.
+    let releaseRead: (() => void) | undefined;
 
     try {
       // Artifact previews dispatch BEFORE checkTransport, deliberately — but
@@ -350,6 +359,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // limiter only guards the auth operations and needs `opName` to know.
       authRateLimiter?.check(match.opName, wsClientKey(req), body);
 
+      // BEFORE identity resolution too: resolution itself takes a pooled
+      // connection (`resolve_auth_session`/`touch_auth_session`), and a queued
+      // read must not hold one while it waits. Commands never wait here.
+      if (opts.readAdmission && match.op.kind === 'read') {
+        releaseRead = await opts.readAdmission.acquire();
+      }
+
       let identity: Awaited<ReturnType<typeof resolveIdentity>>;
       try {
         identity = await resolveIdentity(req.headers, {
@@ -428,6 +444,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       writeResult(res, requestId, result);
     } catch (err) {
       sendWireError(res, err, requestId);
+    } finally {
+      releaseRead?.();
     }
   }
 

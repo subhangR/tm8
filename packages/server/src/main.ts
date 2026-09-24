@@ -65,6 +65,7 @@ import {
 } from './http/config.js';
 import { createArtifactPreviewHandler, createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
+import { ReadAdmission, readLimitForPool } from './http/read-admission.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
@@ -675,6 +676,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // probe that goes red when the pool is exhausted, which is the one outage
     // /health has actually failed to report.
     ...(db ? { healthProbe: async () => { await db.query({ nodeAdmin: false }, 'select 1'); } } : {}),
+    // A quarter of the pool is held back from catalog reads so a UI re-read
+    // wave cannot starve spawn/complete of a connection (read-admission.ts).
+    ...(db ? { readAdmission: new ReadAdmission({ limit: readLimitForPool(config.dbPoolMax ?? 8) }) } : {}),
     ...(identityResolver ? { identityResolver } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
