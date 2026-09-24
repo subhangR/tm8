@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readManifest } from '../../src/manifest.js';
 import { composePrompt } from '../../src/prompt.js';
-import { BYTE_BUDGETS, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
 
 const V2 = fileURLToPath(new URL('../fixtures/manifest.v2.json', import.meta.url));
 const V1 = fileURLToPath(new URL('../fixtures/manifest.sample.json', import.meta.url));
@@ -95,5 +95,20 @@ describe('a v1 manifest still boots', () => {
     expect(system).toContain('<tm8_system_prompt');
     expect(system).toContain('<name>Phoenix</name>');
     expect(system).not.toContain('<trusted_control');
+  });
+});
+
+describe('promptVersion (spec ca8d §6.3)', () => {
+  it('is read from both manifest versions and carried into the envelope metadata', () => {
+    for (const path of [V1, V2]) {
+      const manifest = readManifest(path);
+      expect(manifest.promptVersion, path).toBe('1');
+      expect(composePrompt(manifest).metadata.promptVersion, path).toBe('1');
+    }
+  });
+
+  it('a manifest written before the stamp reads as the default frame', () => {
+    const { promptVersion: _dropped, ...unstamped } = readManifest(V1);
+    expect(composePrompt(unstamped).metadata.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
   });
 });

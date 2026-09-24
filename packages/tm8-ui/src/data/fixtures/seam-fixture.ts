@@ -540,6 +540,7 @@ function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
     unavailableReason: null,
     manifest: {
       manifestVersion: '1',
+      promptVersion: '1',
       sessionId,
       spaceId: FIXTURE_SPACE_ID,
       generatedAt: new Date(FIXTURE_BASE_MS - 60_000).toISOString(),

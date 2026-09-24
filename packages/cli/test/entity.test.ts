@@ -26,7 +26,7 @@
  * hand-wrote a URL, or bound the wrong operation name, the command and the
  * catalog disagree and the row fails.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -708,6 +708,36 @@ describe('entity context', () => {
       const r = await drive(argv);
       expect(r.code, argv.join(' ')).toBe(2);
       expect(seen).toHaveLength(0);
+    }
+  });
+
+  it('journals the schemaVersion the Server returned (spec ca8d §6.3)', async () => {
+    const { journal } = await import('../src/journal.js');
+    const noted = vi.spyOn(journal, 'noteContextRead');
+    try {
+      reply = {
+        status: 200,
+        body: { data: { schemaVersion: 'tm8.entity-context.v1', root: { id: ENT } }, requestId: 'req_t' },
+      };
+      const r = await drive(['entity', 'context', ENT, '--format', 'json']);
+      expect(r.code).toBe(0);
+      expect(noted).toHaveBeenCalledTimes(1);
+      expect(noted).toHaveBeenCalledWith('tm8.entity-context.v1');
+    } finally {
+      noted.mockRestore();
+    }
+  });
+
+  it('journals null — never skips the read — when the response names no schemaVersion', async () => {
+    const { journal } = await import('../src/journal.js');
+    const noted = vi.spyOn(journal, 'noteContextRead');
+    try {
+      reply = { status: 200, body: { data: { root: { id: ENT } }, requestId: 'req_t' } };
+      const r = await drive(['entity', 'context', ENT, '--format', 'json']);
+      expect(r.code).toBe(0);
+      expect(noted).toHaveBeenCalledWith(null);
+    } finally {
+      noted.mockRestore();
     }
   });
 

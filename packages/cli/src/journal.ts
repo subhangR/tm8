@@ -82,6 +82,12 @@ export interface Journal {
   noteStdin(chars: number): void;
   /** One HTTP call, recorded by the client's single `send()` chokepoint. */
   noteCall(call: JournalCallInput): void;
+  /**
+   * An `entity context` read and the `schemaVersion` it returned (`null` when
+   * the response carried none). Recorded so metrics can split reads by the
+   * context shape the agent saw (spec ca8d §6.3).
+   */
+  noteContextRead(schemaVersion: string | null): void;
   /** Append the record. Safe to call more than once; only the first writes. */
   finish(outcome: { path: readonly string[]; argv: readonly string[]; exitCode: number; error?: unknown }): void;
 }
@@ -92,6 +98,7 @@ const INERT: Journal = {
   wrapStreams: (base) => base,
   noteStdin: () => {},
   noteCall: () => {},
+  noteContextRead: () => {},
   finish: () => {},
 };
 
@@ -114,6 +121,7 @@ class FileJournal implements Journal {
   private stderrSample = '';
   private stdinChars = 0;
   private readonly calls: SessionJournalCall[] = [];
+  private contextRead: { schemaVersion: string | null } | undefined;
   private written = false;
 
   constructor(
@@ -160,6 +168,10 @@ class FileJournal implements Journal {
     this.calls.push({ ...call });
   }
 
+  noteContextRead(schemaVersion: string | null): void {
+    this.contextRead = { schemaVersion };
+  }
+
   finish(outcome: {
     path: readonly string[];
     argv: readonly string[];
@@ -200,6 +212,7 @@ class FileJournal implements Journal {
           truncated: this.stdoutChars > this.stdoutSample.length || this.stderrChars > this.stderrSample.length,
         },
         calls: this.calls,
+        ...(this.contextRead ? { contextRead: this.contextRead } : {}),
         result: { exitCode: outcome.exitCode, error: describeError(outcome.error) },
         tokens: {
           estimator: 'chars/4',

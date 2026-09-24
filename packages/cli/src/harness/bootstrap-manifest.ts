@@ -30,7 +30,13 @@
  * The composer FAILS CLOSED on every one of these. A launch that refuses is
  * attributable; a manifest that quietly carries a token is not.
  */
-import { assertWithinBudget, COORDINATOR_KINDS, utf8Bytes, type CoordinatorKind } from '@tm8/prompt';
+import {
+  assertWithinBudget,
+  COORDINATOR_KINDS,
+  DEFAULT_PROMPT_VERSION,
+  utf8Bytes,
+  type CoordinatorKind,
+} from '@tm8/prompt';
 
 export const MANIFEST_VERSION = '2';
 export const GRAMMAR_VERSION = '2';
@@ -45,9 +51,13 @@ export const BEARER_ENV = 'TM8_AGENT_TOKEN';
  */
 export const RETIRED_BEARER_ENV = 'TM8_AUTH_TOKEN';
 
-/** The nine §5.1 top-level keys, in the order they are serialized. */
+/**
+ * The nine §5.1 top-level keys plus the §6.3 `promptVersion` tag, in the order
+ * they are serialized.
+ */
 export const BOOTSTRAP_MANIFEST_KEYS = [
   'manifestVersion',
+  'promptVersion',
   'server',
   'credential',
   'identity',
@@ -161,6 +171,13 @@ export interface BootstrapDiscovery {
 
 export interface BootstrapManifestV2 {
   manifestVersion: string;
+  /**
+   * Which prompt frame the session boots with (spec ca8d §6.3) — the tag that
+   * splits journals and metrics by version. Not the document shape; that is
+   * `manifestVersion`. Typed `string`, not `PromptVersion`: a CLI older than
+   * the frame it is handed must still read the manifest, not drop it.
+   */
+  promptVersion: string;
   server: BootstrapServer;
   /** Exactly one field. There is no value field to accidentally populate. */
   credential: { bearerEnv: string };
@@ -172,7 +189,7 @@ export interface BootstrapManifestV2 {
   discovery: BootstrapDiscovery;
 }
 
-/** What a caller supplies. `credential`, `discovery` and versions are derived. */
+/** What a caller supplies. `credential`, `discovery` and `manifestVersion` are derived. */
 export interface BootstrapManifestInput {
   server: Omit<BootstrapServer, 'grammarVersion'>;
   identity: BootstrapIdentity;
@@ -183,9 +200,15 @@ export interface BootstrapManifestInput {
   interactionProfile: BootstrapInteractionProfile;
   assignment: { primaryTaskId?: string | null; taskIds?: readonly string[] };
   routing: BootstrapRouting;
+  /**
+   * Defaults to `DEFAULT_PROMPT_VERSION`. Accepted rather than always derived
+   * so a manifest read back from disk keeps the frame it was stamped with.
+   */
+  promptVersion?: string;
 }
 
 const INPUT_KEYS: readonly string[] = [
+  'promptVersion',
   'server',
   'identity',
   'session',
@@ -237,7 +260,7 @@ function object(field: string, value: unknown): Record<string, unknown> {
 /**
  * Compose and validate. Throws `InvalidBootstrapManifestError` on anything the
  * manifest is forbidden to carry, including an input key that is not one of
- * the six — which is how `tasks`, `memory`, `skills` and `promptExtra` are
+ * the seven — which is how `tasks`, `memory`, `skills` and `promptExtra` are
  * refused rather than silently dropped. Silently dropping would let a caller
  * believe it had passed something through.
  */
@@ -289,8 +312,15 @@ export function composeBootstrapManifest(input: BootstrapManifestInput): Bootstr
   }
   const taskIds = (taskIdsRaw ?? []).map((id, i) => str(`assignment.taskIds[${i}]`, id));
 
+  // Any non-empty tag, not only the ones this build knows: an unknown value is
+  // a NEWER frame, and refusing it would make parseBootstrapManifest drop a
+  // valid v2 manifest onto the v1 path.
+  const promptVersion =
+    raw.promptVersion === undefined ? DEFAULT_PROMPT_VERSION : str('promptVersion', raw.promptVersion);
+
   return {
     manifestVersion: MANIFEST_VERSION,
+    promptVersion,
     server: {
       id: str('server.id', server.id),
       baseUrl: str('server.baseUrl', server.baseUrl),
@@ -392,6 +422,7 @@ export function parseBootstrapManifest(raw: unknown): BootstrapManifestV2 | null
       interactionProfile: raw.interactionProfile as unknown as BootstrapInteractionProfile,
       assignment: assignment as unknown as BootstrapManifestInput['assignment'],
       routing: raw.routing as unknown as BootstrapRouting,
+      ...(raw.promptVersion === undefined ? {} : { promptVersion: raw.promptVersion as string }),
     });
   } catch {
     // A file claiming version 2 that does not validate is not a v2 manifest.

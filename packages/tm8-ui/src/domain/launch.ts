@@ -1097,6 +1097,7 @@ export function describeLaunchManifest(
     { label: 'Session title', value: readText(session, 'title'), mono: false },
     { label: 'Space', value: readText(manifest, 'spaceId'), mono: true },
     { label: 'Manifest version', value: readText(manifest, 'manifestVersion'), mono: true },
+    { label: 'Prompt version', value: readText(manifest, 'promptVersion'), mono: true },
     { label: 'Composed at', value: readText(manifest, 'generatedAt'), mono: true },
   ];
 

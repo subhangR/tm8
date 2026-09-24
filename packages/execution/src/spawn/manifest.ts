@@ -1,5 +1,5 @@
 import { computeEffectiveSkills } from './effective-skills.js';
-import { composePrompt, BYTE_BUDGETS, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
+import { composePrompt, BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -1548,6 +1548,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
   const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
+    promptVersion: DEFAULT_PROMPT_VERSION,
     sessionId,
     spaceId: context.spaceId,
     generatedAt: (input.now ?? new Date()).toISOString(),

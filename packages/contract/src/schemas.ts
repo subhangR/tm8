@@ -3376,6 +3376,7 @@ export const SessionJournalRecordSchema: z.ZodType<SessionJournalRecord> = z.obj
     truncated: z.boolean(),
   }),
   calls: z.array(SessionJournalCallSchema),
+  contextRead: z.object({ schemaVersion: z.string().nullable() }).optional(),
   result: z.object({ exitCode: z.number().int(), error: z.string().nullable() }),
   tokens: z.object({
     estimator: z.literal('chars/4'),

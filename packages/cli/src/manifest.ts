@@ -104,6 +104,8 @@ export interface ManifestSkill {
 
 export interface Tm8Manifest {
   manifestVersion?: string;
+  /** The prompt frame this launch was stamped with (spec ca8d §6.3). */
+  promptVersion?: string;
   /**
    * The §5.1 bootstrap projection, present only for `manifestVersion: "2"`.
    *
@@ -195,6 +197,7 @@ function projectBootstrap(bootstrap: BootstrapManifestV2): Tm8Manifest {
 
   return defined<Tm8Manifest>({
     manifestVersion: bootstrap.manifestVersion,
+    promptVersion: bootstrap.promptVersion,
     bootstrap,
     sessionId: session.id,
     spaceId: session.spaceId,
@@ -271,6 +274,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
 
   return defined<Tm8Manifest>({
     manifestVersion: str(raw.manifestVersion),
+    promptVersion: str(raw.promptVersion),
     sessionId: str(raw.sessionId),
     spaceId: str(raw.spaceId),
     mode: mode(raw.mode),

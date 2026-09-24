@@ -135,6 +135,41 @@ describe('counting', () => {
   });
 });
 
+describe('context reads carry the schemaVersion (spec ca8d §6.3)', () => {
+  it('records the returned schemaVersion on an entity context read', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.noteContextRead('tm8.entity-context.v1');
+    j.finish({ path: ['entity', 'context'], argv: ['entity', 'context', 'x'], exitCode: 0 });
+    expect(readRecords(path)[0]!.contextRead).toEqual({ schemaVersion: 'tm8.entity-context.v1' });
+  });
+
+  it('records null rather than dropping the read when no schemaVersion came back', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.noteContextRead(null);
+    j.finish({ path: ['entity', 'context'], argv: ['entity', 'context', 'x'], exitCode: 0 });
+    expect(readRecords(path)[0]!.contextRead).toEqual({ schemaVersion: null });
+  });
+
+  it('omits the field on every other command', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.finish({ path: ['entity', 'get'], argv: ['entity', 'get', 'x'], exitCode: 0 });
+    expect(readRecords(path)[0]).not.toHaveProperty('contextRead');
+  });
+
+  it('the record still validates against the contract schema', async () => {
+    const { SessionJournalRecordSchema } = await import('@tm8/contract');
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.noteContextRead('tm8.entity-context.v1');
+    j.finish({ path: ['entity', 'context'], argv: ['entity', 'context', 'x'], exitCode: 0 });
+    const parsed = SessionJournalRecordSchema.parse(readRecords(path)[0]);
+    expect(parsed.contextRead).toEqual({ schemaVersion: 'tm8.entity-context.v1' });
+  });
+});
+
 describe('redaction happens at write time, so the secret never reaches the disk', () => {
   it('redacts a secret-looking option value in both spellings', () => {
     const path = tempJournal();
