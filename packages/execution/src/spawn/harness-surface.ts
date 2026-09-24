@@ -27,6 +27,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export type HarnessSurface = 'minimal' | 'inherit';
 
@@ -134,4 +135,40 @@ export function readInstalledClaudePlugins(configDir: string): string[] {
   }
 
   return [...ids].sort();
+}
+
+// ── Read hints (token-efficiency #3) ─────────────────────────────────────────
+//
+// A lane-only PostToolUse hook (`harness/read-hint.mjs`) that appends a short
+// hint after a large repository read — `sed`/`cat`/`grep`… through Bash, or
+// Read — pointing at line ranges and the code graph. It never caps or changes
+// the output. It is independent of the harness surface: `inherit` strips
+// nothing, but a lane still gets the hint unless `readHints` is off, which is
+// also the A/B switch (`TM8_READ_HINTS=off`, or `launch.readHints: false`).
+
+export function asReadHints(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (['1', 'on', 'true'].includes(v)) return true;
+  if (['0', 'off', 'false'].includes(v)) return false;
+  return null;
+}
+
+/** Absolute path to the read-hint hook, like `echoAgentPath`: `../../harness`
+ *  lands on the same file from `src/spawn/` (vitest) and `dist/spawn/`. */
+export function readHintHookPath(): string {
+  return fileURLToPath(new URL('../../harness/read-hint.mjs', import.meta.url));
+}
+
+/** The `hooks` settings block that installs the read-hint hook. */
+export function readHintHookSettings(hookPath: string = readHintHookPath()): Record<string, unknown> {
+  return {
+    PostToolUse: [
+      {
+        matcher: 'Bash|Read',
+        hooks: [{ type: 'command', command: `node '${hookPath.replace(/'/g, `'\\''`)}'`, timeout: 5 }],
+      },
+    ],
+  };
 }
