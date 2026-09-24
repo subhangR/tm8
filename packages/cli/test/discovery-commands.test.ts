@@ -156,7 +156,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // over two partial views.
     // 188 -> 189 (187): `session share` over execution.sessions.share — one
     // new catalog row, one new command path, no alias. MEASURED.
-    expect(COMMAND_PATHS).toHaveLength(198); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +7 tm8 skill scan|list|show|create|edit|equip|unequip (2026-09-23). MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(199); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +7 tm8 skill scan|list|show|create|edit|equip|unequip (2026-09-23). MEASURED.
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

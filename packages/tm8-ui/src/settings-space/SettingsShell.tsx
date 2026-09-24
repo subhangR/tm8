@@ -37,6 +37,7 @@ import { AxesSection } from './AxesSection';
 import { WorkflowsSection } from './WorkflowsSection';
 import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
+import { ConfigsSection } from './ConfigsSection';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
@@ -394,6 +395,11 @@ function SectionBody({
           }}
         />
       );
+    case 'configs':
+      /* Read-only and self-loading: the section reads `spaces.configs` when it
+         opens, not on the shell's boot round trip, so a closed Configs tab
+         costs nothing. */
+      return <ConfigsSection heading={def.heading} load={port.loadConfigs} />;
     case 'danger':
       return <DangerSection heading={def.heading} />;
     default:

@@ -62,6 +62,7 @@ import { registerW2CollectionsGraphUndoHandlers } from './handlers/w2/graph-undo
 import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.js';
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
 import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
+import { registerW2ConfigsHandlers } from './handlers/w2/configs.js';
 import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
@@ -254,6 +255,7 @@ export function registerFacadeHandlers(
   registerW2EntityKindsProfileHandlers(registry, facade);
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
+  registerW2ConfigsHandlers(registry, facade);
 
   /**
    * Containers (177). REGISTERED UNCONDITIONALLY, unlike `files` or the

@@ -48,17 +48,17 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // +1 launch.suggest (Jev lane F, 2026-09-23): one mounted v1 POST, so all four move. MEASURED.
         // Jev lane K: +3 credentials.serviceKeys.* rows. MEASURED.
         // SC-3: +10 credentials.space.* / node.credentials.* rows, all mounted v1 HTTP. MEASURED.
-        total: 224, /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
-        v1: 222, /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        total: 225, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        v1: 223, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         reserved: 2,
-        http: 222, /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        http: 223, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         ws: 1,
-        registerableV1Http: 220, /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        registerableV1Http: 221, // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 30 }, // +3 (148): spaces.workflows.*
+        { noun: 'space', operationCount: 31 }, // +1 spaces.configs (task 01a0d350). +3 (148): spaces.workflows.*
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

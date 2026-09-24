@@ -18,6 +18,8 @@ export {
   codexLoopbackConfigArgs,
   composeEnv,
   composeManifest,
+  asPermissionMode,
+  memberLaunchPreferences,
   echoAgentPath,
   resolveLaunchConfig,
   resolveCommandNetworkPolicy,
@@ -29,6 +31,10 @@ export {
 } from './manifest.js';
 export {
   HARNESS_SURFACES,
+  LANE_BUNDLED_SKILLS_OFF,
+  MINIMAL_MCP_CONFIG,
+  asHarnessSurface,
+  asReadHints,
   harnessSurfaceEnv,
   readInstalledClaudePlugins,
   readHintHookPath,

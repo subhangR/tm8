@@ -189,7 +189,7 @@ export function agentToolForModel(model: string | null | undefined): string | nu
   return null;
 }
 
-function asPermissionMode(value: string | null | undefined): PermissionMode | null {
+export function asPermissionMode(value: string | null | undefined): PermissionMode | null {
   if (!value) return null;
   return (PERMISSION_MODES as readonly string[]).includes(value) ? (value as PermissionMode) : null;
 }
@@ -265,7 +265,7 @@ export interface ResolvedLaunchConfig {
  *   { "launch": { "harnessSurface": "inherit", "plugins": ["sales"],
  *                 "mcpServers": { "linear": { "type": "http", "url": "…" } } } }
  */
-function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
+export function memberLaunchPreferences(capabilities: Record<string, unknown> | null | undefined): {
   harnessSurface: HarnessSurface | null;
   plugins: string[] | null;
   mcpServers: Record<string, Record<string, unknown>> | null;

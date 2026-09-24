@@ -162,6 +162,7 @@ import {
   type StartChatResult,
   type SpaceKindCounts,
   type SpaceSettingsView,
+  type SpaceConfigsView,
   type SpaceSummary,
   type TaskAxis,
   type TaskAxisInput,
@@ -564,6 +565,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView> {
       return http.call<SpaceSettingsView>('spaces.settings', { params: { spaceId } });
+    },
+
+    spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView> {
+      return http.call<SpaceConfigsView>('spaces.configs', { params: { spaceId } });
     },
 
     /** The category-model workflows (149): the global default + this space's. */

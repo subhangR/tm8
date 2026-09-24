@@ -176,7 +176,7 @@ interface TaskRow {
  * fewer still (its own cap, `LINKED_MANIFEST_CAP`) and declares the rest by
  * count, so this only bounds the row width. `linked_total` stays exact.
  */
-const LINKED_ROW_CAP = 32;
+export const LINKED_ROW_CAP = 32;
 
 
 interface MemoryRow {

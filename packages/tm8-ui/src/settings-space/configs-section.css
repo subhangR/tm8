@@ -1,0 +1,137 @@
+/* ===========================================================================
+   CONFIGS — every tm8 knob, read-only (ConfigsSection.tsx).
+
+   Owned by this section and imported from its component only. Every class is
+   prefixed `set-configs`. Tokens only; `src/hex-ban.test.ts` walks this file.
+   The frame's gutter is the only horizontal padding — nothing here pads
+   itself sideways (SECTION-CONTRACT.md §3b).
+   =========================================================================== */
+
+.set-configs {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.set-configs__lede,
+.set-configs__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+}
+
+.set-configs__part {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.set-configs__part-title {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+
+.set-configs__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.set-configs__group-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+.set-configs__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.set-configs__knob {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  min-width: 0;
+}
+
+.set-configs__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.set-configs__name {
+  font-family: var(--pn-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+/* A value is often a long JSON bag (BYTE_BUDGETS); `anywhere` keeps one
+   unbroken token from widening the card into a horizontal scroll. */
+.set-configs__value {
+  font-family: var(--pn-mono);
+  font-size: 12px;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.set-configs__value--unset,
+.set-configs__value--unobservable {
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+.set-configs__source {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.set-configs__source--env,
+.set-configs__source--persona,
+.set-configs__source--profile {
+  border-color: var(--pn-brand-2);
+  color: var(--pn-ink);
+}
+
+.set-configs__summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+
+.set-configs__meta {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pn-ink-4);
+  overflow-wrap: anywhere;
+}
+
+.set-configs__meta code {
+  font-family: var(--pn-mono);
+}

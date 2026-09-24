@@ -233,6 +233,7 @@ import type {
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
+  SpaceConfigsView,
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
@@ -505,6 +506,8 @@ export interface Seam {
   menu(spaceId: SpaceId): Promise<MenuConfig | null>;
   /** Launch-default provenance and other member-authorized space settings. */
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
+  /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
+  spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
    * the ONE global default (spaceId null) plus this space's own. Distinct

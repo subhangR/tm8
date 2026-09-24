@@ -186,6 +186,7 @@ const ROWS: ReadonlyArray<{
   { op: 'spaces.home', argv: ['space', 'home', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.counts', argv: ['space', 'counts', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.settings', argv: ['space', 'settings', 'get'], method: 'GET', params: { spaceId: SPACE } },
+  { op: 'spaces.configs', argv: ['space', 'configs', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.members.list', argv: ['space', 'member', 'list'], method: 'GET', params: { spaceId: SPACE } },
   // 109. The member id is an ARGUMENT and the space comes from context, the
   // same shape as `invite revoke` — both address a row INSIDE a space, and the
@@ -285,6 +286,7 @@ const READS = [
   ['space', 'navigation', 'get'],
   ['space', 'home', 'get'],
   ['space', 'settings', 'get'],
+  ['space', 'configs', 'get'],
   ['space', 'member', 'list'],
   ['space', 'invite', 'list'],
   ['space', 'invite', 'resolve'],
@@ -298,7 +300,7 @@ const READS = [
 describe('the registered command set', () => {
   it('registers all 27 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(30);
+    expect(paths).toHaveLength(31); // +1 space configs get (task 01a0d350)
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -335,8 +337,8 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(30); // +3 (148): workflow list|set|delete
-    expect(ROWS).toHaveLength(30);
+    expect(checked).toBe(31); // +1 space configs get (task 01a0d350). +3 (148): workflow list|set|delete
+    expect(ROWS).toHaveLength(31);
   });
 });
 
@@ -351,7 +353,7 @@ describe('mutation identity (§7.4)', () => {
       expect(seen, path.join(' ')).toHaveLength(0);
       checked++;
     }
-    expect(checked).toBe(13); // +1 (118): `space invite resolve`; +1 (W4/132): task-workflow list
+    expect(checked).toBe(14); // +1 space configs get (task 01a0d350); +1 (118): `space invite resolve`; +1 (W4/132): task-workflow list
   });
 
   it('a mutation generates a UUIDv7 when --mutation-id is omitted', async () => {
