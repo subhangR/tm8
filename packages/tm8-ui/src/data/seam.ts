@@ -1252,7 +1252,8 @@ export interface Seam {
       ): Promise<CredentialsSpacePolicySetResult>;
       /**
        * SC-8: share the viewer's OWN GitHub token into a space, by reference
-       * (no secret travels). Un-share is `remove`.
+       * (no secret travels). Un-share is `remove`. A login is shared with
+       * `startLogin(…, { label, share: true })`.
        */
       share(spaceId: SpaceId, input: Omit<CredentialsSpaceShareInput, 'clientMutationId'>): Promise<SpaceCredentialView>;
       /** SC-8: the viewer's own live shares, and whether their GitHub token can be shared. */

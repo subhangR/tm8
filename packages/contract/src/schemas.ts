@@ -2185,6 +2185,7 @@ export const CredentialsLoginSessionStartInputSchema:
     spaceCredential: z.union([
       z.object({ label: SpaceCredentialLabelSchema }).strict(),
       z.object({ credentialId: z.string().uuid() }).strict(),
+      z.object({ label: SpaceCredentialLabelSchema, share: z.literal(true) }).strict(),
     ]).optional(),
     clientMutationId: z.string().min(1).optional(),
   }).strict().refine(

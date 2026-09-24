@@ -478,3 +478,23 @@ describe('sc8-5 — lifecycle: each revokes, and only sessions on that share are
   it.todo('a future member-removal op calls killSharesOf(claims, account, space) before deleting the members row');
   it.todo('a future account-delete op calls killSharesOf(claims, account, null) before deleting the account');
 });
+
+describe('OAuth option A — "Share my login" is a fresh sign-in, never the personal home', () => {
+  it('needs a personal login to exist; starts a pending personal_login share; a personal disconnect revokes it', async () => {
+    await expect(store.startShareLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: 'A’s Max' }))
+      .rejects.toMatchObject({ details: { sqlstate: '23514', reason: 'not_connected' } });
+
+    await db.rpc(claims(A), 'set_account_agent_credential', ['anthropic', null, 'claude.ai', 'active']);
+    const login = await store.startShareLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: 'A’s Max' });
+    expect(login.credential).toMatchObject({
+      provider: 'anthropic', shape: 'login', status: 'pending', shareKind: 'personal_login',
+      sharedBy: { accountId: accounts[A] }, isDefault: false,
+    });
+    expect(await sqlstate(db.rpc(agent(A), 'start_space_credential_share_login', [ids.S, 'anthropic', 'agent', 900, 2]))).toBe('42501');
+
+    await db.rpc(claims(A), 'delete_account_agent_credential', ['anthropic']);
+    expect((await row(login.credential.id)).status).toBe('revoked');
+    const revocation = await store.revokeMemberShares(claims(A), null, accounts[A]!, 'anthropic');
+    expect(revocation.loginTerminals.map((t) => t.workSessionId)).toEqual([login.workSessionId]);
+  });
+});

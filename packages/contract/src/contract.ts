@@ -2207,7 +2207,11 @@ export interface CredentialsLoginSessionStartInput {
    * creator or a space admin, D11). Exactly one. A refusal is `conflict` with
    * `details.reason` `login_open` (with `expiresAt`) or `label_taken`.
    */
-  spaceCredential?: { label: string; credentialId?: never } | { credentialId: string; label?: never };
+  spaceCredential?:
+    | { label: string; credentialId?: never; share?: never }
+    | { credentialId: string; label?: never; share?: never }
+    /** SC-8: a new login that becomes a SHARE of your personal login (you must have it connected). */
+    | { label: string; share: true; credentialId?: never };
   clientMutationId?: string;
 }
 
@@ -2393,8 +2397,9 @@ export interface CredentialsSharesView {
  * `credentials.space.share` — share your personal GitHub token into a space
  * you belong to, by reference. Refused (`invalid_input`, `details.reason`
  * `token_kind`) unless it is a fine-grained token; `conflict` with
- * `already_shared` when you already share one there. Stop sharing is
- * `credentials.space.delete`.
+ * `already_shared` when you already share one there. A login is shared by
+ * `credentials.loginSessions.start` with `spaceCredential.share`. Stop sharing
+ * is `credentials.space.delete`.
  */
 export interface CredentialsSpaceShareInput {
   provider: 'github';

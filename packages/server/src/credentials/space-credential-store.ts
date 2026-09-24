@@ -447,6 +447,24 @@ export class DbSpaceCredentialStore {
     return this.db.rpc<SpaceCredential>(claims, 'share_personal_token', [input.spaceId, input.label]);
   }
 
+  /**
+   * SC-8: open a login terminal whose credential becomes a personal_login
+   * share (210 `start_space_credential_share_login`). The caller signs in
+   * again; the share gets its own grant and home, never the personal one.
+   */
+  async startShareLogin(
+    claims: DbClaims,
+    input: { spaceId: string; provider: 'anthropic' | 'openai'; label: string; ttlSeconds?: number; sessionCap?: number },
+  ): Promise<SpaceCredentialLogin> {
+    return this.db.rpc<SpaceCredentialLogin>(claims, 'start_space_credential_share_login', [
+      input.spaceId,
+      input.provider,
+      input.label,
+      input.ttlSeconds ?? 900,
+      input.sessionCap ?? 2,
+    ]);
+  }
+
   /** SC-8: the caller's live shares across every space it belongs to. */
   async listMyShares(claims: DbClaims): Promise<SpaceCredentialShare[]> {
     return this.db.rpc<SpaceCredentialShare[]>(claims, 'list_my_credential_shares', []);

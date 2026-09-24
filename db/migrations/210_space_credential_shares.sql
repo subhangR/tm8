@@ -17,8 +17,6 @@
 --   * personal_login — a member-owned SPACE LOGIN (SC-4's home and terminal):
 --     the owner signs in again with the same vendor account and the share gets
 --     its own grant. Pointing at the personal home is rejected (addendum §5).
---     (The kind is admitted by the constraints below; the RPC that creates
---     one lands with the login-share change.)
 --
 -- RULES, all enforced here:
 --   * A share is never the space default (CHECK; default_space_credential_if_none
@@ -29,6 +27,7 @@
 --   * Lifecycle (addendum §6, §10.2) — each revokes; the TS caller kills:
 --       - un-share / admin remove: delete_space_credential (206 path);
 --       - owner disconnects GitHub: AFTER DELETE on account_git_credentials;
+--       - owner disconnects a login: AFTER DELETE on account_agent_credentials;
 --       - owner leaves a space: revoke_member_shares BEFORE the members row
 --         goes, and an AFTER DELETE trigger on members as the belt;
 --       - owner disabled: AFTER UPDATE OF status on accounts;
@@ -267,6 +266,22 @@ create trigger account_git_credentials_revoke_shares
 after delete on public.account_git_credentials
 for each row execute function internal.revoke_token_shares_on_disconnect();
 
+-- The owner disconnects a personal login: that provider's login shares.
+create or replace function internal.revoke_login_shares_on_disconnect()
+returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  if old.provider in ('anthropic', 'openai') then
+    perform internal.revoke_account_shares(old.account_id, null, old.provider, 'personal_login');
+  end if;
+  return null;
+end
+$$;
+
+create trigger account_agent_credentials_revoke_shares
+after delete on public.account_agent_credentials
+for each row execute function internal.revoke_login_shares_on_disconnect();
+
 -- The owner is disabled: every share, every space (amended D12).
 create or replace function internal.revoke_shares_on_account_disable()
 returns trigger
@@ -308,6 +323,7 @@ for each row execute function internal.revoke_shares_on_member_delete();
 
 revoke all on function internal.space_credential_share_orphan_revoke() from public;
 revoke all on function internal.revoke_token_shares_on_disconnect() from public;
+revoke all on function internal.revoke_login_shares_on_disconnect() from public;
 revoke all on function internal.revoke_shares_on_account_disable() from public;
 revoke all on function internal.revoke_shares_on_member_delete() from public;
 
@@ -353,6 +369,52 @@ begin
       using errcode = '23505', detail = jsonb_build_object('reason', 'already_shared')::text;
   end;
   return internal.space_credential_json(stored);
+end
+$$;
+
+-- Open a login terminal whose credential will be a personal_login share
+-- (SC-4's flow, flagged). The caller must have that provider connected
+-- personally: the share is offered from the personal card.
+create or replace function public.start_space_credential_share_login(
+  p_space_id uuid,
+  p_provider text,
+  p_label text,
+  p_ttl_seconds integer default 900,
+  p_session_cap integer default 2
+) returns jsonb
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  v_account_id uuid;
+  started jsonb;
+  stored public.space_credentials;
+begin
+  perform internal.require_human_auth_kind();
+  perform internal.require_space_member(p_space_id);
+  v_account_id := internal.current_account_id();
+  if v_account_id is null then
+    raise exception 'no active account for this identity' using errcode = 'P0002';
+  end if;
+  if not exists (select 1 from public.account_agent_credentials
+                  where account_id = v_account_id and provider = p_provider
+                    and status in ('active', 'stale')) then
+    raise exception 'connect % under your credentials before sharing it', p_provider
+      using errcode = '23514', detail = jsonb_build_object('reason', 'not_connected')::text;
+  end if;
+  if exists (select 1 from public.space_credentials
+              where space_id = p_space_id and provider = p_provider
+                and shared_by_account_id = v_account_id and share_kind is not null
+                and status in ('active', 'stale')) then
+    raise exception 'you already share % to this space', p_provider
+      using errcode = '23505', detail = jsonb_build_object('reason', 'already_shared')::text;
+  end if;
+
+  started := public.start_space_credential_login(p_space_id, p_provider, p_label, null,
+                                                  p_ttl_seconds, p_session_cap);
+  update public.space_credentials
+     set shared_by_account_id = v_account_id, share_kind = 'personal_login'
+   where id = (started -> 'credential' ->> 'id')::uuid
+  returning * into stored;
+  return started || jsonb_build_object('credential', internal.space_credential_json(stored));
 end
 $$;
 
@@ -555,12 +617,14 @@ end
 $$;
 
 revoke all on function public.share_personal_token(uuid, text) from public;
+revoke all on function public.start_space_credential_share_login(uuid, text, text, integer, integer) from public;
 revoke all on function public.delete_space_credential(uuid) from public;
 revoke all on function public.revoke_member_shares(uuid, uuid, text) from public;
 revoke all on function public.list_my_credential_shares() from public;
 revoke all on function public.read_space_credential_for_spawn(uuid, text, uuid) from public;
 
 grant execute on function public.share_personal_token(uuid, text) to tm8_app;
+grant execute on function public.start_space_credential_share_login(uuid, text, text, integer, integer) to tm8_app;
 grant execute on function public.delete_space_credential(uuid) to tm8_app;
 grant execute on function public.revoke_member_shares(uuid, uuid, text) to tm8_app;
 grant execute on function public.list_my_credential_shares() to tm8_app;

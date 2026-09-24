@@ -32,6 +32,8 @@
  * "Shared by <name>". Only its sharer renames it, logs in again or stops
  * sharing it; a space admin may only remove it; nobody makes it the default
  * or replaces its token (a shared token IS the sharer's personal one).
+ * "+ Share my login" opens a fresh sign-in for the space (option A): the
+ * member's personal login home is never handed to the space.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type {
@@ -216,7 +218,9 @@ function ProviderGroup({
         seen: false,
         lede: target.credentialId
           ? `Logging in again onto the space credential “${label}”. Follow the terminal prompts, then press “I’ve finished signing in”. Until it completes, “${label}” keeps the login it had.`
-          : `Logging in for the new space credential “${label}”. It belongs to the space, not your account. Follow the terminal prompts, then press “I’ve finished signing in”.`,
+          : target.share
+            ? `Signing in again to share your own ${SPACE_PROVIDER_NAME[provider]} account with this space as “${label}”. A launch that names it runs on your account and your plan. Your own login is untouched; stop sharing at any time.`
+            : `Logging in for the new space credential “${label}”. It belongs to the space, not your account. Follow the terminal prompts, then press “I’ve finished signing in”.`,
       });
       // A new label is now a pending row holding that label (A7): show it.
       if (!target.credentialId) await onChanged();
@@ -481,6 +485,8 @@ function AddByKey({
   const name = SPACE_PROVIDER_NAME[provider];
   const [open, setOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  /** SC-8: the login form opens a SHARE of the member's own login. */
+  const [shareLogin, setShareLogin] = useState(false);
   const [loginLabel, setLoginLabel] = useState('');
   /** The server's A7 refusal for the label as submitted; cleared on edit. */
   const [serverTaken, setServerTaken] = useState<string | null>(null);
@@ -526,10 +532,16 @@ function AddByKey({
           + Add {noun}
         </button>
         {login ? (
-          <button type="button" className="cred-action" aria-label={`Add ${name} by login`} aria-expanded={loginOpen}
-            onClick={() => { setLoginOpen(!loginOpen); setOpen(false); }}>
-            + Add by login
-          </button>
+          <>
+            <button type="button" className="cred-action" aria-label={`Add ${name} by login`} aria-expanded={loginOpen && !shareLogin}
+              onClick={() => { setLoginOpen(!(loginOpen && !shareLogin)); setShareLogin(false); setOpen(false); }}>
+              + Add by login
+            </button>
+            <button type="button" className="cred-action" aria-label={`Share my ${name} login`} aria-expanded={loginOpen && shareLogin}
+              onClick={() => { setLoginOpen(!(loginOpen && shareLogin)); setShareLogin(true); setOpen(false); }}>
+              + Share my login
+            </button>
+          </>
         ) : null}
       </div>
       {login && loginOpen ? (
@@ -540,7 +552,7 @@ function AddByKey({
           setServerTaken(null);
           // The form closes only once the terminal is open: a refused label
           // stays typed, with the reason at the field.
-          void login.start({ label }).then((refused) => {
+          void login.start(shareLogin ? { label, share: true } : { label }).then((refused) => {
             if (refused === null) {
               setLoginOpen(false);
               setLoginLabel('');
@@ -559,7 +571,9 @@ function AddByKey({
             <span className="set-spc__why" role="alert" data-testid="space-login-label-taken">{serverTaken}</span>
           ) : null}
           <span className="set-spc__why">
-            {serverTaken ? null : loginTaken ?? 'A login needs its label first: the label is held for this login until it finishes or expires.'}
+            {serverTaken ? null : loginTaken ?? (shareLogin
+              ? 'Shares your own account with this space: you sign in again here, and a launch that names this label runs as you, on your plan. It is never the default.'
+              : 'A login needs its label first: the label is held for this login until it finishes or expires.')}
           </span>
         </form>
       ) : null}

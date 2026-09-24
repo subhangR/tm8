@@ -10,6 +10,10 @@
  * again at every spawn); the screen says which kind is stored and why another
  * kind is refused.
  *
+ * A Claude or Codex login is shared from Space credentials ("+ Share my
+ * login") — a fresh sign-in with its own terminal, so the member's personal
+ * login home is never given to the space. It is LISTED here with the rest.
+ *
  * STOP SHARING is the space credential delete: it revokes the share and ends
  * every live session running on it, whoever launched it.
  */
@@ -95,6 +99,10 @@ export function SharesBlock({ port }: SharesBlockProps) {
       ) : view ? (
         <p className="cred-intro" data-testid="shares-empty">You share nothing with any space.</p>
       ) : null}
+      <p className="cred-intro">
+        To share a Claude or Codex login, use “+ Share my login” under Space credentials: it opens a fresh
+        sign-in for the space, and your own login here is left alone.
+      </p>
     </section>
   );
 }
