@@ -54,6 +54,7 @@ import {
 } from './operations.js';
 import type { AvailabilityLedger } from './availability.js';
 import { matchIntent, matchReason, rank } from './search.js';
+import { formGuide, type GuideSection } from './form-guide.js';
 
 export const CLI_VERSION = '0.1.0';
 
@@ -143,8 +144,19 @@ export interface NounHelp {
     reason: string | null;
     publicComposite: OperationName | null;
   }[];
+  /**
+   * A noun's authoring guide, when a noun needs more than its command list to
+   * be usable (`form`: decision 12). Additive and optional: every other shard
+   * omits it. Generated from contract data, never a hand-kept second copy.
+   */
+  guide?: GuideSection[];
   truncated?: Truncation;
 }
+
+/** Nouns whose shard carries a guide. Each is a generator, not a string. */
+const NOUN_GUIDES: Readonly<Record<string, () => GuideSection[]>> = {
+  form: formGuide,
+};
 
 export interface CommandHelp {
   schemaVersion: 'tm8.help.command.v1';
@@ -310,6 +322,8 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
     publicComposite: d.publicComposite,
   }));
 
+  const guide = NOUN_GUIDES[noun]?.();
+
   return fit<NounHelp, NounCommandSummary>(
     (items) => ({
       schemaVersion: 'tm8.help.noun.v1',
@@ -320,6 +334,7 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
       helpRefs: HELP_REFS,
       commands: items,
       operationsWithoutCommand: commandless,
+      ...(guide === undefined ? {} : { guide }),
     }),
     rows,
     cap,

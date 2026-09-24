@@ -113,6 +113,9 @@ function renderNoun(dto: NounHelp): string {
       );
     }
   }
+  for (const section of dto.guide ?? []) {
+    lines.push('', section.title, ...section.lines.map((l) => `  ${l}`));
+  }
   lines.push('', `catalog ${dto.catalogDigest}`);
   lines.push(...truncationLines(dto.truncated));
   return lines.join('\n');

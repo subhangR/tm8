@@ -111,6 +111,11 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'no-screenshot',       // container computer — suppress the returned image
   'follow',              // container logs — stream rather than page
   'make-template',       // container snapshot — mark the snapshot as a pool base
+  // Forms (§8). `--open`/`--draft` pick the created form's first state;
+  // `--first` is the null `after` of question add|move.
+  'open',                // form create — start open (agents' default)
+  'draft',               // form create — start as a draft (humans' default)
+  'first',               // form question add|move — put the question first
 ]);
 
 /**

@@ -386,7 +386,9 @@ describe('every dimensioned value names its dimension, on EVERY surface', () => 
     // root help + all three completion scripts, plus the two renderings of the
     // events.subscribe row (cmd:event watch, op:events.subscribe) whose F7 note
     // names `--timeout <seconds>` for `--until-match`.
-    expect(mentioning).toBe(6);
+    // 6 -> 7 (Forms W1 CLI): the `form` noun shard's guide points at
+    // `tm8 form wait <form-id> [--timeout <seconds>]` (W2). MEASURED.
+    expect(mentioning).toBe(7);
   });
 
   it('`--limit` is rendered as a count, never a bare <n>', () => {

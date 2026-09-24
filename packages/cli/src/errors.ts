@@ -314,6 +314,14 @@ export function errorLines(err: unknown): string[] {
     // prints it verbatim, so the caller runs it rather than guessing a number.
     const next = isRecord(err.details) ? err.details['next'] : undefined;
     if (typeof next === 'string') lines.push(`  next: ${next}`);
+    // A located validation refusal (`form_answers_invalid`, 422) names each
+    // problem as {key, code, message}; print them all, the Server's words.
+    const issues = isRecord(err.details) ? err.details['issues'] : undefined;
+    if (Array.isArray(issues)) {
+      for (const i of issues.filter(isRecord)) {
+        lines.push(`  ${String(i['key'] ?? '$')}  ${String(i['code'] ?? '?')}  ${String(i['message'] ?? '')}`);
+      }
+    }
     if (err.hint) lines.push(`  ${err.hint}`);
     return lines;
   }

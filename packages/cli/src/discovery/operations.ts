@@ -2288,23 +2288,175 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
 
-  // ── forms (FORMS-DESIGN §6) ──────────────────────────────────────────────
-  // Registered by the backend lane with `cmd: null`: the operations exist and
-  // are discoverable, and the `tm8 form` noun (a separate CLI lane) binds the
-  // commands. `null` here is "no public invocation YET", never a fabricated one.
-  'forms.create': { cmd: null, sum: 'Create a form (questions, sections, settings) in one call; returns the form and its url', authz: 'space', input: 'bound', tags: ['form', 'question', 'ask', 'survey'], reason: 'cli_noun_pending' },
-  'forms.update': { cmd: null, sum: 'Update a form title, description, settings or sections under a version guard', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'settings'], reason: 'cli_noun_pending' },
-  'forms.questions.add': { cmd: null, sum: 'Add a question to a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
-  'forms.questions.update': { cmd: null, sum: 'Edit one question of a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
-  'forms.questions.remove': { cmd: null, sum: 'Remove one question from a form before its first submitted response', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question'], reason: 'cli_noun_pending' },
-  'forms.questions.move': { cmd: null, sum: 'Move one question after another (or first)', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'question', 'order'], reason: 'cli_noun_pending' },
-  'forms.transition': { cmd: null, sum: 'Open, close, reopen or cancel a form', authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['form', 'open', 'close', 'cancel'], reason: 'cli_noun_pending' },
-  'forms.responses.save': { cmd: null, sum: 'Save the caller\'s draft answers to an open form (partial validation)', authz: 'entity', input: 'bound', tags: ['form', 'response', 'draft', 'answer'], reason: 'cli_noun_pending' },
-  'forms.responses.discard': { cmd: null, sum: 'Discard the caller\'s own draft on a form (idempotent)', authz: 'entity', input: 'bound', tags: ['form', 'response', 'draft', 'discard'], reason: 'cli_noun_pending' },
-  'forms.responses.submit': { cmd: null, sum: 'Submit answers to an open form; stores the response and posts it to the requesting session', authz: 'entity', input: 'bound', tags: ['form', 'response', 'submit', 'answer'], reason: 'cli_noun_pending' },
-  'forms.responses.list': { cmd: null, sum: 'Page the current submitted responses of a form (and the caller\'s own draft)', authz: 'entity', input: 'none', tags: ['form', 'response', 'list'], reason: 'cli_noun_pending' },
-  'forms.responses.get': { cmd: null, sum: 'Read one form response: answers, the frozen questions, and delivery status', authz: 'entity', input: 'none', tags: ['form', 'response'], reason: 'cli_noun_pending' },
-  'forms.responses.mine': { cmd: null, sum: 'Page what the caller has submitted, across a space', authz: 'space', input: 'none', tags: ['form', 'response', 'mine', 'history'], reason: 'cli_noun_pending' },
+  // ── forms (FORMS-DESIGN §6, §8; advisor rulings W1-R1..R4) ─────────────
+  // An agent asks, a human answers, the answer comes back to the requesting
+  // session. Every write validates CLIENT-SIDE against the contract first
+  // (`src/form-input.ts`): the wire carries questions raw and the Server's
+  // only config/answer validator is SQL. The authoring guide — spec shape, one
+  // example per question type, settings — is the `form` noun shard's `guide`
+  // (`src/discovery/form-guide.ts`), generated from the contract registry.
+  'forms.create': {
+    cmd: ['form', 'create'],
+    syn: 'tm8 form create [--title <text>] [--spec <json-source>] [--question <key:type:title[:options]>...] [--optional <question-key>...] [--section <key:title[:question-keys]>...] [--description <text>] [--settings <json-source>] [--open] [--draft] [--for-session <session-id>] [--attach <entity-id>...] [--parent <entity-id>] [--mutation-id <id>]',
+    sum: 'Create a form (questions, sections, settings) in one call; returns the form and its url',
+    authz: 'space',
+    input: 'bound',
+    tags: ['form', 'question', 'ask', 'survey', 'questionnaire', 'poll'],
+    notes: [
+      'the spec and every shorthand question are validated locally against the contract before the call; an invalid one exits 2 with key/code/message per issue and sends nothing',
+      'agents create forms open, humans draft; --open or --draft overrides',
+      'answers are delivered to the requesting session (the caller\'s own); a human names one with --for-session',
+      'spec shape, one example per question type, and every setting: `tm8 help form`',
+    ],
+    examples: [
+      "tm8 form create --title '<title>' --question '<key>:single_choice:<question>?:<a>*,<b>' --question '<key2>:long_text:<question>' --optional <key2>",
+      'tm8 form create --spec @<spec-file>',
+    ],
+  },
+  'forms.update': {
+    cmd: ['form', 'update'],
+    syn: 'tm8 form update <form-id> --expect-version <n> [--title <text>] [--description <text>] [--settings <json-source>] [--sections <json-source>] [--mutation-id <id>]',
+    sum: 'Update a form title, description, settings or sections under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'settings'],
+    notes: [
+      '--settings is a sparse patch (only the keys you name change); --sections REPLACES the section list',
+      'sections and settings.responses freeze with the questions at the first submitted response',
+    ],
+    examples: ["tm8 form update <form-id> --expect-version <n> --settings '{\"allowAmend\":false}'"],
+  },
+  'forms.questions.add': {
+    cmd: ['form', 'question', 'add'],
+    syn: 'tm8 form question add <form-id> --expect-version <n> (--question <key:type:title[:options]> | --spec <json-source>) [--optional <question-key>] [--section <section-key>] [--help-text <text>] [--after <question-key>] [--first] [--mutation-id <id>]',
+    sum: 'Add a question to a form before its first submitted response',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'question'],
+    notes: [
+      '--spec here is ONE question object {key,type,title,help,required,section,config}; validated locally first',
+      'no --after appends; --first puts it first',
+    ],
+    examples: ["tm8 form question add <form-id> --expect-version <n> --question '<key>:scale:<question>'"],
+  },
+  'forms.questions.update': {
+    cmd: ['form', 'question', 'update'],
+    syn: 'tm8 form question update <form-id> <question-key> --expect-version <n> [--title <text>] [--type <type>] [--help-text <text>] [--section <section-key>] [--required true|false] [--config <json-source>] [--mutation-id <id>]',
+    sum: 'Edit one question of a form before its first submitted response',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'question', 'config'],
+    notes: [
+      'the merged question is validated locally; only the fields you pass are sent',
+      '--config REPLACES the question config; an empty --help-text or --section clears it',
+    ],
+    examples: ["tm8 form question update <form-id> <question-key> --expect-version <n> --config '{\"min\":0,\"max\":10}'"],
+  },
+  'forms.questions.remove': {
+    cmd: ['form', 'question', 'remove'],
+    syn: 'tm8 form question remove <form-id> <question-key> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Remove one question from a form before its first submitted response',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'question', 'delete'],
+    examples: ['tm8 form question remove <form-id> <question-key> --expect-version <n>'],
+  },
+  'forms.questions.move': {
+    cmd: ['form', 'question', 'move'],
+    syn: 'tm8 form question move <form-id> <question-key> --expect-version <n> (--after <question-key> | --first) [--mutation-id <id>]',
+    sum: 'Move one question after another (or first)',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'question', 'order', 'reorder'],
+    examples: ['tm8 form question move <form-id> <question-key> --expect-version <n> --first'],
+  },
+  'forms.transition': {
+    cmd: ['form', 'open'],
+    syn: 'tm8 form open <form-id> --expect-version <n> [--reason <text>] [--mutation-id <id>]',
+    sum: 'Open a draft form for answers (also: form close, form cancel, form reopen)',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['form', 'open', 'close', 'cancel', 'reopen', 'transition', 'lifecycle'],
+    notes: [
+      'opening raises an attention request on the form; a submit resolves it',
+      'lifecycle: draft -> open -> closed -> (reopen) open; cancel only from draft or open — the Server refuses any other move (form_transition_invalid)',
+    ],
+    examples: ['tm8 form open <form-id> --expect-version <n>'],
+  },
+  'forms.responses.save': {
+    cmd: ['form', 'response', 'save'],
+    syn: 'tm8 form response save <form-id> --answers <json-source> [--amend-of <response-id>] [--response-version <n>] [--mutation-id <id>]',
+    sum: 'Save the caller\'s draft answers to an open form (partial validation)',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['form', 'response', 'draft', 'answer', 'save'],
+    notes: [
+      'answers are checked locally for shape and bounds (no required check) before the call',
+      '--response-version guards YOUR draft, never the form; --amend-of names the submitted revision being edited (needed only under responses:unlimited)',
+    ],
+    examples: ['tm8 form response save <form-id> --answers @<answers-file>'],
+  },
+  'forms.responses.discard': {
+    cmd: ['form', 'response', 'discard'],
+    syn: 'tm8 form response discard <form-id> [--response-version <n>] [--mutation-id <id>]',
+    sum: 'Discard the caller\'s own draft on a form (idempotent)',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['form', 'response', 'draft', 'discard'],
+    notes: ['no draft is a success that reports discarded:false'],
+    examples: ['tm8 form response discard <form-id>'],
+  },
+  'forms.responses.submit': {
+    cmd: ['form', 'submit'],
+    syn: 'tm8 form submit <form-id> [--answers <json-source>] [--amend-of <response-id>] [--response-version <n>] [--mutation-id <id>]',
+    sum: 'Submit answers to an open form; stores the response and posts it to the requesting session',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['form', 'response', 'submit', 'answer', 'reply'],
+    notes: [
+      'answers are validated locally against the form\'s questions (the contract registry) before the call; without --answers the saved draft is submitted',
+      'with allowAmend (the default) a second submit is a NEW revision, delivered again; history is kept',
+      '--response-version guards your draft, never the form; a version conflict is reported, never retried',
+    ],
+    examples: ["tm8 form submit <form-id> --answers '{\"<key>\":{\"value\":\"<option>\"}}'"],
+  },
+  'forms.responses.list': {
+    cmd: ['form', 'response', 'list'],
+    syn: 'tm8 form response list <form-id> [--respondent <me>] [--lineage <lineage-key>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the current submitted responses of a form (and the caller\'s own draft)',
+    authz: 'entity',
+    input: 'none',
+    tags: ['form', 'response', 'list', 'answers', 'results'],
+    notes: [
+      'default: the CURRENT submitted revision of each response, newest first',
+      '--respondent me: your current revision plus your draft; --lineage: one chain\'s revisions in order (its history)',
+    ],
+    examples: ['tm8 form response list <form-id> --limit <count>'],
+  },
+  'forms.responses.get': {
+    cmd: ['form', 'response', 'get'],
+    syn: 'tm8 form response get <response-id>',
+    sum: 'Read one form response: answers, the frozen questions, and delivery status',
+    authz: 'entity',
+    input: 'none',
+    tags: ['form', 'response', 'answers', 'delivery'],
+    examples: ['tm8 form response get <response-id>'],
+  },
+  'forms.responses.mine': {
+    cmd: ['form', 'response', 'mine'],
+    syn: 'tm8 form response mine [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page what the caller has submitted, across a space',
+    authz: 'space',
+    input: 'none',
+    tags: ['form', 'response', 'mine', 'history'],
+    examples: ['tm8 form response mine --limit <count>'],
+  },
 
   // ── containers (TM8-CONTAINERS-DESIGN §14) ───────────────────────────────
   //
@@ -3187,6 +3339,33 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 chat turns <chat-id> --limit <count>', 'tm8 chat turns --message <message-id>'],
   }],
+  // `form close|cancel|reopen` are three more spellings of forms.transition,
+  // one per target state, beside the row's own `form open` (advisor W1-R4 2).
+  // One catalog row per lifecycle verb would be four doors to one transition.
+  ['form close', {
+    path: ['form', 'close'],
+    syntax: 'tm8 form close <form-id> --expect-version <n> [--reason <text>] [--mutation-id <id>]',
+    summary: 'Close an open form: no further responses (reopen later with `form reopen`)',
+    notes: ['sugar over forms.transition with to=closed — it adds no catalog operation'],
+    examples: ['tm8 form close <form-id> --expect-version <n>'],
+  }],
+  ['form cancel', {
+    path: ['form', 'cancel'],
+    syntax: 'tm8 form cancel <form-id> --expect-version <n> [--reason <text>] [--mutation-id <id>]',
+    summary: 'Cancel a draft or open form; the requester is told, so a waiting agent never hangs',
+    notes: [
+      'sugar over forms.transition with to=cancelled — it adds no catalog operation',
+      'only from draft or open: cancelling a closed form is refused by the Server (form_transition_invalid)',
+    ],
+    examples: ["tm8 form cancel <form-id> --expect-version <n> --reason '<why>'"],
+  }],
+  ['form reopen', {
+    path: ['form', 'reopen'],
+    syntax: 'tm8 form reopen <form-id> --expect-version <n> [--reason <text>] [--mutation-id <id>]',
+    summary: 'Reopen a closed form for answers',
+    notes: ['sugar over forms.transition with to=open — the same move as `form open`, named for a closed form'],
+    examples: ['tm8 form reopen <form-id> --expect-version <n>'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -3253,6 +3432,12 @@ COMMAND_ORDER.splice(
 // `container browser` is not an alias — it owns `containers.browser.endpoint` —
 // but two of its three sub-verbs invoke `containers.computer`, so both
 // operations are named here and the command is as available as its WEAKEST.
+// The form lifecycle verbs sit right after `form open`, which the catalog row owns.
+COMMAND_OPS.set('form close', ['forms.transition']);
+COMMAND_OPS.set('form cancel', ['forms.transition']);
+COMMAND_OPS.set('form reopen', ['forms.transition']);
+const formOpenIndex = COMMAND_ORDER.indexOf('form open');
+COMMAND_ORDER.splice(formOpenIndex < 0 ? COMMAND_ORDER.length : formOpenIndex + 1, 0, 'form close', 'form cancel', 'form reopen');
 COMMAND_OPS.set('container screenshot', ['containers.computer']);
 COMMAND_OPS.set('container adb', ['containers.run']);
 COMMAND_OPS.set('container browser', ['containers.browser.endpoint', 'containers.computer']);
@@ -3376,6 +3561,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
   container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
+  form: 'Forms: ask humans structured questions and get the answers back in your session',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */

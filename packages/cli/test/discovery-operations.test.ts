@@ -263,21 +263,6 @@ const COMMANDLESS_OPERATIONS = [
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
       'execution.terminal.start',
-      // Forms W1 backend: the thirteen rows ship `cmd: null`; the `tm8 form`
-      // noun (a CLI lane stacked on this one) takes them out of this set.
-      'forms.create',
-      'forms.questions.add',
-      'forms.questions.move',
-      'forms.questions.remove',
-      'forms.questions.update',
-      'forms.responses.discard',
-      'forms.responses.get',
-      'forms.responses.list',
-      'forms.responses.mine',
-      'forms.responses.save',
-      'forms.responses.submit',
-      'forms.transition',
-      'forms.update',
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
@@ -694,9 +679,9 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
 };
 
 /**
- * Direction-B rows still awaiting an amendment. The six forms.* rows below are
- * the only entries (the `tm8 form` noun lane closes them); before them the
- * class was closed.
+ * Direction-B rows still awaiting an amendment. None: the six forms.* rows
+ * that sat here while the forms ops were commandless were closed by the
+ * `tm8 form` noun (Forms W1 CLI).
  *
  * All six are fixed, and none of the flag names was invented. The FROZEN SCHEMA
  * is the authority for whether a guard exists — `WithdrawHandoffInput` really
@@ -721,16 +706,9 @@ const GUARD_BACKED_BY_SERVER_LOCAL_SCHEMA: Partial<Record<OperationName, string>
  * testing anything without ever going red, so it decays silently. This cannot.
  */
 const PENDING_AMENDMENT: OperationName[] = [
-  // Forms W1 backend: the rows exist with `cmd: null` until the `tm8 form`
-  // noun lands (a separate CLI lane stacked on this one). That lane advertises
-  // `--expect-version` and DELISTS these six — the exact-set assertion makes
-  // forgetting either half go red.
-  'forms.update',
-  'forms.questions.add',
-  'forms.questions.update',
-  'forms.questions.remove',
-  'forms.questions.move',
-  'forms.transition',
+  // Forms W1 CLI: the six forms.* guard rows the backend listed here now
+  // advertise a required `--expect-version` (the `tm8 form` noun) and are
+  // delisted. The class is closed again.
 ];
 
 describe('version guards: the projection and the frozen DTOs agree, both directions', () => {
@@ -914,6 +892,16 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // pinned all the same: optional is not unspecified, and a row that
     // advertises a flag it cannot send is exactly what this table catches.
     ['execution.sessions.share', '--expect-version', 'expectedVersion'],
+
+    // ── Forms W1 (the `tm8 form` noun): six structure/lifecycle rows guard the
+    // FORM's version. The three response writes guard the RESPONSE with
+    // `--response-version`, which is not an expected* field and is not here.
+    ['forms.update', '--expect-version', 'expectedVersion'],
+    ['forms.questions.add', '--expect-version', 'expectedVersion'],
+    ['forms.questions.update', '--expect-version', 'expectedVersion'],
+    ['forms.questions.remove', '--expect-version', 'expectedVersion'],
+    ['forms.questions.move', '--expect-version', 'expectedVersion'],
+    ['forms.transition', '--expect-version', 'expectedVersion'],
   ];
 
   it('every guard row pins its flag to its frozen field — transposition-proof', () => {
@@ -936,7 +924,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(33); /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(actual.length).toBe(39); /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 
