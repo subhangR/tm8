@@ -131,3 +131,17 @@ test('Q1: a memory dropped at BODY level is a listed, collapsed entry; opening i
   assert.throws(() => measureLane({ manifest: bad, linked: [], transcriptLines: transcript([]) }), /vs entry state expanded/);
 });
 
+
+test('Q1: a collapsed memory whose index line was ALSO trimmed (body + entry drops, no entry) measures as an ENTRY-level miss', () => {
+  const MEMT = id(11);
+  const m = manifest();
+  m.context.dropped.push({ entityId: MEMT, reason: 'byte-budget', level: 'body' }, { entityId: MEMT, reason: 'byte-budget', level: 'entry' });
+  const row = measureLane({ manifest: m, linked: [], transcriptLines: transcript([['Bash', { command: `tm8 entity context ${MEMT} --format json` }]]) });
+  assert.equal(row.miss.ids[MEMT], 'byte-budget:entry');
+  assert.equal(row.miss.entry.count, 1);
+  assert.equal(row.miss.header.count, 0);
+  // negative control: a body drop with no entry and NO entry-level drop is still refused
+  const bad = manifest();
+  bad.context.dropped.push({ entityId: MEMT, reason: 'byte-budget', level: 'body' });
+  assert.throws(() => measureLane({ manifest: bad, linked: [], transcriptLines: transcript([]) }), /byte-budget:body\) vs entry state absent/);
+});

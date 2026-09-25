@@ -10,6 +10,10 @@
 import { CHARS_PER_TOKEN } from './pricing.mjs';
 
 export const INDEX_GROUPS = ['references', 'skills', 'teammates', 'memories'];
+// 2: memoriesExpanded comes from the entries on EVERY arm and is taken OUT of
+// tm8Kernel (v1 read it from the index-only memoryInjection budget, 0 on
+// index-off arms, and left it inside the kernel). report.mjs refuses a mix.
+export const COMPONENTS_SCHEMA = 2;
 
 export function componentsOf({ measured, manifest }) {
   const ctx = manifest?.context ?? {};
@@ -26,13 +30,16 @@ export function componentsOf({ measured, manifest }) {
     }
   }
   const tm8System = measured.system?.tm8Bytes ?? 0;
+  // Memories inlined whole, on every arm: each expanded entry's bytes are its
+  // rendered <entry> (the index-on budget's `used` is the same sum).
+  const memoriesExpanded = entries.filter((e) => e.group === 'memories' && e.state === 'expanded').reduce((s, e) => s + (e.bytes ?? 0), 0);
   const a = measured.attachments ?? {};
   const bytes = {
-    tm8Kernel: Math.max(0, tm8System - indexBytes),
+    tm8Kernel: Math.max(0, tm8System - indexBytes - memoriesExpanded),
     assignmentSnapshot: measured.firstUserBytes ?? 0,
     contextIndex: indexBytes,
     contextIndexByGroup: indexByGroup,
-    memoriesExpanded: ctx.budgets?.memoryInjection?.used ?? 0,
+    memoriesExpanded,
     harness: {
       systemOther: Math.max(0, (measured.system?.harnessChars ?? 0) - (measured.system?.chromeChars ?? 0)),
       chrome: measured.system?.chromeChars ?? 0,
@@ -43,7 +50,7 @@ export function componentsOf({ measured, manifest }) {
     },
   };
   const harnessTotal = Object.values(bytes.harness).reduce((s, x) => s + x, 0);
-  const measuredChars = bytes.tm8Kernel + bytes.assignmentSnapshot + bytes.contextIndex + harnessTotal;
+  const measuredChars = bytes.tm8Kernel + bytes.memoriesExpanded + bytes.assignmentSnapshot + bytes.contextIndex + harnessTotal;
   const first = measured.firstRequestTokens ?? 0;
   const estimatedTotalChars = first * CHARS_PER_TOKEN;
   const remainderChars = Math.max(0, Math.round(estimatedTotalChars - measuredChars));
@@ -53,11 +60,12 @@ export function componentsOf({ measured, manifest }) {
   const tokens = {
     firstRequest: first,
     tm8Kernel: share(bytes.tm8Kernel),
+    memoriesExpanded: share(bytes.memoriesExpanded),
     assignmentSnapshot: share(bytes.assignmentSnapshot),
     contextIndex: share(bytes.contextIndex),
     harness: share(harnessTotal),
     remainderEstimated: share(remainderChars),
     estimate: `shares of firstRequestTokens by measured chars; remainder = first × ${CHARS_PER_TOKEN} − measured`,
   };
-  return { bytes, tokens, measuredChars, harnessTotal };
+  return { schema: COMPONENTS_SCHEMA, bytes, tokens, measuredChars, harnessTotal };
 }

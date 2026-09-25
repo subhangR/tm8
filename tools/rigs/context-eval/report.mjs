@@ -13,7 +13,8 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { missLevel } from '../context-measure/measure.mjs';
-import { ARMS } from './node-registry.mjs';
+import { COMPONENTS_SCHEMA } from './components.mjs';
+import { ARMS, ARM_ENV } from './node-registry.mjs';
 
 const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -73,6 +74,28 @@ export function classify(rows) {
 }
 export const entryMissed = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
 export const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'header');
+// Q1's memory collapse runs only with the context index ON, so the memory
+// family's alias fact is inlined whole on an index-off arm and `aliasCheck`
+// cannot discriminate there: n/a, and out of the rubric mean on those arms.
+const INDEX_OFF_NA = ['aliasCheck'];
+export const indexOff = (arm) => !ARM_ENV[arm]?.TM8_CONTEXT_INDEX;
+const itemApplies = (arm, name) => !(indexOff(arm) && INDEX_OFF_NA.includes(name));
+/** The row's rubric score over the items that apply on its arm. */
+export function rubricScore(r) {
+  const items = r.rubric?.items;
+  if (!Array.isArray(items)) return r.rubric?.score ?? null;
+  const kept = items.filter((i) => itemApplies(r.arm, i.name));
+  return kept.length ? kept.filter((i) => i.pass).length / kept.length : null;
+}
+/** Per rubric item: `name k/n`, or `name n/a (index off)`. */
+function rubricItems(rs, arm) {
+  const names = [...new Set(rs.flatMap((r) => (r.rubric?.items ?? []).map((i) => i.name)))];
+  return names.map((name) => (itemApplies(arm, name) ? `${name} ${rs.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length}/${rs.length}` : `${name} n/a (index off)`)).join(' · ');
+}
+const mean = (xs) => {
+  const v = xs.filter((x) => typeof x === 'number' && Number.isFinite(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+};
 const inputTokens = (r) => (r.usage ? r.usage.input + r.usage.cacheCreation + r.usage.cacheRead : null);
 
 const SIZE_COLS = [
@@ -83,14 +106,13 @@ const SIZE_COLS = [
   ['  references', (r) => r.components?.bytes?.contextIndexByGroup?.references],
   ['  skills', (r) => r.components?.bytes?.contextIndexByGroup?.skills],
   ['  memories (collapsed)', (r) => r.components?.bytes?.contextIndexByGroup?.memories],
-  // Index arms only (the budget that collapses memories runs only with the index
-  // on); these bytes are INSIDE the tm8 kernel above, not in addition to it.
-  ['  memories expanded bytes (index arms; inside kernel)', (r) => r.components?.bytes?.memoriesExpanded],
+  ['memories expanded bytes (outside the kernel)', (r) => r.components?.bytes?.memoriesExpanded],
   ['harness chars (system + attachments)', (r) => r.components?.harnessTotal],
   ['  skill_listing', (r) => r.components?.bytes?.harness?.skillListing],
   ['  Claude in Chrome block', (r) => r.components?.bytes?.harness?.chrome],
   ['remainder chars (estimated: tool schemas)', (r) => r.components?.bytes?.remainderEstimated],
   ['tokens: tm8 kernel (est.)', (r) => r.components?.tokens?.tm8Kernel],
+  ['tokens: memories expanded (est.)', (r) => r.components?.tokens?.memoriesExpanded],
   ['tokens: context index (est.)', (r) => r.components?.tokens?.contextIndex],
   ['tokens: harness (est.)', (r) => r.components?.tokens?.harness],
   ['resident tm8 bytes (× requests)', (r) => r.residentTm8Bytes],
@@ -114,6 +136,8 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   const models = [...new Set(rows.map((r) => r.model))].sort();
   const families = [...new Set(rows.map((r) => r.family))].sort();
   const versions = [...new Set(rows.map((r) => r.fixtureVersion?.contentHash ?? 'none'))];
+  const stale = measured.filter((r) => r.components?.schema !== COMPONENTS_SCHEMA);
+  if (stale.length) throw new Error(`${stale.length} measured row(s) carry components schema ${[...new Set(stale.map((r) => r.components?.schema ?? 1))].join(', ')}, not ${COMPONENTS_SCHEMA} (the kernel figure changed meaning): node remeasure.mjs <file>.jsonl --all`);
   if (versions.length !== 1) throw new Error(`rows span fixture versions ${versions.join(', ')}: arms and families are not comparable across fixtures; report each version separately`);
   const md = [];
   const json = { title, generatedAt: new Date().toISOString(), rows: rows.length, measured: measured.length, excluded: excluded.length, fixtureVersions: versions, builds: [...new Set(rows.map((r) => r.buildSha))], cells: {}, gate: {}, accuracy: {}, costDelta: {}, failures: {}, load: {}, delta: null };
@@ -152,7 +176,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '');
 
   // 3. accuracy per model × arm × family
-  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | needle opened |', '|---|---|---|---|---|---|---|---|');
+  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const family of families) {
       for (const a of arms) {
@@ -160,10 +184,10 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
         if (!rs.length) continue;
         const ok = rs.filter((r) => r.success?.success).length;
         const del = rs.filter((r) => r.success?.deliverableCorrect).length;
-        const rub = stats(rs.map((r) => r.rubric?.score));
+        const rub = mean(rs.map(rubricScore));
         const needle = rs.filter((r) => r.needleOpened !== null);
-        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub ? rub.median.toFixed(2) : '—'} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
-        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: ok, deliverableCorrect: del, rubric: rub };
+        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs, a)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
+        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: ok, deliverableCorrect: del, rubricMean: rub, rubricNa: indexOff(a) ? INDEX_OFF_NA : [] };
       }
     }
   }
@@ -219,7 +243,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
     md.push('## 6. DELTA vs baseline (baseline → this run, medians; n on both sides)', '', `baseline: ${baselineRows.length} rows, builds ${[...new Set(baselineRows.map((r) => r.buildSha))].join(', ')}`, '');
     md.push('| model | arm | family | measure | baseline | this run | Δ |', '|---|---|---|---|---|---|---|');
     json.delta = {};
-    const KEY = [['first-request tokens', (r) => r.firstRequestTokens], ['est. $ per lane', (r) => r.costUsd, 3], ['entry-level missed launches %', null], ['success %', null], ['mean rubric', (r) => r.rubric?.score, 2], ['wall seconds', (r) => r.wallSeconds]];
+    const KEY = [['first-request tokens', (r) => r.firstRequestTokens], ['est. $ per lane', (r) => r.costUsd, 3], ['entry-level missed launches %', null], ['success %', null], ['mean rubric', rubricScore, 2], ['wall seconds', (r) => r.wallSeconds]];
     for (const model of models) {
       for (const a of arms) {
         for (const family of families) {
@@ -232,6 +256,9 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
             if (name.startsWith('entry-level')) {
               pv = (100 * prev.filter(entryMissed).length) / prev.length;
               cv = (100 * cur.filter(entryMissed).length) / cur.length;
+            } else if (name === 'mean rubric') {
+              pv = mean(prev.map(f));
+              cv = mean(cur.map(f));
             } else if (name === 'success %') {
               pv = (100 * prev.filter((r) => r.success?.success).length) / prev.length;
               cv = (100 * cur.filter((r) => r.success?.success).length) / cur.length;

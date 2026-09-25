@@ -21,7 +21,7 @@ function row(over = {}) {
     system: { tm8Bytes: 13_000, harnessChars: 11_000, chromeChars: 4_000 }, firstUserBytes: 3000, attachments: { skill_listing: 20_000 },
     miss: { ids: {}, entry: { count: 0 }, header: { count: 0 } }, expand: { rate: 0.05 }, blindFetchBytes: 0,
     success: { success: true, deliverableCorrect: true, committed: true, closeout: true, ticked: true, checks: { passed: 4, total: 4, failures: [] } },
-    rubric: { score: 1 }, needleOpened: true, components: { bytes: { tm8Kernel: 13_000, contextIndex: 0, contextIndexByGroup: {} }, tokens: {}, harnessTotal: 35_000 },
+    rubric: { score: 1 }, needleOpened: true, components: { schema: 2, bytes: { tm8Kernel: 13_000, contextIndex: 0, contextIndexByGroup: {} }, tokens: {}, harnessTotal: 35_000 },
     ...over,
   };
 }
@@ -110,13 +110,13 @@ test('components: kernel excludes the index, group bytes sum collapsed entries, 
   const measured = { system: { tm8Bytes: 20_000, harnessChars: 11_000, chromeChars: 4_000 }, firstUserBytes: 3000, attachments: { skill_listing: 20_000, agent_listing_delta: 2500 }, firstRequestTokens: 36_000 };
   const manifest = { context: { index: { bytes: 7000 }, budgets: { memoryInjection: { used: 1200 } }, entries: [{ group: 'references', state: 'collapsed', bytes: 5000 }, { group: 'skills', state: 'collapsed', bytes: 2000 }, { group: 'memories', state: 'expanded', bytes: 1200 }] } };
   const c = componentsOf({ measured, manifest });
-  assert.equal(c.bytes.tm8Kernel, 13_000);
+  assert.equal(c.bytes.tm8Kernel, 20_000 - 7000 - 1200, 'kernel excludes the index AND the expanded memories');
   assert.equal(c.bytes.contextIndexByGroup.references, 5000);
   assert.equal(c.bytes.contextIndexByGroup.memories, 0);
   assert.equal(c.bytes.memoriesExpanded, 1200);
   assert.equal(c.harnessTotal, 11_000 + 20_000 + 2500);
   assert.ok(c.bytes.remainderEstimated > 0);
-  const sum = c.tokens.tm8Kernel + c.tokens.assignmentSnapshot + c.tokens.contextIndex + c.tokens.harness + c.tokens.remainderEstimated;
+  const sum = c.tokens.tm8Kernel + c.tokens.memoriesExpanded + c.tokens.assignmentSnapshot + c.tokens.contextIndex + c.tokens.harness + c.tokens.remainderEstimated;
   assert.ok(Math.abs(sum - 36_000) <= 3, String(sum));
 });
 
@@ -156,4 +156,29 @@ test('report §5 flags a slice whose fixture main moved', () => {
   const r = buildReport([row({ base: 'aaaaaaaa11' }), row({ rep: 2, base: 'bbbbbbbb22' })], null);
   assert.deepEqual(r.json.load['c1 / 4621'].fixtureMainShas, ['aaaaaaaa11', 'bbbbbbbb22']);
   assert.match(r.md, /aaaaaaaa, bbbbbbbb ⚑ MOVED/);
+});
+
+test('components: memoriesExpanded comes from the entries on an index-OFF arm too (no memoryInjection budget) and leaves the kernel', () => {
+  const measured = { system: { tm8Bytes: 30_000, harnessChars: 11_000, chromeChars: 0 }, firstUserBytes: 3000, attachments: {}, firstRequestTokens: 30_000 };
+  const manifest = { context: { entries: [{ group: 'memories', state: 'expanded', bytes: 1169 }, { group: 'memories', state: 'expanded', bytes: 1152 }, { group: 'references', state: 'collapsed', bytes: 400 }] } };
+  const c = componentsOf({ measured, manifest });
+  assert.equal(c.bytes.memoriesExpanded, 2321);
+  assert.equal(c.bytes.contextIndex, 0);
+  assert.equal(c.bytes.tm8Kernel, 30_000 - 2321);
+  assert.equal(c.schema, 2);
+});
+
+test('rows measured under components schema 1 are refused (kernel meaning changed): remeasure --all', () => {
+  assert.throws(() => buildReport([row(), row({ rep: 2, components: { bytes: {} } })], null), /components schema 1.*remeasure/);
+});
+
+test('rubric: aliasCheck is n/a on index-off arms (lean, inherit) and out of their mean; it counts on index arms', () => {
+  const items = (alias) => ['committed', 'checks', 'closeout', 'ticked'].map((name) => ({ name, pass: true })).concat([{ name: 'aliasCheck', pass: alias }]);
+  const mem = (arm, alias) => row({ arm, family: 'memory', taskKey: 'mem-fee', rubric: { family: 'memory', items: items(alias), score: alias ? 1 : 0.8 } });
+  const r = buildReport([mem('lean', false), mem('inherit', false), mem('index-derived', false)], null);
+  assert.equal(r.json.accuracy['sonnet5/lean/memory'].rubricMean, 1, 'lean: aliasCheck excluded');
+  assert.equal(r.json.accuracy['sonnet5/inherit/memory'].rubricMean, 1);
+  assert.equal(r.json.accuracy['sonnet5/index-derived/memory'].rubricMean, 0.8, 'index arm: aliasCheck counts');
+  assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*aliasCheck n\/a \(index off\)/);
+  assert.match(r.md, /\| sonnet5 \| memory \| index-derived \| 1 \|[^\n]*aliasCheck 0\/1/);
 });
