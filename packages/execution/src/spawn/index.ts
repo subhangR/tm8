@@ -6,6 +6,7 @@ export {
   redactSecretTokens,
   REDACTION_MARKER,
   SECRET_TOKEN_SOURCE,
+  TOKEN_CHAR_CLASS,
 } from './secret-redaction.js';
 export {
   SpawnService,

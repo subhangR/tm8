@@ -29,7 +29,18 @@
 export const SECRET_TOKEN_SOURCE =
   '(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|tm8[sacr]_[A-Za-z0-9_-]{20,})';
 
-const LEFT_BOUNDARY_SOURCE = '(^|[^A-Za-z0-9_-])';
+/**
+ * The characters a token is made of: every literal and class in
+ * `SECRET_TOKEN_SOURCE` is inside it, and the left boundary is its complement,
+ * so a token always starts where a run of these characters starts. A reader
+ * that cuts text before redacting it (`safeText` in the server's header
+ * resolver) relies on exactly that; a pattern with a character outside this
+ * class (a JWT's `.`, base64's `+/=`) must widen it, and the grammar-shape
+ * test fails until it does.
+ */
+export const TOKEN_CHAR_CLASS = 'A-Za-z0-9_-';
+
+const LEFT_BOUNDARY_SOURCE = `(^|[^${TOKEN_CHAR_CLASS}])`;
 
 /** What a scrubbed token is replaced with, everywhere. */
 export const REDACTION_MARKER = '[credential-redacted]';

@@ -21,7 +21,7 @@ import {
   type EntityHeaderView, type HeaderClippedField, type SelectionHeader,
 } from '@tm8/contract';
 
-import { redactSecretTokens } from '@tm8/execution';
+import { redactSecretTokens, TOKEN_CHAR_CLASS } from '@tm8/execution';
 
 import type { Querier } from '../db/types.js';
 import { titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -32,7 +32,7 @@ const DOC_HEAD_CHARS = 4000;
 /** …and at most this many of its headings. */
 const DOC_HEADINGS_MAX = 24;
 
-interface HeaderRow {
+export interface HeaderRow {
   id: string;
   kind: string;
   skill_name: string | null;
@@ -81,7 +81,7 @@ interface HeaderRow {
  * text leaves the server.
  *
  * SQL cuts first, `REDACTION_MARGIN` characters past each limit. A token can
- * only start where a run of token characters (`[A-Za-z0-9_-]`) starts: the
+ * only start where a run of token characters (`TOKEN_CHAR_CLASS`) starts: the
  * pattern's left boundary forbids one mid-run. So the run the SQL cut ends on
  * is either at least `REDACTION_MARGIN` long, which is more than any pattern's
  * minimum match (the longest, `github_pat_` + 20, is 31), so a credential there
@@ -98,11 +98,13 @@ export const REDACTION_MARGIN = 64;
  * redaction elsewhere in the text can shorten the text enough to pull it back
  * under the limit. Then every credential-shaped token is redacted.
  */
+const TRAILING_RUN = new RegExp(`[${TOKEN_CHAR_CLASS}]+$`);
+
 export function safeText(text: string | null, fetched?: number): string | null {
   if (text === null) return null;
   let cut = text;
   if (fetched !== undefined && Array.from(text).length >= fetched) {
-    const tail = /[A-Za-z0-9_-]+$/.exec(text)?.[0] ?? '';
+    const tail = TRAILING_RUN.exec(text)?.[0] ?? '';
     if (tail.length < REDACTION_MARGIN) cut = text.slice(0, text.length - tail.length);
   }
   return redactSecretTokens(cut);
@@ -238,6 +240,21 @@ function clipText(text: string | null, max: number): string | null {
 }
 
 /**
+ * An authored field read at `fetched` characters, redacted, then clipped to
+ * `max`: the clipped text, or null when the field fits. A field SQL cut (it
+ * reached `fetched`, which is past `max`) was longer than `max`, so it is
+ * ALWAYS a clip, even when redaction shrank what was read back under `max`:
+ * a key longer than the margin would otherwise make a cut silent.
+ */
+export function clipAuthored(raw: string | null, fetched: number, max: number): { text: string | null; clipped: boolean } {
+  const safe = safeText(raw, fetched);
+  if (raw === null || safe === null) return { text: null, clipped: false };
+  const points = Array.from(safe);
+  if (points.length <= max && Array.from(raw).length < fetched) return { text: safe, clipped: false };
+  return { text: `${points.slice(0, Math.min(points.length, max - 1)).join('')}…`, clipped: true };
+}
+
+/**
  * The row's `entity_headers` columns, when it has one, cut to the
  * `AUTHORED_HEADER_LIMITS` guidance and DECLARED in `clipped`. Nothing refuses
  * a longer header (migration 223), so the cut happens here, once, for every
@@ -249,23 +266,33 @@ function authoredOf(row: HeaderRow): AuthoredHeader | null {
   if (row.header_stale == null) return null;
   const clipped: HeaderClippedField[] = [];
   // Redacted before the cut (see REDACTION_MARGIN), so a clip never leaves a credential's prefix.
-  const fullWhen = safeText(row.header_when_to_use, AW);
-  const fullSummary = safeText(row.header_summary, AS);
-  const whenToUse = clipText(fullWhen, AUTHORED_HEADER_LIMITS.whenToUse);
-  if (whenToUse !== null) clipped.push('whenToUse');
-  const summary = clipText(fullSummary, AUTHORED_HEADER_LIMITS.summary);
-  if (summary !== null) clipped.push('summary');
-  const raw = (row.header_keywords ?? []).map((k) => safeText(k, AKL)!);
+  const whenToUse = clipAuthored(row.header_when_to_use, AW, AUTHORED_HEADER_LIMITS.whenToUse);
+  if (whenToUse.clipped) clipped.push('whenToUse');
+  const summary = clipAuthored(row.header_summary, AS, AUTHORED_HEADER_LIMITS.summary);
+  if (summary.clipped) clipped.push('summary');
+  const raw = row.header_keywords ?? [];
   const keywords = raw.slice(0, AUTHORED_HEADER_LIMITS.keywords)
-    .map((k) => clipText(k, AUTHORED_HEADER_LIMITS.keyword) ?? k);
-  if (raw.length > AUTHORED_HEADER_LIMITS.keywords || keywords.some((k, i) => k !== raw[i])) clipped.push('keywords');
+    .map((k) => clipAuthored(k, AKL, AUTHORED_HEADER_LIMITS.keyword));
+  if (raw.length > AUTHORED_HEADER_LIMITS.keywords || keywords.some((k) => k.clipped)) clipped.push('keywords');
   return {
-    whenToUse: whenToUse ?? fullWhen,
-    summary: summary ?? fullSummary,
-    keywords,
+    whenToUse: whenToUse.text,
+    summary: summary.text,
+    keywords: keywords.map((k) => k.text!),
     stale: row.header_stale,
     ...(clipped.length > 0 ? { clipped } : {}),
   };
+}
+
+/**
+ * The header's `name`: `titleOf`, from REDACTED text. A memory's title is its
+ * statement cut to 120, so the statement is redacted before `titleOf` cuts it
+ * (a key straddling 120 would leave a prefix no pattern matches); every other
+ * kind's name is its own column, uncut, and is redacted like every other field.
+ */
+export function headerNameOf(row: HeaderRow): string {
+  const memory_statement = row.kind === 'memory' ? safeText(row.memory_statement, L) : row.memory_statement;
+  // `titleOf` reads only the kind and that kind's own name column, all selected above.
+  return safeText(titleOf({ ...row, memory_statement, deleted_at: null } as unknown as EntityRow))!;
 }
 
 /** One resolved header per readable row, with the row it came from. */
@@ -281,9 +308,7 @@ async function resolveRows(
   for (const row of rows) {
     const facts = factsOf(row);
     if (!facts) continue;
-    // `titleOf` reads only the kind and that kind's own name column, all selected above.
-    const name = titleOf({ ...row, deleted_at: null } as unknown as EntityRow);
-    out.push({ row, header: deriveHeader({ id: row.id, name }, facts, authoredOf(row)) });
+    out.push({ row, header: deriveHeader({ id: row.id, name: headerNameOf(row) }, facts, authoredOf(row)) });
   }
   return out;
 }

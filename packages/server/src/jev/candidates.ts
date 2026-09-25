@@ -21,6 +21,7 @@
  * no loader builds its own snippet (headers design 01a0d31e §7).
  */
 import { SPAWN_SELECTION_GROUP_LIMIT, type RankedEntityKind, type RankedEntitySource } from '@tm8/contract';
+import { redactSecretTokens } from '@tm8/execution';
 
 import type { Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -160,16 +161,35 @@ export async function loadSubject(
       ...(task.priority ? { priority: task.priority } : {}),
       ...(task.work_status ? { status: task.work_status } : {}),
       acceptanceCriteriaCount: Number(task.acceptance_count),
-      ...(parent ? { parentTitle: titleOf(parent) } : {}),
+      ...(parent ? { parentTitle: redactedTitleOf(parent) } : {}),
     };
   } else {
     subject = {
-      title: `${anchor.kind === 'work_session' ? 'Continue: ' : 'Work on: '}${titleOf(anchor)}`,
+      title: `${anchor.kind === 'work_session' ? 'Continue: ' : 'Work on: '}${redactedTitleOf(anchor)}`,
       description: anchor.kind === 'message' ? anchor.message_body ?? '' : '',
     };
   }
   if (draft) subject = { ...subject, title: draft.title, description: draft.description };
-  return { subject, taskId };
+  return { subject: redactSubject(subject), taskId };
+}
+
+/**
+ * `titleOf` over redacted text: a memory's title is its statement cut to 120,
+ * and a key straddling that cut would leave a prefix no pattern matches.
+ */
+function redactedTitleOf(row: EntityRow): string {
+  const statement = row.memory_statement;
+  return titleOf(statement == null ? row : { ...row, memory_statement: redactSecretTokens(statement) });
+}
+
+/** The subject leaves the server for the Jev model, so every text in it is redacted (the manifest's grammar). */
+export function redactSubject(subject: JevSubject): JevSubject {
+  return {
+    ...subject,
+    title: redactSecretTokens(subject.title),
+    description: redactSecretTokens(subject.description),
+    ...(subject.parentTitle !== undefined ? { parentTitle: redactSecretTokens(subject.parentTitle) } : {}),
+  };
 }
 
 /** §8: nothing to ask about. Every group is skipped with `no_subject_text`. */

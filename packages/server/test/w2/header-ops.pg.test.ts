@@ -34,6 +34,7 @@ import type { Db, Querier } from '../../src/db/types.js';
 import { HandlerRegistry, registerFacadeHandlers } from '../../src/facade/index.js';
 import { resolveHeaders } from '../../src/headers/resolve.js';
 import { jevText } from '../../src/headers/render.js';
+import { loadSubject } from '../../src/jev/candidates.js';
 import type { ServerConfig } from '../../src/http/config.js';
 import type { RequestContext } from '../../src/http/types.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
@@ -379,6 +380,85 @@ describe('entities.header.set / clear (I4)', () => {
     expect(derived.source).toBe('derived');
     expect(leaked(derived.summary), 'derived summary').toBe(false);
     expect(leaked(jevText(derived)), 'jev text').toBe(false);
+  });
+
+  it('#805 review: EVERY grammar alternative straddling every cut, through SQL, in EVERY reader: no 4-char prefix survives', async () => {
+    // One token per alternative, at its shortest match, plus a real-length key; every
+    // prefix variant is swept in test/headers/redact-attack-matrix.test.ts.
+    const tokens = [
+      `sk-${'a'.repeat(16)}`, `sk-ant-oat01-${'A'.repeat(95)}`, `ghs_${'C'.repeat(20)}`,
+      `github_pat_${'e'.repeat(20)}`, `xoxb-${'1'.repeat(10)}`, `tm8c_${'G'.repeat(20)}`,
+    ];
+    const at = (start: number, token: string): string => `${'x'.repeat(start - 1)} ${token} and the rest of it`;
+    const q = { query: database.query.bind(database) } as unknown as Querier;
+    const resolved = { query: new URLSearchParams({ header: 'resolved' }) };
+    const resolvedContext = { query: new URLSearchParams({ schema: 'v2', header: 'resolved' }) };
+    /** Every header text a reader shows: name, whenToUse, summary, keywords. */
+    const texts = (h: EntityHeaderView | { name: string; whenToUse: string | null; summary: string | null; keywords: readonly string[] } | undefined): string =>
+      h ? [h.name, h.whenToUse, h.summary, ...h.keywords].join('\n') : '';
+    const expectClean = (label: string, token: string, text: string): void => {
+      expect(text.includes(token.slice(0, 4)), `${label}: ${token.slice(0, 8)}`).toBe(false);
+    };
+
+    // A memory, whose header NAME is its statement cut to 120.
+    const memoryId = '01a0c000-0000-7000-8000-0000000805aa';
+    await database.query(
+      `insert into public.entities(id,space_id,kind,created_by,visibility) values ($1,$2,'memory',$3,'space')`,
+      [memoryId, F.space, F.member],
+    );
+    await database.query(
+      `insert into public.memories(entity_id, statement, mechanism, subject_scope, does_not_establish) values ($1,'seed','seed','scratch','runtime')`,
+      [memoryId],
+    );
+
+    const [original] = await database.query<{ title: string; description: string | null }>(
+      'select title, description from public.tasks where entity_id = $1', [F.T],
+    );
+    for (const token of tokens) {
+      // Authored: straddling the 400/600 clip and the SQL fetch (limit + 64).
+      for (const [field, max] of [['whenToUse', 400], ['summary', 600]] as const) {
+        for (const start of [max - 6, max + 64 - 8]) {
+          const set = await call<HeaderResult>('entities.header.set', { id: F.T }, { body: { [field]: at(start, token), keywords: [at(35, token)] } });
+          for (const [label, h] of [
+            ['set result', set.header], ['set entity', set.entity.header], ['get', (await get(F.T)).header],
+            ['context', (await context(F.T)).header],
+            ['resolveHeaders', (await resolveHeaders(q, F.space, [F.T])).get(F.T)],
+          ] as const) expectClean(`authored ${field}@${start} ${label}`, token, texts(h));
+          expectClean(`authored ${field}@${start} jev`, token, jevText((await resolveHeaders(q, F.space, [F.T])).get(F.T)!));
+          await call('entities.header.clear', { id: F.T }, { body: {} });
+        }
+      }
+      // Derived: the task description straddling 600, the index's 200 and the fetch boundary.
+      for (const start of [200 - 6, 600 - 6, 600 + 64 - 8]) {
+        await database.query('update public.tasks set description = $2 where entity_id = $1', [F.T, at(start, token)]);
+        const clear = await call<HeaderResult>('entities.header.clear', { id: F.T }, { body: {} });
+        const header = (await resolveHeaders(q, F.space, [F.T])).get(F.T)!;
+        expect(header.source).toBe('derived');
+        for (const [label, h] of [
+          ['clear result', clear.header], ['get resolved', (await call<Detail>('entities.get', { id: F.T }, resolved)).header],
+          ['context resolved', (await call<Detail>('entities.context', { id: F.T }, resolvedContext)).header], ['resolveHeaders', header],
+        ] as const) expectClean(`derived @${start} ${label}`, token, texts(h));
+        expectClean(`derived @${start} jev`, token, jevText(header));
+      }
+      // A memory's name, cut at 120 from its statement.
+      for (const start of [120 - 6, 120 - 2]) {
+        await database.query('update public.memories set statement = $2 where entity_id = $1', [memoryId, at(start, token)]);
+        const header = (await resolveHeaders(q, F.space, [memoryId])).get(memoryId)!;
+        expectClean(`memory name @${start}`, token, texts(header));
+        expectClean(`memory name @${start} get resolved`, token, texts((await call<Detail>('entities.get', { id: memoryId }, resolved)).header));
+        expectClean(`memory name @${start} jev`, token, jevText(header));
+      }
+      // The Jev subject: the task Jev is asked about leaves the server whole, drafted or stored.
+      await database.query('update public.tasks set title = $2, description = $3 where entity_id = $1', [F.T, `Rotate ${token}`, at(900, token)]);
+      const stored = (await loadSubject(q, F.space, F.T, undefined)).subject;
+      const drafted = (await loadSubject(q, F.space, F.T, { title: `Draft ${token}`, description: at(5, token) })).subject;
+      for (const subject of [stored, drafted]) {
+        expectClean('jev subject', token, [subject.title, subject.description, subject.parentTitle ?? ''].join('\n'));
+      }
+    }
+    await database.query('update public.tasks set title = $2, description = $3 where entity_id = $1', [F.T, original!.title, original!.description]);
+    await database.query('delete from public.memories where entity_id = $1', [memoryId]);
+    await database.query('delete from public.entities where id = $1', [memoryId]);
   });
 
   it('a kind that stores no header is a no-op success with a warning, not a refusal', async () => {
