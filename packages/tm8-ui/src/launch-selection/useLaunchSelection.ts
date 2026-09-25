@@ -5,6 +5,7 @@ import {
   groupDiff,
   groupLock,
   LAUNCH_SELECTION_GROUPS,
+  launchBlock,
   loadingDefaults,
   manualOutcome,
   NO_SELECTION_EDITS,
@@ -34,6 +35,8 @@ export interface LaunchSelection {
   refusal: { group: SpawnSelectionGroup; id: EntityId; reason: string } | null;
   diff(group: SpawnSelectionGroup): GroupDiff;
   lock(group: SpawnSelectionGroup): string | null;
+  /** Why Launch must wait (an edited group's defaults are still loading); null when it need not. */
+  launchBlock: string | null;
   /** Each group's outcome for `composeSelection`, read at Launch. */
   outcomes(): Record<SpawnSelectionGroup, GroupOutcome>;
 }
@@ -128,6 +131,7 @@ export function useLaunchSelection(args: {
     refusal,
     diff: (group) => groupDiff(defaults[group], edits[group]),
     lock: (group) => groupLock(defaults[group]),
+    launchBlock: launchBlock(defaults, edits),
     outcomes,
   };
 }

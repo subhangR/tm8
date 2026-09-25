@@ -248,7 +248,10 @@ export function LaunchComposerPopup({
   const verdict = canLaunch(config, { projects: projectOptions, capacity });
   const refusal = !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
-    : verdict.ok ? null : verdict.reason;
+    : !verdict.ok ? verdict.reason
+      /* An edited group's defaults are re-reading: wait, or that group would
+         launch on its defaults and drop the person's removals. */
+      : selection.launchBlock;
 
   /*
    * DISMISS ONLY ON SUCCESS — the owner's final ruling (2026-09-07, reversing
@@ -271,7 +274,7 @@ export function LaunchComposerPopup({
   };
 
   const commit = () => {
-    if (!onSpawn || pending) return;
+    if (!onSpawn || pending || refusal) return;
     setNodeRefusal(null);
     setPending(true);
     const sessionTitle = title.trim() || defaultTitle;

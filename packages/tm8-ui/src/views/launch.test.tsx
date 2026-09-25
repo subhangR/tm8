@@ -9,7 +9,7 @@
  * first, which is exactly why they are pinned here.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
 import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -702,6 +702,43 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
     const { load, getByText } = await renderWithDefaults();
     fireEvent.click(getByText('scout'));
     expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'ent-tm-scout', subjectId: 'task-1' });
+  });
+
+  it('while an EDITED group’s defaults re-read, Launch waits and says why — the removal is never dropped', async () => {
+    /* A teammate change re-reads the defaults. Until they land every group is
+       locked and would be omitted, so a launch in that window would load the
+       defaults the person just removed. Untouched groups never block. */
+    const { launches, onLaunch } = launchesOf();
+    let answer: (result: typeof LAUNCH_DEFAULTS) => void = () => {};
+    const load = vi.fn((input: { teamMemberId: string }) => (input.teamMemberId === 'ent-tm-scout'
+      ? new Promise<typeof LAUNCH_DEFAULTS>((resolve) => { answer = resolve; })
+      : Promise.resolve(LAUNCH_DEFAULTS)));
+    const view = await renderWithDefaults({ onLaunch, loadLaunchDefaults: load });
+    const launch = () => view.getByRole('button', { name: /Launch/ }) as HTMLButtonElement;
+
+    fireEvent.click(view.getByTestId('lsel-row-references-ent-file-log'));
+    fireEvent.click(view.getByText('scout'));
+    expect(launch().disabled).toBe(true);
+    expect(view.getByTestId('launch-selection-wait').textContent).toMatch(/defaults.*edits to them are kept/);
+    fireEvent.click(launch());
+    expect(launches).toHaveLength(0);
+
+    await act(async () => { answer(LAUNCH_DEFAULTS); });
+    expect(launch().disabled).toBe(false);
+    expect(view.queryByTestId('launch-selection-wait')).toBeNull();
+    fireEvent.click(launch());
+    expect(launches[0]!.teamMemberId).toBe('ent-tm-scout');
+    expect(launches[0]!.selection).toEqual({ referenceIds: ['ent-doc-spec'] });
+  });
+
+  it('an UNTOUCHED launch never waits on a re-read: nothing it sends depends on the defaults', async () => {
+    const load = vi.fn((input: { teamMemberId: string }) => (input.teamMemberId === 'ent-tm-scout'
+      ? new Promise<typeof LAUNCH_DEFAULTS>(() => {})
+      : Promise.resolve(LAUNCH_DEFAULTS)));
+    const view = await renderWithDefaults({ loadLaunchDefaults: load });
+    fireEvent.click(view.getByText('scout'));
+    expect((view.getByRole('button', { name: /Launch/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect(view.queryByTestId('launch-selection-wait')).toBeNull();
   });
 
   it('a group over the 240 ceiling cannot be edited, says so, and is never sent', async () => {

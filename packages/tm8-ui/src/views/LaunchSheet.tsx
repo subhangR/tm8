@@ -1078,6 +1078,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
 
       <JevRunBar jev={jev} />
 
+      {/* An edited group's defaults are re-reading (a teammate change): Launch
+          waits rather than launch that group on its defaults and drop the
+          person's removals. Said here, not only in a tooltip. */}
+      {selection.launchBlock ? (
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">{selection.launchBlock}</div>
+      ) : null}
+
       <footer className="ls__foot">
         <span className="ls__capacity">
           node loopback ·{' '}
@@ -1131,10 +1138,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <button
           type="button"
           className="ls__launch"
-          disabled={!teammate || atCapacity || launching}
+          disabled={!teammate || atCapacity || launching || selection.launchBlock !== null}
+          title={selection.launchBlock ?? undefined}
           aria-busy={launching || undefined}
           onClick={() => {
-            if (!teammate || atCapacity || launching) return;
+            if (!teammate || atCapacity || launching || selection.launchBlock) return;
             const credentialSources: NonNullable<LaunchConfig['credentialSources']> = {};
             const spaceCredentialIds: NonNullable<LaunchConfig['spaceCredentialIds']> = {};
             const pick = (provider: CredentialProviderName, choice: CredentialChoice) => {

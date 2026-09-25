@@ -152,6 +152,21 @@ export function groupLock(defaults: LaunchGroupDefaults): string | null {
   return null;
 }
 
+export const DEFAULTS_LOADING_BLOCK = 'Reading this launch’s defaults… Launch waits so your edits to them are kept.';
+
+/**
+ * Why Launch must wait; null when it need not. An EDITED group whose defaults
+ * are still loading (a teammate change re-reads them) is locked, so it would
+ * be omitted and launch on its defaults — the person's removals silently
+ * dropped. So Launch waits for that read. An untouched group never blocks: it
+ * is omitted either way.
+ */
+export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSelectionEdits): string | null {
+  const waiting = LAUNCH_SELECTION_GROUPS.some((group) =>
+    defaults[group].status === 'loading' && (edits[group].removed.length > 0 || edits[group].added.length > 0));
+  return waiting ? DEFAULTS_LOADING_BLOCK : null;
+}
+
 function defaultIds(defaults: LaunchGroupDefaults): readonly EntityId[] {
   return defaults.status === 'ready' ? defaults.rows.map((row) => row.id) : [];
 }

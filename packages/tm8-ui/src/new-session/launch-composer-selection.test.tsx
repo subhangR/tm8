@@ -120,6 +120,32 @@ describe('the Run popup’s context chips', () => {
     expect(input.selectionReasons).toEqual({ skills: 'jev-failed', references: 'not-asked' });
   });
 
+  it('while an EDITED group’s defaults re-read, Launch waits with the reason and sends nothing', async () => {
+    /* A new subject re-reads the defaults; until they land the edited group is
+       locked and would launch on its defaults, dropping the removal. */
+    let answer: (result: typeof LAUNCH_DEFAULTS) => void = () => {};
+    const load = vi.fn((input: { subjectId?: string }) => (input.subjectId === 'task-10'
+      ? new Promise<typeof LAUNCH_DEFAULTS>((resolve) => { answer = resolve; })
+      : Promise.resolve(LAUNCH_DEFAULTS)));
+    const selection = { load, candidates: { references: LAUNCH_REFERENCE_CANDIDATES } };
+    const view = renderPopup({ selection });
+    await view.open();
+    fireEvent.click(view.getByTestId('lsel-row-references-ent-doc-spec'));
+    const props: LaunchComposerPopupProps = {
+      subject: { id: 'task-10', title: 'Wire the launch flow' }, spaceId: 'sp-1', teammates: TEAMMATES, projects: PROJECTS,
+      onSpawn: view.onSpawn, onDismiss: vi.fn(), clientMutationId: 'm:test', jev: answeringPort({}), selection,
+    };
+    view.rerender(<div className="cv2-root"><LaunchComposerPopup {...props} /></div>);
+    await waitFor(() => expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-10' }));
+    expect(view.getAllByText(/edits to them are kept/).length).toBeGreaterThan(0);
+    fireEvent.click(view.getByTestId('nsx-send'));
+    expect(view.onSpawn).not.toHaveBeenCalled();
+
+    await act(async () => { answer(LAUNCH_DEFAULTS); });
+    const input = await view.spawn();
+    expect(input.selection).toEqual({ referenceIds: ['ent-file-log'] });
+  });
+
   it('without a defaults read, the groups cannot be edited and nothing is selected', async () => {
     const view = renderPopup({ selection: undefined });
     expect(view.getByTestId('lsel-chip-memories').textContent).toMatch(/\? memories/);
