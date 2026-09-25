@@ -522,6 +522,23 @@ export interface SpawnContext {
    * of it. Absent: no rank.
    */
   memoryScores?: { entityId: string; score: number; critical: boolean }[];
+  /**
+   * A dispatcher's roster (`GraphPort.loadDispatcherRoster`, under RLS):
+   * the space's teammates other than the dispatcher itself, rendered as the
+   * `teammates` group of `<context_index>` (integrated design 01a0d348 §8
+   * I8, headers T6). Only read when the index is on and the launch is a
+   * dispatcher. `total` counts every readable teammate; the ones past the
+   * read are declared, never dropped silently.
+   */
+  roster?: DispatcherRoster;
+}
+
+/** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
+export interface DispatcherRoster {
+  /** In roster order (name, then id), at most `DISPATCHER_ROSTER_READ_MAX`. */
+  members: Array<{ entityId: string; name: string; mode: string | null; model: string | null }>;
+  /** Every teammate the read could see, the dispatcher excluded. */
+  total: number;
 }
 
 export interface SpawnContextAudit {
@@ -551,9 +568,10 @@ export type ContextGroupName = 'memories' | 'skills' | 'references' | 'teammates
 
 /**
  * How an entry entered the launch set. `requested` is an id the spawn named
- * directly without a selection (`tm8 session spawn --memory`).
+ * directly without a selection (`tm8 session spawn --memory`); `roster` is a
+ * dispatcher's teammate, read from the space rather than from an edge.
  */
-export type ContextVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested';
+export type ContextVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'roster';
 
 export interface ContextGroupAudit {
   /**
@@ -569,7 +587,7 @@ export interface ContextGroupAudit {
    * launch's recorded selection malformed, so it loaded the defaults instead.
    */
   reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
-  /** Linked rows beyond the spawn read; declared as `omitted` in the prompt. */
+  /** Linked rows (a dispatcher's teammates: roster rows) beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
   legacyDropped?: number;
@@ -897,6 +915,16 @@ export interface GraphPort {
    * Optional so a graph without it renders the index from loader rows.
    */
   loadContextHeaders?(auth: GraphAuth, input: { spaceId: string; ids: string[] }): Promise<SelectionHeader[]>;
+  /**
+   * A dispatcher's roster (integrated design 01a0d348 §8 I8): the space's
+   * teammates except `excludeTeamMemberId`, under the caller's RLS, at most
+   * `limit` rows with the readable total. Optional: without it a dispatcher's
+   * index has no roster and it reads teammates with the CLI, as before.
+   */
+  loadDispatcherRoster?(
+    auth: GraphAuth,
+    input: { spaceId: string; excludeTeamMemberId: string; limit: number },
+  ): Promise<DispatcherRoster>;
   /**
    * Jev's scores for `memoryIds` from the launch's Ask Jev run
    * (`jev_runs.suggestions.memories`), read under the caller's RLS, with

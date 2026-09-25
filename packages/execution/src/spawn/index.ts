@@ -88,6 +88,7 @@ export {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 export { SpawnError } from './types.js';
+export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 export {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,
@@ -136,6 +137,7 @@ export type {
   ContextGroupAudit,
   ContextGroupName,
   ContextVia,
+  DispatcherRoster,
   LaunchHarnessRecord,
   ManifestContext,
   ManifestSkillContext,

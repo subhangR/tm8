@@ -30,7 +30,7 @@ import {
   SPAWN_SELECTION_GROUP_LIMIT,
 } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
-import { LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
+import { DISPATCHER_ROSTER_READ_MAX, LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
 import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, INDEX_DERIVED_HEADER_CHARS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
 
 import { LINKED_ROW_CAP } from '../facade/execution-handlers.js';
@@ -136,7 +136,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_AGENT_CMD', group: 'Lane launch', summary: 'Replaces the agent binary for every lane (an operator wrapper).', default: null, definedIn: MANIFEST, secret: true },
   { name: 'TM8_HARNESS_SURFACE', group: 'Lane launch', summary: 'minimal or inherit for every Claude lane. Outranks the persona setting.', default: 'minimal', definedIn: MANIFEST },
   { name: 'TM8_READ_HINTS', group: 'Lane launch', summary: 'Installs the large-read hint hook on every Claude lane. Outranks the persona setting.', default: 'off', definedIn: MANIFEST },
-  { name: 'TM8_CONTEXT_INDEX', group: 'Lane launch', summary: 'on or off for every launch: <context_index> (skills, references, teammates with headers, trimmed per group) in place of <skills>. Outranks the profile contextIndex. Shipped dark.', default: 'unset (profile decides; off)', definedIn: 'packages/execution/src/spawn/context-index.ts' },
+  { name: 'TM8_CONTEXT_INDEX', group: 'Lane launch', summary: 'on or off for every launch: <context_index> (skills, references, teammates with headers, trimmed per group) in place of <skills>; a dispatcher\'s teammates group is the space roster. Outranks the profile contextIndex. Shipped dark.', default: 'unset (profile decides; off)', definedIn: 'packages/execution/src/spawn/context-index.ts' },
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
@@ -252,6 +252,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
+  { name: 'DISPATCHER_ROSTER_READ_MAX', group: 'Prompt budgets', summary: 'Teammates a dispatcher\'s <context_index> roster reads (context index on). The rest are declared in the teammates group\'s omitted count; rosterIndex then trims what was read.', definedIn: 'packages/execution/src/spawn/context-index.ts', read: () => DISPATCHER_ROSTER_READ_MAX },
   { name: 'TEAMMATE_FIT_SCORE', group: 'Jev selection', summary: 'A teammate scoring at least this "fits" the work.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TEAMMATE_FIT_SCORE },
   { name: 'TICK_SCORE', group: 'Jev selection', summary: 'A memory or skill at or above this is pre-ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TICK_SCORE },
   { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'A row at or above this is always ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },

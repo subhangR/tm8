@@ -11,7 +11,7 @@ import {
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
-import { collapseMemories, contextBudgetsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch } from '../src/spawn/context-index.js';
+import { collapseMemories, contextBudgetsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
 import type { ContextVia, SpawnContext, SpawnRequest, TaskContext } from '../src/spawn/types.js';
@@ -429,5 +429,107 @@ describe('entries × dropped (index on): an id is shown with a header or body dr
     // No id is dropped twice at the same level.
     const seen = new Set(dropped.map((d) => `${key(d)}:${d.reason}:${d.level ?? ''}`));
     expect(seen.size).toBe(dropped.length);
+  });
+});
+
+describe('I8: a dispatcher\'s roster is its teammates group (design 01a0d348 §8 I8, headers T6)', () => {
+  const dispatcherRequest: SpawnRequest = { spaceId: 'space', teamMemberId: 'persona', mode: 'dispatcher' };
+  const dispatcher: SpawnContext['teamMember'] = { ...member, name: 'Dispatcher', mode: 'dispatcher' };
+  const mate = (i: number) => ({ entityId: `tm-${i}`, name: `Mate ${i}`, mode: i % 2 ? 'worker' : null, model: `model-${i}` });
+  const mateHeader = (i: number, source: SelectionHeader['source'] = 'derived'): SelectionHeader => ({
+    entityId: `tm-${i}`, kind: 'team_member', name: `Mate ${i}`, whenToUse: `role ${i}: backend reviewer`,
+    summary: `persona ${i} `.repeat(60), keywords: [], source, stale: false, bytes: 2048, loadPointer: `tm8 entity context tm-${i}`,
+  });
+  const roster = (n: number, total = n): SpawnContext['roster'] => ({ members: Array.from({ length: n }, (_, i) => mate(i)), total });
+  const dctx = (extra: Partial<SpawnContext> = {}): SpawnContext => ctx({ tasks: [], teamMember: dispatcher, ...extra });
+
+  function composeDispatcher(context: SpawnContext, opts: { on?: boolean; snapshot?: Record<string, unknown> } = {}) {
+    const manifest = composeManifest({
+      sessionId: 'session', request: dispatcherRequest, context, launch: resolveLaunchConfig(dispatcherRequest, context, {}),
+      workdir: { mode: 'project', path: '/repo' }, baseUrl: 'http://localhost', homeDir: HOME,
+      agentConfigDir: `${HOME}/.claude`, now: new Date('2026-09-24T00:00:00Z'),
+      command: (plugins) => `claude plugins=${plugins.join(',')}`,
+      ...(opts.snapshot
+        ? { interactionProfile: { profileId: 'p', profileVersion: 1, templateKey: 'tm8.chat.core', templateVersion: 1, source: 'space_default' as const, resolvedHash: 'h', pinRevision: 1, snapshot: opts.snapshot } }
+        : {}),
+      ...(opts.on ? { contextIndex: { source: 'env' as const } } : {}),
+    });
+    return { manifest, prompt: composePrompt(manifest, { sessionId: 'session', baseUrl: 'http://localhost' }) };
+  }
+
+  it('on: renders every roster teammate as a teammates entry — mode and model as control attributes, header text only inside untrusted_data', () => {
+    const { manifest, prompt } = composeDispatcher(dctx({
+      roster: { members: [...roster(3)!.members, { entityId: 'persona', name: 'Dispatcher', mode: 'dispatcher', model: null }], total: 4 },
+      headers: [0, 1, 2].map((i) => mateHeader(i)),
+    }), { on: true });
+    expect(manifest.mode).toBe('dispatcher');
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    // The dispatcher itself is never on its own roster.
+    expect(group.entries.map((e) => e.id)).toEqual(['tm-0', 'tm-1', 'tm-2']);
+    expect(group.entries.every((e) => e.via === 'roster' && e.kind === 'team_member' && e.load === `tm8 entity context ${e.id}`)).toBe(true);
+    expect(group.fetch).toBe('tm8 entity query --kind team_member');
+    const line = prompt.system.split('\n').find((l) => l.includes('id="tm-1"'))!;
+    expect(line).toContain('mode="worker" model="model-1"');
+    // A null mode is not rendered, never rendered empty.
+    expect(prompt.system.split('\n').find((l) => l.includes('id="tm-0"'))).not.toContain('mode=');
+    // The name and the header are untrusted text: inside the entry-header block, never an attribute.
+    expect(line).not.toContain('Mate 1');
+    expect(prompt.system).toContain(untrustedData({ type: 'entry-header', encoding: 'escaped-json', body: JSON.stringify({
+      name: 'Mate 1', whenToUse: 'role 1: backend reviewer', summary: `${'persona 1 '.repeat(60).slice(0, INDEX_DERIVED_HEADER_CHARS - 1)}…`,
+    }) }));
+    expect(manifest.context!.entries!.filter((e) => e.group === 'teammates').map((e) => [e.entityId, e.via])).toEqual([
+      ['tm-0', 'roster'], ['tm-1', 'roster'], ['tm-2', 'roster'],
+    ]);
+  });
+
+  it('on: a roster over rosterIndex drops header text first, then whole entries — every drop recorded, the rest declared', () => {
+    const n = DISPATCHER_ROSTER_READ_MAX;
+    const { manifest, prompt } = composeDispatcher(dctx({ roster: roster(n, n + 7), headers: Array.from({ length: n }, (_, i) => mateHeader(i)) }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    const drops = manifest.context!.dropped!.filter((d) => d.group === 'teammates');
+    const headerDrops = drops.filter((d) => d.level === 'header');
+    const entryDrops = drops.filter((d) => d.level === 'entry');
+    expect(headerDrops.length).toBeGreaterThan(0);
+    expect(entryDrops.length).toBeGreaterThan(0);
+    expect(drops.every((d) => d.reason === 'byte-budget' && d.kind === 'team_member')).toBe(true);
+    // Conserved: every roster row read is shown or dropped whole, and the rows past the read are counted.
+    expect(group.entries.length + entryDrops.length).toBe(n);
+    expect(group.omitted).toBe(entryDrops.length + 7);
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable', unread: 7 });
+    // The group fits its sub-cap, and the prompt declares the omission with the command that lists it.
+    const bytes = utf8Bytes(prompt.system.slice(prompt.system.indexOf('  <group name="teammates"'), prompt.system.indexOf('  </group>', prompt.system.indexOf('  <group name="teammates"')) + '  </group>'.length)) + 1;
+    expect(bytes).toBeLessThanOrEqual(BYTE_BUDGETS.rosterIndex);
+    expect(prompt.system).toContain(`<group name="teammates" count="${group.entries.length}" omitted="${group.omitted}" fetch="tm8 entity query --kind team_member">`);
+    expect(manifest.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex }]) });
+  });
+
+  it('on: the profile\'s contextBudgets.teammates replaces rosterIndex', () => {
+    const context = dctx({ roster: roster(20), headers: Array.from({ length: 20 }, (_, i) => mateHeader(i)) });
+    const node = composeDispatcher(context, { on: true }).manifest;
+    const tight = composeDispatcher(context, { on: true, snapshot: { draft: { contextBudgets: { teammates: 2048 } } } }).manifest;
+    const shown = (m: typeof node) => m.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries.length;
+    expect(shown(tight)).toBeLessThan(shown(node));
+    expect(tight.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: 2048 }]), profileBudgets: ['teammates'] });
+  });
+
+  it('off: the dispatcher prompt and manifest are byte-identical with or without a roster in the context', () => {
+    const bare = composeDispatcher(dctx());
+    // Rows past the read too, so the manifest's `unread` count is off-gated as well.
+    const withRoster = composeDispatcher(dctx({ roster: roster(26, 26 + 7), headers: Array.from({ length: 26 }, (_, i) => mateHeader(i)) }));
+    expect(withRoster.prompt.system).toBe(bare.prompt.system);
+    expect(withRoster.prompt.task).toBe(bare.prompt.task);
+    expect(JSON.stringify(withRoster.manifest)).toBe(JSON.stringify(bare.manifest));
+    expect(withRoster.prompt.system).not.toContain('<context_index');
+    expect(withRoster.prompt.system).not.toContain('tm-0');
+  });
+
+  it('on, worker: the roster group keeps its linked-teammate shape (no roster, no roster fetch)', () => {
+    const { manifest } = compose(ctx({
+      tasks: [task({ linked: [{ entityId: 'tm-9', kind: 'team_member', link: 'relates_to', title: 'Mate 9' }], linkedTotal: 1 })],
+    }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    expect(group.entries.map((e) => [e.id, e.via])).toEqual([['tm-9', 'linked']]);
+    expect(group.fetch).toBe('tm8 entity context task-1 --sections connections');
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable' });
   });
 });
