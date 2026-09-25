@@ -329,6 +329,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
     subjectId: props.subjectId,
     teammateId: teammateId || null,
     ...(agentToolId === 'claude-code' || agentToolId === 'codex' ? { agentTool: agentToolId } : {}),
+    /* The profile this launch pins decides the budgets and floors Jev fills;
+       a change re-asks the three groups (same as a teammate change). */
+    interactionProfileId: profileId || null,
     host: {
       defaults: selection.defaults,
       edits: selection.edits,

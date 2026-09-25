@@ -194,10 +194,12 @@ function EntitySection({ group, jev, say }: { group: JevEntityGroup; jev: JevPan
           target={group}
           applied={view.applied !== null}
           current={view.appliedIsCurrent}
+          replaced={view.replaced}
           refusal={view.applyRefusal}
           label="Apply this group"
           onApply={() => say(jev.applyGroup(group))}
           onUndo={() => say(jev.undo(group))}
+          onReapply={() => say(jev.reapply(group))}
         />
       ) : null}
     >
@@ -266,10 +268,14 @@ export function ledgerLines(jev: JevPanelSource, modelLabel: string): LedgerLine
   for (const group of JEV_ENTITY_GROUPS) {
     const entry = jev.applied[group];
     if (!entry) continue;
+    /* Only what the launch still carries: a hand edit since takes a change
+       back out, and the line says so rather than list it. */
+    const { carried, replaced } = jev.entity[group];
     const parts: string[] = [];
-    if (entry.added.length > 0) parts.push(`added ${entry.added.map((id) => titleOf(jev, id)).join(', ')}`);
-    if (entry.removed.length > 0) parts.push(`removed default ${entry.removed.map((id) => titleOf(jev, id)).join(', ')}`);
-    lines.push({ target: group, at: entry.at, what: parts.length > 0 ? parts.join('; ') : 'kept the defaults as they are' });
+    if (carried.added.length > 0) parts.push(`added ${carried.added.map((id) => titleOf(jev, id)).join(', ')}`);
+    if (carried.removed.length > 0) parts.push(`removed default ${carried.removed.map((id) => titleOf(jev, id)).join(', ')}`);
+    const what = parts.length > 0 ? parts.join('; ') : replaced ? 'nothing of it is left' : 'kept the defaults as they are';
+    lines.push({ target: group, at: entry.at, what: replaced ? `${what} — ${replaced}` : what });
   }
   return lines.sort((a, b) => a.at - b.at);
 }
@@ -436,7 +442,7 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
                 <span className="jev-ledger__group">{TARGET_WORD[line.target]}</span>
                 <span className="jev-ledger__what">{line.what}</span>
                 <Timestamp className="jev-cost" at={line.at} />
-                {(line.target === 'model' || line.target === 'teammate') && jev.replaced[line.target] ? null : (
+                {((line.target === 'model' || line.target === 'teammate') ? jev.replaced[line.target] : jev.entity[line.target].replaced) ? null : (
                   <button
                     type="button"
                     className="jev-link"

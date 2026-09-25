@@ -311,6 +311,19 @@ describe('on a phone', () => {
 });
 
 describe('the sheet asks launch.defaults with its picks', () => {
+  it('Jev is asked with the profile the sheet picks, and a profile change re-asks the three groups (#828 review D3)', async () => {
+    const port = answeringPort({});
+    const view = renderSheet({ jev: port });
+    await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
+    await waitFor(() => expect(port.inputs).toHaveLength(1));
+    expect(port.inputs[0]).not.toHaveProperty('interactionProfileId');
+    fireEvent.click(view.getByRole('button', { name: 'Change interaction profile' }));
+    await act(async () => { fireEvent.click(view.getByRole('radio', { name: /house-style/ })); });
+    await waitFor(() => expect(port.inputs).toHaveLength(2));
+    expect(port.inputs[1]!.groups).toEqual(['memories', 'skills', 'references']);
+    expect(port.inputs[1]!.interactionProfileId).toBe('pf-house');
+  });
+
   it('the teammate’s harness rides the read; the default profile sends no profile id', async () => {
     const load = vi.fn(async (_input: unknown) => LAUNCH_DEFAULTS);
     renderSheet({ loadLaunchDefaults: load });

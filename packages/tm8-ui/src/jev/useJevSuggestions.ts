@@ -203,6 +203,14 @@ export interface JevEntityGroupView {
   applied: JevAppliedGroup | null;
   /** The applied entry came from THIS answer with THESE ticks; false after a re-ask or a re-tick. */
   appliedIsCurrent: boolean;
+  /**
+   * The applied changes the launch STILL carries: an added id while it is in
+   * the group's edit `added`, a removed default while it is in `removed`. The
+   * badge and the ledger count only these.
+   */
+  carried: { added: readonly EntityId[]; removed: readonly EntityId[] };
+  /** Why the launch no longer carries all of the applied changes (a hand edit since); null while it does. */
+  replaced: string | null;
 }
 
 export interface JevApplyReport {
@@ -256,8 +264,8 @@ export interface JevSuggestions {
    * the row must stop claiming "Applied". Null while the launch still carries it.
    */
   replaced: JevReplaced;
-  /** Apply a replaced model or teammate entry again. */
-  reapply(target: 'model' | 'teammate'): string | null;
+  /** Apply a replaced entry (model, teammate or group) again. */
+  reapply(target: JevApplyTarget): string | null;
 
   applied: JevAppliedLedger;
   applyGroup(group: JevEntityGroup): string | null;
@@ -410,6 +418,8 @@ export function useJevSuggestions(args: {
   draft?: LaunchSuggestDraft;
   /** The harness the launch runs, which decides how a skill's entry reads. */
   agentTool?: JevAgentTool;
+  /** The Interaction Profile the launch will pin, when the surface picked one: its budgets and floors are the ones Jev fills. */
+  interactionProfileId?: string | null;
   /** Where Apply writes. Absent: every Apply is refused with a reason. */
   host?: JevApplyHost | null;
   /** The launch's per-launch budget override, shown in place of Jev's budget. */
@@ -418,6 +428,7 @@ export function useJevSuggestions(args: {
   now?: () => number;
 }): JevSuggestions {
   const { port, spaceId, subjectId, teammateId, draft, agentTool, host, contextBudgets } = args;
+  const interactionProfileId = args.interactionProfileId || null;
 
   // One run per mount. `useState`'s initializer runs once, so this is stable.
   const [runId] = useState(newJevId);
@@ -436,8 +447,8 @@ export function useJevSuggestions(args: {
   /* The request inputs and the host, read at ACTION time rather than
      captured: a press sends what the surface shows at that moment, and the
      actions stay referentially stable. */
-  const live = useRef({ port, spaceId, subjectId, teammateId, draft, agentTool, host, now: args.now ?? Date.now });
-  live.current = { port, spaceId, subjectId, teammateId, draft, agentTool, host, now: args.now ?? Date.now };
+  const live = useRef({ port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now });
+  live.current = { port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now };
 
   /* Which request each group's answer must come from. A slower, older answer
      that lands after a re-ask is dropped per group, never merged over the new. */
@@ -455,7 +466,7 @@ export function useJevSuggestions(args: {
       : null;
 
   const ask = useCallback((requested?: readonly LaunchSuggestGroup[]) => {
-    const { port: p, spaceId: space, subjectId: subject, teammateId: teammate, draft: text, agentTool: tool } = live.current;
+    const { port: p, spaceId: space, subjectId: subject, teammateId: teammate, draft: text, agentTool: tool, interactionProfileId: profile } = live.current;
     if (!p || !subject) return;
     const list = [...new Set(requested && requested.length > 0 ? requested : LAUNCH_SUGGEST_GROUPS)];
     const requestId = newJevId();
@@ -469,6 +480,7 @@ export function useJevSuggestions(args: {
       ...(text ? { draft: { title: text.title, description: text.description } } : {}),
       ...(teammate ? { teamMemberId: teammate } : {}),
       ...(tool ? { agentTool: tool } : {}),
+      ...(profile ? { interactionProfileId: profile } : {}),
     };
 
     setAsked(true);
@@ -548,6 +560,17 @@ export function useJevSuggestions(args: {
     if (dependentAsked) ask(TEAMMATE_DEPENDENT);
   }, [teammateId, dependentAsked, ask]);
 
+  /* THE HARNESS AND THE PROFILE decide the fill too — a skill's entry reads
+     differently native, and the profile's budgets and floors are the ones Jev
+     fills — so a change to either re-asks the same three groups, the same way. */
+  const lastShape = useRef(`${agentTool ?? ''}|${interactionProfileId ?? ''}`);
+  const shape = `${agentTool ?? ''}|${interactionProfileId ?? ''}`;
+  useEffect(() => {
+    if (lastShape.current === shape) return;
+    lastShape.current = shape;
+    if (dependentAsked) ask(TEAMMATE_DEPENDENT);
+  }, [shape, dependentAsked, ask]);
+
   const toggle = useCallback((group: JevEntityGroup, id: string): string | null => {
     const current = ticks[group];
     if (!current.includes(id as EntityId) && current.length >= SPAWN_SELECTION_GROUP_LIMIT) {
@@ -593,6 +616,15 @@ export function useJevSuggestions(args: {
         ? jevGroupEdit(host.defaults[group], NO_EDIT, { items: rows, ticked }).diff
         : jevGroupDiff(rows.map((row) => ({ id: row.entityId as EntityId, isDefault: row.default })), ticked);
       const entry = applied[group] ?? null;
+      /* What of the Apply the launch still carries, read from the group's
+         edit: a hand re-tick or untick since takes a change back out. */
+      const edit = host?.edits[group];
+      const carried = entry && edit
+        ? {
+          added: entry.added.filter((id) => edit.added.includes(id as EntityId)),
+          removed: entry.removed.filter((id) => edit.removed.includes(id as EntityId)),
+        }
+        : { added: [] as EntityId[], removed: [] as EntityId[] };
       let applyRefusal: string | null = null;
       if (!value) applyRefusal = JEV_NOT_ANSWERED_REASON;
       else if (!host) applyRefusal = JEV_NO_HOST_REASON;
@@ -616,6 +648,10 @@ export function useJevSuggestions(args: {
         appliedIsCurrent: entry !== null
           && entry.requestId === answers[group]?.requestId
           && sameIds(entry.ticks, ticked),
+        carried,
+        replaced: entry && (carried.added.length < entry.added.length || carried.removed.length < entry.removed.length)
+          ? JEV_CHANGED_BY_HAND
+          : null,
       };
     }
     return out;
@@ -659,6 +695,13 @@ export function useJevSuggestions(args: {
   const view = useRef({ entity, teammatePick, teammateRefusal, modelSuggestion, modelRefusal, applied, replaced });
   view.current = { entity, teammatePick, teammateRefusal, modelSuggestion, modelRefusal, applied, replaced };
 
+  /** An applied entry the launch no longer (fully) carries: it has Re-apply, not Undo. */
+  const replacedTarget = (target: JevApplyTarget): boolean => (
+    target === 'model' || target === 'teammate'
+      ? Boolean(view.current.replaced[target])
+      : Boolean(view.current.entity[target].replaced)
+  );
+
   const applyGroup = useCallback((group: JevEntityGroup): string | null => {
     const { host: h, now } = live.current;
     const g = view.current.entity[group];
@@ -668,14 +711,19 @@ export function useJevSuggestions(args: {
     if (result.refusal) return result.refusal;
     const refused = h.setEdit(group, result.edit, result.rows);
     if (typeof refused === 'string') return refused;
+    /* A re-Apply keeps the ORIGINAL before, so Undo returns to the pre-Jev
+       launch — which needs every row ANY Apply of this group touched (a
+       re-ask can rank different rows), and a ledger that states the NET
+       change against that launch, not only this Apply's. */
+    const prior = view.current.applied[group];
+    const original = prior?.before ?? before;
     const entry: JevAppliedGroup = {
       at: now(),
-      added: result.diff.added,
-      removed: result.diff.removed,
+      added: result.edit.added.filter((id) => !original.added.includes(id)),
+      removed: result.edit.removed.filter((id) => !original.removed.includes(id)),
       ticks: g.ticked,
-      touched: result.touched,
-      // A re-Apply keeps the ORIGINAL before, so Undo returns to the pre-Jev launch.
-      before: view.current.applied[group]?.before ?? before,
+      touched: [...new Set([...(prior?.touched ?? []), ...result.touched])],
+      before: original,
       requestId: answers[group]?.requestId ?? '',
     };
     setApplied((current) => ({ ...current, [group]: entry }));
@@ -725,7 +773,7 @@ export function useJevSuggestions(args: {
     if (!h) return JEV_NO_HOST_REASON;
     /* A replaced entry has no Undo: the launch already left it, and undoing
        would override the person's own later pick. */
-    if ((target === 'model' || target === 'teammate') && view.current.replaced[target]) return JEV_REPLACED_UNDO_REASON;
+    if (replacedTarget(target)) return JEV_REPLACED_UNDO_REASON;
     if (target === 'teammate') {
       const t = entry as JevAppliedTeammate;
       if (!t.previous || !h.setTeammate) return JEV_CANT_UNDO_TEAMMATE;
@@ -775,18 +823,18 @@ export function useJevSuggestions(args: {
     return report;
   }, [applyGroup, applyModel, applyTeammate]);
 
-  const reapply = useCallback((target: 'model' | 'teammate'): string | null => {
+  const reapply = useCallback((target: JevApplyTarget): string | null => {
     const entry = view.current.applied[target];
     if (!entry) return 'Nothing of Jev’s was applied here.';
-    return target === 'model' ? applyModel() : applyTeammate((entry as JevAppliedTeammate).teamMemberId);
-  }, [applyModel, applyTeammate]);
+    if (target === 'model') return applyModel();
+    if (target === 'teammate') return applyTeammate((entry as JevAppliedTeammate).teamMemberId);
+    return applyGroup(target);
+  }, [applyModel, applyTeammate, applyGroup]);
 
   const undoAll = useCallback(() => {
-    for (const target of lastAll) {
-      if (!view.current.applied[target]) continue;
-      if ((target === 'model' || target === 'teammate') && view.current.replaced[target]) continue;
-      undo(target);
-    }
+    /* undo() itself refuses a replaced entry, so Undo all leaves what the
+       person changed since alone. */
+    for (const target of lastAll) if (view.current.applied[target]) undo(target);
     setLastAll([]);
   }, [lastAll, undo]);
 

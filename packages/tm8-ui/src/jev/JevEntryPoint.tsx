@@ -24,8 +24,8 @@ export function suggestedCount(jev: JevPanelSource): number {
 export function appliedCount(jev: JevPanelSource): number {
   let n = (jev.applied.model && !jev.replaced.model ? 1 : 0) + (jev.applied.teammate && !jev.replaced.teammate ? 1 : 0);
   for (const group of JEV_ENTITY_GROUPS) {
-    const entry = jev.applied[group];
-    if (entry) n += entry.added.length + entry.removed.length;
+    const { carried } = jev.entity[group];
+    n += carried.added.length + carried.removed.length;
   }
   return n;
 }

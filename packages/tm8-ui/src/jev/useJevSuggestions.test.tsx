@@ -50,6 +50,8 @@ import {
 } from './test-support';
 import {
   JEV_NO_HOST_REASON,
+  JEV_CHANGED_BY_HAND,
+  JEV_REPLACED_UNDO_REASON,
   JEV_TEAMMATE_CHANGED_REASON,
   TICK_CEILING_REASON,
   useJevSuggestions,
@@ -310,6 +312,7 @@ interface HarnessProps {
   withHost?: boolean;
   modelRefusal?: string | null;
   initialTeammate?: string;
+  profileId?: string;
 }
 
 /**
@@ -330,6 +333,7 @@ function mountApply(props: HarnessProps = {}) {
       spaceId: 'sp-1',
       subjectId: 'task-1',
       teammateId: teammate,
+      ...(p.profileId ? { interactionProfileId: p.profileId } : {}),
       now: () => (clock += 1),
       host: p.withHost === false ? null : {
         defaults,
@@ -356,7 +360,7 @@ function mountApply(props: HarnessProps = {}) {
       };
       return composeLaunchSelection(outcomes, fields.defaultReasons);
     };
-    return { jev, edits, teammate, model, setTeammate, send };
+    return { jev, edits, teammate, model, setTeammate, setEdits, send };
   }, { initialProps: props });
   return { ...hook, writes };
 }
@@ -368,6 +372,58 @@ async function answeredApply(props: HarnessProps = {}, over: Parameters<typeof a
   await act(async () => port.calls[0]!.resolve(answer(port.calls[0]!.input, over, undefined, index)));
   return { ...h, port };
 }
+
+describe('review round (#828): the ledger states what the launch carries', () => {
+  it('D1 — a hand re-tick after Apply takes the change out: not counted, "changed by hand", no Undo, Re-apply restores', async () => {
+    const { result } = await answeredApply();
+    act(() => { result.current.jev.applyGroup('skills'); });
+    expect(result.current.edits.skills).toEqual({ removed: ['sk-b'], added: [] });
+    expect(result.current.jev.entity.skills.carried.removed).toEqual(['sk-b']);
+    expect(result.current.jev.entity.skills.replaced).toBeNull();
+    // The person re-ticks sk-b by hand: the launch carries none of the Apply.
+    act(() => { result.current.setEdits((c) => ({ ...c, skills: { removed: [], added: [] } })); });
+    expect(result.current.jev.entity.skills.carried).toEqual({ added: [], removed: [] });
+    expect(result.current.jev.entity.skills.replaced).toBe(JEV_CHANGED_BY_HAND);
+    let refusal: string | null = null;
+    act(() => { refusal = result.current.jev.undo('skills'); });
+    expect(refusal).toBe(JEV_REPLACED_UNDO_REASON);
+    expect(result.current.edits.skills).toEqual({ removed: [], added: [] });
+    act(() => { result.current.jev.reapply('skills'); });
+    expect(result.current.edits.skills).toEqual({ removed: ['sk-b'], added: [] });
+    expect(result.current.jev.entity.skills.replaced).toBeNull();
+  });
+
+  it('D2 — Undo after a re-Apply over a different answer returns to the pre-Jev launch', async () => {
+    const { result, port } = await answeredApply();
+    act(() => { result.current.jev.applyGroup('references'); });
+    expect(result.current.edits.references).toEqual({ removed: ['ref-c'], added: ['ref-b'] });
+    act(() => result.current.jev.retry('references'));
+    await act(async () => port.calls[1]!.resolve(answer(port.calls[1]!.input, {
+      references: okGroup({ ...REFERENCES, items: [item('ref-x', 'doc', 2.5, true)] }),
+    })));
+    act(() => { result.current.jev.applyGroup('references'); });
+    expect(result.current.edits.references).toEqual({ removed: ['ref-c'], added: ['ref-b', 'ref-x'] });
+    // The ledger states the NET change against the pre-Jev launch, both Applies.
+    expect(result.current.jev.applied.references!.added).toEqual(['ref-b', 'ref-x']);
+    expect(result.current.jev.applied.references!.removed).toEqual(['ref-c']);
+    act(() => { result.current.jev.undo('references'); });
+    expect(result.current.edits.references).toEqual({ removed: [], added: [] });
+    expect(result.current.jev.applied.references).toBeUndefined();
+  });
+
+  it('D3 — Jev is asked with the launch’s Interaction Profile, and a profile change re-asks the three groups', async () => {
+    const port = pendingPort();
+    const h = mountApply({ port, profileId: 'prof-1' });
+    act(() => h.result.current.jev.ask());
+    expect(port.calls[0]!.input.interactionProfileId).toBe('prof-1');
+    await act(async () => port.calls[0]!.resolve(answer(port.calls[0]!.input)));
+    h.rerender({ port, profileId: 'prof-2' });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1]!.input.groups).toEqual(['memories', 'skills', 'references']);
+    expect(port.calls[1]!.input.interactionProfileId).toBe('prof-2');
+    expect(port.calls[1]!.input.runId).toBe(port.calls[0]!.input.runId);
+  });
+});
 
 describe('ticks are Jev’s proposal: seeded, toggled, retried', () => {
   it('memories, skills AND references are seeded from `suggested` in rank order', async () => {

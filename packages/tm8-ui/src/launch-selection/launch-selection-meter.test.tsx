@@ -111,11 +111,15 @@ describe('a meter per group', () => {
     expect(mem.getByTestId('jev-meter-memories').getAttribute('title')).toBeNull();
   });
 
-  it('Jev’s ranked bytes and budget replace the node’s; the per-launch override replaces both', async () => {
+  it('the node’s budget (read for the launch’s own harness and profile) beats Jev’s; Jev’s only when the node said none; the override beats both', async () => {
     const view = await mount(withBytes({ 'ent-mem-tokens': 700 }, { memories: 12_288 }), { ranked: { memories: MEM_RANKED } });
-    expect(view.getByTestId('lsel-meter-memories').dataset.budgetSource).toBe('jev');
-    expect(view.getByTestId('jev-meter-memories').textContent).toContain('900 B / 1.0 KB');
+    expect(view.getByTestId('lsel-meter-memories').dataset.budgetSource).toBe('defaults');
+    expect(view.getByTestId('jev-meter-memories').textContent).toContain('900 B / 12 KB');
     view.unmount();
+    const jevOnly = await mount(withBytes({ 'ent-mem-tokens': 700 }, {}), { ranked: { memories: MEM_RANKED } });
+    expect(jevOnly.getByTestId('lsel-meter-memories').dataset.budgetSource).toBe('jev');
+    expect(jevOnly.getByTestId('jev-meter-memories').textContent).toContain('900 B / 1.0 KB');
+    jevOnly.unmount();
     const over = await mount(withBytes({ 'ent-mem-tokens': 700 }, { memories: 12_288 }), { ranked: { memories: MEM_RANKED }, budgets: { memories: 512 } });
     expect(over.getByTestId('lsel-meter-memories').dataset.budgetSource).toBe('override');
     expect(over.getByTestId('jev-meter-memories').dataset.meter).toBe('over');
@@ -125,9 +129,9 @@ describe('a meter per group', () => {
     const view = await mount(withBytes({ 'ent-mem-tokens': 700 }, { memories: 12_288 }), { ranked: { memories: MEM_RANKED } });
     fireEvent.click(view.getByTestId('lsel-toggle-memories'));
     fireEvent.click(view.getByTestId('lsel-row-memories-ent-mem-tokens'));
-    expect(view.getByTestId('jev-meter-memories').textContent).toContain('0 B / 1.0 KB');
+    expect(view.getByTestId('jev-meter-memories').textContent).toContain('0 B / 12 KB');
     act(() => { captured!.setEdit('memories', { removed: [], added: ['ent-mem-new' as never] }, []); });
-    expect(view.getByTestId('jev-meter-memories').textContent).toContain('1.3 KB / 1.0 KB');
+    expect(view.getByTestId('jev-meter-memories').textContent).toContain('1.3 KB / 12 KB');
   });
 
   it('an id with unknown bytes turns the meter back into a count', async () => {

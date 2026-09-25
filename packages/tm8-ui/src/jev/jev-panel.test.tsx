@@ -69,6 +69,8 @@ function viewOf(group: JevEntityGroup, ticked: readonly string[] = TICKS[group],
     applyRefusal: null,
     applied: null,
     appliedIsCurrent: false,
+    carried: { added: [], removed: [] },
+    replaced: null,
     ...over,
   };
 }
@@ -86,7 +88,22 @@ const appliedGroup = (added: string[], removed: string[] = [], at = 3): JevAppli
   before: { removed: [], added: [] }, requestId: 'rq-1',
 });
 
+/* A hand-built source whose host still carries every applied change: each
+   applied group's `carried` is its entry's, unless the test says otherwise. */
 function source(over: Partial<JevPanelSource> = {}): JevPanelSource {
+  const built = sourceRaw(over);
+  const entity = { ...built.entity };
+  for (const group of JEV_ENTITY_GROUPS) {
+    const entry = built.applied[group];
+    const view = entity[group];
+    if (entry && !view.replaced && view.carried.added.length === 0 && view.carried.removed.length === 0) {
+      entity[group] = { ...view, carried: { added: entry.added, removed: entry.removed } };
+    }
+  }
+  return { ...built, entity };
+}
+
+function sourceRaw(over: Partial<JevPanelSource> = {}): JevPanelSource {
   return {
     groups: ANSWERED,
     state: 'ready',
@@ -429,8 +446,11 @@ describe('JevPanel over useJevSuggestions', () => {
   function Harness({ host }: { host: JevApplyHost }) {
     const [model, setModel] = useState(host.model ?? null);
     const [teammateId, setTeammateId] = useState('tm-1');
+    const [edits, setEdits] = useState(host.edits);
     const live: JevApplyHost = {
       ...host,
+      edits,
+      setEdit: (group, edit, rows) => { host.setEdit(group, edit, rows); setEdits((all) => ({ ...all, [group]: edit })); },
       model,
       setModel: (choice) => { host.setModel?.(choice); setModel(choice); },
       setTeammate: (id) => { host.setTeammate?.(id); setTeammateId(id); },

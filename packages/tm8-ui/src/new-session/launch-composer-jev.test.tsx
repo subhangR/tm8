@@ -259,14 +259,39 @@ describe('applied model and teammate stay honest', () => {
     expect(input.teamMemberId).toBe('tm-scout');
   });
 
-  it('Undo all leaves a replaced entry alone: Launch sends what the controls show', async () => {
-    const view = await answered();
+  it('Undo all leaves replaced entries alone: the hand-picked teammate and its model survive', async () => {
+    const ATLAS = { id: 'tm-atlas', label: 'atlas', agentTool: 'claude-code', model: 'claude-fable-5-1' };
+    const view = renderPopup({ teammates: [...TEAMMATES, ATLAS] }, { model: SOL });
+    await view.ask();
     fireEvent.click(view.getByTestId('jev-apply-all'));
     await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
-    handPick(view, 'forge');
+    /* By hand: atlas, whose default is fable-5-1. The teammate Apply's "previous"
+       is forge and the model Apply's is forge's sonnet-5, so an Undo that
+       ignored the replacement would put forge + sonnet-5 back over the pick. */
+    handPick(view, 'atlas');
+    expect(view.getByTestId('jev-replaced-model')).toBeTruthy();
+    expect(view.getByTestId('jev-replaced-teammate')).toBeTruthy();
     fireEvent.click(view.getByTestId('jev-undo-all'));
+    expect(view.getByTestId('jev-replaced-model')).toBeTruthy();
     const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-forge', model: 'claude-sonnet-5' });
+    expect(input).toMatchObject({ teamMemberId: 'tm-atlas', model: 'claude-fable-5-1' });
+  });
+
+  it('a group re-ticked by hand after Apply stops counting, says so, and Re-apply restores it', async () => {
+    const view = await answered();
+    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(view.getByTestId('jev-apply-memories'));
+    await waitFor(() => expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/2 changes applied/));
+    // By hand, in the popup's own Memories group: take mem-a back out.
+    fireEvent.click(view.getByTestId('lsel-chip-memories'));
+    fireEvent.click(view.getByTestId('lsel-row-memories-mem-a'));
+    expect(view.getByTestId('jev-replaced-memories').textContent).toBe('Applied, then changed by hand.');
+    expect(view.queryByTestId('jev-undo-memories')).toBeNull();
+    expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/1 change applied/);
+    expect(view.getByTestId('jev-ledger-memories').textContent).not.toContain('mem-a');
+    fireEvent.click(view.getByTestId('jev-reapply-memories'));
+    const input = await view.spawn();
+    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
   });
 });
 

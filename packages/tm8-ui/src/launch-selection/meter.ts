@@ -54,13 +54,17 @@ export function groupMeter(
     else entries += bytes;
   }
   const frame = group !== 'memories' && contextIndex !== 'off' && ids.length > 0 ? contextGroupFrameBytes(group, ids.length) : 0;
+  /* THE BUDGET THE LAUNCH CARRIES: this launch's override, else what
+     `launch.defaults` read for the launch's own harness and profile, else
+     Jev's (a Jev answer can predate a harness or profile change). */
   const override = budgets?.[group];
+  const defaultsBudget = selection.bytes[group].budget;
   const [budget, budgetSource]: [number | null | undefined, GroupMeterFacts['budgetSource']] = override !== undefined
     ? [override, 'override']
-    : ranked
-      ? [ranked.budget, 'jev']
-      : selection.bytes[group].budget !== undefined
-        ? [selection.bytes[group].budget, 'defaults']
+    : defaultsBudget !== undefined
+      ? [defaultsBudget, 'defaults']
+      : ranked
+        ? [ranked.budget, 'jev']
         : [undefined, null];
   return { count: ids.length, usedBytes: unknown ? null : entries + frame, budget, budgetSource, contextIndex };
 }
