@@ -77,6 +77,14 @@ Exit 1 on zero rows, an arm with zero rows, or an unmeasured row that is not exc
 2. `node fixture.mjs --node <port>` builds the templates once per node (skips when `fixtures/node-<port>.json` matches the fixture version).
 3. `node lanes.mjs --slice c1 --node <port> --out results/<run>.jsonl [--reps 2] [--models …] [--only key,…] [--concurrency 2]`: refuses a node whose registered arm is not the slice's; records uptime before/after each lane; does not start a lane while the 1-min load is above 80 (waits, logs); ≤ 2 lanes concurrent.
 4. `node report.mjs results/<run>.jsonl --baseline results/<prior>.jsonl`.
+
+Isolation (next run; decision D9, from C1 msg 01a0d98b-abf7; designer's wording msg 01a0d98c-3bb6). In the first run, lanes' worktrees sat on the same host as the shared build and the operator's `gh` login. Replica lanes ran `git fetch` in the build tree and read the REAL GitHub, and one ticked a criterion because the real PR #800 had merged. The build was also a git WORKTREE of the operator's main tm8 repo, so git run there reached the operator's real branches. The tree was verified intact; SPEC for the next run:
+- (a) The build directory a node runs from is READ-ONLY to lanes. dev-node.sh copies the built dists into `<datadir>/build-<sha>`, owned by the node, runs `chmod -R a-w` after the copy, and the node registry records that path. A lane then cannot alter the code under test, and the four nodes never share a writable tree. The build is a standalone copy, never a worktree of the operator's repo.
+- (b) Lanes run WITHOUT the host's GitHub credential. The node starts with `GH_TOKEN` unset and `GH_CONFIG_DIR=<datadir>/gh-empty`, and the fixture project's repo-url is `none`, so `gh` in a lane fails fast instead of reading real PRs.
+- (c) A row records `reachedOutside: true` when its tool calls name a path outside its worktree and `<datadir>`, or run `gh` / `git fetch` against a remote. It is computed at report time from the transcript, reported per model × arm as a behaviour column, and never scored.
+- (d) Fixture v3 replica bodies must not name real PR numbers or repo paths that exist on the host (part of §8.3's "checkable inside the fixture repo" rule).
+
+Harness noise (for the consolidated read, not a rig item): the mid-turn commit-attribution reminder is Claude Code's own. A model that flags it as injected is being careful; every Claude lane sees it on every arm, so it cancels across arms.
 Never 7778. Nodes only on 4620–4624 / tm8_eval0..4. No fleet default flipped. The rig's own CLI arguments instruct and warn; they never reject content.
 
 ## 8. Later (not built for the first run)

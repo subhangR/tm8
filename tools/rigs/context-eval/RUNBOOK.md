@@ -65,6 +65,14 @@ A row that is neither measured nor excluded makes `report.mjs` exit 1 — that i
 
 ## 6. Report
 
+**Build integrity first (decision D9; this run).** Lanes are not sandboxed from the shared build: several replica lanes ran `git fetch` in `/private/tmp/ctxeval/build` and read the real GitHub with the host's `gh` login. The advisor made the build read-only by hand mid-run. Before the report, print and post:
+```sh
+git -C /private/tmp/ctxeval/build status --short     # must be empty
+git -C /private/tmp/ctxeval/build rev-parse HEAD     # must equal the report's builds line (6d1f4c77…)
+git -C <datadir>/fixture-repo log --oneline main     # only the two fixture commits
+```
+A non-empty status or a moved HEAD means the build tree changed under the run. Set the affected slice's rows aside with `exclude.mjs --reason "build tree changed under the run"` until the change is shown to be refs-only. The fixture-main guard in lanes.mjs covers runners started at d3b68c8b or later only, so the `log` check is the one that covers every runner.
+
 First pull `ctx-eval/e1` and RE-MEASURE every file in place from the stored manifests + transcripts. Rows written by a runner started on an older rig carry `measureError` (Q1 body-level drops, fixed in 545e714e/10d0e431) or components schema 1 (the kernel used to include the expanded memories), and `report.mjs` refuses both. Run it from the checkout that holds `fixtures/node-<port>.json` (the one `fixture.mjs` ran in):
 ```sh
 git pull --ff-only origin ctx-eval/e1
