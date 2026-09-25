@@ -1800,6 +1800,12 @@ function describedSkillIds(manifest: Tm8Manifest): Set<string> {
   return out;
 }
 
+/** Whether the composer moved the task bodies out of the task turn (`delivery="reference"` on its opening tag). */
+function referencesTaskBodies(task: string): boolean {
+  const open = task.split('\n', 1)[0] ?? '';
+  return open.startsWith('<tm8_task_prompt ') && open.includes(' delivery="reference"');
+}
+
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
   const coordinatorSessionId = resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
@@ -1977,30 +1983,41 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     const caps = contextIndexCaps(launch.mode, budgets);
     const ceiling = BYTE_BUDGETS.combinedInitialInjection;
     const fitAt = (available: number): FitContextIndexResult => fitContextIndex({ groups: [...candidates], available, caps });
+    // A task turn too big to inline is switched WHOLE to references by the
+    // composer, which keeps the prompt under the ceiling by moving the task
+    // bodies out of it. The index must never buy its room that way.
+    const inline = !referencesTaskBodies(baseline.task);
     /** The real prompt with this index, measured: every title the index names leaves the task turn. */
     const composedBytes = (fit: FitContextIndexResult): number => {
       const gone = new Set(fit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
       try {
         const p = composePrompt({ ...manifest, skills: manifest.skills.filter(skill => !gone.has(skill.entityId)), contextIndex: fit.index }, { sessionId, baseUrl });
+        if (inline && referencesTaskBodies(p.task)) return Number.POSITIVE_INFINITY;
         return utf8Bytes(`${p.system}\n\n${p.task}`);
       } catch (error) {
         if (error instanceof BudgetExceededError) return Number.POSITIVE_INFINITY;
         throw error;
       }
     };
-    indexFit = fitAt(ceiling - baseBytes);
+    let available = ceiling - baseBytes;
+    indexFit = fitAt(available);
     // The baseline lists every linked title in the task turn, and the titles
     // the index names leave it, so the first fit leaves that room unused. Hand
     // it back to the index while something was dropped, re-measuring the real
     // prompt each time; a retry that would overrun the ceiling is discarded,
-    // so the first (conservative) fit is the floor.
-    for (let credit = ceiling - composedBytes(indexFit), tries = 0; credit > 0 && indexFit.drops.length > 0 && tries < 3; tries += 1) {
-      const retry = fitAt(ceiling - baseBytes + credit);
-      const used = composedBytes(retry);
-      if (used > ceiling) break;
+    // so the first (conservative) fit is the floor. The room handed back is
+    // the real prompt's slack LESS what the fit was offered and did not use:
+    // that part is already in `available`, and spending it twice overshoots
+    // by up to an entry (review #832), which the composer would then settle by
+    // moving the task bodies out.
+    for (let tries = 0; tries < 3 && indexFit.drops.length > 0; tries += 1) {
+      const room = ceiling - composedBytes(indexFit) - (available - indexFit.bytes);
+      if (!(room > 0)) break;
+      const retry = fitAt(available + room);
+      if (composedBytes(retry) > ceiling) break;
       if (retry.drops.length >= indexFit.drops.length && retry.bytes <= indexFit.bytes) break;
+      available += room;
       indexFit = retry;
-      credit += ceiling - used;
     }
     const gone = new Set(indexFit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
     dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
