@@ -9,7 +9,8 @@
  *     EXPLICIT stale header version is refused; clear falls back to the
  *     derived header, with or without a version;
  *   - LENIENT (migration 223): nothing is refused for content or kind. A long
- *     header is stored whole and the READ views clip it, declared in
+ *     header is stored whole, and `resolveHeaders` clips it ONCE for
+ *     every reader (the set result, get, context, Jev's text), declared in
  *     `clipped`; an empty set, a clear with nothing to clear and a kind that
  *     stores no header are no-ops that say so in `warnings`;
  *   - `entities.create` writes a header in the create's transaction, and on a
@@ -25,8 +26,10 @@ import { getOperation } from '@tm8/contract';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/index.js';
-import type { Db } from '../../src/db/types.js';
+import type { Db, Querier } from '../../src/db/types.js';
 import { HandlerRegistry, registerFacadeHandlers } from '../../src/facade/index.js';
+import { resolveHeaders } from '../../src/headers/resolve.js';
+import { jevText } from '../../src/headers/render.js';
 import type { ServerConfig } from '../../src/http/config.js';
 import type { RequestContext } from '../../src/http/types.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
@@ -187,23 +190,43 @@ describe('entities.header.set / clear (I4)', () => {
     await call('entities.header.clear', { id: F.D }, { body: {} });
   });
 
-  it('stores a 5,000-char summary whole; get and context clip it and declare the cut', async () => {
+  it('stores a 5,000-char summary whole; every reader sees ONE clipped value, declared', async () => {
     const summary = 'x'.repeat(5000);
+    const keywords = ['', 'clip', 'clip', ...Array.from({ length: 14 }, (_, i) => `k${i}`), 'y'.repeat(90)];
     const set = await call<HeaderResult>('entities.header.set', { id: F.T }, {
-      body: { whenToUse: '  Open when checking the clip  ', summary, keywords: ['', 'clip', 'clip'] },
+      body: { whenToUse: '  Open when checking the clip  ', summary, keywords },
     });
-    // The write's own result carries the full text, normalised.
-    expect(set.header).toMatchObject({ whenToUse: 'Open when checking the clip', summary, keywords: ['clip'] });
-    expect(set.header?.clipped).toBeUndefined();
-    const stored = await database.query<{ n: number }>(
-      'select char_length(summary)::int n from public.entity_headers where entity_id = $1', [F.T],
+    const clippedSummary = `${'x'.repeat(599)}…`;
+    // The write's own result is the same resolved value every reader gets.
+    expect(set.header).toMatchObject({ whenToUse: 'Open when checking the clip', summary: clippedSummary });
+    expect(set.header?.keywords).toEqual(['clip', ...Array.from({ length: 11 }, (_, i) => `k${i}`)]);
+    expect(set.header?.clipped).toEqual(['summary', 'keywords']);
+    const stored = await database.query<{ n: number; k: number }>(
+      'select char_length(summary)::int n, cardinality(keywords)::int k from public.entity_headers where entity_id = $1',
+      [F.T],
     );
-    expect(stored[0]?.n).toBe(5000);
+    expect(stored[0]).toEqual({ n: 5000, k: 16 });
     for (const read of [await get(F.T), await context(F.T)]) {
-      expect(read.header?.summary).toBe(`${'x'.repeat(599)}…`);
+      expect(read.header?.summary).toBe(clippedSummary);
       expect(read.header?.whenToUse).toBe('Open when checking the clip');
-      expect(read.header?.clipped).toEqual(['summary']);
+      expect(read.header?.clipped).toEqual(['summary', 'keywords']);
     }
+    // The resolver itself, which Jev and the prompt's context index read.
+    const q = { query: database.query.bind(database) } as unknown as Querier;
+    const spaceId = (await database.query<{ space_id: string }>(
+      'select space_id from public.entities where id = $1', [F.T],
+    ))[0]!.space_id;
+    const resolved = (await resolveHeaders(q, spaceId, [F.T])).get(F.T)!;
+    expect(resolved).toMatchObject({ source: 'authored', summary: clippedSummary, clipped: ['summary', 'keywords'] });
+    // Jev cuts per field (600 each); the summary reaches it already cut, never whole.
+    const jev = jevText(resolved);
+    expect(jev).toContain(clippedSummary);
+    expect(jev).not.toContain('x'.repeat(600));
+    // A long keyword alone is cut and declared.
+    await call('entities.header.set', { id: F.T }, { body: { summary: 'short', keywords: ['z'.repeat(90)] } });
+    const kw = (await get(F.T)).header!;
+    expect(kw.keywords).toEqual([`${'z'.repeat(39)}…`]);
+    expect(kw.clipped).toEqual(['keywords']);
   });
 
   it('a kind that stores no header is a no-op success with a warning, not a refusal', async () => {

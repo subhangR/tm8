@@ -72,6 +72,15 @@ interface HeaderRow {
 }
 
 const L = HEADER_TEXT_LIMIT;
+/**
+ * Authored text is cut IN SQL one character past its guidance limit, so an
+ * unbounded header never leaves Postgres whole while `clipAuthored` can still
+ * tell a cut from a fit. Keywords: one past the count, each one past the length.
+ */
+const AW = AUTHORED_HEADER_LIMITS.whenToUse + 1;
+const AS = AUTHORED_HEADER_LIMITS.summary + 1;
+const AK = AUTHORED_HEADER_LIMITS.keywords + 1;
+const AKL = AUTHORED_HEADER_LIMITS.keyword + 1;
 
 const HEADER_SQL = `
   select e.id, e.kind,
@@ -118,9 +127,12 @@ const HEADER_SQL = `
               group by me.kind
            ) member
          ) end as collection_members,
-         eh.when_to_use as header_when_to_use,
-         eh.summary as header_summary,
-         eh.keywords as header_keywords,
+         left(eh.when_to_use, ${AW}) as header_when_to_use,
+         left(eh.summary, ${AS}) as header_summary,
+         case when eh.entity_id is null then null else (
+           select coalesce(array_agg(left(kw.k, ${AKL}) order by kw.o), '{}')
+             from unnest(eh.keywords[1:${AK}]) with ordinality as kw(k, o)
+         ) end as header_keywords,
          eh.version as header_version,
          eh.pinned_version as header_pinned_version,
          case when eh.entity_id is null then null else (
@@ -175,14 +187,38 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
   }
 }
 
-/** The row's `entity_headers` columns, when it has one. */
+/** `text` cut to `max` code points, the last one an ellipsis; null when it already fits. */
+function clipText(text: string | null, max: number): string | null {
+  if (text === null) return null;
+  const points = Array.from(text);
+  return points.length <= max ? null : `${points.slice(0, max - 1).join('')}…`;
+}
+
+/**
+ * The row's `entity_headers` columns, when it has one, cut to the
+ * `AUTHORED_HEADER_LIMITS` guidance and DECLARED in `clipped`. Nothing refuses
+ * a longer header (migration 223), so the cut happens here, once, for every
+ * reader: Jev's candidate text, the prompt's context index (where one huge
+ * header would otherwise strip its neighbours' text in the budget trim) and
+ * `entity get/context` (where `header` is a never-dropped core section).
+ */
 function authoredOf(row: HeaderRow): AuthoredHeader | null {
   if (row.header_stale == null) return null;
+  const clipped: HeaderClippedField[] = [];
+  const whenToUse = clipText(row.header_when_to_use, AUTHORED_HEADER_LIMITS.whenToUse);
+  if (whenToUse !== null) clipped.push('whenToUse');
+  const summary = clipText(row.header_summary, AUTHORED_HEADER_LIMITS.summary);
+  if (summary !== null) clipped.push('summary');
+  const raw = row.header_keywords ?? [];
+  const keywords = raw.slice(0, AUTHORED_HEADER_LIMITS.keywords)
+    .map((k) => clipText(k, AUTHORED_HEADER_LIMITS.keyword) ?? k);
+  if (raw.length > AUTHORED_HEADER_LIMITS.keywords || keywords.some((k, i) => k !== raw[i])) clipped.push('keywords');
   return {
-    whenToUse: row.header_when_to_use,
-    summary: row.header_summary,
-    keywords: row.header_keywords ?? [],
+    whenToUse: whenToUse ?? row.header_when_to_use,
+    summary: summary ?? row.header_summary,
+    keywords,
     stale: row.header_stale,
+    ...(clipped.length > 0 ? { clipped } : {}),
   };
 }
 
@@ -232,47 +268,10 @@ export async function resolveHeaderViews(
   }]));
 }
 
-/** `text` cut to `max` code points, the last one an ellipsis; null when it already fits. */
-function clipText(text: string | null, max: number): string | null {
-  if (text === null) return null;
-  const points = Array.from(text);
-  return points.length <= max ? null : `${points.slice(0, max - 1).join('')}…`;
-}
-
-/**
- * An entity read's header, cut to the `AUTHORED_HEADER_LIMITS` guidance and
- * DECLARED in `clipped`. Nothing refuses a longer header (migration 223), but
- * `entity context` keeps `header` as a never-dropped core section, so one huge
- * header must not trip its budget. Never silent: a cut field is named.
- */
-export function clipHeaderView(header: EntityHeaderView): EntityHeaderView {
-  const clipped: HeaderClippedField[] = [];
-  const whenToUse = clipText(header.whenToUse, AUTHORED_HEADER_LIMITS.whenToUse);
-  if (whenToUse !== null) clipped.push('whenToUse');
-  const summary = clipText(header.summary, AUTHORED_HEADER_LIMITS.summary);
-  if (summary !== null) clipped.push('summary');
-  const cutKeywords = header.keywords.length > AUTHORED_HEADER_LIMITS.keywords
-    || header.keywords.some((k) => Array.from(k).length > AUTHORED_HEADER_LIMITS.keyword);
-  if (cutKeywords) clipped.push('keywords');
-  if (clipped.length === 0) return header;
-  return {
-    ...header,
-    ...(whenToUse === null ? {} : { whenToUse }),
-    ...(summary === null ? {} : { summary }),
-    ...(cutKeywords
-      ? {
-        keywords: header.keywords.slice(0, AUTHORED_HEADER_LIMITS.keywords)
-          .map((k) => clipText(k, AUTHORED_HEADER_LIMITS.keyword) ?? k),
-      }
-      : {}),
-    clipped,
-  };
-}
-
 /**
  * The AUTHORED header of one entity, or undefined — what an entity read
- * (`entities.get`, `entities.context`) shows, clipped and declared by
- * `clipHeaderView`. Almost no entity has an `entity_headers` row, so a
+ * (`entities.get`, `entities.context`) shows, already clipped and declared
+ * by `authoredOf`. Almost no entity has an `entity_headers` row, so a
  * one-row probe (under the same RLS) runs first and the full resolve only
  * when it finds one.
  */
@@ -287,5 +286,5 @@ export async function resolveAuthoredHeaderView(
   );
   if (probe.length === 0) return undefined;
   const header = (await resolveHeaderViews(q, spaceId, [id])).get(id);
-  return header && header.version > 0 ? clipHeaderView(header) : undefined;
+  return header && header.version > 0 ? header : undefined;
 }

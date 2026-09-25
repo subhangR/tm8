@@ -79,13 +79,20 @@ export interface SelectionHeader {
   bytes: number | null;
   /** The exact command that fetches the body; null when the body is always injected. */
   loadPointer: string | null;
+  /**
+   * The AUTHORED fields cut to `AUTHORED_HEADER_LIMITS` at resolve time, so
+   * every reader (Jev, the prompt's context index, `entities.get/context`, the
+   * header commands' result) sees one bounded value. Absent when nothing was
+   * cut; a cut is never silent. The full text stays in `entity_headers`.
+   */
+  clipped?: HeaderClippedField[];
 }
 
 /**
  * Authored-header GUIDANCE, not bounds (lenient ruling, migration 223): the
  * help, the MCP guides and the prompt state these numbers, and nothing refuses
- * a header over them. Readers clip to them for display and declare it
- * (`EntityHeaderView.clipped`). Text is trimmed; a field that trims to nothing
+ * a header over them. `resolveHeaders` clips authored text to them and declares
+ * it (`SelectionHeader.clipped`). Text is trimmed; a field that trims to nothing
  * is dropped, never refused.
  */
 export const AUTHORED_HEADER_LIMITS = {
@@ -109,12 +116,6 @@ export interface EntityHeaderView extends SelectionHeader {
   version: number;
   /** The entity version the authored header was written against; null when not authored. */
   pinnedVersion: number | null;
-  /**
-   * The fields an entity READ cut to `AUTHORED_HEADER_LIMITS` for display
-   * (`entities.get`, `entities.context`). Absent when nothing was cut; never
-   * silent. The header set/clear result carries the full text.
-   */
-  clipped?: HeaderClippedField[];
 }
 
 export type HeaderClippedField = 'whenToUse' | 'summary' | 'keywords';

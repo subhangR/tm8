@@ -10,7 +10,13 @@
  * Text cuts count characters (code points), the same unit Postgres `left()`
  * counts, so a cut made in SQL and a cut made here agree.
  */
-import { SELECTION_HEADER_KINDS, type SelectionHeader, type SelectionHeaderKind, type SelectionHeaderSource } from '@tm8/contract';
+import {
+  SELECTION_HEADER_KINDS,
+  type HeaderClippedField,
+  type SelectionHeader,
+  type SelectionHeaderKind,
+  type SelectionHeaderSource,
+} from '@tm8/contract';
 
 /** Characters of header text that may leave the server (Jev design 01a0cb80 §9). */
 export const HEADER_TEXT_LIMIT = 600;
@@ -39,6 +45,8 @@ export interface AuthoredHeader {
   summary: string | null;
   keywords: string[];
   stale: boolean;
+  /** Fields `resolveHeaders` cut to the guidance limits; carried onto the header. */
+  clipped?: HeaderClippedField[];
 }
 
 /** The per-kind facts `resolveHeaders` reads, already cut where the cut is safe to make in SQL. */
@@ -167,5 +175,6 @@ export function deriveHeader(
     stale: source === 'authored' && own!.stale,
     bytes: base.bytes,
     loadPointer: loadPointerFor(facts.kind, entity.id),
+    ...(own?.clipped && own.clipped.length > 0 ? { clipped: own.clipped } : {}),
   };
 }
