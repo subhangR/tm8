@@ -113,7 +113,9 @@ describe('four-mode identity', () => {
     // `artifact publish` joined the surface for the Tarkesh artifact bug: it is a
     // public command in the frozen catalog, and the surface must name it because
     // every harness ships a competing native artifact tool (see commandSurface).
-    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn', 'artifact publish'];
+    // `form create` joined for Forms (decision 12), for the same reason: an agent
+    // with a question for a human asks it in prose unless told the verb exists.
+    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn', 'artifact publish', 'form create'];
     for (const { usage } of commandSurface(true)) {
       const path = usage.replace(/^tm8 /, '');
       expect(

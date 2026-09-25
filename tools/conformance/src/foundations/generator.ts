@@ -392,7 +392,9 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 224 -> 225 (task 01a0d350): spaces.configs, one GET read. MEASURED.
   // 225 -> 238 (Forms W1): the thirteen forms.* rows (§6's twelve + responses.discard). MEASURED.
   // 238 -> 240 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(names.length, 240, 'catalog total');
+  // 238 -> 240 (Forms W3): forms.responses.redeliver and forms.pendingForSessions. MEASURED.
+  // 240 -> 242: headers I4 and Forms W3 each added two, on the merged tree. MEASURED.
+  assertEqual(names.length, 242, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -410,7 +412,9 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 222 -> 223 (task 01a0d350): spaces.configs ships v1. MEASURED.
   // 223 -> 236 (Forms W1): all thirteen forms.* rows ship v1. MEASURED.
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(V1_OPERATIONS.length, 238, 'v1 total');
+  // 236 -> 238 (Forms W3): both new forms.* rows ship v1. MEASURED.
+  // 238 -> 240: headers I4 and Forms W3 each added two v1 rows, on the merged tree. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 240, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -449,7 +453,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // GET 74 -> 75 (task 01a0d350): spaces.configs. MEASURED.
   // GET 75 -> 78, POST 108 -> 113, PATCH 14 -> 16, DELETE 14 -> 16, PUT 12 -> 13 (Forms W1). MEASURED.
   // PUT 13 -> 14, DELETE 16 -> 17 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(methods, { GET: 78, POST: 113, PATCH: 16, DELETE: 17, PUT: 14, WS: 2 }, 'method accounting');
+  assertEqual(methods, { GET: 79, POST: 114, PATCH: 16, DELETE: 17, PUT: 14, WS: 2 }, 'method accounting');
+  // GET 78 -> 79, POST 113 -> 114 (Forms W3): pendingForSessions, responses.redeliver. MEASURED.
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
   // 177: read 65->69, command 106->126, stream 1->2. MEASURED.
@@ -463,7 +468,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // read 78 -> 79 (task 01a0d350): spaces.configs. MEASURED.
   // read 79 -> 82, command 144 -> 154 (Forms W1): three reads, ten commands. MEASURED.
   // command 154 -> 156 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(kinds, { read: 82, command: 156, stream: 2 }, 'kind accounting');
+  assertEqual(kinds, { read: 83, command: 157, stream: 2 }, 'kind accounting');
+  // read 82 -> 83, command 154 -> 155 (Forms W3): pendingForSessions is a read, redeliver a command. MEASURED.
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
@@ -480,7 +486,9 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 222 -> 223 (task 01a0d350): spaces.configs is mounted. MEASURED.
   // 223 -> 236 (Forms W1): thirteen forms.* routes. MEASURED.
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(router.http.length, 238, 'server router HTTP total');
+  // 236 -> 238 (Forms W3): the two new forms.* routes. MEASURED.
+  // 238 -> 240: headers I4 + Forms W3 routes, on the merged tree. MEASURED.
+  assertEqual(router.http.length, 240, 'server router HTTP total');
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

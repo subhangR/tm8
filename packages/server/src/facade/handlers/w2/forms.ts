@@ -3,7 +3,7 @@ import type { HandlerRegistry } from '../../registry.js';
 import { W2FormsService, type W2FormsServiceOptions } from '../../services/w2/forms.js';
 
 /**
- * Forms registration seam (FORMS-DESIGN §6; migration 211). All thirteen
+ * Forms registration seam (FORMS-DESIGN §6; migrations 211 + 221). All fifteen
  * catalog rows register together: a v1 row with no handler would answer 501
  * and make the catalog lie about what this node does.
  */
@@ -27,6 +27,8 @@ export function registerW2FormHandlers(
     'forms.responses.list': service.responsesList,
     'forms.responses.get': service.responsesGet,
     'forms.responses.mine': service.responsesMine,
+    'forms.responses.redeliver': service.responsesRedeliver,
+    'forms.pendingForSessions': service.pendingForSessions,
   });
   return service;
 }

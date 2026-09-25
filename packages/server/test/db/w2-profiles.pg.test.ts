@@ -59,11 +59,17 @@ function frozenCompatibilityMigrations(): string[] {
 }
 
 /**
- * Later migrations that rewrite 019's objects and so cannot apply without it.
- * Named, never derived: a new entry here is a deliberate decision.
+ * Later migrations that rewrite 019's objects, or build on one that does, and
+ * so cannot apply without it. Named, never derived: a new entry here is a
+ * deliberate decision.
  * 218 re-states session_handoffs_select over 019's source_space_id column.
+ * 220 and 221 call 218's internal.member_space_ids().
  */
-const DEPENDS_ON_019: readonly string[] = ['218_rls_membership_once_per_statement.sql'];
+const DEPENDS_ON_019: readonly string[] = [
+  '218_rls_membership_once_per_statement.sql',
+  '220_secdef_membership_once_per_statement.sql',
+  '221_forms_redeliver_and_pending.sql',
+];
 
 const DRAFT = {
   name: 'Core collaboration',
@@ -262,11 +268,13 @@ describe('W2.G12 fixture chains are derived, ordered and complete', () => {
     expect(chain).toContain(G12_MIGRATION);
     expect(chain).toContain(G14_MIGRATION);
     expect(chain.indexOf(G12_MIGRATION)).toBeLessThan(chain.indexOf(G14_MIGRATION));
-    // Every repository migration except 019 and the named ones that rewrite it.
+    // Every repository migration except 019 and the named ones that depend on it.
     const excluded = allMigrations().filter((file) => !chain.includes(file));
     expect(excluded).toEqual([
       allMigrations().find((file) => file.startsWith('019_')),
       '218_rls_membership_once_per_statement.sql',
+      '220_secdef_membership_once_per_statement.sql',
+      '221_forms_redeliver_and_pending.sql',
     ]);
     expect(chain.some((file) => file.startsWith('019_'))).toBe(false);
     for (const required of ['015_', '016_', '018_', '020_', '021_', '024_']) {

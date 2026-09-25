@@ -345,11 +345,12 @@ export const OPERATIONS = [
   { name: 'artifacts.export',                            method: 'GET',    path: '/v2/artifacts/:artifactId/revisions/:revisionNumber/export',         kind: 'read',    status: 'v1' },
   { name: 'artifacts.restore',                           method: 'POST',   path: '/v2/artifacts/:artifactId/commands/restore-revision',                kind: 'command', status: 'v1' },
 
-  // forms — thirteen rows (§6's twelve plus responses.discard, coordinator
-  // ruling on W1-R3). An agent asks, a human answers, the answer comes back to the
-  // requesting session (FORMS-DESIGN §6; migrations 209 + 211). The form
-  // itself reads through the universal entity reads (a `form` arm in
-  // entity_content); responses are side rows, so they page here.
+  // forms — fifteen rows: §6's twelve plus responses.discard (coordinator
+  // ruling on W1-R3), and W3's redeliver and pendingForSessions. An agent
+  // asks, a human answers, the answer comes back to the requesting session
+  // (FORMS-DESIGN §6; migrations 209 + 211). The form itself reads through
+  // the universal entity reads (a `form` arm in entity_content); responses are
+  // side rows, so they page here.
   { name: 'forms.create',                                method: 'POST',   path: '/v2/forms',                                                          kind: 'command', status: 'v1' },
   { name: 'forms.update',                                method: 'PATCH',  path: '/v2/forms/:formId',                                                  kind: 'command', status: 'v1' },
   { name: 'forms.questions.add',                         method: 'POST',   path: '/v2/forms/:formId/questions',                                        kind: 'command', status: 'v1' },
@@ -363,6 +364,10 @@ export const OPERATIONS = [
   { name: 'forms.responses.list',                        method: 'GET',    path: '/v2/forms/:formId/responses',                                        kind: 'read',    status: 'v1' },
   { name: 'forms.responses.get',                         method: 'GET',    path: '/v2/form-responses/:responseId',                                     kind: 'read',    status: 'v1' },
   { name: 'forms.responses.mine',                        method: 'GET',    path: '/v2/form-responses',                                                 kind: 'read',    status: 'v1' },
+  // W3: the two delivery buttons (new session / resume now) and the batched
+  // read behind the session tile chip and banner (FORMS-DESIGN §7.3, §10).
+  { name: 'forms.responses.redeliver',                   method: 'POST',   path: '/v2/form-responses/:responseId/redeliver',                           kind: 'command', status: 'v1' },
+  { name: 'forms.pendingForSessions',                    method: 'GET',    path: '/v2/forms-pending',                                                  kind: 'read',    status: 'v1' },
 
   // Identity v2 Stage 0 (doc 4 §6): the caller writes their OWN display
   // profile — display name, avatar, email, and the cross-server `globalId`
