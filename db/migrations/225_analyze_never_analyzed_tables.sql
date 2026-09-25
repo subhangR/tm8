@@ -54,6 +54,8 @@
 -- SECURITY INVOKER, not granted to anyone: ANALYZE needs the table owner or a
 -- superuser, which is the migration login. As anyone else Postgres skips the
 -- table with a WARNING, so a wrong caller is a no-op, not an error.
+-- The function reads reltuples back after each ANALYZE: a skipped table is
+-- raised as a WARNING naming it (the runner prints it) and is not returned.
 -- =============================================================================
 
 set role tm8_graph_owner;
@@ -77,7 +79,15 @@ begin
      order by c.oid
   loop
     execute format('analyze %s', rel);
-    return next rel;
+    -- ANALYZE without the rights to it is a WARNING and a skip, not an error,
+    -- so success is read back from the catalog rather than assumed: a table
+    -- still at -1 is not reported as analyzed, and the warning names it.
+    if (select c.reltuples from pg_class c where c.oid = rel) >= 0 then
+      return next rel;
+    else
+      raise warning 'analyze_never_analyzed_tables: % is still never-analyzed; % may not ANALYZE it (needs its owner or a superuser)',
+        rel, current_user;
+    end if;
   end loop;
 end
 $$;

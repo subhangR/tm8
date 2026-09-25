@@ -285,6 +285,10 @@ function analyzeNeverAnalyzed(url) {
     console.warn(`warning: could not analyze never-analyzed tables: ${res.stderr.trim()}`);
     return;
   }
+  // A table the login may not ANALYZE comes back as a WARNING on stderr, and
+  // psql exits 0 for it; print it, or the skip is silent.
+  const warnings = res.stderr.split('\n').filter((line) => line.startsWith('WARNING:'));
+  for (const line of warnings) console.warn(`warning: ${line.replace(/^WARNING:\s*/, '')}`);
   const analyzed = res.stdout.split('\n').filter((line) => line.length > 0);
   if (analyzed.length) console.log(`analyzed ${analyzed.length} never-analyzed table(s)`);
 }

@@ -116,6 +116,32 @@ describe.sequential('the runner analyzes what a migration leaves never-analyzed'
     expect(output).toContain('nothing to do');
     expect(await reltuples('public.analyze_probe')).toBe(0);
   });
+
+  it('never reports a table it had no rights to ANALYZE as analyzed', async () => {
+    // Postgres answers an ANALYZE without rights with a WARNING and a skip, not
+    // an error. Four prod tables are owned by the superuser login rather than
+    // tm8_graph_owner, so a non-superuser caller would skip exactly those.
+    await database.query('create table public.analyze_super_owned (id int)');
+    expect(await reltuples('public.analyze_super_owned')).toBe(-1);
+    const asGraphOwner = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const warnings: string[] = [];
+      client.on('notice', (n) => warnings.push(n.message ?? ''));
+      const { rows } = await client.query<{ rel: string }>(
+        'select internal.analyze_never_analyzed_tables()::text as rel',
+      );
+      client.removeAllListeners('notice');
+      return { rels: rows.map((r) => r.rel), warnings };
+    });
+    expect(asGraphOwner.rels).not.toContain('analyze_super_owned');
+    expect(asGraphOwner.warnings.some((w) => w.includes('analyze_super_owned is still never-analyzed'))).toBe(true);
+    expect(await reltuples('public.analyze_super_owned')).toBe(-1);
+
+    // The superuser migration login can, and then it is reported.
+    const asLogin = await database.query<{ rel: string }>('select internal.analyze_never_analyzed_tables()::text as rel');
+    expect(asLogin.map((r) => r.rel)).toContain('analyze_super_owned');
+    expect(await reltuples('public.analyze_super_owned')).toBe(0);
+  });
 });
 
 describe.sequential('the wide entity reads estimate on real numbers after the full chain', () => {
