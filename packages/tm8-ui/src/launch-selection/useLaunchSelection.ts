@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, LaunchDefaultsInput, LaunchDefaultsResult, SpawnSelectionGroup } from '@tm8/contract';
+import {
+  SPAWN_SELECTION_GROUP_LIMIT,
+  type EntityId,
+  type LaunchDefaultsGroup,
+  type LaunchDefaultsInput,
+  type LaunchDefaultsResult,
+  type SpawnSelectionGroup,
+} from '@tm8/contract';
 
 import {
+  CEILING_REFUSAL,
   groupDiff,
+  groupIds,
   groupLock,
   LAUNCH_SELECTION_GROUPS,
   launchBlock,
@@ -17,8 +26,37 @@ import {
   type GroupOutcome,
   type LaunchContextRow,
   type LaunchSelectionDefaults,
+  type LaunchGroupEdit,
   type LaunchSelectionEdits,
 } from '../domain/launch-selection';
+
+/**
+ * What `launch.defaults` says a group's defaults COST (lane E, I7): each
+ * default's prompt bytes and the group's budget. Optional on the wire until
+ * E's fields land; absent, the meter shows counts only rather than invent bytes.
+ */
+export interface LaunchGroupBytes {
+  /** Bytes per default id, measured by the node with spawn's serializers. Missing id: unknown. */
+  readonly bytes: Readonly<Record<string, number>>;
+  /** The group's budget; null: takes what the prompt has left; undefined: the node didn't say. */
+  readonly budget: number | null | undefined;
+}
+
+/** `launch.defaults` with I7's byte facts, read as optional (lane E adds them). */
+type DefaultsGroupWithBytes = LaunchDefaultsGroup & {
+  readonly budget?: number | null;
+  readonly items: ReadonlyArray<LaunchDefaultsGroup['items'][number] & { readonly promptBytes?: number }>;
+};
+
+function groupBytes(group: LaunchDefaultsGroup): LaunchGroupBytes {
+  const g = group as DefaultsGroupWithBytes;
+  const bytes: Record<string, number> = {};
+  for (const item of g.items) if (typeof item.promptBytes === 'number') bytes[item.entityId] = item.promptBytes;
+  return { bytes, budget: g.budget };
+}
+
+const NO_BYTES: LaunchGroupBytes = { bytes: {}, budget: undefined };
+const NO_BYTES_ALL: Record<SpawnSelectionGroup, LaunchGroupBytes> = { memories: NO_BYTES, skills: NO_BYTES, references: NO_BYTES };
 
 /** `launch.defaults`, bound to the space by the host. */
 export type LoadLaunchDefaults = (input: LaunchDefaultsInput) => Promise<LaunchDefaultsResult>;
@@ -32,6 +70,18 @@ export interface LaunchSelection {
   added: Readonly<Record<SpawnSelectionGroup, readonly LaunchContextRow[]>>;
   /** Returns the refusal when the tick is refused; the row shows it too. */
   toggle(group: SpawnSelectionGroup, row: LaunchContextRow): string | null;
+  /**
+   * Replace a group's edit wholesale — how an applied Jev group arrives (a
+   * person's click on Apply, lane A's JevApplyHost): an ordinary edit, shown
+   * as the same diff as hand ticks. `rows` names the non-default ids it adds.
+   * Refused, and nothing changes, when the group is locked or the set would
+   * pass the per-group ceiling.
+   */
+  setEdit(group: SpawnSelectionGroup, edit: LaunchGroupEdit, rows?: readonly LaunchContextRow[]): string | null;
+  /** The defaults' prompt bytes and the group's budget, as `launch.defaults` stated them. */
+  bytes: Readonly<Record<SpawnSelectionGroup, LaunchGroupBytes>>;
+  /** Whether the launch renders `<context_index>`, as `launch.defaults` stated it; null: not said. */
+  contextIndex: 'on' | 'off' | null;
   refusal: { group: SpawnSelectionGroup; id: EntityId; reason: string } | null;
   diff(group: SpawnSelectionGroup): GroupDiff;
   lock(group: SpawnSelectionGroup): string | null;
@@ -66,7 +116,13 @@ export function useLaunchSelection(args: {
   const canLoad = load !== undefined;
   const key = teammateId ? `${teammateId}|${subjectId ?? ''}` : null;
 
-  const [read, setRead] = useState<{ key: string; defaults: LaunchSelectionDefaults; warnings: readonly string[] } | null>(null);
+  const [read, setRead] = useState<{
+    key: string;
+    defaults: LaunchSelectionDefaults;
+    warnings: readonly string[];
+    bytes: Record<SpawnSelectionGroup, LaunchGroupBytes>;
+    contextIndex: 'on' | 'off' | null;
+  } | null>(null);
   const [edits, setEdits] = useState<LaunchSelectionEdits>(NO_SELECTION_EDITS);
   const [added, setAdded] = useState<LaunchSelection['added']>(NOTHING_ADDED);
   const [refusal, setRefusal] = useState<LaunchSelection['refusal']>(null);
@@ -86,9 +142,15 @@ export function useLaunchSelection(args: {
             references: readyDefaults(result.references),
           },
           warnings: result.warnings,
+          bytes: {
+            memories: groupBytes(result.memories),
+            skills: groupBytes(result.skills),
+            references: groupBytes(result.references),
+          },
+          contextIndex: (result as LaunchDefaultsResult & { contextIndex?: 'on' | 'off' }).contextIndex ?? null,
         });
       },
-      () => { if (live) setRead({ key, defaults: unknownDefaults(UNKNOWN_DEFAULTS_NOTE), warnings: [] }); },
+      () => { if (live) setRead({ key, defaults: unknownDefaults(UNKNOWN_DEFAULTS_NOTE), warnings: [], bytes: NO_BYTES_ALL, contextIndex: null }); },
     );
     return () => { live = false; };
   }, [key, teammateId, subjectId, canLoad]);
@@ -98,7 +160,8 @@ export function useLaunchSelection(args: {
     if (!key) return unknownDefaults('Pick a teammate to see what this launch loads by default.');
     return read && read.key === key ? read.defaults : loadingDefaults();
   }, [canLoad, key, read]);
-  const warnings = read && read.key === key ? read.warnings : [];
+  const current = read && read.key === key ? read : null;
+  const warnings = current ? current.warnings : [];
 
   const toggle = useCallback((group: SpawnSelectionGroup, row: LaunchContextRow): string | null => {
     const result = toggleRow(defaults[group], edits[group], row.id);
@@ -116,6 +179,22 @@ export function useLaunchSelection(args: {
     return null;
   }, [defaults, edits]);
 
+  const setEdit = useCallback((group: SpawnSelectionGroup, edit: LaunchGroupEdit, rows: readonly LaunchContextRow[] = []): string | null => {
+    const lock = groupLock(defaults[group]);
+    const refused = lock ?? (groupIds(defaults[group], edit).length > SPAWN_SELECTION_GROUP_LIMIT ? CEILING_REFUSAL : null);
+    if (refused) return refused;
+    setEdits((prev) => ({ ...prev, [group]: { removed: [...edit.removed], added: [...edit.added] } }));
+    if (rows.length > 0) {
+      setAdded((prev) => {
+        const known = new Set(prev[group].map((r) => r.id));
+        const fresh = rows.filter((r) => edit.added.includes(r.id) && !known.has(r.id));
+        return fresh.length ? { ...prev, [group]: [...prev[group], ...fresh] } : prev;
+      });
+    }
+    setRefusal(null);
+    return null;
+  }, [defaults]);
+
   const outcomes = useCallback(() => {
     const out = {} as Record<SpawnSelectionGroup, GroupOutcome>;
     for (const group of LAUNCH_SELECTION_GROUPS) out[group] = manualOutcome(defaults[group], edits[group]);
@@ -128,6 +207,9 @@ export function useLaunchSelection(args: {
     warnings,
     added,
     toggle,
+    setEdit,
+    bytes: current ? current.bytes : NO_BYTES_ALL,
+    contextIndex: current ? current.contextIndex : null,
     refusal,
     diff: (group) => groupDiff(defaults[group], edits[group]),
     lock: (group) => groupLock(defaults[group]),

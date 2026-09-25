@@ -31,6 +31,7 @@ import type {
   SpawnSelectionGroup,
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT } from '@tm8/contract';
+import { BYTE_BUDGETS, contextBudgetOverrun } from '@tm8/prompt';
 import { catalogModelsFor } from './model-catalog';
 import { MEMORY_IDS_MAX } from './memory';
 
@@ -625,26 +626,25 @@ export interface LaunchConfig {
 }
 
 /**
- * The per-launch budget override's arithmetic, mirrored from the node
- * (`@tm8/prompt` budgets.ts: `contextBudgetOverrun`, decision D1 01a0d77b) —
- * the node's module is not a browser import, so its four numbers are copied
- * here and pinned by `launch-budgets.test.ts`. The budgets must fit
- * `combinedInitialInjection` beside the frame baseline (kernel + manifest
- * ceilings); a key the override leaves out counts at its node default.
+ * The per-launch budget override's ceiling check — the node's own
+ * (`@tm8/prompt` `contextBudgetOverrun`, decision D1 01a0d77b), called with the
+ * node's default prompt policy: the budgets must fit `combinedInitialInjection`
+ * beside the frame baseline (kernel + manifest ceilings), and a key the
+ * override leaves out counts at its node default. The pinned profile may set
+ * its own budgets and ceilings, which this sheet does not read, so the node's
+ * manifest warning is the record; this is the warning at the point of typing.
  */
-export const LAUNCH_PROMPT_CEILING = 32_768;
-export const LAUNCH_FRAME_BASELINE = 6_144 + 4_096;
-export const LAUNCH_BUDGET_DEFAULTS = { memories: 12_288, references: 8_192 } as const;
+export const NODE_PROMPT_POLICY = {
+  kernelMaxBytes: BYTE_BUDGETS.kernel,
+  manifestMaxBytes: BYTE_BUDGETS.manifest,
+  initialContextMaxBytes: BYTE_BUDGETS.combinedInitialInjection,
+} as const;
 
-/** Null when this launch's budgets fit the prompt; else how far over they are. */
+/** Null when this launch's budgets fit the prompt (or none is set); else how far over they are. */
 export function contextBudgetsOverrun(budgets: ContextBudgets | undefined): { promised: number; room: number; over: number } | null {
   if (!budgets || Object.values(budgets).every((bytes) => bytes === undefined)) return null;
-  const promised = (budgets.memories ?? LAUNCH_BUDGET_DEFAULTS.memories)
-    + (budgets.references ?? LAUNCH_BUDGET_DEFAULTS.references)
-    + (budgets.teammates ?? 0)
-    + (budgets.skills ?? 0);
-  const room = LAUNCH_PROMPT_CEILING - LAUNCH_FRAME_BASELINE;
-  return promised > room ? { promised, room, over: promised - room } : null;
+  const overrun = contextBudgetOverrun({ promptPolicy: NODE_PROMPT_POLICY, contextBudgets: budgets });
+  return overrun ? { promised: overrun.promised, room: overrun.cap - overrun.baseline, over: overrun.over } : null;
 }
 
 /** `skills.preview`'s plugin → skill facts for one teammate and task set. */

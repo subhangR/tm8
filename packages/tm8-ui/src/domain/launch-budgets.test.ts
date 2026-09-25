@@ -3,10 +3,9 @@
  *
  * `buildSpawnInput` sends `contextBudgets` only with the keys a person set,
  * and every input it builds is one the node's `ExecutionSpawnInputSchema`
- * accepts. The sheet's ceiling warning is a mirror of the node's
- * `contextBudgetOverrun`, so it is pinned against the node's own function and
- * numbers: a drift on either side is red here, not a warning that disagrees
- * with the manifest.
+ * accepts. The sheet's ceiling warning is a call of the node's
+ * `contextBudgetOverrun`; these cases pin that it agrees with the node's check
+ * for every override the sheet can send, and says nothing for none.
  */
 import { describe, expect, it } from 'vitest';
 import { BYTE_BUDGETS, contextBudgetBaseline, contextBudgetOverrun } from '@tm8/prompt';
@@ -16,9 +15,6 @@ import {
   buildSpawnInput,
   contextBudgetsOverrun,
   defaultConfigFor,
-  LAUNCH_BUDGET_DEFAULTS,
-  LAUNCH_FRAME_BASELINE,
-  LAUNCH_PROMPT_CEILING,
   type LaunchConfig,
 } from './launch';
 
@@ -60,11 +56,8 @@ const NODE_POLICY = { kernelMaxBytes: BYTE_BUDGETS.kernel, manifestMaxBytes: BYT
 const nodeOverrun = (contextBudgets: ContextBudgets) => contextBudgetOverrun({ promptPolicy: NODE_POLICY, contextBudgets });
 
 describe('the ceiling warning agrees with the node', () => {
-  it('its numbers are the node’s', () => {
-    expect(LAUNCH_PROMPT_CEILING).toBe(BYTE_BUDGETS.combinedInitialInjection);
-    expect(LAUNCH_FRAME_BASELINE).toBe(contextBudgetBaseline(NODE_POLICY));
-    expect(LAUNCH_FRAME_BASELINE).toBe(10_240);
-    expect(LAUNCH_BUDGET_DEFAULTS).toEqual({ memories: BYTE_BUDGETS.memoryInjection, references: BYTE_BUDGETS.referenceIndex });
+  it('the room is 32768 minus a 10240 baseline', () => {
+    expect(BYTE_BUDGETS.combinedInitialInjection - contextBudgetBaseline(NODE_POLICY)).toBe(22_528);
   });
 
   const cases: ContextBudgets[] = [

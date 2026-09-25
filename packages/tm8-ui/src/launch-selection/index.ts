@@ -6,7 +6,7 @@
  */
 import './launch-selection.css';
 
-export { useLaunchSelection, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
+export { useLaunchSelection, type LaunchGroupBytes, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
 export {
   LaunchSelectionChips,
   LaunchSelectionGroups,
