@@ -18,7 +18,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, realpathSync } from 'node:fs';
 import { mkdir, rm, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -107,7 +107,23 @@ async function main() {
   console.log(`pg: vendored ${PG_PIN.version} -> ${dest} (${entries.join(', ')})`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/**
+ * Run as a script, not when imported. Compared by REALPATH: node resolves
+ * `import.meta.url` through symlinks but leaves `argv[1]` as typed, so a
+ * checkout reached through one (`/tmp` is `/private/tmp` on macOS, or a
+ * symlinked home) never matched and this exited 0 having vendored nothing —
+ * `bun run desktop` then died at "The bundled Postgres is missing".
+ */
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href;
+  }
+}
+
+if (isEntryPoint()) {
   main().catch((err) => {
     console.error(String(err instanceof Error ? err.message : err));
     process.exit(1);
