@@ -1092,6 +1092,8 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: { archetype: 'reader', primaries: ['add-child'] },
     palette: { createLabel: 'New doc' },
+    // A doc is what a launch most often reads, so its create offers the header.
+    createHeader: true,
   },
 
   // -- channel (COLLECTION as of 2026-08-01 — user ruling) ------------------

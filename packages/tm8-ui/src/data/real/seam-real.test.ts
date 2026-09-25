@@ -504,6 +504,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
       // verb for the same reason as axes: workflows ride `spaceSettings()`.
       'upsertTaskWorkflow', 'deleteTaskWorkflow',
+      // Amendment 13 (I9a): the authored selection header's two doors,
+      // `entities.header.set|clear` — their own ops because the header carries
+      // its own version and never moves the entity's.
+      'setEntityHeader', 'clearEntityHeader',
       // 176: `chat.start` — the write half of the chat-home bridge, and now the
       // ONLY door a chat is born from. It replaces `startChatThread`, which
       // configured an already-posted root message; this one creates the chat

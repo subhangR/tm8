@@ -304,6 +304,19 @@ describe('ops: divergence 1 — no task route; fields travel inside content', ()
     });
   });
 
+  it('header set/clear ride their own catalog doors, body verbatim (the header version, not the entity\'s)', async () => {
+    const { ops, f } = harness({ patches: [], header: {} });
+    await ops.setEntityHeader('e-1', { whenToUse: 'w', summary: null, keywords: ['k'], expectedVersion: 0 });
+    expect(f.last().method).toBe('PUT');
+    expect(f.last().url).toBe('/v2/entities/e-1/header');
+    expect(f.last().body).toEqual({ whenToUse: 'w', summary: null, keywords: ['k'], expectedVersion: 0 });
+
+    await ops.clearEntityHeader('e-1', { expectedVersion: 3 });
+    expect(f.last().method).toBe('DELETE');
+    expect(f.last().url).toBe('/v2/entities/e-1/header');
+    expect(f.last().body).toEqual({ expectedVersion: 3 });
+  });
+
   it('preserves an explicit null (clears the field) while dropping undefined', async () => {
     const { ops, f } = harness({ patches: [] });
     await ops.patchTask('e-1', { expectedVersion: 1, dueDate: null });

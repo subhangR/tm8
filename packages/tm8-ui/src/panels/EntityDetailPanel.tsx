@@ -16,7 +16,7 @@ import type { SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
+import { getKind, headerAuthorable, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
 import { LaunchComposerPopup } from '../new-session';
@@ -26,6 +26,7 @@ import {
   SaveControls,
   useTaskSave,
   type AuthoringCommands,
+  type HeaderCommands,
   type TaskSaveHandle,
 } from '../authoring';
 import {
@@ -58,6 +59,7 @@ import {
 } from './detail/PanelStates';
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
+import { HeaderSection } from './detail/HeaderSection';
 import {
   BinIcon, EntityControlStrip, RestoreIcon, RowAction, RowSharingControl, stripHasLiveControl,
   type ControlHost, type ControlSubject,
@@ -465,7 +467,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: ({ skills?: SkillPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
+  commands?: ({ skills?: SkillPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -1556,6 +1558,14 @@ function PanelBody(
           graph={props.graphSurface}
           /* Only a session has a launch: the terminal archetype, by registry data. */
           launchContext={config.panel.archetype === 'terminal' ? props.launchContextSurface : undefined}
+          /* The authored selection header, for the kinds that can carry one —
+             asked of the domain, never spelled here (§15.2). A tombstone has
+             nothing left to select. */
+          header={
+            headerAuthorable(detail.kind) && !detail.deletedAt ? (
+              <HeaderSection detail={detail} commands={props.commands} onSaved={props.onSaved} />
+            ) : undefined
+          }
         />
       </>
     );

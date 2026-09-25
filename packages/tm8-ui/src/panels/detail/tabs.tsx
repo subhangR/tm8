@@ -416,6 +416,7 @@ export function ConnectionsTab({
   onOpenEntity,
   graph,
   launchContext,
+  header,
   onOpenDiscussion,
 }: {
   detail: EntityDetail;
@@ -433,6 +434,12 @@ export function ConnectionsTab({
    * launch — drawn first, above the edges. Host-composed; absent for other kinds.
    */
   launchContext?: ReactNode;
+  /**
+   * The entity's SELECTION HEADER section (I9a) — what a launch reads when
+   * deciding whether to pick this entity. Host-composed; absent for kinds that
+   * cannot carry an authored header.
+   */
+  header?: ReactNode;
 }) {
   const [view, setView] = useState<'list' | 'graph'>('list');
   const groups: EdgeGroup[] = [
@@ -463,6 +470,7 @@ export function ConnectionsTab({
     <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
       {graph === undefined ? null : <ConnectionsViewSwitch view={view} onChange={setView} />}
       {launchContext}
+      {header}
       {empty ? (
         <EmptyBody
           glyph="⊕"

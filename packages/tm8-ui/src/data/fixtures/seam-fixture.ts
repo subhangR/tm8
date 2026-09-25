@@ -143,6 +143,12 @@ import {
   type TrackingPrMergeResult,
   type WorkInput,
   type WorkStatus,
+  type ClearEntityHeaderInput,
+  type EntityHeaderResult,
+  type EntityHeaderView,
+  type HeaderTextInput,
+  type SelectionHeaderKind,
+  type SetEntityHeaderInput,
 } from '@tm8/contract';
 import type {
   ConnectionState,
@@ -174,7 +180,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
-import { SHIPPED_DEFAULT_MENU } from '../../domain';
+import { SHIPPED_DEFAULT_MENU, headerAuthorable } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -1161,6 +1167,15 @@ export function createFixtureSeam(): FixtureSeam {
   );
 
   /**
+   * AUTHORED HEADERS, keyed by entity — their own table at the node
+   * (`entity_headers`, migration 216) with their OWN version, so a write here
+   * never touches the summary's `version` and emits no `entity.upsert`,
+   * exactly as `set_entity_header` does not. A detail carries `header` only
+   * while one is authored (I4's read rule).
+   */
+  const headers = new Map<EntityId, Omit<EntityHeaderView, 'name' | 'stale'>>();
+
+  /**
    * ATTENTION ROWS ARE STATE HERE, not a projection of the badge.
    *
    * They used to be synthesized per call from `summary.badges.attention`, and
@@ -1791,10 +1806,54 @@ export function createFixtureSeam(): FixtureSeam {
     return path;
   }
 
+  function headerViewOf(s: EntitySummary): EntityHeaderView | undefined {
+    const h = headers.get(s.id);
+    if (!h) return undefined;
+    return { ...clone(h), name: s.title, stale: h.pinnedVersion !== null && h.pinnedVersion !== s.version };
+  }
+
+  /**
+   * `set_entity_header`'s rules as the fixture can state them: the kind
+   * allowlist, the header's own optimistic version, and today's "whenToUse
+   * or summary" refusal (which the UI shows in the node's words rather than
+   * pre-empting). NO length bounds — the lenient ruling (migration 222)
+   * removes them at the node, and a fixture that kept them would test a
+   * refusal the UI is told never to pre-empt.
+   */
+  function writeHeader(s: EntitySummary, text: HeaderTextInput, expectedVersion: number | undefined): EntityHeaderView {
+    if (!headerAuthorable(s.kind)) {
+      throw new CollabError('invalid_input', `a ${s.kind} cannot carry an authored header`);
+    }
+    const current = headers.get(s.id)?.version ?? 0;
+    if (expectedVersion !== undefined && expectedVersion !== current) {
+      throw new CollabError('version_conflict', `expected header version ${expectedVersion}, have ${current}`);
+    }
+    const whenToUse = text.whenToUse?.trim() || null;
+    const summary = text.summary?.trim() || null;
+    if (whenToUse === null && summary === null) {
+      throw new CollabError('invalid_input', 'a header needs whenToUse or summary');
+    }
+    headers.set(s.id, {
+      entityId: s.id,
+      kind: s.kind as SelectionHeaderKind,
+      whenToUse,
+      summary,
+      keywords: (text.keywords ?? []).map((k) => k.trim()).filter(Boolean),
+      source: 'authored',
+      bytes: null,
+      loadPointer: `tm8 entity get ${s.id}`,
+      version: current + 1,
+      pinnedVersion: s.version,
+    });
+    return headerViewOf(s)!;
+  }
+
   function detailOf(id: EntityId): EntityDetail {
     const s = requireSummary(id);
     const e = extrasOf(id);
+    const header = headerViewOf(s);
     return {
+      ...(header ? { header } : {}),
       ...s,
       content: e.content,
       hierarchy: {
@@ -3407,6 +3466,9 @@ export function createFixtureSeam(): FixtureSeam {
             capabilities: { ...CAPS_FULL },
           });
         }
+        // The header rides the create's transaction at the node; here, the
+        // same call. Written before the echo so the created detail carries it.
+        if (input.header) writeHeader(s, input.header, 0);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
@@ -3439,6 +3501,28 @@ export function createFixtureSeam(): FixtureSeam {
         });
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      async setEntityHeader(id, input: SetEntityHeaderInput): Promise<EntityHeaderResult> {
+        const s = requireSummary(id);
+        const header = writeHeader(s, input, input.expectedVersion);
+        return { ...commandResult(s, { patches: [] }), header };
+      },
+      async clearEntityHeader(id, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
+        const s = requireSummary(id);
+        const current = headers.get(id)?.version ?? 0;
+        if (current === 0 || input.expectedVersion !== current) {
+          throw new CollabError('version_conflict', `expected header version ${input.expectedVersion}, have ${current}`);
+        }
+        headers.delete(id);
+        /* Back to the fallback: at the node `header` is the resolved native or
+           derived one with version 0. The fixture has no resolver, so it
+           answers the derived shape with nothing derived in it. */
+        const header: EntityHeaderView = {
+          entityId: id, kind: s.kind as SelectionHeaderKind, name: s.title,
+          whenToUse: null, summary: null, keywords: [], source: 'derived', stale: false,
+          bytes: null, loadPointer: `tm8 entity get ${id}`, version: 0, pinnedVersion: null,
+        };
+        return { ...commandResult(s, { patches: [] }), header };
       },
       async patchEntity(id, input: PatchEntityInput) {
         const s = requireSummary(id);
