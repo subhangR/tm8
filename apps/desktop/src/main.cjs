@@ -319,6 +319,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // A packaged app gets its icon from build/icon.icns (electron-builder). An
+    // unpackaged `electron .` runs inside Electron.app and would show ITS icon
+    // in the dock, so dev sets the same artwork by hand. Both are cut from the
+    // in-app ribbon mark by packages/tm8-ui/scripts/gen-pwa-icons.py.
+    if (IS_MAC && !app.isPackaged) {
+      const icon = path.join(__dirname, '..', 'build', 'icon.png');
+      if (existsSync(icon)) app.dock?.setIcon(icon);
+    }
     createWindow();
     startServer();
     app.on('activate', () => {

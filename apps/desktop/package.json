@@ -80,6 +80,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
       "identity": null,
       "binaries": [
         "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
