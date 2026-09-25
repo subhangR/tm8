@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
-import type { SpawnSelectionGroup } from '@tm8/contract';
+import type { ContextBudgets, RankedEntityReason, SpawnSelectionGroup } from '@tm8/contract';
 
 import {
   groupIds,
@@ -8,7 +8,21 @@ import {
   LAUNCH_SELECTION_GROUPS,
   type LaunchContextRow,
 } from '../domain/launch-selection';
+import { BudgetMeter } from '../jev';
+import { groupMeter, REASON_WORDS, type GroupMeterFacts, type LaunchRanked } from './meter';
 import type { LaunchSelection, LoadLaunchDefaults } from './useLaunchSelection';
+
+/** What a surface knows about the launch's prompt bytes, for the per-group meter (I7). All optional: absent, the meter falls back to `launch.defaults`, then to counts. */
+export interface LaunchSelectionBudgetProps {
+  /** Jev's ok answer per group: rows' `promptBytes`, the group's budget. */
+  ranked?: LaunchRanked;
+  /** The latest answer's context index, else `launch.defaults'`. */
+  contextIndex?: 'on' | 'off' | null;
+  /** The per-launch override (`BudgetOverride`), which replaces the budget it names. */
+  budgets?: ContextBudgets;
+  /** Why a default a person's Jev Apply removed is out (`appliedReasons`). */
+  reasons?: Partial<Record<SpawnSelectionGroup, Readonly<Record<string, RankedEntityReason>>>>;
+}
 
 /** The pool a person may ADD from, per group. Undefined: never read into this client (unknown, not empty). */
 export type LaunchSelectionCandidates = Partial<Record<SpawnSelectionGroup, readonly LaunchContextRow[] | undefined>>;
@@ -45,7 +59,11 @@ export function LaunchSelectionGroups({
   candidates,
   collapsed = false,
   extra,
-}: {
+  ranked,
+  contextIndex,
+  budgets,
+  reasons,
+}: LaunchSelectionBudgetProps & {
   selection: LaunchSelection;
   /** Which groups this surface edits here — in Jev mode the sheet shows Jev's checklists for memories and skills. */
   groups: readonly SpawnSelectionGroup[];
@@ -69,6 +87,8 @@ export function LaunchSelectionGroups({
           candidates={candidates[group]}
           collapsed={collapsed}
           extra={extra?.[group]}
+          meter={groupMeter(selection, group, ranked?.[group], contextIndex ?? selection.contextIndex, budgets)}
+          reasons={reasons?.[group] ?? {}}
         />
       ))}
       {selection.warnings.map((warning) => (
@@ -97,12 +117,16 @@ function SelectionGroup({
   candidates,
   collapsed,
   extra,
+  meter,
+  reasons,
 }: {
   group: SpawnSelectionGroup;
   selection: LaunchSelection;
   candidates: readonly LaunchContextRow[] | undefined;
   collapsed: boolean;
   extra: ReactNode;
+  meter: GroupMeterFacts | null;
+  reasons: Readonly<Record<string, RankedEntityReason>>;
 }) {
   const pickerId = `lsel-${group}-${useId()}`;
   const bodyId = `lsel-body-${group}-${useId()}`;
@@ -128,8 +152,9 @@ function SelectionGroup({
     const on = isTicked(defaults, edit, item.id);
     const refused = selection.refusal?.group === group && selection.refusal.id === item.id ? selection.refusal.reason : null;
     const removed = where === 'default' && !on;
+    const why = removed ? reasons[item.id] : undefined;
     const tag = where === 'default'
-      ? (removed ? 'default · removed' : 'default')
+      ? (removed ? `default · removed${why ? ` · ${REASON_WORDS[why]}` : ''}` : 'default')
       : on ? 'added' : null;
     return (
       <div key={`${where}-${item.id}`} className="lsel__item">
@@ -193,6 +218,7 @@ function SelectionGroup({
           {diff.line ? <span className="lsel__diff" data-testid={`lsel-diff-${group}`}>{diff.line}</span> : null}
         </div>
       )}
+      {meter ? <GroupMeter group={group} facts={meter} /> : null}
       {expanded ? (
       <div id={bodyId} className="lsel__body">
       {lock ? <p className="ls__profile-empty" role="status">{lock}</p> : null}
@@ -251,6 +277,30 @@ function SelectionGroup({
   );
 }
 
+/**
+ * One group's meter: lane B's `BudgetMeter` when the bytes are known, else
+ * the count alone — a meter never shows bytes it does not have (before
+ * `launch.defaults` carries `promptBytes`, a group nobody asked Jev about has
+ * none).
+ */
+function GroupMeter({ group, facts }: { group: SpawnSelectionGroup; facts: GroupMeterFacts }) {
+  const noun = facts.count === 1 ? LAUNCH_ONE[group] : LAUNCH_GROUP_LABEL[group].toLowerCase();
+  if (facts.usedBytes === null || facts.budget === undefined) {
+    return (
+      <p className="lsel__meter lsel__meter--count" data-testid={`lsel-meter-${group}`} data-meter="count">
+        {String(facts.count)} {noun} · prompt bytes not known here
+      </p>
+    );
+  }
+  return (
+    <div className="lsel__meter" data-testid={`lsel-meter-${group}`} data-budget-source={facts.budgetSource ?? undefined}>
+      <BudgetMeter group={group} usedBytes={facts.usedBytes} budget={facts.budget} contextIndex={facts.contextIndex} compact />
+    </div>
+  );
+}
+
+const LAUNCH_ONE: Record<SpawnSelectionGroup, string> = { memories: 'memory', skills: 'skill', references: 'reference' };
+
 /** What a launch surface needs to offer the groups: the defaults read and the add pools. */
 export interface LaunchSelectionSources {
   load?: LoadLaunchDefaults;
@@ -287,7 +337,8 @@ export function LaunchSelectionChips({
   candidates,
   governed = [],
   governedNote = 'Jev’s ticks are this set — review them in ✦ Review.',
-}: {
+  ...budget
+}: LaunchSelectionBudgetProps & {
   selection: LaunchSelection;
   candidates: LaunchSelectionCandidates;
   governed?: readonly SpawnSelectionGroup[];
@@ -338,7 +389,7 @@ export function LaunchSelectionChips({
           }}
         >
           <button type="button" className="lsel-popover__close" aria-label="Close" onClick={() => setOpen(null)}>✕</button>
-          <LaunchSelectionGroups selection={selection} groups={[open]} candidates={candidates} />
+          <LaunchSelectionGroups selection={selection} groups={[open]} candidates={candidates} {...budget} />
         </div>
       ) : null}
     </div>
