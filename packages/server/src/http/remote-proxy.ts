@@ -4,15 +4,110 @@ import type { Duplex } from 'node:stream';
 
 import { CollabError } from '@tm8/contract';
 
+import { readTm8SessionCookie } from './session-cookie.js';
+import type { IdentityResolutionContext, IdentityResolver, RequestIdentity } from './types.js';
+
 const PREFIX = /^\/v2\/server-connections\/([^/]+)\/proxy(?<upstream>\/.*)?$/;
 const HOP_HEADER = 'x-tm8-server-proxy-hop';
 
-export type ServerConnectionTargetResolver = (name: string) => Promise<string | null>;
+/**
+ * Looks the named connection up UNDER THE CALLER'S CLAIMS — never the node
+ * owner's. `server_connections` is readable by node admins only (044), so a
+ * human who is not one gets `null` (an honest `not_found`) until per-member
+ * links exist.
+ */
+export type ServerConnectionTargetResolver = (
+  name: string,
+  caller: RequestIdentity,
+) => Promise<string | null>;
+
+/**
+ * Who is asking this node to relay, and whether the `Authorization` header is
+ * theirs to hand onward. See `resolveRelayCaller`.
+ */
+export interface RelayCaller {
+  readonly identity: RequestIdentity;
+  /** False when `Authorization` carried THIS node's session: it stays here. */
+  readonly forwardAuthorization: boolean;
+}
 
 export interface RemoteServerProxy {
   matches(pathname: string): boolean;
-  handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void>;
-  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void>;
+  handleHttp(req: IncomingMessage, res: ServerResponse, caller: RelayCaller): Promise<void>;
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, caller: RelayCaller): Promise<void>;
+}
+
+const HUMAN_AUTH_KINDS: ReadonlySet<string> = new Set(['browser', 'cli']);
+
+function isUnauthenticated(error: unknown): boolean {
+  return error instanceof CollabError && error.code === 'unauthenticated';
+}
+
+/**
+ * THE RELAY IS A HUMAN'S TOOL, AND IT RUNS UNDER THAT HUMAN'S CLAIMS.
+ *
+ * It used to dispatch before any identity was resolved and to look the target
+ * up as the node owner, so any caller that could reach the port — no session,
+ * or an agent's token — could drive every registered remote (G1).
+ *
+ * Two carriers ride a relayed request and they mean different things. The
+ * session COOKIE is always this node's (it is host-scoped; the remote never set
+ * it). `Authorization` is normally the REMOTE's pass — a browser signed in to
+ * the remote sends it alongside this node's cookie — which is why the ordinary
+ * resolver cannot be used as-is here: it refuses two credentials that disagree.
+ * So:
+ *
+ *   - cookie present: the cookie alone names the local caller, and
+ *     `Authorization` is forwarded unless it is that same local token;
+ *   - no cookie, `Authorization` resolves HERE: it is this node's session (a
+ *     CLI, or an agent) — it names the caller and is NOT forwarded, because a
+ *     remote is someone else's machine;
+ *   - no cookie, `Authorization` is unknown here: it is the remote's pass, and
+ *     the local caller is whatever the request is without it (the loopback
+ *     auto-owner, or anonymous).
+ *
+ * Then: anonymous is `unauthenticated`; anything but a browser/cli session is
+ * `forbidden`. The auto-owner resolves as `browser` (identity-resolver.ts).
+ */
+export async function resolveRelayCaller(
+  headers: IncomingHttpHeaders,
+  resolveIdentity: IdentityResolver,
+  context: IdentityResolutionContext,
+): Promise<RelayCaller> {
+  const { authorization, ...withoutAuthorization } = headers;
+  const presented = typeof authorization === 'string'
+    ? authorization.replace(/^Bearer\s+/i, '').trim()
+    : '';
+  const cookie = readTm8SessionCookie(headers) ?? '';
+
+  let caller: RelayCaller;
+  if (cookie) {
+    caller = {
+      identity: await resolveIdentity(withoutAuthorization, context),
+      forwardAuthorization: presented !== '' && presented !== cookie,
+    };
+  } else if (presented) {
+    try {
+      const identity = await resolveIdentity(headers, context);
+      caller = { identity, forwardAuthorization: identity.kind !== 'bearer' };
+    } catch (error) {
+      if (!isUnauthenticated(error)) throw error;
+      caller = {
+        identity: await resolveIdentity(withoutAuthorization, context),
+        forwardAuthorization: true,
+      };
+    }
+  } else {
+    caller = { identity: await resolveIdentity(headers, context), forwardAuthorization: false };
+  }
+
+  if (caller.identity.kind === 'anonymous') {
+    throw new CollabError('unauthenticated', 'the named Server relay requires a signed-in session');
+  }
+  if (!caller.identity.authKind || !HUMAN_AUTH_KINDS.has(caller.identity.authKind)) {
+    throw new CollabError('forbidden', 'the named Server relay is for browser and cli sessions only');
+  }
+  return caller;
 }
 
 function match(req: IncomingMessage): { name: string; upstream: string } | null {
@@ -54,8 +149,9 @@ function match(req: IncomingMessage): { name: string; upstream: string } | null 
  *     dead-carrier strip in `server.ts`, which is why sign-in appears to work
  *     and everything after it does not.
  *
- * `authorization` is deliberately still forwarded: that one IS the remote's
- * own carrier and is the thing the caller meant to send.
+ * `authorization` is still forwarded when it is the remote's own carrier — the
+ * thing the caller meant to send — and dropped when it is THIS node's session
+ * (`RelayCaller.forwardAuthorization`, decided in `resolveRelayCaller`).
  *
  * NOTE THE SHAPE OF THIS FUNCTION, because it is how the bug got here. A
  * deny-list forwards every header nobody thought to name, so each new
@@ -63,8 +159,13 @@ function match(req: IncomingMessage): { name: string; upstream: string } | null 
  * fail closed instead. That is a wider change than a blocked deploy should
  * carry, so it is filed rather than smuggled in here.
  */
-function forwardedHeaders(headers: IncomingHttpHeaders, target: URL): IncomingHttpHeaders {
+function forwardedHeaders(
+  headers: IncomingHttpHeaders,
+  target: URL,
+  caller: RelayCaller,
+): IncomingHttpHeaders {
   const next = { ...headers };
+  if (!caller.forwardAuthorization) delete next.authorization;
   delete next.host;
   delete next.origin;
   delete next.referer;
@@ -75,9 +176,23 @@ function forwardedHeaders(headers: IncomingHttpHeaders, target: URL): IncomingHt
   return next;
 }
 
-function refuseUpgrade(socket: Duplex, status: number, body: string): void {
+const UPGRADE_STATUS_TEXT: Readonly<Record<number, string>> = {
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+};
+
+export function upgradeRefusalStatus(error: unknown): number {
+  if (!(error instanceof CollabError)) return 502;
+  if (error.code === 'unauthenticated') return 401;
+  if (error.code === 'forbidden') return 403;
+  if (error.code === 'not_found') return 404;
+  return 502;
+}
+
+export function refuseUpgrade(socket: Duplex, status: number, body: string): void {
   socket.end(
-    `HTTP/1.1 ${status} ${status === 404 ? 'Not Found' : 'Bad Gateway'}\r\n` +
+    `HTTP/1.1 ${status} ${UPGRADE_STATUS_TEXT[status] ?? 'Bad Gateway'}\r\n` +
       'connection: close\r\n' +
       'content-type: text/plain; charset=utf-8\r\n' +
       `content-length: ${Buffer.byteLength(body)}\r\n\r\n` +
@@ -94,13 +209,16 @@ function responseHead(response: IncomingMessage): string {
 }
 
 export function createRemoteServerProxy(resolveTarget: ServerConnectionTargetResolver): RemoteServerProxy {
-  async function targetFor(req: IncomingMessage): Promise<{ target: URL; upstream: string }> {
+  async function targetFor(
+    req: IncomingMessage,
+    caller: RelayCaller,
+  ): Promise<{ target: URL; upstream: string }> {
     if (req.headers[HOP_HEADER] !== undefined) {
       throw new CollabError('invariant_violation', 'named Server proxy loop refused');
     }
     const route = match(req);
     if (!route) throw new CollabError('not_found', 'not a named Server proxy route');
-    const baseUrl = await resolveTarget(route.name);
+    const baseUrl = await resolveTarget(route.name, caller.identity);
     if (!baseUrl) throw new CollabError('not_found', `no such server connection: ${route.name}`);
     const target = new URL(baseUrl);
     if (target.protocol !== 'http:' && target.protocol !== 'https:') {
@@ -116,13 +234,13 @@ export function createRemoteServerProxy(resolveTarget: ServerConnectionTargetRes
       return PREFIX.test(pathname);
     },
 
-    async handleHttp(req, res) {
-      const { target } = await targetFor(req);
+    async handleHttp(req, res, caller) {
+      const { target } = await targetFor(req, caller);
       const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
       await new Promise<void>((resolve, reject) => {
         const upstream = send(target, {
           method: req.method ?? 'GET',
-          headers: forwardedHeaders(req.headers, target),
+          headers: forwardedHeaders(req.headers, target, caller),
         }, (reply) => {
           const headers = { ...reply.headers };
           delete headers['access-control-allow-origin'];
@@ -139,12 +257,12 @@ export function createRemoteServerProxy(resolveTarget: ServerConnectionTargetRes
       });
     },
 
-    async handleUpgrade(req, socket, head) {
+    async handleUpgrade(req, socket, head, caller) {
       let resolved: { target: URL };
       try {
-        resolved = await targetFor(req);
+        resolved = await targetFor(req, caller);
       } catch (error) {
-        refuseUpgrade(socket, error instanceof CollabError && error.code === 'not_found' ? 404 : 502,
+        refuseUpgrade(socket, upgradeRefusalStatus(error),
           error instanceof Error ? error.message : String(error));
         return;
       }
@@ -153,7 +271,7 @@ export function createRemoteServerProxy(resolveTarget: ServerConnectionTargetRes
       const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
       const upstreamRequest = send(target, {
         method: 'GET',
-        headers: forwardedHeaders(req.headers, target),
+        headers: forwardedHeaders(req.headers, target, caller),
       });
 
       upstreamRequest.once('upgrade', (reply, upstreamSocket, upstreamHead) => {
