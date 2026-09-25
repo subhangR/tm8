@@ -1278,6 +1278,7 @@ export class DbGraphPort implements GraphPort {
       selection: unknown;
       selection_reasons: unknown;
       effective_plugins: unknown;
+      skill_overrides: unknown;
       context_index: string | null;
     }>(
       this.claims(auth),
@@ -1294,6 +1295,7 @@ export class DbGraphPort implements GraphPort {
                             from jsonb_array_elements(sm.manifest #> '{launch,harness,plugins,allowed}') p
                            where p ->> 'source' = 'effective-skill'), '[]'::jsonb)
               end                                           as effective_plugins,
+              sm.manifest #>  '{launch,harness,skillOverrides}' as skill_overrides,
               sm.manifest #>> '{context,index,source}'    as context_index
          from public.session_manifests sm
         where sm.work_session_id = $1`,
@@ -3474,6 +3476,8 @@ export function sessionLaunchPostureFromRecord(row: {
   selection_reasons?: unknown;
   /** `launch.harness.plugins.allowed[source=effective-skill]` ids; null when none were recorded. */
   effective_plugins?: unknown;
+  /** `launch.harness.skillOverrides`, the skill plan resume replays; narrowed downstream. */
+  skill_overrides?: unknown;
   /** `context.index.source`. */
   context_index?: string | null;
 }): SessionLaunchPosture {
@@ -3520,6 +3524,11 @@ export function sessionLaunchPostureFromRecord(row: {
     // the manifest recorded no plugin decisions at all, so resume computes.
     ...(Array.isArray(row.effective_plugins)
       ? { effectivePlugins: row.effective_plugins.filter((id): id is string => typeof id === 'string') }
+      : {}),
+    // The launch's recorded skill plan, replayed by resume. Stored JSON,
+    // narrowed downstream (`asRecordedSkillPlan`); a bad one is recomputed.
+    ...(typeof row.skill_overrides === 'object' && row.skill_overrides !== null && !Array.isArray(row.skill_overrides)
+      ? { skillOverrides: row.skill_overrides as Record<string, unknown> }
       : {}),
     // The launch rendered `<context_index>`; its resume renders it too.
     ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),

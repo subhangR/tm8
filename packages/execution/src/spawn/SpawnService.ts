@@ -58,8 +58,10 @@ import { detectCheckoutBranch } from './checkout-branch.js';
 import {
   claudePluginConfigDir,
   harnessSurfaceEnv,
+  asRecordedSkillPlan,
   readConfigHomeSkills,
   readInstalledClaudePlugins,
+  readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
 import { contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
@@ -902,6 +904,13 @@ export class SpawnService {
     return readInstalledClaudePlugins(claudePluginConfigDir(credentialConfigDir, this.env));
   }
 
+  /** The workdir's own skill and command names, read under the same conditions as the home's. */
+  private projectSkillKeysFor(launch: ResolvedLaunchConfig, workdir: string): string[] {
+    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
+    if (this.env.TM8_AGENT_CMD?.trim()) return [];
+    return readProjectSkillKeys(workdir, this.env.HOME ?? homedir());
+  }
+
   /**
    * The operator skills the same config home lists, read under the same
    * conditions as its plugins, for `laneSkillPlan` to turn off the ones this
@@ -1543,15 +1552,16 @@ export class SpawnService {
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
-        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides, noChrome) => (baseCommand = buildAgentCommand(launch, this.env, {
           claudeSessionId: nativeSessionId,
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
           ...(skillOverrides ? { skillOverrides } : {}),
+          ...(noChrome === false ? { noChrome } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
         contextIndex,
         baseUrl: this.baseUrl,
       });
@@ -2328,16 +2338,18 @@ export class SpawnService {
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
-        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides, noChrome) => (baseCommand = buildAgentCommand(launch, this.env, {
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
           ...(skillOverrides ? { skillOverrides } : {}),
+          ...(noChrome === false ? { noChrome } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
         contextIndex: resumeIndex,
         replayEffectivePlugins: recorded.posture?.effectivePlugins ?? null,
+        replaySkillPlan: asRecordedSkillPlan(recorded.posture?.skillOverrides),
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });

@@ -362,6 +362,13 @@ export interface SessionLaunchPosture {
    * no plugins), and resume computes the set.
    */
   effectivePlugins?: string[] | null;
+  /**
+   * `launch.harness.skillOverrides`: the skill plan the launch ran with.
+   * Resume replays it (`asRecordedSkillPlan`), so a resumed lane lists the
+   * skills it launched with even if its equips or config home changed.
+   * Stored JSON; absent on a manifest without one, and resume computes.
+   */
+  skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
   contextIndex?: 'env' | 'profile' | null;
 }
@@ -714,6 +721,7 @@ export interface LaunchHarnessRecord {
   skillOverrides?: {
     off: { name: string; source: import('./harness-surface.js').SkillOverrideSource }[];
     nameOnly?: { name: string; source: 'native-name-only' }[];
+    kept?: { name: string; because: 'project-collision' }[];
   };
 }
 

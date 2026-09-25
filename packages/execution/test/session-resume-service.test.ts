@@ -327,6 +327,39 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(result.manifest.launch.harness?.skillOverrides?.off).toContainEqual({ name: 'astro', source: 'user-unselected' });
   });
 
+  it('REPLAYS the launch\'s recorded skill plan instead of recomputing it from today\'s config home', async () => {
+    // The home NOW holds `astro`, which a fresh plan would turn off; the launch
+    // recorded a plan from before `astro` existed, with `graphify` name-only.
+    // A resumed conversation must boot with the harness it launched with.
+    const configDir = join(dataDir, 'claude-home');
+    await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
+    await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
+    const binDir = join(dataDir, 'bin');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const recorded = {
+      off: [{ name: 'init', source: 'builtin-trim' }, { name: 'claude-in-chrome', source: 'chrome' }],
+      nameOnly: [{ name: 'graphify', source: 'native-name-only' }],
+    };
+    graph.postures.set(SESSION_ID, { accessMode: null, permissionMode: null, skillOverrides: recorded });
+    let command = '';
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(((input: { command: string }) => {
+      command = input.command;
+      return { reused: false };
+    }) as never);
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+
+    const result = await serviceWith({
+      PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: dataDir, CLAUDE_CONFIG_DIR: configDir,
+    }).resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(command).toContain(`"skillOverrides":{"graphify":"name-only","init":"off"}`);
+    expect(command).not.toContain('astro');
+    expect(command).toContain('--no-chrome');
+    expect(result.manifest.launch.harness?.skillOverrides).toEqual(recorded);
+  });
+
   it('TM8_HARNESS_SURFACE=inherit resumes on the bare command: no trim, no --no-chrome, no record', async () => {
     const configDir = join(dataDir, 'claude-home');
     await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
@@ -334,6 +367,11 @@ describe('SpawnService.resume — guards and orchestration', () => {
     const binDir = join(dataDir, 'bin');
     await mkdir(binDir, { recursive: true });
     await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    // A recorded minimal plan does not survive the switch: inherit outranks replay.
+    graph.postures.set(SESSION_ID, {
+      accessMode: null, permissionMode: null,
+      skillOverrides: { off: [{ name: 'init', source: 'builtin-trim' }, { name: 'claude-in-chrome', source: 'chrome' }] },
+    });
     let command = '';
     vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(((input: { command: string }) => {
       command = input.command;
