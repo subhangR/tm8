@@ -119,7 +119,7 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
-import { SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
+import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
@@ -2044,6 +2044,7 @@ export class SpawnService {
       ...(launchSelection.selection ? { selection: launchSelection.selection } : {}),
       ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
       ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
+      ...(launchSelection.contextBudgets ? { contextBudgets: launchSelection.contextBudgets } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -3576,14 +3577,19 @@ export class SpawnService {
 export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
   selection?: SpawnSelection;
   selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
+  /** The launch's budget override. A malformed record is dropped alone: it changes a trim, never what loads. */
+  contextBudgets?: NonNullable<SpawnRequest['contextBudgets']>;
   invalid?: true;
 } {
+  const budgets = ContextBudgetsSchema.safeParse(posture?.contextBudgets);
+  const contextBudgets = posture?.contextBudgets !== undefined && budgets.success ? { contextBudgets: budgets.data } : {};
   const hasSelection = posture?.selection !== undefined;
   const hasReasons = posture?.selectionReasons !== undefined;
   const selection = SpawnSelectionSchema.safeParse(posture?.selection);
   const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
-  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true };
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true, ...contextBudgets };
   return {
+    ...contextBudgets,
     ...(hasSelection && selection.success ? { selection: selection.data } : {}),
     ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };

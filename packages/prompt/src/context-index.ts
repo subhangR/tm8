@@ -249,6 +249,16 @@ function groupFrameBytes(group: PromptContextGroup): number {
   return utf8Bytes(groupOpen(group)) + 1 + utf8Bytes('  </group>') + 1;
 }
 
+/**
+ * The frame bytes of a group holding `count` entries with nothing omitted:
+ * what the trim charges a group beside its entries' `contextEntryBytes`. Ask
+ * Jev's budget fill counts it, so a ticked set that fits its budget is a set
+ * the launch trim keeps whole.
+ */
+export function contextGroupFrameBytes(name: ContextIndexGroupName, count: number): number {
+  return groupFrameBytes({ name, entries: new Array<PromptContextEntry>(count), omitted: 0 });
+}
+
 export function serializeContextGroup(group: PromptContextGroup): string {
   return [groupOpen(group), ...group.entries.map(serializeContextEntry), '  </group>'].join('\n');
 }

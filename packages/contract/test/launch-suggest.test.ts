@@ -23,7 +23,7 @@ const suggest = {
   runId: uuid(1),
   requestId: uuid(2),
   subjectId: uuid(3),
-  groups: ['model', 'teammates', 'memories', 'skills'],
+  groups: ['model', 'teammates', 'memories', 'skills', 'references'],
 };
 
 const spawn = {
@@ -51,6 +51,8 @@ describe('LaunchSuggestInputSchema', () => {
       ...suggest,
       draft: { title: 'Fix the deploy target', description: 'deploy.sh points at 7777.' },
       teamMemberId: uuid(4),
+      agentTool: 'codex',
+      interactionProfileId: uuid(5),
     }).success).toBe(true);
   });
 
@@ -104,14 +106,40 @@ describe('LaunchSuggestResultSchema', () => {
           items: [{
             entityId: uuid(20), kind: 'memory', title: 'Deploy box is prod',
             sources: ['teammate', 'task'], score: 2.6, level: 'critical', suggested: true,
+            default: true, promptBytes: 64,
+            header: { whenToUse: 'deploys', summary: 'Deploy box is prod', keywords: [], source: 'native', version: 0 },
+          }, {
+            entityId: uuid(21), kind: 'memory', title: 'Old deploy note',
+            sources: ['space'], score: 1.7, level: 'useful', suggested: false, reason: 'over-budget',
+            default: false, promptBytes: 9000,
+            header: { whenToUse: null, summary: 'Old deploy note', keywords: [], source: 'native', version: 0 },
+          }],
+          considered: 2,
+          total: 2,
+          budget: 12288,
+          floor: 1.5,
+        },
+        cost,
+      },
+      references: {
+        status: 'ok',
+        value: {
+          items: [{
+            entityId: uuid(22), kind: 'doc', title: 'Runbook',
+            sources: ['task', 'parent', 'space'], score: 2, level: 'useful', suggested: true,
+            default: true, promptBytes: 412,
+            header: { whenToUse: 'when deploying', summary: null, keywords: ['deploy'], source: 'authored', version: 3 },
           }],
           considered: 1,
           total: 1,
+          budget: null,
+          floor: 1.5,
         },
         cost,
       },
       skills: { status: 'skipped', reason: 'no_teammate', cost: { ...cost, calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 } },
     },
+    contextIndex: 'on',
     run: { ...cost, calls: 3 },
   };
 
@@ -135,6 +163,43 @@ describe('LaunchSuggestResultSchema', () => {
       ...result,
       groups: { ...result.groups, memories: { ...memories, value: { ...memories.value, items: [item] } } },
     }).success).toBe(false);
+  });
+});
+
+describe('LaunchSuggestResultSchema — the budget fill (design 01a0d348 §10 Q5)', () => {
+  const header = { whenToUse: null, summary: null, keywords: [], source: 'derived', version: 0 };
+  const item = { entityId: uuid(40), kind: 'artifact', title: 'a', sources: ['space'], score: 1, level: 'background', suggested: false, default: false, promptBytes: 10, header };
+  const group = (extra: Record<string, unknown>) => ({
+    runId: uuid(1), contextIndex: 'off', run: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 },
+    groups: { references: { status: 'ok', cost: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 }, value: { items: [{ ...item, ...extra }], considered: 1, total: 1, budget: null, floor: 1.5 } } },
+  });
+
+  it('carries why a row is unticked, in a closed vocabulary', () => {
+    expect(LaunchSuggestResultSchema.safeParse(group({ reason: 'below-floor' })).success).toBe(true);
+    expect(LaunchSuggestResultSchema.safeParse(group({ reason: 'too-big' })).success).toBe(false);
+  });
+
+  it('requires promptBytes, default and the header on every ranked row', () => {
+    for (const key of ['promptBytes', 'default', 'header']) {
+      const { [key]: _gone, ...rest } = item as Record<string, unknown>;
+      const body = group({});
+      (body.groups.references.value.items as unknown[])[0] = rest;
+      expect(LaunchSuggestResultSchema.safeParse(body).success, key).toBe(false);
+    }
+  });
+
+  it('says whether the launch renders <context_index>', () => {
+    const { contextIndex: _gone, ...rest } = group({});
+    expect(LaunchSuggestResultSchema.safeParse(rest).success).toBe(false);
+  });
+});
+
+describe('ExecutionSpawnInputSchema — contextBudgets, the per-launch override', () => {
+  it('accepts any subset of the four budgets, and refuses one past 32 KiB or an unknown key', () => {
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, contextBudgets: { memories: 4096 } }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, contextBudgets: { skills: 0, references: 8192, teammates: 1024 } }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, contextBudgets: { memories: 40_000 } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, contextBudgets: { roster: 1 } }).success).toBe(false);
   });
 });
 
