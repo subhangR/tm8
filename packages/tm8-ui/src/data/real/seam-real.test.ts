@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CollabError } from '@tm8/contract';
+import { pendingFormsSourceFor } from '../../forms/pending';
 import { createRealSeam, deriveWsUrl, type RealSeam, type RealSeamOptions } from './seam-real';
 import { FakeClock, fakeFetch, fakeSocketPool, flush, type FakeFetch, type FakeReply, type FakeSocketPool } from './test-support';
 
@@ -324,6 +325,37 @@ describe('seam-real: commands that adapt the server shape', () => {
     const e = await seam.commands.prompt('ws-1', { clientMutationId: 'c', body: 'hi' } as never)
       .catch((x: unknown) => x) as CollabError;
     expect(e.code).toBe('forbidden');
+  });
+});
+
+/**
+ * The forms session surfaces (FORMS-DESIGN §10): the tile chip "1 form
+ * waiting" and the session panel banner read ONE op through an OPTIONAL seam
+ * method. The pending-forms tests all ran over a fake that had it, while this
+ * seam did not — so the store was null in production and both surfaces
+ * rendered nothing, silently. These two pin the REAL seam end to end.
+ */
+describe('seam-real: forms.pendingForSessions (the session chip and banner)', () => {
+  it('the real seam implements it, so the pending-forms store gets a source', () => {
+    const { seam } = mk(() => ok({ sessions: [] }));
+    expect(typeof seam.formsPendingForSessions).toBe('function');
+    expect(pendingFormsSourceFor(seam, 'sp-1')).not.toBeNull();
+  });
+
+  it('speaks GET /v2/forms-pending with spaceId and ONE comma-joined sessionIds, and returns the answer', async () => {
+    const answer = {
+      sessions: [{ workSessionId: 'ws-1', total: 1, queued: 0, forms: [{
+        formId: 'f-1', title: 'Pick one', version: 2, structureVersion: 1,
+        questionCount: 1, openedAt: '2026-09-25T00:00:00.000Z', draft: null,
+      }] }],
+    };
+    const { seam, f } = mk(() => ok(answer));
+    const source = pendingFormsSourceFor(seam, 'sp-1')!;
+    await expect(source.pendingForSessions({ spaceId: 'sp-1', sessionIds: ['ws-1', 'ws-2'] })).resolves.toEqual(answer);
+    const call = f.last();
+    expect(call.method).toBe('GET');
+    expect(call.url).toBe('/v2/forms-pending?spaceId=sp-1&sessionIds=ws-1%2Cws-2');
+    expect(call.body).toBeUndefined();
   });
 });
 

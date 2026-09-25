@@ -160,6 +160,7 @@ import {
   FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
   FIXTURE_SPACE_ID,
+  fixturePendingForSessions,
   SAMPLE_DIFF,
   ada,
   fixtureDetails,
@@ -2770,6 +2771,16 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async entity(id) {
       return clone(detailOf(id));
+    },
+    /**
+     * forms.pendingForSessions over the forms fixtures: the open forms pinned
+     * to forge's live session wait on the viewer, so the fixture app shows the
+     * session tile chip and the session panel banner. Another space answers
+     * nothing, as RLS would.
+     */
+    async formsPendingForSessions({ spaceId, sessionIds }) {
+      if (spaceId !== FIXTURE_SPACE_ID) return { sessions: [] };
+      return clone(fixturePendingForSessions(sessionIds));
     },
     async children(id, opts) {
       requireSummary(id);

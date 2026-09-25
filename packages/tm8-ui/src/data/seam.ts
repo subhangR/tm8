@@ -1,4 +1,4 @@
-import type { FormsPendingForSessionsResult } from '../forms/pending';
+import type { FormsPendingForSessionsResult } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
 import type { FormsOps } from '../forms/ops-port';

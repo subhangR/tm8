@@ -25,6 +25,9 @@ import {
   teamMemberForge,
 } from '../../fixtures';
 import type { ConnectionState, LivenessSnapshot } from '../seam';
+import { FormsPendingForSessionsResultSchema } from '@tm8/contract';
+import { FORM_FIXTURE_IDS, FORM_FIXTURE_REQUESTING_SESSION } from '../../forms/fixtures';
+import { pendingFormsSourceFor } from '../../forms/pending';
 import { createFixtureSeam } from './seam-fixture';
 
 /** Drain the microtask queue so queueMicrotask-dispatched echoes land. */
@@ -652,5 +655,37 @@ describe('fixture seam — server-parity of the Board wave (PR #253 review findi
       filters: { assignedByIds: [teamMemberForge.id] },
     });
     expect(holders.page.items).toHaveLength(0);
+  });
+});
+
+/**
+ * The forms session surfaces in the fixture app: the pending read is an
+ * OPTIONAL seam method, and a seam without it renders no chip and no banner,
+ * silently — which is how the real seam shipped dead. This seam has it.
+ */
+describe('fixture seam: forms.pendingForSessions (the session chip and banner)', () => {
+  it('pins the open forms to forge\'s live session, and exposes the read to the pending store', () => {
+    expect(FORM_FIXTURE_REQUESTING_SESSION).toBe(sessionLive.id);
+    expect(pendingFormsSourceFor(createFixtureSeam(), FIXTURE_SPACE_ID)).not.toBeNull();
+  });
+
+  it('answers by the server rules: the draft rides along, an answered slot drops out, the queued answer counts', async () => {
+    const seam = createFixtureSeam();
+    const answer = FormsPendingForSessionsResultSchema.parse(await seam.formsPendingForSessions!({
+      spaceId: FIXTURE_SPACE_ID, sessionIds: [sessionLive.id, sessionExited.id],
+    }));
+    // Release review: the viewer's revision 3 is current (done for them) and
+    // still pending delivery (queued). Migration: single, nothing submitted,
+    // the viewer's draft. Onboarding is a draft form, so it never waits.
+    expect(answer.sessions).toEqual([{
+      workSessionId: sessionLive.id,
+      total: 1,
+      queued: 1,
+      forms: [expect.objectContaining({
+        formId: FORM_FIXTURE_IDS.migration, draft: { id: 'resp-ada-draft', version: 3 },
+      })],
+    }]);
+    expect((await seam.formsPendingForSessions!({ spaceId: 'other-space', sessionIds: [sessionLive.id] })).sessions)
+      .toEqual([]);
   });
 });

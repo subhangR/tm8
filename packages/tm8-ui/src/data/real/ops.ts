@@ -176,6 +176,8 @@ import {
   type TrackingPrMergeResult,
   type UpdateAttentionRequestInput,
   type WorkInput,
+  type FormsPendingForSessionsParams,
+  type FormsPendingForSessionsResult,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
@@ -692,6 +694,17 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     entity(id: EntityId): Promise<EntityDetail> {
       return http.call<EntityDetail>('entities.get', { params: { id } });
+    },
+
+    /**
+     * `forms.pendingForSessions` (FORMS-DESIGN §10): GET, the session ids ride
+     * ONE comma-joined `sessionIds` param (at most FORMS_PENDING_MAX_SESSIONS;
+     * the store chunks, and the server refuses duplicates).
+     */
+    formsPendingForSessions(input: FormsPendingForSessionsParams): Promise<FormsPendingForSessionsResult> {
+      return http.call<FormsPendingForSessionsResult>('forms.pendingForSessions', {
+        query: { spaceId: input.spaceId, sessionIds: [...new Set(input.sessionIds)].join(',') },
+      });
     },
 
     children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> {
