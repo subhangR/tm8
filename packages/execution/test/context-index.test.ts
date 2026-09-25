@@ -11,7 +11,8 @@ import {
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
-import { collapseMemories, contextBudgetsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch } from '../src/spawn/context-index.js';
+import { collapseMemories, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch } from '../src/spawn/context-index.js';
+import { replayedSelection } from '../src/spawn/SpawnService.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
 import type { ContextVia, SpawnContext, SpawnRequest, TaskContext } from '../src/spawn/types.js';
@@ -38,9 +39,9 @@ const docHeader = (id: string, summary = 'a summary '.repeat(40)): SelectionHead
   source: 'derived', stale: false, bytes: 4096, loadPointer: `tm8 entity context ${id}`,
 });
 
-function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[]; installed?: string[] } = {}) {
+function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[]; installed?: string[]; request?: SpawnRequest } = {}) {
   const manifest = composeManifest({
-    sessionId: 'session', request, context, launch: resolveLaunchConfig(request, context, {}),
+    sessionId: 'session', request: opts.request ?? request, context, launch: resolveLaunchConfig(request, context, {}),
     workdir: { mode: 'project', path: '/repo' }, baseUrl: 'http://localhost', homeDir: HOME,
     agentConfigDir: `${HOME}/.claude`, now: new Date('2026-09-24T00:00:00Z'),
     command: (plugins) => `claude plugins=${plugins.join(',')}`,
@@ -395,6 +396,47 @@ describe('I5b: memory collapse (§10 Q1)', () => {
       { groups: ['skills'], cap: 4096 },
     ]);
     expect(contextIndexCaps('dispatcher')[2]).toEqual({ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex });
+  });
+
+  it('a profile\'s contextFloors are read the same way, 0..3 only', () => {
+    expect(contextFloorsFrom({ draft: { contextFloors: { memories: 1, skills: 3.5, references: -1, teammates: 0.5 } } })).toEqual({ memories: 1, teammates: 0.5 });
+    expect(contextFloorsFrom(null)).toEqual({});
+  });
+});
+
+describe('I7: the launch sheet\'s per-launch budget override (§10 Q5.4)', () => {
+  const texts = Array.from({ length: 6 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
+  const context = () => ctx({
+    teamMember: { ...member, memories: texts, memoryIds: texts.map((_, i) => `mem-${i}`) },
+    contextAudit: { selected: false, memoryVia: texts.map(() => 'teammate' as const), dropped: [] },
+  });
+
+  it('replaces the profile\'s budget for this launch, and is recorded where resume and the audit read it', () => {
+    // ~9 KB of memories fit the 12 KiB default whole…
+    expect(compose(context(), { on: true }).manifest.context!.dropped!.filter((d) => d.level === 'body')).toEqual([]);
+    // …and collapse under a 4 KiB override.
+    const { manifest } = compose(context(), { on: true, request: { ...request, contextBudgets: { memories: 4096 } } });
+    expect(manifest.context!.dropped!.filter((d) => d.level === 'body').length).toBeGreaterThan(0);
+    expect(manifest.context!.budgets).toMatchObject({ memoryInjection: { cap: 4096 }, launch: { memories: 4096 } });
+    expect(manifest.context!.budgets!.warning).toBeUndefined();
+    expect(manifest.launch.contextBudgets).toEqual({ memories: 4096 });
+  });
+
+  it('is lenient: budgets that cannot fit the prompt are warned and recorded, never refused', () => {
+    const { manifest, prompt } = compose(context(), { on: true, request: { ...request, contextBudgets: { memories: 30_000 } } });
+    expect(manifest.context!.budgets!.warning).toMatchObject({ code: 'context_budgets_over_ceiling', promised: 30_000 + BYTE_BUDGETS.referenceIndex });
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+  });
+
+  it('with the index off it changes nothing but is still recorded', () => {
+    const { manifest } = compose(context(), { request: { ...request, contextBudgets: { memories: 1024 } } });
+    expect(manifest.agent.memory).toHaveLength(6);
+    expect(manifest.context!.budgets).toEqual({ launch: { memories: 1024 } });
+  });
+
+  it('a resume replays it; a malformed record is dropped alone, never the selection with it', () => {
+    expect(replayedSelection({ contextBudgets: { skills: 2048 } } as never)).toEqual({ contextBudgets: { skills: 2048 } });
+    expect(replayedSelection({ contextBudgets: { skills: 'lots' }, selection: { memoryIds: [] } } as never)).toEqual({ selection: { memoryIds: [] } });
   });
 });
 

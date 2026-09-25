@@ -1187,6 +1187,7 @@ export class DbGraphPort implements GraphPort {
       harness_choice: unknown;
       selection: unknown;
       selection_reasons: unknown;
+      context_budgets: unknown;
       effective_plugins: unknown;
       context_index: string | null;
     }>(
@@ -1199,6 +1200,7 @@ export class DbGraphPort implements GraphPort {
               sm.manifest #>  '{launch,harnessChoice}'     as harness_choice,
               sm.manifest #>  '{launch,selection}'         as selection,
               sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons,
+              sm.manifest #>  '{launch,contextBudgets}'    as context_budgets,
               case when jsonb_typeof(sm.manifest #> '{launch,harness,plugins,allowed}') = 'array' then
                 coalesce((select jsonb_agg(p ->> 'id')
                             from jsonb_array_elements(sm.manifest #> '{launch,harness,plugins,allowed}') p
@@ -3044,6 +3046,7 @@ function registerHandlers(
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
       ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
+      ...(input.contextBudgets ? { contextBudgets: input.contextBudgets } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
       ...(input.harnessSurface ? { harnessSurface: input.harnessSurface } : {}),
       ...(input.plugins ? { plugins: input.plugins } : {}),
@@ -3382,6 +3385,8 @@ export function sessionLaunchPostureFromRecord(row: {
   /** Resume's read carries these; the Forms spawn's does not (a new session never replays them). */
   selection?: unknown;
   selection_reasons?: unknown;
+  /** `launch.contextBudgets`: the launch's budget override, replayed by resume. */
+  context_budgets?: unknown;
   /** `launch.harness.plugins.allowed[source=effective-skill]` ids; null when none were recorded. */
   effective_plugins?: unknown;
   /** `context.index.source`. */
@@ -3426,6 +3431,7 @@ export function sessionLaunchPostureFromRecord(row: {
     // contract's own schemas; a malformed one is not replayed.
     ...(row.selection != null ? { selection: row.selection } : {}),
     ...(row.selection_reasons != null ? { selectionReasons: row.selection_reasons } : {}),
+    ...(row.context_budgets != null ? { contextBudgets: row.context_budgets } : {}),
     // The launch's effective-skill plugins, replayed by resume. Absent when
     // the manifest recorded no plugin decisions at all, so resume computes.
     ...(Array.isArray(row.effective_plugins)

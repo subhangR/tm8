@@ -175,6 +175,7 @@ export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-s
 export {
   contextBudgetsFrom,
   contextFloorsFrom,
+  contextHeaderIds,
   contextIndexSwitch,
   referenceIndexEntry,
   skillIndexEntry,

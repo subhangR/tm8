@@ -4825,6 +4825,16 @@ export interface ExecutionSpawnInput extends CommandContext {
    */
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /**
+   * This launch's override of the pinned profile's `contextBudgets` (design
+   * 01a0d348 §10 Q5.4, the launch sheet's meter): each key replaces the
+   * profile's (else the node default) for this session only. Lenient: budgets
+   * that cannot fit the prompt are recorded with a warning, never refused, and
+   * the launch trim still bounds the prompt. Recorded as
+   * `manifest.launch.contextBudgets` (resume replays it) and
+   * `manifest.context.budgets.launch`.
+   */
+  contextBudgets?: import('./context-budgets.js').ContextBudgets;
+  /**
    * The Ask Jev run (`launch.suggest` `runId`) that informed this launch.
    * After a successful spawn the server links `jev_runs.session_id` and writes
    * `launch.jevRunId` on the manifest. Execution passes it through and never

@@ -15,6 +15,7 @@
 //      makes that mistake impossible to make here.
 
 import type {
+  ContextBudgets,
   EffectiveSkills,
   SelectionHeader,
   SkillIndexEntry,
@@ -354,6 +355,8 @@ export interface SessionLaunchPosture {
    */
   selection?: unknown;
   selectionReasons?: unknown;
+  /** `launch.contextBudgets`, which resume replays. Stored JSON, parsed before use. */
+  contextBudgets?: unknown;
   /**
    * `launch.harness.plugins.allowed` ids the launch turned on for its
    * effective skills (`source: 'effective-skill'`). Resume replays them, so
@@ -655,7 +658,20 @@ export interface ManifestContext {
    * memories, which never collapse, ran past the cap into the combined
    * ceiling (§10 Q1 rule 2) — so the sub-cap is never exceeded silently.
    */
-  budgets?: { memoryInjection: { cap: number; used: number; borrowed: number } };
+  budgets?: ContextBudgetsRecord;
+}
+
+/**
+ * `manifest.context.budgets` (design 01a0d348 §10 Q1, Q5.4). `memoryInjection`
+ * is the memory collapse's cap and use. `launch` is the launch sheet's
+ * per-launch override as applied, and `warning` says, when it is present,
+ * that the budgets in force promise more than the prompt can hold beside its
+ * frame: recorded, never refused, and the launch trim still bounds the prompt.
+ */
+export interface ContextBudgetsRecord {
+  memoryInjection?: { cap: number; used: number; borrowed: number };
+  launch?: ContextBudgets;
+  warning?: { code: 'context_budgets_over_ceiling'; baseline: number; promised: number; cap: number; over: number };
 }
 
 /** `manifest.context.index`. */
@@ -1252,6 +1268,12 @@ export interface Tm8Manifest {
     selection?: SpawnSelection;
     selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
     /**
+     * This launch's override of the profile's `contextBudgets`, exactly as
+     * requested (`ExecutionSpawnInput.contextBudgets`). Absent when none was
+     * sent. Resume replays it.
+     */
+    contextBudgets?: ContextBudgets;
+    /**
      * The launch UI's harness pick (or the one a resume replays), when there
      * was one; claude-code lanes only. See `ResolvedLaunchConfig.harnessChoice`.
      */
@@ -1362,6 +1384,8 @@ export interface SpawnRequest {
   selection?: SpawnSelection;
   /** Why unselected groups kept their defaults; audit-only (`ExecutionSpawnInput.selectionReasons`). */
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /** This launch's `contextBudgets` override (`ExecutionSpawnInput.contextBudgets`). */
+  contextBudgets?: ContextBudgets;
   /**
    * Set by resume only, never from the wire: the recorded selection could not
    * be parsed, so every group loaded its defaults. Audited as `replay-invalid`.
