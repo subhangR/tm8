@@ -16,6 +16,13 @@
 #
 # Connection resolution for layer B (first that works):
 #   $TM8_MIGRATION_DATABASE_URL  →  $DATABASE_URL  →  postgres://localhost:$TM8_PG_PORT/postgres
+#
+# DB SAFETY (standing rule, 2026-09-25): there is NO default port. Layer B
+# creates and drops a scratch database, and 5442 is the PROD cluster on the tm8
+# host, so when the resolved port is 5442 or unset layer B is REFUSED: skipped
+# loudly on a workstation (the pre-push path), and a hard failure under CI=true
+# so a mis-set workflow can never pass by skipping. CI's migrations service
+# listens on 5443 (.github/workflows/ci.yml).
 
 set -uo pipefail
 
@@ -23,7 +30,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 MIGRATIONS_DIR="db/migrations"
-: "${TM8_PG_PORT:=5442}"
+: "${TM8_PG_PORT:=}"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_RED=$'\033[31m'; C_YELLOW=$'\033[33m'
@@ -88,7 +95,29 @@ fi
 resolve_url() {
   if [ -n "${TM8_MIGRATION_DATABASE_URL:-}" ]; then echo "$TM8_MIGRATION_DATABASE_URL"; return; fi
   if [ -n "${DATABASE_URL:-}" ]; then echo "$DATABASE_URL"; return; fi
-  echo "postgres://postgres@localhost:${TM8_PG_PORT}/postgres"
+  if [ -n "${TM8_PG_PORT}" ]; then echo "postgres://postgres@localhost:${TM8_PG_PORT}/postgres"; return; fi
+  echo ""
+}
+
+# The explicit port of a postgres URL, or "" when it has none. Strips the
+# scheme, any userinfo, the path and the query, then takes what follows the
+# last ':' of host:port (no IPv6 literals are used by this repo's URLs).
+url_port() {
+  local rest="${1#*://}"
+  rest="${rest##*@}"
+  rest="${rest%%/*}"
+  rest="${rest%%\?*}"
+  case "$rest" in
+    *:*) echo "${rest##*:}" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Refuse a URL on 5442 or with no explicit port. Returns 0 when it is safe.
+test_port_ok() {
+  local port
+  port="$(url_port "$1")"
+  [ -n "$port" ] && [ "$port" != "5442" ]
 }
 
 if ! command -v psql >/dev/null 2>&1; then
@@ -98,6 +127,17 @@ if ! command -v psql >/dev/null 2>&1; then
 fi
 
 ADMIN_URL="$(resolve_url)"
+if [ -z "$ADMIN_URL" ] || ! test_port_ok "$ADMIN_URL"; then
+  found="port $(url_port "$ADMIN_URL")"; [ "$found" = "port " ] && found="no port (unset)"
+  msg="refusing the apply check: the migration Postgres resolves to ${found}. 5442 is the PROD cluster on the tm8 host. Set TM8_PG_PORT=5443 or TM8_MIGRATION_DATABASE_URL=postgres://tm8@127.0.0.1:5443/postgres — the test cluster is on 5443."
+  if [ "${CI:-}" = "true" ]; then
+    err "$msg"
+    exit 1
+  fi
+  warn "$msg"
+  warn "SKIPPING the apply check (static checks only)"
+  exit "$FAILED"
+fi
 if ! psql "$ADMIN_URL" -c 'SELECT 1' >/dev/null 2>&1; then
   warn "no Postgres reachable at ${ADMIN_URL%%\?*} — SKIPPING the apply check (static checks only)"
   note "start the sidecar (\`bun run dev\`) or set TM8_MIGRATION_DATABASE_URL"

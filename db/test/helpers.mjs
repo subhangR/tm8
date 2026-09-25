@@ -14,12 +14,15 @@
 //
 // Connection resolution matches db/migrate.mjs, so one env var configures both:
 //   $TM8_DATABASE_URL → postgres://$TM8_PG_USER@$TM8_PG_HOST:$TM8_PG_PORT/$TM8_TEST_DB
+// with NO default port: 5442 and an unset port are refused (./pg-port-guard.mjs).
 // =============================================================================
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { testDatabaseUrl } from './pg-port-guard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DB_DIR = join(HERE, '..');
@@ -40,14 +43,10 @@ const PSQL = findPsql();
 // --- connection -------------------------------------------------------------
 // TM8_DATABASE_URL is authoritative when present (that is what the lane brief and
 // db/migrate.mjs both use), so the suites can never end up pointed at a different
-// database than the migrations were just applied to.
+// database than the migrations were just applied to. Either way the port must be
+// explicit and not 5442 (the PROD cluster on the tm8 host) — ./pg-port-guard.mjs.
 function resolveOwnerUrl() {
-  if (process.env.TM8_DATABASE_URL) return process.env.TM8_DATABASE_URL;
-  const user = process.env.TM8_PG_USER || process.env.USER || 'postgres';
-  const host = process.env.TM8_PG_HOST || '127.0.0.1';
-  const port = process.env.TM8_PG_PORT || '5442';
-  const db = process.env.TM8_TEST_DB || process.env.TM8_DB || 'tm8_test';
-  return `postgres://${user}@${host}:${port}/${db}`;
+  return testDatabaseUrl(process.env, process.env.TM8_TEST_DB || process.env.TM8_DB || 'tm8_test');
 }
 
 export const OWNER_URL = resolveOwnerUrl();

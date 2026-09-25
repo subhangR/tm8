@@ -48,6 +48,8 @@ import { promisify } from 'node:util';
 
 import { createFromMigratedTemplate } from '../../../../db/scratch-template.mjs';
 
+import { testAdminUrl } from './pg-port-guard.js';
+
 const run = promisify(execFile);
 
 /** Absolute repository root, derived from this file rather than from cwd. */
@@ -56,21 +58,20 @@ export const REPO_ROOT = new URL('../../../../', import.meta.url).pathname.repla
 /**
  * Admin connection used only to CREATE and DROP the scratch database.
  *
- * Defaults to the DEV SIDECAR on 5442 as role `tm8`, matching `db/migrate.mjs`'s
- * own default (`TM8_PG_PORT` 5442) and the instance the other waves use.
+ * Resolved by `testAdminUrl()` (./pg-port-guard.ts), which REFUSES when the port
+ * is 5442 (the PROD cluster on the tm8 host) or is not set at all. There is no
+ * default port: export TM8_PG_PORT=5443, or TM8_W4_ADMIN_DATABASE_URL /
+ * TM8_MIGRATION_DATABASE_URL with an explicit non-5442 port. CI sets
+ * TM8_PG_PORT=5443 and a 5443 TM8_MIGRATION_DATABASE_URL.
  *
- * NOT 5432. A Homebrew Postgres also answers on 5432 on this host and it
+ * NOT 5432 either. A Homebrew Postgres also answers on 5432 on this host and it
  * requires a password for the login role — which is worse than being down,
  * because `psql` then BLOCKS ON STDIN waiting for one. That is what it does
  * inside a test runner: nothing, silently, until the hook times out. See
  * `PSQL` below for the guard.
  */
 export function adminUrl(): string {
-  const explicit = process.env.TM8_W4_ADMIN_DATABASE_URL ?? process.env.TM8_MIGRATION_DATABASE_URL;
-  if (explicit) return explicit;
-  const port = process.env.TM8_PG_PORT ?? '5442';
-  const user = process.env.TM8_PG_USER ?? 'tm8';
-  return `postgres://${user}@127.0.0.1:${port}/postgres`;
+  return testAdminUrl();
 }
 
 /**

@@ -28,7 +28,7 @@ import { spawn } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bindPath, decodeCursor } from '@tm8/contract';
 
-import { assertBuilt, cli, startRealServer, type ObservedAvailability, type RealServer } from './harness.js';
+import { adminUrl, assertBuilt, cli, startRealServer, type ObservedAvailability, type RealServer } from './harness.js';
 import { parseInvocation, splitCommandPath } from '../../src/args.js';
 import { loadLocalConfig, resolveContext, sessionContextFromEnv } from '../../src/context.js';
 import { errorLines, exitCodeFor } from '../../src/errors.js';
@@ -129,11 +129,7 @@ async function http(operation: 'spaces.create' | 'entities.create', body: unknow
  * pattern is anchored to `g5_message` so no other slot's database can match.
  */
 async function psql(database: string, sql: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const admin = new URL(
-    process.env.TM8_W4_ADMIN_DATABASE_URL ??
-      process.env.TM8_MIGRATION_DATABASE_URL ??
-      `postgres://${process.env.TM8_PG_USER ?? 'tm8'}@127.0.0.1:${process.env.TM8_PG_PORT ?? '5442'}/postgres`,
-  );
+  const admin = new URL(adminUrl());
   if (database) admin.pathname = `/${database}`;
   return await new Promise((resolve) => {
     const child = spawn('psql', ['-w', '--no-psqlrc', '-v', 'ON_ERROR_STOP=1', '-q', '-t', '-A', admin.href, '-c', sql], {
