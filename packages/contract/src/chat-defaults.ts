@@ -3,7 +3,7 @@
  * new chat about an entity of a given kind starts with (entity-chat design
  * 01a0da4e §3.4, "Settings → Space → Chat defaults").
  *
- * SPACE-WIDE, stored on the server (migration 228). Every member may read
+ * SPACE-WIDE, stored on the server (migration 229). Every member may read
  * the map; only a human owner/admin may write it, the same gate as
  * `spaces.interactionProfile.setDefault`.
  *
@@ -26,7 +26,7 @@ export const CHAT_DEFAULTS_EXCLUDED_KINDS = ['message', 'chat'] as const;
 /** A core kind slug (`task`, `work_session`) or a custom `c:{name}` kind (001's rule). */
 export const CHAT_DEFAULTS_KIND_PATTERN = /^(?:[a-z][a-z0-9_]{0,48}|c:[a-z0-9][a-z0-9_]{0,48})$/;
 
-/** Model ids are catalog strings; this is only a sanity bound. Migration 228 enforces the same. */
+/** Model ids are catalog strings; this is only a sanity bound. Migration 229 enforces the same. */
 export const CHAT_DEFAULTS_MODEL_MAX = 200;
 
 export interface ChatDefault {

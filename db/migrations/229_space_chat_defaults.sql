@@ -1,5 +1,5 @@
 -- =============================================================================
--- 228 — space_chat_defaults: the teammate + model a new chat about an entity
+-- 229 — space_chat_defaults: the teammate + model a new chat about an entity
 -- of a given kind starts with (entity-chat design 01a0da4e §3.4, task G).
 --
 -- WHAT IS HERE

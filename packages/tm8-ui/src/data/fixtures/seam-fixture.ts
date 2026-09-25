@@ -2357,7 +2357,7 @@ export function createFixtureSeam(): FixtureSeam {
     async spaces() {
       return clone([spaceSummary]);
     },
-    /** Per-kind chat defaults (migration 228): a PATCH over kinds, `null` / `{}` clears. */
+    /** Per-kind chat defaults (migration 229): a PATCH over kinds, `null` / `{}` clears. */
     async chatDefaults(spaceId): Promise<ChatDefaultsView> {
       if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
       return clone(chatDefaults);

@@ -483,4 +483,43 @@ describe('real chat-home seam adapter', () => {
     expect(detail.turns).toHaveLength(1);
     expect(detail.turns[0]?.sourceEntityId).toBeUndefined();
   });
+
+  it('B1: the project chip offers and submits projects.id, never the project ENTITY id', async () => {
+    const PROJECT_ENTITY = '019f0000-0000-7000-8000-000000000301' as EntityId;
+    const PROJECT_ROW = '019f0000-0000-7000-8000-000000000302';
+    const { seam, startChat, query } = seamStub();
+    query.mockImplementation(async (input: { kinds?: string[] }) => (
+      input.kinds?.[0] === 'project'
+        ? { page: { items: [
+          {
+            id: PROJECT_ENTITY,
+            kind: 'project',
+            title: 'tm8',
+            state: { kind: 'project', projectId: PROJECT_ROW, materializedVersion: 1 },
+          },
+          // A row the node projected without a projects.id cannot be bound to.
+          { id: '019f0000-0000-7000-8000-000000000303', kind: 'project', title: 'orphan', state: null },
+        ] } }
+        : { page: { items: [] } }
+    ));
+    const port = createChatHomePortFromSeam(seam);
+
+    const options = await port.listProjects!('space-1');
+    expect(options).toEqual([{ id: PROJECT_ROW, name: 'tm8' }]);
+
+    await port.startThread.create({
+      spaceId: 'space-1',
+      body: 'bound',
+      teammateId: TEAMMATE,
+      model: 'claude-sonnet-4-5',
+      mode: 'ask',
+      clientMutationId: 'start-b1',
+      workdirMode: 'project',
+      projectId: options[0]!.id,
+    });
+    const sent = startChat.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent.workdirMode).toBe('project');
+    expect(sent.projectId).toBe(PROJECT_ROW);
+    expect(sent.projectId).not.toBe(PROJECT_ENTITY);
+  });
 });

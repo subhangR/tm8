@@ -149,7 +149,18 @@ export function createChatHomePortFromSeam(
       sort: 'activityAt_desc',
       limit: 100,
     });
-    return result.page.items.map((item) => ({ id: item.id, name: item.title }));
+    /* `projects.id`, NOT the project ENTITY's id (doc 15 B1). A chat binds to
+       `public.projects(id)` (176: `chats.project_id references projects`), and
+       `chat_start` resolves the directory by that id joined to
+       `space_projects`. The entity id is a different uuid, so sending it made
+       every project-bound chat fail with "project is not linked to this
+       space". The listed row carries the real id as `state.projectId`; a row
+       without one cannot be bound to and is not offered. */
+    return result.page.items.flatMap((item) => (
+      item.state?.kind === 'project' && item.state.projectId
+        ? [{ id: item.state.projectId, name: item.title }]
+        : []
+    ));
   };
 
   /**

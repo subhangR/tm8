@@ -43,6 +43,10 @@ import {
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
+import { claimsFor } from '../../src/facade/context.js';
+import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import type { RequestContext } from '../../src/http/types.js';
+import type { LoopbackOwner } from '../../src/identity/loopback.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -996,5 +1000,114 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     const live = await mintCli(fixture.accountH, fixture.identityH);
     const { status } = await relay(bearer(live));
     expect(status).toBe(200);
+  });
+});
+
+/**
+ * B4 (doc 15, W0c; migration 226) — LINKING A PROJECT REQUIRES SEEING IT.
+ *
+ * `link_project_w2` checked only `require_space_admin`, so an admin of ANY
+ * space could link a project that lives only in a space they are not in — by
+ * id — and then spawn into its folder. It now also requires `projects_select`'s
+ * rule (node admin, or member of a space the project is linked into), and an
+ * invisible project answers P0002 exactly like a missing one.
+ *
+ * Credential: H2's real browser token, resolved by the production resolver
+ * with the loopback owner arm OFF and a non-owner fallback, so the claims are
+ * the token's and nothing else's. H2 owns space C (added here), is a member of
+ * A, and is not in B. The refusal (B's project into C) is paired with the same
+ * credential linking A's project — one H2 can see — into the same space C.
+ */
+describe('B4 link_project — caller must see the project', () => {
+  /** Never consulted with disableAutoOwner; a non-owner so a slip cannot escalate. */
+  const NOT_THE_OWNER: LoopbackOwner = {
+    identityId: 'b4-not-the-owner', accountId: randomUUID(), username: 'b4-not-the-owner',
+    isNodeAdmin: false, isOwner: false,
+  };
+  const spaceC = randomUUID();
+  const memberH2C = randomUUID();
+  const projectA = randomUUID();
+  const projectB = randomUUID();
+  let tokenH2: string;
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity) values ($1, 'Cross-space C', $2)`,
+        [spaceC, fixture.identityH2],
+      );
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'member', $1, 'space')`,
+        [memberH2C, spaceC],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $2, $3, 'owner', 'H2')`,
+        [memberH2C, spaceC, fixture.identityH2],
+      );
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'B4 A project', '/tmp/cross-space-b4-a', 'trusted'),
+                ($2, 'B4 B project', '/tmp/cross-space-b4-b', 'trusted')`,
+        [projectA, projectB],
+      );
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($1, $3, $5), ($2, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectA, projectB, fixture.memberHA, fixture.memberHB],
+      );
+    });
+    tokenH2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+  });
+
+  /**
+   * 'ok', or the SQLSTATE the call raised. The Db layer translates pg errors
+   * into CollabError and keeps the raw state in `details.sqlstate`.
+   */
+  async function outcome(run: () => Promise<unknown>): Promise<string> {
+    try {
+      await run();
+      return 'ok';
+    } catch (error) {
+      const sqlstate = (error as { details?: { sqlstate?: unknown } }).details?.sqlstate;
+      if (typeof sqlstate === 'string') return sqlstate;
+      throw error;
+    }
+  }
+
+  /** Resolve the token exactly as the server does, then run fn under its claims. */
+  async function asToken<T>(token: string, fn: (q: Querier) => Promise<T>): Promise<T> {
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER });
+    const identity = await resolve(
+      { authorization: `Bearer ${token}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+    );
+    const ctx = { identity, requestId: `b4-${randomUUID()}` } as unknown as RequestContext;
+    return db.tx(claimsFor(NOT_THE_OWNER, ctx), fn);
+  }
+
+  async function linked(spaceId: string, projectId: string): Promise<boolean> {
+    return database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const rows = await client.query(
+        'select 1 from public.space_projects where space_id = $1 and project_id = $2',
+        [spaceId, projectId],
+      );
+      return rows.rowCount === 1;
+    });
+  }
+
+  it('refuses H2 (admin of C) linking a project that lives only in B into C (P0002)', async () => {
+    expect(await outcome(() => asToken(tokenH2, (q) =>
+      q.rpc('link_project_w2', [spaceC, projectB, null, `b4-refused-${randomUUID()}`])))).toBe('P0002');
+    expect(await linked(spaceC, projectB)).toBe(false);
+  });
+
+  it('positive — the same H2 credential links a project it can see (linked into A) into C', async () => {
+    expect(await outcome(() => asToken(tokenH2, (q) =>
+      q.rpc('link_project_w2', [spaceC, projectA, null, `b4-visible-${randomUUID()}`])))).toBe('ok');
+    expect(await linked(spaceC, projectA)).toBe(true);
   });
 });
