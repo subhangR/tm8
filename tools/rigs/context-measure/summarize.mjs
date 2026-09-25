@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Per-arm medians and spread over results.jsonl rows (run-lane.mjs).
 //
-//   node summarize.mjs results.jsonl [--arms main,lean,index] [--set fixture|replica|all] [--markdown]
+//   node summarize.mjs results.jsonl [--arms main,lean,index] [--set fixture|replica|all] [--excluded excluded.jsonl] [--markdown]
 //
 // Medians with [min–max], never means alone (the coordinator's rule 6).
 // Launch-only rows feed the bytes columns; full rows also feed success,
@@ -19,6 +19,13 @@ const rows = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => J
 const set = arg('set') ?? 'all';
 const arms = arg('arms')?.split(',') ?? [...new Set(rows.map((r) => r.arm))];
 const inSet = (r) => set === 'all' || (set === 'replica' ? r.taskKey.startsWith('replica-') : !r.taskKey.startsWith('replica-'));
+// Rows set aside (run-lane's errors file). Excluding a lane and re-running it
+// takes it out of every rate below, so a failure that recurs in ONE arm (an
+// index arm that never starts) would read as 100% success. Counted per arm in
+// the table itself, not left to the prose.
+const excluded = arg('excluded')
+  ? readFileSync(arg('excluded'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter(inSet)
+  : null;
 
 // A table over an empty or shrunken set must not print: every requested arm
 // needs rows, and every row must have been measured (run-lane.mjs keeps an
@@ -75,6 +82,12 @@ const FULL = [
 const out = [];
 out.push(`| measure (${set}) | ${arms.join(' | ')} |`, `|---|${arms.map(() => '---').join('|')}|`);
 for (const [name, f] of COLS) out.push(`| ${name} | ${arms.map((a) => fmt(stats(rows.filter((r) => r.arm === a && inSet(r)).map(f)))).join(' | ')} |`);
+if (excluded) {
+  out.push(`| launches set aside / attempted (of which: no transcript) | ${arms.map((a) => {
+    const x = excluded.filter((r) => r.arm === a);
+    return `${x.length}/${rows.filter((r) => r.arm === a && inSet(r)).length + x.length} (${x.filter((r) => !r.transcript).length})`;
+  }).join(' | ')} |`);
+}
 const full = (a) => rows.filter((r) => r.arm === a && inSet(r) && r.success);
 if (arms.some((a) => full(a).length)) {
   for (const [name, f] of FULL) out.push(`| ${name} | ${arms.map((a) => fmt(stats(full(a).map(f)))).join(' | ')} |`);

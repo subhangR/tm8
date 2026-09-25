@@ -100,6 +100,21 @@ export interface ChatTeammateOption {
   permissionMode?: string | null;
 }
 
+/**
+ * The new-thread composer's STARTING chips, chosen by a host before the first
+ * message (the entity chat's settings card, design 01a0da4e §3.4). `projectId`
+ * is a `projects.id`; `null` is scratch. Nothing is created from it — it only
+ * decides what the composer shows until the viewer sends or edits.
+ */
+export interface NewChatSeed {
+  teammateId?: EntityId | null;
+  model?: string | null;
+  mode?: ChatMode | null;
+  projectId?: EntityId | null;
+  /** Focus the message box once the composer is on screen. */
+  focus?: boolean;
+}
+
 export interface ChatProjectOption {
   id: EntityId;
   name: string;

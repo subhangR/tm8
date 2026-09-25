@@ -10,6 +10,52 @@ const file = (id: string, sourcePath: string, extras: Partial<ResolvedSkillRow> 
 const input: Omit<EffectiveSkillsInput, 'equips'> = { agentTool: 'claude-code', workdir: '/repo', projectRoot: '/repo', homeDir: '/home/test', scannedAt: '2026-09-22T00:00:00Z' };
 const effective = (equips: ResolvedSkillRow[], extra: Partial<EffectiveSkillsInput> = {}) => computeEffectiveSkills({ ...input, equips, ...extra });
 
+describe('a tm8 worktree is a checkout OF the project', () => {
+  // The worktree lives outside the project root, so the old path test called
+  // every equipped project skill indexed while the harness still loaded it from
+  // the checkout: listed twice (harness + tm8 index).
+  const WT = '/data/worktrees/p1/s1';
+  const inWorktree = (paths: string[]) => ({ workdir: WT, worktreeOfProject: true, pathExists: (p: string) => paths.includes(p) });
+
+  it('a project skill the checkout carries is native, loaded as /name', () => {
+    const result = effective([file('p', '/repo/.claude/skills/demo/SKILL.md')], inWorktree([`${WT}/.claude/skills/demo/SKILL.md`]));
+    expect(result.native.map(row => row.loadPointer)).toEqual(['/demo']);
+    expect(result.indexed).toEqual([]);
+  });
+
+  it('a nested skill keeps its namespace in the checkout', () => {
+    const result = effective([file('n', '/repo/sub/.claude/skills/demo/SKILL.md', { level: 'nested' })], inWorktree([`${WT}/sub/.claude/skills/demo/SKILL.md`]));
+    expect(result.native.map(row => row.loadPointer)).toEqual(['/sub:demo']);
+  });
+
+  it('a skill the checkout lacks (uncommitted at the base ref) stays indexed: the harness cannot load it', () => {
+    const result = effective([file('p', '/repo/.claude/skills/demo/SKILL.md')], inWorktree([]));
+    expect(result.native).toEqual([]);
+    expect(result.indexed.map(row => row.loadPointer)).toEqual(['/repo/.claude/skills/demo/SKILL.md']);
+  });
+
+  it('without the worktree fact, a workdir outside the project root is judged by path as before', () => {
+    const result = effective([file('p', '/repo/.claude/skills/demo/SKILL.md')], { workdir: WT, pathExists: () => true });
+    expect(result.native).toEqual([]);
+  });
+
+  it('composeManifest passes the fact for workdir.mode worktree only', () => {
+    const context = {
+      spaceId: 's', project: { id: 'p', name: 'repo', workingDir: '/repo', trust: 'trusted' }, tasks: [],
+      skills: [file('p', '/repo/.claude/skills/demo/SKILL.md')],
+      teamMember: { id: 'm', name: 'M', role: '', identity: '', memories: [], model: null, agentTool: 'claude-code', mode: 'worker', permissionMode: null, avatar: null, capabilities: {}, commandPermissions: {} },
+    } as unknown as SpawnContext;
+    const request = { spaceId: 's', teamMemberId: 'm' };
+    const compose = (mode: 'worktree' | 'project') => composeManifest({
+      sessionId: 'x', request, context, launch: resolveLaunchConfig(request, context, {}),
+      workdir: { mode, path: WT }, baseUrl: 'http://localhost', command: 'claude', homeDir: '/home/test',
+      pathExists: () => true,
+    });
+    expect(compose('worktree').effectiveSkills?.native.map(row => row.loadPointer)).toEqual(['/demo']);
+    expect(compose('project').effectiveSkills?.native).toEqual([]);
+  });
+});
+
 describe('effective native equipment', () => {
   it('applies Claude admin > user > project independent of equipment depth', () => {
     const result = effective([

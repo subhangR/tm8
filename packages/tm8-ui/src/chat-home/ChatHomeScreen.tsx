@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
+import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
@@ -58,6 +59,7 @@ import type {
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnFrame,
+  NewChatSeed,
 } from './types';
 /* THE REFUSAL VOCABULARY'S STYLESHEET, IMPORTED WHERE ITS COMPONENTS ARE USED.
    This screen renders `DisabledIconControl` (the refused attach) but reached it
@@ -111,6 +113,15 @@ export interface ChatHomeScreenProps {
    * no other host passes it.
    */
   composerSeed?: { text: string; nonce: number } | undefined;
+  /**
+   * NEW-CHAT SETTINGS SEED — the entity chat's settings card or its
+   * skip-when-default rule (design 01a0da4e §3.4) choosing teammate, model,
+   * mode and project before the first message. Read ONCE, as the new-thread
+   * composer's starting chips; every chip stays editable. A teammate or model
+   * this node does not list falls back to the composer's own default. Absent ⇒
+   * the composer's own defaults, unchanged.
+   */
+  newChatSeed?: NewChatSeed | undefined;
   /**
    * What the NEW-CONVERSATION state says above the composer, when the host
    * knows better than the generic greeting (Craft explains what the craft
@@ -353,6 +364,7 @@ export function ChatHomeScreen({
   aboutId,
   pinnedMode,
   composerSeed,
+  newChatSeed,
   newThreadIntro,
   toolNote,
   models,
@@ -446,8 +458,14 @@ export function ChatHomeScreen({
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
-  const [modelId, setModelId] = useState(models[0]?.model ?? '');
-  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
+  const [modelId, setModelId] = useState(() =>
+    newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
+      ? newChatSeed.model
+      : (models[0]?.model ?? ''));
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? 'ask');
+  /* The seed is a STARTING value: the roster read below lands after mount, so
+     the seeded teammate is kept in a ref and applied when it does. */
+  const newChatSeedRef = useRef(newChatSeed);
   /* THE REST OF THE COMPOSER'S SHAPE. Per-turn: effort (remembered PER MODE),
      the ⚙ options, the ＋ menu's enabled skills. Thread-scope: the project
      binding (write-once on the server) and the permission ceiling. `null`
@@ -456,7 +474,7 @@ export function ChatHomeScreen({
   const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
   const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
-  const [projectChoice, setProjectChoice] = useState('');
+  const [projectChoice, setProjectChoice] = useState(newChatSeed?.projectId ?? '');
   const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
   const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
   const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
@@ -802,7 +820,12 @@ export function ChatHomeScreen({
         if (selectionSpaceRef.current !== spaceId) {
           chooseRoot(coldStart === 'composer' ? null : (nextThreads[0]?.rootId ?? null));
         }
-        setTeammateId(nextTeammates[0]?.id ?? '');
+        const seeded = newChatSeedRef.current?.teammateId;
+        setTeammateId(
+          seeded && nextTeammates.some((teammate) => teammate.id === seeded)
+            ? seeded
+            : (nextTeammates[0]?.id ?? ''),
+        );
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -1273,6 +1296,16 @@ export function ChatHomeScreen({
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedNonce]);
+  /* "Start chat" hands the viewer the message box (§3.4): focus it once,
+     after the opening read has put the composer on screen. */
+  const seedFocusedRef = useRef(false);
+  useEffect(() => {
+    if (seedFocusedRef.current || !newChatSeedRef.current?.focus || loading) return;
+    const area = composer.current;
+    if (!area) return;
+    seedFocusedRef.current = true;
+    area.focus();
+  }, [loading]);
   const attachments = rich.attachments!;
   /* Read at SEND time through a ref, not closed over: `send` is memoised on
      the facts of the conversation, and the staged list changes with every
@@ -1495,6 +1528,9 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
+      /* The next new chat's last-used mode, teammate and model (§3.4, §5).
+         A host that pins its mode (Craft) is not the viewer choosing. */
+      if (!pinnedMode) rememberChatStart({ mode: chatMode, teammateId, model: selectedModel.model });
       setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
       // The select effect owns loading the new chat — a second concurrent read
@@ -1536,7 +1572,7 @@ export function ChatHomeScreen({
     selectedRootId,
     spaceId,
     teammateId,
-    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId,
+    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
   ]);
 
   const interrupt = useCallback(async () => {

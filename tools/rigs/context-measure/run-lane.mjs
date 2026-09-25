@@ -13,11 +13,10 @@
 // The lane's `tm8` is resolved from the lane process's own PATH, so a row
 // proves which CLI build the agent actually ran.
 
-import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { devCli } from './dev-cli.mjs';
+import { lanePid, laneCli, nativeSessionId, sh, sleep, transcriptFor, uptime } from './lane.mjs';
 import { measureLane } from './measure.mjs';
 import { laneSuccess } from './success.mjs';
 
@@ -35,10 +34,6 @@ const IDLE_SECONDS = 45;
 const NO_TRANSCRIPT_MS = 120_000;
 const TIMEOUT_MS = Number(arg('timeout-min') ?? 25) * 60_000;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 << 20, ...opts }).trim();
-const uptime = () => sh('uptime', []).replace(/.*load averages?:\s*/, '');
-
 function resetTask(id) {
   const t = tm8('entity', 'get', id, '--full');
   const done = (t.content?.acceptanceCriteria ?? []).filter((c) => c.done).map((c) => c.id);
@@ -51,42 +46,6 @@ function resetTask(id) {
       console.error(`reset: transition ${status} -> open refused: ${String(e.stderr ?? e.message).trim()}`);
     }
   }
-}
-
-function lanePid(sessionId) {
-  for (const pid of sh('pgrep', ['-f', 'claude'], { stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean)) {
-    try {
-      if (sh('ps', ['eww', '-p', pid]).includes(`TM8_SESSION_ID=${sessionId}`)) return pid;
-    } catch {
-      /* exited */
-    }
-  }
-  return null;
-}
-
-function laneCli(pid) {
-  const env = sh('ps', ['eww', '-p', pid]).split(/\s+/).find((w) => w.startsWith('PATH='));
-  const path = env ? env.slice(5) : '';
-  const bin = sh('/bin/sh', ['-c', 'command -v tm8 || true'], { env: { PATH: path } });
-  let version = null;
-  try {
-    version = sh(bin, ['--version'], { env: { PATH: path, HOME: homedir() } });
-  } catch {
-    version = null;
-  }
-  return { bin, version };
-}
-
-function transcriptFor(worktree, nativeId) {
-  const slug = worktree.replace(/[^A-Za-z0-9]/g, '-');
-  const dir = join(homedir(), '.claude', 'projects', slug);
-  if (!existsSync(dir)) return null;
-  const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
-  if (nativeId && files.includes(`${nativeId}.jsonl`)) return join(dir, `${nativeId}.jsonl`);
-  // Without the native id, only an unambiguous directory is trusted: measuring
-  // the wrong session's transcript would be a plausible, wrong row.
-  if (files.length > 1) throw new Error(`${dir}: ${files.length} transcripts and no native session id to pick one`);
-  return files[0] ? join(dir, files[0]) : null;
 }
 
 const base = sh('git', ['-C', arg('repo'), 'rev-parse', 'main']);
@@ -115,7 +74,7 @@ while (Date.now() - t0 < TIMEOUT_MS) {
     pid = lanePid(sessionId);
     if (pid) {
       cli = laneCli(pid);
-      nativeId = /--session-id\s+(\S+)/.exec(sh('ps', ['-o', 'command=', '-p', pid]))?.[1] ?? null;
+      nativeId = nativeSessionId(pid);
     }
   }
   // A lane that writes no transcript is stuck before its first request. Seen

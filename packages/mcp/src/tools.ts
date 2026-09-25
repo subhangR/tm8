@@ -156,7 +156,7 @@ const ACT_GUIDES = [
   guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },
   }),
-  guide('entities.header.set', 'Write an entity\'s selection header; the whole header is replaced. whenToUse: when a later session should open it, not its title (aim ≤ 400 chars); summary: what it holds (≤ 600); keywords optional (≤ 12 × ≤ 40). Every field optional, nothing refused for length. expectedVersion, if given, is the HEADER\'s version (0 = none yet), never the entity\'s.', {
+  guide('entities.header.set', 'Write an entity\'s selection header; the whole header is replaced. whenToUse: the situation in which a later session should open it, one sentence, shown whole to every later agent ("Open when changing how balances are rounded", not "Rounding policy doc"; aim ≤ 400 chars, past it the write warns header_long); summary: what it holds (≤ 600); keywords optional (≤ 12 × ≤ 40). Every field optional, nothing refused for length. expectedVersion, if given, is the HEADER\'s version (0 = none yet), never the entity\'s.', {
     params: { id: '<entity-id>' }, body: { whenToUse: '<when to pick it>', summary: '<what it is>' },
   }),
   guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one. expectedVersion is optional.', {
