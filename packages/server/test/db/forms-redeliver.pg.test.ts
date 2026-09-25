@@ -606,6 +606,37 @@ describe('forms.pendingForSessions', () => {
     expect((await pending(service, viewer, [s])).sessions).toEqual([]);
   });
 
+  it('an agent is a respondent only in ITS space: its teammate never answers another space\'s forms', async () => {
+    // The teammate lives in w.space; its owner (ID1) is also a member of
+    // `other`. Reading `other` through the owner's identity is allowed, but
+    // the teammate cannot answer there (form_assert_respondent: space
+    // mismatch), so nothing may wait on it — not even an `anyone` form.
+    const { service } = world({ hooks: false });
+    const other = await newId();
+    const otherMember = await newId();
+    const otherSession = await newId();
+    await sql(`insert into public.spaces(id, name, created_by_identity) values ($1, 'Other space', $2)`, [other, ID1]);
+    await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
+               values ($1, $2, 'member', 'space', $1)`, [otherMember, other]);
+    await sql(`insert into public.members(entity_id, space_id, identity_id, role, display_name)
+               values ($1, $2, $3, 'owner', $3)`, [otherMember, other, ID1]);
+    await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
+               values ($1, $2, 'work_session', 'space', $3)`, [otherSession, other, otherMember]);
+    await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+               values ($1, 'Other requester', 'running', 'space', now())`, [otherSession]);
+    const created = await service.create(ctx('forms.create', human(ID1), {}, {
+      clientMutationId: cmid(), spaceId: other, title: 'Anyone, over there', questions: QUESTIONS,
+      open: true, forSession: otherSession, settings: { respondents: 'anyone' },
+    })) as Row;
+    const form = created.entity.id as string;
+
+    // Control: the owner's member row in `other` is a respondent there.
+    expect((await pending(service, human(ID1), [otherSession], other)).sessions[0]!.forms.map((f) => f.formId))
+      .toEqual([form]);
+    // The teammate, bound from its own space, is not.
+    expect((await pending(service, agent(await newSession()), [otherSession], other)).sessions).toEqual([]);
+  });
+
   it('counts queued deliveries, so an exited session with a queued answer is listed', async () => {
     const { service, openForm, submit } = world();
     const s = await newSession();
