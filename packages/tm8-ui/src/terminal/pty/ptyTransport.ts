@@ -140,8 +140,12 @@ const MAX_STAGGER_MS = 2000;
 const _decoders = new Map<string, TextDecoder>();
 /** Per-session RAW byte offset authoritatively consumed; sent as `?offset=`. */
 const _received = new Map<string, number>();
-/** Sessions whose NEXT binary frame is the single display-only replay frame. */
-const _pendingReplay = new Map<string, ReplayInfo['kind']>();
+/**
+ * Sessions whose NEXT binary frame is the single display-only replay frame,
+ * with the `attached.next` that frame stands for. The offset is committed to
+ * `_received` only when the frame ARRIVES — see {@link _handleAttached}.
+ */
+const _pendingReplay = new Map<string, { kind: ReplayInfo['kind']; next: number }>();
 /** Last `epoch` seen per session. Compared by EQUALITY ONLY. */
 const _epochs = new Map<string, string>();
 
@@ -187,13 +191,26 @@ function _handleAttached(id: string, frame: AttachedFrame): void {
     _decoders.delete(id);
     for (const h of _reattachHandlers) h(id);
   }
-  // Snap to the server's authoritative RAW offset — never base + replay length.
-  _received.set(id, frame.next);
   // Replay expectation is fully (re)determined by THIS ack: a stale flag from a
   // prior attached whose replay frame never arrived must not cause this
   // connect's first LIVE frame to be skip-counted.
-  if (frame.hasReplay) _pendingReplay.set(id, frame.replayKind ?? 'delta');
-  else _pendingReplay.delete(id);
+  if (frame.hasReplay) {
+    // DO NOT snap to `next` yet. `next` claims every byte the replay frame
+    // carries; committing it before that frame lands means a socket that dies
+    // in between (the server used to kill it on ordinary backpressure right
+    // after queueing a large replay) reconnects AT THE END of the stream, the
+    // server has nothing to replay, and the history is skipped for good — a
+    // blank xterm that Claude Code's cell-diff renderer then paints over with
+    // holes and stale glyphs. Until the frame arrives, stay where a reconnect
+    // re-requests the same replay: the resume point for a continuation, or 0
+    // after a reset, whose old offset belongs to a stream that no longer exists.
+    _received.set(id, reset ? 0 : prevReceived);
+    _pendingReplay.set(id, { kind: frame.replayKind ?? 'delta', next: frame.next });
+  } else {
+    // Snap to the server's authoritative RAW offset — never base + replay length.
+    _received.set(id, frame.next);
+    _pendingReplay.delete(id);
+  }
 }
 
 function _clearReconnectTimer(id: string): void {
@@ -386,7 +403,8 @@ function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean):
     }
 
     const buf = new Uint8Array(ev.data as ArrayBuffer);
-    const replayKind = _pendingReplay.get(id);
+    const pendingReplay = _pendingReplay.get(id);
+    const replayKind = pendingReplay?.kind;
     // A SNAPSHOT is a full-state repaint, not a continuation, so it must NOT run
     // through the streaming decoder's partial-glyph tail — decode it standalone.
     // A DELTA continues the live stream and uses the persistent decoder.
@@ -394,9 +412,10 @@ function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean):
       replayKind === 'snapshot' ? new TextDecoder().decode(buf) : _decodeFor(id, buf);
     if (replayKind) {
       // The single display-only replay frame following an `attached` ack:
-      // delivered through the hydration channel and NOT counted — `attached.next`
-      // already accounts for the raw stream it represents.
+      // delivered through the hydration channel and NOT counted: commit the
+      // `attached.next` it represents — never base + replay length.
       _pendingReplay.delete(id);
+      _received.set(id, pendingReplay!.next);
       if (_replayHandlers.length > 0) {
         for (const h of _replayHandlers) h(id, text, { kind: replayKind });
       } else {

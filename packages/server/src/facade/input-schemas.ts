@@ -88,6 +88,7 @@ import {
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
   LaunchSuggestInputSchema,
+  SetChatDefaultsInputSchema,
   ExecutionGitCheckpointInputSchema,
   ExecutionGitRollbackInputSchema,
   ExecutionGitCommitInputSchema,
@@ -311,6 +312,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'skills.scan': SkillScanInputSchema,
   // Jev's launch-sheet advice (design 01a0cb80 §5.1): validated for real from day one.
   'launch.suggest': LaunchSuggestInputSchema,
+  // Per-kind chat defaults (entity-chat §3.4): a PATCH over kinds.
+  'spaces.chatDefaults.set': SetChatDefaultsInputSchema,
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,
   'projects.unlink': RequiredCommandContextSchema,

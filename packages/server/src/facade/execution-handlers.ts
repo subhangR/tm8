@@ -1,4 +1,5 @@
 import { resolveHeaders } from '../headers/resolve.js';
+import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
@@ -50,6 +51,7 @@ import {
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
   type ContextDrop,
+  type DispatcherRoster,
   type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
@@ -892,6 +894,15 @@ export class DbGraphPort implements GraphPort {
     return this.db.tx(this.claims(auth), async (q) => [...(await resolveHeaders(q, input.spaceId, input.ids)).values()]);
   }
 
+  async loadDispatcherRoster(
+    auth: GraphAuth,
+    input: { spaceId: string; excludeTeamMemberId: string; limit: number },
+  ): Promise<DispatcherRoster> {
+    // A dispatcher's `<context_index>` teammates (design 01a0d348 §8 I8),
+    // under the caller's RLS.
+    return this.db.tx(this.claims(auth), (q) => loadDispatcherRoster(q, input));
+  }
+
   async loadMemoryScores(
     auth: GraphAuth,
     input: { spaceId: string; jevRunId: string; memoryIds: string[] },
@@ -1098,6 +1109,27 @@ export class DbGraphPort implements GraphPort {
     return view as unknown as Record<string, unknown>;
   }
 
+  /**
+   * The tasks' version and status as they stand now, read after
+   * `execution_spawn` started them. Same caller claims as `loadSpawnContext`.
+   */
+  async loadTaskVersions(
+    auth: GraphAuth,
+    input: { taskIds: string[] },
+  ): Promise<Array<{ id: string; version: number; status: string }>> {
+    if (input.taskIds.length === 0) return [];
+    const rows = await this.db.tx(this.claims(auth), (q) =>
+      q.query<{ entity_id: string; version: number | string; work_status: string }>(
+        `select t.entity_id, e.version, t.work_status
+           from public.tasks t
+           join public.entities e on e.id = t.entity_id
+          where t.entity_id = any($1::uuid[])`,
+        [input.taskIds],
+      ),
+    );
+    return rows.map((row) => ({ id: row.entity_id, version: Number(row.version), status: row.work_status }));
+  }
+
   async issueWorkSessionAgentToken(
     auth: GraphAuth,
     sessionId: string,
@@ -1246,6 +1278,7 @@ export class DbGraphPort implements GraphPort {
       selection: unknown;
       selection_reasons: unknown;
       effective_plugins: unknown;
+      skill_overrides: unknown;
       context_index: string | null;
     }>(
       this.claims(auth),
@@ -1262,6 +1295,7 @@ export class DbGraphPort implements GraphPort {
                             from jsonb_array_elements(sm.manifest #> '{launch,harness,plugins,allowed}') p
                            where p ->> 'source' = 'effective-skill'), '[]'::jsonb)
               end                                           as effective_plugins,
+              sm.manifest #>  '{launch,harness,skillOverrides}' as skill_overrides,
               sm.manifest #>> '{context,index,source}'    as context_index
          from public.session_manifests sm
         where sm.work_session_id = $1`,
@@ -3442,6 +3476,8 @@ export function sessionLaunchPostureFromRecord(row: {
   selection_reasons?: unknown;
   /** `launch.harness.plugins.allowed[source=effective-skill]` ids; null when none were recorded. */
   effective_plugins?: unknown;
+  /** `launch.harness.skillOverrides`, the skill plan resume replays; narrowed downstream. */
+  skill_overrides?: unknown;
   /** `context.index.source`. */
   context_index?: string | null;
 }): SessionLaunchPosture {
@@ -3488,6 +3524,11 @@ export function sessionLaunchPostureFromRecord(row: {
     // the manifest recorded no plugin decisions at all, so resume computes.
     ...(Array.isArray(row.effective_plugins)
       ? { effectivePlugins: row.effective_plugins.filter((id): id is string => typeof id === 'string') }
+      : {}),
+    // The launch's recorded skill plan, replayed by resume. Stored JSON,
+    // narrowed downstream (`asRecordedSkillPlan`); a bad one is recomputed.
+    ...(typeof row.skill_overrides === 'object' && row.skill_overrides !== null && !Array.isArray(row.skill_overrides)
+      ? { skillOverrides: row.skill_overrides as Record<string, unknown> }
       : {}),
     // The launch rendered `<context_index>`; its resume renders it too.
     ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),

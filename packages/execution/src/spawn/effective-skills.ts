@@ -1,6 +1,7 @@
 import { loadPointerFor } from '@tm8/prompt';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { EffectiveSkills, SkillIndexEntry } from '@tm8/contract';
 import { isPluginAllowed } from './harness-surface.js';
 import { resolveSkills, type ResolvedSkillRow } from './skills.js';
@@ -23,6 +24,16 @@ export interface EffectiveSkillsInput {
    * settings) decides, which is what an `inherit` lane runs with.
    */
   launchEnabledPlugins?: readonly string[];
+  /**
+   * Set when `workdir` is a tm8 worktree: a checkout OF the project (the
+   * worktree allocation's project, `workdir.mode === 'worktree'`), not a
+   * directory inside it. A project skill is then native when the checkout
+   * carries the same file at the same relative path, because the harness
+   * loads it from there. Absent: `workdir` is judged by path alone.
+   */
+  worktreeOfProject?: boolean;
+  /** Existence probe for the worktree mapping; injectable so the function stays testable. */
+  pathExists?: (path: string) => boolean;
 }
 const within = (child: string, parent: string): boolean => {
   const rel = relative(resolve(parent), resolve(child));
@@ -62,8 +73,16 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
         const marker = provider === 'agents' ? '/.agents/' : provider === 'claude' ? '/.claude/' : '/.codex/';
         const boundary = path.lastIndexOf(marker);
         const sourceRoot = boundary >= 0 ? path.slice(0, boundary) || '/' : null;
-        native = !!sourceRoot && !!input.projectRoot && within(input.workdir, input.projectRoot) && within(sourceRoot, input.projectRoot) &&
-          (within(input.workdir, sourceRoot) || (level === 'nested' && input.agentTool === 'claude-code'));
+        // A worktree is the project checked out elsewhere: judge the skill at
+        // its place in the checkout, and only if the checkout has the file.
+        const checkout = input.worktreeOfProject === true && !!sourceRoot && !!input.projectRoot && within(sourceRoot, input.projectRoot)
+          && (input.pathExists ?? existsSync)(join(input.workdir, relative(input.projectRoot, path)));
+        native = checkout
+          ? level === 'project'
+            ? relative(input.projectRoot!, sourceRoot!) === ''
+            : input.agentTool === 'claude-code'
+          : !!sourceRoot && !!input.projectRoot && within(input.workdir, input.projectRoot) && within(sourceRoot, input.projectRoot) &&
+            (within(input.workdir, sourceRoot) || (level === 'nested' && input.agentTool === 'claude-code'));
         if (level === 'nested' && sourceRoot && input.projectRoot) qualifier = `${relative(input.projectRoot, sourceRoot).split(sep).join('/')}:`;
       }
       // Additional directories need a launch-time --add-dir fact. An equipped row

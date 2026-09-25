@@ -21,10 +21,15 @@ const arg = (name) => {
   return i > 0 ? process.argv[i + 1] : undefined;
 };
 
-export async function laneSuccess({ taskKey, worktree, base, taskId, actor, since, until, tm8 }) {
-  const task = TASKS.find((t) => t.key === taskKey);
-  // A task with no hidden checks would pass `passed === total` at 0 === 0.
-  if (!task?.check?.length) throw new Error(`task ${taskKey}: no hidden checks in fixture-data.mjs`);
+// `checks` (optional) supplies the hidden checks directly — context-eval's
+// fixture carries its own per-task list — else they are looked up by key in
+// fixture-data.mjs. `checks: []` is allowed only with `allowNoChecks` (a
+// replica has no known deliverable); otherwise a task with no checks would
+// pass `passed === total` at 0 === 0.
+export async function laneSuccess({ taskKey, worktree, base, taskId, actor, since, until, tm8, checks, allowNoChecks = false }) {
+  const task = checks ? { key: taskKey, check: checks } : TASKS.find((t) => t.key === taskKey);
+  if (!task?.check?.length && !allowNoChecks) throw new Error(`task ${taskKey}: no hidden checks in fixture-data.mjs`);
+  if (!task) throw new Error(`task ${taskKey}: unknown`);
   const git = (...a) => execFileSync('git', ['-C', worktree, ...a], { encoding: 'utf8' }).trim();
   const out = { committed: false, commits: 0, checks: { passed: 0, total: task.check.length, failures: [] }, testsPass: false, closeout: false, ticked: false };
 
@@ -45,7 +50,7 @@ export async function laneSuccess({ taskKey, worktree, base, taskId, actor, sinc
       } catch {
         out.testsPass = false;
       }
-      const mod = await import(pathToFileURL(join(dir, 'src', 'ledger.js')).href + `?t=${Date.now()}`);
+      const mod = task.check.length ? await import(pathToFileURL(join(dir, 'src', 'ledger.js')).href + `?t=${Date.now()}`) : {};
       for (const [expr, want] of task.check) {
         let got;
         try {

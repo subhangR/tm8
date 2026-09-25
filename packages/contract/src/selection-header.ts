@@ -49,12 +49,13 @@ export const SELECTION_HEADER_KINDS = [
 ] as const satisfies readonly SelectionHeaderKind[];
 
 /**
- * Text caps. Resolved `whenToUse` and `summary` are each cut at 600 characters
- * (the Jev §9 limit on what may leave the server), with one exception kept
- * for byte parity with today's Jev text: a teammate's derived `whenToUse` is
- * its whole `role`, which has no length cap. The tighter authored caps
- * (`whenToUse` ≤ 400, keywords ≤ 12 × ≤ 40) belong to the authored-header
- * write path, not to this shape.
+ * Text caps. A resolved `whenToUse` is NEVER cut for length, whatever its
+ * source (task 01a0da5a): it is the one line a later agent routes by, so every
+ * reader shows it whole. Only `HEADER_WHEN_TO_USE_BACKSTOP_CHARS` bounds it,
+ * against a pathological header, and that cut is declared in `clipped`. A
+ * `summary` is cut at 600 characters (the Jev §9 limit on what may leave the
+ * server). The authored guidance (`whenToUse` ≤ 400, keywords ≤ 12 × ≤ 40)
+ * belongs to the write path, which warns and never refuses.
  */
 export interface SelectionHeader {
   entityId: EntityId;
@@ -80,10 +81,12 @@ export interface SelectionHeader {
   /** The exact command that fetches the body; null when the body is always injected. */
   loadPointer: string | null;
   /**
-   * The AUTHORED fields cut to `AUTHORED_HEADER_LIMITS` at resolve time, so
-   * every reader (Jev, the prompt's context index, `entities.get/context`, the
-   * header commands' result) sees one bounded value. Absent when nothing was
-   * cut; a cut is never silent. The full text stays in `entity_headers`.
+   * The fields cut at resolve time, so every reader (Jev, the prompt's context
+   * index, `entities.get/context`, the header commands' result) sees one
+   * bounded value: an authored `summary` or keywords past
+   * `AUTHORED_HEADER_LIMITS`, or a `whenToUse` of any source past
+   * `HEADER_WHEN_TO_USE_BACKSTOP_CHARS`. Absent when nothing was cut; a cut is
+   * never silent. The full authored text stays in `entity_headers`.
    */
   clipped?: HeaderClippedField[];
 }
@@ -91,9 +94,11 @@ export interface SelectionHeader {
 /**
  * Authored-header GUIDANCE, not bounds (lenient ruling, migration 223): the
  * help, the MCP guides and the prompt state these numbers, and nothing refuses
- * a header over them. `resolveHeaders` clips authored text to them and declares
- * it (`SelectionHeader.clipped`). Text is trimmed; a field that trims to nothing
- * is dropped, never refused.
+ * a header over them. A `whenToUse` over its guidance is shown WHOLE (up to
+ * `HEADER_WHEN_TO_USE_BACKSTOP_CHARS`), and its write warns `header_long`;
+ * `resolveHeaders` clips a `summary` and keywords to these numbers and
+ * declares it (`SelectionHeader.clipped`). Text is trimmed; a field that trims
+ * to nothing is dropped, never refused.
  */
 export const AUTHORED_HEADER_LIMITS = {
   whenToUse: 400,
@@ -119,6 +124,15 @@ export interface EntityHeaderView extends SelectionHeader {
 }
 
 export type HeaderClippedField = 'whenToUse' | 'summary' | 'keywords';
+
+/**
+ * The only cut a `whenToUse` ever gets (task 01a0da5a, decision D2): a
+ * backstop against a pathological header, five times the authored guidance,
+ * declared in `clipped` wherever it bites. Anything a person or agent would
+ * write for routing is far below it, so in practice a whenToUse is shown
+ * whole, in the context index, in Jev's candidate text and in entity reads.
+ */
+export const HEADER_WHEN_TO_USE_BACKSTOP_CHARS = 2000;
 
 /**
  * The text of an authored header. The WHOLE header is written: an absent or

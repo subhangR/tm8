@@ -51,7 +51,12 @@ import {
 } from './security.js';
 import type { StaticHandler } from './static.js';
 import { wsClientKey } from './ws-admission.js';
-import type { RemoteServerProxy } from './remote-proxy.js';
+import {
+  refuseUpgrade,
+  resolveRelayCaller,
+  upgradeRefusalStatus,
+  type RemoteServerProxy,
+} from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
@@ -201,8 +206,18 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         return;
       }
       const pathname = new URL(req.url ?? '/', 'http://tm8.invalid').pathname;
-      if (opts.remoteServerProxy?.matches(pathname)) {
-        void opts.remoteServerProxy.handleUpgrade(req, socket, head);
+      const relay = opts.remoteServerProxy;
+      if (relay?.matches(pathname)) {
+        // Same gate as the HTTP relay: a human session, resolved here, before
+        // anything is looked up or dialled.
+        void resolveRelayCaller(req.headers, resolveIdentity, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        }).then(
+          (caller) => relay.handleUpgrade(req, socket, head, caller),
+          (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
+            error instanceof Error ? error.message : String(error)),
+        ).catch(() => socket.destroy());
         return;
       }
       if (!upgrades) {
@@ -246,11 +261,6 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
 
       const decision = checkTransport(method, req.headers, config);
       if (decision.refusal) throw fail(decision.refusal.code, decision.refusal.message);
-
-      if (opts.remoteServerProxy?.matches(pathname)) {
-        await opts.remoteServerProxy.handleHttp(req, res);
-        return;
-      }
 
       if (pathname === '/health') {
         // Unenveloped on purpose: `/health` is not a catalog operation, so it
@@ -342,6 +352,20 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           disableAutoOwner: config.disableAutoOwner === true,
         });
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
+      }
+
+      // The named-Server relay. AFTER identity resolution, and only for a human
+      // session (G1): it used to dispatch straight after checkTransport, so a
+      // caller with no session — or an agent's token — could drive every
+      // registered remote as the node owner. Before readJsonBody, because the
+      // body is piped upstream untouched.
+      if (opts.remoteServerProxy?.matches(pathname)) {
+        const caller = await resolveRelayCaller(req.headers, resolveIdentity, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+        await opts.remoteServerProxy.handleHttp(req, res, caller);
+        return;
       }
 
       // No identity resolution: the SFU is not a tm8 identity, and the route

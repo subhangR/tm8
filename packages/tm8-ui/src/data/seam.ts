@@ -247,6 +247,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceConfigsView,
+  ChatDefault,
+  ChatDefaultsView,
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
@@ -525,6 +527,13 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
   spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
+  /** Per-kind chat defaults (`spaces.chatDefaults.get`, entity-chat §3.4): space-wide, any member reads. */
+  chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView>;
+  /**
+   * `spaces.chatDefaults.set` — a PATCH over kinds (`null` clears one). Owner/
+   * admin only; a member's refusal arrives as the server's own `forbidden`.
+   */
+  setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
    * the ONE global default (spaceId null) plus this space's own. Distinct

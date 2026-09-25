@@ -236,7 +236,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
   const identityResolver: IdentityResolver | undefined = db
-    ? createSessionIdentityResolver({ db, owner: owner! })
+    ? createSessionIdentityResolver({
+        db,
+        owner: owner!,
+        ...(config.spaceSessions ? { spaceSessions: config.spaceSessions } : {}),
+      })
     : undefined;
 
   /**
@@ -451,7 +455,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (!identity.identityId || identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');
     }
-    return { identityId: identity.identityId, nodeAdmin: identity.nodeAdmin === true };
+    return {
+      identityId: identity.identityId,
+      nodeAdmin: identity.nodeAdmin === true,
+      ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+    };
   };
 
   const pump = db && eventLog
@@ -597,12 +605,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   const remoteServerProxy = db && owner
-    ? createRemoteServerProxy(async (name) => {
+    ? createRemoteServerProxy(async (name, caller) => {
+        // THE CALLER'S claims, never the owner's (G1). A bearer carries its
+        // own identity and admin bit; the auto-owner IS the owner. 044's RLS
+        // then admits node admins only — the rule until per-member links exist.
         const nodeOwner = await owner();
+        const bearer = caller.kind === 'bearer' ? caller : undefined;
+        if (bearer && !bearer.identityId) return null;
         const rows = await db.query<{ base_url: string }>(
           {
-            identityId: nodeOwner.identityId,
-            nodeAdmin: nodeOwner.isNodeAdmin,
+            identityId: bearer ? bearer.identityId! : nodeOwner.identityId,
+            nodeAdmin: bearer ? bearer.nodeAdmin === true : nodeOwner.isNodeAdmin,
+            ...(caller.authKind ? { authKind: caller.authKind } : {}),
           },
           `select base_url from public.server_connections where lower(name) = lower($1)`,
           [name],

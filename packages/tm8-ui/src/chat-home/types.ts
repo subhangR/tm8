@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -76,6 +76,21 @@ export interface ChatTeammateOption {
   permissionMode?: string | null;
 }
 
+/**
+ * The new-thread composer's STARTING chips, chosen by a host before the first
+ * message (the entity chat's settings card, design 01a0da4e §3.4). `projectId`
+ * is a `projects.id`; `null` is scratch. Nothing is created from it — it only
+ * decides what the composer shows until the viewer sends or edits.
+ */
+export interface NewChatSeed {
+  teammateId?: EntityId | null;
+  model?: string | null;
+  mode?: ChatMode | null;
+  projectId?: EntityId | null;
+  /** Focus the message box once the composer is on screen. */
+  focus?: boolean;
+}
+
 export interface ChatProjectOption {
   id: EntityId;
   name: string;
@@ -111,14 +126,19 @@ export interface ChatThreadSummary {
    * the only reader was an equality filter that never matched, and a lie the
    * moment a panel header draws the relation. It is null now.
    *
-   * IT IS NOT POPULATED BY `listThreads`. A chat's subject is an edge and no
-   * list read carries edges, so Wave 1 paid one `connections` call PER CHAT to
-   * fill this in — a documented N+1 on the one read that scales with the
-   * space. That read is gone: `readThread` fills the field for the ONE chat
-   * being opened, and a host that wants "the conversations about X" asks X
-   * instead (`chatIdsAbout`, one incoming-edge read).
+   * `listThreads` FILLS IT FROM THE SUMMARY (entity chat §3.6). Wave 1 paid
+   * one `connections` call PER CHAT for this — a documented N+1 on the one read
+   * that scales with the space. The server now batches each chat's subject
+   * into its summary state (`state.about`), so the list carries it for free;
+   * `readThread` still reads the edge for the ONE chat being opened.
    */
   aboutId: EntityId | null;
+  /**
+   * The subject's kind and title, for the Chats list's "about ‹title›" chip.
+   * Present only when the list read carried them (`state.about`); a port or a
+   * server that predates §3.6 leaves it absent and the row draws no chip.
+   */
+  about?: { id: EntityId; kind: EntityKind; title: string } | null;
   title: string;
   preview: string;
   updatedAt: string;

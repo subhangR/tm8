@@ -47,20 +47,31 @@ export interface AuthoredHeader {
   clipped?: HeaderClippedField[];
 }
 
+/**
+ * Text a whenToUse may come from, already cut at `HEADER_WHEN_TO_USE_BACKSTOP_CHARS`
+ * (and only there), with whether that cut was made, so it can be declared.
+ */
+export interface Backstopped {
+  text: string | null;
+  cut: boolean;
+}
+
 /** The per-kind facts `resolveHeaders` reads, already cut where the cut is safe to make in SQL. */
 export type HeaderFacts =
-  | { kind: 'skill'; description: string | null; whenToUse: string | null; bytes: number | null }
-  | { kind: 'memory'; statement: string; subjectScope: string | null; bytes: number | null }
-  | { kind: 'team_member'; role: string | null; persona: string | null; bytes: number | null }
+  | { kind: 'skill'; description: Backstopped; whenToUse: Backstopped; bytes: number | null }
+  | { kind: 'memory'; statement: string; subjectScope: Backstopped; bytes: number | null }
+  | { kind: 'team_member'; role: Backstopped; persona: string | null; bytes: number | null }
   | { kind: 'doc'; head: string | null; headings: string[]; bytes: number | null }
   | { kind: 'artifact'; description: string | null; bytes: number | null }
   | { kind: 'drawing'; text: string | null; bytes: number | null }
   | { kind: 'file'; name: string; mime: string | null; bytes: number | null }
   | { kind: 'task'; description: string | null; bytes: number | null }
-  | { kind: 'collection'; description: string | null; members: Record<string, number> };
+  | { kind: 'collection'; description: Backstopped; members: Record<string, number> };
 
 interface Fields {
+  /** Never cut here: the backstop, if it bit, was declared by the reader (`whenCut`). */
   whenToUse: string | null;
+  whenCut: boolean;
   summary: string | null;
   /** Which of the two came from the kind's own purpose-written field. */
   native: boolean;
@@ -90,46 +101,65 @@ function fileSize(bytes: number | null): string | null {
 function kindFields(facts: HeaderFacts): Fields {
   switch (facts.kind) {
     case 'skill': {
-      // Native: the description is the summary; `when_to_use` frontmatter leads
-      // routing, falling back to the description. An empty description is absent.
-      const description = facts.description ? clip(facts.description) : null;
-      const whenToUse = facts.whenToUse ? clip(facts.whenToUse) : description;
-      return { whenToUse, summary: description, native: whenToUse !== null || description !== null, bytes: facts.bytes };
+      // Native: the description is the summary (cut at 600); `when_to_use`
+      // frontmatter leads routing, falling back to the WHOLE description. An
+      // empty description is absent.
+      const description = facts.description.text ? clip(facts.description.text) : null;
+      const routed = facts.whenToUse.text ? facts.whenToUse : facts.description.text ? facts.description : null;
+      return {
+        whenToUse: routed?.text ?? null,
+        whenCut: routed?.cut ?? false,
+        summary: description,
+        native: routed !== null || description !== null,
+        bytes: facts.bytes,
+      };
     }
     case 'memory':
       // Native: `subject_scope` is the "when"; the statement (injected whole at
       // spawn anyway) is the "what".
-      return { whenToUse: facts.subjectScope ? clip(facts.subjectScope) : null, summary: clip(facts.statement), native: true, bytes: facts.bytes };
-    case 'team_member':
+      return {
+        whenToUse: facts.subjectScope.text || null,
+        whenCut: !!facts.subjectScope.text && facts.subjectScope.cut,
+        summary: clip(facts.statement),
+        native: true,
+        bytes: facts.bytes,
+      };
+    case 'team_member': {
       // Derived: the trimmed role, uncut (today's Jev text sends it whole), and
       // the persona cut at 600, untrimmed, when it has any text at all.
+      const role = blankToNull(facts.role.text)?.trim() ?? null;
       return {
-        whenToUse: blankToNull(facts.role)?.trim() ?? null,
+        whenToUse: role,
+        whenCut: role !== null && facts.role.cut,
         summary: blankToNull(facts.persona) ? clip(facts.persona) : null,
         native: false,
         bytes: facts.bytes,
       };
+    }
     case 'doc':
-      return { whenToUse: null, summary: docSummary(facts.head, facts.headings), native: false, bytes: facts.bytes };
+      return { whenToUse: null, whenCut: false, summary: docSummary(facts.head, facts.headings), native: false, bytes: facts.bytes };
     case 'artifact':
-      return { whenToUse: null, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
+      return { whenToUse: null, whenCut: false, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
     case 'drawing':
-      return { whenToUse: null, summary: blankToNull(facts.text) ? clip(facts.text!.replace(/\s+/g, ' ').trim()) : null, native: false, bytes: facts.bytes };
+      return { whenToUse: null, whenCut: false, summary: blankToNull(facts.text) ? clip(facts.text!.replace(/\s+/g, ' ').trim()) : null, native: false, bytes: facts.bytes };
     case 'file':
       return {
         whenToUse: null,
+        whenCut: false,
         summary: clip([facts.name, facts.mime, fileSize(facts.bytes)].filter((part): part is string => !!part).join(' · ')),
         native: false,
         bytes: facts.bytes,
       };
     case 'task':
-      return { whenToUse: null, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
+      return { whenToUse: null, whenCut: false, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
     case 'collection': {
       const counts = Object.entries(facts.members)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([kind, n]) => `${n} ${kind}`);
+      const description = blankToNull(facts.description.text);
       return {
-        whenToUse: blankToNull(facts.description) ? clip(facts.description) : null,
+        whenToUse: description,
+        whenCut: description !== null && facts.description.cut,
         summary: counts.length > 0 ? clip(`Contains ${counts.join(', ')}`) : null,
         native: false,
         bytes: null,
@@ -160,6 +190,9 @@ export function deriveHeader(
   const own = authored && AUTHORABLE(facts.kind) ? authored : null;
   const whenToUse = own?.whenToUse ?? base.whenToUse;
   const summary = own?.summary ?? base.summary;
+  // The authored row's own clips, and the backstop on a whenToUse that fell back to the kind's field.
+  const clipped = [...(own?.clipped ?? [])];
+  if (own?.whenToUse == null && base.whenToUse !== null && base.whenCut) clipped.push('whenToUse');
   const source: SelectionHeaderSource =
     own && (own.whenToUse !== null || own.summary !== null) ? 'authored' : base.native ? 'native' : 'derived';
   return {
@@ -173,6 +206,6 @@ export function deriveHeader(
     stale: source === 'authored' && own!.stale,
     bytes: base.bytes,
     loadPointer: loadPointerFor(facts.kind, entity.id),
-    ...(own?.clipped && own.clipped.length > 0 ? { clipped: own.clipped } : {}),
+    ...(clipped.length > 0 ? { clipped } : {}),
   };
 }

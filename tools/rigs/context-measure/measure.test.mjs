@@ -109,6 +109,24 @@ test('refuses a manifest whose entries and dropped disagree', () => {
   assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /header-dropped with no header-level drop/);
 });
 
+test('a summary-dropped entry kept its whenToUse, so opening it is an expand; the lists must still agree', () => {
+  const m = manifest();
+  m.context.entries[1] = { entityId: NEEDLE, group: 'references', state: 'summary-dropped', bytes: 400 };
+  m.context.dropped[0] = { entityId: NEEDLE, reason: 'byte-budget', level: 'summary' };
+  const row = measureLane({
+    manifest: m,
+    linked: [DOC, NEEDLE],
+    transcriptLines: transcript([['Bash', { command: `tm8 entity context ${NEEDLE}` }]]),
+  });
+  assert.equal(row.reads.find((r) => r.id === NEEDLE).class, 'expand');
+  assert.deepEqual(row.miss.ids, {});
+  const n = manifest();
+  n.context.entries[1] = { entityId: NEEDLE, group: 'references', state: 'summary-dropped', bytes: 400 };
+  assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /dropped .* vs entry state summary-dropped/);
+  n.context.dropped = n.context.dropped.filter((d) => d.entityId !== NEEDLE);
+  assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /summary-dropped with no summary-level drop/);
+});
+
 test('D2: header- and body-level drops are header reads; every other miss is entry-level', async () => {
   const { missLevel } = await import('./measure.mjs');
   for (const why of ['byte-budget:header', 'byte-budget:body']) assert.equal(missLevel(why), 'header', why);
@@ -131,4 +149,35 @@ test('summarize --excluded counts set-aside launches per arm, so a re-run cannot
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('Q1: a memory dropped at BODY level is a listed, collapsed entry; opening it is a header-level read, not an entry miss', () => {
+  const MEMC = id(10);
+  const m = manifest();
+  m.context.entries.push({ entityId: MEMC, group: 'memories', state: 'collapsed', bytes: 1400 });
+  m.context.dropped.push({ entityId: MEMC, reason: 'byte-budget', level: 'body' });
+  const row = measureLane({ manifest: m, linked: [], transcriptLines: transcript([['Bash', { command: `tm8 entity context ${MEMC} --format json` }]]) });
+  assert.equal(row.miss.header.count, 1);
+  assert.equal(row.miss.entry.count, 0);
+  assert.equal(row.miss.ids[MEMC], 'byte-budget:body');
+  // and the two wrong shapes still throw
+  const bad = manifest();
+  bad.context.entries.push({ entityId: MEMC, group: 'memories', state: 'expanded', bytes: 1400 });
+  bad.context.dropped.push({ entityId: MEMC, reason: 'byte-budget', level: 'body' });
+  assert.throws(() => measureLane({ manifest: bad, linked: [], transcriptLines: transcript([]) }), /vs entry state expanded/);
+});
+
+
+test('Q1: a collapsed memory whose index line was ALSO trimmed (body + entry drops, no entry) measures as an ENTRY-level miss', () => {
+  const MEMT = id(11);
+  const m = manifest();
+  m.context.dropped.push({ entityId: MEMT, reason: 'byte-budget', level: 'body' }, { entityId: MEMT, reason: 'byte-budget', level: 'entry' });
+  const row = measureLane({ manifest: m, linked: [], transcriptLines: transcript([['Bash', { command: `tm8 entity context ${MEMT} --format json` }]]) });
+  assert.equal(row.miss.ids[MEMT], 'byte-budget:entry');
+  assert.equal(row.miss.entry.count, 1);
+  assert.equal(row.miss.header.count, 0);
+  // negative control: a body drop with no entry and NO entry-level drop is still refused
+  const bad = manifest();
+  bad.context.dropped.push({ entityId: MEMT, reason: 'byte-budget', level: 'body' });
+  assert.throws(() => measureLane({ manifest: bad, linked: [], transcriptLines: transcript([]) }), /byte-budget:body\) vs entry state absent/);
 });
