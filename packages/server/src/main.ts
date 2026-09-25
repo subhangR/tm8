@@ -1308,6 +1308,24 @@ export async function main(): Promise<void> {
     );
     console.log(`  ws: /v2/ws  ·  health: ${url}/health`);
 
+    // AUTO-RESUME, fire-and-forget and only here. `bootstrap` has already run
+    // ghost reconciliation, which is what files a SIGKILLed session under
+    // `server_restart`, so every restart-interrupted session is visible by now.
+    // Not awaited: resumes are staggered and a boot must not wait on them.
+    // Only `main()` does this, not `bootstrap`, so a test that boots a node
+    // never spawns real agent CLIs. TM8_AUTO_RESUME=off disables it.
+    void execution
+      ?.resumeInterrupted()
+      .then(({ resumed, errors }) => {
+        if (resumed.length > 0) {
+          console.log(`  auto-resume: resumed ${resumed.length} session(s) interrupted by the last restart`);
+        }
+        for (const problem of errors) {
+          console.log(`  auto-resume could not resume ${problem.sessionId}: ${problem.message}`);
+        }
+      })
+      .catch(() => undefined);
+
     // Close the pool as well as the listener. A pool left open holds the
     // process alive past the point the operator asked it to stop, which reads
     // as a hang rather than as the clean exit it nearly was.

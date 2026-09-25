@@ -114,6 +114,7 @@ import {
   resolveLoginShell,
 } from '../shell/ShellSessionLauncher.js';
 import type {
+  AutoResumeReport,
   CredentialSource,
   GraphAuth,
   GraphPort,
@@ -573,6 +574,12 @@ export class SpawnService {
   private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
   private privateDataLayoutReady: Promise<void> | undefined;
+  /**
+   * Set by `recordShutdown`. Boot-time auto-resume checks it between sessions,
+   * so a node told to stop while it is still bringing sessions back does not
+   * spawn fresh PTYs into a process that is about to exit.
+   */
+  private stopping = false;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -3829,6 +3836,7 @@ export class SpawnService {
    * @returns how many sessions were annotated.
    */
   async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
+    this.stopping = true;
     const live = this.pty.liveSessionIds();
     if (live.length === 0) return 0;
 
@@ -3869,6 +3877,84 @@ export class SpawnService {
     }
     this.logger?.info('SpawnService: recorded shutdown', { signal, annotated, live: live.length });
     return annotated;
+  }
+
+  /**
+   * BOOT-TIME AUTO-RESUME — bring back what the last restart interrupted.
+   *
+   * `recordShutdown` and `reconcileNodeGhosts` both end a restart-killed
+   * session with `ended_kind = 'server_restart'` and the sentence "it can be
+   * resumed to pick up where it left off". Until this existed, nothing did:
+   * every reboot of a single-node install left each agent waiting for a human
+   * to press Resume on it, one at a time. Measured 2026-09-23: one macOS
+   * restart stopped 62 sessions, and the node came back up with all of them
+   * dead.
+   *
+   * WHAT IT RESUMES. Only this node's `agent` sessions whose ending was
+   * `server_restart` and whose exit is no older than `windowMs` — see
+   * `GraphPort.listNodeInterruptedSessions`. Every other ending is a decision
+   * or a fault this must not undo, and the window stops a boot from reviving
+   * something a person deliberately left stopped last week.
+   *
+   * HOW. Through `resume()` itself, one session at a time, `staggerMs` apart.
+   * Same path as the Resume button, so the same refusals apply: the session
+   * cap, a missing Codex rollout, a tool with no resume contract. Staggered
+   * because each resume boots a real agent CLI, and fifty of them in one tick
+   * is a thundering herd on the machine that just booted.
+   *
+   * Stops early if `recordShutdown` runs (the node is going away again).
+   *
+   * NEVER THROWS. Called fire-and-forget after the listener is up, so the
+   * report is the only place a refusal can surface.
+   */
+  async resumeInterruptedSessions(
+    auth: GraphAuth,
+    options: { windowMs: number; staggerMs: number },
+  ): Promise<AutoResumeReport> {
+    const resumed: string[] = [];
+    const errors: Array<{ sessionId: string; message: string }> = [];
+    if (!this.nodeId) return { resumed, errors };
+
+    let candidates: Array<{ sessionId: string; exitedAt: Date }>;
+    try {
+      candidates = await this.graph.listNodeInterruptedSessions(
+        auth,
+        this.nodeId,
+        new Date(Date.now() - options.windowMs),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('SpawnService: auto-resume could not list interrupted sessions', {
+        nodeId: this.nodeId,
+        error: message,
+      });
+      return { resumed, errors: [{ sessionId: '*', message: `could not list interrupted sessions: ${message}` }] };
+    }
+
+    for (const [index, { sessionId, exitedAt }] of candidates.entries()) {
+      if (this.stopping) break;
+      if (index > 0 && options.staggerMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, options.staggerMs).unref());
+        if (this.stopping) break;
+      }
+      try {
+        await this.resume(auth, {
+          sessionId,
+          // Keyed on the INTERRUPTION, not the session: a boot that retries
+          // the same interruption replays the ledger instead of resurrecting
+          // it twice, while the next restart's interruption — a new
+          // `exited_at` — is a new command and is not swallowed as a replay.
+          clientMutationId: `auto-resume:${sessionId}:${exitedAt.toISOString()}`,
+        });
+        resumed.push(sessionId);
+        this.logger?.info('SpawnService: auto-resumed session', { sessionId });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ sessionId, message });
+        this.logger?.warn?.('SpawnService: auto-resume refused for session', { sessionId, error: message });
+      }
+    }
+    return { resumed, errors };
   }
 
   /**

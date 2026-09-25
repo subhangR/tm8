@@ -69,6 +69,7 @@ import {
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
   type GhostReconcileReport,
+  type AutoResumeReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
@@ -1568,6 +1569,38 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
   }
 
+  /**
+   * Agent sessions on `nodeId` a server restart interrupted since `since` —
+   * boot-time auto-resume's candidates. Same posture as the read above: a
+   * plain RLS-scoped read, node-local maintenance rather than a contract
+   * surface, and `deleted_at is null` for the same reason.
+   *
+   * `status = 'failed'` alongside the ending is not redundant: a session
+   * already resumed by hand is back at spawning/running/idle and keeps its old
+   * `ended_kind` until it next ends, so the ending alone would pick it up again.
+   */
+  async listNodeInterruptedSessions(
+    auth: GraphAuth,
+    nodeId: string,
+    since: Date,
+  ): Promise<Array<{ sessionId: string; exitedAt: Date }>> {
+    const rows = await this.db.query<{ entity_id: string; exited_at: Date }>(
+      this.claims(auth),
+      `select ws.entity_id, ws.exited_at
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+        where ws.node_id = $1
+          and ws.session_kind = 'agent'
+          and ws.status = 'failed'
+          and ws.ended_kind = 'server_restart'
+          and ws.exited_at >= $2
+          and e.deleted_at is null
+        order by ws.exited_at desc`,
+      [nodeId, since],
+    );
+    return rows.map((r) => ({ sessionId: r.entity_id, exitedAt: new Date(r.exited_at) }));
+  }
+
   // --- worktree provisioning (design §4) --------------------------------------
   //
   // Six writes and two reads, one door call each. They are separate for the
@@ -1819,6 +1852,36 @@ export class DbGraphPort implements GraphPort {
  *  cannot overflow on the way to the guard. */
 const UNLIMITED_SESSION_CAP = 2_147_483_647;
 
+/**
+ * Boot-time auto-resume policy, from the environment.
+ *
+ *   TM8_AUTO_RESUME               on by default; `0|off|false|no` disables it
+ *   TM8_AUTO_RESUME_WINDOW_HOURS  how old an interruption may be (default 24)
+ *   TM8_AUTO_RESUME_STAGGER_MS    gap between resumes (default 2000)
+ *
+ * ON BY DEFAULT because the ending it acts on already promises the user a
+ * resume ("it can be resumed to pick up where it left off"), and a node that
+ * makes that promise and then waits for sixty clicks has not kept it.
+ * Unparseable numbers fall back to the default rather than refusing to boot.
+ */
+export function resolveAutoResumePolicy(env: NodeJS.ProcessEnv = process.env): {
+  enabled: boolean;
+  windowMs: number;
+  staggerMs: number;
+} {
+  const flag = env['TM8_AUTO_RESUME']?.trim().toLowerCase();
+  const enabled = !(flag !== undefined && /^(0|off|false|no)$/.test(flag));
+  const positive = (raw: string | undefined, fallback: number): number => {
+    const n = raw === undefined || raw.trim() === '' ? Number.NaN : Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  return {
+    enabled,
+    windowMs: positive(env['TM8_AUTO_RESUME_WINDOW_HOURS'], 24) * 3_600_000,
+    staggerMs: positive(env['TM8_AUTO_RESUME_STAGGER_MS'], 2_000),
+  };
+}
+
 /** Concurrent live sessions a node runs when `TM8_SESSION_CAP` is unset. Was 8. */
 export const DEFAULT_SESSION_CAP = 64;
 
@@ -1927,6 +1990,13 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+   * Resume the agent sessions the last restart interrupted, per
+   * `resolveAutoResumePolicy`. Call once, AFTER the listener is up and after
+   * `reconcileGhosts` (which is what files a SIGKILLed session under
+   * `server_restart` in the first place). Never rejects; resolves to
+   * `{ resumed: [], errors: [] }` when the policy is off.
+   */
+  resumeInterrupted(): Promise<AutoResumeReport>;
 }
 
 /**
@@ -2104,6 +2174,8 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         return 0;
       }
     },
+    // See `runAutoResume` — shared with the legacy builder below.
+    resumeInterrupted: () => runAutoResume(spawnService, owner, deps.logger),
     reconcileWorktrees: async () => {
       // Same identity story as ghost reconciliation and for the same reason:
       // the doors below go through `require_space_member`, which has no
@@ -2151,6 +2223,34 @@ function resolveWorktreeCap(env: NodeJS.ProcessEnv = process.env): number {
   if (!raw) return 0;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * `ExecutionRuntime.resumeInterrupted`, for both runtime builders.
+ *
+ * Runs as the loopback owner, like ghost reconciliation: they launched these
+ * sessions (or own the node that did), and resume's own membership checks run
+ * against them. Never rejects — an owner lookup that fails becomes one error
+ * row in the report.
+ */
+async function runAutoResume(
+  spawnService: SpawnService,
+  owner: () => Promise<LoopbackOwner>,
+  logger: Logger | undefined,
+): Promise<AutoResumeReport> {
+  const policy = resolveAutoResumePolicy(process.env);
+  if (!policy.enabled) return { resumed: [], errors: [] };
+  try {
+    const o = await owner();
+    return await spawnService.resumeInterruptedSessions(
+      { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'startup-auto-resume' },
+      { windowMs: policy.windowMs, staggerMs: policy.staggerMs },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.warn?.('execution: auto-resume skipped', { error: message });
+    return { resumed: [], errors: [{ sessionId: '*', message }] };
+  }
 }
 
 /**
@@ -2296,6 +2396,7 @@ export function registerExecutionHandlers(
         return 0;
       }
     },
+    resumeInterrupted: () => runAutoResume(spawnService, owner, deps.logger),
     reconcileWorktrees: async () => {
       try {
         const o = await owner();

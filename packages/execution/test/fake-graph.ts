@@ -357,6 +357,24 @@ export class FakeGraph implements GraphPort {
     return this.nodeActiveSessions;
   }
 
+  /** Rows boot-time auto-resume should find. Set by the test. */
+  nodeInterruptedSessions: Array<{ sessionId: string; exitedAt: Date }> = [];
+  /** `(nodeId, since)` pairs `listNodeInterruptedSessions` was asked about. */
+  readonly interruptedQueries: Array<{ nodeId: string; since: Date }> = [];
+  /** When set, the listing REJECTS. */
+  listNodeInterruptedSessionsError: Error | null = null;
+
+  async listNodeInterruptedSessions(
+    auth: GraphAuth,
+    nodeId: string,
+    since: Date,
+  ): Promise<Array<{ sessionId: string; exitedAt: Date }>> {
+    this.authSeen.push(auth);
+    this.interruptedQueries.push({ nodeId, since });
+    if (this.listNodeInterruptedSessionsError) throw this.listNodeInterruptedSessionsError;
+    return this.nodeInterruptedSessions;
+  }
+
   statusesFor(sessionId: string): string[] {
     return this.transitions.filter((t) => t.sessionId === sessionId).map((t) => t.status);
   }

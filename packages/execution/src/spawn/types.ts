@@ -997,6 +997,16 @@ export interface ResumeRequest {
  * sibling (`WorktreeReconcileReport`) already has, for the reason that sibling's
  * failures reach the operator at boot and this one's did not.
  */
+/**
+ * What boot-time auto-resume did. `errors` is per session and non-fatal: one
+ * session that cannot come back (cap reached, rollout missing, tool without a
+ * resume contract) must not keep the rest down.
+ */
+export interface AutoResumeReport {
+  readonly resumed: readonly string[];
+  readonly errors: readonly { readonly sessionId: string; readonly message: string }[];
+}
+
 export interface GhostReconcileReport {
   readonly retired: number;
   /** Empty on a clean sweep. Non-empty means rows were left claiming to be alive. */
@@ -1255,6 +1265,21 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
+   * Agent sessions on THIS node that a server restart interrupted at or after
+   * `since` — the candidates boot-time auto-resume brings back.
+   *
+   * A read, like its sibling above, and scoped to `node_id` for the same
+   * reason: only the node that held the PTY knows the conversation lives on
+   * its disk. Narrowed to `ended_kind = 'server_restart'` because that is the
+   * one ending that says, first-hand or by reconciliation, "nothing was wrong
+   * with this session" — a crash, an OOM kill or an operator stop is not
+   * something a boot should quietly undo.
+   */
+  listNodeInterruptedSessions(
+    auth: GraphAuth,
+    nodeId: string,
+    since: Date,
+  ): Promise<Array<{ sessionId: string; exitedAt: Date }>>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //
