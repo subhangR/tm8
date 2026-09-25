@@ -151,6 +151,8 @@ describe('the fixture seam keeps the header on its own version', () => {
     const cleared = await seam.commands.clearEntityHeader(id, { expectedVersion: 2 });
     expect(cleared.header?.version).toBe(0);
     expect((await seam.entity(id)).header).toBeUndefined();
+    // The default read stays header-less; the opt-in read answers the fallback.
+    expect(await seam.commands.resolvedHeader(id)).toMatchObject({ version: 0, source: 'derived' });
   });
 
   it('LENIENT: a kind with no header, or an empty header, is a no-op with a warning — never a refusal', async () => {

@@ -49,7 +49,10 @@ import {
   SELECTION_HEADER_KINDS,
   decodeCursor,
   encodeCursor,
+  headerReadMode,
   type EntityContextAssignee,
+  type EntityHeaderReadMode,
+  type ResultWarning,
   type EntityContextAssignment,
   type EntityContextBlocker,
   type EntityContextConnection,
@@ -65,7 +68,7 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
-import { resolveAuthoredHeaderView } from '../../../headers/resolve.js';
+import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 
@@ -731,6 +734,8 @@ interface V2Request {
   readonly sections: ReadonlySet<V2Section> | null;
   readonly edgeType: string | null;
   readonly after: ContextV2After | null;
+  /** `resolved` (I9a): the native/derived header when none is authored, on any read but a cursor page. */
+  readonly header: EntityHeaderReadMode;
 }
 
 async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loaded: Loaded; plan: ContextV2LoadPlan }> {
@@ -771,13 +776,20 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     }
   }
 
-  if (plan.header) {
+  // `header=resolved` asks for the header by name, so it loads on an
+  // explicit-sections read too — but never on a cursor page, which is one
+  // section's rows and nothing else (c761 §3.5).
+  const resolved = request.header === 'resolved' && HEADER_KINDS.has(root.kind) && after === null;
+  if (plan.header || resolved) {
     // Core, like the root: a failure fails the read. Under the caller's RLS,
-    // so a header is exactly as visible as its entity. Only an AUTHORED header
-    // is shown: a derived one restates the body this read already carries (a
-    // task's is its own description), and an entity nobody has written a
-    // header for reads byte-identical to before (headers design §9.5).
-    loaded.header = await resolveAuthoredHeaderView(taggedQuerier(q, 'header'), root.space_id, id);
+    // so a header is exactly as visible as its entity. By default only an
+    // AUTHORED header is shown: a derived one restates the body this read
+    // already carries (a task's is its own description), and an entity nobody
+    // has written a header for reads byte-identical to before (headers design
+    // §9.5). `resolved` opts into the fallback a launch reads, at version 0.
+    loaded.header = resolved
+      ? (await resolveHeaderViews(taggedQuerier(q, 'header'), root.space_id, [id])).get(id)
+      : await resolveAuthoredHeaderView(taggedQuerier(q, 'header'), root.space_id, id);
   }
 
   if (plan.assignees) {
@@ -1113,7 +1125,13 @@ function assignmentOf(root: EntityRow, offset: number | undefined): Record<strin
   };
 }
 
-function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: number | undefined): View {
+function assemble(
+  id: string,
+  loaded: Loaded,
+  plan: ContextV2LoadPlan,
+  offset: number | undefined,
+  warnings: readonly ResultWarning[] = [],
+): View {
   const { root } = loaded;
   const header = {
     schemaVersion: V2_SCHEMA_VERSION,
@@ -1124,7 +1142,16 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
   };
   const status = statusOf(root);
   const notLoaded = plan.notLoaded.map((section) => notLoadedEntry(id, section));
-  const tail = { omitted: loaded.omitted, notLoaded, errors: loaded.errors, budget: { requested: 0, used: 0 } };
+  const tail = {
+    omitted: loaded.omitted,
+    notLoaded,
+    errors: loaded.errors,
+    // Only when the read normalised something the caller sent (an unknown
+    // `header` mode), so every other read is byte-identical. Before `fit`,
+    // so the budget counts it.
+    ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
+    budget: { requested: 0, used: 0 },
+  };
 
   const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};
 
@@ -1135,6 +1162,8 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
       status,
       asOfSeq: loaded.asOfSeq,
       ...(plan.parent ? { parent: loaded.parent ?? null } : {}),
+      // Only ever loaded here when `header=resolved` asked for it by name.
+      ...(loaded.header ? { header: loaded.header } : {}),
       ...assignmentFields,
       ...(loaded.blockers ? { blockers: loaded.blockers } : {}),
       ...(loaded.children ? { children: loaded.children } : {}),
@@ -1428,14 +1457,18 @@ export async function loadContextV2(
     edgeType?: string | undefined;
     /** Decoded by `decodeV2Cursor` before the transaction opens. */
     after?: ContextV2After | null;
+    /** The raw `header` query value: read leniently by `headerReadMode`. */
+    header?: string | undefined;
   },
 ): Promise<EntityContextV2View> {
+  const { mode, warning } = headerReadMode(input.header);
   const { loaded, plan } = await loadV2(q, id, {
     sections: input.sections,
     edgeType: input.edgeType ?? null,
     after: input.after ?? null,
+    header: mode,
   });
-  const view = assemble(id, loaded, plan, input.offset);
+  const view = assemble(id, loaded, plan, input.offset, warning ? [warning] : []);
   if (!plan.explicit && BODY_FETCH[loaded.root.kind]) withBodyFetch(view, loaded.root);
   const messagesAreCore = plan.messages?.core === true;
   return fit(view, id, input.totalBytes, input, messagesAreCore, loaded.pagers);

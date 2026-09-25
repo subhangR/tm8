@@ -79,6 +79,7 @@ import type {
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
   EntityContextQuery, EntityContextResult, EntityContextV2View, EntityContextView, EntityCounters, EntityDetail,
+  EntityHeaderReadMode,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
@@ -1088,6 +1089,7 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
   connections: ConnectionsSchema,
   capabilities: EntityCapabilitiesSchema,
   header: EntityHeaderViewSchema.optional(),
+  warnings: z.array(ResultWarningSchema).optional(),
 }).strict());
 
 // ---------------------------------------------------------------------------
@@ -3881,10 +3883,33 @@ const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'mess
 const ENTITY_CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
 const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'blockers', 'connections', 'messages'];
 
+export const ENTITY_HEADER_READ_MODES = ['authored', 'resolved'] as const satisfies readonly EntityHeaderReadMode[];
+
+/**
+ * The `header` query key of `entities.get` / `entities.context` (I9a), read
+ * leniently — instruct, don't refuse. Absent is `authored`, the default; an
+ * unknown value is `authored` too, with a warning naming the valid modes, so a
+ * typo reads as the default AND says so, rather than failing an agent's read
+ * or passing for "no header".
+ */
+export function headerReadMode(raw: string | null | undefined): { mode: EntityHeaderReadMode; warning?: ResultWarning } {
+  if (raw === null || raw === undefined) return { mode: 'authored' };
+  if ((ENTITY_HEADER_READ_MODES as readonly string[]).includes(raw)) return { mode: raw as EntityHeaderReadMode };
+  const shown = raw.length > 64 ? `${raw.slice(0, 64)}…` : raw;
+  return {
+    mode: 'authored',
+    warning: {
+      code: 'header_mode_unknown',
+      message: `header=${JSON.stringify(shown)} is not a header mode; read as 'authored' (the default). Valid: ${ENTITY_HEADER_READ_MODES.join(', ')}`,
+    },
+  };
+}
+
 /**
  * One query shape for both DTOs; `schema` picks which section names and budget
  * knobs are legal. v1's rules are unchanged: absent `schema` is v1 until the
- * rollout step (M2/S5) flips the default.
+ * rollout step (M2/S5) flips the default. `header` is any string here, and
+ * {@link headerReadMode} reads it.
  */
 export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object({
   schema: z.enum(['v1', 'v2']).optional(),
@@ -3897,6 +3922,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   actionsSchema: z.enum(['v1', 'v2']).optional(),
   cursor: CursorSchema.optional(),
   edgeType: z.string().regex(/^[a-z][a-z_]{0,63}$/).optional(),
+  header: z.string().optional(),
 }).strict().superRefine((query, issues) => {
   const v2 = query.schema === 'v2';
   // c761 §5: a context cursor continues exactly ONE paged v2 section, and
@@ -4111,6 +4137,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
     expandOp: ContextExpandOpSchema.optional(),
   }).strict()),
   errors: z.array(z.object({ section: z.string().min(1), code: z.string().min(1), retry: z.boolean() }).strict()),
+  warnings: z.array(ResultWarningSchema).optional(),
   budget: z.object({
     requested: z.number().int().positive(),
     used: z.number().int().nonnegative(),

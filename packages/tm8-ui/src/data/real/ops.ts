@@ -181,6 +181,7 @@ import {
   type SetEntityHeaderInput,
   type ClearEntityHeaderInput,
   type EntityHeaderResult,
+  type EntityHeaderView,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
@@ -972,6 +973,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
       return http.call<EntityHeaderResult>('entities.header.clear', { params: { id }, body: input });
+    },
+
+    /** The opt-in `header=resolved` read: the header a launch reads, authored or not. */
+    async resolvedHeader(id: EntityId): Promise<EntityHeaderView | undefined> {
+      const detail = await http.call<EntityDetail>('entities.get', { params: { id }, query: { header: 'resolved' } });
+      return detail.header;
     },
 
     resolveAttention(

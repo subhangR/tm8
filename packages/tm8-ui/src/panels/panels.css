@@ -1177,6 +1177,18 @@
   gap: 6px;
   margin: 0 0 8px;
 }
+/* A fallback, not a header anyone wrote: quieter ink, a dashed rule. */
+.cv2-root .pn-header__view--derived {
+  padding-left: 8px;
+  border-left: 1px dashed var(--pn-line-2);
+}
+.cv2-root .pn-header__view--derived .pn-header__text {
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-header__badge[data-source='derived'],
+.cv2-root .pn-header__badge[data-source='native'] {
+  border-style: dashed;
+}
 .cv2-root .pn-header__row dt {
   font-size: 11px;
   color: var(--pn-ink-4);

@@ -93,6 +93,10 @@ import type { LaunchSuggestInput } from '@tm8/contract';
  * v1), so a person can write the header the CLI already could (I9a).
  * Contract-shaped and additive, zero caller churn.
  *
+ * Amendment 14 (2026-09-25, derived header preview): commands gain
+ * `resolvedHeader` — `entities.get?header=resolved`, a READ placed in
+ * `commands` on Amendment 12's precedent (see the member's note). Additive.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -257,6 +261,7 @@ import type {
   SetEntityHeaderInput,
   ClearEntityHeaderInput,
   EntityHeaderResult,
+  EntityHeaderView,
 } from '@tm8/contract';
 import type { ChatTurnFrame } from '../chat-home/types';
 
@@ -823,6 +828,15 @@ export interface Seam {
      */
     setEntityHeader(id: EntityId, input: SetEntityHeaderInput): Promise<EntityHeaderResult>;
     clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult>;
+    /**
+     * Amendment 14 (I9a follow-up): the header launches actually read —
+     * authored, else native, else derived at version 0 — via the opt-in
+     * `entities.get?header=resolved`. A READ in `commands` on Amendment 12's
+     * precedent: every detail-panel host already hands the panel
+     * `seam.commands`, so the header section gets it with no host edit.
+     * `undefined` for a kind that resolves no header.
+     */
+    resolvedHeader(id: EntityId): Promise<EntityHeaderView | undefined>;
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
     moveEntity(id: EntityId, input: MoveEntityInput): Promise<CommandResult>;
     deleteEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;

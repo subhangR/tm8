@@ -15,7 +15,11 @@
  *     stores no header are no-ops that say so in `warnings`;
  *   - `entities.create` writes a header in the create's transaction, and on a
  *     kind that cannot carry one the create still succeeds, with a warning;
- *   - a kind with no header (work_session) reads none.
+ *   - a kind with no header (work_session) reads none;
+ *   - `header=resolved` (I9a) is opt-in: it adds the native/derived fallback
+ *     at version 0 and changes nothing else, and a read that does not ask is
+ *     byte-identical to `header=authored`; never on a cursor page; an unknown
+ *     mode reads as `authored` with a `header_mode_unknown` warning.
  *
  * The RPC-level rules (RLS, kind allowlist, normalisation, the teammate edit
  * right) are pinned in test/db/entity-headers.pg.test.ts; this is the
@@ -45,7 +49,7 @@ const OWNER = {
   isOwner: true,
 };
 
-interface Detail { id: string; kind: string; version: number; header?: EntityHeaderView }
+interface Detail { id: string; kind: string; version: number; header?: EntityHeaderView; warnings?: Warning[] }
 interface Warning { code: string; message: string }
 interface HeaderResult { entity: Detail; header?: EntityHeaderView; activity?: { id: string }; warnings?: Warning[] }
 
@@ -117,6 +121,126 @@ describe('header on entity reads (I4)', () => {
   it('a kind with no header reads none', async () => {
     expect((await get(F.WS)).header).toBeUndefined();
     expect((await context(F.WS)).header).toBeUndefined();
+  });
+});
+
+/**
+ * I9a: `header=resolved` is OPT-IN. Pinned before any header is written on
+ * F.D (the describe above and this one run first), so the default read has
+ * nothing authored to carry.
+ */
+describe('header=resolved on entity reads (I9a)', () => {
+  const getWith = (id: string, header?: string): Promise<Detail & Record<string, unknown>> =>
+    call('entities.get', { id }, { query: new URLSearchParams(header ? { header } : {}) });
+  const contextWith = (id: string, extra: Record<string, string> = {}): Promise<Detail & Record<string, unknown>> =>
+    call('entities.context', { id }, { query: new URLSearchParams({ schema: 'v2', ...extra }) });
+  /** The context envelope's clock fields differ per call and are not content. */
+  const steady = (view: Record<string, unknown>): Record<string, unknown> => {
+    const { provenance: _provenance, ...rest } = view;
+    return rest;
+  };
+  const withoutHeader = (view: Record<string, unknown>): Record<string, unknown> => {
+    const { header: _header, ...rest } = view;
+    return rest;
+  };
+
+  it('a read that does not ask is BYTE-IDENTICAL to header=authored, and carries no header', async () => {
+    const plain = await getWith(F.D);
+    expect('header' in plain).toBe(false);
+    expect(JSON.stringify(plain)).toBe(JSON.stringify(await getWith(F.D, 'authored')));
+
+    const plainContext = await contextWith(F.D);
+    expect('header' in plainContext).toBe(false);
+    expect(JSON.stringify(steady(plainContext))).toBe(JSON.stringify(steady(await contextWith(F.D, { header: 'authored' }))));
+  });
+
+  it('get: resolved adds ONLY the fallback header, at version 0; every other byte is the default read', async () => {
+    const plain = await getWith(F.D);
+    const resolved = await getWith(F.D, 'resolved');
+    expect(resolved.header).toMatchObject({ entityId: F.D, version: 0, pinnedVersion: null, stale: false });
+    expect(['native', 'derived']).toContain(resolved.header!.source);
+    expect(JSON.stringify(withoutHeader(resolved))).toBe(JSON.stringify(plain));
+  });
+
+  it('context: resolved carries the same fallback header, and loads it on an explicit-sections read too', async () => {
+    const fromGet = (await getWith(F.D, 'resolved')).header;
+    const resolved = await contextWith(F.D, { header: 'resolved' });
+    expect(resolved.header).toEqual(fromGet);
+    // The header is a CORE section, so it spends budget: the body page is the
+    // one thing that may shrink to make room (and `budget.used` says so).
+    // Everything else is the default read.
+    const plain = await contextWith(F.D);
+    const rest = (view: Record<string, unknown>) => {
+      const { assignment: _assignment, budget: _budget, ...others } = steady(withoutHeader(view));
+      return others;
+    };
+    expect(JSON.stringify(rest(resolved))).toBe(JSON.stringify(rest(plain)));
+    const body = (view: Record<string, unknown>) => (view['assignment'] as { text: string }).text;
+    expect(body(plain).startsWith(body(resolved).replace(/…$/, '').slice(0, 200))).toBe(true);
+    // The shrink is DECLARED, never silent: the cut body says it is cut and
+    // its expand resumes exactly where this page stopped, and the read stays
+    // inside its budget.
+    type Assignment = { text: string; bytes: number; complete: boolean; expandOp?: { params: { offset: number } } };
+    const cut = resolved['assignment'] as Assignment;
+    const budget = resolved['budget'] as { requested: number; used: number };
+    expect(Buffer.byteLength(body(resolved))).toBeLessThan(Buffer.byteLength(body(plain)));
+    expect(cut.complete).toBe(false);
+    expect(cut.bytes).toBe((plain['assignment'] as Assignment).bytes);
+    expect(cut.expandOp?.params.offset).toBe(Buffer.byteLength(body(resolved)));
+    expect(budget.used).toBeLessThanOrEqual(budget.requested);
+
+    expect('header' in (await contextWith(F.D, { sections: 'hierarchy' }))).toBe(false);
+    expect((await contextWith(F.D, { sections: 'hierarchy', header: 'resolved' })).header).toEqual(fromGet);
+  });
+
+  it('a kind with no header reads none, resolved or not', async () => {
+    expect((await getWith(F.WS, 'resolved')).header).toBeUndefined();
+    expect((await contextWith(F.WS, { header: 'resolved' })).header).toBeUndefined();
+  });
+
+  it('never on a cursor page: a page is one section\'s rows (c761 §3.5)', async () => {
+    // A trimmed read of F.P (ten children) hands out a hierarchy cursor.
+    const full = await contextWith(F.P);
+    const requested = (full['budget'] as { used: number }).used - 600;
+    const trimmed = await contextWith(F.P, { totalBytes: String(requested) });
+    const omitted = trimmed['omitted'] as Array<{ section: string; expandOp?: { params: Record<string, unknown> } }>;
+    const cursor = omitted.find((o) => o.section === 'children')?.expandOp?.params['cursor'] as string | undefined;
+    expect(cursor).toEqual(expect.any(String));
+    const page = await contextWith(F.P, { sections: 'hierarchy', cursor: cursor!, header: 'resolved' });
+    expect((page['children'] as unknown[]).length).toBeGreaterThan(0);
+    expect('header' in page).toBe(false);
+    // The same read without the cursor does carry it: the cursor is the reason.
+    expect((await contextWith(F.P, { sections: 'hierarchy', header: 'resolved' })).header).toMatchObject({ entityId: F.P, version: 0 });
+  });
+
+  it('an unknown mode reads as the default and SAYS so, naming the valid modes (instruct, don\'t refuse)', async () => {
+    const plain = await getWith(F.D);
+    const typo = await getWith(F.D, 'derived');
+    expect(typo.warnings).toEqual([{
+      code: 'header_mode_unknown',
+      message: "header=\"derived\" is not a header mode; read as 'authored' (the default). Valid: authored, resolved",
+    }]);
+    const { warnings: _warnings, ...rest } = typo;
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(plain));
+
+    const plainContext = await contextWith(F.D);
+    const typoContext = await contextWith(F.D, { header: 'derived' });
+    expect(typoContext.warnings).toEqual(typo.warnings);
+    expect('header' in typoContext).toBe(false);
+    // The warning is counted in the budget, so only it and the body's cut may differ.
+    const core = (view: Record<string, unknown>) => {
+      const { warnings: _w, assignment: _a, budget: _b, ...others } = steady(view);
+      return others;
+    };
+    expect(JSON.stringify(core(typoContext))).toBe(JSON.stringify(core(plainContext)));
+    const budget = typoContext['budget'] as { requested: number; used: number };
+    expect(budget.used).toBeLessThanOrEqual(budget.requested);
+    // F.D's body is cut at the ceiling, so the warning's bytes come out of it.
+    const text = (view: Record<string, unknown>) => (view['assignment'] as { text: string }).text;
+    expect(Buffer.byteLength(text(typoContext))).toBeLessThan(Buffer.byteLength(text(plainContext)));
+    // A good mode never carries one.
+    expect('warnings' in (await getWith(F.D, 'resolved'))).toBe(false);
+    expect('warnings' in (await contextWith(F.D, { header: 'resolved' }))).toBe(false);
   });
 });
 

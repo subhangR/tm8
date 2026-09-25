@@ -700,6 +700,12 @@ export interface EntityDetail extends EntitySummary {
    * detail already carries. Header text is graph content: untrusted.
    */
   header?: EntityHeaderView;
+  /**
+   * Present only when the read normalised something the caller sent — an
+   * unknown `header` mode read as `authored` (I9a). Absent otherwise, so a
+   * read that asks nothing odd is byte-identical to one that never could.
+   */
+  warnings?: ResultWarning[];
 }
 
 /**
@@ -6325,6 +6331,32 @@ export interface EntityContextQuery {
   cursor?: string;
   /** v2 only, with `sections=connections` alone: one edge type, `anchored_to` included. */
   edgeType?: string;
+  /**
+   * v2 only. `resolved` (I9a): carry the RESOLVED selection header — the
+   * native or derived one (version 0) when none is authored — and load it on
+   * an explicit-sections read too. Absent or `authored`: the default, the
+   * header only when one is authored, so a default read stays byte-identical.
+   * Any other value is read as `authored`, with a `warnings[]` entry naming
+   * the valid modes (instruct, don't refuse).
+   */
+  header?: string;
+}
+
+/**
+ * Which selection header an entity read carries (I9a). `authored` (the
+ * default): only an authored one, so reads of the entities nobody has written
+ * a header for stay byte-identical (headers design §9.5). `resolved`: the
+ * header launches actually read — authored, else native, else derived (at
+ * version 0) — so a person can see what an unwritten header falls back to.
+ */
+export type EntityHeaderReadMode = 'authored' | 'resolved';
+
+/**
+ * GET /v2/entities/:id query. `header` is an {@link EntityHeaderReadMode};
+ * any other value is read as `authored`, with a `warnings[]` entry.
+ */
+export interface GetEntityQuery {
+  header?: string;
 }
 
 export interface EntityContextView {
@@ -6530,6 +6562,11 @@ export interface EntityContextV2View {
   omitted: EntityContextOmitted[];
   notLoaded: EntityContextNotLoaded[];
   errors: EntityContextError[];
+  /**
+   * Present only when the read normalised something the caller sent — an
+   * unknown `header` mode read as `authored` (I9a). Counted in the budget.
+   */
+  warnings?: ResultWarning[];
   budget: { requested: number; used: number };
 }
 

@@ -9,6 +9,7 @@ import {
   decodeCursor,
   encodeCursor,
   isCollabError,
+  headerReadMode,
   SELECTION_HEADER_KINDS,
   type ActivityItem,
   type ActorSummary,
@@ -33,6 +34,7 @@ import {
   type TickCriteriaInput,
   type ClearEntityHeaderInput,
   type EntityHeaderResult,
+  type EntityHeaderReadMode,
   type EntityHeaderView,
   type SetEntityHeaderInput,
   type PullInput,
@@ -933,11 +935,17 @@ async function headerOf(q: Querier, detail: EntityDetail): Promise<EntityHeaderV
 const authored = (header: EntityHeaderView | undefined): EntityHeaderView | undefined =>
   header && header.version > 0 ? header : undefined;
 
-/** `entities.get`'s detail, with `header` when one is authored. */
-async function withHeader(q: Querier, detail: EntityDetail): Promise<EntityDetail> {
-  const header = HEADER_KINDS.has(detail.kind)
-    ? await resolveAuthoredHeaderView(q, detail.spaceId, detail.id)
-    : undefined;
+/**
+ * `entities.get`'s detail, with `header` when one is authored — or, under the
+ * opt-in `header=resolved` (I9a), the header launches actually read: authored,
+ * else native, else derived at version 0. The default path is unchanged, so a
+ * read that does not ask stays byte-identical.
+ */
+async function withHeader(q: Querier, detail: EntityDetail, mode: EntityHeaderReadMode = 'authored'): Promise<EntityDetail> {
+  if (!HEADER_KINDS.has(detail.kind)) return detail;
+  const header = mode === 'resolved'
+    ? await headerOf(q, detail)
+    : await resolveAuthoredHeaderView(q, detail.spaceId, detail.id);
   return header ? { ...detail, header } : detail;
 }
 
@@ -1309,7 +1317,12 @@ export class W2EntitiesCommandsTrackingService {
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId)));
+    // Only `header` is read: the route took no query before, and it still
+    // ignores every other key. An unknown mode reads as the default and says
+    // so in `warnings` (instruct, don't refuse).
+    const { mode, warning } = headerReadMode(ctx.query.get('header'));
+    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
+    return warning ? { ...detail, warnings: [warning] } : detail;
   };
 
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {

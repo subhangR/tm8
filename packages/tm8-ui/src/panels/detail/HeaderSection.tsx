@@ -28,8 +28,10 @@ import { DisabledAction, type UnavailableReason } from '../honesty/DisabledWithR
  * THIS entity.
  *
  * WHAT A READ CARRIES. `entities.get` carries `header` ONLY when one is
- * authored (I4's rule); otherwise launches see a native/derived summary that no
- * read returns yet, so this section says so rather than inventing one.
+ * authored (I4's rule), so default reads stay byte-identical. With none, this
+ * section asks the opt-in `header=resolved` read (`commands.resolvedHeader`)
+ * for the fallback launches read, and shows it labelled with its source
+ * (`derived`). A host without that read gets the plain sentence.
  *
  * ITS OWN VERSION. `expectedVersion` is `header.version` (0 = none yet), never
  * the entity's, and a write never moves the entity's version — so no
@@ -72,6 +74,30 @@ export function HeaderSection({
   const [busy, setBusy] = useState<'save' | 'clear' | 'mark' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // THE DERIVED PREVIEW (I9a follow-up). With no authored header, ask the
+  // opt-in `header=resolved` read what launches fall back to. Only a version-0
+  // answer is a fallback: a version > 0 means this detail is behind an
+  // authored header, and that is the detail's to show, not this preview's.
+  const readResolved = commands?.resolvedHeader;
+  const hasAuthored = authored !== undefined;
+  const [fallback, setFallback] = useState<{ id: string; header: EntityHeaderView | undefined } | null>(null);
+  useEffect(() => {
+    if (hasAuthored || !readResolved) return;
+    let live = true;
+    const id = detail.id;
+    readResolved(id).then(
+      (h) => { if (live) setFallback({ id, header: h && h.version === 0 ? h : undefined }); },
+      // A failed preview is not an error to report: the sentence below is
+      // still true, it just cannot quote the text.
+      () => { if (live) setFallback({ id, header: undefined }); },
+    );
+    return () => { live = false; };
+  }, [hasAuthored, readResolved, detail.id, detail.version]);
+  const derived = !authored && fallback?.id === detail.id && fallback.header
+    && (fallback.header.whenToUse !== null || fallback.header.summary !== null)
+    ? fallback.header
+    : undefined;
 
   // A different entity in the same panel instance starts clean.
   useEffect(() => {
@@ -125,8 +151,8 @@ export function HeaderSection({
 
   const badges = (
     <div className="pn-header__badges">
-      <span className="pn-header__badge" data-source={authored ? 'authored' : 'none'} data-testid="header-source">
-        {authored ? 'authored' : 'not authored'}
+      <span className="pn-header__badge" data-source={authored ? 'authored' : derived ? derived.source : 'none'} data-testid="header-source">
+        {authored ? 'authored' : derived ? derived.source : 'not authored'}
       </span>
       {stale ? (
         <span className="pn-header__badge pn-header__badge--stale" data-testid="header-stale" title="Mark current re-pins it to the body as it is now">
@@ -199,6 +225,16 @@ export function HeaderSection({
             </div>
           ) : null}
         </dl>
+      ) : derived ? (
+        <>
+          <p className="pn-launch__note" data-testid="header-none">
+            {`No authored header: launches read this ${derived.source} one.`}
+          </p>
+          <dl className="pn-header__view pn-header__view--derived" data-testid="header-derived">
+            <HeaderField label="When to open" value={derived.whenToUse} testId="header-derived-when" />
+            <HeaderField label="What it holds" value={derived.summary} testId="header-derived-summary" />
+          </dl>
+        </>
       ) : (
         <p className="pn-launch__note" data-testid="header-none">
           No header: later launches see its derived summary.

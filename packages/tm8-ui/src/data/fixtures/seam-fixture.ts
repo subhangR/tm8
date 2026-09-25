@@ -150,6 +150,7 @@ import {
   type SelectionHeaderKind,
   type SetEntityHeaderInput,
   type ResultWarning,
+  SELECTION_HEADER_KINDS,
 } from '@tm8/contract';
 import type {
   ConnectionState,
@@ -1854,11 +1855,12 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /* At the node the fallback is the resolved native/derived header, version 0.
-     The fixture has no resolver, so it answers the derived shape, empty. */
+     The fixture has no resolver; its derived summary is the row's excerpt,
+     which is what a doc's or task's derived header is built from. */
   function fallbackHeaderOf(s: EntitySummary): EntityHeaderView {
     return {
       entityId: s.id, kind: s.kind as SelectionHeaderKind, name: s.title,
-      whenToUse: null, summary: null, keywords: [], source: 'derived', stale: false,
+      whenToUse: null, summary: s.excerpt?.trim() || null, keywords: [], source: 'derived', stale: false,
       bytes: null, loadPointer: `tm8 entity get ${s.id}`, version: 0, pinnedVersion: null,
     };
   }
@@ -3525,6 +3527,11 @@ export function createFixtureSeam(): FixtureSeam {
           ...(header ? { header } : {}),
           ...(warnings.length > 0 ? { warnings } : {}),
         };
+      },
+      async resolvedHeader(id): Promise<EntityHeaderView | undefined> {
+        const s = requireSummary(id);
+        if (!(SELECTION_HEADER_KINDS as readonly string[]).includes(s.kind)) return undefined;
+        return clone(headerViewOf(s) ?? fallbackHeaderOf(s));
       },
       async clearEntityHeader(id, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
         const s = requireSummary(id);
