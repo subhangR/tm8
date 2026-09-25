@@ -148,6 +148,11 @@ while (Date.now() - t0 < TIMEOUT_MS) {
     ended = status;
     break;
   }
+  // Idle with no transcript is the trust-prompt hang, not a finished lane.
+  if (status === 'idle' && sawRunning && !(() => { try { return worktree && transcriptFor(worktree, nativeId); } catch { return null; } })()) {
+    idleSince = null;
+    continue;
+  }
   if (status === 'idle' && sawRunning) {
     idleSince ??= Date.now();
     if (Date.now() - idleSince >= IDLE_SECONDS * 1000) {
