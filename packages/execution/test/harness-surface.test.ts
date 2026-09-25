@@ -389,6 +389,15 @@ describe('laneSkillPlan', () => {
     expect(LANE_SKILLS_ALWAYS_ON).toEqual(['code-review', 'security-review', 'simplify', 'workflow-authoring']);
   });
 
+  it('an equipped native skill tm8 does not describe is named nowhere: not off, not name-only', () => {
+    const plan = laneSkillPlan(home, [{ level: 'user', loadPointer: '/graphify', described: false }]);
+    expect(plan.settings).not.toHaveProperty('graphify');
+    expect(plan.record.off.map((o) => o.name)).not.toContain('graphify');
+    expect(plan.record.nameOnly).toEqual([]);
+    // Its unequipped neighbours are still off.
+    expect(plan.settings.astro).toBe('off');
+  });
+
   it('with nothing read, is exactly the bundled trim plus the Chrome record', () => {
     const plan = laneSkillPlan([], []);
     expect(plan.settings).toEqual(laneSkillOverrides());

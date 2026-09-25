@@ -143,7 +143,11 @@ const SYNCED_QUALIFIER = 'anthropic-skills:';
  *     from the index: off (`user-unselected` / `synced-unselected`);
  *   - equipped skills the harness loads natively: `name-only`
  *     (`native-name-only`) — tm8's index already describes them, and
- *     `/name` and a model's Skill call still load them (probed);
+ *     `/name` and a model's Skill call still load them (probed). One whose
+ *     description tm8's prompt does NOT carry (`described: false`: an empty
+ *     description, or a context-index header the byte budget dropped) is
+ *     named nowhere and stays fully listed, so its description survives in
+ *     one place;
  *   - `--no-chrome`, which is argv, is recorded here as `chrome` so every
  *     trim is in one list.
  * Project skills nobody equipped are the repo's choice and stay listed.
@@ -151,19 +155,20 @@ const SYNCED_QUALIFIER = 'anthropic-skills:';
  */
 export function laneSkillPlan(
   homeSkills: readonly ConfigHomeSkill[],
-  native: readonly { level: string; loadPointer: string }[],
+  native: readonly { level: string; loadPointer: string; described?: boolean }[],
 ): LaneSkillPlan {
   const kept = new Set(LANE_SKILLS_ALWAYS_ON);
-  const nameOnly = new Set(
-    native
-      .filter((skill) => NAME_ONLY_LEVELS.has(skill.level) && skill.loadPointer.startsWith('/'))
-      .map((skill) => {
-        const key = skill.loadPointer.slice(1);
-        return skill.level === 'synced' && key.startsWith(SYNCED_QUALIFIER) ? key.slice(SYNCED_QUALIFIER.length) : key;
-      })
-      // A command name never holds a '/'; a path-shaped pointer is not one.
-      .filter((key) => key !== '' && !key.includes('/') && !kept.has(key)),
-  );
+  const nameOnly = new Set<string>();
+  for (const skill of native) {
+    if (!NAME_ONLY_LEVELS.has(skill.level) || !skill.loadPointer.startsWith('/')) continue;
+    const pointer = skill.loadPointer.slice(1);
+    const key = skill.level === 'synced' && pointer.startsWith(SYNCED_QUALIFIER) ? pointer.slice(SYNCED_QUALIFIER.length) : pointer;
+    // A command name never holds a '/'; a path-shaped pointer is not one.
+    if (key === '' || key.includes('/') || kept.has(key)) continue;
+    // Equipped but undescribed in tm8's prompt: keep the harness's own listing.
+    if (skill.described === false) kept.add(key);
+    else nameOnly.add(key);
+  }
   const off = new Map<string, SkillOverrideSource>();
   for (const name of LANE_BUNDLED_SKILLS_OFF) if (!nameOnly.has(name)) off.set(name, 'builtin-trim');
   for (const { key, level } of homeSkills) {

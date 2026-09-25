@@ -1778,6 +1778,27 @@ export interface ComposeManifestInput {
  * contain a credential value` — and the alternative to refusing would have
  * been persisting the key. See secret-redaction.ts for the measured incident.
  */
+/**
+ * The skills whose description the composed prompt actually renders: the
+ * `<skills>` index carries every kept skill's description; the
+ * `<context_index>` carries an entry's header text unless the budget dropped
+ * it (`headerDropped`). Empty text is no description.
+ */
+function describedSkillIds(manifest: Tm8Manifest): Set<string> {
+  const out = new Set<string>();
+  if (manifest.contextIndex) {
+    for (const group of manifest.contextIndex.groups) {
+      if (group.name !== 'skills') continue;
+      for (const entry of group.entries) {
+        if (!entry.headerDropped && (entry.header?.whenToUse?.trim() || entry.header?.summary?.trim())) out.add(entry.id);
+      }
+    }
+  } else {
+    for (const skill of manifest.skills) if (skill.entityId && skill.description?.trim()) out.add(skill.entityId);
+  }
+  return out;
+}
+
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
   const coordinatorSessionId = resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
@@ -1988,8 +2009,16 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     ? [...input.replayEffectivePlugins].sort()
     : equippedClaudePlugins(manifest.skills.flatMap(skill => keptRows.get(skill.entityId) ?? []));
   // The same post-trim skills decide `skillOverrides`, argv and record alike.
+  // A native skill goes `name-only` only when tm8's prompt carries its
+  // description: with the context index on, the budget can drop an entry's
+  // header while keeping its line, and name-only would then leave the skill
+  // described nowhere.
+  const described = describedSkillIds(manifest);
   const skillPlan = input.harness && launch.harnessSurface !== 'inherit'
-    ? laneSkillPlan(input.harness.skills ?? [], manifest.effectiveSkills?.native ?? [])
+    ? laneSkillPlan(
+      input.harness.skills ?? [],
+      (manifest.effectiveSkills?.native ?? []).map(skill => ({ ...skill, described: described.has(skill.entityId) })),
+    )
     : null;
   if (typeof command !== 'string') {
     manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins, skillPlan?.settings));
