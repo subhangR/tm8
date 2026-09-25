@@ -2,7 +2,7 @@
 // Task success for one I10a lane (§7.2): the deliverable is right, it was
 // committed, and the lane closed out in the graph.
 //
-//   TM8_CLI=… node success.mjs --task-key fee --worktree <path> --base <sha> \
+//   TM8_CLI=<dev-node wrapper> node success.mjs --task-key fee --worktree <path> --base <sha> \
 //     --task-id <id> --actor <teammate-id> --since <iso> [--until <iso>]
 //
 // The deliverable is judged at the lane's COMMITTED head (git archive), never
@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { devCli } from './dev-cli.mjs';
 import { TASKS } from './fixture-data.mjs';
 
 const arg = (name) => {
@@ -20,8 +21,10 @@ const arg = (name) => {
   return i > 0 ? process.argv[i + 1] : undefined;
 };
 
-export async function laneSuccess({ taskKey, worktree, base, taskId, actor, since, until, cli }) {
+export async function laneSuccess({ taskKey, worktree, base, taskId, actor, since, until, tm8 }) {
   const task = TASKS.find((t) => t.key === taskKey);
+  // A task with no hidden checks would pass `passed === total` at 0 === 0.
+  if (!task?.check?.length) throw new Error(`task ${taskKey}: no hidden checks in fixture-data.mjs`);
   const git = (...a) => execFileSync('git', ['-C', worktree, ...a], { encoding: 'utf8' }).trim();
   const out = { committed: false, commits: 0, checks: { passed: 0, total: task.check.length, failures: [] }, testsPass: false, closeout: false, ticked: false };
 
@@ -60,16 +63,18 @@ export async function laneSuccess({ taskKey, worktree, base, taskId, actor, sinc
     }
   }
 
-  if (cli) {
-    const tm8 = (...a) => JSON.parse(execFileSync(cli, [...a, '--format', 'json'], { encoding: 'utf8', maxBuffer: 64 << 20 }));
+  if (tm8) {
     const list = tm8('message', 'list', '--for', taskId, '--order', 'newest', '--limit', '50');
-    const items = list.items ?? list.page?.items ?? [];
+    const items = list.items ?? list.page?.items;
+    if (!Array.isArray(items)) throw new Error(`message list for ${taskId}: no items array (${Object.keys(list)})`);
     const t0 = Date.parse(since);
     const t1 = until ? Date.parse(until) : Infinity;
+    if (!Number.isFinite(t0)) throw new Error(`--since ${since} is not a date`);
     out.closeout = items.some((m) => {
       // A listed message carries no timestamp; its uuidv7 id does (first 48 bits, ms).
       const at = parseInt(m.id.replace(/-/g, '').slice(0, 12), 16);
-      const author = m.createdBy?.id ?? m.author?.id ?? m.state?.author?.id;
+      // `createdBy` is the display NAME on a listed message; the id is state.author.id.
+      const author = m.state?.author?.id ?? m.createdBy?.id ?? m.author?.id;
       return author === actor && at >= t0 && at <= t1;
     });
     const got = tm8('entity', 'get', taskId, '--full');
@@ -91,7 +96,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     actor: arg('actor'),
     since: arg('since'),
     until: arg('until'),
-    cli: process.env.TM8_CLI,
+    tm8: process.env.TM8_CLI ? devCli() : null,
   });
   process.stdout.write(JSON.stringify(row) + '\n');
 }

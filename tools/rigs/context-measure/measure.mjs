@@ -22,13 +22,25 @@
 //     API response.
 //
 // Reads (§7.2): a Bash `tm8 entity context|get <id>`, `tm8 file download
-// <id>`, `tm8 skill show <id>` or a Skill tool call is a READ. A read is:
-//   - an EXPAND when its id is an entry of manifest.context.entries;
+// <id>`, `tm8 skill show <id>` is a READ, and so is opening an equipped skill
+// the way the prompt says to load it: a Skill tool call on its name (native),
+// or a Read / cat of its SKILL.md (path pointer; index off lists skills by
+// path, so without this the off arm under-counts its skill reads). A read is:
+//   - an EXPAND when its id is an entry of manifest.context.entries.
+//     `expand.rate` = distinct opened ÷ entries (§7.2's denominator);
+//     `expand.rateOfCollapsed` = ÷ entries not inlined at spawn;
 //   - a MISS when its id is in manifest.context.dropped, or is a linked
-//     entity (--linked) that the index did not carry at all. `missLevels`
-//     says which drop level (header / entry / body / not-selected) it hit;
+//     entity (--linked) that the index did not carry at all. `miss.ids`
+//     says which drop level (`<reason>:<level>`, or absent-from-index) it hit;
+//     a header-level miss is ALSO an expand (the entry was listed);
 //   - a BLIND FETCH when it read a collapsed entry larger than 20 KB without
-//     paging (`--cursor` / `--limit` / `--sections`); its result bytes count.
+//     paging (`--offset` / `--cursor` / `--limit` / `--sections`); the tool
+//     call's result bytes count, once per call.
+//
+// Throws, rather than returning a row of nulls, when the manifest has no
+// context audit, the transcript has no first request, or the manifest's
+// entries and dropped disagree: medians silently drop nulls, so a lane that
+// measured nothing would otherwise shrink n and still look fine.
 
 import { readFileSync } from 'node:fs';
 
@@ -38,10 +50,24 @@ const arg = (name) => {
 };
 
 export function measureLane({ manifest, transcriptLines, linked = [] }) {
-  const ctx = manifest.context ?? {};
-  const entries = new Map((ctx.entries ?? []).map((e) => [e.entityId, e]));
+  const ctx = manifest.context;
+  if (!ctx || !Array.isArray(ctx.entries)) throw new Error(`manifest ${manifest.sessionId}: no context audit (manifest.context.entries)`);
+  const entries = new Map(ctx.entries.map((e) => [e.entityId, e]));
   const dropped = new Map();
   for (const d of ctx.dropped ?? []) if (!dropped.has(d.entityId)) dropped.set(d.entityId, d);
+  // The two lists must agree, or the header/entry miss split is meaningless:
+  // a header-level drop is a listed entry whose header was trimmed, anything
+  // else dropped was never listed.
+  for (const d of ctx.dropped ?? []) {
+    const e = entries.get(d.entityId);
+    if (d.level === 'header' ? e?.state !== 'header-dropped' : e) {
+      throw new Error(`manifest ${manifest.sessionId}: dropped ${d.entityId} (${d.reason}:${d.level ?? '-'}) vs entry state ${e?.state ?? 'absent'}`);
+    }
+  }
+  for (const e of entries.values()) {
+    if (e.state === 'header-dropped' && dropped.get(e.entityId)?.level !== 'header') throw new Error(`manifest ${manifest.sessionId}: entry ${e.entityId} header-dropped with no header-level drop`);
+  }
+  const skills = skillLookup(manifest.skills ?? []);
   const linkedSet = new Set(linked);
 
   const records = [];
@@ -53,6 +79,7 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
       /* a torn last line while the lane still writes */
     }
   }
+  if (!records.length) throw new Error(`manifest ${manifest.sessionId}: transcript has no records`);
 
   const utf8 = (s) => Buffer.byteLength(s ?? '', 'utf8');
   const row = {
@@ -114,10 +141,11 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
         const use = toolUses.get(block.tool_use_id);
         if (!use) continue;
         const resultBytes = utf8(typeof block.content === 'string' ? block.content : JSON.stringify(block.content));
-        for (const read of readsOf(use)) row.reads.push({ ...read, resultBytes });
+        for (const read of readsOf(use, skills)) row.reads.push({ ...read, toolUseId: use.id, resultBytes });
       }
     }
   }
+  if (!row.system || row.firstRequestTokens === null) throw new Error(`manifest ${manifest.sessionId}: transcript has no ${row.system ? 'API response' : 'prompt_snapshot'}`);
   row.requests = seenMsg.size;
   for (const u of seenMsg.values()) {
     row.usage.input += u.input_tokens ?? 0;
@@ -133,6 +161,7 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
   const expanded = new Set();
   const missed = new Map();
   let blindFetchBytes = 0;
+  const blindCalls = new Set();
   for (const read of row.reads) {
     const entry = read.id ? entries.get(read.id) : null;
     const drop = read.id ? dropped.get(read.id) : null;
@@ -143,13 +172,20 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
             : 'other';
     if (read.class === 'expand' || (entry && read.class === 'miss')) expanded.add(read.id);
     if (read.class === 'miss') missed.set(read.id, drop ? `${drop.reason}:${drop.level ?? '-'}` : entry ? 'byte-budget:header' : 'absent-from-index');
-    if (entry && entry.state !== 'expanded' && (entry.bytes ?? 0) > 20_000 && !read.paged) blindFetchBytes += read.resultBytes;
+    // One result per tool call: a Bash line with two reads counts its bytes once.
+    if (entry && entry.state !== 'expanded' && (entry.bytes ?? 0) > 20_000 && !read.paged && !blindCalls.has(read.toolUseId)) {
+      blindCalls.add(read.toolUseId);
+      blindFetchBytes += read.resultBytes;
+    }
   }
   const collapsed = [...entries.values()].filter((e) => e.state !== 'expanded');
+  const openedCollapsed = [...expanded].filter((id) => entries.get(id)?.state !== 'expanded').length;
   row.expand = {
     opened: expanded.size,
+    entries: entries.size,
     collapsedEntries: collapsed.length,
-    rate: collapsed.length ? expanded.size / collapsed.length : null,
+    rate: entries.size ? expanded.size / entries.size : null,
+    rateOfCollapsed: collapsed.length ? openedCollapsed / collapsed.length : null,
     byGroup: countBy([...expanded].map((id) => entries.get(id)).filter(Boolean), (e) => e.group),
   };
   row.miss = { count: missed.size, ids: Object.fromEntries(missed), launchMissed: missed.size > 0 };
@@ -168,25 +204,60 @@ function attachmentText(a) {
 }
 
 const ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+// The verb, then the rest of that command up to a separator; the id is the
+// first uuid in it, so `tm8 entity get --full <id>` is a read too.
 const READ_RES = [
-  [new RegExp(`tm8\\s+entity\\s+(context|get)\\s+(${ID})([^|;&\\n]*)`, 'g'), 'entity'],
-  [new RegExp(`tm8\\s+file\\s+download\\s+(${ID})()([^|;&\\n]*)`, 'g'), 'file'],
-  [new RegExp(`tm8\\s+skill\\s+show\\s+(${ID})()([^|;&\\n]*)`, 'g'), 'skill'],
+  [/tm8\s+entity\s+(context|get)\b([^|;&\n]*)/g, 'entity'],
+  [/tm8\s+file\s+(download)\b([^|;&\n]*)/g, 'file'],
+  [/tm8\s+skill\s+(show)\b([^|;&\n]*)/g, 'skill'],
 ];
+const PAGED = /--offset|--cursor|--limit|--sections/;
+
+/** name -> skill id, and SKILL.md path -> skill id, from manifest.skills. */
+function skillLookup(skills) {
+  const byName = new Map();
+  const byPath = new Map();
+  for (const s of skills) {
+    if (!s.entityId) continue;
+    if (s.name) byName.set(s.name, s.entityId);
+    for (const p of [s.sourcePath, s.loadPointer]) if (p && p.endsWith('SKILL.md')) byPath.set(p, s.entityId);
+  }
+  return { byName, byPath };
+}
+
+/** The equipped skill a path names: exact pointer, or `.claude/skills/<name>/SKILL.md` in the lane's worktree. */
+function skillByPath(path, skills) {
+  if (skills.byPath.has(path)) return skills.byPath.get(path);
+  const m = /(?:^|\/)\.claude\/skills\/([^/]+)\/SKILL\.md$/.exec(path);
+  return m ? (skills.byName.get(m[1]) ?? null) : null;
+}
 
 /** Every read one tool call performs (a Bash line can hold several). */
-export function readsOf(use) {
-  if (use.name === 'Skill') return [{ via: 'Skill', id: null, skill: use.input?.skill ?? null, paged: false }];
+export function readsOf(use, skills = skillLookup([])) {
+  if (use.name === 'Skill') {
+    const name = String(use.input?.skill ?? '');
+    const id = skills.byName.get(name) ?? skills.byName.get(name.split(':').pop()) ?? null;
+    return [{ via: 'Skill', id, skill: name || null, paged: false, sections: null }];
+  }
+  if (use.name === 'Read') {
+    const id = skillByPath(String(use.input?.file_path ?? ''), skills);
+    return id ? [{ via: 'Read', id, paged: false, sections: null }] : [];
+  }
   if (use.name !== 'Bash') return [];
   const cmd = String(use.input?.command ?? '');
   const out = [];
   for (const [re, via] of READ_RES) {
     for (const m of cmd.matchAll(re)) {
-      const id = via === 'entity' ? m[2] : m[1];
-      const rest = via === 'entity' ? m[3] : m[3];
+      const rest = m[2];
+      const id = new RegExp(ID).exec(rest)?.[0];
+      if (!id) continue;
       const sections = /--sections\s+(\S+)/.exec(rest)?.[1] ?? null;
-      out.push({ via: via === 'entity' ? `entity ${m[1]}` : via, id, paged: /--cursor|--limit|--sections/.test(rest), sections });
+      out.push({ via: via === 'entity' ? `entity ${m[1]}` : via, id, paged: PAGED.test(rest), sections });
     }
+  }
+  for (const m of cmd.matchAll(/(?:cat|head|tail|sed|less|bat)\b[^|;&\n]*?(\S*SKILL\.md)/g)) {
+    const id = skillByPath(m[1].replace(/^['"]|['"]$/g, ''), skills);
+    if (id) out.push({ via: 'shell', id, paged: false, sections: null });
   }
   return out;
 }

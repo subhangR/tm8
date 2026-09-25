@@ -11,14 +11,16 @@ sessions (7778).** Arms differ by node env (`TM8_HARNESS_SURFACE`,
 
 | File | What it does |
 |---|---|
+| `dev-cli.mjs` | The one door to the dev node: requires `TM8_CLI`, refuses the ambient `tm8`, and strips every `TM8_*` var from the child env, so a wrapper without `env -i` fails instead of writing to the live node. |
 | `fixture-data.mjs` | Fixture content: 7 tasks, each with ONE fact deep in one linked doc (past the derived header's reach), a stress task with 60 links, 10 skills, 8 memories. |
 | `fixture.mjs` | Creates the fixture on the dev node (skills in the fixture repo, memories, docs, file, tasks and their edges). `REUSE`/`ONLY` recreate single tasks. |
 | `replicate.mjs` | Copies real tasks and the links their launch recorded onto the dev node. Read-only on the source. |
 | `headers.mjs` | Writes authored headers on the fixture docs (the "+index authored" pass). |
 | `run-lane.mjs` | One lane: reset the task, spawn, wait for idle (or the first response with `--launch-only`), terminate, then measure and judge. Records `uptime` and the lane's own `tm8` binary. |
-| `measure.mjs` | Per-lane bytes, first-request tokens, and expand, miss and blind-fetch counts. |
+| `measure.mjs` | Per-lane bytes, first-request tokens, and expand, miss and blind-fetch counts. Throws on a lane it cannot measure (no context audit, no first request, entries/dropped disagree). |
+| `measure.test.mjs` | The classifier on a synthetic lane: `node --test tools/rigs/context-measure/*.test.mjs`. |
 | `success.mjs` | Hidden checks at the committed head, `npm test`, closeout message, criteria ticked. |
-| `summarize.mjs` | Per-arm median [min–max] tables. Misses are split into entry-level and header-level. |
+| `summarize.mjs` | Per-arm median [min–max] tables. Misses are split into entry-level and header-level. Exits 1 on no rows, an arm with no rows, or any unmeasured row. |
 | `derived-cut.mjs` | Offline: what a shorter derived header cut would save in the index. |
 | `results/` | Raw per-lane rows (JSONL), one file per run. |
 
@@ -51,14 +53,18 @@ node summarize.mjs results.jsonl --arms main,lean,index --set fixture|replica
 
 ## Definitions (§7.2)
 
-- **Expand**: a Bash `tm8 entity context|get <id>`, `tm8 file download <id>`, `tm8 skill show <id>` or a Skill call on an entry of `manifest.context.entries`.
+- **Read**: a Bash `tm8 entity context|get …<id>`, `tm8 file download …<id>` or `tm8 skill show …<id>` (flags may precede the id), or opening an equipped skill the way the prompt says to load it: a Skill call on its name (native) or a Read / `cat` of its `SKILL.md` (path pointer, which is how index-off lists skills). Skills map to ids through `manifest.skills`.
+- **Expand**: a read of an entry of `manifest.context.entries`. **Expand rate** = distinct entries opened ÷ entries (§7.2); `rateOfCollapsed` divides by the entries not inlined at spawn. A header-level miss is also an expand.
 - **Miss**: a read of an id in `manifest.context.dropped`, or of a linked entity the index did not carry. Split:
   - ENTRY-level: the id was not in the prompt at all (`count-cap`, `byte-budget:entry`, not read at spawn).
   - HEADER-level: the entry was listed, but the 8 KiB cap trimmed its header.
-- **Blind fetch**: an unpaged read of a collapsed entry over 20 KB.
+- **Blind fetch**: an unpaged read (no `--offset`, `--cursor`, `--limit` or `--sections`) of a collapsed entry over 20 KB. Its tool call's result bytes count once, however many reads the call held.
 - **Success**: the hidden checks pass at the lane's committed head, a closeout message was posted, and every criterion is ticked.
 
 ## Known limits
+
+- §7.2 also splits expand by `source` (authored/derived) and `jev.level`. `manifest.context.entries` records neither, so only the by-group split is here.
+- A fixture built before `linkedIds` existed counts an absent-from-index miss only for the needle and file (and the stress pool). The 4 distractors of a normal task always fit the index, so this cannot hide a miss there.
 
 - About 12k of the harness tokens that `inherit` adds are not in the transcript (tool schemas). The first-request token count includes them, but the per-attachment chars cannot itemize them.
 - The fixture A/B is a small N. It stands in for §7.2's week of live traffic, because the switch may not be flipped on a live node.

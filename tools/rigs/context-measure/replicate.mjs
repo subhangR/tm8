@@ -16,19 +16,19 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { devCli } from './dev-cli.mjs';
 
 const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : undefined;
 };
 const SRC = process.env.SRC_CLI ?? 'tm8';
-const DST = process.env.TM8_CLI;
+const dst = devCli(); // refuses the ambient tm8, so SRC and the write side can never be one node
 const dir = arg('manifests');
 const ids = process.argv.slice(2).filter((a) => /^[0-9a-f]{8}-/.test(a));
 
 const run = (cli, args) => JSON.parse(execFileSync(cli, [...args, '--format', 'json'], { encoding: 'utf8', maxBuffer: 64 << 20 }));
 const src = (id) => run(SRC, ['entity', 'get', id, '--full']);
-const dst = (...a) => run(DST, a);
 const idOf = (r) => r.id ?? r.entity?.id;
 
 const manifests = readdirSync(dir)

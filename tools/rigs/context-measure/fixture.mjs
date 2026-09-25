@@ -22,18 +22,14 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { devCli } from './dev-cli.mjs';
 import { TASKS, STRESS_LINKS, STRESS_NEEDLE_AT, SKILLS, MEMORIES, SAMPLE_CSV, needleDoc, distractorDocs } from './fixture-data.mjs';
 
-const CLI = process.env.TM8_CLI;
 const PROJECT = process.env.PROJECT_ID;
 const REPO = process.env.REPO;
 const out = process.argv[process.argv.indexOf('--out') + 1] || 'fixture.json';
-if (!CLI || !PROJECT || !REPO) throw new Error('set TM8_CLI, PROJECT_ID and REPO');
-
-function tm8(...args) {
-  const raw = execFileSync(CLI, [...args, '--format', 'json'], { encoding: 'utf8', maxBuffer: 64 << 20 });
-  return JSON.parse(raw);
-}
+if (!PROJECT || !REPO) throw new Error('set TM8_CLI, PROJECT_ID and REPO');
+const tm8 = devCli();
 const idOf = (r) => r.id ?? r.entity?.id ?? r.data?.id;
 
 function createDoc(doc) {
@@ -90,7 +86,9 @@ for (const [i, task] of TASKS.entries()) {
   const fileId = idOf(tm8('file', 'upload', csvPath, '--name', 'sample-import.csv', '--mime', 'text/csv', '--attach-to', taskId));
   for (const skillId of Object.values(fx.skills)) tm8('edge', 'create', taskId, 'equips', skillId);
   for (const memoryId of fx.memories) tm8('edge', 'create', taskId, 'remembers', memoryId);
-  fx.tasks[task.key] = { id: taskId, needleId, fileId, fn: task.fn, links: distractors.length + 1, needleAt: at + 1, stress: !!task.stress };
+  // linkedIds: everything the task links, so run-lane can count a read of any
+  // of them the index did not carry as a miss (not only the needle's).
+  fx.tasks[task.key] = { id: taskId, needleId, fileId, fn: task.fn, links: distractors.length + 1, linkedIds: [...distractors.map((d) => d.id), needleId, fileId], needleAt: at + 1, stress: !!task.stress };
   console.error(`task ${task.key} ${taskId} (${distractors.length + 1} docs)`);
 }
 

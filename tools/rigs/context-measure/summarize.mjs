@@ -19,6 +19,18 @@ const set = arg('set') ?? 'all';
 const arms = arg('arms')?.split(',') ?? [...new Set(rows.map((r) => r.arm))];
 const inSet = (r) => set === 'all' || (set === 'replica' ? r.taskKey.startsWith('replica-') : !r.taskKey.startsWith('replica-'));
 
+// A table over an empty or shrunken set must not print: every requested arm
+// needs rows, and every row must have been measured (run-lane.mjs keeps an
+// unmeasured lane's row with `measureError` rather than dropping it).
+const refuse = (why) => {
+  console.error(`summarize: ${why}`);
+  process.exit(1);
+};
+if (!rows.length) refuse(`${file} has no rows`);
+for (const a of arms) if (!rows.some((r) => r.arm === a && inSet(r))) refuse(`arm ${a} has no rows in set ${set}`);
+const unmeasured = rows.filter((r) => arms.includes(r.arm) && inSet(r) && (r.measureError || typeof r.firstRequestTokens !== 'number'));
+if (unmeasured.length) refuse(`${unmeasured.length} row(s) not measured: ${unmeasured.map((r) => `${r.arm}/${r.taskKey}#${r.rep} ${r.measureError ?? 'no firstRequestTokens'}`).join('; ')}`);
+
 export function stats(xs) {
   const v = xs.filter((x) => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
   if (!v.length) return null;
@@ -42,6 +54,11 @@ const COLS = [
   ['agent_listing_delta chars', (r) => r.attachments?.agent_listing_delta ?? 0],
   ['manifest.context.index.bytes', (r) => r.manifestContextIndexBytes],
 ];
+// Rows written before expand.entries existed hold opened / collapsed in `rate`.
+const legacy = (r) => r.expand && r.expand.entries === undefined;
+const rateOfEntries = (r) => (legacy(r) ? (r.entries?.total ? r.expand.opened / r.entries.total : null) : r.expand?.rate ?? null);
+const rateOfCollapsed = (r) => (legacy(r) ? r.expand.rate : r.expand?.rateOfCollapsed ?? null);
+const pctOf = (x) => (x === null || x === undefined ? null : x * 100);
 const FULL = [
   ['API requests', (r) => r.requests],
   ['wall seconds', (r) => r.wallSeconds],
@@ -49,7 +66,8 @@ const FULL = [
   ['resident tm8 bytes', (r) => r.residentTm8Bytes],
   ['total input-side tokens', (r) => (r.usage ? r.usage.input + r.usage.cacheCreation + r.usage.cacheRead : null)],
   ['output tokens', (r) => r.usage?.output],
-  ['expand rate % (opened / collapsed)', (r) => (r.expand?.rate ?? null) === null ? null : r.expand.rate * 100],
+  ['expand rate % (opened / entries, §7.2)', (r) => pctOf(rateOfEntries(r))],
+  ['expand rate % (opened / collapsed)', (r) => pctOf(rateOfCollapsed(r))],
   ['blind-fetch bytes', (r) => r.blindFetchBytes],
 ];
 

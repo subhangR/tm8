@@ -10,8 +10,8 @@
 // `merchant` needle (headerCarriesFact), whose summary IS the rule: that one
 // task shows what a header alone is worth.
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { devCli } from './dev-cli.mjs';
 import { TASKS } from './fixture-data.mjs';
 
 const arg = (name) => {
@@ -19,7 +19,7 @@ const arg = (name) => {
   return i > 0 ? process.argv[i + 1] : undefined;
 };
 const fx = JSON.parse(readFileSync(arg('fixture'), 'utf8'));
-const tm8 = (...a) => JSON.parse(execFileSync(process.env.TM8_CLI, [...a, '--format', 'json'], { encoding: 'utf8' }));
+const tm8 = devCli();
 
 let n = 0;
 for (const task of TASKS) {

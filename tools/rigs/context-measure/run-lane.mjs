@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { devCli } from './dev-cli.mjs';
 import { measureLane } from './measure.mjs';
 import { laneSuccess } from './success.mjs';
 
@@ -24,17 +25,17 @@ const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : undefined;
 };
-const CLI = process.env.TM8_CLI;
+const tm8 = devCli();
 const fixture = JSON.parse(readFileSync(arg('fixture'), 'utf8'));
 const taskKey = arg('task-key');
 const task = fixture.tasks[taskKey];
+if (!task) throw new Error(`task key ${taskKey} is not in ${arg('fixture')}`);
 const launchOnly = process.argv.includes('--launch-only');
 const IDLE_SECONDS = 45;
 const TIMEOUT_MS = Number(arg('timeout-min') ?? 25) * 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 << 20, ...opts }).trim();
-const tm8 = (...a) => JSON.parse(sh(CLI, [...a, '--format', 'json']));
 const uptime = () => sh('uptime', []).replace(/.*load averages?:\s*/, '');
 
 function resetTask(id) {
@@ -80,8 +81,11 @@ function transcriptFor(worktree, nativeId) {
   const dir = join(homedir(), '.claude', 'projects', slug);
   if (!existsSync(dir)) return null;
   const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
-  const pick = nativeId && files.includes(`${nativeId}.jsonl`) ? `${nativeId}.jsonl` : files[0];
-  return pick ? join(dir, pick) : null;
+  if (nativeId && files.includes(`${nativeId}.jsonl`)) return join(dir, `${nativeId}.jsonl`);
+  // Without the native id, only an unambiguous directory is trusted: measuring
+  // the wrong session's transcript would be a plausible, wrong row.
+  if (files.length > 1) throw new Error(`${dir}: ${files.length} transcripts and no native session id to pick one`);
+  return files[0] ? join(dir, files[0]) : null;
 }
 
 const base = sh('git', ['-C', arg('repo'), 'rev-parse', 'main']);
@@ -148,23 +152,37 @@ await sleep(2_000);
 
 const manifest = JSON.parse(readFileSync(join(arg('data-dir'), 'manifests', `${sessionId}.json`), 'utf8'));
 const transcript = worktree && transcriptFor(worktree, nativeId);
+// Replicas carry their copied links; fixture tasks built before linkedIds
+// existed fall back to needle + file (+ the stress pool).
 const linked = Array.isArray(task.links)
   ? task.links.map((l) => l.copy)
-  : [task.needleId, task.fileId, ...(task.stress ? fixture.distractors.map((d) => d.id) : [])].filter(Boolean);
-const measured = transcript ? measureLane({ manifest, transcriptLines: readFileSync(transcript, 'utf8').split('\n'), linked }) : null;
-if (measured) {
+  : task.linkedIds ?? [task.needleId, task.fileId, ...(task.stress ? fixture.distractors.map((d) => d.id) : [])].filter(Boolean);
+let measured = null;
+let measureError = null;
+try {
+  if (!transcript) throw new Error(`no transcript for ${worktree} (native ${nativeId})`);
+  if (!linked.length) throw new Error(`task ${taskKey} has no linked ids, so no absent-from-index miss could be counted`);
+  measured = measureLane({ manifest, transcriptLines: readFileSync(transcript, 'utf8').split('\n'), linked });
   measured.needleOpened = task.needleId ? measured.reads.some((r) => r.id === task.needleId) : null;
   measured.needleMissed = task.needleId ? task.needleId in measured.miss.ids : null;
   delete measured.reads;
+} catch (e) {
+  measureError = String(e.message ?? e);
 }
 const success = launchOnly
   ? null
-  : await laneSuccess({ taskKey, worktree, base, taskId: task.id, actor: arg('teammate'), since: startedAt, until: new Date().toISOString(), cli: CLI });
+  : await laneSuccess({ taskKey, worktree, base, taskId: task.id, actor: arg('teammate'), since: startedAt, until: new Date().toISOString(), tm8 });
 
 const row = {
   arm: arg('arm'), taskKey, rep: Number(arg('rep')), sessionId, worktree, base, transcript,
   startedAt, endedAt, ended, wallSeconds: Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 1000),
-  uptimeStart, uptimeEnd, laneTm8: cli, ...measured, success,
+  uptimeStart, uptimeEnd, laneTm8: cli, ...measured, ...(measureError ? { measureError } : {}), success,
 };
+// The row is kept (the lane is spent), but summarize.mjs refuses a file that
+// holds one, and this exits non-zero so a loop stops here.
 appendFileSync(arg('out'), JSON.stringify(row) + '\n');
+if (measureError) {
+  console.error(`${arg('arm')} ${taskKey}#${arg('rep')} NOT MEASURED: ${measureError}`);
+  process.exitCode = 1;
+}
 console.error(`${arg('arm')} ${taskKey}#${arg('rep')} ${ended} ${row.wallSeconds}s first=${measured?.firstRequestTokens} tm8=${measured?.system?.tm8Bytes} ok=${success?.success}`);
