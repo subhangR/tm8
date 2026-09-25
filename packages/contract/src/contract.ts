@@ -129,7 +129,7 @@ export interface ActorSummary {
   via?: { sessionId: EntityId };
   /**
    * Present only when the membership behind this actor has ENDED (migration
-   * 230): a `member` who left or was removed, or a `team_member` whose owner
+   * 231): a `member` who left or was removed, or a `team_member` whose owner
    * did. The actor and everything they authored still render; the client adds
    * "(left)". Absent means active. Additive.
    */
@@ -4842,6 +4842,16 @@ export interface ExecutionSpawnInput extends CommandContext {
    * refused (`invalid_input`). Absent groups record `no-selection`.
    */
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /**
+   * This launch's override of the pinned profile's `contextBudgets` (design
+   * 01a0d348 §10 Q5.4, the launch sheet's meter): each key replaces the
+   * profile's (else the node default) for this session only. Lenient: budgets
+   * that cannot fit the prompt are recorded with a warning, never refused, and
+   * the launch trim still bounds the prompt. Recorded as
+   * `manifest.launch.contextBudgets` (resume replays it) and
+   * `manifest.context.budgets.launch`.
+   */
+  contextBudgets?: import('./context-budgets.js').ContextBudgets;
   /**
    * The Ask Jev run (`launch.suggest` `runId`) that informed this launch.
    * After a successful spawn the server links `jev_runs.session_id` and writes

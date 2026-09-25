@@ -1,5 +1,5 @@
 /**
- * Ending a membership, and turning an account off (migration 230, plan
+ * Ending a membership, and turning an account off (migration 231, plan
  * 01a0d9eb W1 / G6). A membership ends by TOMBSTONE: the member row, the
  * member entity and everything they authored stay, `members.status` becomes
  * `left` or `removed`, and every membership helper stops answering for it.

@@ -1,7 +1,7 @@
 /**
  * THE SEND RULE, PARSED BY I6's CONTRACT (design 01a0d348 §5.1–5.2, I9).
  *
- * The sibling tests pin the SHAPE `composeSelection` / `buildSpawnInput`
+ * The sibling tests pin the SHAPE `composeLaunchSelection` / `buildSpawnInput`
  * produce; this one hands every launch they build to the node's own
  * `ExecutionSpawnInputSchema`, so a shape the node refuses (a group named in
  * both `selection` and `selectionReasons`, `memoryIds` beside `selection`, a
@@ -12,7 +12,7 @@ import { ExecutionSpawnInputSchema, SPAWN_SELECTION_GROUP_LIMIT, type EntityId, 
 
 import { buildSpawnInput, defaultConfigFor, type LaunchConfig } from './launch';
 import {
-  composeSelection,
+  composeLaunchSelection,
   manualOutcome,
   toggleRow,
   type LaunchContextRow,
@@ -44,7 +44,7 @@ function launch(
   edits: Partial<Record<'memories' | 'skills' | 'references', LaunchGroupEdit>>,
   over: Partial<LaunchConfig> = {},
 ): ExecutionSpawnInput {
-  const fields = composeSelection({
+  const fields = composeLaunchSelection({
     memories: manualOutcome(MEMORIES, edits.memories ?? NONE),
     skills: manualOutcome(SKILLS, edits.skills ?? NONE),
     references: manualOutcome(REFERENCES, edits.references ?? NONE),
@@ -89,7 +89,7 @@ describe('every launch the sheet builds is one I6’s contract accepts', () => {
       clientMutationId: 'c', spaceId: SPACE, teamMemberId: uuid(0xfff1), selection: { memoryIds: over },
     }).success).toBe(false);
     // …so the builder never sends it, whichever way it arrives.
-    const fields = composeSelection(
+    const fields = composeLaunchSelection(
       { memories: { send: over }, skills: { omit: 'not-asked' }, references: { omit: 'not-asked' } },
     );
     const config = { ...defaultConfigFor({ id: uuid(0xfff1), agentTool: 'claude-code', model: 'claude-opus-5' }), ...fields };

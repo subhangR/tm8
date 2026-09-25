@@ -34,6 +34,7 @@ import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
 import {
+  acceptanceCriteriaOf,
   coordinatorBootstrapControl,
   coordinatorKindOf,
   dispatcherBootstrapControl,
@@ -1011,13 +1012,11 @@ export function composePrompt(
   t.push(`<tm8_task_prompt count="${tasks.length}">`);
   const namedInIndex = contextIndexNames(manifest.contextIndex);
   for (const task of tasks) {
-    const criteria = strings(task.acceptanceCriteria);
     const body = [
       task.title ? `Title: ${task.title}` : null,
       task.priority ? `Priority: ${task.priority}` : null,
       task.status ? `Status: ${task.status}` : null,
       task.description ? `Description:\n${task.description}` : null,
-      criteria.length > 0 ? `Acceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n')}` : null,
     ].filter((line): line is string => line !== null).join('\n\n');
     t.push(taskAssignmentInjection({
       messageId: null,
@@ -1036,6 +1035,7 @@ export function composePrompt(
       linked: task.linked ?? [],
       linkedTotal: task.linkedTotal ?? 0,
       ...(namedInIndex.size > 0 ? { namedInIndex } : {}),
+      acceptance: acceptanceCriteriaOf(task.acceptanceCriteria),
     }));
   }
   if (tasks.length === 0) {

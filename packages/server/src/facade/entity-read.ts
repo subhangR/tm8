@@ -737,7 +737,7 @@ interface ActorRow {
   space_id: string;
   member_display_name: string | null;
   member_role: string | null;
-  /** 230: `members.status` of the member row, or of the persona's owner. */
+  /** 231: `members.status` of the member row, or of the persona's owner. */
   member_status: string | null;
   team_member_owner_status: string | null;
   team_member_name: string | null;
@@ -774,10 +774,10 @@ export async function loadActors(
   const out = new Map<string, ActorSummary>();
   if (unique.length === 0) return out;
 
-  // `members.status` (230) is read through `to_jsonb(row) ->> 'status'`, not
+  // `members.status` (231) is read through `to_jsonb(row) ->> 'status'`, not
   // `mem.status`: position-pinned suites apply the chain only up to their own
   // migration and then run this current code, and a plain column reference
-  // fails there. Before 230 the key is absent, which reads as active.
+  // fails there. Before 231 the key is absent, which reads as active.
   const rows = await q.query<ActorRow>(
     `select e.id, e.kind, e.space_id,
             mem.display_name as member_display_name, mem.role as member_role,
@@ -885,7 +885,7 @@ export async function loadActors(
 }
 
 /**
- * G6 (230): a member who left or was removed keeps their row, their persona
+ * G6 (231): a member who left or was removed keeps their row, their persona
  * and their authorship — old content still renders under their name. The
  * summary says the membership ended (`memberStatus`); the client appends
  * "(left)". A persona carries its owner's status. Absent while active, so

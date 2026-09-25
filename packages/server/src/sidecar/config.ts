@@ -9,11 +9,14 @@
  *   TM8_ENV        dev | prod                 → data-dir default
  *   TM8_DATA_DIR   ~/.tm8-dev | ~/.tm8        → root of all sidecar state
  *   TM8_PG_PORT    5442                       → loopback TCP (tooling endpoint)
+ *   TM8_PG_SOCKET_DIR <dataDir>/run           → unix_socket_directories override
+ *   TM8_PG_LISTEN_ADDRESSES 127.0.0.1         → '' for a socket-only profile
  *   TM8_PG_BIN_DIR —                          → explicit Postgres bin/ override
  *   TM8_PG_DATABASE / TM8_PG_SUPERUSER / TM8_PG_APP_ROLE
  */
 
-import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,6 +45,12 @@ export interface ResolvedSidecarConfig {
   readonly socketDir: string;
   /** Loopback TCP port from TM8_PG_PORT. Secondary/tooling endpoint. */
   readonly pgPort: number;
+  /**
+   * `listen_addresses`. `127.0.0.1` for a server install (tooling wants a TCP
+   * endpoint); the empty string for the desktop app, which is socket-only —
+   * that is what makes `pgPort` a filename rather than a claim on a port.
+   */
+  readonly listenAddresses: string;
   /** Pinned major, e.g. 18. */
   readonly pgMajor: number;
   /** <dataDir>/backups — scheduled/, pre-migration/, on-demand/ (§5). */
@@ -78,6 +87,71 @@ export function defaultRepoRoot(): string {
   return resolve(here, '..', '..', '..', '..');
 }
 
+/**
+ * `sizeof(struct sockaddr_un.sun_path)` on macOS. Linux is 108; 104 is the
+ * smaller of the two, so asserting against it is portable.
+ */
+export const SUN_PATH_MAX = 104;
+
+/** What Postgres will actually try to `bind()`. */
+export function socketFilePath(socketDir: string, pgPort: number): string {
+  return join(socketDir, `.s.PGSQL.${pgPort}`);
+}
+
+/**
+ * Choose a socket directory whose `.s.PGSQL.<port>` fits in `sun_path`.
+ *
+ * The preferred directory is `<dataDir>/run`, and on a normal machine it fits
+ * with room to spare. It does not fit for a long username, a deeply nested
+ * `TM8_DATA_DIR`, or an iCloud-synced Desktop — and the failure Postgres gives
+ * for that is `bind() failed: Invalid argument`, which names neither the path
+ * nor the limit. So measure it here and fall back to a short hashed directory
+ * under `$TMPDIR`, keyed by the data dir so two data dirs never share a socket.
+ *
+ * The fallback is announced, not silent: a socket under `$TMPDIR` is reaped by
+ * macOS eventually, and an operator who does not know that is an operator who
+ * will one day be very confused.
+ */
+export function chooseSocketDir(
+  dataDir: string,
+  pgPort: number,
+  override?: string | undefined,
+): { readonly socketDir: string; readonly fallbackReason?: string } {
+  if (override !== undefined && override.trim() !== '') {
+    const dir = resolve(expandHome(override.trim()));
+    const path = socketFilePath(dir, pgPort);
+    if (Buffer.byteLength(path) >= SUN_PATH_MAX) {
+      throw new Error(
+        `TM8_PG_SOCKET_DIR=${dir} is too long: the socket Postgres would bind is ` +
+          `${Buffer.byteLength(path)} bytes and the kernel limit (sun_path) is ${SUN_PATH_MAX}. ` +
+          `Choose a shorter directory.`,
+      );
+    }
+    return { socketDir: dir };
+  }
+
+  const preferred = join(dataDir, 'run');
+  const preferredBytes = Buffer.byteLength(socketFilePath(preferred, pgPort));
+  if (preferredBytes < SUN_PATH_MAX) return { socketDir: preferred };
+
+  const digest = createHash('sha256').update(dataDir).digest('hex').slice(0, 12);
+  const fallback = join(tmpdir(), `tm8-${digest}`);
+  const fallbackBytes = Buffer.byteLength(socketFilePath(fallback, pgPort));
+  if (fallbackBytes >= SUN_PATH_MAX) {
+    throw new Error(
+      `tm8: no usable Postgres socket directory. ${preferred} is ${preferredBytes} bytes and the ` +
+        `$TMPDIR fallback ${fallback} is ${fallbackBytes}; the kernel limit (sun_path) is ${SUN_PATH_MAX}. ` +
+        `Set TM8_PG_SOCKET_DIR to a short path such as /tmp/tm8.`,
+    );
+  }
+  return {
+    socketDir: fallback,
+    fallbackReason:
+      `${preferred} would make a ${preferredBytes}-byte socket path and the kernel limit is ` +
+      `${SUN_PATH_MAX}; using ${fallback} instead. Set TM8_PG_SOCKET_DIR to override.`,
+  };
+}
+
 function readPort(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === '') return fallback;
   const n = Number(raw);
@@ -110,13 +184,19 @@ export function resolveSidecarPaths(
   // Major-scoped so a future major upgrade creates a sibling, never overwrites (§4);
   // an existing unversioned cluster of the pinned major is adopted in place.
   const choice = chooseClusterDir(dataDir, pgMajor);
+  const pgPort = readPort(env['TM8_PG_PORT'], DEFAULT_PG_PORT);
+  const socket = chooseSocketDir(dataDir, pgPort, env['TM8_PG_SOCKET_DIR']);
+  if (socket.fallbackReason !== undefined) {
+    console.warn(`sidecar: socket directory fallback — ${socket.fallbackReason}`);
+  }
 
   return {
     env: mode,
     dataDir,
     pgDataDir: choice.pgDataDir,
-    socketDir: join(dataDir, 'run'),
-    pgPort: readPort(env['TM8_PG_PORT'], DEFAULT_PG_PORT),
+    socketDir: socket.socketDir,
+    pgPort,
+    listenAddresses: env['TM8_PG_LISTEN_ADDRESSES'] ?? '127.0.0.1',
     pgMajor,
     backupsDir: join(dataDir, 'backups'),
     appRole: env['TM8_PG_APP_ROLE'] ?? 'tm8_app',

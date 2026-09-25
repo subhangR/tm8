@@ -3210,6 +3210,19 @@ export const SpawnSelectionReasonsSchema = z.object({
   references: SelectionDefaultReasonSchema.optional(),
 }).strict();
 
+/**
+ * Per-kind prompt budgets in bytes (design 01a0d348 §10 Q5): a profile's
+ * `contextBudgets`, or one launch's override of them. Every key optional: an
+ * absent key takes the profile's value, else the node default. A budget past
+ * the combined 32 KiB ceiling can never be honoured, so it is refused here.
+ */
+export const ContextBudgetsSchema = z.object({
+  memories: z.number().int().min(0).max(32_768).optional(),
+  skills: z.number().int().min(0).max(32_768).optional(),
+  references: z.number().int().min(0).max(32_768).optional(),
+  teammates: z.number().int().min(0).max(32_768).optional(),
+}).strict();
+
 const executionSpawnInputObject = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
@@ -3236,6 +3249,7 @@ const executionSpawnInputObject = z.object({
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   selection: SpawnSelectionSchema.optional(),
   selectionReasons: SpawnSelectionReasonsSchema.optional(),
+  contextBudgets: ContextBudgetsSchema.optional(),
   jevRunId: SpawnUuidSchema.optional(),
   harnessSurface: z.enum(['minimal', 'inherit']).optional(),
   plugins: z.array(z.string().trim().min(1).max(200)).max(64).optional(),
@@ -4228,12 +4242,7 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
      OPTIONAL, every key too: an absent key takes the node default. A budget
      past the combined 32 KiB ceiling can never be honoured, so it is refused
      here; the fit against the frame baseline is checked at save. */
-  contextBudgets: z.object({
-    memories: z.number().int().min(0).max(32_768).optional(),
-    skills: z.number().int().min(0).max(32_768).optional(),
-    references: z.number().int().min(0).max(32_768).optional(),
-    teammates: z.number().int().min(0).max(32_768).optional(),
-  }).strict().optional(),
+  contextBudgets: ContextBudgetsSchema.optional(),
   contextFloors: z.object({
     memories: z.number().min(0).max(3).optional(),
     skills: z.number().min(0).max(3).optional(),

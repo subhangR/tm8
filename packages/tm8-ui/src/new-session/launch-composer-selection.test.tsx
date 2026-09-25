@@ -14,7 +14,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import type { ExecutionSpawnInput, LaunchSuggestResult, ProjectId } from '@tm8/contract';
 
 import type { LaunchProjectOption } from '../domain/launch';
-import { answeringPort, failedGroup } from '../jev/test-support';
+import { answeringPort, failedGroup, item, MEMORIES, okGroup } from '../jev/test-support';
 import { LAUNCH_DEFAULTS, LAUNCH_REFERENCE_CANDIDATES } from '../views/launch-fixtures';
 import { LaunchComposerPopup, type LaunchComposerPopupProps } from './LaunchComposerPopup';
 
@@ -22,6 +22,13 @@ const TEAMMATES = [
   { id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-sonnet-5' },
 ];
 const PROJECTS: readonly LaunchProjectOption[] = [{ projectId: 'pj-a' as ProjectId, name: 'tm8-ui', trusted: true }];
+
+/* Jev's memories as NON-defaults of LAUNCH_DEFAULTS (whose one memory default
+   is ent-mem-tokens): Apply must ADD the two it ticks beside that default. */
+const JEV_MEMORIES = okGroup({
+  ...MEMORIES,
+  items: [item('mem-a', 'memory', 2.8, true), item('mem-b', 'memory', 1.9, true), item('mem-c', 'memory', 0.3, false)],
+});
 
 function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Partial<LaunchSuggestResult['groups']> = {}) {
   const load = vi.fn(async () => LAUNCH_DEFAULTS);
@@ -42,7 +49,7 @@ function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Parti
   const spawn = async () => {
     fireEvent.click(view.getByTestId('nsx-send'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
-    return onSpawn.mock.calls.at(-1)![0];
+    return onSpawn.mock.calls[onSpawn.mock.calls.length - 1]![0];
   };
   const open = async (group = 'references') => {
     await waitFor(() => expect(view.getByTestId(`lsel-chip-${group}`).textContent).not.toMatch(/…/));
@@ -55,7 +62,7 @@ function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Parti
 describe('the Run popup’s context chips', () => {
   it('reads the defaults for the popup’s teammate and subject', async () => {
     const view = renderPopup();
-    await waitFor(() => expect(view.load).toHaveBeenCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-9' }));
+    await waitFor(() => expect(view.load).toHaveBeenCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-9', agentTool: 'claude-code' }));
   });
 
   it('shows three count chips, nothing open, none amber', async () => {
@@ -106,18 +113,19 @@ describe('the Run popup’s context chips', () => {
     expect(view.getByTestId('lsel-chip-references').className).toMatch(/lsel-chip--edited/);
   });
 
-  it('in Jev mode a failed group keeps its defaults as jev-failed while the answered one goes', async () => {
-    const view = renderPopup({}, { skills: failedGroup('timeout') });
-    await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
-    await waitFor(() => expect(view.getByTestId('jev-strip')).toBeTruthy());
-    // Jev's groups are Jev's: their chips say so and do not open.
+  it('an applied Jev group is an ordinary edit; a failed group keeps its defaults as jev-failed', async () => {
+    const view = renderPopup({}, { memories: JEV_MEMORIES, skills: failedGroup('timeout') });
+    await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
+    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(view.getByTestId('jev-apply-memories'));
+    // Applied, the group is the popup's own edit: its chip says so and still opens.
     const memories = view.getByTestId('lsel-chip-memories');
-    expect(memories.textContent).toMatch(/Jev’s memories/);
+    expect(memories.className).toMatch(/lsel-chip--edited/);
     fireEvent.click(memories);
-    expect(view.queryByTestId('lsel-popover')).toBeNull();
+    expect(view.getByTestId('lsel-popover')).toBeTruthy();
     const input = await view.spawn();
-    expect(input.selection).toEqual({ memoryIds: ['mem-a', 'mem-b'] });
-    expect(input.selectionReasons).toEqual({ skills: 'jev-failed', references: 'not-asked' });
+    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
+    expect(input.selectionReasons).toMatchObject({ skills: 'jev-failed' });
   });
 
   it('while an EDITED group’s defaults re-read, Launch waits with the reason and sends nothing', async () => {
@@ -136,7 +144,7 @@ describe('the Run popup’s context chips', () => {
       onSpawn: view.onSpawn, onDismiss: vi.fn(), clientMutationId: 'm:test', jev: answeringPort({}), selection,
     };
     view.rerender(<div className="cv2-root"><LaunchComposerPopup {...props} /></div>);
-    await waitFor(() => expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-10' }));
+    await waitFor(() => expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-10', agentTool: 'claude-code' }));
     expect(view.getAllByText(/edits to them are kept/).length).toBeGreaterThan(0);
     fireEvent.click(view.getByTestId('nsx-send'));
     expect(view.onSpawn).not.toHaveBeenCalled();

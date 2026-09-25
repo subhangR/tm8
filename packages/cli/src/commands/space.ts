@@ -773,7 +773,7 @@ function renderMembershipEnd(dto: unknown): string {
 }
 
 /**
- * `space leave` — end your own membership of a Space (G6, migration 230).
+ * `space leave` — end your own membership of a Space (G6, migration 231).
  *
  * The row is kept (status `left`): what you wrote still renders under your
  * name. Your tokens pinned to the Space are revoked, your agent sessions there
@@ -794,7 +794,7 @@ async function spaceLeave(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `space member remove <member-id>` — an admin ends someone else's membership
- * (G6, migration 230). Same effects as `space leave`, status `removed`; only an
+ * (G6, migration 231). Same effects as `space leave`, status `removed`; only an
  * owner may remove an owner, and removing yourself is `space leave`.
  */
 async function spaceMemberRemove(cmd: CommandContext): Promise<ExitCode> {

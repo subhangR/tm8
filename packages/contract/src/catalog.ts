@@ -86,11 +86,11 @@ export const OPERATIONS = [
   { name: 'spaces.configs',          method: 'GET',    path: '/v2/spaces/:spaceId/configs',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.updateRole', method: 'PATCH', path: '/v2/spaces/:spaceId/members/:memberId',       kind: 'command', status: 'v1' },
-  // G6 (migration 230): a membership ends by tombstone. Both human-only; the
+  // G6 (migration 231): a membership ends by tombstone. Both human-only; the
   // member row and everything it authored stay. POST verbs, like invites.revoke.
   { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
-  // Node admin turns an account off: every session refused, launched work contained (230).
+  // Node admin turns an account off: every session refused, launched work contained (231).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },

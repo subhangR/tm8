@@ -42,5 +42,6 @@ export const SOURCE_WORDS: Record<RankedEntitySource, string> = {
   teammate: 'teammate',
   inherited: 'inherited',
   task: 'task',
+  parent: 'parent task',
   space: 'space',
 };
