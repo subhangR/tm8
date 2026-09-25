@@ -14,11 +14,13 @@
 import {
   ATTACHMENT_MANIFEST_MAX,
   LINKED_MANIFEST_MAX,
+  contextEntryBytes,
   serializeAttachmentEntry,
   serializeLinkedEntity,
   serializeMemoryEntry,
   serializeSkillIndexEntry,
   utf8Bytes,
+  type FitContextIndexResult,
 } from '@tm8/prompt';
 import { SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import type { SkippedSkill, SpawnSelection, SpawnSelectionDefaultReason, SpawnSelectionGroup } from '@tm8/contract';
@@ -40,6 +42,8 @@ const SKILL_DROP_REASONS: ReadonlySet<string> = new Set<ContextDropReason>([
   'byte-budget',
   'task-name-collision',
   'native-shadowed',
+  'missing',
+  'disabled',
 ]);
 
 export interface ManifestContextInput {
@@ -54,6 +58,12 @@ export interface ManifestContextInput {
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /** A resume could not parse the launch's recorded selection (`SpawnRequest.selectionReplayInvalid`). */
   selectionReplayInvalid?: boolean;
+  /**
+   * The trimmed `<context_index>`, when the launch rendered one. Its groups
+   * are then what the prompt carries for skills, references and teammates,
+   * and each of its drops is recorded (`header` or `entry`, `byte-budget`).
+   */
+  index?: FitContextIndexResult;
 }
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
@@ -69,7 +79,7 @@ function selectionGroupsOf(selection: SpawnSelection | undefined): SpawnSelectio
 }
 
 /** `groups`, `entries` and `dropped`; the caller keeps `memoryIds`. */
-export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds'>> {
+export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index'>> {
   const { context } = input;
   const audit = context.contextAudit;
   const selectedGroups = new Set<SpawnSelectionGroup>(audit?.selectedGroups ?? selectionGroupsOf(input.requestSelection));
@@ -99,6 +109,11 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   // the manifest's own budget pass counts it.
   const rows = new Map((context.skillEquips ?? context.skills ?? []).map((row) => [row.entityId, row]));
   const selectionOnly = new Set(audit?.selectionOnlySkillIds ?? []);
+  // Under `<context_index>` an entry's bytes are its index line, and a level-1
+  // trim shows as `header-dropped`.
+  const indexed = new Map(
+    (input.index?.index.groups ?? []).flatMap((group) => group.entries.map((entry) => [`${group.name}:${entry.id}`, entry] as const)),
+  );
   for (const skill of input.skills) {
     const row = rows.get(skill.entityId) as { viaTaskId?: string; depth?: number } | undefined;
     const via: ContextVia = selectionOnly.has(skill.entityId)
@@ -113,8 +128,15 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
       kind: 'skill',
       group: 'skills',
       via,
-      state: 'collapsed',
-      bytes: utf8Bytes(serializeSkillIndexEntry(skill)) + 1,
+      ...(input.index
+        ? (() => {
+            const entry = indexed.get(`skills:${skill.entityId}`);
+            return {
+              state: entry?.headerDropped ? ('header-dropped' as const) : ('collapsed' as const),
+              bytes: entry ? contextEntryBytes(entry) : 0,
+            };
+          })()
+        : { state: 'collapsed' as const, bytes: utf8Bytes(serializeSkillIndexEntry(skill)) + 1 }),
     });
   }
   for (const skip of input.skippedSkills) {
@@ -146,7 +168,39 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     selectedReferences !== null && REFERENCE_KINDS.has(kind) && !selectedReferences.has(entityId);
   const capped: ContextDrop[] = [];
   let unreadReferences = 0;
-  for (const task of context.tasks) {
+  if (input.index) {
+    // The index lists every linked row the spawn read, or the selected
+    // reference set (its byte caps, not the snapshot's count cap, bound it),
+    // so its groups are the record.
+    for (const group of input.index.index.groups) {
+      if (group.name !== 'references' && group.name !== 'teammates') continue;
+      for (const entry of group.entries) {
+        const key = `${group.name}:${entry.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        add({
+          entityId: entry.id,
+          kind: entry.kind,
+          group: group.name,
+          via: entry.via as ContextVia,
+          ...(entry.link ? { link: entry.link } : {}),
+          state: entry.headerDropped ? 'header-dropped' : 'collapsed',
+          bytes: contextEntryBytes(entry),
+        });
+      }
+    }
+    for (const drop of input.index.drops) {
+      // A skill's whole-entry drop is already recorded from `skippedSkills`.
+      if (drop.group === 'harness' || (drop.group === 'skills' && drop.level === 'entry')) continue;
+      // Claimed, so a selected reference the trim dropped is not ALSO `not-rendered` below.
+      seen.add(`${drop.group}:${drop.id}`);
+      dropped.push({ entityId: drop.id, kind: drop.kind, group: drop.group, reason: 'byte-budget', level: drop.level });
+    }
+    for (const task of context.tasks) {
+      unreadReferences += Math.max(0, (task.linkedTotal ?? (task.linked ?? []).length) - (task.linked ?? []).length);
+    }
+  }
+  for (const task of input.index ? [] : context.tasks) {
     const linked = task.linked ?? [];
     linked.forEach((item, index) => {
       const group: ContextGroupName = item.kind === 'team_member' ? 'teammates' : 'references';
@@ -195,8 +249,9 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   }
 
   // A selected reference that is not one of the tasks' own links has no
-  // rendering yet: the snapshot lists only task links, and no context index
-  // renders references. Recorded, so the selection never shrinks silently.
+  // rendering when the context index is off: the snapshot lists only task
+  // links. (On, the index renders the selected set and claimed each id above.)
+  // Recorded, so the selection never shrinks silently.
   // A selected DEFAULT the snapshot never read (past the spawn read's row
   // cap, so only counted in `unread`) gets its own per-id `count-cap`.
   for (const reference of context.references ?? []) {

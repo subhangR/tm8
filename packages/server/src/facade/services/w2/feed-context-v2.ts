@@ -1389,6 +1389,32 @@ function fit(
 }
 
 /**
+ * The call that fetches the body of a kind whose body lives outside the
+ * envelope (design 01a0d348 §4.1: `tm8 entity context` is the one load
+ * pointer, and its expand names the next call).
+ */
+const BODY_FETCH: Readonly<Record<string, (id: string) => string>> = {
+  skill: (id) => `tm8 skill show ${id}`,
+  file: (id) => `tm8 file download ${id} --output -`,
+  artifact: (id) => `tm8 artifact export ${id} --out ${id}.zip`,
+};
+
+/**
+ * A skill, file or artifact target names its body fetch, right after
+ * `status`. Never the body, and no read of its own. (The selection header on
+ * this read is I4's, authored only.)
+ */
+function withBodyFetch(view: View, root: EntityRow): void {
+  const reordered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(view)) {
+    reordered[key] = value;
+    if (key === 'status') reordered['bodyFetch'] = { expand: BODY_FETCH[root.kind]!(root.id) };
+  }
+  for (const key of Object.keys(view)) delete view[key];
+  Object.assign(view, reordered);
+}
+
+/**
  * The v2 read: load per the plan, assemble, fit to the budget. Runs inside the
  * caller's claim-bound transaction; every statement is tagged.
  */
@@ -1410,6 +1436,7 @@ export async function loadContextV2(
     after: input.after ?? null,
   });
   const view = assemble(id, loaded, plan, input.offset);
+  if (!plan.explicit && BODY_FETCH[loaded.root.kind]) withBodyFetch(view, loaded.root);
   const messagesAreCore = plan.messages?.core === true;
   return fit(view, id, input.totalBytes, input, messagesAreCore, loaded.pagers);
 }

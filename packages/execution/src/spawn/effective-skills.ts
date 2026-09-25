@@ -1,3 +1,4 @@
+import { loadPointerFor } from '@tm8/prompt';
 import { homedir } from 'node:os';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { EffectiveSkills, SkillIndexEntry } from '@tm8/contract';
@@ -85,7 +86,10 @@ export function computeEffectiveSkills(input: EffectiveSkillsInput): EffectiveSk
       entityId: row.entityId, name: row.name,
       description: row.description || (typeof row.frontmatter?.when_to_use === 'string' ? row.frontmatter.when_to_use : ''),
       provider, level, ...(path ? { sourcePath: path } : {}), native,
-      loadPointer: native ? `${input.agentTool === 'codex' ? '$' : '/'}${qualifier}${invoke}` : path ?? `tm8 entity get ${row.entityId}`,
+      // A native skill's pointer is the harness's own (design 01a0d348 §4.1). The
+      // path / `entity get` fallback is the legacy `<skills>` pointer, kept so a
+      // launch without `<context_index>` renders what it always did.
+      loadPointer: native ? loadPointerFor('skill', row.entityId, { tool: input.agentTool, qualifier, invoke }) : path ?? `tm8 entity get ${row.entityId}`,
       ...(row.contentHash ? { hash: row.contentHash } : {}),
       allowImplicitInvocation: implicit,
       ...(row.viaTaskId ? { viaTaskId: row.viaTaskId } : {}),

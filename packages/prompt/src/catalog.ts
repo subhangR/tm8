@@ -26,6 +26,7 @@
 import { BYTE_BUDGETS, utf8Bytes, type BudgetName } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
+import { CONTEXT_INDEX_INSTRUCTION } from './context-index.js';
 import {
   BASE_PROMPT_V2,
   coordinationLineV2,
@@ -589,6 +590,19 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     text: V2_REPO_GRAPH_LINE,
   },
   {
+    id: 'frame.context-index',
+    categoryId: 'frame',
+    title: 'Context index instruction',
+    summary:
+      'Heads <context_index>, the one collapsed index of skills, references and teammates: nothing is loaded, open an entry only when its when_to_use matches, with its load command; header="dropped" and omitted declare byte-budget trims.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/context-index.ts',
+    injectedWhen:
+      'Inside <context_index>, in place of <skills>, on v1 and v2 frames — only when TM8_CONTEXT_INDEX is on for the node or the pinned profile sets contextIndex (default off, design 01a0d348 §10 Q2).',
+    text: CONTEXT_INDEX_INSTRUCTION,
+  },
+  {
     id: 'frame.command-surface',
     categoryId: 'frame',
     title: 'Command-surface preamble',
@@ -795,6 +809,8 @@ const BUDGET_LABELS: Record<BudgetName, string> = {
   combinedInitialInjection: 'Everything injected before the first turn',
   handoffEnvelope: 'Entity-handoff envelope (frozen, not a default)',
   incomingMessageInjection: 'One incoming-message injection',
+  referenceIndex: 'Context index: references (and a worker\'s linked teammates), inside the combined ceiling',
+  rosterIndex: 'Context index: a dispatcher\'s teammate roster, inside the combined ceiling',
 };
 
 const BUDGET_ENTRY: PromptEntry = {

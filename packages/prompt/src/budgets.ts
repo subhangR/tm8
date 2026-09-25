@@ -29,6 +29,15 @@ export const BYTE_BUDGETS = {
   handoffEnvelope: 32768,
   /** One incoming-message injection: excerpt plus fetch reference (§8.1). */
   incomingMessageInjection: 16384,
+  /**
+   * Sub-caps INSIDE `combinedInitialInjection` for `<context_index>` groups
+   * (design 01a0d348 §2.3, §10 Q3 — Subhang's numbers, tuned from the I10
+   * data, not here). References (with a worker's linked teammates) and a
+   * dispatcher's roster each trim to their own cap, header text first, so
+   * neither can push every skill out; skills take what remains.
+   */
+  referenceIndex: 8192,
+  rosterIndex: 8192,
 } as const;
 
 export type BudgetName = keyof typeof BYTE_BUDGETS;

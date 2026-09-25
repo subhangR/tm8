@@ -24,7 +24,7 @@ import { CliError, EXIT_USAGE } from './exit.js';
 // prompt is the only thing that varies by mode, so it owns the vocabulary.
 // Re-exported here so this module stays the CLI's manifest surface.
 export { AGENT_MODES, type AgentMode } from '@tm8/prompt';
-import { AGENT_MODES, type AgentMode } from '@tm8/prompt';
+import { AGENT_MODES, parseContextIndex, type AgentMode, type PromptContextIndex } from '@tm8/prompt';
 import { parseBootstrapManifest, type BootstrapManifestV2 } from './harness/bootstrap-manifest.js';
 
 /** The persona this process is running as — a `team_member` entity (T-L7). */
@@ -131,6 +131,8 @@ export interface Tm8Manifest {
   coordinator?: ManifestCoordinator | null;
   directive?: ManifestDirective | null;
   skills?: ManifestSkill[];
+  /** `<context_index>`, when the launch rendered one (it then replaces `<skills>`). */
+  contextIndex?: PromptContextIndex;
   /** `ExecutionSpawnInput.promptExtra`, passed through verbatim. */
   promptExtra?: string | null;
 }
@@ -319,6 +321,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
         })
       : undefined,
     skills: skills && skills.length > 0 ? skills : undefined,
+    contextIndex: parseContextIndex(raw.contextIndex),
     promptExtra: str(raw.promptExtra),
   });
 }

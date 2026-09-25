@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../../src/db/index.js';
 import type { DbClaims, Db, Querier } from '../../src/db/types.js';
 import { resolveHeaders } from '../../src/headers/resolve.js';
+import { loadContextV2 } from '../../src/facade/services/w2/feed-context-v2.js';
 import { loadMemories, loadSkills, loadTeammates } from '../../src/jev/candidates.js';
 import { legacyLoadMemories, legacyLoadSkills, legacyLoadTeammates } from './jev-candidates-legacy.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -317,5 +318,28 @@ describe('resolveHeaders', () => {
       expect(header.stale).toBe(false);
       expect(header.keywords).toEqual([]);
     }
+  });
+});
+
+describe('entity context: a skill or file target names its body fetch (design 01a0d348 §4.1)', () => {
+  const context = (id: string) => asCaller((q) => loadContextV2(q, id, { sections: null, totalBytes: 16_384 }));
+
+  it('a skill: `tm8 skill show`, right after status, never the body', async () => {
+    const view = await context(ids.sLong!);
+    expect(view.bodyFetch).toEqual({ expand: `tm8 skill show ${ids.sLong}` });
+    expect(JSON.stringify(view)).not.toContain('XXXXXXXXXX');
+    const keys = Object.keys(view);
+    expect(keys.indexOf('bodyFetch')).toBe(keys.indexOf('status') + 1);
+    // The header on this read is I4's, authored only: none here.
+    expect((view as Record<string, unknown>).header).toBeUndefined();
+  });
+
+  it('a file: `tm8 file download`', async () => {
+    const view = await context(ids.file!);
+    expect(view.bodyFetch).toEqual({ expand: `tm8 file download ${ids.file} --output -` });
+  });
+
+  it('other kinds are unchanged', async () => {
+    expect((await context(ids.doc!)).bodyFetch).toBeUndefined();
   });
 });

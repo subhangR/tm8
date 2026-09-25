@@ -1,4 +1,5 @@
-import { serializeMemoryEntry, serializeSkillIndex, type PromptSkill } from './skill-index.js';
+import { serializeMemoryEntry, type PromptSkill } from './skill-index.js';
+import { serializeLaunchIndex, type PromptContextIndex } from './context-index.js';
 export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
 /**
  * `@tm8/prompt` — the ONE agent-prompt composer, shared by the spawn path and
@@ -50,6 +51,7 @@ import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from
  * single import for both the spawn path and the CLI.
  */
 export * from './budgets.js';
+export * from './context-index.js';
 export * from './escape.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
@@ -161,6 +163,12 @@ export interface PromptManifest {
     | null
     | undefined;
   skills?: ReadonlyArray<PromptSkill> | undefined;
+  /**
+   * The unified `<context_index>` (design 01a0d348 §2.2), present only when
+   * the launch's context-index switch was on. When present it replaces the
+   * `<skills>` block; absent, the prompt is exactly what it was without it.
+   */
+  contextIndex?: PromptContextIndex | undefined;
   promptExtra?: string | null | undefined;
 }
 
@@ -982,7 +990,7 @@ export function composePrompt(
   }
   s.push('  </command_surface>');
 
-  const skillIndex = serializeSkillIndex(manifest.skills ?? []);
+  const skillIndex = serializeLaunchIndex(manifest);
   if (skillIndex) s.push(skillIndex);
 
   if (manifest.promptExtra) {

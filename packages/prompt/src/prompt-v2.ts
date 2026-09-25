@@ -22,7 +22,8 @@
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
-import { serializeMemoryEntry, serializeSkillIndex } from './skill-index.js';
+import { serializeMemoryEntry } from './skill-index.js';
+import { serializeLaunchIndex } from './context-index.js';
 import { coordinatorKindOf } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
@@ -378,7 +379,7 @@ export function composePromptV2(
     s.push('</authorization>');
   }
   if (runtime.codeGraph === true) s.push(`<repo>${V2_REPO_GRAPH_LINE}</repo>`);
-  const skillIndex = serializeSkillIndex(manifest.skills ?? []);
+  const skillIndex = serializeLaunchIndex(manifest);
   if (skillIndex) s.push(skillIndex);
   if (manifest.promptExtra) {
     s.push(untrustedData({ type: 'launch-context', body: manifest.promptExtra }));
