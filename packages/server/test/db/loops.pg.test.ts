@@ -162,11 +162,14 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('loops');
   const files = migrationFiles();
   const loops = loopsMigration(files);
-  // Upgrade shape: the whole chain except the loops migration, seed a pre-loops
-  // world, then apply it exactly as an upgrade would.
-  database.apply(files.filter((f) => f !== loops));
+  // Upgrade shape: seed a pre-loops world, then apply loops exactly as an upgrade would.
+  // Everything BEFORE it, seed, then it and everything after — the order an
+  // upgrade really runs. Holding it back while applying later migrations
+  // broke once a later one (218) rewrote policies on the tables it creates.
+  const at = files.indexOf(loops);
+  database.apply(files.slice(0, at));
   fixture = await seedPre091(database);
-  database.apply([loops]);
+  database.apply(files.slice(at));
 });
 
 afterAll(async () => {
