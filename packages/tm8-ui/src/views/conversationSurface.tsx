@@ -294,6 +294,53 @@ export function chatThreadSurfaceFor(
   );
 }
 
+/** What the entity chat slot's body needs — a strict subset of the host. */
+export type EntityChatSurfaceHost = Pick<
+  ConversationSurfaceHost,
+  'seam' | 'spaceId' | 'nodeKey' | 'onOpenEntity' | 'skillOptions' | 'viewerName' | 'viewerMemberId'
+>;
+
+/**
+ * THE ENTITY CHAT SLOT'S BODY (design 01a0da4e §3.3) — the SAME solo chat
+ * surface `chatThreadSurfaceFor` mounts, for both of the slot's states:
+ *
+ *   · an existing chat: `routeThreadId` names it, exactly as the chat panel;
+ *   · `'new'`: `routeThreadId: null` with `aboutId` bound — the composer, and
+ *     `chat.start` writes the `about` edge. `coldStart: 'composer'` stops the
+ *     screen auto-opening the SPACE's most recent chat, which would be about
+ *     something else.
+ *
+ * `onThreadSelected` is how `new` becomes the created id (the host REPLACES
+ * the slot's thread, §3.1); a `null` from the screen is its own "new
+ * conversation", reported as `'new'`.
+ */
+export function entityChatSurfaceFor(
+  aboutId: EntityId,
+  thread: EntityId | 'new',
+  host: EntityChatSurfaceHost,
+  onThreadSelected: (thread: EntityId | 'new') => void,
+): ReactNode {
+  const isNew = thread === 'new';
+  return (
+    <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
+      <LazyChatThreadSurface
+        seam={host.seam}
+        spaceId={host.spaceId}
+        nodeKey={host.nodeKey}
+        soloConversation
+        coldStart="composer"
+        routeThreadId={isNew ? null : thread}
+        {...(isNew ? { aboutId } : {})}
+        onThreadSelected={(id) => onThreadSelected(id ?? 'new')}
+        onOpenEntity={host.onOpenEntity}
+        {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
+        {...(host.viewerName ? { viewerName: host.viewerName } : {})}
+        {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
+      />
+    </Suspense>
+  );
+}
+
 export function conversationSurfaceFor(
   detail: EntityDetail | null | undefined,
   entityId: EntityId,

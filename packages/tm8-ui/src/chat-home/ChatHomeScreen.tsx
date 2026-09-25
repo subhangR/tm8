@@ -240,6 +240,15 @@ export interface ChatHomeScreenProps {
    */
   soloConversation?: boolean;
   /**
+   * WHAT A COLD START OPENS. `'latest'` (the default, ruled 2026-08-15) opens
+   * the space's most recent conversation so the pane is never empty.
+   * `'composer'` opens the new-conversation composer instead, and is what the
+   * entity chat slot asks for when its thread is `new`: that host has ALREADY
+   * decided no existing chat is wanted, and auto-opening the space's latest
+   * chat — about some other entity entirely — would contradict the address.
+   */
+  coldStart?: 'latest' | 'composer';
+  /**
    * The loaded thread list, published up for a host that draws its own
    * selector. ONE read stays behind it: a host that re-listed for its picker
    * would have a second list free to disagree with this one about what
@@ -367,6 +376,7 @@ export function ChatHomeScreen({
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
+  coldStart = 'latest',
   onThreadsChange,
   onSelectionChange,
   stage = null,
@@ -710,8 +720,8 @@ export function ChatHomeScreen({
       return;
     }
     if (selectionSpaceRef.current === spaceId) return;
-    chooseRoot(next[0]?.rootId ?? null);
-  }, [chooseRoot, port, spaceId]);
+    chooseRoot(coldStart === 'composer' ? null : (next[0]?.rootId ?? null));
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   /** Read a thread snapshot and replay every cached frame over it, so frames
    *  published after the read began are never lost. Phase is NOT derived here —
@@ -789,7 +799,7 @@ export function ChatHomeScreen({
            included. A space the viewer HAS chosen in fails the test on its own,
            so entering a different space is still a cold start. */
         if (selectionSpaceRef.current !== spaceId) {
-          chooseRoot(nextThreads[0]?.rootId ?? null);
+          chooseRoot(coldStart === 'composer' ? null : (nextThreads[0]?.rootId ?? null));
         }
         setTeammateId(nextTeammates[0]?.id ?? '');
       })
@@ -802,7 +812,7 @@ export function ChatHomeScreen({
     return () => {
       alive = false;
     };
-  }, [chooseRoot, port, spaceId]);
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;

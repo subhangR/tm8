@@ -91,7 +91,8 @@ describe('loop management is registry-declared and fully wired', () => {
     // launches `loop`). It does NOT mean "fire this loop now" — that is
     // `loop-controls`, the first panel block, and it stays the loop's own verb.
     // Run means what it means everywhere: point an agent at this row.
-    expect(loop.panel.primaries).toEqual(['run', 'edit']);
+    // `chat-about` sits beside Run in every header (entity chat §3.2).
+    expect(loop.panel.primaries).toEqual(['run', 'chat-about', 'edit']);
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
     // record of what the loop has done. `membership` follows (2026-08-12) —
@@ -268,12 +269,11 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(session.list.rowActions).toEqual([
       'run', 'complete', 'share-session', 'terminate', 'chat-about',
     ]);
-    // The PANEL's budget is untouched by the row's third verb: `chat-about` is
-    // derived onto `list.rowActions` only. `applyLaunch` writes to both arrays
-    // because Run is a verb about the entity; this one opens a conversation
-    // ELSEWHERE, and the panel's budget is for acting on what you are looking
-    // at — continuing this session (▶) and ending it (⏻).
-    expect(session.panel.primaries).toEqual(['run', 'terminate']);
+    // `chat-about` joins the PANEL too since entity chat (design 01a0da4e
+    // §3.2, Q6): the chat now opens BESIDE the entity rather than elsewhere,
+    // so it is a verb about what you are looking at, and it sits right after
+    // Run — on a session as on every kind, labelled plain "Chat".
+    expect(session.panel.primaries).toEqual(['run', 'chat-about', 'terminate']);
   });
 
   /**
@@ -340,7 +340,8 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * silently re-growing the two verbs the original ruling turned away.
    */
   it('the task DETAIL toolbar keeps Run and Edit, and nothing else', () => {
-    expect(getKind('task').panel.primaries).toEqual(['run', 'edit']);
+    // Chat beside Run is the one addition since (entity chat §3.2).
+    expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about', 'edit']);
   });
 
   it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {

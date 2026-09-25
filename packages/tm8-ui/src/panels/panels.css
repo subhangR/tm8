@@ -4995,3 +4995,7 @@
   font-size: var(--pn-fs-micro);
   color: var(--pn-brand-2);
 }
+
+/* A primary's COUNT beside its word — the Chat button's `❝ Chat · 3`
+   (entity chat design 01a0da4e §3.2). Detail header only. */
+.cv2-root .pn-btn__count { margin-left: 4px; opacity: 0.7; font-variant-numeric: tabular-nums; }

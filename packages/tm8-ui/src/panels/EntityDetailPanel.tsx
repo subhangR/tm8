@@ -534,6 +534,12 @@ export interface EntityDetailPanelProps {
    */
   wiredActions?: readonly ActionRef[];
   /**
+   * Counts drawn beside primaries in the header bar — today only the Chat
+   * button's `❝ Chat · 3` (entity chat design 01a0da4e §3.2). The host
+   * measures (`useChatsAbout`); the bar only draws. See `ActionBar`.
+   */
+  primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
+  /**
    * THE LAUNCH SOURCES for Run's inline configuration — the SAME `LaunchSources`
    * the list panel takes, so the two surfaces cannot drift into two different
    * spawn semantics.
@@ -1101,6 +1107,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               ctx={panelActionContext(detail, ctx, props.liveness)}
               onAction={props.onAction}
               wiredActions={props.wiredActions}
+              primaryCounts={props.primaryCounts}
               openFlow={flowRef}
               /* Only when the host actually has launch sources. Without them
                  the expand would render an empty teammate select over an

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { REASONS, allKinds, deferredActions, processControlFor, resolveAction } from '../domain';
 import { PANEL_PRIMARY_ACTIONS } from './usePanelPrimaries';
 import { ENTITY_VERB_ACTIONS } from './useEntityVerbs';
+import { CHAT_ABOUT_ACTIONS } from './useChatAbout';
 
 /**
  * THE MOUNT-SITE GUARD — every `EntityDetailPanel` must be handed its verbs.
@@ -293,6 +294,9 @@ describe('the dispatcher and the registry agree', () => {
       (ref) =>
         !PANEL_PRIMARY_ACTIONS.includes(ref)
         && !ENTITY_VERB_ACTIONS.includes(ref)
+        // `chat-about` (Chat, beside Run since entity chat §3.2) has its own
+        // dispatcher, composed into every panel host beside these two.
+        && !CHAT_ABOUT_ACTIONS.includes(ref)
         // ANY flow verb has an executor — its surface. Written as `!== 'launch'`
         // until B10 added a second flow, at which point the equality was itself
         // the action-id literal §15.2 keeps out, and `merge-pr` would have been

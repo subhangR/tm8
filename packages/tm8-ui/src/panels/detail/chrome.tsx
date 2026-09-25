@@ -392,6 +392,7 @@ export function ActionBar({
   onOpenLaunch,
   launchSubjectId,
   markPrimaries = false,
+  primaryCounts,
 }: {
   config: KindConfig;
   ctx: ActionContext;
@@ -480,6 +481,14 @@ export function ActionBar({
    * request from the one host that needs it, not a new house style.
    */
   markPrimaries?: boolean;
+  /**
+   * A COUNT BESIDE A PRIMARY'S WORD — `❝ Chat · 3` (entity chat design
+   * 01a0da4e §3.2). Keyed by verb so the bar names no verb itself; a host
+   * supplies what it has measured. A verb with an entry draws its glyph too,
+   * since the number alone next to a word reads as part of the word. Zero
+   * draws the glyph and no number. Ignored on a marked bar, which has no room.
+   */
+  primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
 }) {
   /**
    * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
@@ -512,6 +521,7 @@ export function ActionBar({
             : {})}
           primary
           mark={markPrimaries}
+          count={primaryCounts?.[ref]}
         />
       ))}
       {flowSurface ? (
@@ -608,6 +618,7 @@ function ActionButton({
   launchSubjectId,
   primary = false,
   mark = false,
+  count,
 }: {
   ref_: ActionRef;
   ctx: ActionContext;
@@ -619,6 +630,8 @@ function ActionButton({
   primary?: boolean;
   /** Render the primary as its glyph rather than its word — see `markPrimaries`. */
   mark?: boolean;
+  /** See `ActionBar.primaryCounts`. */
+  count?: number | undefined;
 }) {
   const def = resolveAction(ref_);
 
@@ -713,6 +726,17 @@ function ActionButton({
     >
       {primary && mark ? (
         <span aria-hidden>{def.icon}</span>
+      ) : primary && count !== undefined ? (
+        <>
+          <span aria-hidden>{def.icon} </span>
+          {def.label}
+          {count > 0 ? (
+            <span className="pn-btn__count" data-testid={`panel-primary-count-${ref_}`}>
+              <span aria-hidden>· </span>
+              {count}
+            </span>
+          ) : null}
+        </>
       ) : primary ? (
         def.label
       ) : (
