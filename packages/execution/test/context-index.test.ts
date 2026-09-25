@@ -6,6 +6,7 @@ import {
   composePrompt,
   contextEntryBytes,
   INDEX_DERIVED_HEADER_CHARS,
+  serializeContextEntry,
   serializeContextIndex,
   untrustedData,
   utf8Bytes,
@@ -117,8 +118,9 @@ describe('on: one index for skills, references and teammates', () => {
 });
 
 describe('on: the trim records every drop (§2.3)', () => {
-  it('references over their 8 KiB sub-cap lose header text first, then whole entries — all recorded', () => {
-    const linked = Array.from({ length: 60 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
+  it('references over their 8 KiB sub-cap lose summaries first, then whole entries — all recorded, every whenToUse whole', () => {
+    // 150: past what even the handed-back title room can hold, so whole entries go too.
+    const linked = Array.from({ length: 150 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
     const { manifest, prompt } = compose(ctx({
       tasks: [task({ linked, linkedTotal: linked.length })],
       headers: linked.map((l) => docHeader(l.entityId)),
@@ -127,11 +129,33 @@ describe('on: the trim records every drop (§2.3)', () => {
     expect(group.omitted).toBeGreaterThan(0);
     const dropped = manifest.context!.dropped!.filter((d) => d.group === 'references' && d.reason === 'byte-budget');
     expect(dropped.filter((d) => d.level === 'entry')).toHaveLength(group.omitted);
-    expect(dropped.filter((d) => d.level === 'header').length)
-      .toBe(group.entries.filter((e) => e.headerDropped).length);
+    expect(dropped.filter((d) => d.level === 'summary').length)
+      .toBe(group.entries.filter((e) => e.summaryDropped).length);
+    expect(dropped.filter((d) => d.level === 'header')).toEqual([]);
     const states = manifest.context!.entries!.filter((e) => e.group === 'references').map((e) => e.state);
-    expect(states).toContain('header-dropped');
+    expect(states).toContain('summary-dropped');
+    expect(states).not.toContain('header-dropped');
+    for (const e of group.entries) expect(prompt.system).toContain(`&quot;whenToUse&quot;:&quot;open ${e.id} when designing&quot;`);
     expect(prompt.system).toContain(`omitted="${group.omitted}" fetch="tm8 entity context task-1 --sections connections"`);
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+  });
+
+  it('hands the task turn\'s title room back to the index: past the baseline\'s reservation, to within an entry of the ceiling', () => {
+    // The baseline lists every linked title; the titles the index names leave
+    // the task turn (≈ 4 KB for these). Fitted against the baseline alone, the
+    // prompt would end that far under the ceiling; handed back, under two entries.
+    const linked = Array.from({ length: 150 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `A longer linked document title, number ${i}` }));
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked, linkedTotal: linked.length })],
+      headers: linked.map((l) => docHeader(l.entityId)),
+    }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
+    expect(group.omitted).toBeGreaterThan(0);
+    const total = utf8Bytes(`${prompt.system}\n\n${prompt.task}`);
+    expect(total).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+    const perEntry = utf8Bytes(serializeContextEntry(group.entries[0]!)) + 1;
+    expect(BYTE_BUDGETS.combinedInitialInjection - total).toBeLessThan(perEntry * 2);
+    expect(prompt.task).not.toContain('A longer linked document title, number 0');
   });
 
   it('skills take what remains: a whole-entry skill drop is byte-budget in every record', () => {
@@ -144,7 +168,7 @@ describe('on: the trim records every drop (§2.3)', () => {
     expect(manifest.effectiveSkills!.skipped.filter((s) => s.reason === 'byte-budget')).toHaveLength(skills.omitted);
     const drops = manifest.context!.dropped!.filter((d) => d.group === 'skills' && d.reason === 'byte-budget');
     expect(drops.filter((d) => d.level === 'entry')).toHaveLength(skills.omitted);
-    expect(drops.filter((d) => d.level === 'header')).toHaveLength(skills.entries.filter((e) => e.headerDropped).length);
+    expect(drops.filter((d) => d.level === 'summary')).toHaveLength(skills.entries.filter((e) => e.summaryDropped).length);
     expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
   });
 });
@@ -238,7 +262,7 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     ],
   });
 
-  it('(d) cuts a DERIVED header to INDEX_DERIVED_HEADER_CHARS per field and declares it; authored text is untouched', () => {
+  it('(d) cuts a DERIVED summary to INDEX_DERIVED_HEADER_CHARS and declares it; a whenToUse and authored text are untouched', () => {
     const { manifest, prompt } = compose(context, { on: true });
     const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
     const derived = refs.entries.find((e) => e.id === 'doc-1')!;
@@ -266,8 +290,10 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     }), { on: true });
     const entry = manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries[0]!;
     expect(entry.header!.summary).toBe(`${'a'.repeat(183)} [credential-red…`);
-    expect(entry.header!.whenToUse).toBe(entry.header!.summary);
-    expect(entry.clipped).toEqual(['summary', 'whenToUse']);
+    // A whenToUse is never cut (task 01a0da5a): it arrives whole, redacted.
+    expect(entry.header!.whenToUse!.startsWith(`${'a'.repeat(183)} [credential-redacted`)).toBe(true);
+    expect(entry.header!.whenToUse!.endsWith(' tail')).toBe(true);
+    expect(entry.clipped).toEqual(['summary']);
     expect(prompt.system).not.toContain('sk-Z');
   });
 
@@ -398,8 +424,8 @@ describe('I5b: memory collapse (§10 Q1)', () => {
   });
 });
 
-describe('entries × dropped (index on): an id is shown with a header or body drop, never with any other', () => {
-  it('holds for a collapsed memory, a header-dropped reference and an entry-dropped skill in one launch', () => {
+describe('entries × dropped (index on): an id is shown with a summary or body drop, never with any other', () => {
+  it('holds for a collapsed memory, a summary-dropped reference and an entry-dropped skill in one launch', () => {
     const texts = Array.from({ length: 12 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
     const linked = Array.from({ length: 40 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
     const { manifest } = compose(ctx({
@@ -417,14 +443,14 @@ describe('entries × dropped (index on): an id is shown with a header or body dr
     // Each case is present in this launch.
     const collapsedMemory = dropped.find((d) => d.group === 'memories' && d.level === 'body');
     expect(collapsedMemory && shown.has(key(collapsedMemory))).toBe(true);
-    const headerRef = dropped.find((d) => d.group === 'references' && d.level === 'header');
-    expect(headerRef && shown.has(key(headerRef))).toBe(true);
+    const summaryRef = dropped.find((d) => d.group === 'references' && d.level === 'summary');
+    expect(summaryRef && shown.has(key(summaryRef))).toBe(true);
     const entrySkill = dropped.find((d) => d.group === 'skills' && d.level === 'entry');
     expect(entrySkill && !shown.has(key(entrySkill))).toBe(true);
 
     // The invariant, over every drop.
     for (const drop of dropped) {
-      if (shown.has(key(drop))) expect(['header', 'body']).toContain(drop.level);
+      if (shown.has(key(drop))) expect(['summary', 'body']).toContain(drop.level);
     }
     // No id is dropped twice at the same level.
     const seen = new Set(dropped.map((d) => `${key(d)}:${d.reason}:${d.level ?? ''}`));

@@ -1781,8 +1781,9 @@ export interface ComposeManifestInput {
 /**
  * The skills whose description the composed prompt actually renders: the
  * `<skills>` index carries every kept skill's description; the
- * `<context_index>` carries an entry's header text unless the budget dropped
- * it (`headerDropped`). Empty text is no description.
+ * `<context_index>` carries an entry's whenToUse always, and its summary
+ * unless the budget dropped it (`summaryDropped`; `headerDropped` on a
+ * pre-floor-rule manifest). Empty text is no description.
  */
 function describedSkillIds(manifest: Tm8Manifest): Set<string> {
   const out = new Set<string>();
@@ -1790,7 +1791,7 @@ function describedSkillIds(manifest: Tm8Manifest): Set<string> {
     for (const group of manifest.contextIndex.groups) {
       if (group.name !== 'skills') continue;
       for (const entry of group.entries) {
-        if (!entry.headerDropped && (entry.header?.whenToUse?.trim() || entry.header?.summary?.trim())) out.add(entry.id);
+        if (!entry.headerDropped && (entry.header?.whenToUse?.trim() || (!entry.summaryDropped && entry.header?.summary?.trim()))) out.add(entry.id);
       }
     }
   } else {
@@ -1972,13 +1973,35 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // to their sub-caps, skills to what remains, header text before entries.
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
-    indexFit = fitContextIndex({
-      groups: [
-        ...redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories: collapsedMemories })),
-      ],
-      available: BYTE_BUDGETS.combinedInitialInjection - baseBytes,
-      caps: contextIndexCaps(launch.mode, budgets),
-    });
+    const candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories: collapsedMemories }));
+    const caps = contextIndexCaps(launch.mode, budgets);
+    const ceiling = BYTE_BUDGETS.combinedInitialInjection;
+    const fitAt = (available: number): FitContextIndexResult => fitContextIndex({ groups: [...candidates], available, caps });
+    /** The real prompt with this index, measured: every title the index names leaves the task turn. */
+    const composedBytes = (fit: FitContextIndexResult): number => {
+      const gone = new Set(fit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
+      try {
+        const p = composePrompt({ ...manifest, skills: manifest.skills.filter(skill => !gone.has(skill.entityId)), contextIndex: fit.index }, { sessionId, baseUrl });
+        return utf8Bytes(`${p.system}\n\n${p.task}`);
+      } catch (error) {
+        if (error instanceof BudgetExceededError) return Number.POSITIVE_INFINITY;
+        throw error;
+      }
+    };
+    indexFit = fitAt(ceiling - baseBytes);
+    // The baseline lists every linked title in the task turn, and the titles
+    // the index names leave it, so the first fit leaves that room unused. Hand
+    // it back to the index while something was dropped, re-measuring the real
+    // prompt each time; a retry that would overrun the ceiling is discarded,
+    // so the first (conservative) fit is the floor.
+    for (let credit = ceiling - composedBytes(indexFit), tries = 0; credit > 0 && indexFit.drops.length > 0 && tries < 3; tries += 1) {
+      const retry = fitAt(ceiling - baseBytes + credit);
+      const used = composedBytes(retry);
+      if (used > ceiling) break;
+      if (retry.drops.length >= indexFit.drops.length && retry.bytes <= indexFit.bytes) break;
+      indexFit = retry;
+      credit += ceiling - used;
+    }
     const gone = new Set(indexFit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
     dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
     manifest.skills = manifest.skills.filter(skill => !gone.has(skill.entityId));

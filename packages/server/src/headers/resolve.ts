@@ -17,7 +17,7 @@
  * and files, the body ref did.
  */
 import {
-  AUTHORED_HEADER_LIMITS, SELECTION_HEADER_KINDS,
+  AUTHORED_HEADER_LIMITS, HEADER_WHEN_TO_USE_BACKSTOP_CHARS, SELECTION_HEADER_KINDS,
   type EntityHeaderView, type HeaderClippedField, type SelectionHeader,
 } from '@tm8/contract';
 
@@ -25,7 +25,7 @@ import { redactSecretTokens, TOKEN_CHAR_CLASS } from '@tm8/execution';
 
 import type { Querier } from '../db/types.js';
 import { titleOf, type EntityRow } from '../facade/entity-read.js';
-import { deriveHeader, HEADER_TEXT_LIMIT, type AuthoredHeader, type HeaderFacts } from './derive.js';
+import { deriveHeader, HEADER_TEXT_LIMIT, type AuthoredHeader, type Backstopped, type HeaderFacts } from './derive.js';
 
 /** A doc's derived summary reads this much of the body for its first paragraph… */
 const DOC_HEAD_CHARS = 4000;
@@ -112,11 +112,17 @@ export function safeText(text: string | null, fetched?: number): string | null {
 
 const L = HEADER_TEXT_LIMIT + REDACTION_MARGIN;
 /**
- * Authored text is cut IN SQL one character past its guidance limit, so an
+ * Text a whenToUse may come from (an authored one, a skill's description or
+ * `when_to_use`, a memory's `subject_scope`, a collection's description) is
+ * read to the BACKSTOP, not to the 600 summary cut: a whenToUse is never cut
+ * for length (task 01a0da5a), and `backstopped` declares the one cut it can get.
+ */
+const W = HEADER_WHEN_TO_USE_BACKSTOP_CHARS + REDACTION_MARGIN;
+/**
+ * Authored text is cut IN SQL past its limit (a whenToUse at `W`), so an
  * unbounded header never leaves Postgres whole while `clipAuthored` can still
  * tell a cut from a fit. Keywords: one past the count, each one past the length.
  */
-const AW = AUTHORED_HEADER_LIMITS.whenToUse + REDACTION_MARGIN;
 const AS = AUTHORED_HEADER_LIMITS.summary + REDACTION_MARGIN;
 const AK = AUTHORED_HEADER_LIMITS.keywords + 1;
 const AKL = AUTHORED_HEADER_LIMITS.keyword + REDACTION_MARGIN;
@@ -124,12 +130,12 @@ const AKL = AUTHORED_HEADER_LIMITS.keyword + REDACTION_MARGIN;
 const HEADER_SQL = `
   select e.id, e.kind,
          sk.name as skill_name,
-         left(nullif(sk.description, ''), ${L}) as skill_description,
-         left(sk.frontmatter ->> 'when_to_use', ${L}) as skill_when_to_use,
+         left(nullif(sk.description, ''), ${W}) as skill_description,
+         left(sk.frontmatter ->> 'when_to_use', ${W}) as skill_when_to_use,
          coalesce(sk.body_bytes, octet_length(sk.content)) as skill_bytes,
          -- 600 covers both the summary cut and titleOf's 120-character title.
          left(memo.statement, ${L}) as memory_statement,
-         left(memo.subject_scope, ${L}) as memory_subject_scope,
+         left(memo.subject_scope, ${W}) as memory_subject_scope,
          octet_length(memo.statement) as memory_bytes,
          tm.name as team_member_name,
          tm.role as team_member_role,
@@ -156,7 +162,7 @@ const HEADER_SQL = `
          left(t.description, ${L}) as task_description,
          octet_length(t.description) as task_bytes,
          col.name as collection_name,
-         left(col.description, ${L}) as collection_description,
+         left(col.description, ${W}) as collection_description,
          case when col.entity_id is null then null else (
            select jsonb_object_agg(member.kind, member.n) from (
              select me.kind, count(*) as n
@@ -166,7 +172,7 @@ const HEADER_SQL = `
               group by me.kind
            ) member
          ) end as collection_members,
-         left(eh.when_to_use, ${AW}) as header_when_to_use,
+         left(eh.when_to_use, ${W}) as header_when_to_use,
          left(eh.summary, ${AS}) as header_summary,
          case when eh.entity_id is null then null else (
            select coalesce(array_agg(left(kw.k, ${AKL}) order by kw.o), '{}')
@@ -196,16 +202,27 @@ const HEADER_SQL = `
 
 const num = (value: string | number | null): number | null => (value == null ? null : Number(value));
 
+/**
+ * A field a whenToUse may come from, read at `fetched` (`W` when SQL cut it),
+ * redacted, and cut only at the backstop, declared: the `clipAuthored` rule,
+ * so a cut is never silent even when redaction shrank what was read.
+ */
+function backstopped(raw: string | null, fetched = W): Backstopped {
+  const { text, clipped } = clipAuthored(raw, fetched, HEADER_WHEN_TO_USE_BACKSTOP_CHARS);
+  return { text, cut: clipped };
+}
+
 /** Every text field goes through `safeText`: fields SQL cut with their fetch length, whole ones without. */
 function factsOf(row: HeaderRow): HeaderFacts | null {
   switch (row.kind) {
     case 'skill':
-      return { kind: 'skill', description: safeText(row.skill_description, L), whenToUse: safeText(row.skill_when_to_use, L), bytes: num(row.skill_bytes) };
+      return { kind: 'skill', description: backstopped(row.skill_description), whenToUse: backstopped(row.skill_when_to_use), bytes: num(row.skill_bytes) };
     case 'memory':
       if (row.memory_statement == null) return null;
-      return { kind: 'memory', statement: safeText(row.memory_statement, L)!, subjectScope: safeText(row.memory_subject_scope, L), bytes: num(row.memory_bytes) };
+      return { kind: 'memory', statement: safeText(row.memory_statement, L)!, subjectScope: backstopped(row.memory_subject_scope), bytes: num(row.memory_bytes) };
     case 'team_member':
-      return { kind: 'team_member', role: safeText(row.team_member_role), persona: safeText(row.team_member_persona, L), bytes: num(row.team_member_bytes) };
+      // The role is read whole (today's Jev text sends it uncut); only the backstop bounds it.
+      return { kind: 'team_member', role: backstopped(row.team_member_role, Number.MAX_SAFE_INTEGER), persona: safeText(row.team_member_persona, L), bytes: num(row.team_member_bytes) };
     case 'doc':
       return {
         kind: 'doc',
@@ -224,7 +241,7 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
     case 'collection':
       return {
         kind: 'collection',
-        description: safeText(row.collection_description, L),
+        description: backstopped(row.collection_description),
         members: Object.fromEntries(Object.entries(row.collection_members ?? {}).map(([k, n]) => [k, Number(n)])),
       };
     default:
@@ -255,18 +272,19 @@ export function clipAuthored(raw: string | null, fetched: number, max: number): 
 }
 
 /**
- * The row's `entity_headers` columns, when it has one, cut to the
- * `AUTHORED_HEADER_LIMITS` guidance and DECLARED in `clipped`. Nothing refuses
- * a longer header (migration 223), so the cut happens here, once, for every
- * reader: Jev's candidate text, the prompt's context index (where one huge
- * header would otherwise strip its neighbours' text in the budget trim) and
- * `entity get/context` (where `header` is a never-dropped core section).
+ * The row's `entity_headers` columns, when it has one. The `whenToUse` is shown
+ * WHOLE (task 01a0da5a, D2): only `HEADER_WHEN_TO_USE_BACKSTOP_CHARS` cuts it.
+ * The summary and keywords are cut to the `AUTHORED_HEADER_LIMITS` guidance.
+ * Every cut is DECLARED in `clipped`. Nothing refuses a longer header
+ * (migration 223), so the cut happens here, once, for every reader: Jev's
+ * candidate text, the prompt's context index and `entity get/context` (where
+ * `header` is a never-dropped core section).
  */
 function authoredOf(row: HeaderRow): AuthoredHeader | null {
   if (row.header_stale == null) return null;
   const clipped: HeaderClippedField[] = [];
   // Redacted before the cut (see REDACTION_MARGIN), so a clip never leaves a credential's prefix.
-  const whenToUse = clipAuthored(row.header_when_to_use, AW, AUTHORED_HEADER_LIMITS.whenToUse);
+  const whenToUse = clipAuthored(row.header_when_to_use, W, HEADER_WHEN_TO_USE_BACKSTOP_CHARS);
   if (whenToUse.clipped) clipped.push('whenToUse');
   const summary = clipAuthored(row.header_summary, AS, AUTHORED_HEADER_LIMITS.summary);
   if (summary.clipped) clipped.push('summary');

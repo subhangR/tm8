@@ -250,24 +250,24 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
 const INDEX_TEXT_FIELDS: ReadonlySet<string> = new Set(['whenToUse', 'summary']);
 
 /**
- * An entry's header fields. DERIVED text (nobody wrote it for routing) is cut
- * to `INDEX_DERIVED_HEADER_CHARS` per field here, and only here: Jev keeps its
- * 600 (`jevText`), and authored and native text is never cut. Every cut field
- * is named in `clipped`, together with any authored clip `resolveHeaders`
- * already declared, so a cut is never silent.
+ * An entry's header fields. A DERIVED summary (nobody wrote it for routing)
+ * is cut to `INDEX_DERIVED_HEADER_CHARS` here, and only here: Jev keeps its
+ * 600 (`jevText`), and authored and native text is never cut. A whenToUse is
+ * never cut, whatever its source (task 01a0da5a): it is the entry's floor, and
+ * the trim keeps it whole or leaves the entry out. Every cut field is named in
+ * `clipped`, together with any clip `resolveHeaders` already declared, so a
+ * cut is never silent.
  */
 function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header' | 'clipped'> {
   if (!header) return fallbackName ? { header: { name: fallbackName } } : {};
   // Only the fields the index renders: an authored `keywords` clip is not
   // text this entry shows, so declaring it here would name nothing.
   const clipped = new Set<string>((header.clipped ?? []).filter((field) => INDEX_TEXT_FIELDS.has(field)));
-  let { whenToUse, summary } = header;
+  let { summary } = header;
   if (header.source === 'derived') {
     // Redact BEFORE the cut: a cut through a credential leaves a prefix too
     // short for the pattern, and the manifest-wide redaction after it would
     // ship that prefix.
-    const cutWhen = clipIndexText(whenToUse === null ? null : redactSecretTokens(whenToUse), INDEX_DERIVED_HEADER_CHARS);
-    if (cutWhen !== null) { whenToUse = cutWhen; clipped.add('whenToUse'); }
     const cutSummary = clipIndexText(summary === null ? null : redactSecretTokens(summary), INDEX_DERIVED_HEADER_CHARS);
     if (cutSummary !== null) { summary = cutSummary; clipped.add('summary'); }
   }
@@ -275,7 +275,7 @@ function withHeader(header: SelectionHeader | undefined, fallbackName: string | 
     bytes: header.bytes,
     source: header.source,
     stale: header.stale,
-    header: { name: header.name, whenToUse, summary },
+    header: { name: header.name, whenToUse: header.whenToUse, summary },
     ...(clipped.size > 0 ? { clipped: [...clipped].sort() } : {}),
   };
 }

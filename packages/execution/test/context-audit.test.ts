@@ -221,18 +221,22 @@ describe('name-only never leaves a native skill described nowhere (#803 review)'
     expect(overrides?.graphify).toBe('name-only');
   });
 
-  it('context index ON with the header budget-dropped: the harness keeps the description', () => {
+  it('context index ON under budget pressure: a native skill is described whole or trimmed, never name-only and described nowhere', () => {
+    // The floor rule (task 01a0da5a): a skill's whenToUse (its description) is
+    // never dropped on its own, so there is no bare line for name-only to
+    // strand. The lowest-ranked skill leaves the index whole, and the harness
+    // treats it as trimmed (§3: "equipped but trimmed from the index: off").
     const { overrides, manifest } = compose(
       ctx({ skills: [...filler, userSkill('graphify')] }),
       { homeSkills: HOME_SKILLS, contextIndex: true },
     );
-    const entry = manifest.contextIndex?.groups.find((g) => g.name === 'skills')?.entries.find((e) => e.id === 'graphify');
-    // The precondition: the entry survived as a bare line, its header gone.
-    expect(entry?.headerDropped).toBe(true);
-    expect(manifest.effectiveSkills?.native.map((s) => s.entityId)).toEqual(['graphify']);
-    expect(overrides).not.toHaveProperty('graphify');
+    const skills = manifest.contextIndex!.groups.find((g) => g.name === 'skills')!;
+    expect(skills.entries.find((e) => e.id === 'graphify')).toBeUndefined();
+    expect(skills.omitted).toBeGreaterThan(0);
+    for (const e of skills.entries) expect(e.header?.whenToUse, e.id).toBe('x'.repeat(1500));
+    expect(manifest.effectiveSkills?.native.map((s) => s.entityId)).toEqual([]);
+    expect(overrides?.graphify).toBe('off');
     expect(manifest.launch.harness?.skillOverrides?.nameOnly).toEqual([]);
-    expect(manifest.launch.harness?.skillOverrides?.off.map((o) => o.name)).not.toContain('graphify');
   });
 });
 

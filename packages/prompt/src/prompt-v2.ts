@@ -50,14 +50,20 @@ export type TaskContextSnapshot =
 // Change the words there, not here, and apply what they send verbatim.
 
 /**
- * Header authoring (doc 01a0d708 §1): rule 4 of the base, and the same sentence
- * on every v1 mode instruction, so both frames carry one wording. It names
- * `--when-to-use` and `--summary`, which the create verbs accept from I4 (#767).
+ * Header authoring (doc 01a0d708 §1, reworded by task 01a0da5a / doc 01a0da65
+ * D6): rule 4 of the base, and the same sentence on every v1 mode instruction,
+ * so both frames carry one wording. It names `--when-to-use` and `--summary`,
+ * which the create verbs accept from I4 (#767), and carries ONE good and ONE
+ * bad example, because a whenToUse is shown whole to every later agent and a
+ * restated title routes nothing. The examples are single-quoted: the v1 frame
+ * entity-escapes a double quote to six bytes. It fits every mode's approved
+ * ceiling (doc 01a0d456) at +22 B; the 400/600 numbers moved to
+ * `tm8 help entity header set`, and a long whenToUse is warned at write.
  */
 export const HEADER_AUTHORING_RULE =
   'When you create a doc, artifact, file, drawing, task or collection that a later ' +
-  'session may need, pass --when-to-use (when to open it, not its title) and ' +
-  '--summary (what it holds) in the same create call; aim for 400 and 600 chars at most.';
+  "session may need, pass --when-to-use (when to open it, not its title: 'Open when changing " +
+  "balance rounding', not 'Rounding doc') and --summary (what it holds) in the same create call.";
 
 /**
  * The base: what tm8 is, and the rules for every mode. Byte-identical in all
