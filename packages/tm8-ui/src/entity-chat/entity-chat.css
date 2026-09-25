@@ -120,3 +120,38 @@ button.ecp__subject:hover { background: var(--pn-hover); }
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
   background: var(--pn-surface);
 }
+
+/* WORK'S CENTRE (§3.1, Work row): the slot replaces the panel stack, so it
+   takes the stack's whole region. */
+.ws-chat-centre {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.ws-chat-centre > .ecp { flex: 1 1 auto; }
+
+/* THE PHONE'S FULL-SCREEN SHEET (§3.1, Phone row). `inset: 0` against the
+   frame's sheet region, which is already the screen minus the keyboard — so
+   the composer rides above the keyboard with no arithmetic of its own. The
+   host is `pointer-events: none`; this sheet must take taps. */
+.ecp-phone {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  background: var(--pn-surface);
+  padding-top: var(--mobile-safe-top, 0px);
+  padding-bottom: var(--mobile-safe-bottom, 0px);
+}
+.ecp-phone > .ecp { flex: 1 1 auto; }
+.mobile-frame[data-keyboard='up'] .ecp-phone { padding-bottom: 0; }
+/* A thumb-sized target for the head's controls: 44px is the phone floor. */
+.ecp-phone .ecp__switch,
+.ecp-phone .ecp__new,
+.ecp-phone .ecp__close { min-height: 44px; }
+.ecp-phone .ecp__menu { width: min(280px, calc(100vw - 16px)); }

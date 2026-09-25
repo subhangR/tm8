@@ -34,6 +34,8 @@ export async function openEntityChat(seam: ChatsAboutSeam, aboutId: EntityId): P
  * in its own layout; the dock then stands aside on that view by itself.
  */
 export function surfaceHostsChatSlot(view: NavView): boolean {
-  /* Home: the third column / <1200px overlay (lane D, `HomeView`). */
-  return view.view === 'home';
+  /* Home: the third column / <1200px overlay (lane D, `HomeView`).
+     Work: the slot replaces the centre panel stack (`WorkspaceView`).
+     The phone never mounts the dock at all — `MobileShell` hosts its own sheet. */
+  return view.view === 'home' || view.view === 'workspace';
 }

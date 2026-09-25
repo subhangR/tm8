@@ -9,7 +9,7 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EntityId,
   EntitySummary,
@@ -48,7 +48,7 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
-import { WithChatCounts } from '../entity-chat';
+import { WithChatCounts, useChatSlot } from '../entity-chat';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
@@ -94,6 +94,13 @@ export interface WorkspaceViewProps {
    * renders refused with a reason rather than inert.
    */
   onChatAbout?(aboutId: EntityId | null): void;
+  /**
+   * THE CHAT SLOT'S HOST (entity chat §3.1, Work row) — the shell's
+   * `EntityChatSlot`, built there because its ports are shell navigation.
+   * While a slot is open it REPLACES the centre panel stack; the stack stays
+   * in the route underneath, so Back (or ✕) shows the entity again.
+   */
+  chatSlot?: ReactNode;
   onPinRefusal?(id: EntityId, refusal: string): void;
   /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
   onLeftKindChange?(kind: string): void;
@@ -474,130 +481,130 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               { onAction: chatAbout.forEntity(id), wiredActions: chatAbout.wiredActions },
             ]);
             return (
-            /* The Chat button's count — a component, not a hook, for the
-               reason `EntityVerbs` is one: this callback renders several
-               panels at once. */
-            <WithChatCounts seam={data.seam} aboutId={id}>
-            {(chatCounts) => (
-        <EntityDetailPanel
-          detail={detail ?? null}
-          serverBaseUrl={props.serverBaseUrl}
-          loading={!detail}
-          host={host}
-          reasons={reasons}
-          ctx={{ ...ctx, entityId: id }}
-          controls={{
-            ...controlHostBase,
-            kind: detail?.kind ?? '',
-            ctx: { ...ctx, entityId: id },
-            /* The same executor the side lists' rows use for the sharing slot. */
-            onShareSession: primaries.shareSession,
-          }}
-          /* The panel primaries, finally executable: Terminate commits here,
-             Run expands the same launch config the list rows open, and edit /
-             add-child come from `EntityVerbs` — see `composePanelActions`. */
-          onAction={panelActions.onAction}
-          wiredActions={panelActions.wiredActions}
-          primaryCounts={chatCounts}
-          membershipAuthoring={membership.authoringFor(detail)}
-          launch={launchPort}
-          mergePr={mergePrPortFor(data.seam)}
-          onRestore={() => rowLifecycle.archive('restore', id)}
-          pinned={nav.pinned.includes(id)}
-          // A1c's contract: the refusal string renders as the disabled pin
-          // control in T1-4's two-line form (my D14). `undefined` ⇒ pin is live.
-          pinRefusal={
-            nav.pinned.includes(id) || admission.admitted
-              ? undefined
-              : `${admission.cause} — ${admission.remedy}`
-          }
-          liveness={data.livenessOf(id)}
-          attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
-          debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
-          sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
-          sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
-          gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
-          changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
-          taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
-          graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
-          launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
-          attachments={attachments}
-          onAttachmentUploaded={() => props.data.refetchDetail(id)}
-          livenessOf={data.livenessOf}
-          /* Same one prop, same shared predicate, same reason as EntityView:
-             the block signal must reach the terminal AND the chat surface, not
-             whichever one is on top. */
-          needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-          attentionDetail={QUIET_SESSION_DETAIL}
-          viewerMemberId={props.viewerMemberId}
-          contentSurface={nav.surfaceOf?.(id) ?? null}
-          onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
-          /*
-           * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
-           * The fork itself lives in `conversationSurfaceFor`, shared by all five
-           * EntityDetailPanel hosts (user ruling 2026-08-01 made a channel
-           * opened from the Entity List Panel readable and postable; the shared
-           * helper is what keeps the other hosts from un-learning it).
-           */
-          conversationSurface={conversationSurfaceFor(detail, id, {
-            seam: data.seam,
-            spaceId: data.spaceId,
-            connection: data.connection,
-            livenessOf: data.livenessOf,
-            channelFeedPort,
-            viewerMemberId: props.viewerMemberId,
-            nodeKey: data.nodeKey,
-            skillOptions: data.skillOptions,
-            onOpenEntity: openEntity,
-            onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
-          })}
-          discussionSurface={conversationSurfaceFor(detail, id, {
-            seam: data.seam,
-            spaceId: data.spaceId,
-            connection: data.connection,
-            livenessOf: data.livenessOf,
-            channelFeedPort,
-            viewerMemberId: props.viewerMemberId,
-            nodeKey: data.nodeKey,
-            skillOptions: data.skillOptions,
-            onOpenEntity: openEntity,
-            onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
-          }, 'discussion')}
-          messages={messages}
-          connections={data.connectionsOf(id)}
-          linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
-          linkedPullRequestsOf={data.linkedPullRequestsOf}
-          mentionOptions={data.mentionOptions}
-          skillOptions={data.skillOptions}
-          onResumeSession={() => handleSessionResume(id)}
-          resumingSession={resumingId === id}
-          /* The stale card's "mark exited" chip, wired to the SAME executor as
-             the session tile's ✕ — `usePanelPrimaries.terminate` exists so the
-             two controls cannot drift into meaning different things. Until now
-             the chip called nothing at all, which mattered most in exactly the
-             case it is drawn for: after a node restart, when every killed
-             session claims to be running and only an operator at a shell could
-             clear them. */
-          onMarkSessionExited={() => handleSessionTerminate(id)}
-          /* GAP-2 (data-wiring handover): hand the seam commands down so the
-             save path is live in the workspace panels too. */
-          commands={data.seam.commands}
-          onSaved={data.reconcileCommand}
-          streaming={data.activity[id] ?? false}
-          onPin={() => {
-            if (nav.pinned.includes(id)) {
-              nav.unpin(id);
-              return;
-            }
-            const outcome = engine.requestPin(id);
-            if (!outcome.admitted) props.onPinRefusal?.(id, `${outcome.cause} — ${outcome.remedy}`);
-          }}
-          onPromote={() => nav.promote(id)}
-          onClose={() => nav.close(id)}
-          onOpenEntity={openEntity}
-        />
-            )}
-            </WithChatCounts>
+              /* The Chat button's count — a component, not a hook, for the
+                 reason `EntityVerbs` is one: this callback renders several
+                 panels at once. */
+              <WithChatCounts seam={data.seam} aboutId={id}>
+                {(chatCounts) => (
+                  <EntityDetailPanel
+                    detail={detail ?? null}
+                    serverBaseUrl={props.serverBaseUrl}
+                    loading={!detail}
+                    host={host}
+                    reasons={reasons}
+                    ctx={{ ...ctx, entityId: id }}
+                    controls={{
+                      ...controlHostBase,
+                      kind: detail?.kind ?? '',
+                      ctx: { ...ctx, entityId: id },
+                      /* The same executor the side lists' rows use for the sharing slot. */
+                      onShareSession: primaries.shareSession,
+                    }}
+                    /* The panel primaries, finally executable: Terminate commits here,
+                       Run expands the same launch config the list rows open, and edit /
+                       add-child come from `EntityVerbs` — see `composePanelActions`. */
+                    onAction={panelActions.onAction}
+                    wiredActions={panelActions.wiredActions}
+                    primaryCounts={chatCounts}
+                    membershipAuthoring={membership.authoringFor(detail)}
+                    launch={launchPort}
+                    mergePr={mergePrPortFor(data.seam)}
+                    onRestore={() => rowLifecycle.archive('restore', id)}
+                    pinned={nav.pinned.includes(id)}
+                    // A1c's contract: the refusal string renders as the disabled pin
+                    // control in T1-4's two-line form (my D14). `undefined` ⇒ pin is live.
+                    pinRefusal={
+                      nav.pinned.includes(id) || admission.admitted
+                        ? undefined
+                        : `${admission.cause} — ${admission.remedy}`
+                    }
+                    liveness={data.livenessOf(id)}
+                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
+                    debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+                    sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
+                    sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
+                    gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
+                    changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
+                    taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
+                    graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
+                    launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
+                    attachments={attachments}
+                    onAttachmentUploaded={() => props.data.refetchDetail(id)}
+                    livenessOf={data.livenessOf}
+                    /* Same one prop, same shared predicate, same reason as EntityView:
+                       the block signal must reach the terminal AND the chat surface, not
+                       whichever one is on top. */
+                    needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
+                    attentionDetail={QUIET_SESSION_DETAIL}
+                    viewerMemberId={props.viewerMemberId}
+                    contentSurface={nav.surfaceOf?.(id) ?? null}
+                    onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
+                    /*
+                     * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
+                     * The fork itself lives in `conversationSurfaceFor`, shared by all five
+                     * EntityDetailPanel hosts (user ruling 2026-08-01 made a channel
+                     * opened from the Entity List Panel readable and postable; the shared
+                     * helper is what keeps the other hosts from un-learning it).
+                     */
+                    conversationSurface={conversationSurfaceFor(detail, id, {
+                      seam: data.seam,
+                      spaceId: data.spaceId,
+                      connection: data.connection,
+                      livenessOf: data.livenessOf,
+                      channelFeedPort,
+                      viewerMemberId: props.viewerMemberId,
+                      nodeKey: data.nodeKey,
+                      skillOptions: data.skillOptions,
+                      onOpenEntity: openEntity,
+                      onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
+                    })}
+                    discussionSurface={conversationSurfaceFor(detail, id, {
+                      seam: data.seam,
+                      spaceId: data.spaceId,
+                      connection: data.connection,
+                      livenessOf: data.livenessOf,
+                      channelFeedPort,
+                      viewerMemberId: props.viewerMemberId,
+                      nodeKey: data.nodeKey,
+                      skillOptions: data.skillOptions,
+                      onOpenEntity: openEntity,
+                      onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
+                    }, 'discussion')}
+                    messages={messages}
+                    connections={data.connectionsOf(id)}
+                    linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
+                    linkedPullRequestsOf={data.linkedPullRequestsOf}
+                    mentionOptions={data.mentionOptions}
+                    skillOptions={data.skillOptions}
+                    onResumeSession={() => handleSessionResume(id)}
+                    resumingSession={resumingId === id}
+                    /* The stale card's "mark exited" chip, wired to the SAME executor as
+                       the session tile's ✕ — `usePanelPrimaries.terminate` exists so the
+                       two controls cannot drift into meaning different things. Until now
+                       the chip called nothing at all, which mattered most in exactly the
+                       case it is drawn for: after a node restart, when every killed
+                       session claims to be running and only an operator at a shell could
+                       clear them. */
+                    onMarkSessionExited={() => handleSessionTerminate(id)}
+                    /* GAP-2 (data-wiring handover): hand the seam commands down so the
+                       save path is live in the workspace panels too. */
+                    commands={data.seam.commands}
+                    onSaved={data.reconcileCommand}
+                    streaming={data.activity[id] ?? false}
+                    onPin={() => {
+                      if (nav.pinned.includes(id)) {
+                        nav.unpin(id);
+                        return;
+                      }
+                      const outcome = engine.requestPin(id);
+                      if (!outcome.admitted) props.onPinRefusal?.(id, `${outcome.cause} — ${outcome.remedy}`);
+                    }}
+                    onPromote={() => nav.promote(id)}
+                    onClose={() => nav.close(id)}
+                    onOpenEntity={openEntity}
+                  />
+                )}
+              </WithChatCounts>
             );
           }}
         </EntityVerbs>
@@ -791,6 +798,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   });
 
   const centreIsEmpty = engine.visible.stack.length === 0 && engine.visible.pinned.length === 0;
+  /* Only a host that was handed the slot can stand the stack down for it. */
+  const chatInCentre = useChatSlot() !== null && props.chatSlot != null;
 
   return (
     <WorkspaceGrid
@@ -930,9 +939,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadLaunchDefaults={data.launch.loadLaunchDefaults}
               skillCandidates={data.launch.skillCandidates}
               referenceCandidates={data.launch.referenceCandidates}
-          loadSkillPreview={data.launch.loadSkillPreview}
-          jev={data.launch.jev}
-          spaceId={data.spaceId}
+              loadSkillPreview={data.launch.loadSkillPreview}
+              jev={data.launch.jev}
+              spaceId={data.spaceId}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
               loadSpaceCredentials={data.seam.credentials.space.list}
@@ -973,7 +982,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               </div>
             </div>
           )}
-          {centreIsEmpty ? (
+          {chatInCentre ? (
+            /* The chat REPLACES the stack (Q5) rather than joining it as a
+               column: the stack is `EntityId[]` and a new chat has no id. The
+               stack stays in the route, so closing the chat restores it. */
+            <div className="ws-chat-centre" data-testid="workspace-chat-centre">
+              {props.chatSlot}
+            </div>
+          ) : centreIsEmpty ? (
             <EmptyCenter
               liveIds={data.liveIds}
               rows={rosterRows}
@@ -1002,7 +1018,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           {columnHeader('right')}
           <EntityListPanel
             kind={rightKind}
-              selectorSlot="host"
+            selectorSlot="host"
             rowsFor={data.rowsFor(rightKind)}
             pageStateOf={data.pageStateOf(rightKind)}
             loadMore={data.loadMore(rightKind)}

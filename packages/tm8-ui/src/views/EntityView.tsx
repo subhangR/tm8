@@ -1232,6 +1232,8 @@ export function EntityView(props: EntityViewProps) {
               setAux({ sort: 'tab', tab: tab as 'discussion' | 'connections' }),
             onAction: panelActions.onAction,
             wiredActions: panelActions.wiredActions,
+            /* The Chat row's count, as the desktop header draws it (§3.2). */
+            primaryCounts: chatCounts,
             /* D44's precedence: where the host mounts the full launch sheet, Run
                opens it directly rather than the 300px inline expand, which
                `mobile/CONTRACT.md` §4 rules does not survive a 390px screen —
