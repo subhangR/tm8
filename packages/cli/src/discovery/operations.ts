@@ -2219,6 +2219,27 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     ver: 'expectedVersion',
   },
+  'spaces.chatDefaults.get': {
+    cmd: ['space', 'chat-defaults', 'get'],
+    syn: 'tm8 space chat-defaults get [<space-id>]',
+    sum: 'Read the Space\'s per-kind chat defaults (teammate and model a new chat about an entity of that kind starts with)',
+    authz: 'space',
+    input: 'none',
+    tags: ['chat'],
+  },
+  'spaces.chatDefaults.set': {
+    cmd: ['space', 'chat-defaults', 'set'],
+    syn: 'tm8 space chat-defaults set <kind> [--teammate <team-member-id>] [--model <model-id>] [--clear] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Set or clear one kind\'s chat default for the whole Space',
+    authz: 'space',
+    input: 'bound',
+    tags: ['chat'],
+    notes: [
+      'requires an authenticated human Member with the Space owner/admin capability',
+      'a PATCH over kinds: the named kind is replaced by exactly the flags given; other kinds are untouched',
+      'never `message` or `chat` — a chat cannot be about either',
+    ],
+  },
   'spaces.interactionProfile.setDefault': {
     cmd: ['space', 'interaction-profile', 'set-default'],
     syn: 'tm8 space interaction-profile set-default <interaction-profile-id|none> [--space <space-id>] --expect-settings-revision <n> --yes [--mutation-id <id>]',
@@ -3016,7 +3037,8 @@ export const CATALOG_DIGEST =
   // Re-measured (headers I4): + entities.header.set/clear; matched to the regenerated manifest.
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
-  'sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2';
+  // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  'sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35';
 
 export const GRAMMAR_VERSION = '2';
 

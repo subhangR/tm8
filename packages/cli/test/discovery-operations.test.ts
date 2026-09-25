@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 243; /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 245; /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 239, /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 241, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
   });
 });
 
