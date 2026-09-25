@@ -56,6 +56,7 @@ A row that is neither measured nor excluded makes `report.mjs` exit 1 — that i
 
 ## 5. On a hang
 
+- `ended: auth-error` = the lane's first reply was synthetic ("Not logged in"): the node's env lacked USER/SHELL/LANG (start it with `dev-node.sh up`, never by hand). The row is set aside; re-`up` the node and re-run the cell.
 - `ended: no-transcript` after 120 s = the workspace-trust prompt (task 01a0d79e). The runner already terminated it and set the row aside. Re-run that cell: `--only <key> --models <model> --reps 1` (the rep number will repeat; note it on your task).
 - A lane past `--timeout-min`: the row says `ended: timeout` and is measured anyway; it is counted in §5 of the report.
 - The runner itself stuck (no log line for 30 min): `pkill -f "lanes.mjs --slice <yours>"` (ONLY your slice's pattern — never a bare `pkill -f claude`), `tm8`-terminate the lane sessions it lists in the log via `<datadir>/t8 session terminate <id> --yes`, then restart the runner with `--only` for the cells that have no row yet.
