@@ -65,6 +65,12 @@ A row that is neither measured nor excluded makes `report.mjs` exit 1 — that i
 
 ## 6. Report
 
+First pull `ctx-eval/e1` and RE-MEASURE every file in place from the stored manifests + transcripts. Rows written by a runner started on an older rig carry `measureError` (Q1 body-level drops, fixed in 545e714e/10d0e431) or components schema 1 (the kernel used to include the expanded memories), and `report.mjs` refuses both. Run it from the checkout that holds `fixtures/node-<port>.json` (the one `fixture.mjs` ran in):
+```sh
+git pull --ff-only origin ctx-eval/e1
+node $RIG/remeasure.mjs $RIG/results/<file>.jsonl --all     # identity/success/rubric untouched; adds remeasuredAt + remeasureRig
+```
+Then:
 ```sh
 node $RIG/report.mjs $RIG/results/<file>.jsonl                       # your slice
 node $RIG/report.mjs $RIG/results/<date>-<sha>-c*.jsonl --out $RIG/results/<date>-<sha>-all   # all four
