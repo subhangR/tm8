@@ -133,6 +133,24 @@ test('D2: header- and body-level drops are header reads; every other miss is ent
   for (const why of ['byte-budget:entry', 'count-cap:entry', 'not-selected:-', 'absent-from-index']) assert.equal(missLevel(why), 'entry', why);
 });
 
+test('summarize --excluded counts set-aside launches per arm, so a re-run cannot hide a failure', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'summarize-excluded-'));
+  try {
+    const row = (arm) => JSON.stringify({ arm, taskKey: 't', firstRequestTokens: 1, uptimeStart: '1 1 1' });
+    writeFileSync(join(dir, 'rows.jsonl'), [row('off'), row('on')].join('\n'));
+    writeFileSync(join(dir, 'excluded.jsonl'), JSON.stringify({ arm: 'on', taskKey: 't', transcript: null, measureError: 'no transcript' }));
+    const run = (...extra) => execFileSync(process.execPath, [new URL('./summarize.mjs', import.meta.url).pathname, join(dir, 'rows.jsonl'), '--arms', 'off,on', ...extra], { encoding: 'utf8' });
+    assert.match(run('--excluded', join(dir, 'excluded.jsonl')), /\| launches set aside \/ attempted \(of which: no transcript\) \| 0\/1 \(0\) \| 1\/2 \(1\) \|/);
+    assert.doesNotMatch(run(), /set aside/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Q1: a memory dropped at BODY level is a listed, collapsed entry; opening it is a header-level read, not an entry miss', () => {
   const MEMC = id(10);
   const m = manifest();
