@@ -422,6 +422,55 @@ describe('Responses', () => {
   });
 });
 
+describe('opening a form', () => {
+  function mountDefault(formId: string, canEdit: boolean, edit?: (content: Record<string, unknown>) => void) {
+    const f = FORM_FIXTURE_FORMS.find((x) => x.id === formId)!;
+    const content: Record<string, unknown> = { kind: 'form', ...structuredClone(f.content) };
+    edit?.(content);
+    const detail = { id: f.id, title: f.title, version: f.version, content, capabilities: { canEdit } };
+    render(
+      <FormsPortProvider port={createFixtureFormsPort({ responses: [] })}>
+        <QuestionnaireBlock detail={detail as never} />
+      </FormsPortProvider>,
+    );
+  }
+  const selected = () => screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')?.textContent;
+
+  it('an editor opening a draft lands on Build: there is nothing to fill yet', async () => {
+    mountDefault(FORM_FIXTURE_IDS.onboarding, true);
+    await screen.findByTestId('build');
+    expect(selected()).toBe('Build');
+  });
+
+  it('a draft opens on Fill for someone who cannot edit it', async () => {
+    mountDefault(FORM_FIXTURE_IDS.onboarding, false);
+    await screen.findByTestId('fill-draft');
+    expect(selected()).toBe('Fill');
+  });
+
+  it('an open form opens on Fill for its editor', async () => {
+    mountDefault(FORM_FIXTURE_IDS.release, true);
+    await screen.findByRole('tabpanel');
+    expect(selected()).toBe('Fill');
+  });
+
+  it('a section left with no questions renders no heading', async () => {
+    mountDefault(FORM_FIXTURE_IDS.release, true, (content) => {
+      const questions = content.questions as { section?: string | null }[];
+      content.questions = questions.filter((q) => q.section !== 'notes');
+    });
+    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['Scope', 'Quality']);
+  });
+
+  it('the cancelled notice does not blame a requester the form may not have', async () => {
+    mountDefault(FORM_FIXTURE_IDS.naming, false);
+    const notice = await screen.findByTestId('fill-cancelled');
+    expect(notice.textContent).toMatch(/This form was cancelled/);
+    expect(notice.textContent).not.toMatch(/requester/);
+  });
+});
+
 describe('W3: the real port', () => {
   function mountReal(formId: string, tab: QuestionnaireTab) {
     const f = FORM_FIXTURE_FORMS.find((x) => x.id === formId)!;

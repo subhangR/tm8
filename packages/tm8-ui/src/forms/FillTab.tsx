@@ -52,7 +52,7 @@ export function FillTab({ q }: { q: Questionnaire }) {
     </Notice>
   ) : status === 'cancelled' ? (
     <Notice tone="block" title="Cancelled" testId="fill-cancelled">
-      The requester cancelled this form. Nothing more will be delivered.
+      This form was cancelled, so it takes no more answers. Nothing more will be delivered.
     </Notice>
   ) : null;
 

@@ -223,7 +223,11 @@ export interface QuestionGroup {
   questions: FormQuestionRow[];
 }
 
-/** Unsectioned questions first, then one group per section, each in position order. */
+/**
+ * Unsectioned questions first, then one group per section, each in position
+ * order. A section with no questions has no group: its heading alone would
+ * read as a part of the form that went missing.
+ */
 export function groupBySection(sections: readonly FormSectionRow[], questions: readonly FormQuestionRow[]): QuestionGroup[] {
   const ordered = [...questions].sort((a, b) => a.position - b.position);
   const known = new Set(sections.map((s) => s.key));
@@ -231,7 +235,8 @@ export function groupBySection(sections: readonly FormSectionRow[], questions: r
   const loose = ordered.filter((q) => !q.section || !known.has(q.section));
   if (loose.length > 0) groups.push({ section: null, questions: loose });
   for (const section of [...sections].sort((a, b) => a.position - b.position)) {
-    groups.push({ section, questions: ordered.filter((q) => q.section === section.key) });
+    const inSection = ordered.filter((q) => q.section === section.key);
+    if (inSection.length > 0) groups.push({ section, questions: inSection });
   }
   return groups;
 }
