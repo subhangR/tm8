@@ -26,6 +26,7 @@
  */
 import {
   AUTHORED_HEADER_LIMITS,
+  CONTEXT_FLOOR_DEFAULTS,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   SPAWN_SELECTION_GROUP_LIMIT,
 } from '@tm8/contract';
@@ -41,7 +42,7 @@ import {
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
-import { CRITICAL_SCORE, MEMORY_TICK_LIMIT, TEAMMATE_FIT_SCORE, TICK_SCORE } from '../jev/groups.js';
+import { CRITICAL_SCORE } from '../jev/groups.js';
 
 export interface EnvKnob {
   name: string;
@@ -251,10 +252,8 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
-  { name: 'TEAMMATE_FIT_SCORE', group: 'Jev selection', summary: 'A teammate scoring at least this "fits" the work.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TEAMMATE_FIT_SCORE },
-  { name: 'TICK_SCORE', group: 'Jev selection', summary: 'A memory or skill at or above this is pre-ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TICK_SCORE },
-  { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'A row at or above this is always ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },
-  { name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories Ask Jev pre-ticks. The spawn ceiling is SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/groups.ts', read: () => MEMORY_TICK_LIMIT },
+  { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'Rows at or above this are considered first in the budget fill, and a critical memory is always ticked (spawn never collapses one).', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },
+  { name: 'CONTEXT_FLOOR_DEFAULTS', group: 'Jev selection', summary: 'Node score floors for the Ask Jev budget fill, per group (memories, skills, references, teammates). A row under its floor is never pre-ticked; a profile\'s contextFloors.* replaces each.', definedIn: 'packages/contract/src/context-budgets.ts', read: () => CONTEXT_FLOOR_DEFAULTS },
   { name: 'CANDIDATE_LIMIT', group: 'Jev selection', summary: 'Candidates Jev ranks per group per launch. Defined from SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => CANDIDATE_LIMIT },
   { name: 'SPAWN_SELECTION_GROUP_LIMIT', group: 'Jev selection', summary: 'Most ids one spawn selection group (memories, skills, references) may name. A safety ceiling equal to the candidate pool; the byte budget is the real limit.', definedIn: 'packages/contract/src/contract.ts', read: () => SPAWN_SELECTION_GROUP_LIMIT },
   { name: 'TEXT_LIMIT', group: 'Jev selection', summary: 'Characters of a memory, persona or skill description that may leave the server.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => TEXT_LIMIT },
@@ -308,10 +307,10 @@ export const PROFILE_KNOBS: readonly SubjectKnob[] = [
   { name: 'contextBudgets.skills', summary: 'Bytes of <context_index> skill entries; unset, skills take what the prompt has left. Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: 'what remains', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.skills', change: 'profile' },
   { name: 'contextBudgets.references', summary: 'Bytes of <context_index> reference entries (a worker\'s linked teammates share it unless teammates is set). Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: '8192 (BYTE_BUDGETS.referenceIndex)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.references', change: 'profile' },
   { name: 'contextBudgets.teammates', summary: 'Bytes of <context_index> teammate entries. Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: 'shares references (worker); 8192 (BYTE_BUDGETS.rosterIndex, dispatcher)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.teammates', change: 'profile' },
-  { name: 'contextFloors.memories', summary: 'Jev score floor for filling the memories budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.memories', change: 'profile' },
-  { name: 'contextFloors.skills', summary: 'Jev score floor for filling the skills budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.skills', change: 'profile' },
-  { name: 'contextFloors.references', summary: 'Jev score floor for filling the references budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.references', change: 'profile' },
-  { name: 'contextFloors.teammates', summary: 'Jev score floor for filling the teammates budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.0', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.teammates', change: 'profile' },
+  { name: 'contextFloors.memories', summary: 'Jev score floor for filling the memories budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.memories)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.memories', change: 'profile' },
+  { name: 'contextFloors.skills', summary: 'Jev score floor for filling the skills budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.skills)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.skills', change: 'profile' },
+  { name: 'contextFloors.references', summary: 'Jev score floor for filling the references budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.references)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.references', change: 'profile' },
+  { name: 'contextFloors.teammates', summary: 'Jev score floor for filling the teammates budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.0 (CONTEXT_FLOOR_DEFAULTS.teammates)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.teammates', change: 'profile' },
   { name: 'initialContentSurface', summary: 'Surface a session on this profile opens on: terminal or chat. Unset defers to the pinned template.', default: null, definedIn: 'packages/contract/src/contract.ts', anchor: "initialContentSurface?: 'terminal' | 'chat';", change: 'profile' },
 ];
 

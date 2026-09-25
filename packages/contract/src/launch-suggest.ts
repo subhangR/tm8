@@ -7,8 +7,8 @@
  * spawn as an ordinary `execution.spawn` field (`selection`, `model`,
  * `agentTool`, `reasoningEffort`), never as a Jev verdict.
  *
- * Four groups — model, teammates, memories, skills — are four independent Jev
- * calls. Each comes back self-contained, with its own status and its own cost,
+ * Five groups — model, teammates, memories, skills, references — are five
+ * independent Jev calls. Each comes back self-contained, with its own status and its own cost,
  * so one group failing never affects another and a later move to streaming
  * needs no contract change.
  *
@@ -18,20 +18,22 @@
  */
 import { z } from 'zod';
 
-import type { LaunchReasoningEffort } from './contract.js';
+import { SPAWN_SELECTION_REFERENCE_KINDS, type LaunchReasoningEffort, type SpawnSelectionReferenceKind } from './contract.js';
+import type { SelectionHeaderSource } from './selection-header.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /** One independent Jev question. */
-export type LaunchSuggestGroup = 'model' | 'teammates' | 'memories' | 'skills';
+export type LaunchSuggestGroup = 'model' | 'teammates' | 'memories' | 'skills' | 'references';
 
 export const LAUNCH_SUGGEST_GROUPS = [
   'model',
   'teammates',
   'memories',
   'skills',
+  'references',
 ] as const satisfies readonly LaunchSuggestGroup[];
 
 /** Every way a Jev HTTP call can fail. The client never throws; it reports one of these. */
@@ -94,10 +96,37 @@ export interface ModelSuggestion {
   reasons: string[];
 }
 
-export type RankedEntityKind = 'memory' | 'skill' | 'team_member';
-/** Where a candidate came from. An entity found by several sources appears once, with all of them. */
-export type RankedEntitySource = 'teammate' | 'inherited' | 'task' | 'space';
+/** A reference is a doc, artifact, drawing, file or task — the kinds `selection.referenceIds` may name. */
+export type RankedEntityKind = 'memory' | 'skill' | 'team_member' | SpawnSelectionReferenceKind;
+export const RANKED_ENTITY_KINDS = ['memory', 'skill', 'team_member', ...SPAWN_SELECTION_REFERENCE_KINDS] as const satisfies readonly RankedEntityKind[];
+/**
+ * Where a candidate came from. An entity found by several sources appears
+ * once, with all of them. `parent`: a doc under the subject task's parent.
+ */
+export type RankedEntitySource = 'teammate' | 'inherited' | 'task' | 'parent' | 'space';
 export type RelevanceLevel = 'irrelevant' | 'background' | 'useful' | 'critical';
+
+/**
+ * The selection header in effect for a ranked entity (headers design
+ * 01a0d31e §2), whatever wrote it: `source` says whether a person authored
+ * it, the kind carries it natively, or tm8 derived it. `version` is the
+ * authored header's own version, 0 when there is none. Graph content: render
+ * it as plain text.
+ */
+export interface RankedEntityHeader {
+  whenToUse: string | null;
+  summary: string | null;
+  keywords: string[];
+  source: SelectionHeaderSource;
+  version: number;
+}
+
+/**
+ * Why a row Jev ranked is NOT pre-ticked (design 01a0d348 §10 Q5):
+ * `below-floor` — scored under the group's floor; `over-budget` — above the
+ * floor, but the group's byte budget was full when its turn came.
+ */
+export type RankedEntityReason = 'below-floor' | 'over-budget';
 
 /** One candidate, ranked. Entities are de-duplicated by id before Jev sees them. */
 export interface RankedEntity {
@@ -108,21 +137,50 @@ export interface RankedEntity {
   /** 0..3 */
   score: number;
   level: RelevanceLevel;
-  /** Pre-ticked in the UI (design §4.2). */
+  /** Pre-ticked in the UI: filled by rank into the group's budget (design 01a0d348 §10 Q5). */
   suggested: boolean;
+  /**
+   * A default of this launch: what spawn loads for the group when nothing is
+   * selected (the same loaders `launch.defaults` reads).
+   */
+  default: boolean;
+  /**
+   * Bytes this entity adds to the launch prompt when ticked, measured with
+   * the serializers spawn uses: a memory's whole `<entry>`, anything else's
+   * `<context_index>` entry. The group's budget counts these.
+   */
+  promptBytes: number;
+  header: RankedEntityHeader;
+  /** Set on an unticked row only: why the fill left it out. */
+  reason?: RankedEntityReason;
 }
 
 export interface TeammateSuggestion {
   items: RankedEntity[];
   /** True when no teammate is a good fit for this work. */
   noFit: boolean;
+  /** The score a teammate needs to fit (`contextFloors.teammates`). */
+  floor: number;
 }
 
-/** Memories or skills. `considered` of `total` candidates were sent to Jev. */
+/**
+ * Memories, skills or references. `considered` of `total` candidates were
+ * sent to Jev. The ticks fill `budget` bytes in rank order, skipping rows
+ * scored under `floor`.
+ */
 export interface EntitySuggestion {
   items: RankedEntity[];
   considered: number;
   total: number;
+  /**
+   * Bytes the group may take in the prompt: the profile's `contextBudgets`,
+   * else the node default. For an index group (skills, references) it covers
+   * the group's frame as well as its entries. Null: no budget of its own
+   * (skills, unless the profile caps them, take what the prompt has left).
+   */
+  budget: number | null;
+  /** The profile's `contextFloors` for the group, else the node default. */
+  floor: number;
 }
 
 export interface LaunchSuggestDraft {
@@ -145,6 +203,14 @@ export interface LaunchSuggestInput {
   draft?: LaunchSuggestDraft;
   /** Required by the memories and skills groups; without it they are skipped with `no_teammate`. */
   teamMemberId?: string;
+  /**
+   * The harness the launch will run, which decides whether a skill is native
+   * and so how its index entry reads. Absent: the teammate's own, else
+   * claude-code.
+   */
+  agentTool?: JevAgentTool;
+  /** The Interaction Profile the launch will pin, whose budgets and floors the fill uses. Absent: the one spawn would resolve. */
+  interactionProfileId?: string;
   groups: LaunchSuggestGroup[];
   /**
    * TRANSPORT FIELD, NOT JEV'S. The HTTP facade injects a fresh
@@ -163,7 +229,16 @@ export interface LaunchSuggestResult {
     teammates?: JevGroupResult<TeammateSuggestion>;
     memories?: JevGroupResult<EntitySuggestion>;
     skills?: JevGroupResult<EntitySuggestion>;
+    references?: JevGroupResult<EntitySuggestion>;
   };
+  /**
+   * Whether the launch would render `<context_index>` (the node's
+   * `TM8_CONTEXT_INDEX`, else the profile's `contextIndex`). `off`: references
+   * reach the prompt only as linked names, so their `promptBytes` are 0 and
+   * their group has no budget, and a skill's `promptBytes` is its `<skills>`
+   * line. `promptBytes` never counts bytes that do not reach the prompt.
+   */
+  contextIndex: 'on' | 'off';
   /** Running total for the whole run, including earlier requests. */
   run: JevCost;
 }
@@ -192,6 +267,8 @@ const launchSuggestInputObject = z.object({
   subjectId: Uuid,
   draft: LaunchSuggestDraftSchema.optional(),
   teamMemberId: Uuid.optional(),
+  agentTool: z.enum(['claude-code', 'codex']).optional(),
+  interactionProfileId: Uuid.optional(),
   groups: z.array(LaunchSuggestGroupSchema)
     .min(1)
     .refine((groups) => new Set(groups).size === groups.length, {
@@ -224,25 +301,40 @@ export const ModelSuggestionSchema = z.object({
   reasons: z.array(z.string()),
 }).strict();
 
+export const RankedEntityHeaderSchema = z.object({
+  whenToUse: z.string().nullable(),
+  summary: z.string().nullable(),
+  keywords: z.array(z.string()),
+  source: z.enum(['authored', 'native', 'derived']),
+  version: z.number().int().nonnegative(),
+}).strict();
+
 export const RankedEntitySchema = z.object({
   entityId: Uuid,
-  kind: z.enum(['memory', 'skill', 'team_member']),
+  kind: z.enum(RANKED_ENTITY_KINDS),
   title: z.string(),
-  sources: z.array(z.enum(['teammate', 'inherited', 'task', 'space'])).min(1),
+  sources: z.array(z.enum(['teammate', 'inherited', 'task', 'parent', 'space'])).min(1),
   score: z.number().min(0).max(3),
   level: z.enum(['irrelevant', 'background', 'useful', 'critical']),
   suggested: z.boolean(),
+  default: z.boolean(),
+  promptBytes: z.number().int().nonnegative(),
+  header: RankedEntityHeaderSchema,
+  reason: z.enum(['below-floor', 'over-budget']).optional(),
 }).strict();
 
 export const TeammateSuggestionSchema = z.object({
   items: z.array(RankedEntitySchema),
   noFit: z.boolean(),
+  floor: z.number().min(0).max(3),
 }).strict();
 
 export const EntitySuggestionSchema = z.object({
   items: z.array(RankedEntitySchema),
   considered: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
+  budget: z.number().int().nonnegative().nullable(),
+  floor: z.number().min(0).max(3),
 }).strict();
 
 export function jevGroupResultSchema<T extends z.ZodTypeAny>(value: T) {
@@ -264,7 +356,9 @@ export const LaunchSuggestResultSchema = z.object({
     teammates: jevGroupResultSchema(TeammateSuggestionSchema).optional(),
     memories: jevGroupResultSchema(EntitySuggestionSchema).optional(),
     skills: jevGroupResultSchema(EntitySuggestionSchema).optional(),
+    references: jevGroupResultSchema(EntitySuggestionSchema).optional(),
   }).strict(),
+  contextIndex: z.enum(['on', 'off']),
   run: JevCostSchema,
 }).strict();
 
@@ -299,6 +393,7 @@ export type LaunchSuggestShapeProof = [
   Assert<SameShape<z.infer<typeof JevCostSchema>, JevCost>>,
   Assert<SameShape<z.infer<typeof ModelSuggestionSchema>, ModelSuggestion>>,
   Assert<SameShape<z.infer<typeof RankedEntitySchema>, RankedEntity>>,
+  Assert<SameShape<z.infer<typeof RankedEntityHeaderSchema>, RankedEntityHeader>>,
   Assert<SameShape<z.infer<typeof TeammateSuggestionSchema>, TeammateSuggestion>>,
   Assert<SameShape<z.infer<typeof EntitySuggestionSchema>, EntitySuggestion>>,
 ];

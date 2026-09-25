@@ -1,10 +1,13 @@
 /**
  * Renderings of a resolved `SelectionHeader` (headers design 01a0d31e §7).
  *
- * `jevText` is the ONE place Ask Jev's candidate text is built. For teammates,
- * memories and skills with no authored header it is byte-identical to the
- * text `candidates.ts` built by hand before the header module existed
- * (golden tests: `test/db/headers-jev-parity.pg.test.ts`).
+ * `jevText` is the ONE place Ask Jev's candidate text is built. For teammates
+ * and skills with no authored header it is byte-identical to the text
+ * `candidates.ts` built by hand before the header module existed (golden
+ * tests: `test/db/headers-jev-parity.pg.test.ts`). Headers T4 (integrated
+ * design 01a0d348 §8 I7) changed two things on purpose: a memory's text
+ * carries its `subject_scope`, and an authored header's keywords join the
+ * text of the kinds that can have one.
  *
  * Only headers are rendered; a body never is.
  */
@@ -30,6 +33,12 @@ export interface JevTextOptions {
   equippedSkills?: readonly string[];
 }
 
+/** ` Keywords: a, b.` for an authored header that has any, each cut and redacted like every other field. */
+function keywordsPart(header: SelectionHeader, limit: number): string | null {
+  const words = header.keywords.map((word) => clip(word, limit)).filter((word) => word.trim().length > 0);
+  return words.length > 0 ? `Keywords: ${words.join(', ')}.` : null;
+}
+
 /** What Jev is shown for one candidate. */
 export function jevText(header: SelectionHeader, options: JevTextOptions = {}): string {
   // Names, a teammate's uncut role and equipped-skill names are not cut, but
@@ -46,11 +55,17 @@ function renderJevText(header: SelectionHeader, options: JevTextOptions): string
       const equipped = options.equippedSkills ?? [];
       if (equipped.length > 0) parts.push(`Equipped with: ${equipped.join(', ')}.`);
       if (header.summary) parts.push(clip(header.summary, limit));
+      const keywords = keywordsPart(header, limit);
+      if (keywords) parts.push(keywords);
       return parts.join(' ');
     }
-    case 'memory':
-      // The statement, cut. (`subject_scope` joins it in headers T4, not here.)
-      return clip(header.summary, limit);
+    case 'memory': {
+      // The statement, cut, then what it is about (headers T4): a true claim
+      // about the wrong subject is how an irrelevant memory ranks high.
+      const statement = clip(header.summary, limit);
+      const scope = header.whenToUse ? clip(header.whenToUse, limit) : '';
+      return scope.trim() ? `${statement} (scope: ${scope})` : statement;
+    }
     case 'skill': {
       // "name: description", else "name: when_to_use", else the bare name.
       const text = clip(header.summary ?? header.whenToUse, limit);
@@ -58,8 +73,11 @@ function renderJevText(header: SelectionHeader, options: JevTextOptions): string
     }
     default: {
       // References (doc, artifact, drawing, file, task, collection): name,
-      // then when, then what. Not yet shown to Jev (headers T7).
+      // then when, then what, then an authored header's keywords. The body is
+      // never sent (headers design 01a0d31e §7.1).
       const parts = [header.whenToUse, header.summary].filter((part): part is string => !!part).map((part) => clip(part, limit));
+      const keywords = keywordsPart(header, limit);
+      if (keywords) parts.push(keywords);
       return parts.length > 0 ? `${header.name}: ${parts.join(' ')}` : header.name;
     }
   }

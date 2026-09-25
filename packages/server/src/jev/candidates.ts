@@ -1,6 +1,6 @@
 /**
- * What Jev is shown: the subject and the four candidate groups (design
- * 01a0cb80 §4.1).
+ * What Jev is shown: the subject and the candidate groups (design 01a0cb80
+ * §4.1; the references group, design 01a0d348 §8 I7 / headers 01a0d31e §7.1).
  *
  * Every loader takes the CALLER'S transaction (`deps.db.tx(claimsFor(owner,
  * ctx), …)`, as `skills.preview` does), so RLS decides what exists: Jev is
@@ -19,17 +19,32 @@
  * Each loader's SQL chooses the POOL (sources, order, the 240 cap, `total`);
  * the text comes from the header module — `jevText(resolveHeaders(ids))` — so
  * no loader builds its own snippet (headers design 01a0d31e §7).
+ *
+ * Every candidate also carries what the launch sheet fills a budget with
+ * (design 01a0d348 §10 Q5): whether it is a DEFAULT of the launch (from
+ * spawn's own loaders, `facade/spawn-defaults.ts`), the header in effect, and
+ * its `promptBytes` (`measure.ts`, spawn's serializers).
  */
-import { SPAWN_SELECTION_GROUP_LIMIT, type RankedEntityKind, type RankedEntitySource } from '@tm8/contract';
-import { redactSecretTokens } from '@tm8/execution';
+import {
+  SPAWN_SELECTION_GROUP_LIMIT,
+  SPAWN_SELECTION_REFERENCE_KINDS,
+  type EntityHeaderView,
+  type RankedEntityHeader,
+  type RankedEntityKind,
+  type RankedEntitySource,
+} from '@tm8/contract';
+import { redactSecretTokens, type ContextVia, type ResolvedSkillRow } from '@tm8/execution';
 
 import type { Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
+import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from '../facade/spawn-defaults.js';
+import { loadMemoriesById, renderMemoryText } from '../facade/spawn-memories.js';
 import { fail } from '../http/errors.js';
 import { clip, HEADER_TEXT_LIMIT } from '../headers/derive.js';
 import { jevText } from '../headers/render.js';
-import { resolveHeaders } from '../headers/resolve.js';
-import { loadSkillEquipment } from '../skills/equipment.js';
+import { resolveHeaderViews } from '../headers/resolve.js';
+import { loadSkillsById } from '../skills/equipment.js';
+import { memoryPromptBytes, referencePromptBytes, skillPromptBytes, type MeasureContext } from './measure.js';
 import type { JevSubject } from './port.js';
 
 /**
@@ -49,6 +64,11 @@ export interface Candidate {
   /** What Jev is shown. */
   text: string;
   sources: RankedEntitySource[];
+  /** What spawn loads for this group when nothing is selected. */
+  default: boolean;
+  /** Bytes it adds to the launch prompt when ticked (`measure.ts`). */
+  promptBytes: number;
+  header: RankedEntityHeader;
 }
 
 export interface CandidateSet {
@@ -63,9 +83,22 @@ export interface LoadedSubject {
   subject: JevSubject;
   /** The task whose `remembers` set is a memory source: the subject itself, or its one open derived task. */
   taskId: string | null;
+  /** That task's parent task, whose links are a reference source. */
+  parentTaskId: string | null;
 }
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/** The header in effect, as a ranked row carries it (coordinator note on I7: I1's resolver, under RLS). */
+function rankedHeader(view: EntityHeaderView): RankedEntityHeader {
+  return {
+    whenToUse: view.whenToUse,
+    summary: view.summary,
+    keywords: [...view.keywords],
+    source: view.source,
+    version: view.version,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Subject
@@ -144,6 +177,7 @@ export async function loadSubject(
   const { taskId, anchor } = resolved;
 
   let subject: JevSubject;
+  let parentTaskId: string | null = null;
   if (taskId) {
     const task = (await q.query<TaskFactsRow>(
       `select t.title, t.description, t.priority, t.work_status, e.parent_id,
@@ -155,6 +189,7 @@ export async function loadSubject(
     ))[0];
     if (!task) throw fail('not_found', `task ${taskId} is not a live task in this space`);
     const parent = task.parent_id ? await entityRow(q, spaceId, task.parent_id) : null;
+    if (parent?.kind === 'task') parentTaskId = parent.id;
     subject = {
       title: task.title ?? '',
       description: task.description ?? '',
@@ -170,7 +205,7 @@ export async function loadSubject(
     };
   }
   if (draft) subject = { ...subject, title: draft.title, description: draft.description };
-  return { subject: redactSubject(subject), taskId };
+  return { subject: redactSubject(subject), taskId, parentTaskId };
 }
 
 /**
@@ -197,14 +232,18 @@ export function hasSubjectText(subject: JevSubject): boolean {
   return subject.title.trim().length > 0 || subject.description.trim().length > 0;
 }
 
-/** The teammate must be a live team_member in this space, readable by the caller. */
-export async function requireTeammate(q: Querier, spaceId: string, teamMemberId: string): Promise<void> {
-  const rows = await q.query<{ id: string }>(
-    `select e.id from public.entities e join public.team_members tm on tm.entity_id = e.id
+/**
+ * The teammate must be a live team_member in this space, readable by the
+ * caller. Returns its own agent tool, the one a launch runs when it names none.
+ */
+export async function requireTeammate(q: Querier, spaceId: string, teamMemberId: string): Promise<{ agentTool: string | null }> {
+  const rows = await q.query<{ id: string; agent_tool: string | null }>(
+    `select e.id, tm.agent_tool from public.entities e join public.team_members tm on tm.entity_id = e.id
       where e.id = $1 and e.space_id = $2 and e.kind = 'team_member' and e.deleted_at is null`,
     [teamMemberId, spaceId],
   );
   if (rows.length === 0) throw fail('not_found', `teammate ${teamMemberId} not found in this space`);
+  return { agentTool: rows[0]!.agent_tool };
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +255,7 @@ export async function requireTeammate(q: Querier, spaceId: string, teamMemberId:
  * skill names. persona (600)" — the skill names include what each teammate
  * inherits from its ancestors, which is what it would actually carry.
  */
-export async function loadTeammates(q: Querier, spaceId: string): Promise<CandidateSet> {
+export async function loadTeammates(q: Querier, spaceId: string, measure: MeasureContext): Promise<CandidateSet> {
   const rows = await q.query<{ id: string; total: string | number }>(
     `select e.id, count(*) over () as total
        from public.team_members tm
@@ -242,7 +281,7 @@ export async function loadTeammates(q: Querier, spaceId: string): Promise<Candid
     [spaceId, rows.map((row) => row.id)],
   );
   const equipped = new Map(skills.map((row) => [row.root, row.names]));
-  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const headers = await resolveHeaderViews(q, spaceId, rows.map((row) => row.id));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
     // The pool query and `resolveHeaders` read separate READ COMMITTED
@@ -250,7 +289,18 @@ export async function loadTeammates(q: Querier, spaceId: string): Promise<Candid
     // dropped here and shows only as `considered` < the pool's rows.
     if (!header) return [];
     const text = jevText(header, { limit: TEXT_LIMIT, equippedSkills: equipped.get(row.id) ?? [] });
-    return [{ entityId: row.id, kind: 'team_member', title: header.name, text, sources: ['space'] }];
+    return [{
+      entityId: row.id,
+      kind: 'team_member',
+      title: header.name,
+      text,
+      sources: ['space'],
+      // Picking who runs the launch is not a context group: nothing is a default.
+      default: false,
+      // As the index carries a teammate a task links (I8's roster entry replaces this when it lands).
+      promptBytes: referencePromptBytes({ entityId: row.id, kind: 'team_member', via: 'linked', link: 'relates_to', title: header.name }, header, measure),
+      header: rankedHeader(header),
+    }];
   });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
 }
@@ -271,6 +321,7 @@ export async function loadMemories(
   teamMemberId: string,
   taskId: string | null,
 ): Promise<CandidateSet> {
+  const defaults = new Set((await loadMemoryDefaults(q, spaceId, teamMemberId, taskId ? [taskId] : [])).map((row) => row.entityId));
   const rows = await q.query<{ id: string; from_teammate: boolean; from_task: boolean; total: string | number }>(
     `with pool as (
        select m.entity_id as id, e.updated_at,
@@ -290,13 +341,18 @@ export async function loadMemories(
       limit ${CANDIDATE_LIMIT}`,
     [spaceId, teamMemberId, taskId],
   );
-  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const headers = await resolveHeaderViews(q, spaceId, rows.map((row) => row.id));
+  // The WHOLE statement with its marks, exactly as spawn injects it: that is
+  // what a ticked memory costs.
+  const rendered = new Map((await loadMemoriesById(q, spaceId, rows.map((row) => row.id)))
+    .map((row) => [row.entity_id, renderMemoryText(row)]));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
+    const text = rendered.get(row.id);
     // The pool query and `resolveHeaders` read separate READ COMMITTED
     // snapshots, so an entity deleted between them has no header: it is
     // dropped here and shows only as `considered` < the pool's rows.
-    if (!header) return [];
+    if (!header || text === undefined) return [];
     return [{
       entityId: row.id,
       kind: 'memory',
@@ -308,6 +364,9 @@ export async function loadMemories(
         ...(row.from_task ? ['task' as const] : []),
         'space',
       ],
+      default: defaults.has(row.id),
+      promptBytes: memoryPromptBytes(text),
+      header: rankedHeader(header),
     }];
   });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
@@ -318,16 +377,23 @@ export async function loadMemories(
 // ---------------------------------------------------------------------------
 
 /**
- * ① what the teammate is equipped with, its ancestors' equipment included
- * (`loadSkillEquipment`, the reader spawn and `skills.preview` use — depth 0
- * is `teammate`, deeper is `inherited`), ② every live skill in the space.
- * A filesystem reference the scanner marked `missing` is excluded from both:
- * a session could not load it, so suggesting it would be advice nobody can take.
+ * ① what spawn equips by default — the teammate's equipment with its
+ * ancestors' (`loadSkillEquipment`: depth 0 is `teammate`, deeper is
+ * `inherited`) and the task's (`task`), through `loadSkillDefaults`, the
+ * loader spawn itself runs; ② every live skill in the space. A filesystem
+ * reference the scanner marked `missing` is excluded from both: a session
+ * could not load it, so suggesting it would be advice nobody can take.
  */
-export async function loadSkills(q: Querier, spaceId: string, teamMemberId: string): Promise<CandidateSet> {
-  const direct = new Map<string, RankedEntitySource>();
-  for (const row of await loadSkillEquipment(q, spaceId, teamMemberId)) {
-    if (!row.missing) direct.set(row.entityId, row.depth === 0 ? 'teammate' : 'inherited');
+export async function loadSkills(
+  q: Querier,
+  spaceId: string,
+  teamMemberId: string,
+  taskId: string | null,
+  measure: MeasureContext,
+): Promise<CandidateSet> {
+  const direct = new Map<string, ResolvedSkillRow>();
+  for (const row of await loadSkillDefaults(q, spaceId, teamMemberId, taskId ? [taskId] : [])) {
+    if (!row.missing) direct.set(row.entityId, row);
   }
   const rows = await q.query<{ id: string; total: string | number }>(
     `select sk.entity_id as id, count(*) over () as total
@@ -338,20 +404,96 @@ export async function loadSkills(q: Querier, spaceId: string, teamMemberId: stri
       limit ${CANDIDATE_LIMIT}`,
     [spaceId, [...direct.keys()]],
   );
-  const headers = await resolveHeaders(q, spaceId, rows.map((row) => row.id));
+  const headers = await resolveHeaderViews(q, spaceId, rows.map((row) => row.id));
+  // A skill the launch does not equip rides it by id — spawn's own by-id read.
+  const byId = new Map((await loadSkillsById(q, spaceId, rows.map((row) => row.id).filter((id) => !direct.has(id))))
+    .map((row) => [row.entityId, row]));
   const items = rows.flatMap((row): Candidate[] => {
     const header = headers.get(row.id);
     // The pool query and `resolveHeaders` read separate READ COMMITTED
     // snapshots, so an entity deleted between them has no header: it is
     // dropped here and shows only as `considered` < the pool's rows.
-    if (!header) return [];
-    const source = direct.get(row.id);
+    const equipped = direct.get(row.id);
+    const skill = equipped ?? byId.get(row.id);
+    if (!header || !skill) return [];
+    // How spawn names the path the skill arrives by (`skillVia`).
+    const via: ContextVia = !equipped ? 'selection' : equipped.viaTaskId ? 'task' : equipped.depth > 0 ? 'inherited' : 'teammate';
+    const source: RankedEntitySource | null = equipped ? (via as RankedEntitySource) : null;
     return [{
       entityId: row.id,
       kind: 'skill',
       title: header.name,
       text: jevText(header, { limit: TEXT_LIMIT }),
       sources: source ? [source, 'space'] : ['space'],
+      default: equipped !== undefined,
+      promptBytes: skillPromptBytes(skill, via, header, measure),
+      header: rankedHeader(header),
+    }];
+  });
+  return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
+}
+
+// ---------------------------------------------------------------------------
+// References
+// ---------------------------------------------------------------------------
+
+/**
+ * The reference kinds the space pool offers (③): the live docs and artifacts,
+ * most recently updated first (headers design 01a0d31e §7.1). The task's own
+ * links may be of any kind `selection.referenceIds` names.
+ */
+const SPACE_REFERENCE_KINDS = ['doc', 'artifact'] as const;
+
+/**
+ * ① what the launch's task links — `loadReferenceDefaults`, the loader spawn
+ * runs, so these are exactly the references an unselected launch carries
+ * (`task`, a default); ② what the task's PARENT task links (`parent`): the
+ * references its sibling work shares; ③ the space's live docs and artifacts
+ * (`space`). A body is never read, let alone sent: the text is the header.
+ */
+export async function loadReferences(
+  q: Querier,
+  spaceId: string,
+  taskId: string | null,
+  parentTaskId: string | null,
+  measure: MeasureContext,
+): Promise<CandidateSet> {
+  const defaults = new Map((await loadReferenceDefaults(q, spaceId, taskId ? [taskId] : [])).map((row) => [row.entityId, row]));
+  const parentLinks = new Set((await loadReferenceDefaults(q, spaceId, parentTaskId ? [parentTaskId] : [])).map((row) => row.entityId));
+  if (taskId) parentLinks.delete(taskId);
+  const rows = await q.query<{ id: string; kind: string; total: string | number }>(
+    `select e.id, e.kind, count(*) over () as total
+       from public.entities e
+      where e.space_id = $1 and e.deleted_at is null
+        and e.kind = any($4::text[])
+        and (e.id = any($2::uuid[]) or e.id = any($3::uuid[]) or e.kind = any($5::text[]))
+        and ($6::uuid is null or e.id <> $6::uuid)
+      order by (e.id = any($2::uuid[])) desc, (e.id = any($3::uuid[])) desc, e.updated_at desc, e.id
+      limit ${CANDIDATE_LIMIT}`,
+    [spaceId, [...defaults.keys()], [...parentLinks], [...SPAWN_SELECTION_REFERENCE_KINDS], [...SPACE_REFERENCE_KINDS], taskId],
+  );
+  const headers = await resolveHeaderViews(q, spaceId, rows.map((row) => row.id));
+  const items = rows.flatMap((row): Candidate[] => {
+    const header = headers.get(row.id);
+    // Deleted between the two reads (see loadSkills).
+    if (!header) return [];
+    const dflt = defaults.get(row.id);
+    const sources: RankedEntitySource[] = [
+      ...(dflt ? ['task' as const] : []),
+      ...(parentLinks.has(row.id) ? ['parent' as const] : []),
+      'space',
+    ];
+    // Spawn's rule for a selected reference's `via` and `link`.
+    const via = dflt ? (dflt.link === 'attached_to' && row.kind === 'file' ? 'attached' : 'linked') : 'selection';
+    return [{
+      entityId: row.id,
+      kind: row.kind as RankedEntityKind,
+      title: header.name,
+      text: jevText(header, { limit: TEXT_LIMIT }),
+      sources,
+      default: dflt !== undefined,
+      promptBytes: referencePromptBytes({ entityId: row.id, kind: row.kind, via, link: dflt?.link ?? null, title: header.name }, header, measure),
+      header: rankedHeader(header),
     }];
   });
   return { items, considered: items.length, total: Number(rows[0]?.total ?? 0) };
