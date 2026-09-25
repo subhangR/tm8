@@ -10,8 +10,8 @@
  *
  * Distinct from `manifestVersion`, which versions the manifest DOCUMENT shape,
  * and from the `<tm8_system_prompt version="1.0">` attribute, which is a frame
- * detail the agent sees. This one is the analytics tag. `'2'` is the shorter
- * worker frame of spec ca8d §2 (`composeWorkerPromptV2`); the Interaction
+ * detail the agent sees. This one is the analytics tag. `'2'` is the layered
+ * frame of spec ca8d §2 (`composePromptV2`); the Interaction
  * Profile picks between them (`promptVersionFor`) — callers take the value
  * from this module, never a literal.
  */
@@ -22,7 +22,7 @@ export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 /** Today's frame: the v1 persona envelope composed by `composePrompt`. */
 export const PROMPT_VERSION_V1: PromptVersion = '1';
 
-/** The v2.0 frame: five numbered rules plus the embedded context DTO (spec ca8d §2). */
+/** The v2.0 frame: base + one role layer, plus the embedded context DTO (spec ca8d §2). */
 export const PROMPT_VERSION_V2: PromptVersion = '2';
 
 /**
@@ -45,8 +45,14 @@ export const DEFAULT_PROMPT_VERSION: PromptVersion = PROMPT_VERSION_V1;
  */
 export const KERNEL_TEMPLATE_V2 = 'tm8.core.v2';
 
-/** The modes v2 covers (spec ca8d §5 scope). Every other mode stays on v1. */
-export const PROMPT_V2_MODES: readonly string[] = ['worker', 'coordinated-worker'];
+/** The modes v2 covers: all five, since the layered prompt (task 01a0d465). */
+export const PROMPT_V2_MODES: readonly string[] = [
+  'worker',
+  'coordinated-worker',
+  'coordinator',
+  'coordinated-coordinator',
+  'dispatcher',
+];
 
 /**
  * The version a launch is booted with, from its mode and its resolved profile

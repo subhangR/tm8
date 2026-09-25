@@ -42,7 +42,7 @@ import {
   type CoordinatorKind,
 } from './templates.js';
 import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
-import { composeWorkerPromptV2, type TaskContextSnapshot } from './worker-v2.js';
+import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from './prompt-v2.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -54,7 +54,7 @@ export * from './escape.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
-export * from './worker-v2.js';
+export * from './prompt-v2.js';
 
 export type AgentMode =
   | 'worker'
@@ -297,7 +297,9 @@ const WORKER_IDENTITY_INSTRUCTION =
   'your process exiting is not completion: close out with one `tm8 message send` ' +
   'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
   'questions, and next-session pointers.' +
-  GIT_TRACKING_WORKER_INSTRUCTION;
+  GIT_TRACKING_WORKER_INSTRUCTION +
+  ' ' +
+  HEADER_AUTHORING_RULE;
 
 // Rewritten 2026-08-12 against the six real `mode=coordinator` journals: three
 // never spawned anyone, two briefed workers to reply to the WORKER'S OWN
@@ -336,7 +338,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'through the owning domain command rather than announcing it, and close out ' +
   'with one `tm8 message send` on your assignment anchor integrating every ' +
   'worker result — or naming the ones you could not collect.' +
-  GIT_TRACKING_COORDINATOR_INSTRUCTION;
+  GIT_TRACKING_COORDINATOR_INSTRUCTION +
+  ' ' +
+  HEADER_AUTHORING_RULE;
 
 const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'You are a worker agent in a coordinated multi-agent team. A coordinator spawned ' +
@@ -354,7 +358,9 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or task anchor. The message must carry outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
   'pointers. Do not go idle after finishing.' +
-  GIT_TRACKING_WORKER_INSTRUCTION;
+  GIT_TRACKING_WORKER_INSTRUCTION +
+  ' ' +
+  HEADER_AUTHORING_RULE;
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'You are a sub-coordinator in a hierarchical multi-agent team. A parent coordinator ' +
@@ -373,7 +379,9 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'in `<coordination><coordinator_session_id>` — never the assignment or task anchor. ' +
   'Include outcome, verification and blockers, and do not go idle leaving the parent ' +
   'waiting.' +
-  GIT_TRACKING_COORDINATOR_INSTRUCTION;
+  GIT_TRACKING_COORDINATOR_INSTRUCTION +
+  ' ' +
+  HEADER_AUTHORING_RULE;
 
 /**
  * The fifth mode (D4). A resident router, not a doer.
@@ -400,7 +408,8 @@ const DISPATCHER_IDENTITY_INSTRUCTION =
   'if it is worth dispatching it is worth dispatching. You never create, edit or ' +
   'delete teammates, and you never change a teammate\'s persona or model — you ' +
   'select from the roster as it is. If no teammate fits, say so on the thread ' +
-  'rather than inventing one or doing the task.';
+  'rather than inventing one or doing the task. ' +
+  HEADER_AUTHORING_RULE;
 
 // -- Frame instructions (v1 envelope) -----------------------------------------
 //
@@ -854,11 +863,11 @@ export function composePrompt(
         : PLAN_AUTHORIZATION_INSTRUCTION
       : null;
 
-  // The v2.0 worker frame (spec ca8d). Selected by the stamp alone, and only
-  // for the modes it covers: a stamp on any other mode renders v1 rather than
-  // a frame nobody specified for it.
+  // The v2.0 layered frame (spec ca8d, docs 01a0d418 + 01a0d456). Selected by
+  // the stamp alone, and only for the modes it covers: a stamp on any other
+  // mode renders v1 rather than a frame nobody specified for it.
   if (promptVersion === PROMPT_VERSION_V2 && PROMPT_V2_MODES.includes(mode)) {
-    return composeWorkerPromptV2(manifest, runtime, {
+    return composePromptV2(manifest, runtime, {
       mode,
       sessionId,
       spaceId,
