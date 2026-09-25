@@ -23,7 +23,12 @@ const manifest: PromptManifest = {
       description: 'Stream bytes.',
       priority: 'high',
       status: 'open',
-      acceptanceCriteria: ['xterm renders live output', 'no poll requests'],
+      // The shape the server STORES and the manifest carries (D13): bare-string
+      // fixtures kept v1's string-only reader green while it dropped every real one.
+      acceptanceCriteria: [
+        { id: 'xterm', text: 'xterm renders live output', done: false },
+        { id: 'no-poll', text: 'no poll requests', done: true, doneBy: 'tm-1', doneAt: '2026-09-26T00:00:00.000Z' },
+      ],
     },
   ],
 };
@@ -205,8 +210,9 @@ describe('composePrompt', () => {
     const { task } = composePrompt(manifest);
     expect(task).toContain('kind="task_assignment"');
     expect(task).toContain('Acceptance criteria (tick each by its id once it is met):');
-    expect(task).toContain('- [ ] xterm renders live output');
-    expect(task).toContain('- [ ] no poll requests');
+    expect(task).toContain('- [ ] xterm: xterm renders live output');
+    expect(task).toContain('- [x] no-poll: no poll requests');
+    expect(task).toContain('<acceptance count="2" open="1" tick_with="tm8 task tick task-1 &lt;criterion-id&gt;... --expect-version &lt;n&gt;" />');
     expect(task).toContain('attribution="recorded_only"');
   });
 

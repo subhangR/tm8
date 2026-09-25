@@ -62,7 +62,7 @@ Ship the v2 plumbing.
 Keep v1 selectable.
 
 Acceptance criteria (tick each by its id once it is met):
-- [ ] PROMPT_VERSIONS includes 2
+- [ ] c1: PROMPT_VERSIONS includes 2
 </untrusted_data>
 </tm8_task_prompt>"
 `;

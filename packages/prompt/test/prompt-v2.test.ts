@@ -45,7 +45,7 @@ const base: PromptManifest = {
       title: 'Lever 4',
       description: BODY,
       status: 'open',
-      acceptanceCriteria: ['PROMPT_VERSIONS includes 2'],
+      acceptanceCriteria: [{ id: 'c1', text: 'PROMPT_VERSIONS includes 2', done: false }],
     },
   ],
 };
@@ -377,7 +377,7 @@ describe('v2 task half (spec ca8d §2.2)', () => {
     // The only untrusted block is the criteria (D13): ticking never waits on a fetch.
     expect([...failed.task.matchAll(/<untrusted_data type="([^"]+)"/g)].map((m) => m[1])).toEqual(['acceptance']);
     expect(embedded(failed.task, 'acceptance')).toEqual([
-      { task: TASK, acceptance: [{ done: false, text: 'PROMPT_VERSIONS includes 2' }] },
+      { task: TASK, acceptance: [{ id: 'c1', done: false, text: 'PROMPT_VERSIONS includes 2' }] },
     ]);
     // `tm8 worker init` has no DTO to give.
     const reread = composePrompt(base, { sessionId: SESSION });
