@@ -105,7 +105,7 @@ describe('LaunchContextSection', () => {
     expect(harness).toContain('Pluginssales (declared)');
     expect(harness).toContain('MCP serversgithub (declared)');
     expect(harness).not.toContain('gh-mcp');
-    expect(harness).toContain('Bundled skillstrimmed (declared)');
+    expect(harness).toContain('Harness skillstrimmed (declared)');
     expect(harness).toContain('Native skills1');
     expect(harness).toContain('Indexed skills2');
   });
@@ -162,7 +162,10 @@ describe('LaunchContextSection', () => {
             surfaceSource: 'env',
             plugins: { allowed: [], denied: [] },
             mcpServers: [{ name: 'linear', source: 'persona' }],
-            skillOverrides: { off: [{ name: 'init', source: 'builtin-trim' }, { name: 'loop', source: 'builtin-trim' }] },
+            skillOverrides: {
+              off: [{ name: 'init', source: 'builtin-trim' }, { name: 'loop', source: 'builtin-trim' }],
+              nameOnly: [{ name: 'graphify', source: 'native-name-only' }],
+            },
           },
         },
       },
@@ -172,7 +175,7 @@ describe('LaunchContextSection', () => {
     expect(text).toContain('Harness surfaceminimal (env)');
     expect(text).toContain('MCP serverslinear');
     expect(text).not.toContain('github');
-    expect(text).toContain('Bundled skillstrimmed (2 off)');
+    expect(text).toContain('Harness skillstrimmed (2 off, 1 name-only)');
     expect(text).not.toMatch(/\((declared|picked)\)/);
   });
 

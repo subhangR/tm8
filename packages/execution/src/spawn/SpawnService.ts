@@ -48,7 +48,13 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
-import { claudePluginConfigDir, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
+import {
+  claudePluginConfigDir,
+  harnessSurfaceEnv,
+  readConfigHomeSkills,
+  readInstalledClaudePlugins,
+  type ConfigHomeSkill,
+} from './harness-surface.js';
 import { contextHeaderIds, contextIndexForResume, contextIndexSwitch } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
@@ -879,6 +885,21 @@ export class SpawnService {
   }
 
   /**
+   * The operator skills the same config home lists, read under the same
+   * conditions as its plugins, for `laneSkillPlan` to turn off the ones this
+   * launch did not equip. Spawn AND resume read it, so a resumed lane keeps
+   * the trim.
+   */
+  private configHomeSkillsFor(
+    launch: ResolvedLaunchConfig,
+    credentialConfigDir: string | undefined,
+  ): ConfigHomeSkill[] {
+    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
+    if (this.env.TM8_AGENT_CMD?.trim()) return [];
+    return readConfigHomeSkills(claudePluginConfigDir(credentialConfigDir, this.env));
+  }
+
+  /**
    * Decide what a launch is allowed to do when the node cannot actually give it
    * the sandbox its posture asks for. Returns whether `buildAgentCommand` must
    * drop `--sandbox`; throws when the launch may not proceed at all.
@@ -1451,6 +1472,7 @@ export class SpawnService {
       // The command is built INSIDE composeManifest, after the skill index is
       // trimmed, from the plugins of the skills that survived (F2).
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
+      const homeSkills = this.configHomeSkillsFor(launch, credentialHome?.configDir);
       let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
@@ -1465,14 +1487,15 @@ export class SpawnService {
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
-        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
           claudeSessionId: nativeSessionId,
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
+          ...(skillOverrides ? { skillOverrides } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
         contextIndex,
         baseUrl: this.baseUrl,
       });
@@ -2229,6 +2252,7 @@ export class SpawnService {
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
       const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
+      const homeSkills = this.configHomeSkillsFor(launch, credentialHome?.configDir);
       let baseCommand = '';
       const manifest = composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
@@ -2240,13 +2264,14 @@ export class SpawnService {
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
-        command: (effectiveClaudePlugins) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
+          ...(skillOverrides ? { skillOverrides } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
         contextIndex: resumeIndex,
         replayEffectivePlugins: recorded.posture?.effectivePlugins ?? null,
         baseUrl: this.baseUrl,

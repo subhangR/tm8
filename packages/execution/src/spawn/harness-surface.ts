@@ -23,6 +23,16 @@
 //     is set `true`.
 //   - Bundled skills lanes never use: `skillOverrides` off per name (see
 //     `LANE_BUNDLED_SKILLS_OFF`).
+//   - The operator's own skills (`<config>/skills/*`, and the claude.ai-synced
+//     `anthropic-skills:*`) the launch did not equip: `skillOverrides` off.
+//     An equipped one the harness loads natively goes `name-only`, because
+//     tm8's skill index already carries its description (`laneSkillPlan`).
+//     Plugin skills are NOT reachable this way — Claude Code ignores
+//     `skillOverrides` for them (probed, 2.1.280, and documented) — so a
+//     plugin stays all-or-nothing through `enabledPlugins`, and its record
+//     says so (`granularity: 'plugin'`).
+//   - The Claude in Chrome block (~4.1k chars of system prompt): `--no-chrome`.
+//     Per invocation, so the operator's own Chrome setting is untouched.
 //   - The harness Artifact tool: `CLAUDE_CODE_DISABLE_ARTIFACT=1`. tm8 lanes
 //     publish with `tm8 artifact publish`; the harness tool publishes outside
 //     tm8, and its prompt tells agents not to use it.
@@ -30,7 +40,7 @@
 // `inherit` restores the bare command exactly, for a teammate that genuinely
 // needs the operator's plugins or connectors.
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,9 +75,150 @@ export const LANE_BUNDLED_SKILLS_OFF: readonly string[] = [
   'update-config',
 ];
 
-/** The flag-level `skillOverrides` a `minimal` lane runs with. */
+/**
+ * The ONE always-on list: skill keys a `minimal` lane never names in
+ * `skillOverrides`, so they stay fully listed whatever the launch equipped.
+ * Only the bundled keep-four, by decision (D4.2): there is no operator
+ * allowlist, because the launch's effective skills are the one source (design
+ * 01a0d348 §3.1). An operator skill a teammate always needs is EQUIPPED — user
+ * skills are skill entities too. A `skillOverrides` key is a bare command
+ * name, so an operator skill sharing one of these names is left alone too:
+ * turning it off would take the bundled skill with it.
+ */
+export const LANE_SKILLS_ALWAYS_ON: readonly string[] = [
+  'code-review',
+  'security-review',
+  'simplify',
+  'workflow-authoring',
+];
+
+/** The flag-level `skillOverrides` a `minimal` lane runs with when tm8 read no skills. */
 export function laneSkillOverrides(): Record<string, 'off'> {
   return Object.fromEntries(LANE_BUNDLED_SKILLS_OFF.map((name) => [name, 'off' as const]));
+}
+
+/** A skill the lane's config home would list: `skills/<dir>` (`user`) or claude.ai-synced (`synced`). */
+export interface ConfigHomeSkill {
+  /** The `skillOverrides` key: the dir name, or `anthropic-skills:<dir>` for a synced skill. */
+  key: string;
+  level: 'user' | 'synced';
+}
+
+/** Why a `minimal` lane's `skillOverrides` names a skill. */
+export type SkillOverrideSource = 'builtin-trim' | 'user-unselected' | 'synced-unselected' | 'chrome';
+
+export interface LaneSkillPlan {
+  /** The flag-level `skillOverrides`, sorted by key. */
+  settings: Record<string, 'off' | 'name-only'>;
+  /** `launch.harness.skillOverrides`: the same keys, each with its reason. */
+  record: {
+    off: { name: string; source: SkillOverrideSource }[];
+    nameOnly: { name: string; source: 'native-name-only' }[];
+  };
+}
+
+/** The pseudo-name `launch.harness.skillOverrides.off` records `--no-chrome` under. */
+export const CHROME_RECORD_NAME = 'claude-in-chrome';
+
+/**
+ * Levels whose native skills take a bare or `anthropic-skills:` key. Plugin
+ * skills ignore `skillOverrides`; nested and admin keys were not probed.
+ */
+const NAME_ONLY_LEVELS: ReadonlySet<string> = new Set(['user', 'synced', 'project']);
+
+/**
+ * What a `minimal` lane's `skillOverrides` says, and why, from the lane's
+ * POST-BUDGET effective skills (design 01a0d348 §3): the harness loads only
+ * what the launch chose.
+ *   - bundled skills lanes never use: off (`builtin-trim`);
+ *   - config-home skills the launch did not equip, or equipped but trimmed
+ *     from the index: off (`user-unselected` / `synced-unselected`);
+ *   - equipped skills the harness loads natively: `name-only`
+ *     (`native-name-only`) — tm8's index already describes them, and
+ *     `/name` and a model's Skill call still load them (probed);
+ *   - `--no-chrome`, which is argv, is recorded here as `chrome` so every
+ *     trim is in one list.
+ * Project skills nobody equipped are the repo's choice and stay listed.
+ * Nothing in `LANE_SKILLS_ALWAYS_ON` is ever named.
+ */
+export function laneSkillPlan(
+  homeSkills: readonly ConfigHomeSkill[],
+  native: readonly { level: string; loadPointer: string }[],
+): LaneSkillPlan {
+  const kept = new Set(LANE_SKILLS_ALWAYS_ON);
+  const nameOnly = new Set(
+    native
+      .filter((skill) => NAME_ONLY_LEVELS.has(skill.level) && skill.loadPointer.startsWith('/'))
+      .map((skill) => skill.loadPointer.slice(1))
+      // A command name never holds a '/'; a path-shaped pointer is not one.
+      .filter((key) => key !== '' && !key.includes('/') && !kept.has(key)),
+  );
+  const off = new Map<string, SkillOverrideSource>();
+  for (const name of LANE_BUNDLED_SKILLS_OFF) if (!nameOnly.has(name)) off.set(name, 'builtin-trim');
+  for (const { key, level } of homeSkills) {
+    if (!kept.has(key) && !nameOnly.has(key) && !off.has(key)) off.set(key, `${level}-unselected`);
+  }
+  const settings: Record<string, 'off' | 'name-only'> = {};
+  for (const key of [...off.keys(), ...nameOnly].sort()) settings[key] = nameOnly.has(key) ? 'name-only' : 'off';
+  return {
+    settings,
+    record: {
+      off: [
+        ...[...off].map(([name, source]) => ({ name, source })),
+        { name: CHROME_RECORD_NAME, source: 'chrome' as const },
+      ],
+      nameOnly: [...nameOnly].sort().map((name) => ({ name, source: 'native-name-only' as const })),
+    },
+  };
+}
+
+/**
+ * The skills a Claude config home lists besides bundled and plugin ones:
+ * `skills/<dir>/SKILL.md`, and the claude.ai-synced skills under
+ * `skills/synced/<bucket>/<dir>/SKILL.md`, which the CLI namespaces
+ * `anthropic-skills:<dir>` (a bare `<dir>` key also matches them; the
+ * qualified one cannot hit an operator skill of the same name). Best-effort,
+ * like `readInstalledClaudePlugins`: no skills directory is the ordinary case.
+ */
+export function readConfigHomeSkills(configDir: string): ConfigHomeSkill[] {
+  const out: ConfigHomeSkill[] = [];
+  const root = join(configDir, 'skills');
+  for (const dir of listDirs(root)) {
+    if (dir === 'synced') {
+      for (const bucket of listDirs(join(root, dir))) {
+        for (const skill of listDirs(join(root, dir, bucket))) {
+          if (hasSkillFile(join(root, dir, bucket, skill))) out.push({ key: `anthropic-skills:${skill}`, level: 'synced' });
+        }
+      }
+    } else if (hasSkillFile(join(root, dir))) {
+      out.push({ key: dir, level: 'user' });
+    }
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function listDirs(path: string): string[] {
+  try {
+    return readdirSync(path).filter((name) => !name.startsWith('.') && isDirectory(join(path, name)));
+  } catch {
+    return [];
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function hasSkillFile(dir: string): boolean {
+  try {
+    return statSync(join(dir, 'SKILL.md')).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** The empty MCP config a `minimal` lane runs under `--strict-mcp-config`. */
@@ -114,7 +265,13 @@ export type PluginAllowSource = 'launch' | 'effective-skill' | 'persona';
 export type PluginDenyReason = 'launch-pick' | 'not-chosen';
 
 export interface HarnessPluginDecisions {
-  allowed: { id: string; source: PluginAllowSource }[];
+  /**
+   * `granularity: 'plugin'`: an allowed plugin lists ALL its skills, chosen or
+   * not. Claude Code ignores `skillOverrides` for plugin skills (probed on
+   * 2.1.280, and documented), so no finer trim exists; recorded so the
+   * limitation is visible rather than silent (decision D4.1).
+   */
+  allowed: { id: string; source: PluginAllowSource; granularity: 'plugin' }[];
   denied: { id: string; because: PluginDenyReason }[];
 }
 
@@ -136,7 +293,7 @@ export function pluginDecisions(
         : isPluginAllowed(id, lists.effective) ? 'effective-skill'
           : lists.launchPick === null && isPluginAllowed(id, lists.persona) ? 'persona'
             : null;
-    if (source) out.allowed.push({ id, source });
+    if (source) out.allowed.push({ id, source, granularity: 'plugin' });
     else out.denied.push({ id, because: lists.launchPick !== null && isPluginAllowed(id, lists.persona) ? 'launch-pick' : 'not-chosen' });
   }
   return out;
@@ -195,8 +352,8 @@ export type HarnessSurfaceSource = 'launch' | 'env' | 'inherited' | 'persona' | 
  * the surface and who chose it, and under `minimal` everything the lane's
  * flags turn on or off — plugins (`pluginDecisions`), the MCP servers kept
  * under `--strict-mcp-config` (names only: a server config can carry a
- * token), and the bundled skills `skillOverrides` turns off. Built from the
- * same values `buildAgentCommand` reads, so the record and argv agree.
+ * token), and every skill `skillOverrides` names (`laneSkillPlan`). Built
+ * from the same values `buildAgentCommand` reads, so the record and argv agree.
  */
 export function laneHarnessRecord(
   launch: {
@@ -205,12 +362,13 @@ export function laneHarnessRecord(
     mcpServers?: Record<string, unknown>;
   },
   plugins: HarnessPluginDecisions | null,
+  skills: LaneSkillPlan['record'] | null,
 ): {
   surface: HarnessSurface;
   surfaceSource: HarnessSurfaceSource;
   plugins?: HarnessPluginDecisions;
   mcpServers?: { name: string; source: 'persona' }[];
-  skillOverrides?: { off: { name: string; source: 'builtin-trim' }[] };
+  skillOverrides?: LaneSkillPlan['record'];
 } {
   const surface = launch.harnessSurface ?? 'minimal';
   const surfaceSource = launch.harnessSurfaceSource ?? 'default';
@@ -220,9 +378,7 @@ export function laneHarnessRecord(
     surfaceSource,
     ...(plugins ? { plugins } : {}),
     mcpServers: Object.keys(launch.mcpServers ?? {}).sort().map((name) => ({ name, source: 'persona' as const })),
-    skillOverrides: {
-      off: Object.keys(laneSkillOverrides()).map((name) => ({ name, source: 'builtin-trim' as const })),
-    },
+    skillOverrides: skills ?? laneSkillPlan([], []).record,
   };
 }
 

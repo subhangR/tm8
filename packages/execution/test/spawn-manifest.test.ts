@@ -400,7 +400,7 @@ describe('resolveWorkdir', () => {
 
 /** The argv tail every default (`minimal`) Claude lane carries. */
 const MINIMAL =
-  ` --strict-mcp-config --mcp-config '{"mcpServers":{}}'` +
+  ` --strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-chrome` +
   ` --settings '{"skillOverrides":{"claude-api":"off","dataviz":"off","fewer-permission-prompts":"off","init":"off","keybindings-help":"off","loop":"off","run":"off","schedule":"off","update-config":"off"}}'`;
 
 describe('buildAgentCommand', () => {

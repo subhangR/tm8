@@ -9,10 +9,12 @@ import {
   isPluginAllowed,
   laneHarnessRecord,
   laneSkillOverrides,
+  laneSkillPlan,
   pluginDecisions,
   minimalMcpConfig,
   pluginSettings,
   readHintHookSettings,
+  type ConfigHomeSkill,
   type HarnessSurface,
   type HarnessSurfaceSource,
 } from './harness-surface.js';
@@ -937,6 +939,11 @@ export function buildAgentCommand(
      * choosing its plugin.
      */
     equippedClaudePlugins?: readonly string[];
+    /**
+     * The lane's `skillOverrides` (`laneSkillPlan`), built from its post-budget
+     * effective skills. Absent: only the bundled-skill trim.
+     */
+    skillOverrides?: Readonly<Record<string, 'off' | 'name-only'>>;
   } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
@@ -976,12 +983,15 @@ export function buildAgentCommand(
     // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
     // builds on this same base command, so these flags survive `--resume`.
     args.push('--strict-mcp-config', '--mcp-config', shellQuote(minimalMcpConfig(launch.mcpServers)));
+    // Drops the ~4.1k-char Claude in Chrome prompt block for this lane only;
+    // the operator's own Chrome setting is untouched.
+    args.push('--no-chrome');
     const plugins = pluginSettings(opts.installedClaudePlugins ?? [], [
       ...(launch.plugins ?? []),
       ...(opts.equippedClaudePlugins ?? []),
     ]);
     if (Object.keys(plugins).length > 0) settings.enabledPlugins = plugins;
-    settings.skillOverrides = laneSkillOverrides();
+    settings.skillOverrides = opts.skillOverrides ?? laneSkillOverrides();
   }
   // Flag-level hooks merge with the user's own hooks rather than replace them.
   if (launch.readHints === true) settings.hooks = readHintHookSettings();
@@ -1711,10 +1721,16 @@ export interface ComposeManifestInput {
    * plugins of the lane's POST-BUDGET effective skills (design 01a0d348 §3.1,
    * F2), which only exist once the skill index has been trimmed here — so a
    * plugin skill dropped as `byte-budget` or `native-shadowed` does not turn
-   * its plugin on. The prompt never renders the command, so building it after
-   * the trim changes no measured byte.
+   * its plugin on — and the `skillOverrides` built from the same skills
+   * (absent when tm8 does not manage the lane's harness). The prompt never
+   * renders the command, so building it after the trim changes no measured byte.
    */
-  command: string | ((effectiveClaudePlugins: readonly string[]) => string);
+  command:
+    | string
+    | ((
+      effectiveClaudePlugins: readonly string[],
+      skillOverrides?: Readonly<Record<string, 'off' | 'name-only'>>,
+    ) => string);
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
@@ -1723,9 +1739,12 @@ export interface ComposeManifestInput {
    * `TM8_AGENT_CMD` wrapper): the plugin ids its config home carries (empty
    * under `inherit`, where none are read). Recorded as `launch.harness`, and
    * under `minimal` with plugins present it makes this launch's allow set the
-   * authority on which plugin skills are native. Absent: no harness record.
+   * authority on which plugin skills are native. `skills` are the operator
+   * skills the same home lists (`readConfigHomeSkills`, empty under
+   * `inherit`); the ones this launch did not equip are turned off
+   * (`laneSkillPlan`). Absent: no harness record.
    */
-  harness?: { installedPlugins: readonly string[] } | null;
+  harness?: { installedPlugins: readonly string[]; skills?: readonly ConfigHomeSkill[] } | null;
   /**
    * The context-index switch (`contextIndexSwitch`), already resolved from
    * the node env and the pinned profile. Set: the launch renders
@@ -1968,8 +1987,12 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const effectiveClaudePlugins = input.replayEffectivePlugins
     ? [...input.replayEffectivePlugins].sort()
     : equippedClaudePlugins(manifest.skills.flatMap(skill => keptRows.get(skill.entityId) ?? []));
+  // The same post-trim skills decide `skillOverrides`, argv and record alike.
+  const skillPlan = input.harness && launch.harnessSurface !== 'inherit'
+    ? laneSkillPlan(input.harness.skills ?? [], manifest.effectiveSkills?.native ?? [])
+    : null;
   if (typeof command !== 'string') {
-    manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins));
+    manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins, skillPlan?.settings));
   }
   if (input.harness) {
     const launchPick = launch.harnessChoice?.plugins ?? null;
@@ -1980,7 +2003,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
         effective: effectiveClaudePlugins,
       })
       : null;
-    manifest.launch.harness = laneHarnessRecord(launch, plugins);
+    manifest.launch.harness = laneHarnessRecord(launch, plugins, skillPlan?.record ?? null);
   }
 
   // The launch-context audit (§6): ids and enums only, after every trim.

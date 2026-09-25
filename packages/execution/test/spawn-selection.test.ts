@@ -151,6 +151,8 @@ describe('SpawnService', () => {
         join(configDir, 'plugins', 'synced', 'bucket', 'manifest.json'),
         JSON.stringify({ plugins: [{ name: 'sales' }, { name: 'marketing' }] }),
       );
+      await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
+      await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
       // A stub `claude` on PATH: the spawn preflight only checks it exists, and
       // CI has no real one. The PTY is mocked, so it never runs.
       const binDir = join(dataDir, 'bin');
@@ -184,10 +186,16 @@ describe('SpawnService', () => {
         surface: 'minimal',
         surfaceSource: 'default',
         plugins: {
-          allowed: [{ id: 'sales@synced', source: 'effective-skill' }],
+          allowed: [{ id: 'sales@synced', source: 'effective-skill', granularity: 'plugin' }],
           denied: [{ id: 'marketing@synced', because: 'not-chosen' }],
         },
         mcpServers: [],
+      });
+      // The operator skill nobody chose is off, and the Chrome block with it.
+      expect(command).toContain('"astro":"off"');
+      expect(command).toContain('--no-chrome');
+      expect(lastLaunch.harness).toMatchObject({
+        skillOverrides: { off: expect.arrayContaining([{ name: 'astro', source: 'user-unselected' }]) },
       });
     });
   });

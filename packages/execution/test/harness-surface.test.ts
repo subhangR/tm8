@@ -18,8 +18,11 @@ import {
   equippedClaudePlugins,
   harnessSurfaceEnv,
   pluginSkillIds,
+  LANE_SKILLS_ALWAYS_ON,
   laneSkillOverrides,
+  laneSkillPlan,
   pluginDecisions,
+  readConfigHomeSkills,
   pluginSettings,
   readInstalledClaudePlugins,
   claudePluginConfigDir,
@@ -38,7 +41,8 @@ const LAUNCH: ResolvedLaunchConfig = {
 };
 
 const BARE = "claude --permission-mode acceptEdits --model 'opus' --session-id 'uuid-1'";
-const STRICT_MCP = `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`;
+/** The fixed argv head of every minimal lane: no MCP servers, no Chrome block. */
+const STRICT_MCP = `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-chrome`;
 /** The bundled-skill trim every minimal lane carries, pinned in full. */
 const SKILL_OVERRIDES = `"skillOverrides":{"claude-api":"off","dataviz":"off","fewer-permission-prompts":"off","init":"off","keybindings-help":"off","loop":"off","run":"off","schedule":"off","update-config":"off"}`;
 const INSTALLED = ['marketing@synced', 'sales@synced', 'rust-analyzer-lsp@claude-plugins-official'];
@@ -257,14 +261,14 @@ describe('pluginDecisions', () => {
 
   it('names the source of every enabled plugin and the reason for every disabled one', () => {
     expect(pluginDecisions(installed, { launchPick: null, persona: ['marketing'], effective: ['sales'] })).toEqual({
-      allowed: [{ id: 'marketing@synced', source: 'persona' }, { id: 'sales@synced', source: 'effective-skill' }],
+      allowed: [{ id: 'marketing@synced', source: 'persona', granularity: 'plugin' }, { id: 'sales@synced', source: 'effective-skill', granularity: 'plugin' }],
       denied: [{ id: 'ops@synced', because: 'not-chosen' }, { id: 'x@m', because: 'not-chosen' }],
     });
   });
 
   it('a launch pick replaces the persona list and records what it removed', () => {
     expect(pluginDecisions(installed, { launchPick: ['ops'], persona: ['marketing'], effective: [] })).toEqual({
-      allowed: [{ id: 'ops@synced', source: 'launch' }],
+      allowed: [{ id: 'ops@synced', source: 'launch', granularity: 'plugin' }],
       denied: [
         { id: 'marketing@synced', because: 'launch-pick' },
         { id: 'sales@synced', because: 'not-chosen' },
@@ -338,6 +342,90 @@ describe('readInstalledClaudePlugins', () => {
     dir = await mkdtemp(join(tmpdir(), 'tm8-plugins-'));
     expect(readInstalledClaudePlugins(dir)).toEqual([]);
     expect(readInstalledClaudePlugins(join(dir, 'missing'))).toEqual([]);
+  });
+});
+
+describe('laneSkillPlan', () => {
+  const home = [
+    { key: 'anthropic-skills:docx', level: 'synced' as const },
+    { key: 'astro', level: 'user' as const },
+    { key: 'graphify', level: 'user' as const },
+    { key: 'simplify', level: 'user' as const },
+  ];
+
+  it('offs unchosen operator skills by level, name-only for native equips, and records Chrome', () => {
+    const plan = laneSkillPlan(home, [
+      { level: 'user', loadPointer: '/graphify' },
+      { level: 'project', loadPointer: '/repo-skill' },
+      // Plugin skills ignore skillOverrides (probed): never named.
+      { level: 'plugin', loadPointer: '/sales:call-prep' },
+      // An indexed pointer is a path, not a command: never named.
+      { level: 'user', loadPointer: '/home/x/.claude/skills/y/SKILL.md' },
+    ]);
+    expect(plan.settings).toMatchObject({
+      'anthropic-skills:docx': 'off', astro: 'off', graphify: 'name-only', 'repo-skill': 'name-only', init: 'off',
+    });
+    expect(Object.keys(plan.settings)).toEqual([...Object.keys(plan.settings)].sort());
+    expect(plan.settings).not.toHaveProperty('sales:call-prep');
+    expect(plan.record.off).toContainEqual({ name: 'astro', source: 'user-unselected' });
+    expect(plan.record.off).toContainEqual({ name: 'anthropic-skills:docx', source: 'synced-unselected' });
+    expect(plan.record.off.at(-1)).toEqual({ name: 'claude-in-chrome', source: 'chrome' });
+    expect(plan.record.nameOnly).toEqual([
+      { name: 'graphify', source: 'native-name-only' },
+      { name: 'repo-skill', source: 'native-name-only' },
+    ]);
+  });
+
+  it('never names the always-on list, even for an operator skill sharing a name or an equip', () => {
+    const plan = laneSkillPlan(home, [{ level: 'user', loadPointer: '/code-review' }]);
+    for (const name of LANE_SKILLS_ALWAYS_ON) expect(plan.settings).not.toHaveProperty(name);
+    expect(LANE_SKILLS_ALWAYS_ON).toEqual(['code-review', 'security-review', 'simplify', 'workflow-authoring']);
+  });
+
+  it('with nothing read, is exactly the bundled trim plus the Chrome record', () => {
+    const plan = laneSkillPlan([], []);
+    expect(plan.settings).toEqual(laneSkillOverrides());
+    expect(plan.record.nameOnly).toEqual([]);
+  });
+
+  it('reaches argv through buildAgentCommand, and resume keeps it and --no-chrome', () => {
+    const { settings } = laneSkillPlan(home, [{ level: 'user', loadPointer: '/graphify' }]);
+    const base = buildAgentCommand(LAUNCH, {}, { skillOverrides: settings });
+    expect(base).toContain(`"skillOverrides":${JSON.stringify(settings)}`);
+    const resumed = withAgentResume(base, '<sys/>', LAUNCH, 'uuid-9', {});
+    expect(resumed).toContain('--no-chrome');
+    expect(resumed).toContain('"graphify":"name-only"');
+    expect(buildAgentCommand({ ...LAUNCH, harnessSurface: 'inherit' }, {}, { skillOverrides: settings }))
+      .not.toMatch(/no-chrome|skillOverrides/);
+  });
+});
+
+describe('readConfigHomeSkills', () => {
+  let dir: string | null = null;
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = null;
+  });
+
+  it('lists user skill dirs and synced skills as anthropic-skills:<dir>, only where SKILL.md exists', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    for (const d of ['skills/astro', 'skills/empty', 'skills/.hidden', 'skills/synced/bucket/docx', 'skills/synced/.bucket/pdf']) {
+      await mkdir(join(dir, d), { recursive: true });
+    }
+    await writeFile(join(dir, 'skills/astro/SKILL.md'), '---\nname: astro\n---\n');
+    await writeFile(join(dir, 'skills/.hidden/SKILL.md'), 'x');
+    await writeFile(join(dir, 'skills/synced/bucket/docx/SKILL.md'), 'x');
+    await writeFile(join(dir, 'skills/synced/.bucket/pdf/SKILL.md'), 'x');
+    await writeFile(join(dir, 'skills/synced/bucket/manifest.json'), '{}');
+    expect(readConfigHomeSkills(dir)).toEqual([
+      { key: 'anthropic-skills:docx', level: 'synced' },
+      { key: 'astro', level: 'user' },
+    ]);
+  });
+
+  it('returns nothing for a home without skills', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    expect(readConfigHomeSkills(dir)).toEqual([]);
   });
 });
 
