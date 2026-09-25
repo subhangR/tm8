@@ -204,6 +204,24 @@ describe('the settings card (§3.4 rule 2)', () => {
   });
 });
 
+describe('a subject whose kind never arrives', () => {
+  it('reads it once itself; if that fails, the card still shows — no kind default, no checkbox', async () => {
+    const seam = { ...fakeSeam(), entity: vi.fn(async () => { throw new Error('not found'); }) };
+    mount(seam as never, null as never);
+    await waitFor(() => screen.getByTestId('new-chat-card'));
+    expect(screen.getByTestId('new-chat-card').textContent).toContain('Choose how this chat starts.');
+    expect(screen.queryByTestId('new-chat-use-for-kind')).toBeNull();
+    fireEvent.click(screen.getByTestId('new-chat-start'));
+    await waitFor(() => screen.getByTestId('composer'));
+  });
+
+  it('a kind the gate reads itself drives the rule as usual', async () => {
+    mount(fakeSeam({ defaults: { task: { teammateId: BOB as EntityId, model: MODEL_B } } }), null as never);
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: BOB, model: MODEL_B });
+  });
+});
+
 describe('every slot host gets the gate (EntityChatSlot default)', () => {
   beforeEach(() => resetNav(SPACE));
 

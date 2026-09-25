@@ -111,9 +111,25 @@ async function readFacts(seam: NewChatSettingsSeam, spaceId: string, subject: Ne
   return { teammates, projects, projectId };
 }
 
+/** The kind couldn't be learned: the card still shows, with no kind default. */
+const UNKNOWN_KIND = '';
+
 export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }: NewChatSettingsProps) {
-  const kind = subject.kind;
-  const defaults = useChatDefaults(seam, spaceId, kind ?? undefined);
+  /* The host's kind is `null` while ITS subject read is in flight, and stays
+     `null` forever if that read fails. Ask once more here, and on a failure
+     fall to the card without a kind rather than wait on a kind that won't come. */
+  const [readKind, setReadKind] = useState<string | null>(null);
+  useEffect(() => {
+    if (subject.kind) return;
+    let live = true;
+    seam.entity(subject.id).then(
+      (detail) => { if (live) setReadKind(detail.kind); },
+      () => { if (live) setReadKind(UNKNOWN_KIND); },
+    );
+    return () => { live = false; };
+  }, [seam, subject.id, subject.kind]);
+  const kind = subject.kind ?? readKind;
+  const defaults = useChatDefaults(seam, spaceId, kind || undefined);
   const [fresh, setFresh] = useState(false);
   const [facts, setFacts] = useState<Facts | null>(null);
   const [started, setStarted] = useState<NewChatSeed | null>(null);
@@ -132,14 +148,14 @@ export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }
   }, [refresh]);
 
   useEffect(() => {
-    if (!kind) return;
+    if (kind === null) return;
     let live = true;
     void readFacts(seam, String(spaceId), { id: subject.id, kind }).then((next) => { if (live) setFacts(next); });
     return () => { live = false; };
   }, [seam, spaceId, subject.id, kind]);
 
   if (started) return <>{composerFor(started)}</>;
-  if (!kind || !fresh || !facts) {
+  if (kind === null || !fresh || !facts) {
     return <div className="ecp-card__load" role="status" data-testid="new-chat-loading">Loading chat settings…</div>;
   }
 
@@ -205,7 +221,7 @@ function SettingsCard({ kind, entry, problems, teammates, models, projects, init
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ids = useId();
-  const label = kindLabel(kind);
+  const label = kind === UNKNOWN_KIND ? null : kindLabel(kind);
   const pick = <K extends keyof CardChoice>(key: K) => (value: CardChoice[K]) => setChoice((current) => ({ ...current, [key]: value }));
   const ready = choice.teammateId !== '' && choice.model !== '';
 
@@ -244,7 +260,9 @@ function SettingsCard({ kind, entry, problems, teammates, models, projects, init
       }}
     >
       <p className="ecp-card__lead">
-        {partial
+        {label === null
+          ? 'Choose how this chat starts.'
+          : partial
           ? `${label} chats have a default ${entry.teammateId ? 'teammate' : 'model'} but no ${entry.teammateId ? 'model' : 'teammate'}.`
           : entry && problems.length > 0
             ? `The default for ${label} chats no longer resolves.`
@@ -282,15 +300,17 @@ function SettingsCard({ kind, entry, problems, teammates, models, projects, init
           {projects.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}
         </select>
       </label>
-      <label className="ecp-card__check">
-        <input
-          type="checkbox"
-          data-testid="new-chat-use-for-kind"
-          checked={useForKind}
-          onChange={(e) => setUseForKind(e.target.checked)}
-        />
-        {` Use for every ${label} chat`}
-      </label>
+      {label === null ? null : (
+        <label className="ecp-card__check">
+          <input
+            type="checkbox"
+            data-testid="new-chat-use-for-kind"
+            checked={useForKind}
+            onChange={(e) => setUseForKind(e.target.checked)}
+          />
+          {` Use for every ${label} chat`}
+        </label>
+      )}
       {error ? <p className="ecp-card__error" role="alert" data-testid="new-chat-error">{error}</p> : null}
       <button type="submit" className="ecp-card__start" data-testid="new-chat-start" disabled={!ready || saving}>
         {saving ? 'Saving…' : 'Start chat'}
