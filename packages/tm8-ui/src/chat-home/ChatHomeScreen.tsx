@@ -527,6 +527,13 @@ export function ChatHomeScreen({
     setThreads([]);
     setSelectedRootId(null);
     setDetail(null);
+    /* doc 15 B2: the composer's project binding is a `projects.id` linked to
+       the space being LEFT. Carried across, the next chat started here would
+       name a project this space may not have — refused by `chat_start`
+       ("project is not linked to this space"), or, where both spaces link
+       the same folder, silently bound to it without the viewer choosing it
+       in this space. Back to the default (scratch) on every switch. */
+    setProjectChoice('');
   }, [spaceId]);
 
   useEffect(() => {
