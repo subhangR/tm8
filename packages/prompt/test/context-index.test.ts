@@ -241,3 +241,32 @@ describe('profile budgets fit the prompt (§10 Q5.6)', () => {
     expect(contextBudgetOverrun({ promptPolicy: { ...policy, initialContextMaxBytes: 16_384 }, contextBudgets: {} })).not.toBeNull();
   });
 });
+
+describe('I8: a roster teammate entry (design 01a0d348 §8 I8)', () => {
+  const mate: PromptContextEntry = {
+    id: 'tm-1', kind: 'team_member', via: 'roster', teammate: { mode: 'worker', model: 'claude-opus-5' },
+    load: 'tm8 entity context tm-1', source: 'authored', stale: false,
+    header: { name: 'Reviewer" onload="x', whenToUse: 'pick me for review', summary: null },
+  };
+
+  it('renders mode and model as control attributes and the name only inside the entry-header block', () => {
+    const text = serializeContextEntry(mate);
+    const open = text.split('\n')[0]!;
+    expect(open).toBe('    <entry id="tm-1" kind="team_member" mode="worker" model="claude-opus-5" via="roster" source="authored" stale="false" load="tm8 entity context tm-1">');
+    expect(open).not.toContain('Reviewer');
+    expect(text).toContain('<untrusted_data type="entry-header"');
+  });
+
+  it('omits a null mode or model rather than rendering it empty', () => {
+    const open = serializeContextEntry({ ...mate, teammate: { mode: null, model: 'm' } }).split('\n')[0]!;
+    expect(open).not.toContain('mode=');
+    expect(open).toContain('model="m"');
+  });
+
+  it('round-trips through a stored manifest', () => {
+    const index = { groups: [{ name: 'teammates' as const, entries: [mate], omitted: 3, fetch: 'tm8 entity query --kind team_member' }] };
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify(index)))!;
+    expect(parsed).toEqual(index);
+    expect(serializeContextIndex(parsed)).toBe(serializeContextIndex(index));
+  });
+});

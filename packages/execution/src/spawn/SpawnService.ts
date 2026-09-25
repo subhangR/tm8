@@ -62,7 +62,7 @@ import {
   readInstalledClaudePlugins,
   type ConfigHomeSkill,
 } from './harness-surface.js';
-import { contextHeaderIds, contextIndexForResume, contextIndexSwitch } from './context-index.js';
+import { contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1248,8 +1248,17 @@ export class SpawnService {
    * The selection headers `<context_index>` renders, read under the caller's
    * RLS after the context load (so a spawn's refusals keep their order). A
    * graph without the read renders the index from the loader's own rows.
+   * A dispatcher reads its roster first, so the roster's headers ride the
+   * same header read (design 01a0d348 §8 I8).
    */
-  private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext, jevRunId?: string): Promise<void> {
+  private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext, mode: string | null | undefined, jevRunId?: string): Promise<void> {
+    if (mode === 'dispatcher' && this.graph.loadDispatcherRoster) {
+      context.roster = await this.graph.loadDispatcherRoster(auth, {
+        spaceId: context.spaceId,
+        excludeTeamMemberId: context.teamMember.id,
+        limit: DISPATCHER_ROSTER_READ_MAX,
+      });
+    }
     if (this.graph.loadContextHeaders) {
       context.headers = await this.graph.loadContextHeaders(auth, {
         spaceId: context.spaceId,
@@ -1346,7 +1355,7 @@ export class SpawnService {
     // the pinned profile turns it on, and only then are its headers read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
-    if (contextIndex) await this.loadIndexHeaders(auth, context, request.jevRunId);
+    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
 
     const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
@@ -1979,8 +1988,6 @@ export class SpawnService {
       ...(launchSelection.selection ? { selection: launchSelection.selection, selectionReplay: true } : {}),
     });
 
-    if (resumeIndex) await this.loadIndexHeaders(auth, context);
-
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
     // identically and cannot drift.
@@ -2005,6 +2012,9 @@ export class SpawnService {
     // model that created it. Resume replays the recorded posture, full stop.
     const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
+    // After the launch resolves, so a resumed dispatcher reads its roster by
+    // the mode it runs in, exactly as its spawn did.
+    if (resumeIndex) await this.loadIndexHeaders(auth, context, launch.mode);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
       throw new SpawnError(
