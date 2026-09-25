@@ -98,4 +98,26 @@ describe('WebSocket backpressure, timeouts and inbound caps', () => {
     conn.send(Buffer.from('this frame cannot fit'));
     expect(conn.readyState).toBe(PTY_SOCKET_STATE.closed);
   });
+
+  it('keeps a PTY socket open when a large replay only overruns the highWaterMark', () => {
+    // write() === false is backpressure: the frame is queued. Killing the socket
+    // here discarded the attach replay the client had just been promised.
+    const socket = new FakeSocket();
+    const written: Buffer[] = [];
+    vi.spyOn(socket, 'write').mockImplementation(((chunk: Buffer) => {
+      written.push(chunk);
+      return false;
+    }) as typeof socket.write);
+    const conn = new PtyWsConnection(socket, {});
+    conn.send(Buffer.alloc(700 * 1024, 0x61));
+    expect(conn.readyState).toBe(PTY_SOCKET_STATE.open);
+    expect(written).toHaveLength(1);
+  });
+
+  it('the default PTY queue cap admits a full 1 MiB ring replay', () => {
+    const socket = new FakeSocket();
+    const conn = new PtyWsConnection(socket, {});
+    conn.send(Buffer.alloc(1024 * 1024, 0x61));
+    expect(conn.readyState).toBe(PTY_SOCKET_STATE.open);
+  });
 });
