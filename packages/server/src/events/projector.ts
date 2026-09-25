@@ -51,7 +51,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { isEndedKind, loadChatSubjects, loadUnreadCounts, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -319,6 +319,7 @@ interface SummaryRow {
   chat_turn_state: 'idle' | 'queued' | 'running' | null;
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
+  chat_context: unknown;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
@@ -481,6 +482,7 @@ select
   chq.turn_state     as chat_turn_state,
   chq.turn_count     as chat_turn_count,
   chq.last_turn_at   as chat_last_turn_at,
+  cht.context        as chat_context,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
@@ -1421,6 +1423,7 @@ export class PgEntityProjector implements EntityProjector {
           turnState: r.chat_turn_state ?? 'idle',
           turnCount: Number(r.chat_turn_count ?? 0),
           lastTurnAt: iso(r.chat_last_turn_at),
+          context: chatContextOf(r.chat_context),
           about: chatSubjects.get(r.id) ?? null,
         };
       case 'container': {

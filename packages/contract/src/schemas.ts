@@ -47,7 +47,7 @@ import type {
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionView, AuthSignupInput,
-  AuthSignupResult, ChannelTab, ChatTurnFrame, ChatTurnUsage,
+  AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
@@ -635,6 +635,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     turnState: z.enum(['idle', 'queued', 'running']),
     turnCount: z.number().int().nonnegative(),
     lastTurnAt: IsoTimestamp.nullable(),
+    // Additive (Chat Context): the last known reading. Lazy because the
+    // context schema is declared further down this module.
+    context: z.lazy(() => SessionTranscriptContextSchema).nullable().optional(),
     // Additive (entity chat §3.6): absent = not computed, null = no subject.
     about: z.object({
       id: EntityIdSchema,
@@ -1364,6 +1367,12 @@ export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnio
     usage: ChatTurnUsageSchema.nullable(),
   }).strict(),
 ]);
+
+export const ChatContextFrameSchema: z.ZodType<ChatContextFrame> = z.lazy(() => z.object({
+  type: z.literal('chat.context'),
+  chatId: EntityIdSchema,
+  context: SessionTranscriptContextSchema,
+}).strict());
 
 export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   ...entitySummaryShape(),

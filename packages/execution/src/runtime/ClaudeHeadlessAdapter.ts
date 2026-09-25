@@ -5,6 +5,7 @@ import {
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import type { SessionTranscriptContext } from '@tm8/contract';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { Logger } from '../pty/types.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
@@ -16,6 +17,7 @@ import {
   type AgentThread,
   type AgentThreadExit,
   type AgentTurnInput,
+  type ContextTurnItem,
   type StartAgentThreadInput,
   type ToolCallTurnItem,
   type TurnDoneReason,
@@ -48,6 +50,7 @@ function claudeTranscriptExists(env: NodeJS.ProcessEnv, nativeSessionId: string)
 const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
+const ONE_M_SUFFIX = '[1m]';
 const CLAUDE_BUILTIN_TOOLS = [
   'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch',
   'NotebookEdit', 'TodoWrite', 'Task', 'TaskOutput', 'AskUserQuestion',
@@ -55,6 +58,28 @@ const CLAUDE_BUILTIN_TOOLS = [
 ] as const;
 
 type JsonObject = Record<string, unknown>;
+
+type UsageKey =
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'cache_creation_input_tokens'
+  | 'cache_read_input_tokens'
+  | 'total_cost_usd';
+/** A process's running totals as its last result reported them; a missing key is unknown. */
+type RunningTotals = Partial<Record<UsageKey, number>>;
+const TOKEN_KEYS = [
+  ['inputTokens', 'input_tokens'],
+  ['outputTokens', 'output_tokens'],
+  ['cacheCreationInputTokens', 'cache_creation_input_tokens'],
+  ['cacheReadInputTokens', 'cache_read_input_tokens'],
+] as const;
+const FRESH_TOTALS: RunningTotals = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0,
+  total_cost_usd: 0,
+};
 
 interface ActiveTurn {
   queue: AsyncTurnQueue;
@@ -74,6 +99,17 @@ interface ThreadState {
   unusable: boolean;
   booting: boolean;
   closed: boolean;
+  /**
+   * This process's running totals as of its last result: the base a turn's
+   * usage is the step from. Null when unknown — a resumed process restores the
+   * session's earlier totals, so with none remembered there is no honest base,
+   * and that turn's cost stays absent rather than inflated.
+   */
+  totals: RunningTotals | null;
+  /** The newest main-thread request sampled, so each request emits once. */
+  sampledRequestId: string | null;
+  /** That request's reading, re-emitted once a result reports the capacity. */
+  sample: SessionTranscriptContext | null;
 }
 
 interface InterruptedThread {
@@ -128,6 +164,19 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
    * caller-authorized post-interrupt resume.
    */
   private readonly interruptedThreads = new Map<string, InterruptedThread>();
+  /**
+   * Per thread, the context window each model reported (`modelUsage[k].
+   * contextWindow`). Outlives a process so the first request after a respawn
+   * can show a percentage before its turn's result arrives.
+   */
+  private readonly contextWindows = new Map<string, Map<string, number>>();
+  /**
+   * Per thread, the last running totals seen. A `--resume`d process RESTORES
+   * the session's running `modelUsage` and `total_cost_usd` (measured, claude
+   * 2.1.280: a resumed first turn reported both turns' cost), so this — not
+   * zero — is where a resumed process's first step starts.
+   */
+  private readonly lastTotals = new Map<string, RunningTotals>();
 
   constructor(options: ClaudeHeadlessAdapterOptions = {}) {
     this.command = options.command ?? 'claude';
@@ -243,6 +292,9 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       unusable: false,
       booting: true,
       closed: false,
+      totals: config.resume === 'post_interrupt' ? this.lastTotals.get(config.threadId) ?? null : FRESH_TOTALS,
+      sampledRequestId: null,
+      sample: null,
     };
     this.threads.set(config.threadId, state);
 
@@ -560,6 +612,10 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   }
 
   private handleSystemEvent(state: ThreadState, event: JsonObject): void {
+    if (stringField(event, 'subtype') === 'compact_boundary') {
+      this.clearContext(state);
+      return;
+    }
     if (stringField(event, 'subtype') !== 'init') return;
     const observed = stringField(event, 'session_id');
     if (observed && observed !== state.input.nativeSessionId) {
@@ -575,6 +631,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     const active = state.active;
     if (!active) return;
     const message = objectField(event, 'message');
+    if (message) this.sampleContext(state, event, message);
     const content = message?.['content'];
     if (!Array.isArray(content)) return;
     for (const rawBlock of content) {
@@ -642,22 +699,125 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       });
     }
 
-    const usage = this.mapUsage(event);
+    this.captureCapacity(state, event);
+    const usage = this.mapUsage(state, event, !failed && !interrupted);
     if (usage) active.queue.push(usage);
     this.finishActiveTurn(state, interrupted ? 'interrupted' : failed ? 'error' : 'success');
   }
 
-  private mapUsage(event: JsonObject): UsageTurnItem | null {
-    const modelUsage = objectField(event, 'modelUsage');
+  /**
+   * THIS TURN's usage, as the step in the process's running totals.
+   *
+   * `modelUsage` and `total_cost_usd` are running totals for the process
+   * (measured, claude 2.1.280: a 2-turn process reported turn 2's cacheRead as
+   * both turns' sum), so reporting them per turn made turn N include turns
+   * 1..N-1. The step from the previous result is exactly this turn's spend,
+   * sub-agent requests included, so its tokens and its cost cover the same
+   * requests. The top-level `usage` is per turn too, but an aborted result
+   * zeroes it; it is only the fallback for a successful turn with no base.
+   */
+  private mapUsage(state: ThreadState, event: JsonObject, succeeded: boolean): UsageTurnItem | null {
+    const current = runningTotals(event);
+    const base = state.totals;
+    const reported = objectField(event, 'usage');
     const usage: UsageTurnItem = { kind: 'usage' };
-    if (modelUsage) {
-      copyModelUsageSum(modelUsage, usage, 'inputTokens', 'input_tokens');
-      copyModelUsageSum(modelUsage, usage, 'outputTokens', 'output_tokens');
-      copyModelUsageSum(modelUsage, usage, 'cacheCreationInputTokens', 'cache_creation_input_tokens');
-      copyModelUsageSum(modelUsage, usage, 'cacheReadInputTokens', 'cache_read_input_tokens');
+    for (const key of Object.keys(FRESH_TOTALS) as UsageKey[]) {
+      const now = current[key];
+      const before = base?.[key];
+      // A total that went DOWN is not this process's running total; say nothing.
+      if (now !== undefined && before !== undefined && now >= before) {
+        // Rounded: a float step like 0.0138285 - 0.009524 is not a price.
+        usage[key] = key === 'total_cost_usd' ? Math.round((now - before) * 1e10) / 1e10 : now - before;
+      } else if (key !== 'total_cost_usd' && succeeded && reported) {
+        const count = countField(reported, key);
+        if (count !== null) usage[key] = count;
+      }
     }
-    copyResultCost(event, usage);
+    state.totals = current;
+    this.lastTotals.set(state.input.threadId, current);
     return Object.keys(usage).length > 1 ? usage : null;
+  }
+
+  /**
+   * One main-thread request's context: the same rule as `collectContext`
+   * (transcript/read-transcript.ts) applied to the stream. Every event of one
+   * streamed message repeats its usage, so a request emits once, on its first
+   * event. A sub-agent's request runs in its own context and is skipped
+   * (claude 2.1.280 does not stream a Task sub-agent's assistant events at all;
+   * the skip holds if a later version does), as is a `<synthetic>` message,
+   * which had no request behind it.
+   */
+  private sampleContext(state: ThreadState, event: JsonObject, message: JsonObject): void {
+    const active = state.active;
+    if (!active) return;
+    const parent = event['parent_tool_use_id'];
+    if (parent !== undefined && parent !== null) return;
+    const model = stringField(message, 'model');
+    if (model === '<synthetic>') return;
+    const usage = objectField(message, 'usage');
+    const requestId = stringField(message, 'id');
+    if (!usage || !requestId || requestId === state.sampledRequestId) return;
+    state.sampledRequestId = requestId;
+    const input = countField(usage, 'input_tokens');
+    const read = countField(usage, 'cache_read_input_tokens');
+    const created = countField(usage, 'cache_creation_input_tokens');
+    // An absent part is UNKNOWN, not zero: a zero-filled cache part would
+    // understate the context by the cached prefix, usually most of it.
+    const used = input !== null && read !== null && created !== null ? input + read + created : null;
+    const capacity = model === null ? null : this.contextWindows.get(state.input.threadId)?.get(model) ?? null;
+    state.sample = {
+      usedTokens: used,
+      capacityTokens: capacity,
+      cacheReadTokens: read,
+      requestInputTokens: used,
+      model,
+      // The stream carries no record timestamp; it is read as it is written,
+      // so the moment it arrives is the request's own time to within a tick.
+      observedAt: new Date().toISOString(),
+      source: 'claude_request_usage',
+      capacitySource: capacity === null ? null : 'provider',
+      unavailableReason: used === null ? 'incomplete_usage' : null,
+    };
+    active.queue.push(contextItem(state.sample));
+  }
+
+  /**
+   * The capacity is the provider's own `modelUsage[k].contextWindow`, matched
+   * to the sampled request's model. Cached per thread, and when the turn's
+   * newest sample lacked it, that sample is re-emitted with it.
+   */
+  private captureCapacity(state: ThreadState, event: JsonObject): void {
+    const sample = state.sample;
+    const modelUsage = objectField(event, 'modelUsage');
+    if (!sample || sample.model === null || !modelUsage) return;
+    const window = contextWindowFor(modelUsage, sample.model, state.input.model);
+    if (window === null) return;
+    let windows = this.contextWindows.get(state.input.threadId);
+    if (!windows) {
+      windows = new Map();
+      this.contextWindows.set(state.input.threadId, windows);
+    }
+    windows.set(sample.model, window);
+    if (sample.capacityTokens === window) return;
+    state.sample = { ...sample, capacityTokens: window, capacitySource: 'provider' };
+    state.active?.queue.push(contextItem(state.sample));
+  }
+
+  /** A compaction retires the sample: it describes a context that is gone. */
+  private clearContext(state: ThreadState): void {
+    state.sample = null;
+    state.sampledRequestId = null;
+    state.active?.queue.push(contextItem({
+      usedTokens: null,
+      capacityTokens: null,
+      cacheReadTokens: null,
+      requestInputTokens: null,
+      model: null,
+      observedAt: new Date().toISOString(),
+      source: 'claude_request_usage',
+      capacitySource: null,
+      unavailableReason: 'awaiting_new_sample',
+    }));
   }
 
   private finishActiveTurn(state: ThreadState, reason: TurnDoneReason): void {
@@ -804,35 +964,68 @@ function stringField(object: JsonObject, key: string): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function copyModelUsageSum(
-  models: JsonObject,
-  target: UsageTurnItem,
-  sourceKey:
-    | 'inputTokens'
-    | 'outputTokens'
-    | 'cacheCreationInputTokens'
-    | 'cacheReadInputTokens',
-  targetKey:
-    | 'input_tokens'
-    | 'output_tokens'
-    | 'cache_creation_input_tokens'
-    | 'cache_read_input_tokens',
-): void {
-  let reported = false;
-  let total = 0;
-  for (const raw of Object.values(models)) {
-    if (!isObject(raw)) continue;
-    const value = raw[sourceKey];
-    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-    reported = true;
-    total += value;
-  }
-  if (reported) Object.assign(target, { [targetKey]: total });
+function countField(object: JsonObject, key: string): number | null {
+  const value = object[key];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function copyResultCost(result: JsonObject, target: UsageTurnItem): void {
-  const value = result['total_cost_usd'];
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    target.total_cost_usd = value;
+/** The result's running totals: `modelUsage` summed across models, and `total_cost_usd`. */
+function runningTotals(result: JsonObject): RunningTotals {
+  const totals: RunningTotals = {};
+  const models = objectField(result, 'modelUsage');
+  if (models) {
+    for (const [sourceKey, targetKey] of TOKEN_KEYS) {
+      let reported = false;
+      let total = 0;
+      for (const raw of Object.values(models)) {
+        if (!isObject(raw)) continue;
+        const value = countField(raw, sourceKey);
+        if (value === null) continue;
+        reported = true;
+        total += value;
+      }
+      if (reported) totals[targetKey] = total;
+    }
   }
+  const cost = countField(result, 'total_cost_usd');
+  if (cost !== null) totals.total_cost_usd = cost;
+  return totals;
+}
+
+function contextItem(context: SessionTranscriptContext): ContextTurnItem {
+  return { kind: 'context', context };
+}
+
+/**
+ * The `modelUsage` entry describing `model` (the request's `message.model`).
+ *
+ * The key is the model as launched and may carry `[1m]` (`claude-opus-5-5[1m]`
+ * against `message.model` `claude-opus-5-5`); `canonicalModel` drops a date
+ * suffix (`claude-haiku-4-5` against `claude-haiku-4-5-20251001`). So, in
+ * order: the launch model's own entry when it names this model, an exact key,
+ * a key without `[1m]`, then a unique `canonicalModel`. Anything else is
+ * unknown — a guess would put a 200k window under a 1M context.
+ */
+export function contextWindowFor(
+  modelUsage: JsonObject,
+  model: string,
+  launchModel: string | null,
+): number | null {
+  const entries: Array<{ key: string; canonical: string | null; window: number }> = [];
+  for (const [key, raw] of Object.entries(modelUsage)) {
+    if (!isObject(raw)) continue;
+    const window = countField(raw, 'contextWindow');
+    if (window === null || window === 0) continue;
+    entries.push({ key, canonical: stringField(raw, 'canonicalModel'), window });
+  }
+  const base = (key: string) => (key.endsWith(ONE_M_SUFFIX) ? key.slice(0, -ONE_M_SUFFIX.length) : key);
+  const launched = entries.find((e) => e.key === launchModel && (base(e.key) === model || e.canonical === model));
+  if (launched) return launched.window;
+  const exact = entries.find((e) => e.key === model);
+  if (exact) return exact.window;
+  const stripped = entries.filter((e) => base(e.key) === model);
+  if (stripped.length === 1) return stripped[0]!.window;
+  const canonical = entries.filter((e) => e.canonical === model);
+  if (canonical.length === 1) return canonical[0]!.window;
+  return null;
 }

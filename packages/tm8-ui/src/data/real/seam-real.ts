@@ -316,6 +316,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     onChatTurn: (cb) =>
       connection.onChatTurn((frame) =>
         cb(chatTurnFrameFromWire(frame as unknown as WireChatTurnFrame))),
+    onChatContext: (cb) => connection.onChatContext(cb),
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),
     onResync: (cb) => connection.onResync(cb),

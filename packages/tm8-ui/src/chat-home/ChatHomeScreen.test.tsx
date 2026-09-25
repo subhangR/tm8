@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatHomePort, ChatModelOption, ChatThreadDetail, ChatTurn } from './types';
+import type { ChatContextFrame, ChatHomePort, ChatModelOption, ChatThreadDetail, ChatTurn } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
@@ -115,6 +115,86 @@ describe('Chat Home', () => {
     expect(titles()).toEqual(before);
   });
 
+  describe('the context number on the conversation header', () => {
+    const reading = {
+      usedTokens: 48_210,
+      capacityTokens: 200_000,
+      cacheReadTokens: 45_000,
+      requestInputTokens: 48_210,
+      model: 'claude-sonnet-4-5',
+      observedAt: '2026-08-13T08:20:00.000Z',
+      source: 'claude_request_usage' as const,
+      capacitySource: 'provider' as const,
+      unavailableReason: null,
+    };
+
+    function contextPort(
+      summary: Partial<ChatThreadDetail['summary']>,
+    ): { port: ChatHomePort; emit: (frame: ChatContextFrame) => void } {
+      const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+      Object.assign(thread.summary, summary);
+      const { port: base } = createChatHomeFixturePort([thread]);
+      const listeners = new Set<(frame: ChatContextFrame) => void>();
+      return {
+        port: {
+          ...base,
+          subscribeContext(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+        },
+        emit: (frame) => listeners.forEach((listener) => listener(frame)),
+      };
+    }
+
+    const chip = (view: ReturnType<typeof render>) =>
+      view.container.querySelector('.tch-conversation__head [data-testid="chat-context"] button');
+
+    it('shows a stopped chat\'s stored reading as last known', async () => {
+      const { port } = contextPort({ runtimeState: 'stopped', context: reading });
+      const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+      await waitFor(() => expect(chip(view)).not.toBeNull());
+      expect(chip(view)?.textContent).toMatch(/^~48k · 24%/);
+      expect(chip(view)?.getAttribute('aria-label')).toContain('Last known: Context 48,210 tokens of 200,000');
+      fireEvent.click(chip(view)!);
+      expect(view.getByRole('group', { name: 'Context details' }).textContent).toContain(
+        "last known — the chat's runtime is stopped",
+      );
+    });
+
+    it('replaces the stored reading with a live frame, which is current', async () => {
+      const { port, emit } = contextPort({ runtimeState: 'cold', context: reading });
+      const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+      await waitFor(() => expect(chip(view)?.textContent).toMatch(/^~48k/));
+      act(() =>
+        emit({
+          type: 'chat.context',
+          chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId,
+          context: { ...reading, usedTokens: 96_000, requestInputTokens: 96_000 },
+        }),
+      );
+      expect(chip(view)?.textContent).toMatch(/^96k · 48%/);
+      // A frame for another chat never draws on this header.
+      act(() =>
+        emit({
+          type: 'chat.context',
+          chatId: '019f0000-0000-7000-8000-0000000000ff' as EntityId,
+          context: { ...reading, usedTokens: 1_000 },
+        }),
+      );
+      expect(chip(view)?.textContent).toMatch(/^96k/);
+    });
+
+    it('draws nothing for a chat that has never been measured', async () => {
+      const { port } = contextPort({ runtimeState: 'cold', context: null });
+      const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+      await waitFor(() =>
+        expect(view.container.querySelector('.tch-title strong')?.textContent).toBe('Plan the launch sequence'),
+      );
+      expect(chip(view)).toBeNull();
+    });
+  });
+
   it('renders a thread, the entities its calls touched, and actual usage', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
@@ -127,6 +207,11 @@ describe('Chat Home', () => {
     expect(readLine.textContent).toBe('Read 1 task');
     expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
+    // Each count under its own name: "1,018 tokens" would claim a total the
+    // card does not have (Claude bills a cached prefix as cache read).
+    expect(view.getByTestId('chat-usage-card').textContent).toContain('842 in');
+    expect(view.getByTestId('chat-usage-card').textContent).toContain('176 out');
+    expect(view.getByTestId('chat-usage-card').textContent).not.toContain('tokens');
     // A configured thread still SAYS what it runs as; it just cannot be edited.
     expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
     expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
