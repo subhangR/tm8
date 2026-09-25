@@ -233,7 +233,7 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     tasks: [task({ linked, linkedTotal: 46 })],
     headers: [
       docHeader('doc-1', long),
-      { ...docHeader('doc-2', long), source: 'authored', whenToUse: 'w'.repeat(300), clipped: ['keywords'] },
+      { ...docHeader('doc-2', long), source: 'authored', whenToUse: 'w'.repeat(300), clipped: ['keywords', 'whenToUse'] },
     ],
   });
 
@@ -247,10 +247,27 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     const authored = refs.entries.find((e) => e.id === 'doc-2')!;
     expect(authored.header!.summary).toBe(long);
     expect(authored.header!.whenToUse).toBe('w'.repeat(300));
-    // An authored clip already declared by resolveHeaders is carried, not re-cut.
-    expect(authored.clipped).toEqual(['keywords']);
+    // An authored clip already declared by resolveHeaders is carried, not
+    // re-cut; `keywords` is not text the index shows, so it is not named.
+    expect(authored.clipped).toEqual(['whenToUse']);
     expect(prompt.system).toContain('clipped="summary"');
-    expect(prompt.system).toContain('clipped="keywords"');
+    expect(prompt.system).toContain('clipped="whenToUse"');
+    expect(prompt.system).not.toContain('keywords');
+  });
+
+  it('(d) redacts a credential BEFORE the cut, so a cut through one never ships its prefix', () => {
+    // The token starts inside the 200 kept characters and ends past them: cut
+    // first, `sk-` plus 12 characters is too short for the pattern.
+    const secret = `${'a'.repeat(183)} sk-${'Z'.repeat(40)} tail`;
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked: [linked[0]!], linkedTotal: 1 })],
+      headers: [{ ...docHeader('doc-1', secret), whenToUse: secret }],
+    }), { on: true });
+    const entry = manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries[0]!;
+    expect(entry.header!.summary).toBe(`${'a'.repeat(183)} [credential-red…`);
+    expect(entry.header!.whenToUse).toBe(entry.header!.summary);
+    expect(entry.clipped).toEqual(['summary', 'whenToUse']);
+    expect(prompt.system).not.toContain('sk-Z');
   });
 
   it('(b) links past the spawn read are the references group\'s omitted count, with the command that lists them', () => {

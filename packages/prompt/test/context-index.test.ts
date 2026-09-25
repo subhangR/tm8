@@ -218,7 +218,9 @@ describe('I5a follow-ups: declared clip, names the index carries', () => {
     expect(contextIndexNames({ groups: [] }).size).toBe(0);
   });
 
-  it('the instruction names the clipped attribute', () => {
-    expect(CONTEXT_INDEX_INSTRUCTION).toContain('clipped names header fields cut short');
+  it('the instruction names the clipped attribute and what omitted counts', () => {
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('clipped names header fields shown cut short, so load the entry');
+    // `omitted` also counts links past the launch's read (I5a follow-up b), not only the budget's drops.
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('omitted count is entries left out, for the budget or past the launch\'s read');
   });
 });

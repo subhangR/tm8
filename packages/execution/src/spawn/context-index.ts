@@ -21,6 +21,7 @@ import {
   type PromptContextGroup,
 } from '@tm8/prompt';
 import { SPAWN_SELECTION_REFERENCE_KINDS, type SelectionHeader } from '@tm8/contract';
+import { redactSecretTokens } from './secret-redaction.js';
 import type { ContextVia, ManifestSkillContext, SpawnContext } from './types.js';
 
 /** `TM8_CONTEXT_INDEX` values that turn the index on, and off, for every launch on the node. */
@@ -97,6 +98,9 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
   return (row?.depth ?? 0) > 0 ? 'inherited' : 'teammate';
 }
 
+/** The header fields a `<context_index>` entry renders, so the only ones `clipped` may name. */
+const INDEX_TEXT_FIELDS: ReadonlySet<string> = new Set(['whenToUse', 'summary']);
+
 /**
  * An entry's header fields. DERIVED text (nobody wrote it for routing) is cut
  * to `INDEX_DERIVED_HEADER_CHARS` per field here, and only here: Jev keeps its
@@ -106,12 +110,17 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
  */
 function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header' | 'clipped'> {
   if (!header) return fallbackName ? { header: { name: fallbackName } } : {};
-  const clipped = new Set<string>(header.clipped ?? []);
+  // Only the fields the index renders: an authored `keywords` clip is not
+  // text this entry shows, so declaring it here would name nothing.
+  const clipped = new Set<string>((header.clipped ?? []).filter((field) => INDEX_TEXT_FIELDS.has(field)));
   let { whenToUse, summary } = header;
   if (header.source === 'derived') {
-    const cutWhen = clipIndexText(whenToUse, INDEX_DERIVED_HEADER_CHARS);
+    // Redact BEFORE the cut: a cut through a credential leaves a prefix too
+    // short for the pattern, and the manifest-wide redaction after it would
+    // ship that prefix.
+    const cutWhen = clipIndexText(whenToUse === null ? null : redactSecretTokens(whenToUse), INDEX_DERIVED_HEADER_CHARS);
     if (cutWhen !== null) { whenToUse = cutWhen; clipped.add('whenToUse'); }
-    const cutSummary = clipIndexText(summary, INDEX_DERIVED_HEADER_CHARS);
+    const cutSummary = clipIndexText(summary === null ? null : redactSecretTokens(summary), INDEX_DERIVED_HEADER_CHARS);
     if (cutSummary !== null) { summary = cutSummary; clipped.add('summary'); }
   }
   return {
@@ -225,7 +234,8 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   // they are DECLARED in the references group's omitted count, with the
   // command that lists them (the first task that has some). A selected
   // reference set replaces the default links, so there is nothing unread to
-  // declare. The audit records the same count as `groups.references.unread`.
+  // declare in the index (the audit's `groups.references.unread` still counts
+  // them; unselected, it is this same number).
   const unreadByTask = selected
     ? []
     : context.tasks.map((task) => ({
