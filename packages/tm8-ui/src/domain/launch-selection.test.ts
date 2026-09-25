@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SPAWN_SELECTION_GROUP_LIMIT, type EntityId } from '@tm8/contract';
 
+import { item } from '../jev/test-support';
 import {
+  composeLaunchSelection,
   composeSelection,
+  jevGroupEdit,
+  restoreRows,
   defaultRow,
   groupDiff,
   groupIds,
@@ -193,4 +197,57 @@ describe('defaultRow — header text', () => {
 
 it('NO_SELECTION_EDITS covers the three groups', () => {
   expect(Object.keys(NO_SELECTION_EDITS).sort()).toEqual(['memories', 'references', 'skills']);
+});
+
+describe('jevGroupEdit — Applying Jev to one group', () => {
+  // d1, d2 defaults; x a pick. Jev ticks d1 + x, leaves d2 out over budget.
+  const items = [
+    item('d1', 'doc', 2.8, true, ['task'], 'Spec', 400),
+    item('x', 'artifact', 2.4, true, ['space'], 'Mock', 300),
+    item('d2', 'doc', 2.0, false, ['task'], 'Epic', 900),
+  ];
+  const defaults = ready('d1', 'd2');
+
+  it('removed = defaults Jev left unticked (with why), added = non-default picks (with display rows)', () => {
+    const result = jevGroupEdit(defaults, NONE, { items, ticked: ['d1', 'x'] });
+    expect(result.edit).toEqual({ removed: ['d2'], added: ['x'] });
+    expect(result.diff).toEqual({ removed: ['d2'], added: ['x'] });
+    expect(result.reasons).toEqual({ d2: 'over-budget' });
+    expect(result.rows).toEqual([{ id: 'x', kind: 'artifact', title: 'Mock', text: 'Mock', derived: true, via: null }]);
+    expect(result.touched).toEqual(['d1', 'x', 'd2']);
+    expect(result.refusal).toBeNull();
+    expect(groupIds(defaults, result.edit)).toEqual(['d1', 'x']);
+  });
+
+  it('rows Jev did not rank keep the person’s edit; rows it did take Jev’s verdict', () => {
+    const mine: LaunchGroupEdit = { removed: [id('d1'), id('d9')], added: [id('own')] };
+    const result = jevGroupEdit(ready('d1', 'd2', 'd9'), mine, { items, ticked: ['d1', 'x'] });
+    expect(result.edit).toEqual({ removed: ['d9', 'd2'], added: ['own', 'x'] });
+  });
+
+  it('a locked group refuses: defaults unread, or past the ceiling', () => {
+    expect(jevGroupEdit({ status: 'loading' }, NONE, { items, ticked: ['d1'] }).refusal).toMatch(/Reading/);
+    const many = Array.from({ length: SPAWN_SELECTION_GROUP_LIMIT + 1 }, (_, i) => item(`p${String(i)}`, 'doc', 2, true));
+    const result = jevGroupEdit(ready('d1'), NONE, { items: many, ticked: many.map((m) => m.entityId) });
+    expect(result.refusal).toMatch(/at most/);
+  });
+
+  it('restoreRows undoes exactly the rows Apply decided, keeping later edits elsewhere', () => {
+    const applied = jevGroupEdit(defaults, NONE, { items, ticked: ['d1', 'x'] });
+    const later: LaunchGroupEdit = { removed: applied.edit.removed, added: [...applied.edit.added, id('own')] };
+    expect(restoreRows(later, NONE, applied.touched)).toEqual({ removed: [], added: ['own'] });
+  });
+});
+
+describe('composeLaunchSelection — no override, reasons for asked-but-unapplied groups', () => {
+  it('an applied group is an ordinary send; a failed one still says why it defaulted', () => {
+    expect(composeLaunchSelection({ ...OMITTED, references: { send: [id('r1')] } }, { memories: 'jev-failed', references: 'jev-failed' })).toEqual({
+      selection: { referenceIds: ['r1'] },
+      selectionReasons: { memories: 'jev-failed', skills: 'not-asked' },
+    });
+  });
+
+  it('nothing edited, nothing applied: nothing sent', () => {
+    expect(composeLaunchSelection(OMITTED).selection).toBeUndefined();
+  });
 });
