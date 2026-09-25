@@ -109,6 +109,19 @@ function createWindow() {
   });
 }
 
+/**
+ * The launching shell's environment, minus every `TM8_*` variable.
+ *
+ * Started from a terminal inside a tm8 agent lane, the shell inherits that
+ * lane's `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_BASE_URL`, … and the server
+ * hands its own env to every agent it spawns — so without this, desktop agents
+ * would authenticate as, and report to, a session on a different server. This
+ * node's `TM8_*` configuration is exactly the set written below, nothing more.
+ */
+function inheritedEnv() {
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('TM8_')));
+}
+
 function startServer() {
   const layout = resolveLayout();
 
@@ -138,7 +151,7 @@ function startServer() {
     // inherits `execArgv` by default. Source maps match `deploy/prod/run-server.sh`.
     execArgv: ['--enable-source-maps'],
     env: {
-      ...process.env,
+      ...inheritedEnv(),
       ELECTRON_RUN_AS_NODE: '1',
       TM8_DESKTOP: '1',
       TM8_DATA_DIR: layout.dataDir,
