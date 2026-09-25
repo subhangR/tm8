@@ -33,6 +33,8 @@ async function mount(formId: string, tab: QuestionnaireTab = 'fill', responses?:
 }
 
 const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }));
+/** The Responses tab opens on Summary; the table is Individual. */
+const individual = () => tab('Individual');
 
 describe('header', () => {
   it('shows status, and the locked chip only once a response is submitted', async () => {
@@ -245,6 +247,7 @@ describe('Build', () => {
 describe('Responses', () => {
   it('a table of current responses with a delivery chip each; drafts never appear', async () => {
     await mount(FORM_FIXTURE_IDS.release, 'responses');
+    individual();
     const rows = within(screen.getByTestId('responses-table')).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(4);
     expect(screen.getAllByTestId('delivery-chip').map((c) => c.getAttribute('data-status')).sort())
@@ -255,6 +258,7 @@ describe('Responses', () => {
 
   it('a response detail shows its revisions and its queued delivery', async () => {
     await mount(FORM_FIXTURE_IDS.release, 'responses');
+    individual();
     fireEvent.click(screen.getByRole('button', { name: 'Ada' }));
     const detail = await screen.findByTestId('response-detail');
     expect(within(detail).getByTestId('delivery-note').getAttribute('data-state')).toBe('queued');
@@ -267,6 +271,7 @@ describe('Responses', () => {
 
   it('a cancelled delivery says the answer is stored', async () => {
     await mount(FORM_FIXTURE_IDS.release, 'responses');
+    individual();
     fireEvent.click(screen.getByRole('button', { name: 'Omar' }));
     expect((await screen.findByTestId('delivery-note')).textContent).toMatch(/Not delivered: the session was deleted\. The answer is stored\./);
   });
