@@ -96,6 +96,7 @@ import { graphSurfaceFor } from './graphSurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
+import { useChatCounts } from '../entity-chat';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -766,7 +767,11 @@ export function EntityView(props: EntityViewProps) {
   const panelActions = composePanelActions([
     { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
     { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
+    /* The header's Chat, beside Run (entity chat §3.2) — the same dispatcher
+       the row's hover verb uses, so the two open the same chat. */
+    { onAction: selectedId ? chatAbout.forEntity(selectedId) : undefined, wiredActions: chatAbout.wiredActions },
   ]);
+  const chatCounts = useChatCounts(data.seam, selectedId);
 
   const detailPanel = selectedId ? (
     <EntityDetailPanel
@@ -781,6 +786,7 @@ export function EntityView(props: EntityViewProps) {
          see `composePanelActions` for why neither can be passed alone. */
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      primaryCounts={chatCounts}
       memoryAuthoring={memoryWorkingSet.authoring}
       membershipAuthoring={membership.authoringFor(detail)}
       onMarkMemory={memoryMarks.begin}
@@ -1465,6 +1471,7 @@ export function EntityView(props: EntityViewProps) {
                   launchPort,
                   rowLifecycle,
                   attachments,
+                  chatAbout,
                   serverBaseUrl: props.serverBaseUrl,
                   viewerMemberId: props.viewerMemberId,
                 }}

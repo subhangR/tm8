@@ -635,6 +635,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     turnState: z.enum(['idle', 'queued', 'running']),
     turnCount: z.number().int().nonnegative(),
     lastTurnAt: IsoTimestamp.nullable(),
+    // Additive (entity chat §3.6): absent = not computed, null = no subject.
+    about: z.object({
+      id: EntityIdSchema,
+      kind: EntityKindSchema,
+      title: z.string(),
+    }).strict().nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),

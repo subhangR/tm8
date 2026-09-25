@@ -505,7 +505,18 @@ export type CoreEntityState =
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
-      turnCount: number; lastTurnAt: string | null }
+      turnCount: number; lastTurnAt: string | null;
+      /**
+       * What the chat is ABOUT — its `about` edge's target, with the kind and
+       * title a list tile needs to draw it (entity chat §3.6). Batched per
+       * page by the server (`loadChatSubjects`), so the Chats list shows each
+       * chat's subject without a read per row.
+       *
+       * `null` means NO SUBJECT (a bare Home chat, or a subject the reader
+       * cannot see or that was deleted). ABSENT means the answering door did
+       * not compute it — a client must not read absence as "no subject".
+       */
+      about?: { id: EntityId; kind: EntityKind; title: string } | null }
   /**
    * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
    * carries the surface KINDS that are live and not their detail; the panel

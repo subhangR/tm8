@@ -129,6 +129,9 @@ describe('one identity path (R2 / claims contract)', () => {
     'acting_as',
     'client_mutation_id',
     'auth_kind',
+    // 227 (plan W0a): the space an agent session is pinned to. Caller
+    // identity, not a side channel — it narrows what identity_id may reach.
+    'session_space_id',
   ] as const;
 
   const CLAIMS_BINDER = join(SRC, 'db', 'client.ts');

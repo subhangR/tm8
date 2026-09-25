@@ -48,6 +48,7 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { WithChatCounts } from '../entity-chat';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
@@ -469,8 +470,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             const panelActions = composePanelActions([
               { onAction: primaries.forEntity(id), wiredActions: primaries.wiredActions },
               { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
+              /* The header's Chat, beside Run (entity chat §3.2). */
+              { onAction: chatAbout.forEntity(id), wiredActions: chatAbout.wiredActions },
             ]);
             return (
+            /* The Chat button's count — a component, not a hook, for the
+               reason `EntityVerbs` is one: this callback renders several
+               panels at once. */
+            <WithChatCounts seam={data.seam} aboutId={id}>
+            {(chatCounts) => (
         <EntityDetailPanel
           detail={detail ?? null}
           serverBaseUrl={props.serverBaseUrl}
@@ -490,6 +498,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
              add-child come from `EntityVerbs` — see `composePanelActions`. */
           onAction={panelActions.onAction}
           wiredActions={panelActions.wiredActions}
+          primaryCounts={chatCounts}
           membershipAuthoring={membership.authoringFor(detail)}
           launch={launchPort}
           mergePr={mergePrPortFor(data.seam)}
@@ -587,12 +596,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onClose={() => nav.close(id)}
           onOpenEntity={openEntity}
         />
+            )}
+            </WithChatCounts>
             );
           }}
         </EntityVerbs>
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort, membership],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort, membership, chatAbout],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded

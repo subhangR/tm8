@@ -37,6 +37,7 @@ import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../st
 import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { chatAboutTarget } from './useChatAbout';
+import { EntityChatDock, openEntityChat } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -1423,8 +1424,31 @@ export function GateApp(props: GateAppProps = {}) {
    * different places.
    */
   const openChatAbout = useCallback((aboutId: EntityId | null) => {
-    navStore.getState().navigate(chatAboutTarget(aboutId));
-  }, []);
+    /* WITH a subject it opens the CHAT SLOT on the current surface (entity
+       chat §3.2) — its latest chat, else the composer. The subject-less form
+       (a list header) is still bare Home's new conversation. */
+    if (aboutId) void openEntityChat(data.seam, aboutId);
+    else navStore.getState().navigate(chatAboutTarget(null));
+  }, [data.seam]);
+
+  /* The chat slot's ports (entity chat §3.3). OPENING the subject lands where
+     each surface opens an entity: Home's Trail roots on it, anywhere else the
+     workspace raises it — the same two gestures a row click makes. */
+  const openChatSubject = useCallback((id: EntityId) => {
+    if (navStore.getState().view.view === 'home') navStore.getState().openCenter(id);
+    else {
+      navigateTo(WORKSPACE_TARGET);
+      navStore.getState().push(id);
+    }
+  }, [navigateTo]);
+  const chatSubjectOf = useCallback((id: EntityId) => {
+    const detail = data.detailOf(id);
+    return detail ? { title: detail.title, kind: detail.kind } : undefined;
+  }, [data]);
+  const chatTeammateLabel = useCallback(
+    (id: EntityId) => data.launch.teammates.find((teammate) => teammate.id === id)?.name ?? null,
+    [data.launch.teammates],
+  );
 
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
@@ -2022,6 +2046,24 @@ export function GateApp(props: GateAppProps = {}) {
         />
 
         <div className="shell-body">
+          {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the
+              right over any surface that does not host the slot in its own
+              layout — see `surfaceHostsChatSlot`. Fixed-position, so where it
+              sits in this tree does not matter. */}
+          {data.ready ? (
+            <EntityChatDock
+              seam={data.seam}
+              spaceId={data.spaceId}
+              nodeKey={nodeKey}
+              skillOptions={data.skillOptions}
+              viewerName={data.viewerActor?.displayName}
+              viewerMemberId={viewerMemberId}
+              onOpenEntity={openChatSubject}
+              onOpenSubject={openChatSubject}
+              subjectOf={chatSubjectOf}
+              teammateLabel={chatTeammateLabel}
+            />
+          ) : null}
           {/* R2: the rail is the ACTIVE TAB's contents — one group, no
               group-spine listing. Null when the active group is its own one
               screen (Graph / Settings / Files) or nothing claims the target.

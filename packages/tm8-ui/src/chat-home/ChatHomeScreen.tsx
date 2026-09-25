@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
@@ -240,6 +240,15 @@ export interface ChatHomeScreenProps {
    */
   soloConversation?: boolean;
   /**
+   * WHAT A COLD START OPENS. `'latest'` (the default, ruled 2026-08-15) opens
+   * the space's most recent conversation so the pane is never empty.
+   * `'composer'` opens the new-conversation composer instead, and is what the
+   * entity chat slot asks for when its thread is `new`: that host has ALREADY
+   * decided no existing chat is wanted, and auto-opening the space's latest
+   * chat — about some other entity entirely — would contradict the address.
+   */
+  coldStart?: 'latest' | 'composer';
+  /**
    * The loaded thread list, published up for a host that draws its own
    * selector. ONE read stays behind it: a host that re-listed for its picker
    * would have a second list free to disagree with this one about what
@@ -367,6 +376,7 @@ export function ChatHomeScreen({
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
+  coldStart = 'latest',
   onThreadsChange,
   onSelectionChange,
   stage = null,
@@ -527,6 +537,13 @@ export function ChatHomeScreen({
     setThreads([]);
     setSelectedRootId(null);
     setDetail(null);
+    /* doc 15 B2: the composer's project binding is a `projects.id` linked to
+       the space being LEFT. Carried across, the next chat started here would
+       name a project this space may not have — refused by `chat_start`
+       ("project is not linked to this space"), or, where both spaces link
+       the same folder, silently bound to it without the viewer choosing it
+       in this space. Back to the default (scratch) on every switch. */
+    setProjectChoice('');
   }, [spaceId]);
 
   useEffect(() => {
@@ -703,8 +720,8 @@ export function ChatHomeScreen({
       return;
     }
     if (selectionSpaceRef.current === spaceId) return;
-    chooseRoot(next[0]?.rootId ?? null);
-  }, [chooseRoot, port, spaceId]);
+    chooseRoot(coldStart === 'composer' ? null : (next[0]?.rootId ?? null));
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   /** Read a thread snapshot and replay every cached frame over it, so frames
    *  published after the read began are never lost. Phase is NOT derived here —
@@ -782,7 +799,7 @@ export function ChatHomeScreen({
            included. A space the viewer HAS chosen in fails the test on its own,
            so entering a different space is still a cold start. */
         if (selectionSpaceRef.current !== spaceId) {
-          chooseRoot(nextThreads[0]?.rootId ?? null);
+          chooseRoot(coldStart === 'composer' ? null : (nextThreads[0]?.rootId ?? null));
         }
         setTeammateId(nextTeammates[0]?.id ?? '');
       })
@@ -795,7 +812,7 @@ export function ChatHomeScreen({
     return () => {
       alive = false;
     };
-  }, [chooseRoot, port, spaceId]);
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;
@@ -1681,7 +1698,7 @@ export function ChatHomeScreen({
             ? threadGroups.map((group) => (
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
-                  {group.rows.map((thread) => (
+                  {group.rows.map((thread) => withChatSubject(thread, onOpenEntity, (
                     <button
                       type="button"
                       key={thread.rootId}
@@ -1718,7 +1735,7 @@ export function ChatHomeScreen({
                         <Timestamp at={thread.updatedAt} />
                       </span>
                     </button>
-                  ))}
+                  )))}
                 </div>
               ))
             : null}
@@ -2644,4 +2661,30 @@ function describeError(error: unknown): string {
 
 function defaultMutationId(prefix: string): string {
   return `${prefix}:${crypto.randomUUID()}`;
+}
+
+/**
+ * A Chats-list row, with its SUBJECT when the server named one (entity chat
+ * §3.6): "about ‹title›" as a chip that opens the subject, not the chat.
+ *
+ * The chip sits BESIDE the row button rather than inside it — a button cannot
+ * nest a button, the `.tch-task-row` precedent. A row with no subject (or from
+ * a port that predates §3.6) is returned exactly as it was.
+ */
+function withChatSubject(
+  thread: ChatThreadSummary,
+  onOpenEntity: ((id: EntityId) => void) | undefined,
+  row: ReactNode,
+): ReactNode {
+  if (!thread.about) return <Fragment key={thread.rootId}>{row}</Fragment>;
+  const { id, kind, title } = thread.about;
+  return (
+    <div key={thread.rootId} className="tch-chat-row" data-testid="chat-row-with-subject">
+      {row}
+      <div className="tch-thread__about" data-testid="chat-row-about">
+        <span className="tch-about__word">about</span>
+        <EntityChip refInfo={{ id, kind, title }} onOpen={onOpenEntity} />
+      </div>
+    </div>
+  );
 }
