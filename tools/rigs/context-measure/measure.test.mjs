@@ -108,3 +108,9 @@ test('refuses a manifest whose entries and dropped disagree', () => {
   n.context.dropped = n.context.dropped.filter((d) => d.entityId !== NEEDLE);
   assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /header-dropped with no header-level drop/);
 });
+
+test('D2: header- and body-level drops are header reads; every other miss is entry-level', async () => {
+  const { missLevel } = await import('./measure.mjs');
+  for (const why of ['byte-budget:header', 'byte-budget:body']) assert.equal(missLevel(why), 'header', why);
+  for (const why of ['byte-budget:entry', 'count-cap:entry', 'not-selected:-', 'absent-from-index']) assert.equal(missLevel(why), 'entry', why);
+});
