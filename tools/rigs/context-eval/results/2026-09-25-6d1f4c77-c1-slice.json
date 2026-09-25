@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-6d1f4c77-c1-first.jsonl, 2026-09-25-6d1f4c77-c1.jsonl, 2026-09-25-6d1f4c77-c1-rep2.jsonl",
-  "generatedAt": "2026-09-25T17:59:27.879Z",
+  "generatedAt": "2026-09-25T18:02:21.980Z",
   "rows": 47,
   "measured": 36,
   "excluded": 11,
@@ -2189,6 +2189,45 @@
     "memoryDirMoved": []
   },
   "crossLane": {
+    "readSiblingCommit": [
+      {
+        "slice": "c1",
+        "model": "haiku45",
+        "taskKey": "stress30",
+        "rep": 1,
+        "sessionId": "01a0d9b3-a5e9-75e0-adac-34a2fb1f3beb",
+        "excluded": true,
+        "from": [
+          {
+            "sha": "3fe8d061abfe",
+            "sessionId": "01a0d992-35e0-798b-a240-149b0404b73c"
+          },
+          {
+            "sha": "1641784f2379",
+            "sessionId": "01a0d9ab-55e8-7a98-8506-873390aea530"
+          },
+          {
+            "sha": "5d4d337665ae",
+            "sessionId": "01a0d9aa-829e-7e16-8d3e-35701a14a3da"
+          },
+          {
+            "sha": "5f35de11c63a",
+            "sessionId": "01a0d9ad-fdc6-7d82-8239-c32861eb67d1"
+          },
+          {
+            "sha": "080cfb461525",
+            "sessionId": "01a0d993-7fcc-7658-adf6-f8a2563114f6"
+          }
+        ]
+      }
+    ],
+    "readSiblingCommitUnverified": [],
+    "listedAllRefs": [
+      "01a0d981-9d63-745f-b800-06aee6399b25",
+      "01a0d986-7a84-7541-bb2a-55e5730c6d53",
+      "01a0d983-55c2-7930-8d42-53ab42da6462",
+      "01a0d9b3-a5e9-75e0-adac-34a2fb1f3beb"
+    ],
     "readSiblingWorktree": [
       {
         "slice": "c1",
