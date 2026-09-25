@@ -101,8 +101,10 @@ describe('on: one index for skills, references and teammates', () => {
       ['teammates', ['mate-1']],
       ['skills', ['s1']],
     ]);
-    expect(prompt.system).toContain('load="tm8 entity context doc-1"');
-    expect(prompt.system).toContain('load="tm8 entity context s1"');
+    // The default pointer is said once, in the instruction (D5 ii), not on each line.
+    expect(prompt.system).toContain('<entry id="doc-1" kind="doc"');
+    expect(prompt.system).toContain('<entry id="s1" kind="skill"');
+    expect(prompt.system).not.toContain('load="tm8 entity context doc-1"');
     expect(manifest.context?.index).toMatchObject({ source: 'env' });
     expect(manifest.context?.index?.caps).toContainEqual({ groups: ['references', 'teammates'], cap: BYTE_BUDGETS.referenceIndex });
   });
@@ -241,7 +243,7 @@ describe('on: I6 selected references (the #759 seam)', () => {
       ['ws-1', 'linked'],
     ]);
     expect(groups.get('teammates')!.map((e) => e.id)).toEqual(['mate-1']);
-    expect(prompt.system).toContain('load="tm8 entity context art-pick"');
+    expect(prompt.system).toContain('<entry id="art-pick" kind="artifact"');
     expect(prompt.system).not.toContain('doc-unticked');
     const refs = manifest.context!.entries!.filter((e) => e.group === 'references').map((e) => [e.entityId, e.via]);
     expect(refs).toEqual([['art-pick', 'selection'], ['doc-kept', 'linked'], ['ws-1', 'linked']]);
@@ -252,7 +254,8 @@ describe('on: I6 selected references (the #759 seam)', () => {
   });
 
   it('a selected reference the trim drops is byte-budget only, never also not-rendered', () => {
-    const picks = Array.from({ length: 60 }, (_, i) => ({ entityId: `art-${i}`, kind: 'artifact', title: `Art ${i}`, via: 'selection' as const }));
+    // 150: past what the ceiling holds even with the default load pointer left off the lines (D5 ii).
+    const picks = Array.from({ length: 150 }, (_, i) => ({ entityId: `art-${i}`, kind: 'artifact', title: `Art ${i}`, via: 'selection' as const }));
     const { manifest } = compose(selected(picks, { headers: picks.map((p) => docHeader(p.entityId)) }), { on: true });
     const group = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
     expect(group.omitted).toBeGreaterThan(0);
