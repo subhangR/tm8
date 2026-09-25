@@ -300,7 +300,22 @@ export class PgDb implements Db {
       // so no Node-side failure mode can wedge a pooled client permanently.
       statement_timeout: options.statementTimeoutMillis ?? 12_000,
       idle_in_transaction_session_timeout: options.idleInTransactionTimeoutMillis ?? 30_000,
-      options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'}`,
+      // JIT OFF, per connection. Every statement this pool runs is a short
+      // interactive read or write, and JIT only ever costs such a statement:
+      // once the planner's estimate crosses `jit_above_cost` (100k — easy for
+      // an entity read whose RLS predicates call functions over tables with
+      // no statistics yet), Postgres pays LLVM compilation on EVERY execution,
+      // hundreds of ms each, before returning a handful of rows. A full
+      // command result is ~60 such statements in one request, so the request
+      // crossed the clients' 15s deadline while no single statement came near
+      // `statement_timeout`. Measured in CI (postgres:17, JIT built in): one
+      // backend CPU-bound for 45s across a run of SELECTs, RSS 61→175 MB as
+      // LLVM loaded; `task link-pr` timed out at 15s and the byte-measurement
+      // test hung 600s. Homebrew Postgres is built without LLVM
+      // (`pg_jit_available()` = false), which is why it never reproduced on a
+      // Mac. Set here rather than in the cluster so every node gets it,
+      // whatever its Postgres was built with.
+      options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'} -c jit=off`,
     });
     // An idle-client error (server restart, sidecar bounce) is emitted on the
     // pool, and an unhandled 'error' event on an EventEmitter takes the process

@@ -445,9 +445,13 @@ describe('byte measurements (reported, and each receipt budget-asserted)', () =>
     const call = async (method: string, path: string, body: Json, receipt: boolean): Promise<{ chars: number; ms: number }> => {
       const url = new URL(path + (receipt ? '?return=receipt' : ''), server.baseUrl);
       const t0 = performance.now();
+      // The CLI's own 15s per-request deadline. Without one, a request the
+      // Server never answers holds this test until vitest's 600s timeout —
+      // one hang cost a whole CI job, twice, before the JIT fix.
       const res = await fetch(url, {
         method, headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...body, clientMutationId: randomUUID() }),
+        signal: AbortSignal.timeout(15_000),
       });
       const text = await res.text();
       const ms = performance.now() - t0;

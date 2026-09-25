@@ -443,6 +443,8 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
         max,
         statement_timeout: 30_000,
         idle_in_transaction_session_timeout: 30_000,
+        // Short OLTP statements only; see the `jit=off` note in db/client.ts.
+        options: '-c jit=off',
       }),
       true,
     );
