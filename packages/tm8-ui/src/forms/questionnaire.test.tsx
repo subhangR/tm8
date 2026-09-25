@@ -332,6 +332,28 @@ describe('Build', () => {
     await screen.findByText('Structure version 2');
   });
 
+  it('a saved structure survives the host re-rendering with the same version and the OLD content', async () => {
+    // The panel host bumps its detail's version from the thin entity event
+    // (which carries no questions) and keeps the content it already had: the
+    // write's result and that host detail then TIE on version, and the
+    // pre-save questions must not win the tie.
+    const f = FORM_FIXTURE_FORMS.find((x) => x.id === FORM_FIXTURE_IDS.migration)!;
+    const { rerender, port } = await mount(FORM_FIXTURE_IDS.migration, 'build');
+    fireEvent.click(screen.getByRole('button', { name: '+ Short text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await screen.findByText('Structure version 2');
+    const saved = await port.form(f.id);
+    const stale = { id: f.id, title: f.title, version: saved.version, content: { kind: 'form', ...f.content }, capabilities: { canEdit: true } };
+    rerender(
+      <FormsPortProvider port={port}>
+        <QuestionnaireBlock detail={stale as never} initialTab="build" />
+      </FormsPortProvider>,
+    );
+    expect(screen.getByText('Structure version 2')).toBeTruthy();
+    expect(screen.getByTestId('build-q-short_text_1')).toBeTruthy();
+    expect(screen.getByText(`${f.content.questions.length + 1} questions · 0 responses`)).toBeTruthy();
+  });
+
   it('checks configs with the contract schema and refuses to save a bad one', async () => {
     await mount(FORM_FIXTURE_IDS.migration, 'build');
     fireEvent.click(within(screen.getByTestId('build-q-strategy')).getByRole('button', { name: 'Edit' }));
