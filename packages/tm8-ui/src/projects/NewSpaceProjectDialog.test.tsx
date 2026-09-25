@@ -169,7 +169,7 @@ describe('Create Space — a project from a node-local folder', () => {
       clientMutationId: ids.project,
     }));
     expect(p.linkProject).toHaveBeenCalledWith(space.id, {
-      projectId: project.id,
+      folderId: project.id,
       clientMutationId: ids.link,
     });
     expect(p.createMemory).toHaveBeenCalledWith(expect.objectContaining({
@@ -293,7 +293,7 @@ describe('Create Space — a project from a node-local folder', () => {
 
     expect(result.project).toEqual(existing);
     expect(p.linkProject).toHaveBeenCalledWith(space.id, {
-      projectId: existing.id,
+      folderId: existing.id,
       clientMutationId: ids.link,
     });
     // The recorded memory says the truth: reused, not created.

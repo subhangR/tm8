@@ -3,8 +3,9 @@ import { basename, isAbsolute } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { ensureDefaultTeammates } from './default-teammates.js';
+import { pickOwningSpace } from '../projects/owning-space.js';
 
-interface SpaceRow { id: string }
+interface SpaceRow { id: string; created_by_owner: boolean; created_at: Date | string }
 interface ProjectRow { id: string; trust: 'trusted' | 'untrusted' }
 
 interface ProjectMutation { project?: { id?: string } }
@@ -43,7 +44,9 @@ export async function ensureLaunchResources(args: {
   };
   const spaces = await args.db.query<SpaceRow>(
     claims,
-    `select distinct space_row.id::text id
+    `select distinct space_row.id::text id,
+            space_row.created_by_identity is not distinct from $1 created_by_owner,
+            space_row.created_at
        from public.spaces space_row
        join public.members member_row on member_row.space_id = space_row.id
       where member_row.identity_id = $1
@@ -78,16 +81,34 @@ export async function ensureLaunchResources(args: {
     );
   }
 
+  // W11 (230): a folder is granted to ONE space. On a fresh node that is the
+  // owner's personal/first space (the K13 tie-break: no activity yet); when the
+  // folder is already granted — by an earlier boot or a gate admin — the grant
+  // is left exactly where it is.
+  const granted = await args.db.query<{ space_id: string }>(
+    claims,
+    'select space_id::text space_id from public.space_projects where project_id = $1',
+    [project.id],
+  );
+  if (granted.length === 0) {
+    const target = pickOwningSpace(spaces.map((space) => ({
+      spaceId: space.id,
+      activity30d: 0,
+      createdByOwner: space.created_by_owner === true,
+      createdAt: space.created_at instanceof Date ? space.created_at.toISOString() : String(space.created_at),
+    })));
+    if (target) {
+      await args.db.rpc(claims, 'public.grant_folder', [
+        target,
+        project.id,
+        `bootstrap:folder-grant:${project.id}`,
+      ]);
+    }
+  }
+
   let teammatesCreated = 0;
   let teammatesUpdated = 0;
   for (const space of spaces) {
-    await args.db.rpc(claims, 'public.link_project_w2', [
-      space.id,
-      project.id,
-      null,
-      `bootstrap:project-link:${space.id}:${project.id}`,
-    ]);
-
     const seeded = await args.db.tx(claims, (q) => ensureDefaultTeammates(q, space.id));
     teammatesCreated += seeded.created;
     teammatesUpdated += seeded.updated;

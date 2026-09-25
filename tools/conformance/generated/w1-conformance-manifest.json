@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35",
+  "catalogDigest": "sha256:3e308e7c93717cd9d972dc35a5b3753d237ee27e05c7fb6b50ff1554971b8074",
   "catalog": {
-    "total": 245,
-    "v1": 243,
+    "total": 248,
+    "v1": 246,
     "reserved": 2,
-    "http": 243,
+    "http": 246,
     "ws": 1,
-    "registerableV1Http": 241,
+    "registerableV1Http": 244,
     "methods": {
-      "GET": 81,
-      "POST": 114,
+      "GET": 83,
+      "POST": 115,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 85,
-      "command": 158,
+      "read": 87,
+      "command": 159,
       "stream": 2
     },
-    "uniqueNames": 245,
-    "uniqueBindings": 244
+    "uniqueNames": 248,
+    "uniqueBindings": 247
   },
   "reservedOperations": [
     "search.query",
@@ -894,9 +894,30 @@
         "source": "server-router"
       },
       {
-        "operation": "projects.link",
+        "operation": "spaces.projects.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.projects.create",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.list",
+        "method": "GET",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.create",
+        "method": "POST",
+        "path": "/v2/gate/folders",
         "status": "registered",
         "source": "server-router"
       },
@@ -1946,14 +1967,14 @@
         "messages.post",
         "projects.create",
         "projects.get",
-        "projects.link",
         "projects.list",
         "projects.update",
         "spaces.create",
         "spaces.get",
         "spaces.home",
         "spaces.list",
-        "spaces.navigation"
+        "spaces.navigation",
+        "spaces.projects.create"
       ]
     },
     "inputSchemas": {
@@ -2055,8 +2076,8 @@
           "schema": "ProjectUpdateInputSchema"
         },
         {
-          "operation": "projects.link",
-          "schema": "ProjectLinkInputSchema"
+          "operation": "spaces.projects.create",
+          "schema": "SpaceProjectCreateInputSchema"
         },
         {
           "operation": "files.uploadInit",
@@ -2119,7 +2140,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 213
+    "unimplementedV1Http": 216
   },
   "schemas": {
     "additive": {
@@ -3927,15 +3948,67 @@
         "publicComposite": null
       },
       {
-        "operation": "projects.link",
+        "operation": "spaces.projects.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.list",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.projects.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.create",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": "SpaceProjectCreateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.list",
         "noun": "project",
         "exposure": "public",
-        "helpRef": "tm8://help/operation/projects.link",
+        "helpRef": "tm8://help/operation/gate.folders.list",
         "intentTags": [
-          "projects",
-          "link"
+          "gate",
+          "folders",
+          "list"
         ],
-        "inputSchemaRef": "ProjectLinkInputSchema",
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.create",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.create",
+        "intentTags": [
+          "gate",
+          "folders",
+          "create"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
@@ -6848,7 +6921,7 @@
           "reactions": true,
           "connections": true,
           "lifecycleOperations": [
-            "projects.link",
+            "spaces.projects.create",
             "projects.unlink",
             "projects.associations.correct"
           ]

@@ -39,12 +39,12 @@ export const GOVERNANCE_REASONS = {
    * operation, so the remedy NAMES the way that works today (the CLI, and the
    * Add-space onboarding flow) rather than dead-ending. A refusal that points
    * at the real path is honest; one that implies the operation is impossible is
-   * not (the CLI `tm8 project link` has always carried `ProjectLinkInput`).
+   * not (the CLI `tm8 project add` carries `SpaceProjectCreateInput`).
    */
   linkProject: {
     cause: 'Linking a project can’t be done from this screen yet',
     remedy:
-      'this settings seam carries no link executor — link from the CLI: `tm8 project create <name> --working-dir <abs-path>` then `tm8 project link <project-id> --space <space>` (adding a project while creating a space links one too)',
+      'this settings seam carries no link executor — link from the CLI: `tm8 project create <name> --working-dir <abs-path>` then `tm8 project add <folder-id> --space <space>` (adding a project while creating a space links one too)',
   },
 
   /** Oracle L194 "＋ New project" (node-admin registry card). */
@@ -187,7 +187,7 @@ export interface GovernanceGap {
 }
 
 export const GOVERNANCE_GAPS: readonly GovernanceGap[] = [
-  { id: 'GG1', need: 'link a project to a space', seamToday: 'no link executor in this screen’s seam (the CLI `tm8 project link` and the Add-space onboarding do carry it)', reason: 'linkProject' },
+  { id: 'GG1', need: 'link a project to a space', seamToday: 'no link executor in this screen’s seam (the CLI `tm8 project add` and the Add-space onboarding do carry it)', reason: 'linkProject' },
   { id: 'GG2', need: 'unlink a project from a space', seamToday: '`unlink` ActionRef exists, deferred (actions.ts:282)', reason: 'actions.unlink' },
   { id: 'GG3', need: 'read the node project registry', seamToday: 'ProjectResource is contract-only; no seam read', reason: 'registryRead' },
   { id: 'GG4', need: 'create a node project', seamToday: 'ProjectCreateInput declared; no seam command', reason: 'newProject' },

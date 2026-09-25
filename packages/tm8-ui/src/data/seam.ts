@@ -213,7 +213,7 @@ import type {
   ProjectFolderUploadInitInput,
   ProjectFolderUploadResult,
   ProjectId,
-  ProjectLinkInput,
+  SpaceProjectCreateInput,
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
@@ -615,7 +615,7 @@ export interface Seam {
     directories(path?: string): Promise<ProjectDirectoryListing>;
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
     createProject(input: ProjectCreateInput): Promise<ProjectResource>;
-    linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+    linkProject(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<void>;
     /**
      * Every project on the node, unscoped — `projects.list` without a
      * `spaceId`. `working_dir` is node-globally unique, so when

@@ -15,7 +15,7 @@
  *    so a literal that happened to be correct today would still be caught the
  *    moment the catalog moved.
  *  - A ProjectResource id and a per-Space project PROJECTION entity id are two
- *    different identifier domains. `project link` renders both, names both, and
+ *    different identifier domains. `project add` renders both, names both, and
  *    NEVER substitutes one for the other — including when the node answers
  *    without the projection id at all.
  *  - §7.5: `project unlink` requires `--yes`; `project update` requires it
@@ -31,7 +31,7 @@ import {
   FileUploadInitInputSchema,
   MessageDeliveryQuerySchema,
   ProjectCreateInputSchema,
-  ProjectLinkInputSchema,
+  SpaceProjectCreateInputSchema,
   ProjectUpdateInputSchema,
 } from '@tm8/contract';
 import { parseInvocation } from '../src/args.js';
@@ -158,17 +158,20 @@ const RESOURCE = {
 };
 
 describe('the project module registers exactly its projected paths', () => {
-  it('claims the eleven project rows and nothing else', () => {
+  it('claims the fourteen project rows and nothing else', () => {
     expect(PROJECT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
+      'project add',
       'project association correct',
       'project blame',
       'project branches',
       'project contention',
       'project create',
       'project file-history',
+      'project folder-add',
+      'project folders',
       'project get',
-      'project link',
       'project list',
+      'project space-list',
       'project unlink',
       'project update',
     ]);
@@ -212,7 +215,7 @@ describe('G06 owns no paging surface — asserted at the SCHEMA, not by grepping
     const rows: [string, unknown][] = [
       ['projects.create', ProjectCreateInputSchema],
       ['projects.update', ProjectUpdateInputSchema],
-      ['projects.link', ProjectLinkInputSchema],
+      ['spaces.projects.create', SpaceProjectCreateInputSchema],
       ['projects.associations.correct', CorrectProjectAssociationInputSchema],
       ['files.uploadInit', FileUploadInitInputSchema],
       ['files.uploadComplete', FileUploadCompleteInputSchema],
@@ -470,44 +473,55 @@ describe('tm8 project get / update', () => {
   });
 });
 
-describe('tm8 project link — two identifier domains, never interchangeable', () => {
-  it('binds the Space-scoped path and carries the ProjectResource id in the body', async () => {
-    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, projectEntityId: PROJECTION, patches: [] } });
-    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
+describe('tm8 project add — the Space project on a granted folder (W11)', () => {
+  const ADDED = {
+    id: PROJECTION, spaceId: SPACE, folderId: PROJECT, name: 'tm8', trust: 'untrusted', defaults: {},
+    materializedVersion: 1, createdAt: '2026-07-27T00:00:00.000Z', updatedAt: '2026-07-27T00:00:00.000Z',
+  };
+
+  it('binds spaces.projects.create and carries the folder id in the body', async () => {
+    respond = () => ({ status: 201, body: ADDED });
+    const r = await invoke(['project', 'add', PROJECT, '--space', SPACE, '--name', 'web']);
     expect(r.code).toBe(0);
     expect(requests[0]?.method).toBe('POST');
-    expect(requests[0]?.path).toBe(bindPath('projects.link', { spaceId: SPACE }));
-    expect((requests[0]?.body as Record<string, unknown>).projectId).toBe(PROJECT);
+    expect(requests[0]?.path).toBe(bindPath('spaces.projects.create', { spaceId: SPACE }));
+    expect((requests[0]?.body as Record<string, unknown>).folderId).toBe(PROJECT);
+    expect((requests[0]?.body as Record<string, unknown>).name).toBe('web');
   });
 
   it('renders BOTH identities, each named for its own domain', async () => {
-    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, projectEntityId: PROJECTION, patches: [] } });
-    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
-    expect(r.stdout).toContain(PROJECT);
-    expect(r.stdout).toContain(PROJECTION);
+    respond = () => ({ status: 201, body: ADDED });
+    const r = await invoke(['project', 'add', PROJECT, '--space', SPACE]);
     expect(r.stdout).toMatch(/projectEntityId[^\n]*00000000-0000-7000-8000-0000000000dd/);
-    expect(r.stdout).toMatch(/projectId[^\n]*00000000-0000-7000-8000-0000000000bb/);
-  });
-
-  it('when the node returns no projection id, it says so and NEVER substitutes the resource id', async () => {
-    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, patches: [] } });
-    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
-    expect(r.code).toBe(0);
-    const projectionLine = r.stdout.split('\n').find((l) => l.includes('projectEntityId')) ?? '';
-    expect(projectionLine).not.toContain(PROJECT);
-    expect(projectionLine.length).toBeGreaterThan(0);
-    // stderr names the separate domain as a CONTRACT fact — `projectEntityId`
-    // has zero occurrences in packages/contract/src, so the result is complete
-    // as specified and this is not a claim that the node misbehaved.
-    expect(r.stderr).toMatch(/projection entity/i);
-    // and it never prints the ProjectResource id where the projection id would go
-    expect(r.stderr).not.toContain(PROJECT);
+    expect(r.stdout).toMatch(/folderId[^\n]*00000000-0000-7000-8000-0000000000bb/);
   });
 
   it('requires a Space in context', async () => {
-    const r = await invoke(['project', 'link', PROJECT]);
+    const r = await invoke(['project', 'add', PROJECT]);
     expect(r.code).toBe(2);
     expect(requests).toEqual([]);
+  });
+
+  it('`project link` is gone: the path is not a command', () => {
+    expect(isCommandPath(['project', 'link'])).toBe(false);
+  });
+});
+
+describe('tm8 project folders / folder-add — the gate (W11)', () => {
+  it('folders binds gate.folders.list', async () => {
+    respond = () => ({ body: [] });
+    const r = await invoke(['project', 'folders']);
+    expect(r.code).toBe(0);
+    expect(requests[0]?.method).toBe('GET');
+    expect(requests[0]?.path).toBe(bindPath('gate.folders.list'));
+  });
+
+  it('folder-add binds gate.folders.create with the path and the grant space', async () => {
+    respond = () => ({ status: 201, body: { folder: { ...RESOURCE, grants: [] }, created: true } });
+    const r = await invoke(['project', 'folder-add', 'web', '--working-dir', '/srv/web', '--grant-space', SPACE]);
+    expect(r.code).toBe(0);
+    expect(requests[0]?.path).toBe(bindPath('gate.folders.create'));
+    expect(requests[0]?.body).toMatchObject({ name: 'web', workingDir: '/srv/web', spaceId: SPACE });
   });
 });
 

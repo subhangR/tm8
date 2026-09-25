@@ -11,7 +11,7 @@ import {
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
-  ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, ProjectResourceSchema,
+  ProjectCreateInputSchema, ProjectDirectoryListingSchema, SpaceProjectCreateInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
   MOUNTED_OPERATIONS,
@@ -148,11 +148,15 @@ describe('operation catalog', () => {
 
   it('carries the projects.* and files.* families (AM-2 §1/§2) as v1', () => {
     for (const name of ['projects.list', 'projects.create', 'projects.directories.list', 'projects.get', 'projects.update',
-                        'projects.link', 'projects.unlink',
+                        'spaces.projects.list', 'spaces.projects.create', 'projects.unlink',
+                        'gate.folders.list', 'gate.folders.create',
                         'files.uploadInit', 'files.uploadComplete', 'files.uploadAbort', 'files.download'] as const) {
       expect(getOperation(name).status).toBe('v1');
     }
-    // link/unlink bind under the space (M2M semantics, T-D17)
+    // W11: projects.link is gone; spaces.projects.create binds the same space path.
+    expect(OPERATIONS.some((o) => (o.name as string) === 'projects.link')).toBe(false);
+    expect(bindPath('spaces.projects.create', { spaceId: 's1' })).toBe('/v2/spaces/s1/projects');
+    expect(bindPath('gate.folders.list', {})).toBe('/v2/gate/folders');
     expect(bindPath('projects.unlink', { spaceId: 's1', projectId: 'p1' })).toBe('/v2/spaces/s1/projects/p1');
   });
 
@@ -502,7 +506,8 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       name: 'tm8', workingDir: '/Users/x/tm8', ensureWorkingDir: true,
     }).success).toBe(true);
     expect(ProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(false);
-    expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(false);
     expect(ProjectDirectoryListingSchema.safeParse({
       roots: ['/Users/x'], path: '/Users/x', parentPath: null, separator: '/',
       directories: [{ name: 'tm8', path: '/Users/x/tm8' }], truncated: false,

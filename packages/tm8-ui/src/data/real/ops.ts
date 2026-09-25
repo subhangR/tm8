@@ -134,7 +134,7 @@ import {
   type ProjectFolderUploadResult,
   type ProjectFileListing,
   type ProjectId,
-  type ProjectLinkInput,
+  type SpaceProjectCreateInput,
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
@@ -706,8 +706,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ProjectResource>('projects.create', { body: input });
     },
 
-    async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {
-      await http.call('projects.link', { params: { spaceId }, body: input });
+    /** W11: `spaces.projects.create` — the Space's own project on a folder (same path as the retired `projects.link`). */
+    async linkProject(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<void> {
+      await http.call('spaces.projects.create', { params: { spaceId }, body: input });
     },
 
     entity(id: EntityId): Promise<EntityDetail> {

@@ -116,7 +116,8 @@ import type {
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
-  ProjectLinkInput, ProjectResource,
+  ProjectResource,
+  SpaceProject, SpaceProjectCreateInput, GateFolder, GateFolderGrant, GateFolderCreateInput, GateFolderCreateResult,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -2846,7 +2847,9 @@ export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
   id: ProjectIdSchema,
   name: z.string(),
   repoUrl: z.string().nullable().optional(),
-  workingDir: z.string(),
+  workingDir: z.string().optional(),
+  projectEntityId: EntityIdSchema.nullable().optional(),
+  spaceId: SpaceIdSchema.nullable().optional(),
   trust: ProjectTrustLevelSchema,
   defaults: ProjectDefaultsSchema,
   linkFrozen: z.boolean().optional(),
@@ -2969,7 +2972,7 @@ export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
 
 export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   defaultBranch: z.string().min(1),
   defaultBranchSource: z.enum(['origin_head', 'local_conventional', 'current_branch']),
   branches: z.array(ProjectBranchSchema),
@@ -3006,7 +3009,7 @@ export const ProjectRevisionDiffSchema: z.ZodType<ProjectRevisionDiff> = z.objec
 
 export const ProjectFileHistorySchema: z.ZodType<ProjectFileHistory> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   path: z.string().min(1),
   revisions: z.array(ProjectFileRevisionSchema),
   truncated: z.boolean(),
@@ -3026,7 +3029,7 @@ export const ProjectBlameHunkSchema: z.ZodType<ProjectBlameHunk> = z.object({
 
 export const ProjectFileBlameSchema: z.ZodType<ProjectFileBlame> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   path: z.string().min(1),
   hunks: z.array(ProjectBlameHunkSchema),
   blamedLines: z.number().int().nonnegative(),
@@ -3099,9 +3102,60 @@ export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object(
   defaults: ProjectDefaultsSchema.optional(),
 }).strict();
 
-export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
+// W11 (migration 230): space-owned projects over gate-owned folders.
+export const SpaceProjectSchema: z.ZodType<SpaceProject> = z.object({
+  id: EntityIdSchema,
+  spaceId: SpaceIdSchema,
+  folderId: ProjectIdSchema,
+  name: z.string(),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema,
+  defaults: ProjectDefaultsSchema,
+  materializedVersion: z.number().int().nonnegative(),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const SpaceProjectCreateInputSchema: z.ZodType<SpaceProjectCreateInput> = z.object({
   ...commandContextShape,
-  projectId: ProjectIdSchema,
+  folderId: ProjectIdSchema,
+  name: z.string().trim().min(1).max(200).optional(),
+}).strict();
+
+export const GateFolderGrantSchema: z.ZodType<GateFolderGrant> = z.object({
+  spaceId: SpaceIdSchema,
+  spaceName: z.string(),
+  projectId: EntityIdSchema.nullable(),
+  grantedBy: z.string().nullable(),
+  grantedAt: IsoTimestamp,
+}).strict();
+
+export const GateFolderSchema: z.ZodType<GateFolder> = z.object({
+  id: ProjectIdSchema,
+  name: z.string(),
+  workingDir: z.string(),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema,
+  defaults: ProjectDefaultsSchema,
+  grants: z.array(GateFolderGrantSchema),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const GateFolderCreateInputSchema: z.ZodType<GateFolderCreateInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1),
+  workingDir: z.string().min(1),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema.optional(),
+  defaults: ProjectDefaultsSchema.optional(),
+  spaceId: SpaceIdSchema.optional(),
+  ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const GateFolderCreateResultSchema: z.ZodType<GateFolderCreateResult> = z.object({
+  folder: GateFolderSchema,
+  created: z.boolean(),
 }).strict();
 
 export const CorrectProjectAssociationInputSchema: z.ZodType<CorrectProjectAssociationInput> = z.object({

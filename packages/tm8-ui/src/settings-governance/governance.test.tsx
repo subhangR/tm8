@@ -158,7 +158,7 @@ describe('T2-2 — projects & trust', () => {
     // The empty state is ACTIONABLE: the refusal to link here is honest, but it
     // names the real way — the CLI — instead of dead-ending.
     expect(container.querySelector('[data-testid="empty-region"]')?.textContent).toContain(
-      'tm8 project link',
+      'tm8 project add',
     );
   });
 

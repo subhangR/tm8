@@ -4251,8 +4251,18 @@ export interface ProjectResource {
   id: ProjectId;
   name: string;
   repoUrl?: string | null;
-  /** Absolute path on the owning node; path-traversal/symlink-guarded (10-SECURITY-MODEL). */
-  workingDir: string;
+  /**
+   * Absolute path on the owning node; path-traversal/symlink-guarded
+   * (10-SECURITY-MODEL). W11 (migration 230): the folder is the gate's, so the
+   * path is present ONLY for a gate (node) admin and absent for every member.
+   */
+  workingDir?: string;
+  /**
+   * W11: the space's own project entity for this folder, when the read was
+   * made in a space (`projects.list?spaceId=`, `projects.get` by a member).
+   */
+  projectEntityId?: EntityId | null;
+  spaceId?: SpaceId | null;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
   /** Migration/remediation state for the 16-active-link cap. */
@@ -4395,7 +4405,8 @@ export interface ProjectBranch {
  */
 export interface ProjectBranchTopology {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   defaultBranch: string;
   defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
   branches: ProjectBranch[];
@@ -4455,7 +4466,8 @@ export interface ProjectRevisionDiff {
 
 export interface ProjectFileHistory {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   revisions: ProjectFileRevision[];
   /** True when the revision cap cut the walk short — the read is bounded. */
@@ -4490,7 +4502,8 @@ export interface ProjectBlameHunk {
  */
 export interface ProjectFileBlame {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   hunks: ProjectBlameHunk[];
   blamedLines: number;
@@ -4614,9 +4627,75 @@ export interface ProjectUpdateInput extends CommandContext {
   defaults?: ProjectDefaults;
 }
 
-/** POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding. */
-export interface ProjectLinkInput extends CommandContext {
-  projectId: ProjectId;
+// --- W11 (migration 230): space-owned projects over gate-owned folders -------
+//
+// A FOLDER (the `projects` row: path, trust, repo_url) is the gate's; a gate
+// admin grants it to exactly ONE space. The space's PROJECT is an entity of
+// that space (kind `project`) that references the grant and never carries the
+// path. `projects.link` is gone: a folder reaches a space by a gate grant.
+
+/** One project of a space, as any member of it reads it. Never a path. */
+export interface SpaceProject {
+  /** The space's project entity id. */
+  id: EntityId;
+  spaceId: SpaceId;
+  /** The granted folder (`projects.id`), the id spawn and chats still key on. */
+  folderId: ProjectId;
+  name: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  materializedVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/spaces/:spaceId/projects — a space admin names the space's project on a folder granted to it. */
+export interface SpaceProjectCreateInput extends CommandContext {
+  folderId: ProjectId;
+  /** Defaults to the folder's name. */
+  name?: string;
+}
+
+export interface GateFolderGrant {
+  spaceId: SpaceId;
+  spaceName: string;
+  /** The space's project entity for this folder (null if not materialized). */
+  projectId: EntityId | null;
+  grantedBy: string | null;
+  grantedAt: string;
+}
+
+/** A folder on this server, as a gate (node) admin reads it. */
+export interface GateFolder {
+  id: ProjectId;
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  /** One entry normally; two or more only on folders linked twice before 230. */
+  grants: GateFolderGrant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/gate/folders — register a folder (inside TM8_PROJECT_ROOTS), optionally granting it to one space. */
+export interface GateFolderCreateInput extends CommandContext {
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust?: ProjectTrustLevel;
+  defaults?: ProjectDefaults;
+  /** Grant the folder to this space in the same step. */
+  spaceId?: SpaceId;
+  /** Create `workingDir` when it is one missing child beneath an allowed directory. */
+  ensureWorkingDir?: boolean;
+}
+
+export interface GateFolderCreateResult {
+  folder: GateFolder;
+  created: boolean;
 }
 
 export interface CorrectProjectAssociationInput {

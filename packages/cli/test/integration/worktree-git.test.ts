@@ -135,7 +135,7 @@ beforeAll(async () => {
   });
   const projectId = (project as { project?: { id: string } }).project?.id ?? (project as { id?: string }).id;
   if (!projectId) throw new Error(`projects.create returned no id: ${JSON.stringify(project)}`);
-  await post(`/v2/spaces/${spaceId}/projects`, { clientMutationId: cmid(), projectId })
+  await post(`/v2/spaces/${spaceId}/projects`, { clientMutationId: cmid(), folderId: projectId })
     .catch(() => undefined); // creation may have linked already; the door checks the link, not us
 
   // THE DOOR. Transaction-local claims exactly as the server binds them.

@@ -307,11 +307,14 @@ export class W2ProjectFolderUploadService {
       throw new CollabError('invalid_input', (error as Error).message);
     }
 
-    const project = await this.resolveProject(ctx, claims, state, materialized.workingDir);
+    // W11 (230): the folder is the gate's, granted to ONE space. The caller is
+    // a node admin by ACCOUNT (requireNodeAdmin above); the gate RPCs re-check
+    // that fact (`internal.require_node_admin`) and also read the claim, so the
+    // grant runs with the claim set to the fact — never wider than the account.
+    const gateClaims: DbClaims = { ...claims, nodeAdmin: true };
+    const project = await this.resolveProject(ctx, gateClaims, state, materialized.workingDir);
 
-    await this.deps.db.rpc(claims, 'link_project_w2', [
-      state.spaceId, project.id, state.actorId, null,
-    ]);
+    await this.deps.db.rpc(gateClaims, 'grant_folder', [state.spaceId, project.id, null]);
 
     await this.release(claims, state);
 

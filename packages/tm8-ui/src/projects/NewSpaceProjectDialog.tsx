@@ -6,7 +6,7 @@ import type {
   CreateSpaceResult,
   ProjectCreateInput,
   ProjectDirectoryListing,
-  ProjectLinkInput,
+  SpaceProjectCreateInput,
   ProjectResource,
   ProjectTrustLevel,
   SpaceId,
@@ -62,7 +62,7 @@ export interface ProjectOnboardingPort {
   directories(path?: string): Promise<ProjectDirectoryListing>;
   createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
   createProject(input: ProjectCreateInput): Promise<ProjectResource>;
-  linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+  linkProject(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<void>;
   createMemory(input: CreateEntityInput): Promise<CommandResult>;
   /**
    * Every project on the node, unscoped. Optional so ports that predate it
@@ -279,7 +279,7 @@ export async function onboardSpaceProject(
       }
     });
     // `projects.folderUploads.complete` creates AND links the project itself,
-    // so a second `projects.link` here would be a duplicate, not a safety net.
+    // so a second `spaces.projects.create` here would be a duplicate, not a safety net.
   } else {
     let reused = false;
     project = await stage('project', onStage, async () => {
@@ -300,7 +300,7 @@ export async function onboardSpaceProject(
       }
     });
     await stage('link', onStage, () => port.linkProject(space.id, {
-      projectId: project.id,
+      folderId: project.id,
       clientMutationId: ids.link,
     }));
     reusedExisting = reused;
@@ -316,8 +316,8 @@ export async function onboardSpaceProject(
       mechanism: source.kind === 'upload'
         ? 'Recorded by Space project onboarding after projects.folderUploads.complete succeeded.'
         : reusedExisting
-          ? 'Recorded by Space project onboarding after projects.create refused the already-connected folder and projects.link linked its existing project.'
-          : 'Recorded by Space project onboarding after projects.create and projects.link succeeded.',
+          ? 'Recorded by Space project onboarding after projects.create refused the already-connected folder and spaces.projects.create named it in this Space.'
+          : 'Recorded by Space project onboarding after projects.create and spaces.projects.create succeeded.',
       subjectScope: `Space ${space.id}; project ${project.id}; working directory ${project.workingDir}`,
       doesNotEstablish: source.kind === 'github'
         ? 'This records the repository URL and the configured working directory; it does not establish a clone, fetched refs, or any Git state on disk.'

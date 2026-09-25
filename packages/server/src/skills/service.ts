@@ -12,11 +12,17 @@ const absolute = (value: unknown): value is string => typeof value === 'string' 
 
 /** Only project rows visible to the authenticated database principal become roots. */
 export async function resolveSkillRoots(db: Db, claims: DbClaims, spaceId: string, options: SkillScanOptions): Promise<SkillRoots> {
+  // W11 (230): a member reads the space's folders through the definer
+  // resolver (pinned membership), never public.projects.
   const projects = await db.query<ProjectRoot>(claims,
-    `select p.id, p.working_dir, p.trust, p.defaults from public.projects p
-      join public.space_projects sp on sp.project_id = p.id where sp.space_id = $1`, [spaceId]);
+    `select folder_id id, working_dir, trust, defaults from public.space_folders_for_caller($1::uuid)`, [spaceId]);
   if (options.root && !projects.some(p => p.id === options.root)) throw new CollabError('not_found', 'project is not linked to this space');
-  const boundaries = await db.query<{ working_dir: string }>(claims, 'select working_dir from public.projects');
+  // Boundaries: the space's folders, plus every folder when the caller is a
+  // gate admin (the only caller RLS lets read public.projects since 230).
+  const boundaries = [
+    ...projects,
+    ...(await db.query<{ working_dir: string }>(claims, 'select working_dir from public.projects')),
+  ];
   const selected = projects.filter(p => !options.root || p.id === options.root);
   // No member home field exists in this schema. Use explicit authorized project
   // defaults when configured, otherwise the server OS account home.

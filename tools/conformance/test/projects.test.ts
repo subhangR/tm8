@@ -46,9 +46,9 @@ describe('projects.* (AM-2 §1, T-D17)', () => {
     expect(got.defaults.model).toBe('claude-opus-4-8');
   });
 
-  it('link/unlink bind the project to a space (M2M); list?spaceId= reflects it', async () => {
+  it('add/unlink bind the folder to a space (W11 spaces.projects.create); list?spaceId= reflects it', async () => {
     const p = await createProject(`p-${randomUUID().slice(0, 8)}`);
-    await api.command('projects.link', { projectId: p.id, clientMutationId: `cmid-link-${randomUUID()}` }, { spaceId: w.spaceId });
+    await api.command('spaces.projects.create', { folderId: p.id, clientMutationId: `cmid-link-${randomUUID()}` }, { spaceId: w.spaceId });
     const linked = await api.read('projects.list', {}, { spaceId: w.spaceId }) as ProjectPage;
     expect(linked.items.map((i) => expectValid(ProjectResourceSchema, i, 'linked project').id)).toContain(p.id);
 
@@ -57,9 +57,9 @@ describe('projects.* (AM-2 §1, T-D17)', () => {
     expect(after.items.map((i) => (i as ProjectResource).id)).not.toContain(p.id);
   });
 
-  it('linking a nonexistent project is a typed not_found', async () => {
+  it('adding a nonexistent folder is a typed not_found', async () => {
     await expectError(
-      api.command('projects.link', { projectId: `proj-missing-${randomUUID()}` }, { spaceId: w.spaceId }),
+      api.command('spaces.projects.create', { folderId: randomUUID() }, { spaceId: w.spaceId }),
       'not_found',
     );
   });
