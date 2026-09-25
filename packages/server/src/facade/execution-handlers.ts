@@ -1,3 +1,4 @@
+import { resolveHeaders } from '../headers/resolve.js';
 import { loadSkillEquipment, loadTaskSkillEquipment } from '../skills/equipment.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
@@ -81,6 +82,7 @@ import type {
   ExecutionTerminateInput,
   SessionJournalPage,
   SessionJournalRecord,
+  SelectionHeader,
   SessionLaunchRecord,
   SkippedSkill,
   SpawnSelection,
@@ -939,6 +941,12 @@ export class DbGraphPort implements GraphPort {
     });
   }
 
+  async loadContextHeaders(auth: GraphAuth, input: { spaceId: string; ids: string[] }): Promise<SelectionHeader[]> {
+    // `<context_index>` headers (design 01a0d348 §2.1): one statement in the
+    // caller's transaction, so RLS decides what resolves.
+    return this.db.tx(this.claims(auth), async (q) => [...(await resolveHeaders(q, input.spaceId, input.ids)).values()]);
+  }
+
   async createWorkSession(
     auth: GraphAuth,
     input: CreateWorkSessionInput,
@@ -1268,6 +1276,8 @@ export class DbGraphPort implements GraphPort {
       harness_choice: unknown;
       selection: unknown;
       selection_reasons: unknown;
+      effective_plugins: unknown;
+      context_index: string | null;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
@@ -1277,7 +1287,13 @@ export class DbGraphPort implements GraphPort {
               sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids,
               sm.manifest #>  '{launch,harnessChoice}'     as harness_choice,
               sm.manifest #>  '{launch,selection}'         as selection,
-              sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons
+              sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons,
+              case when jsonb_typeof(sm.manifest #> '{launch,harness,plugins,allowed}') = 'array' then
+                coalesce((select jsonb_agg(p ->> 'id')
+                            from jsonb_array_elements(sm.manifest #> '{launch,harness,plugins,allowed}') p
+                           where p ->> 'source' = 'effective-skill'), '[]'::jsonb)
+              end                                           as effective_plugins,
+              sm.manifest #>> '{context,index,source}'    as context_index
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -3455,6 +3471,10 @@ export function sessionLaunchPostureFromRecord(row: {
   /** Resume's read carries these; the Forms spawn's does not (a new session never replays them). */
   selection?: unknown;
   selection_reasons?: unknown;
+  /** `launch.harness.plugins.allowed[source=effective-skill]` ids; null when none were recorded. */
+  effective_plugins?: unknown;
+  /** `context.index.source`. */
+  context_index?: string | null;
 }): SessionLaunchPosture {
   const storedCredentialSources =
     typeof row.credential_sources === 'object' &&
@@ -3495,5 +3515,12 @@ export function sessionLaunchPostureFromRecord(row: {
     // contract's own schemas; a malformed one is not replayed.
     ...(row.selection != null ? { selection: row.selection } : {}),
     ...(row.selection_reasons != null ? { selectionReasons: row.selection_reasons } : {}),
+    // The launch's effective-skill plugins, replayed by resume. Absent when
+    // the manifest recorded no plugin decisions at all, so resume computes.
+    ...(Array.isArray(row.effective_plugins)
+      ? { effectivePlugins: row.effective_plugins.filter((id): id is string => typeof id === 'string') }
+      : {}),
+    // The launch rendered `<context_index>`; its resume renders it too.
+    ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),
   };
 }

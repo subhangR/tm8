@@ -30,14 +30,12 @@ const blankToNull = (text: string | null | undefined): string | null =>
   text == null || text.trim().length === 0 ? null : text;
 
 /**
- * The one place a load pointer is built (integrated design 01a0d348 §4.1): every
- * tm8 entity opens with `tm8 entity context`, which is bounded, pages with
- * `--offset`, and names the next call for bodies that live outside the envelope.
- * A harness-native skill's pointer is the harness's own, set at spawn.
+ * The one place a load pointer is built (integrated design 01a0d348 §4.1)
+ * lives in `@tm8/prompt`, beside the `<context_index>` serializer that renders
+ * it, so the spawn path and the header resolver share it.
  */
-export function loadPointerFor(_kind: SelectionHeaderKind, id: string): string {
-  return `tm8 entity context ${id}`;
-}
+export { loadPointerFor } from '@tm8/prompt';
+import { loadPointerFor } from '@tm8/prompt';
 
 /** An `entity_headers` row, with its staleness computed at read. */
 export interface AuthoredHeader {

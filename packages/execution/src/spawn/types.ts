@@ -16,13 +16,14 @@
 
 import type {
   EffectiveSkills,
+  SelectionHeader,
   SkillIndexEntry,
   CredentialProviderName,
   SpawnSelection,
   SpawnSelectionDefaultReason,
   SpawnSelectionGroup,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind };
@@ -353,6 +354,16 @@ export interface SessionLaunchPosture {
    */
   selection?: unknown;
   selectionReasons?: unknown;
+  /**
+   * `launch.harness.plugins.allowed` ids the launch turned on for its
+   * effective skills (`source: 'effective-skill'`). Resume replays them, so
+   * its plugin allow set is the launch's even when the text the skill trim
+   * measured has changed since. Absent: nothing recorded (an older manifest,
+   * no plugins), and resume computes the set.
+   */
+  effectivePlugins?: string[] | null;
+  /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
+  contextIndex?: 'env' | 'profile' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -497,6 +508,13 @@ export interface SpawnContext {
     via: 'selection' | 'linked' | 'attached';
     link?: string;
   }>;
+  /**
+   * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
+   * entries `<context_index>` renders. Only read when the index is on; an
+   * entity with no header here renders from the loader's own row (its title,
+   * a skill's description).
+   */
+  headers?: SelectionHeader[];
 }
 
 export interface SpawnContextAudit {
@@ -557,8 +575,12 @@ export interface ContextEntryRecord {
   via: ContextVia;
   /** 1-based position in its group: the selected order, else edge order. */
   rank: number;
-  /** Memories are injected whole; everything else is an index line. */
-  state: 'expanded' | 'collapsed';
+  /**
+   * Memories are injected whole; everything else is an index line.
+   * `header-dropped`: a `<context_index>` entry that kept its bare line but
+   * lost its header text to the byte budget (level 1).
+   */
+  state: 'expanded' | 'collapsed' | 'header-dropped';
   /** UTF-8 bytes of the entry as the prompt renders it. */
   bytes: number;
   /** Edge type, for references and teammates. */
@@ -583,7 +605,11 @@ export type ContextDropReason =
    * still replays. `kind` is the entity's kind when it is still readable,
    * else `'unknown'`.
    */
-  | 'unavailable';
+  | 'unavailable'
+  /** An equipped skill whose file is gone (`effectiveSkills.skipped` `missing`). */
+  | 'missing'
+  /** An equipped skill the lane's tool has turned off (`effectiveSkills.skipped` `disabled`). */
+  | 'disabled';
 
 export interface ContextDrop {
   entityId: string;
@@ -602,6 +628,25 @@ export interface ManifestContext {
   groups?: Record<ContextGroupName, ContextGroupAudit>;
   entries?: ContextEntryRecord[];
   dropped?: ContextDrop[];
+  /**
+   * Present only when the launch rendered `<context_index>` (design 01a0d348
+   * §2): which switch turned it on, and each index group's byte cap and use.
+   * Absent: the launch rendered today's `<skills>` block.
+   */
+  index?: ContextIndexRecord;
+}
+
+/** `manifest.context.index`. */
+export interface ContextIndexRecord {
+  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
+  source: 'env' | 'profile';
+  /** Rendered bytes of the whole element plus its joining newline. */
+  bytes: number;
+  /**
+   * The sub-caps in force (`BYTE_BUDGETS.referenceIndex` / `rosterIndex`), by
+   * the groups that share each; skills take what remains.
+   */
+  caps: { groups: string[]; cap: number }[];
 }
 
 /** `manifest.launch.harness` (design 01a0d348 §3.6). */
@@ -815,6 +860,12 @@ export interface GhostReconcileReport {
 export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
+  /**
+   * Selection headers for `<context_index>` (design 01a0d348 §2.1), read
+   * under the caller's RLS: an id the caller cannot read is simply absent.
+   * Optional so a graph without it renders the index from loader rows.
+   */
+  loadContextHeaders?(auth: GraphAuth, input: { spaceId: string; ids: string[] }): Promise<SelectionHeader[]>;
   /** `public.execution_spawn` — work_session row + `working_on` edges, one tx. */
   createWorkSession(auth: GraphAuth, input: CreateWorkSessionInput): Promise<CreateWorkSessionResult>;
   /** The project read behind a vanilla terminal. See {@link ShellSessionContext}. */
@@ -1188,6 +1239,13 @@ export interface Tm8Manifest {
 
   /** Equipped skill metadata and explicit load pointers, never bodies. */
   skills: ManifestSkillContext[];
+  /**
+   * The rendered `<context_index>` (design 01a0d348 §2), after the byte-budget
+   * trim, when the launch's context-index switch was on. It replaces the
+   * `<skills>` block in both prompt frames; `skills` still lists the kept
+   * skills for every other reader. Absent: switch off.
+   */
+  contextIndex?: PromptContextIndex;
   effectiveSkills?: EffectiveSkills;
   /** Names omitted by relevance selection or the serialized index byte budget. */
   droppedSkills?: string[];

@@ -135,6 +135,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_AGENT_CMD', group: 'Lane launch', summary: 'Replaces the agent binary for every lane (an operator wrapper).', default: null, definedIn: MANIFEST, secret: true },
   { name: 'TM8_HARNESS_SURFACE', group: 'Lane launch', summary: 'minimal or inherit for every Claude lane. Outranks the persona setting.', default: 'minimal', definedIn: MANIFEST },
   { name: 'TM8_READ_HINTS', group: 'Lane launch', summary: 'Installs the large-read hint hook on every Claude lane. Outranks the persona setting.', default: 'off', definedIn: MANIFEST },
+  { name: 'TM8_CONTEXT_INDEX', group: 'Lane launch', summary: 'on or off for every launch: <context_index> (skills, references, teammates with headers, trimmed per group) in place of <skills>. Outranks the profile contextIndex. Shipped dark.', default: 'unset (profile decides; off)', definedIn: 'packages/execution/src/spawn/context-index.ts' },
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
@@ -244,7 +245,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
 };
 
 export const CODE_CONSTANTS: readonly CodeConstant[] = [
-  { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Hard byte ceilings on every prompt tm8 injects. A profile may choose smaller, never larger.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
+  { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Hard byte ceilings on every prompt tm8 injects, and the <context_index> sub-caps inside the combined ceiling (referenceIndex, rosterIndex). A profile may choose smaller, never larger.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
@@ -299,6 +300,7 @@ export const PROFILE_KNOBS: readonly SubjectKnob[] = [
   { name: 'toolDiscoveryPolicy.entityContextDefaultBytes', summary: 'Default byte budget of entity context.', default: '16384', definedIn: CORE_DRAFT, change: 'profile' },
   { name: 'feedPolicy.pageSize', summary: 'Chat feed page size.', default: '50', definedIn: CORE_DRAFT, change: 'profile' },
   { name: 'feedPolicy.bodyExcerptBytes', summary: 'Chat feed body excerpt bytes.', default: '1024', definedIn: CORE_DRAFT, change: 'profile' },
+  { name: 'contextIndex', summary: 'Sessions on this profile render <context_index> in place of <skills>. TM8_CONTEXT_INDEX outranks it.', default: 'false', definedIn: 'packages/contract/src/contract.ts', anchor: 'contextIndex?: boolean;', change: 'profile' },
   { name: 'initialContentSurface', summary: 'Surface a session on this profile opens on: terminal or chat. Unset defers to the pinned template.', default: null, definedIn: 'packages/contract/src/contract.ts', anchor: "initialContentSurface?: 'terminal' | 'chat';", change: 'profile' },
 ];
 

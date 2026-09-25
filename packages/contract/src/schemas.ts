@@ -4064,6 +4064,9 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
     offset: z.number().int().nonnegative(),
   }).strict()).optional(),
   outlineTruncated: z.literal(true).optional(),
+  bodyFetch: z.object({
+    expand: z.string().min(1),
+  }).strict().optional(),
   teammate: NullableString,
   agentTool: NullableString,
   model: NullableString,
@@ -4184,6 +4187,9 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
      means "defer to the pinned static template" — exactly the behaviour those
      drafts already had. Authors who set it are choosing, not overriding. */
   initialContentSurface: z.enum(['terminal', 'chat']).optional(),
+  /* `<context_index>` on (design 01a0d348 §2). OPTIONAL: absent is off, and
+     every earlier draft stays valid. Shipped dark (§10 Q2). */
+  contextIndex: z.boolean().optional(),
 }).strict();
 
 export const ProposeInteractionProfileInputSchema: z.ZodType<ProposeInteractionProfileInput> = z.object({

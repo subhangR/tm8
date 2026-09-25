@@ -6493,6 +6493,12 @@ export interface EntityContextV2View {
   // doc
   outline?: Array<{ level: number; text: string; offset: number }>;
   outlineTruncated?: true;
+  /**
+   * skill, file, artifact (design 01a0d348 §4.1): the one call that fetches
+   * the body, which never rides in the envelope — it lives outside it (a
+   * file's bytes, an artifact bundle, a skill's filesystem body).
+   */
+  bodyFetch?: { expand: string };
   // work_session
   teammate?: string | null;
   agentTool?: string | null;
@@ -6575,6 +6581,10 @@ export interface InteractionProfileDraft {
       means "defer to the pinned static template", which is what every draft
       written before this field existed meant implicitly. */
   initialContentSurface?: 'terminal' | 'chat';
+  /** Sessions on this profile render `<context_index>` in place of `<skills>`
+      (design 01a0d348 §2; shipped dark, §10 Q2). Absent or false: off.
+      `TM8_CONTEXT_INDEX` on the node outranks it either way. */
+  contextIndex?: boolean;
 }
 
 export type InteractionProfileStatus = 'draft' | 'active' | 'retired';

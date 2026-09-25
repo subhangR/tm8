@@ -49,6 +49,7 @@ import {
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
 import { claudePluginConfigDir, harnessSurfaceEnv, readInstalledClaudePlugins } from './harness-surface.js';
+import { contextHeaderIds, contextIndexForResume, contextIndexSwitch } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1204,6 +1205,19 @@ export class SpawnService {
     }
   }
 
+  /**
+   * The selection headers `<context_index>` renders, read under the caller's
+   * RLS after the context load (so a spawn's refusals keep their order). A
+   * graph without the read renders the index from the loader's own rows.
+   */
+  private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext): Promise<void> {
+    if (!this.graph.loadContextHeaders) return;
+    context.headers = await this.graph.loadContextHeaders(auth, {
+      spaceId: context.spaceId,
+      ids: contextHeaderIds(context),
+    });
+  }
+
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
@@ -1282,6 +1296,11 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       interactionProfileId: request.interactionProfileId ?? null,
     });
+    // `<context_index>` (design 01a0d348 §2), shipped dark: the node env or
+    // the pinned profile turns it on, and only then are its headers read.
+    const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
+    const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
+    if (contextIndex) await this.loadIndexHeaders(auth, context);
 
     const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
@@ -1337,6 +1356,7 @@ export class SpawnService {
         interactionProfile: { ...resolvedProfile, pinRevision: 0 },
         workdir: { mode: workdir.mode, path: cwd },
         command,
+        contextIndex,
         baseUrl: this.baseUrl,
       });
       return {
@@ -1446,6 +1466,7 @@ export class SpawnService {
         })),
         sandboxDegraded: sandbox.degradedReason,
         harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
+        contextIndex,
         baseUrl: this.baseUrl,
       });
 
@@ -1879,13 +1900,15 @@ export class SpawnService {
     // default — a session launched `fullAccess` came back on `auto` and stalled
     // on its first approval. The recorded manifest is where that fact is
     // durable, and resume does not rewrite it, so it still describes the launch.
-    // Read BEFORE the context: the launch's selection lives there too.
+    // Read BEFORE the context: the launch's selection lives there too, and
+    // whether it rendered `<context_index>` (so the loader reads its headers).
     const recorded = await this.recordedPosture(auth, sessionId);
     const recordedPosture = recorded.posture;
     // The launch's exact sets, replayed (design 01a0d348 §5.1). Without this a
     // resumed session came back on the edge defaults while its rewritten
     // manifest claimed it had never selected anything.
     const launchSelection = replayedSelection(recordedPosture);
+    const resumeIndex = contextIndexForResume(this.env, recordedPosture?.contextIndex ?? null);
 
     const context = await this.graph.loadSpawnContext(auth, {
       spaceId: info.spaceId,
@@ -1900,6 +1923,8 @@ export class SpawnService {
       parentSessionId: info.parentSessionId,
       ...(launchSelection.selection ? { selection: launchSelection.selection, selectionReplay: true } : {}),
     });
+
+    if (resumeIndex) await this.loadIndexHeaders(auth, context);
 
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
@@ -2215,6 +2240,8 @@ export class SpawnService {
         })),
         sandboxDegraded: sandbox.degradedReason,
         harness: this.managesClaudeHarness(launch) ? { installedPlugins } : null,
+        contextIndex: resumeIndex,
+        replayEffectivePlugins: recorded.posture?.effectivePlugins ?? null,
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });

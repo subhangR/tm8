@@ -1,4 +1,5 @@
 import { buildManifestContext } from './context-audit.js';
+import { contextIndexCandidates, contextIndexCaps } from './context-index.js';
 import { computeEffectiveSkills } from './effective-skills.js';
 import {
   asHarnessSurface,
@@ -15,7 +16,7 @@ import {
   type HarnessSurface,
   type HarnessSurfaceSource,
 } from './harness-surface.js';
-import { composePrompt, BYTE_BUDGETS, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry } from '@tm8/prompt';
+import { composePrompt, BYTE_BUDGETS, fitContextIndex, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -1725,6 +1726,22 @@ export interface ComposeManifestInput {
    * authority on which plugin skills are native. Absent: no harness record.
    */
   harness?: { installedPlugins: readonly string[] } | null;
+  /**
+   * The context-index switch (`contextIndexSwitch`), already resolved from
+   * the node env and the pinned profile. Set: the launch renders
+   * `<context_index>` in place of `<skills>` and trims it per group
+   * (design 01a0d348 §2.3). Absent: the manifest and prompt are exactly what
+   * they were before the index existed.
+   */
+  contextIndex?: { source: 'env' | 'profile' } | null;
+  /**
+   * A RESUME's replay of the plugins its launch turned on for effective
+   * skills (`launch.harness.plugins.allowed[source=effective-skill]`). Set,
+   * it replaces the post-trim list, because the trim depends on text (a task
+   * body, a header) that may have changed since, and a resumed conversation
+   * must boot with the harness it was launched with. Absent: computed.
+   */
+  replayEffectivePlugins?: readonly string[] | null;
   now?: Date;
   agentConfigDir?: string;
   homeDir?: string;
@@ -1865,19 +1882,36 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });
-  // Measure the real non-skill prompt once, then account for the exact escaped
+  // Measure the real non-index prompt once, then account for the exact escaped
   // serializer. This stays linear even when a deep equipment chain has no count cap.
   const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
   const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
-  let indexBytes = manifest.skills.length ? utf8Bytes(serializeSkillIndex(manifest.skills)) + 1 : 0;
   const dropped: ManifestSkillContext[] = [];
-  while (baseBytes + indexBytes > BYTE_BUDGETS.combinedInitialInjection && manifest.skills.length) {
-    const removed = manifest.skills.pop()!;
-    dropped.push(removed);
-    indexBytes = manifest.skills.length ? indexBytes - utf8Bytes(serializeSkillIndexEntry(removed)) - 1 : 0;
+  let indexFit: FitContextIndexResult | null = null;
+  if (input.contextIndex) {
+    // `<context_index>` (design 01a0d348 §2.3): references and teammates trim
+    // to their sub-caps, skills to what remains, header text before entries.
+    // Candidates are redacted BEFORE the trim, so the bytes it counts are the
+    // bytes that ship.
+    indexFit = fitContextIndex({
+      groups: redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills })),
+      available: BYTE_BUDGETS.combinedInitialInjection - baseBytes,
+      caps: contextIndexCaps(launch.mode),
+    });
+    const gone = new Set(indexFit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
+    dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
+    manifest.skills = manifest.skills.filter(skill => !gone.has(skill.entityId));
+    manifest.contextIndex = indexFit.index;
+  } else {
+    let indexBytes = manifest.skills.length ? utf8Bytes(serializeSkillIndex(manifest.skills)) + 1 : 0;
+    while (baseBytes + indexBytes > BYTE_BUDGETS.combinedInitialInjection && manifest.skills.length) {
+      const removed = manifest.skills.pop()!;
+      dropped.push(removed);
+      indexBytes = manifest.skills.length ? indexBytes - utf8Bytes(serializeSkillIndexEntry(removed)) - 1 : 0;
+    }
+    dropped.reverse();
   }
   if (dropped.length) {
-    dropped.reverse();
     manifest.droppedSkills = [...(manifest.droppedSkills ?? []), ...dropped.map(skill => skill.name)];
     const kept = new Set(manifest.skills.map(skill => skill.entityId));
     const audit = manifest.effectiveSkills!;
@@ -1890,9 +1924,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   // the native-shadow pass), so the argv and `launch.harness.plugins` are
   // built from one list and cannot disagree.
   const keptRows = new Map(equips.map(row => [row.entityId, row]));
-  const effectiveClaudePlugins = equippedClaudePlugins(
-    manifest.skills.flatMap(skill => keptRows.get(skill.entityId) ?? []),
-  );
+  const effectiveClaudePlugins = input.replayEffectivePlugins
+    ? [...input.replayEffectivePlugins].sort()
+    : equippedClaudePlugins(manifest.skills.flatMap(skill => keptRows.get(skill.entityId) ?? []));
   if (typeof command !== 'string') {
     manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins));
   }
@@ -1918,7 +1952,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       ...(request.selection ? { requestSelection: request.selection } : {}),
       ...(request.selectionReasons ? { selectionReasons: request.selectionReasons } : {}),
       ...(request.selectionReplayInvalid ? { selectionReplayInvalid: true } : {}),
+      ...(indexFit ? { index: indexFit } : {}),
     }),
+    ...(input.contextIndex && indexFit
+      ? { index: { source: input.contextIndex.source, bytes: indexFit.bytes, caps: contextIndexCaps(launch.mode) } }
+      : {}),
   };
   composePrompt(manifest, { sessionId, baseUrl });
   return manifest;
