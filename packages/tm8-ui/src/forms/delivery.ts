@@ -4,7 +4,9 @@
  * pinned by a table test (delivery.test.ts), and the ONLY place the UI reads
  * `status`/`attempts`/`lastError` to decide anything.
  *
- *   pending,  attempts=0, no error        → queued     (Resume now)
+ *   pending,  attempts=0, no error, age < DELIVERING_GRACE_MS
+ *                                         → delivering (no door: the live fast path usually lands in a second or two)
+ *   pending,  attempts=0, no error        → queued     (Resume now; also when the age is unknown)
  *   pending,  attempts>0 or a lastError   → retrying   (Resume now; shows the error)
  *   pending,  lastError redelivered_from… → redelivering (sent to a new session; no door)
  *   delivered                             → delivered
@@ -17,10 +19,16 @@
  * a failure, and keeps its old `attempts`: while pending it reads
  * "redelivering", never "retrying". (A `to=resume` leaves no mark on the view;
  * the note says "Resume requested" locally after the click.)
+ *
+ * `ageMs` is how long ago the delivery started (the caller's clock against
+ * the submit: the response's `submittedAt`, or this viewer's own submit), so
+ * the function stays pure. Delivery settling emits no event (W4 risk): until
+ * the grace window runs out the reader has no evidence the session is NOT
+ * live, so the row says "Delivering…" rather than asking for a resume.
  */
 import type { FormDeliveryView } from '@tm8/contract';
 
-export type DeliveryState = 'queued' | 'retrying' | 'redelivering' | 'delivered' | 'unverified' | 'spawned' | 'cancelled';
+export type DeliveryState = 'delivering' | 'queued' | 'retrying' | 'redelivering' | 'delivered' | 'unverified' | 'spawned' | 'cancelled';
 
 export interface DeliveryReading {
   state: DeliveryState;
@@ -33,6 +41,9 @@ export interface DeliveryReading {
   /** Which door the row offers. */
   action: 'resume' | 'new_session' | null;
 }
+
+/** How long a fresh, never-attempted row reads "Delivering…" before "Queued". */
+export const DELIVERING_GRACE_MS = 30_000;
 
 const UNVERIFIED = 'delivery_unverified';
 const REDELIVERED = 'redelivered_from:';
@@ -50,7 +61,21 @@ export function cancelReasonText(lastError: string | null): string {
   return CANCEL_REASON[head] ?? lastError;
 }
 
-export function readDelivery(d: Pick<FormDeliveryView, 'status' | 'attempts' | 'lastError'>): DeliveryReading {
+/**
+ * When a response's delivery started, for `readDelivery`'s age: the later of
+ * the server's `submittedAt` and this viewer's own submit (a server clock
+ * behind the browser's must not age a delivery the viewer just sent).
+ */
+export function deliveryStart(submittedAt: string | null, localSubmitAt: number | null = null): number | null {
+  const server = submittedAt ? Date.parse(submittedAt) : NaN;
+  if (Number.isNaN(server)) return localSubmitAt;
+  return localSubmitAt === null ? server : Math.max(server, localSubmitAt);
+}
+
+export function readDelivery(
+  d: Pick<FormDeliveryView, 'status' | 'attempts' | 'lastError'>,
+  ageMs: number | null = null,
+): DeliveryReading {
   const provenance = d.lastError?.startsWith(REDELIVERED) ? d.lastError.slice(REDELIVERED.length).trim() : null;
   const error = provenance === null ? d.lastError : null;
   const base = { redeliveredFrom: provenance, reason: null, error: null, action: null } as const;
@@ -59,7 +84,9 @@ export function readDelivery(d: Pick<FormDeliveryView, 'status' | 'attempts' | '
       if (provenance !== null) return { ...base, state: 'redelivering', reason: cancelReasonText(provenance) };
       return d.attempts > 0 || error
         ? { ...base, state: 'retrying', error, action: 'resume' }
-        : { ...base, state: 'queued', action: 'resume' };
+        : ageMs !== null && ageMs < DELIVERING_GRACE_MS
+          ? { ...base, state: 'delivering' }
+          : { ...base, state: 'queued', action: 'resume' };
     case 'delivered':
       return error?.startsWith(UNVERIFIED)
         ? { ...base, state: 'unverified', error }

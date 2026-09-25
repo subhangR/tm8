@@ -4,8 +4,10 @@
  * Open form, nothing submitted: the questions, with autosave to a draft,
  * "Accept recommended" and client validation from the contract registry.
  * Submitted: the member's answers, their delivery, the revision history and
- * "Edit & resubmit" (allowAmend, default on). Draft / closed / cancelled
- * forms say so instead of offering inputs that would be refused.
+ * "Edit & resubmit" (allowAmend, default on). While the submit is on the
+ * wire its button spins and reads "Submitting…"; the delivery that follows
+ * reads "Delivering…" for its grace window (delivery.ts). Draft / closed /
+ * cancelled forms say so instead of offering inputs that would be refused.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateFormAnswers, type FormAnswerIssue, type FormAnswers } from '@tm8/contract';
@@ -73,6 +75,7 @@ export function FillTab({ q }: { q: Questionnaire }) {
         supersedesId={supersedesId}
         amendOfRevision={amendOf?.revision ?? null}
         onSubmitted={async () => {
+          q.markSubmitted();
           await q.reload();
           setEditing(null);
         }}
@@ -97,8 +100,9 @@ export function FillTab({ q }: { q: Questionnaire }) {
           form={form}
           current={mine.current}
           history={mine.history}
+          since={q.deliverySince(mine.current)}
           port={port}
-          onSettled={() => void q.reload()}
+          onSettled={q.followDeliveries}
           canAmend={!readOnly && settings.allowAmend}
           amendOff={!readOnly && !settings.allowAmend}
           canSubmitAnother={!readOnly && settings.responses === 'unlimited'}
@@ -113,11 +117,13 @@ export function FillTab({ q }: { q: Questionnaire }) {
 }
 
 function SubmittedView({
-  form, current, history, port, onSettled, canAmend, amendOff, canSubmitAnother, onEdit, onAnother,
+  form, current, history, since, port, onSettled, canAmend, amendOff, canSubmitAnother, onEdit, onAnother,
 }: {
   form: FormState;
   current: FormResponseView;
   history: FormResponseView[];
+  /** When `current`'s delivery started, for the "Delivering…" grace window. */
+  since: number | null;
   port: FormsPort;
   onSettled(): void;
   canAmend: boolean;
@@ -140,7 +146,7 @@ function SubmittedView({
       </div>
       {amendOff ? <p className="qn-muted">This form doesn’t accept changes after submitting.</p> : null}
       {current.deliveries.map((d) => (
-        <DeliveryNote key={d.workSessionId} delivery={d} redeliver={redeliverFor(port, current.id)} onSettled={onSettled} />
+        <DeliveryNote key={d.workSessionId} delivery={d} since={since} redeliver={redeliverFor(port, current.id)} onSettled={onSettled} />
       ))}
       <AnswerList response={current} fallbackSections={form.content.sections} fallbackQuestions={form.content.questions} />
       {history.length > 1 ? (
@@ -367,8 +373,17 @@ function FillForm({
               Discard changes
             </button>
           ) : null}
-          <button type="button" className="pn-btn pn-btn--primary" disabled={submitting} onClick={() => void submit()}>
-            {amendOfRevision !== null ? 'Resubmit' : 'Submit'}
+          <button
+            type="button"
+            className="pn-btn pn-btn--primary qn-submit"
+            disabled={submitting}
+            aria-busy={submitting || undefined}
+            onClick={() => void submit()}
+          >
+            {submitting ? <span className="qn-spinner" aria-hidden="true" /> : null}
+            {amendOfRevision !== null
+              ? (submitting ? 'Resubmitting…' : 'Resubmit')
+              : (submitting ? 'Submitting…' : 'Submit')}
           </button>
         </span>
       </div>

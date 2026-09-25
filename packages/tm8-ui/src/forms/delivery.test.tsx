@@ -1,15 +1,19 @@
 // @vitest-environment jsdom
 /** Every real `form_deliveries` state → chip, note and door (FORMS-DESIGN §7.3). */
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FormDeliveryView } from '@tm8/contract';
-import { readDelivery } from './delivery';
+import { DELIVERING_GRACE_MS, deliveryStart, readDelivery } from './delivery';
 import { DeliveryNote, FormsNavContext } from './parts';
 import { FormsPortError } from './seam';
 
 const d = (extra: Partial<FormDeliveryView>): FormDeliveryView => ({
   workSessionId: 'ws1', status: 'pending', spawnedSessionId: null, lastError: null, attempts: 0,
   createdAt: '2026-09-01T00:00:00.000Z', ...extra,
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('readDelivery', () => {
@@ -27,6 +31,31 @@ describe('readDelivery', () => {
     ['cancelled: envelope refusal', d({ status: 'cancelled', lastError: 'envelope_refused: too large' }), 'cancelled', 'new_session'],
   ] as const)('%s', (_name, row, state, action) => {
     expect(readDelivery(row)).toMatchObject({ state, action });
+  });
+
+  // The grace window: only a fresh, never-attempted, error-free pending row reads "delivering".
+  it.each([
+    ['fresh pending → delivering, no door', d({}), 0, 'delivering', null],
+    ['pending just inside the window → delivering', d({}), DELIVERING_GRACE_MS - 1, 'delivering', null],
+    ['pending at the window’s end → queued', d({}), DELIVERING_GRACE_MS, 'queued', 'resume'],
+    ['pending well past the window → queued', d({}), 10 * DELIVERING_GRACE_MS, 'queued', 'resume'],
+    ['an unknown age → queued', d({}), null, 'queued', 'resume'],
+    ['an attempted row inside the window still retries', d({ attempts: 1 }), 0, 'retrying', 'resume'],
+    ['an errored row inside the window still retries', d({ lastError: 'pty busy' }), 0, 'retrying', 'resume'],
+    ['a redelivery inside the window still reads redelivering', d({ lastError: 'redelivered_from: session_deleted' }), 0, 'redelivering', null],
+    ['delivered inside the window', d({ status: 'delivered', attempts: 1 }), 0, 'delivered', null],
+    ['cancelled inside the window', d({ status: 'cancelled', lastError: 'session_deleted' }), 0, 'cancelled', 'new_session'],
+  ] as const)('%s', (_name, row, age, state, action) => {
+    expect(readDelivery(row, age)).toMatchObject({ state, action });
+  });
+
+  it('a delivery starts at the later of the server’s submit and this viewer’s', () => {
+    const server = Date.parse('2026-09-01T00:00:00.000Z');
+    expect(deliveryStart('2026-09-01T00:00:00.000Z')).toBe(server);
+    expect(deliveryStart('2026-09-01T00:00:00.000Z', server + 5_000)).toBe(server + 5_000);
+    expect(deliveryStart('2026-09-01T00:00:00.000Z', server - 5_000)).toBe(server);
+    expect(deliveryStart(null, server)).toBe(server);
+    expect(deliveryStart(null)).toBeNull();
   });
 
   it('cancel reasons read as words; an unknown refusal is shown verbatim', () => {
@@ -47,6 +76,25 @@ describe('DeliveryNote', () => {
     expect(await screen.findByText(/Resume requested\. Resuming can take a couple of minutes/)).toBeTruthy();
     expect(redeliver).toHaveBeenCalledWith('ws1', 'resume');
     expect(settled).toHaveBeenCalled();
+  });
+
+  it('fresh: "Delivering…" with no door and no resume text, then "Queued" + Resume now when the window runs out', () => {
+    vi.useFakeTimers();
+    render(<DeliveryNote delivery={d({})} since={Date.now()} redeliver={async () => {}} />);
+    expect(screen.getByTestId('delivery-chip').textContent).toMatch(/^●?Delivering…$/);
+    expect(screen.getByTestId('delivery-note').getAttribute('data-state')).toBe('delivering');
+    expect(screen.getByTestId('delivery-note').textContent).not.toMatch(/resume/i);
+    expect(screen.queryByRole('button')).toBeNull();
+    act(() => { vi.advanceTimersByTime(DELIVERING_GRACE_MS); });
+    expect(screen.getByTestId('delivery-chip').textContent).toBe('Queued');
+    expect(screen.getByTestId('delivery-note').textContent).toMatch(/when the session resumes/);
+    expect(screen.getByRole('button', { name: 'Resume now' })).toBeTruthy();
+  });
+
+  it('a row that started long ago reads "Queued" at once', () => {
+    render(<DeliveryNote delivery={d({})} since={Date.now() - 2 * DELIVERING_GRACE_MS} redeliver={async () => {}} />);
+    expect(screen.getByTestId('delivery-chip').textContent).toBe('Queued');
+    expect(screen.getByRole('button', { name: 'Resume now' })).toBeTruthy();
   });
 
   it('retrying shows the attempt and the error', () => {
