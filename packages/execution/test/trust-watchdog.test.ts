@@ -73,6 +73,64 @@ describe('readTrustDialog on real Claude Code 2.1.280 frames', () => {
   });
 });
 
+/**
+ * A WORKING lane that prints the dialog: the real post-boot frame, then a
+ * screen as Claude renders a tool call whose output is the dialog text (a
+ * lane reviewing this very watchdog `cat`s its fixture) and an assistant
+ * reply quoting it in a code block. Every word and the relative layout are
+ * there; only the live dialog puts `❯` at column 0 beside a two-space sibling.
+ */
+async function renderPrinted({ banner }: { banner: boolean }): Promise<string> {
+  const mirror = new TerminalStateMirror(100, 30);
+  mirror.append(await readFile(join(FIXTURES, 'after-confirm.bin')));
+  mirror.append(Buffer.from([
+    '\x1b[2J\x1b[H',
+    ...(banner ? [' ▐▛███▛█   Claude Code v2.1.280', ''] : []),
+    '⏺ Bash(cat test/fixtures/claude-trust-dialog/dialog-no.txt)',
+    '  ⎿  Quick safety check: Is this a project you created or one you trust?',
+    '     ❯ No, exit',
+    '       Yes, I trust this folder',
+    '     Enter to confirm · Esc to cancel',
+    '',
+    '⏺ The dialog reads:',
+    '  ❯ No, exit',
+    '    Yes, I trust this folder',
+    '  Enter to confirm · Esc to cancel',
+    '',
+    '────────────────────────────────────────',
+    '❯ ',
+    '────────────────────────────────────────',
+  ].join('\r\n')));
+  const screen = await mirror.readViewport();
+  mirror.dispose();
+  return screen;
+}
+
+describe('a working lane that PRINTS the dialog is never answered', () => {
+  it('does not read printed dialog text (tool output, a code block) as the live dialog', async () => {
+    const printed = await renderPrinted({ banner: false });
+    expect(printed).toContain('❯ No, exit'); // control: every word is on screen
+    expect(printed).toContain('Enter to confirm');
+    expect(readTrustDialog(printed)).toEqual({ visible: false, selected: null });
+  });
+
+  it('stands down for good once claude has booted past the gate (its banner is up)', async () => {
+    const printed = await renderPrinted({ banner: true });
+    expect(decideTrustWatchdog(state(printed))).toEqual({ kind: 'stop', reason: 'booted' });
+  });
+
+  it('calls an answered dialog recovered the moment the post-trust banner renders', async () => {
+    const booted = await render('after-confirm');
+    expect(decideTrustWatchdog(state(booted, { keystrokes: 2, absentReads: 0 }))).toEqual({ kind: 'recovered' });
+  });
+
+  it('the real dialog frames carry no banner, so the latch cannot hide a real hang', async () => {
+    for (const frame of ['dialog-no', 'dialog-yes'] as const) {
+      expect(decideTrustWatchdog(state(await render(frame))).kind).not.toBe('stop');
+    }
+  });
+});
+
 describe('decideTrustWatchdog', () => {
   it('moves the cursor off "No, exit" and NEVER presses Enter there', async () => {
     const onNo = await render('dialog-no');
@@ -87,17 +145,21 @@ describe('decideTrustWatchdog', () => {
     });
   });
 
-  it('calls it recovered only after two dialog-free reads following a keystroke', async () => {
-    const composer = await render('after-confirm');
+  // An ERASED frame (Ink clears, then repaints) shows neither the dialog nor
+  // the banner: the absent-read and window rules are for frames like this one.
+  // The banner itself is positive proof of boot and short-circuits both (see
+  // 'a working lane that PRINTS the dialog is never answered' above).
+  const erased = '\n'.repeat(23);
+
+  it('calls it recovered only after two dialog-free reads following a keystroke', () => {
     // One absent frame can be a mid-redraw read: keep watching.
-    expect(decideTrustWatchdog(state(composer, { keystrokes: 2, absentReads: 0 })).kind).toBe('wait');
-    expect(decideTrustWatchdog(state(composer, { keystrokes: 2, absentReads: 1 })).kind).toBe('recovered');
+    expect(decideTrustWatchdog(state(erased, { keystrokes: 2, absentReads: 0 })).kind).toBe('wait');
+    expect(decideTrustWatchdog(state(erased, { keystrokes: 2, absentReads: 1 })).kind).toBe('recovered');
   });
 
-  it('waits, then stands down, on a lane that never shows the dialog', async () => {
-    const composer = await render('after-confirm');
-    expect(decideTrustWatchdog(state(composer)).kind).toBe('wait');
-    expect(decideTrustWatchdog(state(composer, { elapsedMs: 120_000 }))).toEqual({
+  it('waits, then stands down, on a lane that never shows the dialog', () => {
+    expect(decideTrustWatchdog(state(erased)).kind).toBe('wait');
+    expect(decideTrustWatchdog(state(erased, { elapsedMs: 120_000 }))).toEqual({
       kind: 'stop',
       reason: 'window_elapsed',
     });
