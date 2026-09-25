@@ -1,5 +1,5 @@
 -- =============================================================================
--- 226 — doc 15 B3 + B4: the project unlink guard counts chats, and linking a
+-- 228 — doc 15 B3 + B4: the project unlink guard counts chats, and linking a
 -- project requires being able to SEE it.
 --
 -- B3. `internal.guard_space_project_link` (015) refuses to delete a
@@ -79,7 +79,7 @@ begin
     raise exception 'Project has a live launch root or association in this Space'
       using errcode = '23514', detail = 'project_not_linked';
   end if;
-  -- B3 (226): a chat bound to this project in this space is a launch root
+  -- B3 (228): a chat bound to this project in this space is a launch root
   -- that outlives any one runtime — idle, cold, or never turned, it still
   -- resumes into the project folder. Same code and detail as the session case,
   -- so every caller's existing mapping of this refusal still applies; the
@@ -99,7 +99,7 @@ begin
 end
 $$;
 
--- B4 (226): `projects_select`'s rule, callable from a SECURITY DEFINER body
+-- B4 (228): `projects_select`'s rule, callable from a SECURITY DEFINER body
 -- (where RLS does not apply). Reads the caller's claims, never an argument.
 create or replace function internal.project_visible_to_caller(p_project_id uuid)
 returns boolean language sql stable security definer
@@ -112,7 +112,7 @@ $$;
 
 comment on function internal.project_visible_to_caller(uuid) is
   'True when the caller may see the project under projects_select''s rule: node admin, '
-  'or a member of a space it is linked into (226, doc 15 B4).';
+  'or a member of a space it is linked into (228, doc 15 B4).';
 
 revoke all on function internal.project_visible_to_caller(uuid) from public;
 

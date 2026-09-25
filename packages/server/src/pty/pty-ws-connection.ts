@@ -99,7 +99,14 @@ export interface PtyWsConnectionOptions {
 
 export const DEFAULT_PTY_IDLE_TIMEOUT_MS = 15 * 60_000;
 export const DEFAULT_PTY_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60_000;
-export const DEFAULT_PTY_MAX_BUFFERED_BYTES = 1024 * 1024;
+/**
+ * The slow-consumer cap: bytes the socket may hold queued before the peer is
+ * dropped. It MUST exceed the largest single frame the server sends on purpose
+ * — an attach replay of the whole 1 MiB OutputBuffer ring, or a serialized
+ * terminal-state snapshot — or every fresh attach to a long session would trip
+ * it on its own replay.
+ */
+export const DEFAULT_PTY_MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_PTY_MAX_INPUT_BYTES = 64 * 1024;
 export const DEFAULT_PTY_MAX_CONTROL_BYTES = 4 * 1024;
 
@@ -356,12 +363,14 @@ export class PtyWsConnection {
       return false;
     }
     try {
-      if (this.socket.write(frame) === false) {
-        this.close(CLOSE_CODE.policyViolation, 'slow consumer');
-        this.socket.destroy();
-        this.finish();
-        return false;
-      }
+      // `write()` returning false is ordinary backpressure, NOT a slow
+      // consumer: the frame IS queued, the socket merely holds more than its
+      // 16KB highWaterMark. Treating it as fatal destroyed the socket right
+      // after queueing any large attach replay, discarding the replay the
+      // client had just been promised in `attached` — so every reopen of a
+      // session past a few hundred KB of output painted live Claude Code
+      // diffs onto a blank terminal. The byte cap above is the bound.
+      this.socket.write(frame);
       return true;
     } catch {
       this.socket.destroy();

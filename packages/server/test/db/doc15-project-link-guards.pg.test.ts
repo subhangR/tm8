@@ -10,7 +10,7 @@ import {
 } from './w1-pg.js';
 
 /**
- * DOC 15 B3 + B4 (migration 226) — the project link/unlink guards, on a
+ * DOC 15 B3 + B4 (migration 228) — the project link/unlink guards, on a
  * two-space fixture.
  *
  * B3: the unlink guard counted live work sessions but not CHATS. A chat bound

@@ -70,7 +70,7 @@ const DEPENDS_ON_019: readonly string[] = [
   '218_rls_membership_once_per_statement.sql',
   '220_secdef_membership_once_per_statement.sql',
   '221_forms_redeliver_and_pending.sql',
-  '226_project_link_guards.sql',
+  '228_project_link_guards.sql',
 ];
 
 const DRAFT = {
@@ -277,7 +277,7 @@ describe('W2.G12 fixture chains are derived, ordered and complete', () => {
       '218_rls_membership_once_per_statement.sql',
       '220_secdef_membership_once_per_statement.sql',
       '221_forms_redeliver_and_pending.sql',
-      '226_project_link_guards.sql',
+      '228_project_link_guards.sql',
     ]);
     expect(chain.some((file) => file.startsWith('019_'))).toBe(false);
     for (const required of ['015_', '016_', '018_', '020_', '021_', '024_']) {

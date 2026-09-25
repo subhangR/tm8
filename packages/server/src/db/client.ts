@@ -111,6 +111,12 @@ function claimValue(value: string | undefined): string {
  * agent's `TM8_AGENT_TOKEN` carries its owner's FULL identity, not a reduced
  * principal, so `identity_id()`, `can_act_as` and `is_space_member` all answer
  * as the human. `kind` is the ONLY thing that distinguishes them.
+ *
+ * `tm8.session_space_id` — the SIXTH claim (227, plan W0a). The one space an
+ * agent session may act in, read from `auth_sessions.space_id` (226) and bound
+ * only for agent kinds while `TM8_SPACE_SESSIONS` is not `off`. Every
+ * membership helper intersects with it, so the owner's full identity is
+ * narrowed to that space. Immutable for the session's life, like `kind`.
  */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
@@ -118,7 +124,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.node_admin',  $3, true),
   set_config('tm8.request_id',  $4, true),
   set_config('tm8.auth_kind',   $5, true),
-  set_config('role',            $6, true)`;
+  set_config('tm8.session_space_id', $6, true),
+  set_config('role',            $7, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -413,6 +420,8 @@ export class PgDb implements Db {
         // and `require_human_auth_kind` refuses. Fail-closed by construction:
         // every caller that does not know its own kind is not human.
         claimValue(claims.authKind),
+        // Absent binds as `''`: unpinned, every helper answers as before 227.
+        claimValue(claims.sessionSpaceId),
         this.role,
       ]);
 
