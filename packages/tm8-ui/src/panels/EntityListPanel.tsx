@@ -84,6 +84,8 @@ import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
+import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
+import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
 import {
@@ -3152,6 +3154,9 @@ export function Tile({
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
+  /* Forms this session asked the viewer to answer (decision 11). One batched
+     read serves every tile in the list — see `forms/pending.ts`. */
+  const pendingForms = usePendingForms(sessionTree ? row.id : null);
   const verdict = props.livenessOf?.(row.id);
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
@@ -3351,8 +3356,9 @@ export function Tile({
       Clickability requires a wired `connectionsOf`; without the projection
       an opened group could never fill. */
   const tileBadges =
-    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) || hasPendingFormsChip(pendingForms) ? (
       <>
+        <PendingFormsChip pending={pendingForms} />
         {sessionChip}
         {linkedPullRequests.length > 0 ? (
           <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />

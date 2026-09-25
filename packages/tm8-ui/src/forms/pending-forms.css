@@ -1,0 +1,44 @@
+/*
+ * The session tile's forms chip and the session panel's pending-forms banner
+ * (FORMS-DESIGN §10, decision 11). Tokens only (§14).
+ */
+.cv2-root .pf-chip {
+  border-radius: var(--pn-r-pill);
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+.cv2-root .pf-chip--waiting {
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+}
+.cv2-root .pf-chip--queued {
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+  border: 1px solid color-mix(in srgb, var(--pn-info) 35%, transparent);
+}
+
+.pf-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  background: color-mix(in srgb, var(--pn-wait) 9%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+}
+.pf-banner__head { display: flex; align-items: center; gap: var(--pn-space-2); font-weight: 600; }
+.pf-banner__list { display: flex; flex-direction: column; gap: var(--pn-space-1); margin: 0; padding: 0; list-style: none; }
+.pf-banner__item { display: flex; flex-direction: column; gap: var(--pn-space-2); min-width: 0; }
+.pf-banner__row { display: flex; align-items: center; gap: var(--pn-space-2); min-width: 0; }
+.pf-banner__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-banner__meta { color: var(--pn-ink-3); white-space: nowrap; }
+.pf-banner__fill {
+  padding: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+}
+.pf-banner__queued { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pn-space-2); color: var(--pn-ink-2); }
+.pf-banner__error { color: var(--pn-block); }

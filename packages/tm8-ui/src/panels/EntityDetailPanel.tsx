@@ -1,3 +1,4 @@
+import { PendingFormsBanner } from '../forms/PendingFormsBanner';
 import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
@@ -1002,6 +1003,17 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
+      ) : null}
+
+      {/* Forms this session asked the viewer to answer, with Fill inline
+          (decision 11). Resume is offered for a queued answer only where this
+          panel already offers it: a session that is not running. */}
+      {isTerminal && !isTombstone ? (
+        <PendingFormsBanner
+          sessionId={detail.id}
+          onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
+          resuming={props.resumingSession}
+        />
       ) : null}
 
       <TabStrip

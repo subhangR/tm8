@@ -9,7 +9,8 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
@@ -320,6 +321,12 @@ export function GateApp(props: GateAppProps = {}) {
     cursorScope: `${activeServer.id}:${authAccount?.accountId ?? 'anonymous'}`,
     ...(props.seam ? { seam: props.seam } : {}),
   });
+  /* Forms waiting on sessions (decision 11): one store per space, read by
+     every session tile's chip and the session panel's banner. */
+  const pendingFormsStore = usePendingFormsStoreFor(data.seam, data.spaceId);
+  const withPendingForms = (node: ReactNode) => (
+    <PendingFormsProvider store={pendingFormsStore}>{node}</PendingFormsProvider>
+  );
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
     spaceId: data.spaceId,
@@ -1741,7 +1748,7 @@ export function GateApp(props: GateAppProps = {}) {
        its `calc(100vh / 1.1)` reciprocal are untouched). A marker rather than a
        `:has()` selector because a `:has()` that stops matching fails silently
        back to a zoomed phone. */
-    return (
+    return withPendingForms(
       <div className="cv2-root" data-shell="mobile" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <MobileShell
           data={data}
@@ -1869,7 +1876,7 @@ export function GateApp(props: GateAppProps = {}) {
     );
   }
 
-  return (
+  return withPendingForms(
     /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
        a containing block that is exactly the viewport, so the shell can size
        with a percentage instead of a viewport unit. Chrome and Safari disagree
