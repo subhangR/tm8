@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-smoke-6d1f4c77.jsonl",
-  "generatedAt": "2026-09-25T16:12:36.819Z",
+  "generatedAt": "2026-09-25T16:32:03.899Z",
   "rows": 2,
   "measured": 2,
   "excluded": 0,
@@ -20,9 +20,9 @@
       },
       "tm8 kernel bytes": {
         "n": 1,
-        "median": 13083,
-        "min": 13083,
-        "max": 13083
+        "median": 12379,
+        "min": 12379,
+        "max": 12379
       },
       "assignment snapshot bytes": {
         "n": 1,
@@ -54,11 +54,11 @@
         "min": 0,
         "max": 0
       },
-      "memories expanded bytes": {
+      "memories expanded bytes (outside the kernel)": {
         "n": 1,
-        "median": 0,
-        "min": 0,
-        "max": 0
+        "median": 704,
+        "min": 704,
+        "max": 704
       },
       "harness chars (system + attachments)": {
         "n": 1,
@@ -86,9 +86,15 @@
       },
       "tokens: tm8 kernel (est.)": {
         "n": 1,
-        "median": 3634,
-        "min": 3634,
-        "max": 3634
+        "median": 3439,
+        "min": 3439,
+        "max": 3439
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 1,
+        "median": 196,
+        "min": 196,
+        "max": 196
       },
       "tokens: context index (est.)": {
         "n": 1,
@@ -178,9 +184,9 @@
       },
       "tm8 kernel bytes": {
         "n": 1,
-        "median": 13081,
-        "min": 13081,
-        "max": 13081
+        "median": 12377,
+        "min": 12377,
+        "max": 12377
       },
       "assignment snapshot bytes": {
         "n": 1,
@@ -212,11 +218,11 @@
         "min": 0,
         "max": 0
       },
-      "memories expanded bytes": {
+      "memories expanded bytes (outside the kernel)": {
         "n": 1,
-        "median": 0,
-        "min": 0,
-        "max": 0
+        "median": 704,
+        "min": 704,
+        "max": 704
       },
       "harness chars (system + attachments)": {
         "n": 1,
@@ -244,9 +250,15 @@
       },
       "tokens: tm8 kernel (est.)": {
         "n": 1,
-        "median": 3634,
-        "min": 3634,
-        "max": 3634
+        "median": 3438,
+        "min": 3438,
+        "max": 3438
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 1,
+        "median": 196,
+        "min": 196,
+        "max": 196
       },
       "tokens: context index (est.)": {
         "n": 1,
@@ -351,23 +363,19 @@
       "n": 1,
       "success": 1,
       "deliverableCorrect": 1,
-      "rubric": {
-        "n": 1,
-        "median": 1,
-        "min": 1,
-        "max": 1
-      }
+      "rubricMean": 1,
+      "rubricNa": [
+        "aliasCheck"
+      ]
     },
     "sonnet5/lean/needle": {
       "n": 1,
       "success": 1,
       "deliverableCorrect": 1,
-      "rubric": {
-        "n": 1,
-        "median": 1,
-        "min": 1,
-        "max": 1
-      }
+      "rubricMean": 1,
+      "rubricNa": [
+        "aliasCheck"
+      ]
     }
   },
   "costDelta": {},
@@ -394,97 +402,11 @@
         "min": 3.98,
         "max": 4.33
       },
-      "waited": 0
+      "waited": 0,
+      "fixtureMainShas": [
+        "c2dadd23ba4bfd10b0a5e1469ba818e142bd7183"
+      ]
     }
   },
-  "delta": {
-    "haiku45/lean/needle": {
-      "first-request tokens": {
-        "baseline": 28638,
-        "current": 28638,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "est. $ per lane": {
-        "baseline": 0.1295353,
-        "current": 0.1295353,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "entry-level missed launches %": {
-        "baseline": 0,
-        "current": 0,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "success %": {
-        "baseline": 100,
-        "current": 100,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "mean rubric": {
-        "baseline": 1,
-        "current": 1,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "wall seconds": {
-        "baseline": 131,
-        "current": 131,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      }
-    },
-    "sonnet5/lean/needle": {
-      "first-request tokens": {
-        "baseline": 38266,
-        "current": 38266,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "est. $ per lane": {
-        "baseline": 0.39743294999999995,
-        "current": 0.39743294999999995,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "entry-level missed launches %": {
-        "baseline": 0,
-        "current": 0,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "success %": {
-        "baseline": 100,
-        "current": 100,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "mean rubric": {
-        "baseline": 1,
-        "current": 1,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      },
-      "wall seconds": {
-        "baseline": 113,
-        "current": 113,
-        "delta": 0,
-        "nBaseline": 1,
-        "nCurrent": 1
-      }
-    }
-  }
+  "delta": null
 }
