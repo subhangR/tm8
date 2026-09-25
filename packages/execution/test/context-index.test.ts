@@ -538,33 +538,49 @@ describe('I8: a dispatcher\'s roster is its teammates group (design 01a0d348 §8
     ]);
   });
 
-  it('on: a roster over rosterIndex drops header text first, then whole entries — every drop recorded, the rest declared', () => {
+  // D1 (task 01a0da5a, doc 01a0da65, PR #832): a sub-cap governs an entry's
+  // DETAIL only. Over rosterIndex a roster sheds summaries, never a whenToUse;
+  // each teammate's floor (line, name, role) borrows from the 32 KiB ceiling,
+  // and whole entries go only when the ceiling itself is short.
+  it('on: a roster over rosterIndex sheds summaries first and keeps every whenToUse (D1) — every drop recorded, the rest declared', () => {
     const n = DISPATCHER_ROSTER_READ_MAX;
     const { manifest, prompt } = composeDispatcher(dctx({ roster: roster(n, n + 7), headers: Array.from({ length: n }, (_, i) => mateHeader(i)) }), { on: true });
     const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
     const drops = manifest.context!.dropped!.filter((d) => d.group === 'teammates');
-    const headerDrops = drops.filter((d) => d.level === 'header');
+    const summaryDrops = drops.filter((d) => d.level === 'summary');
     const entryDrops = drops.filter((d) => d.level === 'entry');
-    expect(headerDrops.length).toBeGreaterThan(0);
-    expect(entryDrops.length).toBeGreaterThan(0);
+    expect(summaryDrops.length).toBeGreaterThan(0);
+    expect(drops.filter((d) => d.level === 'header')).toEqual([]);
     expect(drops.every((d) => d.reason === 'byte-budget' && d.kind === 'team_member')).toBe(true);
+    // Every teammate shown carries its role whole: the floor is never cut on its own.
+    expect(group.entries.length).toBeGreaterThan(0);
+    for (const e of group.entries) {
+      expect(e.headerDropped).not.toBe(true);
+      expect(prompt.system).toContain(`&quot;whenToUse&quot;:&quot;role ${e.id.slice(3)}: backend reviewer&quot;`);
+    }
+    expect(summaryDrops.length).toBe(group.entries.filter((e) => e.summaryDropped).length);
     // Conserved: every roster row read is shown or dropped whole, and the rows past the read are counted.
     expect(group.entries.length + entryDrops.length).toBe(n);
     expect(group.omitted).toBe(entryDrops.length + 7);
     expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable', unread: 7 });
-    // The group fits its sub-cap, and the prompt declares the omission with the command that lists it.
-    const bytes = utf8Bytes(prompt.system.slice(prompt.system.indexOf('  <group name="teammates"'), prompt.system.indexOf('  </group>', prompt.system.indexOf('  <group name="teammates"')) + '  </group>'.length)) + 1;
-    expect(bytes).toBeLessThanOrEqual(BYTE_BUDGETS.rosterIndex);
+    // The prompt stays under the ceiling, and declares the omission with the command that lists it.
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
     expect(prompt.system).toContain(`<group name="teammates" count="${group.entries.length}" omitted="${group.omitted}" fetch="tm8 entity query --kind team_member">`);
     expect(manifest.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex }]) });
   });
 
-  it('on: the profile\'s contextBudgets.teammates replaces rosterIndex', () => {
-    const context = dctx({ roster: roster(20), headers: Array.from({ length: 20 }, (_, i) => mateHeader(i)) });
+  it('on: the profile\'s contextBudgets.teammates replaces rosterIndex: a tighter cap sheds more summaries, not teammates (D1)', () => {
+    // 12: past a 2 KiB cap, but with room for summaries under the node's rosterIndex.
+    const context = dctx({ roster: roster(12), headers: Array.from({ length: 12 }, (_, i) => mateHeader(i)) });
     const node = composeDispatcher(context, { on: true }).manifest;
     const tight = composeDispatcher(context, { on: true, snapshot: { draft: { contextBudgets: { teammates: 2048 } } } }).manifest;
-    const shown = (m: typeof node) => m.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries.length;
-    expect(shown(tight)).toBeLessThan(shown(node));
+    const mates = (m: typeof node) => m.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries;
+    const summaries = (m: typeof node) => mates(m).filter((e) => !e.summaryDropped).length;
+    expect(summaries(node)).toBeGreaterThan(0);
+    expect(summaries(tight)).toBeLessThan(summaries(node));
+    // The ceiling has room, so the floor borrows past the 2 KiB cap: every teammate stays listed.
+    expect(mates(tight)).toHaveLength(12);
+    expect(mates(node)).toHaveLength(12);
     expect(tight.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: 2048 }]), profileBudgets: ['teammates'] });
   });
 
