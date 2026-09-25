@@ -26,7 +26,12 @@ import {
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
-import { resolveClaudeTrustRoot, trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import {
+  completeClaudeOnboarding,
+  resolveClaudeTrustRoot,
+  trustClaudeWorkspace,
+  trustCodexWorkspace,
+} from './workspace-trust.js';
 import {
   decideTrustWatchdog,
   readTrustDialog,
@@ -58,8 +63,10 @@ import { detectCheckoutBranch } from './checkout-branch.js';
 import {
   claudePluginConfigDir,
   harnessSurfaceEnv,
+  asRecordedSkillPlan,
   readConfigHomeSkills,
   readInstalledClaudePlugins,
+  readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
 import { contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
@@ -117,7 +124,7 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
-import { SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
+import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
@@ -902,6 +909,13 @@ export class SpawnService {
     return readInstalledClaudePlugins(claudePluginConfigDir(credentialConfigDir, this.env));
   }
 
+  /** The workdir's own skill and command names, read under the same conditions as the home's. */
+  private projectSkillKeysFor(launch: ResolvedLaunchConfig, workdir: string): string[] {
+    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
+    if (this.env.TM8_AGENT_CMD?.trim()) return [];
+    return readProjectSkillKeys(workdir, this.env.HOME ?? homedir());
+  }
+
   /**
    * The operator skills the same config home lists, read under the same
    * conditions as its plugins, for `laneSkillPlan` to turn off the ones this
@@ -1273,6 +1287,32 @@ export class SpawnService {
     }
   }
 
+  /**
+   * `execution_spawn` starts every unstarted task it is handed, which bumps
+   * the task's version, but the context was read before it ran. Re-read the
+   * version and status so the manifest (and every version the prompt
+   * renders) matches the task the agent will write to. Stale by one, the
+   * task turn's version failed the agent's first versioned write with
+   * version_conflict (D13 re-run: 6 of 6 lanes that ticked from the turn).
+   * A failed read keeps the pre-spawn values and never fails the launch: a
+   * refused write names the current version.
+   */
+  private async refreshStartedTasks(auth: GraphAuth, context: SpawnContext): Promise<void> {
+    if (context.tasks.length === 0 || !this.graph.loadTaskVersions) return;
+    try {
+      const rows = await this.graph.loadTaskVersions(auth, { taskIds: context.tasks.map((t) => t.id) });
+      const now = new Map(rows.map((row) => [row.id, row]));
+      context.tasks = context.tasks.map((task) => {
+        const current = now.get(task.id);
+        return current ? { ...task, version: current.version, status: current.status } : task;
+      });
+    } catch (error) {
+      this.logger?.warn?.('spawn: task versions not refreshed after the start transition', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
@@ -1378,6 +1418,9 @@ export class SpawnService {
       confirmUntrusted: request.confirmUntrusted ?? false,
       clientMutationId: request.clientMutationId ?? null,
     });
+    // The RPC just started the tasks, so their version moved (a replay's did,
+    // the first time). Compose from the task as it stands now.
+    await this.refreshStartedTasks(auth, context);
 
     // A projectless scratch session's directory is named for the session, which
     // only exists now. Re-resolve so the manifest and the PTY agree.
@@ -1514,15 +1557,16 @@ export class SpawnService {
         commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
-        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides, noChrome) => (baseCommand = buildAgentCommand(launch, this.env, {
           claudeSessionId: nativeSessionId,
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
           ...(skillOverrides ? { skillOverrides } : {}),
+          ...(noChrome === false ? { noChrome } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
         contextIndex,
         baseUrl: this.baseUrl,
       });
@@ -2005,6 +2049,7 @@ export class SpawnService {
       ...(launchSelection.selection ? { selection: launchSelection.selection } : {}),
       ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
       ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
+      ...(launchSelection.contextBudgets ? { contextBudgets: launchSelection.contextBudgets } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -2299,16 +2344,18 @@ export class SpawnService {
         commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
-        command: (effectiveClaudePlugins, skillOverrides) => (baseCommand = buildAgentCommand(launch, this.env, {
+        command: (effectiveClaudePlugins, skillOverrides, noChrome) => (baseCommand = buildAgentCommand(launch, this.env, {
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
           ...(skillOverrides ? { skillOverrides } : {}),
+          ...(noChrome === false ? { noChrome } : {}),
         })),
         sandboxDegraded: sandbox.degradedReason,
-        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills } : null,
+        harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
         contextIndex: resumeIndex,
         replayEffectivePlugins: recorded.posture?.effectivePlugins ?? null,
+        replaySkillPlan: asRecordedSkillPlan(recorded.posture?.skillOverrides),
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
@@ -2396,8 +2443,8 @@ export class SpawnService {
   }
 
   /**
-   * Seed Claude's trust for `cwd` and its stable trust root, immediately before
-   * exec. An `unverified` outcome means a concurrent rewrite kept dropping the
+   * Seed Claude's trust for `cwd` and its stable trust root, and its onboarding
+   * flag for a logged-in home, immediately before exec. An `unverified` outcome means a concurrent rewrite kept dropping the
    * entry; the launch goes ahead and the watchdog is the backstop.
    */
   private async seedClaudeTrust(
@@ -2412,6 +2459,13 @@ export class SpawnService {
     if (outcome === 'unverified') {
       this.logger?.warn?.('SpawnService: workspace trust entry did not survive re-assertion', {
         sessionId, cwd, trustRoot,
+      });
+    }
+    // A home that already holds a login must not boot into Claude's first-run
+    // login screen; see completeClaudeOnboarding.
+    if ((await completeClaudeOnboarding(env)) === 'completed') {
+      this.logger?.info('SpawnService: marked Claude onboarding complete for a logged-in config home', {
+        sessionId,
       });
     }
   }
@@ -3535,14 +3589,19 @@ export class SpawnService {
 export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
   selection?: SpawnSelection;
   selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
+  /** The launch's budget override. A malformed record is dropped alone: it changes a trim, never what loads. */
+  contextBudgets?: NonNullable<SpawnRequest['contextBudgets']>;
   invalid?: true;
 } {
+  const budgets = ContextBudgetsSchema.safeParse(posture?.contextBudgets);
+  const contextBudgets = posture?.contextBudgets !== undefined && budgets.success ? { contextBudgets: budgets.data } : {};
   const hasSelection = posture?.selection !== undefined;
   const hasReasons = posture?.selectionReasons !== undefined;
   const selection = SpawnSelectionSchema.safeParse(posture?.selection);
   const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
-  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true };
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true, ...contextBudgets };
   return {
+    ...contextBudgets,
     ...(hasSelection && selection.success ? { selection: selection.data } : {}),
     ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };

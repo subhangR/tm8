@@ -20,6 +20,7 @@
     "local:status": "bash deploy/local.sh --status",
     "local:stop": "bash deploy/local.sh --stop",
     "local:restart": "bash deploy/local.sh --restart",
+    "desktop": "bash deploy/desktop.sh",
     "pg": "bash deploy/pg/ensure-cluster.sh",
     "pg:status": "bash deploy/pg/ensure-cluster.sh --status",
     "utho": "bash deploy/utho/deploy.sh",

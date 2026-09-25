@@ -31,7 +31,13 @@ export function item(
 ): RankedEntity {
   const r = Math.round(score);
   const level = r >= 3 ? 'critical' : r === 2 ? 'useful' : r === 1 ? 'background' : 'irrelevant';
-  return { entityId, kind, title, sources, score, level, suggested };
+  return {
+    entityId, kind, title, sources, score, level, suggested,
+    default: sources.includes('teammate') || sources.includes('inherited') || sources.includes('task'),
+    promptBytes: 300,
+    header: { whenToUse: null, summary: title, keywords: [], source: 'derived', version: 0 },
+    ...(suggested ? {} : { reason: score < 1.5 ? 'below-floor' as const : 'over-budget' as const }),
+  };
 }
 
 export const MODEL: ModelSuggestion = {
@@ -45,6 +51,7 @@ export const TEAMMATES: TeammateSuggestion = {
     item('ent-tm-forge', 'team_member', 1.4, true, ['space'], 'forge'),
   ],
   noFit: false,
+  floor: 1,
 };
 
 /** Three memories, two suggested; the first is critical and from two sources. */
@@ -56,6 +63,8 @@ export const MEMORIES: EntitySuggestion = {
   ],
   considered: 3,
   total: 3,
+  budget: 12288,
+  floor: 1.5,
 };
 
 export const SKILLS: EntitySuggestion = {
@@ -65,6 +74,8 @@ export const SKILLS: EntitySuggestion = {
   ],
   considered: 2,
   total: 812,
+  budget: null,
+  floor: 1.5,
 };
 
 export const okGroup = <T,>(value: T, c = cost(1)): JevGroupResult<T> => ({ status: 'ok', value, cost: c });
@@ -85,7 +96,7 @@ export function answer(
   };
   const groups: LaunchSuggestResult['groups'] = {};
   for (const g of input.groups) (groups as Record<string, unknown>)[g] = all[g];
-  return { runId: input.runId, groups, run };
+  return { runId: input.runId, groups, contextIndex: 'on', run };
 }
 
 export interface PendingCall {

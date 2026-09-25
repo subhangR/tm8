@@ -45,7 +45,7 @@ const base: PromptManifest = {
       title: 'Lever 4',
       description: BODY,
       status: 'open',
-      acceptanceCriteria: ['PROMPT_VERSIONS includes 2'],
+      acceptanceCriteria: [{ id: 'c1', text: 'PROMPT_VERSIONS includes 2', done: false }],
     },
   ],
 };
@@ -374,10 +374,33 @@ describe('v2 task half (spec ca8d §2.2)', () => {
     expect(failed.task).toContain(`task="${TASK}" version="1"`);
     expect(failed.task).toContain('snapshot="unavailable" reason="timeout"');
     expect(failed.task).toContain(`Run \`tm8 entity context ${TASK}\` before anything else.`);
-    expect(failed.task).not.toContain('<untrusted_data');
+    // The only untrusted block is the criteria (D13): ticking never waits on a fetch.
+    expect([...failed.task.matchAll(/<untrusted_data type="([^"]+)"/g)].map((m) => m[1])).toEqual(['acceptance']);
+    expect(embedded(failed.task, 'acceptance')).toEqual([
+      { task: TASK, acceptance: [{ id: 'c1', done: false, text: 'PROMPT_VERSIONS includes 2' }] },
+    ]);
     // `tm8 worker init` has no DTO to give.
     const reread = composePrompt(base, { sessionId: SESSION });
     expect(reread.task).toContain('reason="not_rendered"');
+  });
+
+  it('carries stored criteria when the snapshot cannot, and never repeats the snapshot\'s own list (D13)', () => {
+    const criteria = [{ id: 'criteria', text: 'ids render', done: false }, { id: 'scope', text: 'scoped', done: true }];
+    const tasks = [{ ...base.tasks![0]!, acceptanceCriteria: criteria }];
+    const failed = composePrompt({ ...base, tasks }, { ...runtime, taskContext: { taskId: TASK, unavailable: 'timeout' } });
+    expect(embedded(failed.task, 'acceptance')).toEqual([{
+      task: TASK,
+      acceptance: [{ id: 'criteria', done: false, text: 'ids render' }, { id: 'scope', done: true, text: 'scoped' }],
+    }]);
+    // The snapshot carries `acceptance` (never dropped by the context read): one list, not two.
+    expect(embedded(composePrompt({ ...base, tasks }, runtime).task, 'acceptance')).toEqual([]);
+    // A snapshot without it still gets the list.
+    const { acceptance: _cut, ...bare } = dto;
+    const noList = composePrompt({ ...base, tasks }, { ...runtime, taskContext: { taskId: TASK, dto: bare } });
+    expect(embedded(noList.task, 'acceptance')).toHaveLength(1);
+    // No criteria, no block.
+    const none = composePrompt({ ...base, tasks: [{ ...base.tasks![0]!, acceptanceCriteria: [] }] }, { sessionId: SESSION });
+    expect(none.task).not.toContain('<untrusted_data');
   });
 
   it('gives other tasks cards whose body is a pointer, all within the snapshot cap (Q8)', () => {

@@ -13,11 +13,15 @@
  *   · every Jev call is a `jev_calls` row (failures too), `chunk` is its index
  *     in `calls[]`, a retried `requestId` adds nothing, and `run` sums the run;
  *   · `jev_runs.suggestions` holds ids and numbers, never text;
- *   · the four groups are in flight at once.
+ *   · the four groups are in flight at once;
+ *   · I7: the references group, the default tags, promptBytes and each group's
+ *     budget and floor, from the profile the launch would pin; with the context
+ *     index off, no bytes that do not reach the prompt.
  */
 import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult } from '@tm8/contract';
+import { BYTE_BUDGETS, serializeMemoryEntry, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/index.js';
@@ -88,6 +92,12 @@ async function skill(client: import('pg').PoolClient, space: string, name: strin
   return id;
 }
 
+async function doc(client: import('pg').PoolClient, space: string, title: string, body: string, opts: { visibility?: string } = {}): Promise<string> {
+  const id = await entity(client, space, 'doc', opts);
+  await client.query(`insert into public.documents(entity_id, title, body) values ($1, $2, $3)`, [id, title, body]);
+  return id;
+}
+
 async function teammate(client: import('pg').PoolClient, space: string, name: string, role: string, persona: string, parent?: string): Promise<string> {
   const id = await entity(client, space, 'team_member', parent ? { parent } : {});
   await client.query(
@@ -152,6 +162,27 @@ beforeAll(async () => {
     await edge(c, s, ids.parent, ids.sInherited, 'equips');
     ids.sSpace = await skill(c, s, 'figma-connector');
     ids.sMissing = await skill(c, s, 'vanished', { missing: true });
+    // The task equips a skill too: spawn equips it by default (I7).
+    ids.sTaskEquip = await skill(c, s, 'task-runbook');
+    await edge(c, s, ids.task, ids.sTaskEquip, 'equips');
+
+    // References (I7): a subject task under a parent task, each with links.
+    ids.refParent = await entity(c, s, 'task');
+    await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Auth epic')`, [ids.refParent]);
+    ids.refTask = await entity(c, s, 'task', { parent: ids.refParent });
+    await c.query(`insert into public.tasks(entity_id, title, description) values ($1, 'Fix SSO', 'SSO lands on 404')`, [ids.refTask]);
+    ids.dLinked = await doc(c, s, 'Linked runbook', `First paragraph of the runbook.\n\n${'body '.repeat(400)}`);
+    await edge(c, s, ids.dLinked, ids.refTask, 'attached_to');
+    ids.fAttached = await entity(c, s, 'file');
+    await c.query(
+      `insert into public.files(entity_id, name, mime_type, size_bytes, storage_path) values ($1, 'trace.har', 'application/json', 2048, $2)`,
+      [ids.fAttached, `spaces/${s}/trace-${ids.fAttached}.har`],
+    );
+    await edge(c, s, ids.fAttached, ids.refTask, 'attached_to');
+    ids.dParent = await doc(c, s, 'Epic design', 'The epic design.');
+    await edge(c, s, ids.refParent, ids.dParent, 'relates_to');
+    ids.dSpace = await doc(c, s, 'Space notes', 'Unrelated notes.');
+    ids.dHidden = await doc(c, s, 'HIDDEN restricted doc', 'hidden', { visibility: 'restricted' });
   });
 }, 300_000);
 
@@ -215,10 +246,18 @@ function fakePort(opts: {
   return port;
 }
 
-function handlerFor(advisor: JevAdvisorPort | null, identity = OWNER) {
+function handlerFor(
+  advisor: JevAdvisorPort | null,
+  identity = OWNER,
+  opts: { env?: Record<string, string>; profile?: unknown } = {},
+) {
   const registry = new HandlerRegistry();
   const deps = { db, config: {}, owner: async () => ({ identityId: identity, isNodeAdmin: false }) } as unknown as FacadeDeps;
-  registerJevHandlers(registry, deps, { advisor });
+  registerJevHandlers(registry, deps, {
+    advisor,
+    env: opts.env ?? {},
+    ...('profile' in opts ? { resolveProfile: async () => opts.profile } : {}),
+  });
   const handler = registry.get('launch.suggest')!;
   return (body: Record<string, unknown>, spaceId = ids.space!) => handler({
     params: { spaceId }, query: new URLSearchParams(), body, requestId: randomUUID(),
@@ -231,7 +270,7 @@ const input = (over: Record<string, unknown> = {}) => ({
   runId: randomUUID(), requestId: randomUUID(), subjectId: ids.task, teamMemberId: ids.teammate, groups: ALL, ...over,
 });
 
-function items(result: LaunchSuggestResult, group: 'memories' | 'skills' | 'teammates') {
+function items(result: LaunchSuggestResult, group: 'memories' | 'skills' | 'teammates' | 'references') {
   const g = result.groups[group];
   if (g?.status !== 'ok') throw new Error(`${group} is ${g?.status}: ${JSON.stringify(g)}`);
   return g.value.items;
@@ -261,21 +300,26 @@ describe('candidates', () => {
 
     const sent = port.seen.find((s) => s.noun === 'memory')!.candidates;
     expect(sent.map((c) => c.id).sort()).toEqual([ids.mWorking, ids.mTask, ids.mSpace, ids.mNew].sort());
-    expect([...sent.find((c) => c.id === ids.mWorking)!.text]).toHaveLength(600);
+    // The statement cut at 600, then its scope (headers T4: every memory here is 'scratch').
+    const text = sent.find((c) => c.id === ids.mWorking)!.text;
+    expect(text.endsWith(' (scope: scratch)')).toBe(true);
+    expect([...text.slice(0, -' (scope: scratch)'.length)]).toHaveLength(600);
     expect(JSON.stringify(sent)).not.toContain('HIDDEN');
     // Direct sources first.
     expect(sent.slice(0, 2).map((c) => c.id).sort()).toEqual([ids.mWorking, ids.mTask].sort());
   });
 
-  it('skills: equipped, inherited and space sources merged per id; missing excluded; bodies never sent', async () => {
+  it('skills: equipped, inherited, task and space sources merged per id; missing excluded; bodies never sent', async () => {
     const port = fakePort();
     const result = await handlerFor(port)(input());
     const byId = new Map(items(result, 'skills').map((item) => [item.entityId, item]));
     expect(byId.get(ids.sEquipped!)?.sources).toEqual(['teammate', 'space']);
     expect(byId.get(ids.sInherited!)?.sources).toEqual(['inherited', 'space']);
     expect(byId.get(ids.sSpace!)?.sources).toEqual(['space']);
+    // What the task equips is a default too (I7: spawn equips it).
+    expect(byId.get(ids.sTaskEquip!)?.sources).toEqual(['task', 'space']);
     expect(byId.has(ids.sMissing!)).toBe(false);
-    expect(byId.size).toBe(3);
+    expect(byId.size).toBe(4);
     const sent = port.seen.find((s) => s.noun === 'skill')!.candidates;
     expect(sent.find((c) => c.id === ids.sEquipped)?.text).toBe('deploy-runbook: deploy-runbook does a thing');
     expect(JSON.stringify(port.seen)).not.toContain('SECRET SKILL BODY');
@@ -450,5 +494,107 @@ describe('parallelism', () => {
     expect(port.maxInFlight).toBe(4);
     // The barrier released on the fourth arrival, not on its 2 s fallback.
     expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, §10 Q5)', () => {
+  const INDEX_ON = { TM8_CONTEXT_INDEX: '1' };
+
+  it('references: the task\'s links (defaults), the parent task\'s links, then the space\'s docs; unreadable excluded', async () => {
+    const port = fakePort();
+    const result = await handlerFor(port, OWNER, { env: INDEX_ON })(input({ subjectId: ids.refTask, groups: ['references'] }));
+    const rows = new Map(items(result, 'references').map((row) => [row.entityId, row]));
+    expect(rows.get(ids.dLinked)).toMatchObject({ kind: 'doc', default: true, sources: ['task', 'space'], title: 'Linked runbook' });
+    expect(rows.get(ids.fAttached)).toMatchObject({ kind: 'file', default: true, sources: ['task', 'space'] });
+    expect(rows.get(ids.dParent)).toMatchObject({ kind: 'doc', default: false, sources: ['parent', 'space'] });
+    expect(rows.get(ids.dSpace)).toMatchObject({ kind: 'doc', default: false, sources: ['space'] });
+    expect(rows.has(ids.dHidden)).toBe(false);
+    // Defaults lead the pool, then the parent's links, then the space.
+    const sent = port.seen.find((seen) => seen.noun === 'reference')!.candidates.map((c) => c.id);
+    expect(new Set(sent.slice(0, 2))).toEqual(new Set([ids.dLinked, ids.fAttached]));
+    expect(sent[2]).toBe(ids.dParent);
+    // Jev reads the header — the doc's first paragraph — never the body past it.
+    const linked = port.seen.find((seen) => seen.noun === 'reference')!.candidates.find((c) => c.id === ids.dLinked)!;
+    expect(linked.text).toBe('Linked runbook: First paragraph of the runbook.');
+  });
+
+  it('a references call is recorded like any other group (migration 230 widened jev_calls.grp)', async () => {
+    const runId = randomUUID();
+    await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ runId, subjectId: ids.refTask, groups: ['references'] }));
+    expect((await callRows(runId)).map((row) => row.grp)).toEqual(['references']);
+  });
+
+  it('tags the launch\'s defaults: the working and task memory sets, persona and task skills', async () => {
+    const result = await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['memories', 'skills'] }));
+    const memories = new Map(items(result, 'memories').map((row) => [row.entityId, row.default]));
+    expect(memories.get(ids.mWorking)).toBe(true);
+    expect(memories.get(ids.mTask)).toBe(true);
+    expect(memories.get(ids.mSpace)).toBe(false);
+    const skills = new Map(items(result, 'skills').map((row) => [row.entityId, row]));
+    expect(skills.get(ids.sEquipped)).toMatchObject({ default: true, sources: ['teammate', 'space'] });
+    expect(skills.get(ids.sInherited)).toMatchObject({ default: true, sources: ['inherited', 'space'] });
+    expect(skills.get(ids.sTaskEquip)).toMatchObject({ default: true, sources: ['task', 'space'] });
+    expect(skills.get(ids.sSpace)).toMatchObject({ default: false, sources: ['space'] });
+  });
+
+  it('carries the header in effect and promptBytes on every row, and each group\'s budget and floor', async () => {
+    const result = await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['memories', 'skills', 'teammates'] }));
+    expect(result.contextIndex).toBe('on');
+    const mTask = items(result, 'memories').find((row) => row.entityId === ids.mTask)!;
+    expect(mTask.header).toEqual({ whenToUse: 'scratch', summary: 'task memory', keywords: [], source: 'native', version: 0 });
+    // A memory costs its whole rendered <entry>.
+    expect(mTask.promptBytes).toBe(utf8Bytes(serializeMemoryEntry('task memory')));
+    for (const group of ['memories', 'skills', 'teammates'] as const) {
+      for (const row of items(result, group)) expect(row.promptBytes, `${group} ${row.entityId}`).toBeGreaterThan(0);
+    }
+    const memories = result.groups.memories;
+    const skills = result.groups.skills;
+    const teammates = result.groups.teammates;
+    if (memories?.status !== 'ok' || skills?.status !== 'ok' || teammates?.status !== 'ok') throw new Error('groups');
+    expect([memories.value.budget, memories.value.floor]).toEqual([BYTE_BUDGETS.memoryInjection, 1.5]);
+    // Skills take what the prompt has left unless a profile caps them.
+    expect([skills.value.budget, skills.value.floor]).toEqual([null, 1.5]);
+    expect(teammates.value.floor).toBe(1.0);
+  });
+
+  it('with <context_index> off (the fleet default), never counts bytes that do not reach the prompt', async () => {
+    const off = await handlerFor(fakePort())(input({ subjectId: ids.refTask, groups: ['references'] }));
+    expect(off.contextIndex).toBe('off');
+    const references = off.groups.references;
+    if (references?.status !== 'ok') throw new Error('references');
+    expect(references.value.budget).toBeNull();
+    expect(references.value.items.every((row) => row.promptBytes === 0)).toBe(true);
+    // A skill is its <skills> line, not an index entry: the two measure differently.
+    const skillOff = items(await handlerFor(fakePort())(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
+    const skillOn = items(await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
+    expect(skillOff.promptBytes).toBeGreaterThan(0);
+    expect(skillOff.promptBytes).not.toBe(skillOn.promptBytes);
+  });
+
+  it('the profile the launch would pin sets the floors and budgets; a default the budget leaves out says over-budget', async () => {
+    const taskEntry = utf8Bytes(serializeMemoryEntry('task memory'));
+    const profile = { draft: { contextIndex: true, contextBudgets: { memories: taskEntry }, contextFloors: { skills: 2.5 } } };
+    const score = (noun: string, c: { id: string }) => (noun === 'memory' && c.id === ids.mTask ? 2.4 : 2);
+    const result = await handlerFor(fakePort({ score }), OWNER, { profile })(input({ groups: ['memories', 'skills'] }));
+    expect(result.contextIndex).toBe('on');
+    const memories = items(result, 'memories');
+    // The best-scored memory fills the budget exactly; the working-set default is over it.
+    expect(memories.filter((row) => row.suggested).map((row) => row.entityId)).toEqual([ids.mTask]);
+    expect(memories.find((row) => row.entityId === ids.mWorking)).toMatchObject({ default: true, suggested: false, reason: 'over-budget' });
+    // Every skill scored 2, under the profile's 2.5 floor.
+    expect(items(result, 'skills').every((row) => !row.suggested && row.reason === 'below-floor')).toBe(true);
+  });
+
+  it('a profile that cannot be resolved is the node defaults, never a refusal', async () => {
+    const registry = new HandlerRegistry();
+    const deps = { db, config: {}, owner: async () => ({ identityId: OWNER, isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerJevHandlers(registry, deps, { advisor: fakePort(), env: {}, resolveProfile: async () => { throw new Error('no profile'); } });
+    const result = await registry.get('launch.suggest')!({
+      params: { spaceId: ids.space }, query: new URLSearchParams(), body: input({ groups: ['memories'] }), requestId: randomUUID(),
+      identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/',
+    } as unknown as RequestContext) as LaunchSuggestResult;
+    const memories = result.groups.memories;
+    if (memories?.status !== 'ok') throw new Error('memories');
+    expect(memories.value.budget).toBe(BYTE_BUDGETS.memoryInjection);
   });
 });

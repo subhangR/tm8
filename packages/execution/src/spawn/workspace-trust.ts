@@ -194,6 +194,64 @@ export async function trustClaudeWorkspace(
   }
 }
 
+/**
+ * What {@link completeClaudeOnboarding} concluded.
+ *
+ * - `completed` — tm8 set `hasCompletedOnboarding` on a logged-in config.
+ * - `unchanged` — already complete, or no login to vouch for: nothing written.
+ * - `skipped` — malformed config or an I/O error: nothing written.
+ */
+export type ClaudeOnboardingOutcome = 'completed' | 'unchanged' | 'skipped';
+
+/**
+ * Mark Claude's first-run onboarding complete for a config home that ALREADY
+ * holds a login, so the lane boots to the composer instead of the login screen.
+ *
+ * WHY. A member connects their Anthropic account through tm8's
+ * `claude auth login` terminal. That persists the token (keychain /
+ * `.credentials.json`) and `oauthAccount`, but never `hasCompletedOnboarding`
+ * — only the interactive TUI writes that. So the first interactive `claude`
+ * on the fresh credential home runs the whole first-run flow, INCLUDING
+ * "Select login method", and the member is asked to sign in a second time
+ * right after tm8 told them they were connected. Measured 2026-09-25 on the
+ * desktop node: login verified 20:04:01Z; lane launched 20:09:33Z with
+ * `oauthAccount` present and no onboarding flag; the keychain item for that
+ * home was re-CREATED at 20:10:21Z by the in-lane login. Space credential
+ * homes already seed the flag (`space-credential-session-home.ts`); this
+ * covers member homes and the node's own home, at every launch, so homes
+ * connected before this fix are repaired too.
+ *
+ * GATED ON `oauthAccount`: the flag is only a claim that login is done. A home
+ * with no login keeps Claude's own onboarding, whose login step is then the
+ * only way in — skipping it would leave the lane at "please run /login".
+ *
+ * Same file, same lock and same atomic write as {@link trustClaudeWorkspace};
+ * never throws, never overwrites a config it cannot parse.
+ */
+export async function completeClaudeOnboarding(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ClaudeOnboardingOutcome> {
+  const release = await acquireTrustUpdate();
+  try {
+    const configDir = env['CLAUDE_CONFIG_DIR'] || env['HOME'] || homedir();
+    const configPath = join(configDir, '.claude.json');
+    const config = await readClaudeConfig(configPath);
+    if (config === 'malformed') return 'skipped';
+    if (config['hasCompletedOnboarding'] === true) return 'unchanged';
+    const account = config['oauthAccount'];
+    if (!account || typeof account !== 'object') return 'unchanged';
+    await writeFileAtomic(
+      configPath,
+      `${JSON.stringify({ ...config, hasCompletedOnboarding: true }, null, 2)}\n`,
+    );
+    return 'completed';
+  } catch {
+    return 'skipped';
+  } finally {
+    release();
+  }
+}
+
 /** Parsed config, `{}` when ABSENT (safe to create), `'malformed'` when present
  *  but unparseable (must never be overwritten). */
 async function readClaudeConfig(configPath: string): Promise<ClaudeConfig | 'malformed'> {

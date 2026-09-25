@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +105,15 @@ describe('ClaudeHeadlessAdapter', () => {
     }
     await rm(root, { recursive: true, force: true });
   });
+
+  /** A Claude config home whose projects hold NATIVE_SESSION_ID's transcript. */
+  async function configHomeWithTranscript(): Promise<string> {
+    const home = join(root, 'claude-home');
+    const project = join(home, 'projects', '-any-project-slug');
+    await mkdir(project, { recursive: true });
+    await writeFile(join(project, `${NATIVE_SESSION_ID}.jsonl`), '{}\n');
+    return home;
+  }
 
   function input(overrides: Partial<StartAgentThreadInput> = {}): StartAgentThreadInput {
     nextThread += 1;
@@ -367,7 +376,7 @@ describe('ClaudeHeadlessAdapter', () => {
     await runtime.startThread({
       ...thread,
       resume: 'post_interrupt',
-      env: { TM8_FAKE_ARGV_FILE: argvFile },
+      env: { TM8_FAKE_ARGV_FILE: argvFile, CLAUDE_CONFIG_DIR: await configHomeWithTranscript() },
     });
     const recorded = await readRecorded<{ args: string[] }>(argvFile);
     expect(recorded.args).toContain('--resume');
@@ -383,7 +392,7 @@ describe('ClaudeHeadlessAdapter', () => {
     const runtime = adapter();
     const thread = input({
       resume: 'post_interrupt',
-      env: { TM8_FAKE_ARGV_FILE: argvFile },
+      env: { TM8_FAKE_ARGV_FILE: argvFile, CLAUDE_CONFIG_DIR: await configHomeWithTranscript() },
     });
 
     // This adapter has no in-memory interrupted tombstone. The durable caller
@@ -395,6 +404,26 @@ describe('ClaudeHeadlessAdapter', () => {
     await expect(
       collect(runtime.sendTurn(thread.threadId, { text: 'after-node-restart' })),
     ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-node-restart:1' });
+  });
+
+  it('starts a FRESH native session when the transcript to resume is gone', async () => {
+    // Claude deletes transcripts after cleanupPeriodDays (30); a chat idle that
+    // long used to fail every turn with "No conversation found".
+    const argvFile = join(root, 'expired-resume-argv.json');
+    const emptyHome = join(root, 'expired-home');
+    await mkdir(join(emptyHome, 'projects', '-some-other-project'), { recursive: true });
+    const runtime = adapter();
+    const thread = input({
+      resume: 'post_interrupt',
+      env: { TM8_FAKE_ARGV_FILE: argvFile, CLAUDE_CONFIG_DIR: emptyHome },
+    });
+    await runtime.startThread(thread);
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
+    expect(recorded.args).not.toContain('--resume');
+    expect(recorded.args[recorded.args.indexOf('--session-id') + 1]).toBe(NATIVE_SESSION_ID);
+    await expect(
+      collect(runtime.sendTurn(thread.threadId, { text: 'after-expiry' })),
+    ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-expiry:1' });
   });
 
   it('turns a mid-turn process crash into error + exactly one done and evicts it', async () => {

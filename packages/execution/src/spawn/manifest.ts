@@ -15,10 +15,11 @@ import {
   pluginSettings,
   readHintHookSettings,
   type ConfigHomeSkill,
+  type LaneSkillPlan,
   type HarnessSurface,
   type HarnessSurfaceSource,
 } from './harness-surface.js';
-import { composePrompt, BudgetExceededError, BYTE_BUDGETS, fitContextIndex, type PromptContextEntry, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
+import { composePrompt, BudgetExceededError, BYTE_BUDGETS, contextBudgetOverrun, fitContextIndex, type PromptContextEntry, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -944,6 +945,8 @@ export function buildAgentCommand(
      * effective skills. Absent: only the bundled-skill trim.
      */
     skillOverrides?: Readonly<Record<string, 'off' | 'name-only'>>;
+    /** `false` only when a replayed plan launched without `--no-chrome`. Default: emitted. */
+    noChrome?: boolean;
   } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
@@ -985,7 +988,7 @@ export function buildAgentCommand(
     args.push('--strict-mcp-config', '--mcp-config', shellQuote(minimalMcpConfig(launch.mcpServers)));
     // Drops the ~4.1k-char Claude in Chrome prompt block for this lane only;
     // the operator's own Chrome setting is untouched.
-    args.push('--no-chrome');
+    if (opts.noChrome !== false) args.push('--no-chrome');
     const plugins = pluginSettings(opts.installedClaudePlugins ?? [], [
       ...(launch.plugins ?? []),
       ...(opts.equippedClaudePlugins ?? []),
@@ -1730,6 +1733,7 @@ export interface ComposeManifestInput {
     | ((
       effectiveClaudePlugins: readonly string[],
       skillOverrides?: Readonly<Record<string, 'off' | 'name-only'>>,
+      noChrome?: boolean,
     ) => string);
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
@@ -1744,7 +1748,19 @@ export interface ComposeManifestInput {
    * `inherit`); the ones this launch did not equip are turned off
    * (`laneSkillPlan`). Absent: no harness record.
    */
-  harness?: { installedPlugins: readonly string[]; skills?: readonly ConfigHomeSkill[] } | null;
+  harness?: {
+    installedPlugins: readonly string[];
+    skills?: readonly ConfigHomeSkill[];
+    /** Skill and command names the lane's workdir lists itself (`readProjectSkillKeys`). */
+    projectKeys?: readonly string[];
+  } | null;
+  /**
+   * A RESUME's replay of the skill plan its launch recorded
+   * (`launch.harness.skillOverrides`, via `asRecordedSkillPlan`). Set, it
+   * replaces the computed plan in argv and record alike, like
+   * `replayEffectivePlugins` does for plugins. Absent: computed.
+   */
+  replaySkillPlan?: LaneSkillPlan | null;
   /**
    * The context-index switch (`contextIndexSwitch`), already resolved from
    * the node env and the pinned profile. Set: the launch renders
@@ -1764,6 +1780,27 @@ export interface ComposeManifestInput {
   now?: Date;
   agentConfigDir?: string;
   homeDir?: string;
+  /** Existence probe for a worktree's project skills (`computeEffectiveSkills`); tests inject it. */
+  pathExists?: (path: string) => boolean;
+}
+
+/**
+ * The pinned profile's prompt ceilings, read tolerantly; anything missing is
+ * the node's hard ceiling (what an unconstrained profile allows).
+ */
+function promptPolicyOf(profileSnapshot: unknown): { kernelMaxBytes: number; manifestMaxBytes: number; initialContextMaxBytes: number } {
+  const at = (v: unknown, key: string): unknown =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>)[key] : undefined;
+  const policy = at(at(profileSnapshot, 'draft'), 'promptPolicy');
+  const num = (key: string, fallback: number): number => {
+    const value = at(policy, key);
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  };
+  return {
+    kernelMaxBytes: num('kernelMaxBytes', BYTE_BUDGETS.kernel),
+    manifestMaxBytes: num('manifestMaxBytes', BYTE_BUDGETS.manifest),
+    initialContextMaxBytes: num('initialContextMaxBytes', BYTE_BUDGETS.combinedInitialInjection),
+  };
 }
 
 /** Assemble the manifest. Pure — every input is already resolved.
@@ -1835,6 +1872,10 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     agentTool: launch.agentTool, workdir: workdir.path, projectRoot: context.project?.workingDir ?? null,
     equips,
     scannedAt: context.skillsScannedAt, agentConfigDir: input.agentConfigDir, homeDir: input.homeDir,
+    // A worktree is a checkout OF the launch project (`resolveWorkdir`), so
+    // its project skills load from the checkout, not the project root.
+    ...(workdir.mode === 'worktree' && context.project ? { worktreeOfProject: true } : {}),
+    ...(input.pathExists ? { pathExists: input.pathExists } : {}),
     ...(decidesPlugins
       ? { launchEnabledPlugins: installedPlugins.filter(id => isPluginAllowed(id, preBudgetAllow)) }
       : {}),
@@ -1891,6 +1932,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // when the launch sent none, so an ordinary manifest is unchanged.
       ...(request.selection ? { selection: structuredClone(request.selection) } : {}),
       ...(request.selectionReasons ? { selectionReasons: { ...request.selectionReasons } } : {}),
+      // The launch sheet's budget override, recorded so resume replays it;
+      // absent when the launch sent none.
+      ...(request.contextBudgets ? { contextBudgets: { ...request.contextBudgets } } : {}),
       // Absent unless the launch UI (or the session this one continues) picked
       // a harness, so an ordinary launch writes the manifest it always wrote.
       ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),
@@ -1933,7 +1977,17 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   // (design 01a0d348 §10 Q1). Only with `<context_index>`: without it there is
   // nowhere to declare a collapsed memory, and the launch behaves as it always
   // did. Measured on the redacted texts, which are the ones that ship.
-  const budgets = input.contextIndex ? contextBudgetsFrom(interactionProfile.snapshot) : {};
+  // The profile's budgets, each key replaced by this launch's override (§10 Q5.4).
+  const budgets = input.contextIndex ? { ...contextBudgetsFrom(interactionProfile.snapshot), ...request.contextBudgets } : {};
+  // Lenient (Subhang's rule): an override that promises more than the prompt
+  // can hold beside its frame is recorded with a warning, never refused. The
+  // trim below still bounds the prompt, and records what it cut.
+  const budgetWarning = request.contextBudgets
+    ? contextBudgetOverrun({
+      promptPolicy: promptPolicyOf(interactionProfile.snapshot),
+      contextBudgets: { ...contextBudgetsFrom(interactionProfile.snapshot), ...request.contextBudgets },
+    })
+    : null;
   let memoryCollapse: MemoryCollapseResult | null = null;
   const collapsedMemories: PromptContextEntry[] = [];
   if (input.contextIndex) {
@@ -2054,14 +2108,16 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   // header while keeping its line, and name-only would then leave the skill
   // described nowhere.
   const described = describedSkillIds(manifest);
-  const skillPlan = input.harness && launch.harnessSurface !== 'inherit'
-    ? laneSkillPlan(
-      input.harness.skills ?? [],
-      (manifest.effectiveSkills?.native ?? []).map(skill => ({ ...skill, described: described.has(skill.entityId) })),
-    )
-    : null;
+  const skillPlan = !input.harness || launch.harnessSurface === 'inherit' ? null
+    : input.replaySkillPlan
+      ? structuredClone(input.replaySkillPlan)
+      : laneSkillPlan(
+        input.harness.skills ?? [],
+        (manifest.effectiveSkills?.native ?? []).map(skill => ({ ...skill, described: described.has(skill.entityId) })),
+        input.harness.projectKeys ?? [],
+      );
   if (typeof command !== 'string') {
-    manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins, skillPlan?.settings));
+    manifest.launch.command = redactSecretsDeep(command(effectiveClaudePlugins, skillPlan?.settings, skillPlan?.noChrome));
   }
   if (input.harness) {
     const launchPick = launch.harnessChoice?.plugins ?? null;
@@ -2098,8 +2154,14 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
           },
         }
       : {}),
-    ...(memoryCollapse
-      ? { budgets: { memoryInjection: { cap: memoryCollapse.cap, used: memoryCollapse.used, borrowed: memoryCollapse.borrowed } } }
+    ...(memoryCollapse || request.contextBudgets
+      ? {
+          budgets: {
+            ...(memoryCollapse ? { memoryInjection: { cap: memoryCollapse.cap, used: memoryCollapse.used, borrowed: memoryCollapse.borrowed } } : {}),
+            ...(request.contextBudgets ? { launch: { ...request.contextBudgets } } : {}),
+            ...(budgetWarning ? { warning: { code: 'context_budgets_over_ceiling' as const, ...budgetWarning } } : {}),
+          },
+        }
       : {}),
   };
   composePrompt(manifest, { sessionId, baseUrl });

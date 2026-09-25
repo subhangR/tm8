@@ -177,6 +177,14 @@ describe('SpawnService', () => {
       expect(command).toContain('"marketing@synced":false');
     });
 
+    it('a project skill sharing an operator skill\'s name keeps it listed: the key would reach both', async () => {
+      await mkdir(join(projectDir, '.claude', 'skills', 'astro'), { recursive: true });
+      await writeFile(join(projectDir, '.claude', 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
+      const command = await claudeLaunch({ skillEquips: [] });
+      expect(command).not.toContain('"astro":"off"');
+      expect(lastLaunch.harness).toMatchObject({ skillOverrides: { kept: [{ name: 'astro', because: 'project-collision' }] } });
+    });
+
     it('a selected plugin skill, equipped or not, turns its plugin on', async () => {
       const command = await claudeLaunch({ skillEquips: [SALES_SKILL] });
       expect(command).toContain('"sales@synced":true');
