@@ -106,9 +106,10 @@ export interface JevApplyHost {
   /**
    * Replace one group's edit (`useLaunchSelection().setEdit`). `rows` carries
    * the display row of every id the edit ADDS that the sheet may not know
-   * yet, so a Jev-added row keeps its title while it is ticked.
+   * yet, so a Jev-added row keeps its title while it is ticked. Returns a
+   * refusal (the group is locked) or null; a refused Apply is not recorded.
    */
-  setEdit(group: JevEntityGroup, edit: LaunchGroupEdit, rows: readonly LaunchContextRow[]): void;
+  setEdit(group: JevEntityGroup, edit: LaunchGroupEdit, rows?: readonly LaunchContextRow[]): string | null | void;
   /** Absent: the surface's teammate is fixed, and applyTeammate is refused. */
   setTeammate?(teamMemberId: string): void;
   /** The launch's current model choice; absent means applyModel is refused. */
@@ -644,7 +645,8 @@ export function useJevSuggestions(args: {
     const before = h.edits[group];
     const result = jevGroupEdit(h.defaults[group], before, { items: g.rows, ticked: g.ticked });
     if (result.refusal) return result.refusal;
-    h.setEdit(group, result.edit, result.rows);
+    const refused = h.setEdit(group, result.edit, result.rows);
+    if (typeof refused === 'string') return refused;
     const entry: JevAppliedGroup = {
       at: now(),
       added: result.diff.added,
@@ -700,7 +702,8 @@ export function useJevSuggestions(args: {
       h.setModel(m.previous);
     } else {
       const g = entry as JevAppliedGroup;
-      h.setEdit(target, restoreRows(h.edits[target], g.before, g.touched), []);
+      const refused = h.setEdit(target, restoreRows(h.edits[target], g.before, g.touched), []);
+      if (typeof refused === 'string') return refused;
     }
     setApplied((ledger) => {
       const next = { ...ledger };

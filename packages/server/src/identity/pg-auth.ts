@@ -65,6 +65,8 @@ export interface ResolvedAuthSession {
   /** Pre-176 credentials only; a chat is an entity now and binds through runtimeChatId. */
   runtimeThreadRootId: string | null;
   runtimeChatId: string | null;
+  /** 226: required for agent kinds, null for a human (gate) session. */
+  spaceId: string | null;
   expiresAt: string;
   label: string | null;
 }

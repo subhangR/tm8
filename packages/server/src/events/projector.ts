@@ -51,7 +51,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { isEndedKind, loadUnreadCounts } from '../facade/entity-read.js';
+import { isEndedKind, loadChatSubjects, loadUnreadCounts, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -794,6 +794,11 @@ export class PgEntityProjector implements EntityProjector {
     // being unlinked. Same loader as the facade assembler, so the two answers
     // cannot drift. Skipped entirely when no task is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+    // Each chat's `about` subject — the SAME loader as the facade assembler, for
+    // the pull-request reason above: a subject chip that rendered on load and
+    // vanished on the next `entity.upsert` would read as the link being removed.
+    // Skipped entirely when no chat is in the batch.
+    const chatSubjects = await loadChatSubjects(q, rows);
 
     for (const r of rows) {
       out.set(
@@ -801,7 +806,7 @@ export class PgEntityProjector implements EntityProjector {
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
           memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id), humanMessageAuthors.get(r.id)),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects),
       );
     }
     return out;
@@ -880,6 +885,7 @@ export class PgEntityProjector implements EntityProjector {
     containsCounts: ReadonlyMap<string, number>,
     pullRequests: LinkedPullRequestBadges | undefined,
     humanMessageAuthors: HumanMessageAuthorIds | undefined,
+    chatSubjects: ReadonlyMap<string, ChatSubject>,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -915,7 +921,9 @@ export class PgEntityProjector implements EntityProjector {
       // ABSENT when the entity has no status, never a defaulted bucket.
       ...categoryFragment(r.status_category, r.id),
       counters,
-      state: this.stateOf(r, actors, assignees, assignments, members, unreadCounts, containsCounts),
+      state: this.stateOf(
+        r, actors, assignees, assignments, members, unreadCounts, containsCounts, chatSubjects,
+      ),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -1133,6 +1141,7 @@ export class PgEntityProjector implements EntityProjector {
     members: readonly string[],
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
+    chatSubjects: ReadonlyMap<string, ChatSubject>,
   ): EntityState {
     switch (r.kind) {
       case 'task': {
@@ -1412,6 +1421,7 @@ export class PgEntityProjector implements EntityProjector {
           turnState: r.chat_turn_state ?? 'idle',
           turnCount: Number(r.chat_turn_count ?? 0),
           lastTurnAt: iso(r.chat_last_turn_at),
+          about: chatSubjects.get(r.id) ?? null,
         };
       case 'container': {
         // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field

@@ -8,6 +8,7 @@
 
 export type {
   BuildOutcome,
+  ChatSlot,
   ContentSurface,
   DropClass,
   NavView,

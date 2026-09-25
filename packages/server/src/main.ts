@@ -236,7 +236,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
   const identityResolver: IdentityResolver | undefined = db
-    ? createSessionIdentityResolver({ db, owner: owner! })
+    ? createSessionIdentityResolver({
+        db,
+        owner: owner!,
+        ...(config.spaceSessions ? { spaceSessions: config.spaceSessions } : {}),
+      })
     : undefined;
 
   /**
@@ -451,7 +455,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (!identity.identityId || identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');
     }
-    return { identityId: identity.identityId, nodeAdmin: identity.nodeAdmin === true };
+    return {
+      identityId: identity.identityId,
+      nodeAdmin: identity.nodeAdmin === true,
+      ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+    };
   };
 
   const pump = db && eventLog
