@@ -11,11 +11,14 @@
  *   · a non-task subject resolves through its one open derived task;
  *   · lenient: an unknown or malformed teammate or subject gives empty groups
  *     and a warning, never a refusal; only a non-member is refused;
- *   · header text is `whenToUse` ?? `summary`, with its source.
+ *   · header text is `whenToUse` ?? `summary`, with its source;
+ *   · ONE MEASUREMENT, TWO READERS: a default's `promptBytes`, and each
+ *     group's budget and floor, equal `launch.suggest`'s for the same graph
+ *     and profile, with `<context_index>` on and off.
  */
 import { randomUUID } from 'node:crypto';
 
-import type { LaunchDefaultsResult } from '@tm8/contract';
+import type { LaunchDefaultsResult, LaunchSuggestResult } from '@tm8/contract';
 import { composeManifest, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +28,9 @@ import type { FacadeDeps } from '../../src/facade/deps.js';
 import { DbGraphPort } from '../../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import type { RequestContext } from '../../src/http/types.js';
-import { registerLaunchDefaultsHandler } from '../../src/launch/defaults.js';
+import { registerJevHandlers } from '../../src/jev/handlers.js';
+import type { JevAdvisorPort } from '../../src/jev/port.js';
+import { registerLaunchDefaultsHandler, type LaunchDefaultsOptions } from '../../src/launch/defaults.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 // The pre-spawn scan refreshes filesystem references; not under test here.
@@ -141,9 +146,14 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-function call(query: Record<string, string>, identity = OWNER, spaceId = ids.space!): Promise<LaunchDefaultsResult> {
+function call(
+  query: Record<string, string>,
+  identity = OWNER,
+  spaceId = ids.space!,
+  options: LaunchDefaultsOptions = {},
+): Promise<LaunchDefaultsResult> {
   const registry = new HandlerRegistry();
-  registerLaunchDefaultsHandler(registry, { db, config: {}, owner: async () => ({ identityId: identity, isNodeAdmin: false }) } as unknown as FacadeDeps);
+  registerLaunchDefaultsHandler(registry, { db, config: {}, owner: async () => ({ identityId: identity, isNodeAdmin: false }) } as unknown as FacadeDeps, options);
   return registry.get('launch.defaults')!({
     params: { spaceId }, query: new URLSearchParams(query), body: undefined, requestId: randomUUID(),
     identity: { kind: 'loopback' }, headers: {}, method: 'GET', path: '/',
@@ -221,9 +231,9 @@ describe('launch.defaults is lenient', () => {
 
   it('a malformed or missing teammate and subject: empty groups and warnings, never a 4xx', async () => {
     const result = await call({ teamMemberId: 'not-an-id', subjectId: 'nope' });
-    expect(result.memories).toEqual({ items: [], total: 0 });
-    expect(result.skills).toEqual({ items: [], total: 0 });
-    expect(result.references).toEqual({ items: [], total: 0 });
+    expect(result.memories).toMatchObject({ items: [], total: 0 });
+    expect(result.skills).toMatchObject({ items: [], total: 0 });
+    expect(result.references).toMatchObject({ items: [], total: 0 });
     expect(result.warnings).toHaveLength(2);
     const bare = await call({});
     expect(bare.warnings).toEqual([expect.stringMatching(/No teamMemberId/)]);
@@ -238,5 +248,87 @@ describe('launch.defaults is lenient', () => {
 
   it('only authorization refuses: a non-member of the space is forbidden', async () => {
     await expect(call({ teamMemberId: ids.teammate! }, STRANGER)).rejects.toMatchObject({ code: 'forbidden' });
+  });
+});
+
+describe('launch.defaults measures what launch.suggest measures', () => {
+  /** Every candidate scores 2: the ranking is not under test, the bytes are. */
+  const jev: JevAdvisorPort = {
+    rank: async ({ candidates }) => ({
+      ok: true,
+      ranked: candidates.map((c) => ({ id: c.id, score: 2 })),
+      calls: [{ jevModel: 'jev-test', inputTokens: 1, outputTokens: 1, costUsd: 0, latencyMs: 1, outcome: 'ok' }],
+    }),
+    model: async () => { throw new Error('not asked'); },
+  };
+  const profile = { draft: { contextBudgets: { memories: 3000, references: 2000 } } };
+
+  function suggest(options: LaunchDefaultsOptions): Promise<LaunchSuggestResult> {
+    const registry = new HandlerRegistry();
+    const deps = { db, config: {}, owner: async () => ({ identityId: OWNER, isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerJevHandlers(registry, deps, { advisor: jev, ...options });
+    return registry.get('launch.suggest')!({
+      params: { spaceId: ids.space }, query: new URLSearchParams(), requestId: randomUUID(),
+      body: { runId: randomUUID(), requestId: randomUUID(), subjectId: ids.task, teamMemberId: ids.teammate, groups: ['memories', 'skills', 'references'] },
+      identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/',
+    } as unknown as RequestContext) as Promise<LaunchSuggestResult>;
+  }
+
+  for (const index of ['on', 'off'] as const) {
+    it(`index ${index}: every default's promptBytes, and each group's budget and floor, equal launch.suggest's`, async () => {
+      const options: LaunchDefaultsOptions = { env: { TM8_CONTEXT_INDEX: index }, resolveProfile: async () => profile };
+      const defaults = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! }, OWNER, ids.space!, options);
+      const suggested = await suggest(options);
+      expect(defaults.contextIndex).toBe(index);
+      expect(suggested.contextIndex).toBe(index);
+      expect(defaults.warnings).toEqual([]);
+
+      for (const name of ['memories', 'skills', 'references'] as const) {
+        const g = suggested.groups[name];
+        if (g?.status !== 'ok') throw new Error(`${name} is ${g?.status}`);
+        const bytes = new Map(g.value.items.map((item) => [item.entityId, item.promptBytes]));
+        const mine = defaults[name];
+        // Not a comparison over an empty set: every group has defaults here.
+        expect(mine.items.length).toBeGreaterThan(0);
+        expect(mine.items.map((item) => [item.entityId, item.promptBytes]))
+          .toEqual(mine.items.map((item) => [item.entityId, bytes.get(item.entityId)]));
+        expect({ budget: mine.budget, floor: mine.floor }).toEqual({ budget: g.value.budget, floor: g.value.floor });
+      }
+
+      // The profile reached both: its memory budget, not the node default.
+      expect(defaults.memories.budget).toBe(3000);
+      // Memory bytes are real either way; references reach the prompt only with the index.
+      expect(defaults.memories.items.every((item) => item.promptBytes > 0)).toBe(true);
+      expect(defaults.skills.items.every((item) => item.promptBytes > 0)).toBe(true);
+      if (index === 'on') {
+        expect(defaults.references.items.every((item) => item.promptBytes > 0)).toBe(true);
+        expect(defaults.references.budget).toBe(2000);
+      } else {
+        expect(defaults.references.items.map((item) => item.promptBytes)).toEqual([0, 0]);
+        expect(defaults.references.budget).toBeNull();
+      }
+    });
+  }
+
+  it('lenient: a profile that does not resolve is the node defaults and a warning, never a refusal', async () => {
+    const result = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! }, OWNER, ids.space!, {
+      env: {}, resolveProfile: async () => { throw new Error('no profile'); },
+    });
+    expect(result.contextIndex).toBe('off');
+    expect(result.memories.budget).toBe(12288);
+    expect(result.memories.items.length).toBe(2);
+    expect(result.warnings).toEqual([expect.stringMatching(/Interaction Profile could not be resolved/)]);
+  });
+
+  it('a malformed interactionProfileId or agentTool is a warning; the teammate reaches the resolver only once found', async () => {
+    const seen: Array<string | null> = [];
+    const options: LaunchDefaultsOptions = { env: {}, resolveProfile: async (_c, input) => { seen.push(input.teamMemberId); return null; } };
+    const result = await call({ teamMemberId: randomUUID(), subjectId: ids.task!, interactionProfileId: 'nope', agentTool: 'vim' }, OWNER, ids.space!, options);
+    expect(seen).toEqual([null]);
+    expect(result.warnings).toEqual([
+      expect.stringMatching(/not a live teammate/),
+      expect.stringMatching(/agentTool vim/),
+      expect.stringMatching(/interactionProfileId nope/),
+    ]);
   });
 });
