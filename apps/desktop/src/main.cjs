@@ -29,6 +29,12 @@ const path = require('node:path');
 const PG_VERSION = '18.6.0';
 const PG_MAJOR = '18';
 
+const IS_MAC = process.platform === 'darwin';
+/** Height of the shell-painted strip that replaces the native title bar. */
+const TITLE_BAR_HEIGHT = 28;
+/** Centres the 12px traffic lights vertically in that strip. */
+const TRAFFIC_LIGHTS = { x: 12, y: 8 };
+
 /** Grace period for the child's own shutdown chain before SIGKILL (plan §B.5). */
 const SHUTDOWN_GRACE_MS = 5_000;
 
@@ -86,6 +92,11 @@ function createWindow() {
     minHeight: 480,
     title: 'tm8',
     backgroundColor: '#101014',
+    // No native title bar: it only repeated the word "tm8" above the app. On
+    // macOS 'hidden' keeps the traffic lights (close / minimise / zoom) and
+    // floats them over the top-left of the page; installTitleBarChrome() gives
+    // them a drag strip to sit in. Other platforms keep their native frame.
+    ...(IS_MAC ? { titleBarStyle: 'hidden', trafficLightPosition: TRAFFIC_LIGHTS } : {}),
     show: true,
     webPreferences: {
       // The renderer is a web client and nothing more. No preload, because a
@@ -96,6 +107,7 @@ function createWindow() {
     },
   });
 
+  win.webContents.on('did-finish-load', () => installTitleBarChrome());
   win.loadFile(path.join(__dirname, 'status.html')).catch(() => undefined);
 
   // External links leave the app rather than replacing the tm8 window.
@@ -110,6 +122,60 @@ function createWindow() {
 }
 
 /**
+ * The drag strip that replaces the native title bar, painted by the SHELL.
+ *
+ * With the title bar hidden, nothing on the page is draggable and the traffic
+ * lights sit on top of whatever the app draws in its top-left corner. The
+ * renderer has no desktop-only branch (AM-7/T-D24), so the fix belongs here:
+ * after every load (status page, app, reload) push the whole page down by one
+ * strip and fill that strip with a fixed, draggable element. `#root` is sized
+ * `height: 100%` against body, so a border-box body padding shrinks the app
+ * rather than overflowing it. Idempotent: a reload re-runs it on a fresh DOM.
+ */
+function installTitleBarChrome() {
+  if (!IS_MAC || win === null || win.isDestroyed()) return;
+  const h = `${TITLE_BAR_HEIGHT}px`;
+  win.webContents
+    .insertCSS(
+      `html body { box-sizing: border-box; padding-top: ${h}; }\n` +
+        `#tm8-desktop-titlebar { position: fixed; top: 0; left: 0; right: 0; height: ${h};` +
+        ` z-index: 2147483647; -webkit-app-region: drag; -webkit-user-select: none;` +
+        ` background: var(--pn-surface, #FBFAF6); border-bottom: 1px solid rgba(0, 0, 0, 0.06); }`,
+    )
+    .catch(() => undefined);
+  win.webContents
+    .executeJavaScript(
+      `(() => { if (document.getElementById('tm8-desktop-titlebar')) return;` +
+        ` const bar = document.createElement('div'); bar.id = 'tm8-desktop-titlebar';` +
+        ` bar.setAttribute('aria-hidden', 'true'); document.body.appendChild(bar); })()`,
+      true,
+    )
+    .catch(() => undefined);
+}
+
+/**
+ * Every `node_modules/.bin` directory is removed from PATH.
+ *
+ * `bun run` and `npm run` PREPEND the `node_modules/.bin` of the package AND
+ * EVERY ANCESTOR directory, up to `/node_modules/.bin`. The server hands this
+ * PATH to every agent it spawns, and only APPENDS the real install dirs
+ * (`withAgentBinDirs`), so any `claude` a package manager happened to leave in
+ * an ancestor wins. Measured 2026-09-25: a stray `~/package.json` pinned
+ * `@anthropic-ai/claude-code@2.1.77` into `~/node_modules/.bin`, and under
+ * `bun run desktop` every lane ran it instead of `/opt/homebrew/bin/claude`
+ * (2.1.280). Opus 5.5 then refused with a 400 ("2.1.280 or newer is
+ * required"). A packaged `.app` never has these entries; a dev launch
+ * should not either.
+ */
+function withoutPackageManagerBins(pathValue) {
+  if (!pathValue) return pathValue;
+  return pathValue
+    .split(':')
+    .filter((dir) => dir !== '' && !/(^|\/)node_modules\/\.bin\/?$/.test(dir))
+    .join(':');
+}
+
+/**
  * The launching shell's environment, minus every `TM8_*` variable.
  *
  * Started from a terminal inside a tm8 agent lane, the shell inherits that
@@ -119,7 +185,9 @@ function createWindow() {
  * node's `TM8_*` configuration is exactly the set written below, nothing more.
  */
 function inheritedEnv() {
-  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('TM8_')));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('TM8_')));
+  if (env.PATH !== undefined) env.PATH = withoutPackageManagerBins(env.PATH);
+  return env;
 }
 
 function startServer() {
