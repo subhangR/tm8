@@ -77,7 +77,11 @@ for i in $(seq 1 60); do curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2
 if [ ! -s "$DATADIR/owner-token" ]; then
   for i in $(seq 1 20); do [ -s "$DATADIR/setup-token" ] && break; sleep 0.5; done
   [ -s "$DATADIR/setup-token" ] || die "no setup-token in $DATADIR (node already claimed by someone else?)"
-  PW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24); echo "$PW" > "$DATADIR/owner-password"; chmod 600 "$DATADIR/owner-password"
+  # head must be FIRST: with `tr </dev/urandom | head`, tr takes SIGPIPE when head closes and
+  # `set -o pipefail` turns that into exit 141 before the claim (C1's finding, msg 01a0d95c-15ce).
+  PW=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-24)
+  [ "${#PW}" -ge 16 ] || die "could not mint an owner password"
+  echo "$PW" > "$DATADIR/owner-password"; chmod 600 "$DATADIR/owner-password"
   curl -fsS -X POST "http://127.0.0.1:$PORT/v2/auth/claim" -H 'content-type: application/json' \
     -d "{\"token\":\"$(cat "$DATADIR/setup-token")\",\"username\":\"owner\",\"password\":\"$PW\",\"displayName\":\"Eval Owner\"}" > "$DATADIR/claim.json"
   node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.data.token)' "$DATADIR/claim.json" > "$DATADIR/owner-token"
