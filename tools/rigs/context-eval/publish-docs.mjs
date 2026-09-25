@@ -5,8 +5,13 @@
 // file; optionally a per-arm block (and the consolidated report) in the
 // program root doc.
 //
-//   node publish-docs.mjs results/<run>.jsonl --arm-doc <doc-id> --task <coordinator-task-id>
-//     [--root-doc <doc-id>] [--report <report.md>] [--observations <file.json>] [--dry-run]
+//   node publish-docs.mjs results/<run>.jsonl[=<label>] [more.jsonl[=<label>] ...] --arm-doc <doc-id> --task <coordinator-task-id>
+//     [--label <text>] [--root-doc <doc-id>] [--report <report.md>] [--observations <file.json>] [--dry-run]
+//
+// Several result files make ONE arm table (pilot + full slice). A lane title
+// keys on rep within a file, so a pilot's "lane 1" and the full run's "lane 1"
+// would collide: give each file a label (`pilot.jsonl=pilot`, or --label for
+// every file without one) and the title carries it: "… · lane 1 · pilot".
 //
 // Idempotent by TITLE: a lane doc titled "<arm> · <taskKey> · <model> · lane <rep>"
 // is updated in place (under --expect-version) when it already exists among the
@@ -20,7 +25,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { classify, entryMissed, headerRead, stats, fmt } from './report.mjs';
+import { classify, entryMissed, headerRead, stats, fmt, rubricScore, indexOff } from './report.mjs';
 
 const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -36,12 +41,13 @@ const inputTokens = (r) => (r.usage ? r.usage.input + r.usage.cacheCreation + r.
 const startFailure = (r) => (r.excluded ? `yes — ${r.excluded.reason}` : 'no');
 
 export function laneTitle(r, dup = false) {
-  return `${r.arm} · ${r.taskKey} · ${r.model} · lane ${r.rep}${dup ? ` · ${String(r.sessionId).slice(0, 8)}` : ''}`;
+  return `${r.arm} · ${r.taskKey} · ${r.model} · lane ${r.rep}${r.label ? ` · ${r.label}` : ''}${dup ? ` · ${String(r.sessionId).slice(0, 8)}` : ''}`;
 }
 
 export function laneBody(r, observation) {
   const s = r.success ?? {};
-  const rub = r.rubric;
+  // The rubric score the report uses (aliasCheck is n/a on an index-off arm).
+  const rub = r.rubric ? { ...r.rubric, score: rubricScore(r), items: r.rubric.items.map((i) => (i.name === 'aliasCheck' && indexOff(r.arm) ? { ...i, na: 'index off' } : i)) } : null;
   const gates = [`committed ${yes(s.committed)}`, `hidden checks ${s.checks ? `${s.checks.passed}/${s.checks.total}` : '—'}`, `closeout ${yes(s.closeout)}`, `criteria ticked ${yes(s.ticked)}`, `success ${yes(s.success)}`].join(' · ');
   return [
     `# ${laneTitle(r)}`,
@@ -62,7 +68,7 @@ export function laneBody(r, observation) {
     `| needle | state ${r.needleState ?? '—'} · opened ${r.needleOpened == null ? '—' : yes(r.needleOpened)} |`,
     `| start failure | ${startFailure(r)} |`,
     `| success gates | ${gates} |`,
-    `| rubric | ${rub ? `${rub.score.toFixed(2)} (${rub.items.map((i) => `${i.name} ${i.pass ? '✓' : '✗'}`).join(', ')})` : '—'} |`,
+    `| rubric | ${rub ? `${rub.score == null ? '—' : rub.score.toFixed(2)} (${rub.items.map((i) => `${i.name} ${i.na ? `n/a (${i.na})` : i.pass ? '✓' : '✗'}`).join(', ')})` : '—'} |`,
     ...(r.turn ? [`| multi-turn | injected ${r.turn.injectedAt ?? '—'} · ran after inject ${yes(r.turn.ranAfterInject)} · resumed ${yes(r.turn.resumed)} (${r.turn.afterResume ?? '—'}) |`] : []),
     `| est. $ | ${n(r.costUsd, 3)} (pricing.mjs, VERIFY) |`,
     `| transcript | \`${r.transcript ?? '—'}\` |`,
@@ -77,10 +83,10 @@ export function laneBody(r, observation) {
 }
 
 export function armTable(rows, docIds) {
-  const head = '| lane | task | model | first-request tokens | total tokens | requests | entry misses | header misses | expand | blind-fetch B | start failure | success | doc |';
-  const sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|';
-  const sorted = [...rows].sort((a, b) => a.taskKey.localeCompare(b.taskKey) || a.model.localeCompare(b.model) || a.rep - b.rep);
-  const lines = sorted.map((r) => `| ${r.rep} | ${r.taskKey} | ${r.model} | ${n(r.firstRequestTokens)} | ${n(inputTokens(r))} | ${n(r.requests)} | ${n(r.miss?.entry?.count)} | ${n(r.miss?.header?.count)} | ${r.expand?.rate == null ? '—' : `${(r.expand.rate * 100).toFixed(0)}%`} | ${n(r.blindFetchBytes)} | ${r.excluded ? 'yes' : 'no'} | ${r.success?.success ? 'yes' : r.success ? 'no' : '—'} | ${docIds.get(r.sessionId) ?? '—'} |`);
+  const head = '| lane | run | task | model | first-request tokens | total tokens | requests | entry misses | header misses | expand | blind-fetch B | start failure | success | doc |';
+  const sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|';
+  const sorted = [...rows].sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '') || a.taskKey.localeCompare(b.taskKey) || a.model.localeCompare(b.model) || a.rep - b.rep);
+  const lines = sorted.map((r) => `| ${r.rep} | ${r.label ?? '—'} | ${r.taskKey} | ${r.model} | ${n(r.firstRequestTokens)} | ${n(inputTokens(r))} | ${n(r.requests)} | ${n(r.miss?.entry?.count)} | ${n(r.miss?.header?.count)} | ${r.expand?.rate == null ? '—' : `${(r.expand.rate * 100).toFixed(0)}%`} | ${n(r.blindFetchBytes)} | ${r.excluded ? 'yes' : 'no'} | ${r.success?.success ? 'yes' : r.success ? 'no' : '—'} | ${docIds.get(r.sessionId) ?? '—'} |`);
   return [head, sep, ...lines].join('\n');
 }
 
@@ -122,11 +128,18 @@ export function armSummary(rows, armDocId) {
 // ---- main ----
 function main() {
 const dry = process.argv.includes('--dry-run');
-const file = process.argv[2];
+const argv = process.argv.slice(2);
+const inputs = argv.filter((a, i) => !a.startsWith('--') && /\.jsonl(=.*)?$/.test(a) && !(i > 0 && argv[i - 1].startsWith('--')));
 const armDoc = arg('arm-doc');
 const task = arg('task');
-if (!file || !armDoc || !task) throw new Error('usage: node publish-docs.mjs <results.jsonl> --arm-doc <id> --task <id> [--root-doc <id>] [--report <md>] [--observations <json>] [--dry-run]');
-const rows = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+if (!inputs.length || !armDoc || !task) throw new Error('usage: node publish-docs.mjs <results.jsonl[=label]> [...] --arm-doc <id> --task <id> [--label <text>] [--root-doc <id>] [--report <md>] [--observations <json>] [--dry-run]');
+const rows = [];
+for (const input of inputs) {
+  const [path, fileLabel] = input.split('=');
+  const label = fileLabel || arg('label') || (inputs.length > 1 ? path.split('/').pop().replace(/\.jsonl$/, '') : undefined);
+  for (const l of readFileSync(path, 'utf8').split('\n').filter(Boolean)) rows.push({ ...JSON.parse(l), ...(label ? { label } : {}) });
+}
+const file = inputs.join(', ');
 if (!rows.length) throw new Error(`${file}: no rows`);
 const arms = [...new Set(rows.map((r) => r.arm))];
 if (arms.length !== 1) throw new Error(`${file} holds ${arms.length} arms (${arms.join(', ')}); publish one arm's file per arm doc`);
@@ -144,7 +157,7 @@ do {
 const seen = new Set();
 const docIds = new Map();
 for (const r of rows) {
-  const key = `${r.model}/${r.taskKey}#${r.rep}`;
+  const key = `${r.label ?? ''}|${r.model}/${r.taskKey}#${r.rep}`;
   const title = laneTitle(r, seen.has(key));
   seen.add(key);
   const body = laneBody(r, obsFor(r));
