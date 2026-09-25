@@ -328,6 +328,13 @@ export interface TaskAssignmentFacts {
    * Absent or empty (the index is off), the output is byte-identical to before.
    */
   namedInIndex?: ReadonlySet<string>;
+  /**
+   * The task's acceptance criteria (`acceptanceCriteriaOf`). Listed at the
+   * end of the task body with their ids and ticked state, and counted on a
+   * trusted `<acceptance>` line that names the tick command, so ticking never
+   * depends on a fetch (D13). Absent or empty: no line, and the body is as given.
+   */
+  acceptance?: readonly TaskAcceptanceCriterion[];
 }
 
 /**
@@ -396,10 +403,90 @@ function linkedManifest(all: readonly TaskLinkedEntity[], total: number, namedIn
   };
 }
 
+/**
+ * One acceptance criterion as the task stores it (`{id, text, done}`, the
+ * server's normaliser). `id` is null only for a bare string from an older
+ * manifest, which has no id to tick by.
+ */
+export interface TaskAcceptanceCriterion {
+  id: string | null;
+  text: string;
+  done: boolean;
+}
+
+/**
+ * A manifest's `acceptanceCriteria`, read tolerantly. Stored criteria are
+ * OBJECTS; the v1 task turn used to keep strings only, so every real
+ * criterion was dropped and a lane could tick only after fetching its task
+ * (D13: 0/123 ticked without opening it). An entry with no text is dropped.
+ */
+export function acceptanceCriteriaOf(values: readonly unknown[] | undefined): TaskAcceptanceCriterion[] {
+  return (values ?? []).flatMap((value): TaskAcceptanceCriterion[] => {
+    if (typeof value === 'string') return value.trim() === '' ? [] : [{ id: null, text: value, done: false }];
+    if (typeof value !== 'object' || value === null) return [];
+    const record = value as Record<string, unknown>;
+    if (typeof record.text !== 'string' || record.text.trim() === '') return [];
+    const id = typeof record.id === 'string' && record.id.trim() !== '' ? record.id : null;
+    return [{ id, text: record.text, done: record.done === true }];
+  });
+}
+
+/**
+ * Bounded like the linked manifest, so a task with a long checklist stays
+ * inside the 16,384-byte assignmentSnapshot budget: 24 rows of 400
+ * characters is under 10 KiB. The surplus is DECLARED on `<acceptance>`
+ * (`omitted`, `clipped`), never dropped in silence.
+ */
+export const ACCEPTANCE_MANIFEST_MAX = 24;
+const ACCEPTANCE_TEXT_MAX_CHARS = 400;
+
+/**
+ * The criteria as the task body lists them, `- [ ] <id>: <text>`, and the
+ * trusted `<acceptance>` line that counts them and names the tick command.
+ * Ids and text are author-controlled, so they stay in the untrusted body; the
+ * control line carries only counts and the task id.
+ *
+ * The tick command names NO version (`--expect-version <current>`): the
+ * version composed into a spawned lane's prompt is already stale when the
+ * lane reads it (the spawn moves the task after composing), so a number here
+ * fails the first tick of every lane that ticks straight from the turn, while
+ * no number costs at most one read. The body says where the current one is.
+ */
+export function acceptanceManifest(
+  criteria: readonly TaskAcceptanceCriterion[],
+  taskId: string,
+): { control: string[]; lines: string } {
+  if (criteria.length === 0) return { control: [], lines: '' };
+  const shown = criteria.slice(0, ACCEPTANCE_MANIFEST_MAX);
+  const omitted = criteria.length - shown.length;
+  let clipped = 0;
+  const rows = shown.map((c) => {
+    const points = Array.from(c.text);
+    const text = points.length > ACCEPTANCE_TEXT_MAX_CHARS
+      ? (clipped += 1, `${points.slice(0, ACCEPTANCE_TEXT_MAX_CHARS - 1).join('')}…`)
+      : c.text;
+    return `- [${c.done ? 'x' : ' '}] ${c.id === null ? '' : `${c.id}: `}${text}`;
+  });
+  const open = criteria.filter((c) => !c.done).length;
+  return {
+    control: [
+      `  <acceptance count="${criteria.length}" open="${open}"` +
+        (omitted > 0 ? ` omitted="${omitted}"` : '') +
+        (clipped > 0 ? ` clipped="${clipped}"` : '') +
+        ` tick_with="tm8 task tick ${attr(taskId)} &lt;criterion-id&gt;... --expect-version &lt;current&gt;"` +
+        (omitted > 0 || clipped > 0 ? ` fetch_with="tm8 entity context ${attr(taskId)}"` : '') +
+        ' />',
+    ],
+    lines: 'Acceptance criteria (tick each by its id once it is met; the current version for --expect-version is in ' +
+      `tm8 entity context on the task, or in a version_conflict's currentVersion):\n${rows.join('\n')}`,
+  };
+}
+
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
   const attachments = attachmentManifest(f.attachments ?? []);
   const linked = linkedManifest(f.linked ?? [], f.linkedTotal ?? 0, f.namedInIndex);
+  const acceptance = acceptanceManifest(f.acceptance ?? [], f.taskId);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
@@ -410,13 +497,15 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     ...linked.control,
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
+    ...acceptance.control,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
     '  <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />',
     '</trusted_control>',
   ].join('\n');
+  const body = acceptance.lines === '' ? f.body : f.body === '' ? acceptance.lines : `${f.body}\n\n${acceptance.lines}`;
   const data = untrustedData({
     type: 'task-body',
-    body: f.body,
+    body,
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
