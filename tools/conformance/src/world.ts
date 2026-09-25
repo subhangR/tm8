@@ -7,7 +7,7 @@
  * Against the G0 stub every call here 501s, which is exactly the red signal
  * the gate wants. Against a conformant server this must succeed end-to-end.
  */
-import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import type { EntityDetail } from '@tm8/contract';
 import { api } from './client.js';
 import { randomUUID } from 'node:crypto';
 
@@ -142,8 +142,4 @@ export function expectValid<T>(schema: { safeParse(v: unknown): { success: boole
     throw new Error(`${label} failed contract schema:\n${JSON.stringify(r.error?.issues, null, 2)}\nvalue: ${JSON.stringify(value, null, 2).slice(0, 2000)}`);
   }
   return r.data as T;
-}
-
-export function summariesOf(page: unknown): EntitySummary[] {
-  return (page as { items: EntitySummary[] }).items;
 }
