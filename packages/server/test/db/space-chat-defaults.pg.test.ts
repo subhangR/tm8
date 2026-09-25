@@ -1,6 +1,6 @@
 /**
  * `spaces.chatDefaults.get` / `.set` against a REAL PostgreSQL (entity-chat
- * design 01a0da4e §3.4, migration 226).
+ * design 01a0da4e §3.4, migration 228).
  *
  * The handlers are registered as the facade registers them and run as
  * `tm8_app` under the caller's claims. What must hold:

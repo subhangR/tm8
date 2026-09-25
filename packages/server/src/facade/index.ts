@@ -206,7 +206,7 @@ export function registerFacadeHandlers(
   registerJevHandlers(registry, facade, deps.resolveJevAdvisor ? { resolveAdvisor: deps.resolveJevAdvisor } : {});
   // launch.defaults (I9): spawn's own default loaders, for the launch sheet's pre-ticks.
   registerLaunchDefaultsHandler(registry, facade);
-  // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 226.
+  // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 228.
   registerChatDefaultsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);

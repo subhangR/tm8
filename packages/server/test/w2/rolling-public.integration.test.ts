@@ -352,7 +352,7 @@ const GIT_NET_NEW_OPERATIONS = [
   'entities.commands.tick',
   // I9b: the launch sheet's defaults read.
   'launch.defaults',
-  // Entity chat G: the per-kind chat defaults, read + write (migration 226).
+  // Entity chat G: the per-kind chat defaults, read + write (migration 228).
   'spaces.chatDefaults.get',
   'spaces.chatDefaults.set',
   // headers I4: the authored selection header's two doors join the G02 entities seam.

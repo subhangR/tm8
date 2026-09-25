@@ -16,6 +16,7 @@ import {
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
+import type { SpaceSessionsMode } from './types.js';
 
 export interface ServerConfig {
   /** Bind address. Loopback only — see S1 above. */
@@ -114,6 +115,13 @@ export interface ServerConfig {
    * silent version of the bug this whole design closes.
    */
   readonly nodeMode?: 'single' | 'multi';
+  /**
+   * `TM8_SPACE_SESSIONS=off|agents|enforce`, default `agents` (plan W0a).
+   * Whether an agent session's `auth_sessions.space_id` is bound as the
+   * `tm8.session_space_id` claim. Read once here; a change is a restart.
+   * `enforce` is reserved for W3 and behaves as `agents` until then.
+   */
+  readonly spaceSessions?: SpaceSessionsMode;
   /**
    * The origin this node is actually reachable at from a browser
    * (`TM8_PUBLIC_ORIGIN`), when that differs from its bind address.
@@ -494,6 +502,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
   const nodeMode: 'single' | 'multi' = nodeModeRaw === 'multi' ? 'multi' : 'single';
 
+  // Refused rather than defaulted, for the reason TM8_NODE_MODE is: a typo
+  // must not silently choose a mode the operator did not ask for.
+  const spaceSessionsRaw = env.TM8_SPACE_SESSIONS?.trim().toLowerCase();
+  if (
+    spaceSessionsRaw !== undefined && spaceSessionsRaw !== ''
+    && spaceSessionsRaw !== 'off' && spaceSessionsRaw !== 'agents' && spaceSessionsRaw !== 'enforce'
+  ) {
+    throw new ConfigError(
+      `TM8_SPACE_SESSIONS must be "off", "agents" or "enforce", got ${JSON.stringify(env.TM8_SPACE_SESSIONS)}`,
+    );
+  }
+  const spaceSessions: SpaceSessionsMode =
+    spaceSessionsRaw === 'off' || spaceSessionsRaw === 'enforce' ? spaceSessionsRaw : 'agents';
+
   // Validated at load rather than at print time: a malformed origin should stop
   // the operator now, not silently produce a broken claim link on the one boot
   // where it matters.
@@ -560,6 +582,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
     containers,
     nodeMode,
+    spaceSessions,
     ...(publicOrigin ? { publicOrigin } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never

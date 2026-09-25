@@ -1,7 +1,7 @@
 /**
  * `spaces.chatDefaults.get` / `spaces.chatDefaults.set` — the per-kind chat
  * defaults (entity-chat design 01a0da4e §3.4). Storage, validation and the
- * gate all live in migration 226's two SECURITY DEFINER doors; this file only
+ * gate all live in migration 228's two SECURITY DEFINER doors; this file only
  * binds them to the operations.
  *
  *   · get — any member of the space; a non-member is `forbidden`.
