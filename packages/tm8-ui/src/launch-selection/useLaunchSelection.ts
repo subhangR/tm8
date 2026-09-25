@@ -58,8 +58,20 @@ function groupBytes(group: LaunchDefaultsGroup): LaunchGroupBytes {
 const NO_BYTES: LaunchGroupBytes = { bytes: {}, budget: undefined };
 const NO_BYTES_ALL: Record<SpawnSelectionGroup, LaunchGroupBytes> = { memories: NO_BYTES, skills: NO_BYTES, references: NO_BYTES };
 
+/**
+ * What the launch will run with, which decides the defaults' bytes and
+ * budgets (lane E, #829): the harness (a skill's entry reads differently
+ * native) and the Interaction Profile (its `contextBudgets`). Query params on
+ * `launch.defaults` — a node before #829 ignores them. Declared here until the
+ * contract's `LaunchDefaultsInput` carries them; the intersection is harmless after.
+ */
+export interface LaunchDefaultsLaunchParams {
+  agentTool?: 'claude-code' | 'codex';
+  interactionProfileId?: EntityId;
+}
+
 /** `launch.defaults`, bound to the space by the host. */
-export type LoadLaunchDefaults = (input: LaunchDefaultsInput) => Promise<LaunchDefaultsResult>;
+export type LoadLaunchDefaults = (input: LaunchDefaultsInput & LaunchDefaultsLaunchParams) => Promise<LaunchDefaultsResult>;
 
 export interface LaunchSelection {
   defaults: LaunchSelectionDefaults;
@@ -109,12 +121,18 @@ export function useLaunchSelection(args: {
   load?: LoadLaunchDefaults;
   teammateId: string | null | undefined;
   subjectId: string | null | undefined;
+  /** The launch's harness; re-reads the defaults when it changes. */
+  agentTool?: string | null;
+  /** The profile the launch will pin, when the surface picked one; re-reads the defaults when it changes. */
+  interactionProfileId?: string | null;
 }): LaunchSelection {
   const { load, teammateId, subjectId } = args;
+  const agentTool = args.agentTool === 'claude-code' || args.agentTool === 'codex' ? args.agentTool : null;
+  const profileId = args.interactionProfileId || null;
   const loadRef = useRef(load);
   loadRef.current = load;
   const canLoad = load !== undefined;
-  const key = teammateId ? `${teammateId}|${subjectId ?? ''}` : null;
+  const key = teammateId ? `${teammateId}|${subjectId ?? ''}|${agentTool ?? ''}|${profileId ?? ''}` : null;
 
   const [read, setRead] = useState<{
     key: string;
@@ -131,7 +149,12 @@ export function useLaunchSelection(args: {
     const fn = loadRef.current;
     if (!key || !teammateId || !fn) return;
     let live = true;
-    fn({ teamMemberId: teammateId as EntityId, ...(subjectId ? { subjectId: subjectId as EntityId } : {}) }).then(
+    fn({
+      teamMemberId: teammateId as EntityId,
+      ...(subjectId ? { subjectId: subjectId as EntityId } : {}),
+      ...(agentTool ? { agentTool } : {}),
+      ...(profileId ? { interactionProfileId: profileId as EntityId } : {}),
+    }).then(
       (result) => {
         if (!live) return;
         setRead({
@@ -153,7 +176,7 @@ export function useLaunchSelection(args: {
       () => { if (live) setRead({ key, defaults: unknownDefaults(UNKNOWN_DEFAULTS_NOTE), warnings: [], bytes: NO_BYTES_ALL, contextIndex: null }); },
     );
     return () => { live = false; };
-  }, [key, teammateId, subjectId, canLoad]);
+  }, [key, teammateId, subjectId, agentTool, profileId, canLoad]);
 
   const defaults = useMemo<LaunchSelectionDefaults>(() => {
     if (!canLoad) return unknownDefaults(UNKNOWN_DEFAULTS_NOTE);

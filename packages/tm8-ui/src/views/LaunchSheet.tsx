@@ -291,6 +291,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
     load: props.loadLaunchDefaults,
     teammateId: teammateId || null,
     subjectId: props.subjectId,
+    /* The picks that change what the defaults cost (lane E): a skill's entry
+       depends on the harness, the budgets on the profile. */
+    agentTool: agentToolId || null,
+    interactionProfileId: profileId || null,
   });
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),

@@ -309,3 +309,13 @@ describe('on a phone', () => {
     host.remove();
   });
 });
+
+describe('the sheet asks launch.defaults with its picks', () => {
+  it('the teammate’s harness rides the read; the default profile sends no profile id', async () => {
+    const load = vi.fn(async (_input: unknown) => LAUNCH_DEFAULTS);
+    renderSheet({ loadLaunchDefaults: load });
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(load.mock.calls[0]![0]).toMatchObject({ teamMemberId: 'ent-tm-forge', agentTool: 'claude-code' });
+    expect(load.mock.calls[0]![0]).not.toHaveProperty('interactionProfileId');
+  });
+});

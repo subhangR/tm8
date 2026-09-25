@@ -7,7 +7,7 @@
  * `launch.defaults`; with no bytes known it shows the count only. A default a
  * person's Jev Apply removed says why. Every rule has its negative control.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { contextGroupFrameBytes } from '@tm8/prompt';
 import type { EntitySuggestion, LaunchDefaultsResult, SpawnSelectionGroup } from '@tm8/contract';
@@ -185,5 +185,34 @@ describe('setEdit', () => {
     act(() => { refused = captured!.setEdit('skills', { removed: [], added: many }, []); });
     expect(refused).toMatch(/at most/);
     expect(captured!.edits.skills.added).toEqual([]);
+  });
+});
+
+describe('launch.defaults is asked with the launch’s harness and profile', () => {
+  function Params({ load, agentTool, profile }: { load: (input: unknown) => Promise<LaunchDefaultsResult>; agentTool: string | null; profile: string | null }) {
+    useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1', agentTool, interactionProfileId: profile });
+    return null;
+  }
+
+  it('sends both when picked, and re-reads when either changes', async () => {
+    const load = vi.fn(async (_input: unknown) => BARE);
+    const view = render(<Params load={load} agentTool="codex" profile="pf-1" />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(load.mock.calls[0]![0]).toEqual({ teamMemberId: 'tm-1', subjectId: 'task-1', agentTool: 'codex', interactionProfileId: 'pf-1' });
+    view.rerender(<Params load={load} agentTool="claude-code" profile="pf-1" />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    view.rerender(<Params load={load} agentTool="claude-code" profile="pf-2" />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(load.mock.calls[2]![0]).toMatchObject({ agentTool: 'claude-code', interactionProfileId: 'pf-2' });
+  });
+
+  it('negative control: no profile picked and an unknown harness send neither key, and an unchanged pick does not re-read', async () => {
+    const load = vi.fn(async (_input: unknown) => BARE);
+    const view = render(<Params load={load} agentTool="some-other-tool" profile={null} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(load.mock.calls[0]![0]).toEqual({ teamMemberId: 'tm-1', subjectId: 'task-1' });
+    view.rerender(<Params load={load} agentTool="some-other-tool" profile={null} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });
