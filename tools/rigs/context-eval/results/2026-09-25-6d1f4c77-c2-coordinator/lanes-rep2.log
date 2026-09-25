@@ -1,0 +1,4 @@
+slice c2 arm index-derived node 4622 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 1 lanes (haiku45 × 1 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c2-rep2.jsonl
+c2/haiku45/turn-date#1 session 01a0d99c-aa27-717b-9d8d-4fd6a7e01619 load 44.34 39.04 34.62
+c2/haiku45/turn-date#1 idle 310s first=30837 entryMiss=0 score=1.00 $0.187
+slice done

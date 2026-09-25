@@ -1,0 +1,167 @@
+{
+  "01a0d960-3af3-7c3e-ae2b-bd171f0099ea": {
+    "docId": "01a0d962-6577-7ca5-b07a-1d6c9ec865af",
+    "title": "index-derived · fee · sonnet5 · lane 1",
+    "hash": "794c7be5090662b7"
+  },
+  "01a0d960-6bac-7a44-bce4-9928f92ded49": {
+    "docId": "01a0d963-01ed-7f83-a184-ab45d31c8366",
+    "title": "index-derived · fee · haiku45 · lane 1",
+    "hash": "cf9cdd7e96d6529b"
+  },
+  "01a0d962-add9-7803-91ca-a68d669ac60c": {
+    "docId": "01a0d965-a986-703f-9bc5-1ab61307667b",
+    "title": "index-derived · category · haiku45 · lane 1",
+    "hash": "563cecfc0bf455ed"
+  },
+  "01a0d963-c979-7df4-b994-dd8e3cca5e56": {
+    "docId": "01a0d966-311c-70de-af5a-054c078e3a84",
+    "title": "index-derived · category · sonnet5 · lane 1",
+    "hash": "c5f81256fdbfe026"
+  },
+  "01a0d966-47d2-728a-8380-cb70dacf0454": {
+    "docId": "01a0d968-d57c-759d-a47f-4dfc989cb93b",
+    "title": "index-derived · rounding · sonnet5 · lane 1",
+    "hash": "492293af8cf0ca95"
+  },
+  "01a0d966-d920-7a41-bbff-08e6c6462f9a": {
+    "docId": "01a0d969-930e-74a5-853f-0f8fbc5cb89f",
+    "title": "index-derived · rounding · haiku45 · lane 1",
+    "hash": "12644ebf2ddbcea8"
+  },
+  "01a0d969-c16c-7d29-a5cf-31f7ca30cd86": {
+    "docId": "01a0d96c-2878-70d9-88ad-e4563a2430d6",
+    "title": "index-derived · stress30 · sonnet5 · lane 1",
+    "hash": "8b64ab8d34a9cc29"
+  },
+  "01a0d969-3129-72a4-b442-1cfc8f1b86e1": {
+    "docId": "01a0d96d-1fcb-7237-86e1-d7da94e35986",
+    "title": "index-derived · stress30 · haiku45 · lane 1",
+    "hash": "1ea39b6b4e6c2bda"
+  },
+  "01a0d96c-c2ee-7025-b0a2-9f29c3b4d391": {
+    "docId": "01a0d96f-fbb7-79de-9362-5e97dd5492f2",
+    "title": "index-derived · stress60 · sonnet5 · lane 1",
+    "hash": "db1fc6672198a56d"
+  },
+  "01a0d96e-07fb-74f4-9b6d-f4c348a0451c": {
+    "docId": "01a0d971-affa-7924-8486-558dffc87801",
+    "title": "index-derived · stress60 · haiku45 · lane 1",
+    "hash": "8629f8a559e15db9"
+  },
+  "01a0d970-69bb-7426-93b8-9433076edfff": {
+    "docId": "01a0d973-5cf8-72cd-80ff-bc9ba8728898",
+    "title": "index-derived · mem-fee · haiku45 · lane 1",
+    "hash": "637bee8b4239de2c"
+  },
+  "01a0d972-5681-744a-8aa9-69b1536ced9e": {
+    "docId": "01a0d974-5174-7d83-ad45-8ac6ee39f290",
+    "title": "index-derived · mem-fee · sonnet5 · lane 1",
+    "hash": "daf920af95cadae0"
+  },
+  "01a0d973-7703-7ff5-8b2d-d2c346154c75": {
+    "docId": "01a0d978-fa46-77cd-bbe7-3aba07230c3f",
+    "title": "index-derived · turn-date · sonnet5 · lane 1",
+    "hash": "a77c819f70652e61"
+  },
+  "01a0d974-9fac-78d8-ae97-35be708984e4": {
+    "docId": "01a0d97a-2d81-712b-bb1a-9824b0cb65ed",
+    "title": "index-derived · turn-date · haiku45 · lane 1",
+    "hash": "e8134bdd032f9926"
+  },
+  "01a0d97a-263c-713b-8aad-c960a23f35df": {
+    "docId": "01a0d97b-dc1d-7d05-a15f-3932992b9062",
+    "title": "index-derived · replica-01a0d742 · sonnet5 · lane 1",
+    "hash": "d7fab7b7d696922e"
+  },
+  "01a0d979-05a3-71a7-ad7a-c3699f432bab": {
+    "docId": "01a0d97c-9c42-7b5b-8302-b7e5100b9ce5",
+    "title": "index-derived · replica-01a0d742 · haiku45 · lane 1",
+    "hash": "12a66e6d641ea030"
+  },
+  "01a0d97b-dba2-7f94-b437-ac4b7930f9c7": {
+    "docId": "01a0d97e-4a01-7c5d-aa3b-643d991a4c70",
+    "title": "index-derived · replica-01a0d780 · sonnet5 · lane 1",
+    "hash": "7af4e56c225a2c18"
+  },
+  "01a0d97c-8fbb-7803-9ada-3fbf5353d743": {
+    "docId": "01a0d984-6702-7159-b3f3-56ffad6ba675",
+    "title": "index-derived · replica-01a0d780 · haiku45 · lane 1",
+    "hash": "e655703dabb159a7"
+  },
+  "01a0d97e-349f-7231-a005-811309a43dbe": {
+    "docId": "01a0d984-687a-7be1-93ae-28ddaa37e5b9",
+    "title": "index-derived · replica-01a0d778 · haiku45 · lane 1",
+    "hash": "0a456b490a9eeabf"
+  },
+  "01a0d984-84fc-7e4c-88c5-6cf49654dba7": {
+    "docId": "01a0d986-4215-7d86-bea0-48798f7aead9",
+    "title": "index-derived · replica-01a0d778 · sonnet5 · lane 1",
+    "hash": "29333eeb3048d310"
+  },
+  "01a0d984-a1af-70fb-ab45-a51c13ba8321": {
+    "docId": "01a0d986-cc6d-7df3-a929-d7cd2c23a85e",
+    "title": "index-derived · fee · sonnet5 · lane 2",
+    "hash": "030668a4d51fe0c7"
+  },
+  "01a0d986-4acc-7166-b130-dfb5e41b767f": {
+    "docId": "01a0d988-8431-7378-a6e4-56493082131d",
+    "title": "index-derived · fee · haiku45 · lane 2",
+    "hash": "76983f8863f68945"
+  },
+  "01a0d986-b926-79e5-90cd-730087257cc4": {
+    "docId": "01a0d989-7889-7236-81e9-51f18cdf88bb",
+    "title": "index-derived · category · haiku45 · lane 2",
+    "hash": "92b22a273722bf87"
+  },
+  "01a0d988-66f1-7c79-b6fb-2381e127bc36": {
+    "docId": "01a0d98a-a3de-7b5f-a6ae-74a6b9220869",
+    "title": "index-derived · category · sonnet5 · lane 2",
+    "hash": "cdecb5dda76ba4b2"
+  },
+  "01a0d98a-5c89-7737-93ef-3a2431055cbe": {
+    "docId": "01a0d98c-c367-72e3-8db3-260fb33f8a59",
+    "title": "index-derived · rounding · sonnet5 · lane 2",
+    "hash": "ca253d143eff2992"
+  },
+  "01a0d98a-94af-70ba-a4f8-b791b2efc95d": {
+    "docId": "01a0d98d-4a40-76d7-bba9-f85bc30cc556",
+    "title": "index-derived · rounding · haiku45 · lane 2",
+    "hash": "306aac6b5a0afb1f"
+  },
+  "01a0d98d-6166-7131-922c-c05fbd34f0ef": {
+    "docId": "01a0d98f-ee7d-76b1-9d1f-57076ac140d7",
+    "title": "index-derived · stress30 · sonnet5 · lane 2",
+    "hash": "df98c3ed3f44c546"
+  },
+  "01a0d98d-0e07-7fa9-90e3-2c20b36f5888": {
+    "docId": "01a0d992-7fc1-78d6-b800-0925361be83b",
+    "title": "index-derived · stress30 · haiku45 · lane 2",
+    "hash": "26a88d9b2274716e"
+  },
+  "01a0d990-73b5-7c60-a211-ee7eb6256765": {
+    "docId": "01a0d994-2179-7bed-b916-4553369466aa",
+    "title": "index-derived · stress60 · sonnet5 · lane 2",
+    "hash": "6a04ed8490743280"
+  },
+  "01a0d992-9f2e-79a4-9754-53f913803d96": {
+    "docId": "01a0d995-4f06-74e1-ae44-fc63f0ab4b78",
+    "title": "index-derived · stress60 · haiku45 · lane 2",
+    "hash": "5a7dffc8a206f6de"
+  },
+  "01a0d994-63f1-7b0c-b53a-1b4e99b43260": {
+    "docId": "01a0d996-7be8-7dc0-9b31-c911c600e11c",
+    "title": "index-derived · mem-fee · haiku45 · lane 2",
+    "hash": "549a694cd4f7d008"
+  },
+  "01a0d995-9f25-7220-9982-a1cf2d84ebac": {
+    "docId": "01a0d997-f2ae-79f9-bbf9-4b851f4fa3d9",
+    "title": "index-derived · mem-fee · sonnet5 · lane 2",
+    "hash": "655d416c6940048d"
+  },
+  "01a0d996-bd04-77fb-a062-469cfcc0e100": {
+    "docId": "01a0d99c-2e56-7f87-88e0-1cfb0cb21c55",
+    "title": "index-derived · turn-date · sonnet5 · lane 2",
+    "hash": "41b965c56ca97bea"
+  }
+}

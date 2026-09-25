@@ -1,0 +1,6 @@
+- **Replica rep 2 dropped (D9).** The runner (pid 5240) was stopped at 22:57:56 on the lane boundary before the first rep-2 replica lane (automated: killed within 0.3 s of the 33rd row; no replica rep-2 lane started). Planned 40 → 34.
+- **One lane orphaned by that stop, no row in the main file:** haiku45/turn-date#2, session 01a0d998-22bd (started 22:53:46, still running at the stop). It needs the runner for its inject + resume, so it was terminated (`ended: stopped_by_operator`) and the cell re-run on the guarded runner (7cc832d4+) into `2026-09-25-6d1f4c77-c2-rep2.jsonl`. That row says rep 1 because lanes.mjs has no rep offset.
+- **D2 misses:** entry-level 0 on every measured row so far.
+- **D9 isolation:** shared build untouched; one cross-lane contact (haiku45 replica-01a0d780#1 ↔ replica-01a0d778#1); `gh auth status` ran once (sonnet5 replica-01a0d780#1). Details are in the lane docs.
+- **D11 auto-memory:** node2's fixture-repo memory dir stayed empty; no row wrote or loaded lane memory.
+- mem-fee rows show "measurement pending remeasure" until the end-of-slice `remeasure.mjs --all` at ≥ 889efcf0.
