@@ -1,0 +1,51 @@
+# context-eval — the reusable context-pipeline eval
+
+Re-run it unchanged after every improvement and read the report as a diff.
+Design (decisions, marked AUTHORITY / SPEC / SUMMARY): `DESIGN.md` (entity doc 01a0d941-e2ac). Coordinator commands: `RUNBOOK.md`.
+Task E1 01a0d93b-122f; builds on `../context-measure` (I10a, #799/#809/#811/#813) and IMPORTS its measurement: `measure.mjs` (bytes, tokens, expand / miss / blind-fetch, D2 `missLevel`), `success.mjs` (hidden checks at the committed head, closeout, criteria), `lane.mjs` (lane process probes), `dev-cli.mjs` (the one door to a dev node), and its fixture content.
+
+**Dev nodes only (ports 4620–4624, DBs tm8_eval0..4). Never 7778. No fleet default is flipped.**
+
+| file | what |
+|---|---|
+| `dev-node.sh` | `up <port> <db> <datadir> <build-dir> [ARM=lean\|index-derived\|index-authored\|inherit]` / `stop <port>` / `status <port>`. DB + migrate + server under `env -i` (delivery wired as `tm8_delivery_worker`, `TM8_LAUNCH_BOOTSTRAP=1`) + owner claim + space (seeds the catalog teammates) + project + ledger-lite fixture repo + `<datadir>/t8` wrapper + registry `$CTX_EVAL_HOME/nodes/<port>.json`. |
+| `fixture-data.mjs` | v2 content: the I10a needle tasks (imported), stress30/stress60, the heavy memory set (Q1), the multi-turn change request, per-family rubric items. |
+| `build-fixture.mjs` | Emits `fixtures/fixture-v2.json` (schemaVersion + contentHash) from fixture-data + `fixtures/replicas-v2.json`. |
+| `snapshot-replicas.mjs` | Freezes real tasks (read-only `entity get` on the source) into `fixtures/replicas-v2.json`. |
+| `fixture.mjs` | `--node <port>`: creates the TEMPLATE entities on that node → `fixtures/node-<port>.json` (ignored by git; per node). Authored headers only on an `index-authored` node. |
+| `lanes.mjs` | `--slice c1..c4 --node <port> --out results/<run>.jsonl`: the slice runner. Interleaved order, load-tiered concurrency (2 < 40, 1 at 40–80, wait > 80), FRESH task copy per lane, multi-turn injection + resume, measure + judge, one JSONL row per lane. |
+| `components.mjs` | Context size by component (bytes) and its estimated token share. |
+| `pricing.mjs` | The one $/Mtok table (VERIFY-marked) and `CHARS_PER_TOKEN`. |
+| `report.mjs` | `results/<run>.jsonl [--baseline <prior>.jsonl]` → MD + JSON: per model × arm × family tables, D2 gate rows (exact 95% UB), accuracy, cost deltas vs lean, start failures, per-slice load, DELTA vs baseline. Exit 1 on zero rows, an arm with no measured rows, or an unmeasured row that is not excluded. |
+| `exclude.mjs` | Set a row aside with a reason (never deleted; counted in §5). |
+| `report.test.mjs` | `node --test tools/rigs/context-eval/*.test.mjs`: positive control, NEGATIVE control (a mutated miss level reds the gate row), refusals, rubric, Clopper–Pearson, components, pricing. |
+| `node-registry.mjs` | Arms, their env, and the node registry reader. |
+| `results/` | One JSONL per run, plus the report MD/JSON. |
+
+## The matrix (DESIGN.md §2–3)
+
+models `sonnet5`, `haiku45` (`opus55` wired) × arms `lean` / `index-derived` / `index-authored` / `inherit` × families `needle` (fee, category, rounding) / `replica` (3 frozen real tasks) / `stress` (stress30, stress60) / `memory` (mem-fee) / `multiturn` (turn-date) × reps. A slice is one arm on one node: c1 lean 4621, c2 index-derived 4622, c3 index-authored 4623, c4 inherit 4624.
+
+## Row schema (`context-eval.row.v1`)
+
+identity (`slice, arm, node{port,db,env}, buildSha, fixtureVersion, model, teammateId, family, taskKey, rep, sessionId, taskId, templateTaskId, worktree, base, laneTm8`) · timing/load (`startedAt, endedAt, ended, wallSeconds, uptimeStart, uptimeEnd, loadAtStart, waitedSeconds`) · measure.mjs fields (`system, firstUserBytes, attachments, firstRequestTokens, requests, usage, expand, miss, blindFetchBytes, needleState, needleOpened, memoriesCollapsed, memoryExpands, toolCalls, modelId, residentTm8Bytes, residentHarnessChars`) · `components {bytes, tokens}` · `costUsd` · `success` (context-measure) · `checkResults[] {expr, set: base|alias|turn, pass}` · `rubric {family, items[], score, judge:'deterministic'}` · `turn` (multiturn) · `excluded {reason, by, at}` / `measureError` / `judgeError`.
+
+## Known limits
+
+- The token split by component is an estimate (chars ÷ `CHARS_PER_TOKEN`); `firstRequestTokens` itself is measured. About 12k tokens of `inherit`'s harness (tool schemas) are not in the transcript and land in `remainderEstimated`.
+- Four arms on one Mac share wall-clock time; every row carries `loadAtStart`, `uptimeStart/End` and `node.port`, and report §5 shows per-slice load so a slow slice reads as load, not as the arm.
+- `resumed` is judged from the session's state after `session resume` (ran or reached idle), not from the transcript.
+- Prices in `pricing.mjs` are VERIFY-marked; $ is a comparative estimate.
+- The memory family's alias item is confounded in fixture v2 (decision D7). The equipped naming-conventions skill CONTRADICTS the alias memory (`<name>2` exports), so a careful model may rightly refuse it. It measures memory trusted over a conflicting skill, not delivery. This run it is out of the rubric mean and out of success on every arm, printed with k/n under that name; read delivery on index arms from `memoryExpands`. Fixture v3 removes the conflict (DESIGN.md §8).
+- The replica family's rubric is not a context measure in fixture v2 (decision D8). All three replicas are real tm8 tasks (an explainer doc, a PR #800 review-merge, a harness lane), and lanes run them in the ledger-lite fixture repo, where none of that code exists. `committed` is n/a on all three; `ticked` is n/a on replica-01a0d778 (no criteria); the per-key map is `REPLICA_ITEMS` in report.mjs, pinned to `fixtures/replicas-v2.json` by a test. "asked the human" (ended idle, ≤ 2 requests, no commit, no closeout) is counted, not scored 0. Replica accuracy is dropped from every success comparison; its sizes, misses and blind-fetch are the real measures. Fixture v3 either runs replicas against a tm8 checkout at the source sha, or freezes ledger-lite-native tasks with an explicit `deliverableKind` (DESIGN.md §8.3).
+- Lanes are NOT sandboxed from the shared build dir or the host's `gh` login (decision D9). In this run, replica lanes ran `git fetch` in `/private/tmp/ctxeval/build` (a worktree of the operator's main repo) and read the real GitHub. Nothing was written, and the build was made read-only by hand mid-run. RUNBOOK §6 has the integrity check to run before any report; DESIGN.md §7 has the next-run hardening (a read-only per-node build copy, no GH credential, a `reachedOutside` behaviour column).
+- More isolation limits this run (D9 addendum), all next-run items in DESIGN.md §7 (e)-(l). Two are LAUNCH tasks: per-lane TMPDIR = 01a0d991-1570; skill pointers naming the main checkout instead of the lane's worktree = 01a0d98e-c633.
+  - Lanes can reach the host's `gh` token from anywhere via `gh api`. `gh` inside a worktree fails ("no git remotes found"), and the build dir was the only path to a remote; its git link was severed by hand this run.
+  - The dev node's owner wrapper `<datadir>/t8` and its token are readable by lanes (same OS user); one c3 lane posted with the owner token. Closeout never credits it: only the lane's own teammate counts.
+  - Concurrent lanes on a node can find and message each other. Two c2 replica rows (01a0d97c-8fbb, 01a0d97e-349f) are not independent.
+  - `/tmp` is shared across all nodes' lanes.
+  - The replica family was dropped from the rest of rep 2 by decision.
+- Claude auto-memory is keyed to the fixture repo, so lanes on a node shared one project memory (decision D11). A lane's notes loaded into every later lane: 19 rows this run (c1 9, c3 4, c4 6). report.mjs sets them aside automatically and flags the writer; lanes.mjs (7cc832d4) guards the dir before every spawn. Prevention (probed, 2.1.280): `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the node env (DESIGN §7 (l)).
+- lanes.mjs has no graceful stop, `--exclude-families` or rep-start yet (DESIGN §8.5).
+- Subagent transcripts (`<transcript-dir>/<native-id>/subagents/agent-*.jsonl`) are counted since 889efcf0, the re-measure floor. `requests`, `usage` and `costUsd` are lane totals, and `main*` keeps the main thread's; first-request tokens, components and misses stay the main thread's. Before the fix, the 2 delegating lanes (sonnet5 replica-01a0d742#1 on c3 and c4) read at about a third of their real cost ($0.86 vs $2.44). Folding subagent READS into misses/expand is still schema 4 (DESIGN.md §8.4).
+- `blindFetchBytes` is structurally 0 in fixture v2, so read it as no evidence rather than a clean result. measure.mjs gates it on a manifest entry's `bytes` > 20 KB, but an entry's `bytes` is its INDEX LINE (or snapshot row), at most 655 B across all 34 eval manifests. And no fixture body exceeds 4.5 KB. Redefining it (e.g. an unpaged read whose RESULT exceeds 20 KB) changes the measurement: a next-run item under the schema freeze at 703db99a.
