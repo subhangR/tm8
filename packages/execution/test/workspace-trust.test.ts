@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  completeClaudeOnboarding,
   resolveClaudeTrustRoot,
   trustClaudeWorkspace,
   trustCodexWorkspace,
@@ -273,5 +274,54 @@ describe('trustCodexWorkspace', () => {
 
     const config = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
     expect(config.match(/\[projects\./g)).toHaveLength(2);
+  });
+});
+
+describe('completeClaudeOnboarding', () => {
+  it('marks onboarding complete on a logged-in home, keeping every other key', async () => {
+    // The member-credential home after `claude auth login`: a login, no flag.
+    const { home } = await sandbox();
+    const configDir = join(home, 'anthropic');
+    await mkdir(configDir);
+    const configPath = join(configDir, '.claude.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({ oauthAccount: { emailAddress: 'someone@example.com' }, userID: 'u1' }),
+    );
+    expect(await completeClaudeOnboarding({ HOME: home, CLAUDE_CONFIG_DIR: configDir })).toBe('completed');
+    const config = JSON.parse(await readFile(configPath, 'utf8'));
+    expect(config).toEqual({
+      oauthAccount: { emailAddress: 'someone@example.com' },
+      userID: 'u1',
+      hasCompletedOnboarding: true,
+    });
+    // The node's own home was never touched.
+    await expect(stat(join(home, '.claude.json'))).rejects.toThrow();
+  });
+
+  it('leaves a home with NO login to Claude\'s own onboarding', async () => {
+    // Its login step is the only way in; skipping it strands the lane at /login.
+    const { home } = await sandbox();
+    await writeFile(join(home, '.claude.json'), JSON.stringify({ userID: 'u1' }));
+    expect(await completeClaudeOnboarding({ HOME: home })).toBe('unchanged');
+    const config = JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'));
+    expect(config.hasCompletedOnboarding).toBeUndefined();
+    // Absent config: nothing created.
+    const { home: empty } = await sandbox();
+    expect(await completeClaudeOnboarding({ HOME: empty })).toBe('unchanged');
+    await expect(stat(join(empty, '.claude.json'))).rejects.toThrow();
+  });
+
+  it('does not rewrite an already-onboarded home, and never touches a malformed one', async () => {
+    const { home } = await sandbox();
+    const configPath = join(home, '.claude.json');
+    await writeFile(configPath, JSON.stringify({ oauthAccount: {}, hasCompletedOnboarding: true }));
+    const before = (await stat(configPath)).mtimeMs;
+    expect(await completeClaudeOnboarding({ HOME: home })).toBe('unchanged');
+    expect((await stat(configPath)).mtimeMs).toBe(before);
+
+    await writeFile(configPath, '{ "oauthAccount": {} ,,, not json');
+    expect(await completeClaudeOnboarding({ HOME: home })).toBe('skipped');
+    expect(await readFile(configPath, 'utf8')).toBe('{ "oauthAccount": {} ,,, not json');
   });
 });
