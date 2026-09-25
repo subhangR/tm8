@@ -8,3 +8,4 @@ import './launch-selection.css';
 
 export { useLaunchSelection, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
 export { LaunchSelectionGroups, type LaunchSelectionCandidates } from './LaunchSelectionGroups';
+export type { LaunchDefaultsPort } from './port';

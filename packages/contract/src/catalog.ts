@@ -60,6 +60,10 @@ export const OPERATIONS = [
   // no CLI, no dispatch, no spawn-time call. A command because it writes the
   // jev_runs / jev_calls cost rows; `requestId` in the body is its idempotency key.
   { name: 'launch.suggest', method: 'POST', path: '/v2/spaces/:spaceId/launch/suggest', kind: 'command', status: 'v1' },
+  // launch.defaults — what a launch loads per selection group when nothing is
+  // selected (design 01a0d348 §5.1, I9): spawn's own default loaders, read in
+  // the caller's RLS tx, so the launch sheet pre-ticks exactly what spawn loads.
+  { name: 'launch.defaults', method: 'GET', path: '/v2/spaces/:spaceId/launch/defaults', kind: 'read', status: 'v1' },
   // identity & spaces
   { name: 'identity.get',            method: 'GET',    path: '/v2/identity',                                kind: 'read',    status: 'v1' },
   { name: 'serverConnections.list',  method: 'GET',    path: '/v2/server-connections',                      kind: 'read',    status: 'v1' },

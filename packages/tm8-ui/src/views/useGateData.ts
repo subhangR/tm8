@@ -2,7 +2,9 @@ import { createRealFormsPort } from '../forms/real-port';
 import { setDefaultFormsPort } from '../forms/seam';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
-import type { SkillPreviewResult } from '@tm8/contract';
+import type { LaunchDefaultsInput, SkillPreviewResult } from '@tm8/contract';
+import { REFERENCE_KINDS, referenceCandidateRow, skillCandidateRow, type LaunchContextRow } from '../domain/launch-selection';
+import type { LoadLaunchDefaults } from '../launch-selection/useLaunchSelection';
 /**
  * Gate boot: seam → domain store → the selectors the views hand to the panels.
  *
@@ -712,6 +714,11 @@ export interface GateData {
      * two differently.
      */
     memories?: readonly LaunchMemory[];
+    /** `launch.defaults` (I9): what a launch loads per selection group. */
+    loadLaunchDefaults?: LoadLaunchDefaults;
+    /** The launch's add pools (I9). Absent: not read into this client. */
+    skillCandidates?: readonly LaunchContextRow[];
+    referenceCandidates?: readonly LaunchContextRow[];
     capacity?: LaunchCapacity;
   };
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
@@ -2436,6 +2443,16 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
           };
         })
       : undefined;
+    /* THE ADD POOLS for the launch's selection groups (I9). Same rule as
+       memories: a kind nobody has hydrated is UNKNOWN, not empty, so the
+       reference pool exists only once at least one reference kind was read,
+       and holds only the kinds that were. */
+    const referenceKinds = REFERENCE_KINDS.filter((kind) => rows[`${kind}::*`]);
+    const referenceCandidates = referenceKinds.length > 0
+      ? summaries.filter((row) => referenceKinds.includes(row.state.kind)).map(referenceCandidateRow)
+      : undefined;
+    const skillCandidates = skillOptions?.map(skillCandidateRow);
+    const launchDefaultsPort = seam.commands.launchDefaults;
     const capacity = executionCapacity
       ? {
           slotsFree: Math.max(0, executionCapacity.total - executionCapacity.used),
@@ -2450,6 +2467,9 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
          would be three call sites that can drift, and would leave whichever one
          nobody remembered on the old insertion order. */
       ...(seam.commands.jev ? { jev: seam.commands.jev } : {}),
+      ...(launchDefaultsPort ? { loadLaunchDefaults: (input: LaunchDefaultsInput) => launchDefaultsPort.defaults(spaceId, input) } : {}),
+      ...(skillCandidates ? { skillCandidates } : {}),
+      ...(referenceCandidates ? { referenceCandidates } : {}),
       ...(seam.commands.skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => seam.commands.skills!.preview(spaceId, input) } : {}),
       teammates: orderTeammatesByRecency(teammates, launchRecents),
       projects,
@@ -2457,7 +2477,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, seam]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, seam, skillOptions]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty

@@ -1,5 +1,6 @@
 import type { SkillPort } from '../../skills/port';
 import type { JevPort } from '../../jev/port';
+import type { LaunchDefaultsPort } from '../../launch-selection/port';
 import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
@@ -1070,6 +1071,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // inject a `clientMutationId`, which the contract tolerates.
       suggest(spaceId, input) { return http.call('launch.suggest', { params: { spaceId }, body: input }); },
     } satisfies JevPort,
+    launchDefaults: {
+      defaults(spaceId, input) { return http.call('launch.defaults', { params: { spaceId }, query: { ...input } }); },
+    } satisfies LaunchDefaultsPort,
     /**
      * `forms.*` (FORMS-DESIGN §6) for the questionnaire block's real port.
      * `redeliver` is feature-detected: it exists only once this build's

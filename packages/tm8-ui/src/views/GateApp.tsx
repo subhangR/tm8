@@ -71,6 +71,7 @@ import { JoinScreen, arriveInSpace, clearPendingJoin, newJoinMutationId } from '
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
+import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
@@ -1258,7 +1259,10 @@ export function GateApp(props: GateAppProps = {}) {
    * facts and only one of them is a measurement.
    */
   useEffect(() => {
-    if (launch.subjectId) data.ensureKind('memory');
+    if (!launch.subjectId) return;
+    data.ensureKind('memory');
+    /* The References group's add pool (I9) — the same on-open rule. */
+    for (const kind of REFERENCE_KINDS) data.ensureKind(kind);
   }, [launch.subjectId, data]);
 
   /* GraphScreen takes its launch sources as a PROP (its data port is

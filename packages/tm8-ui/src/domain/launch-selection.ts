@@ -24,6 +24,7 @@
  */
 import {
   SPAWN_SELECTION_GROUP_LIMIT,
+  SPAWN_SELECTION_REFERENCE_KINDS,
   type EntityId,
   type LaunchDefaultItem,
   type LaunchDefaultsGroup,
@@ -32,6 +33,8 @@ import {
   type SpawnSelectionDefaultReason,
   type SpawnSelectionGroup,
 } from '@tm8/contract';
+
+import type { LaunchMemory } from './launch';
 
 export const LAUNCH_SELECTION_GROUPS = ['memories', 'skills', 'references'] as const satisfies readonly SpawnSelectionGroup[];
 
@@ -86,6 +89,35 @@ export function loadingDefaults(): LaunchSelectionDefaults {
 export function unknownDefaults(reason: string): LaunchSelectionDefaults {
   const group = { status: 'unknown', reason } as const;
   return { memories: group, skills: group, references: group };
+}
+
+/** A space memory offered for adding, in the sheet's shape. Its scope and mark ride along: picking a claim blind is how a true statement about the wrong subject gets injected. */
+export function memoryCandidateRow(memory: LaunchMemory): LaunchContextRow {
+  return {
+    id: memory.id as EntityId,
+    kind: 'memory',
+    title: memory.statement,
+    text: `${memory.mark} · ${memory.subjectScope}`,
+    derived: false,
+    via: null,
+  };
+}
+
+/** A space skill offered for adding (the `/` trigger's options: name and description). */
+export function skillCandidateRow(option: { readonly id: string; readonly display: string; readonly meta?: string }): LaunchContextRow {
+  return { id: option.id as EntityId, kind: 'skill', title: option.display, text: option.meta ?? null, derived: false, via: null };
+}
+
+/** The kinds `selection.referenceIds` may name, as the node's contract states them. */
+export const REFERENCE_KINDS: readonly string[] = SPAWN_SELECTION_REFERENCE_KINDS;
+
+/** A space doc, artifact, drawing, file or task offered for adding. */
+export function referenceCandidateRow(summary: {
+  readonly id: string;
+  readonly title: string;
+  readonly state: { readonly kind: string };
+}): LaunchContextRow {
+  return { id: summary.id as EntityId, kind: summary.state.kind, title: summary.title || summary.id, text: null, derived: false, via: null };
 }
 
 /** `launch.defaults` rows, in the sheet's shape. */
@@ -218,6 +250,8 @@ const SELECTION_KEY = {
 export function composeSelection(
   manual: Readonly<Record<SpawnSelectionGroup, GroupOutcome>>,
   override: Partial<Record<SpawnSelectionGroup, GroupOutcome>> = {},
+  /** Why a group left on its defaults got there, when it is more than `not-asked` (a failed or pending Jev group). */
+  defaultReasons: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>> = {},
 ): LaunchSelectionFields {
   const selection: SpawnSelection = {};
   const reasons: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>> = {};
@@ -226,7 +260,8 @@ export function composeSelection(
     if ('send' in outcome && outcome.send.length <= SPAWN_SELECTION_GROUP_LIMIT) {
       selection[SELECTION_KEY[group]] = [...outcome.send];
     } else {
-      reasons[group] = 'omit' in outcome ? outcome.omit : 'not-asked';
+      const reason = 'omit' in outcome ? outcome.omit : 'not-asked';
+      reasons[group] = reason === 'not-asked' ? defaultReasons[group] ?? reason : reason;
     }
   }
   return {

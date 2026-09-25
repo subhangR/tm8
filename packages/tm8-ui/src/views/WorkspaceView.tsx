@@ -916,6 +916,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               /* Undefined until the kind is hydrated, and the sheet draws that
                  as "unknown" rather than "none" — see the picker's comment. */
               memories={data.launch.memories}
+              loadLaunchDefaults={data.launch.loadLaunchDefaults}
+              skillCandidates={data.launch.skillCandidates}
+              referenceCandidates={data.launch.referenceCandidates}
           loadSkillPreview={data.launch.loadSkillPreview}
           jev={data.launch.jev}
           spaceId={data.spaceId}
