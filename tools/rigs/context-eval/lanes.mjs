@@ -224,16 +224,21 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
     row.transcript = transcript;
     const noLinks = tpl.linkedIds.length === 0 && !(manifest.context?.entries ?? []).some((e) => e.group === 'references') && !manifest.context?.groups?.references?.unread;
     if (!tpl.linkedIds.length && !noLinks) throw new Error(`task ${cell.taskKey} has no linked ids, so no absent-from-index miss could be counted`);
-    measured = measureLane({ manifest, transcriptLines: readFileSync(transcript, 'utf8').split('\n'), linked: tpl.linkedIds });
-    measured.toolCalls = measured.reads.length ? undefined : undefined;
-    measured.needleOpened = tpl.needleId ? measured.reads.some((r) => r.id === tpl.needleId) : null;
+    const transcriptText = readFileSync(transcript, 'utf8');
+    // A lane whose first reply is synthetic ("Not logged in · Please run /login")
+    // sent no request: its keychain read failed (seen when the node was started
+    // from a sandboxed shell). It is set aside, never measured as a 0-token lane.
+    if (/"model":"<synthetic>"/.test(transcriptText) && /Not logged in/.test(transcriptText)) throw new Error('auth-error: the lane was not logged in (synthetic reply); start the node from a non-sandboxed shell');
+    measured = measureLane({ manifest, transcriptLines: transcriptText.split('\n'), linked: tpl.linkedIds });
+        measured.needleOpened = tpl.needleId ? measured.reads.some((r) => r.id === tpl.needleId) : null;
     measured.needleMissed = tpl.needleId ? tpl.needleId in measured.miss.ids : null;
     measured.needleState = tpl.needleId ? ((manifest.context?.entries ?? []).find((e) => e.entityId === tpl.needleId)?.state ?? 'absent') : null;
     measured.memoriesCollapsed = (manifest.context?.dropped ?? []).filter((d) => d.level === 'body').length;
     measured.memoryExpands = (manifest.context?.entries ?? []).filter((e) => e.group === 'memories' && measured.reads.some((r) => r.id === e.entityId)).length;
     delete measured.reads;
-    measured.toolCalls = countToolCalls(readFileSync(transcript, 'utf8'));
+    measured.toolCalls = countToolCalls(transcriptText);
     measured.modelId = manifest.launch?.model ?? null;
+    delete measured.model; // the row's `model` is the matrix key (sonnet5); the launch's id is `modelId`
     measured.components = componentsOf({ measured, manifest });
     measured.costUsd = laneCostUsd(measured.modelId, measured.usage);
   } catch (e) {
@@ -252,7 +257,10 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
     judgeError = String(e.message ?? e);
   }
   const rubric = judgeError ? null : rubricFor(tpl.family, { success, turn: row.turn, checkResults });
-  const excluded = row.ended === 'no-transcript' ? { reason: 'start failure: no transcript within 120s (workspace-trust hang, task 01a0d79e)', by: 'auto' } : undefined;
+  const excluded = row.ended === 'no-transcript'
+    ? { reason: 'start failure: no transcript within 120s (workspace-trust hang, task 01a0d79e)', by: 'auto' }
+    : measureError?.startsWith('auth-error') ? { reason: `start failure: ${measureError}`, by: 'auto' } : undefined;
+  if (excluded && measureError?.startsWith('auth-error')) row.ended = 'auth-error';
   const done = finish({ ...measured, ...(measureError ? { measureError } : {}), success, checkResults, rubric, ...(judgeError ? { judgeError } : {}), ...(excluded ? { excluded } : {}) });
   console.error(`${tag} ${done.ended} ${done.wallSeconds}s first=${measured?.firstRequestTokens ?? '-'} entryMiss=${measured?.miss?.entry?.count ?? '-'} score=${rubric?.score?.toFixed(2) ?? '-'} $${measured?.costUsd?.toFixed(3) ?? '-'}${measureError ? ` NOT MEASURED: ${measureError}` : ''}${excluded ? ` EXCLUDED: ${excluded.reason}` : ''}`);
   return done;

@@ -244,7 +244,8 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const files = process.argv.slice(2).filter((a) => !a.startsWith('--') && a.endsWith('.jsonl') && process.argv[process.argv.indexOf(a) - 1] !== '--baseline');
+  const argv = process.argv.slice(2);
+  const files = argv.filter((a, i) => !a.startsWith('--') && a.endsWith('.jsonl') && !(i > 0 && argv[i - 1].startsWith('--')));
   const refuse = (why) => {
     console.error(`report: ${why}`);
     process.exit(1);

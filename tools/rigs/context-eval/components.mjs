@@ -16,11 +16,15 @@ export function componentsOf({ measured, manifest }) {
   const entries = Array.isArray(ctx.entries) ? ctx.entries : [];
   const indexByGroup = {};
   for (const g of INDEX_GROUPS) indexByGroup[g] = 0;
-  for (const e of entries) {
-    if (e.state === 'expanded') continue; // expanded memories are counted under memoriesExpanded
-    indexByGroup[e.group] = (indexByGroup[e.group] ?? 0) + (e.bytes ?? 0);
-  }
   const indexBytes = typeof ctx.index?.bytes === 'number' ? ctx.index.bytes : 0;
+  // With the index OFF the manifest still records the selected entries (what
+  // the launch would have listed), but nothing was rendered: the groups stay 0.
+  if (indexBytes > 0) {
+    for (const e of entries) {
+      if (e.state === 'expanded') continue; // expanded memories are counted under memoriesExpanded
+      indexByGroup[e.group] = (indexByGroup[e.group] ?? 0) + (e.bytes ?? 0);
+    }
+  }
   const tm8System = measured.system?.tm8Bytes ?? 0;
   const a = measured.attachments ?? {};
   const bytes = {
