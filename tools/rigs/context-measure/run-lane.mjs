@@ -32,6 +32,7 @@ const task = fixture.tasks[taskKey];
 if (!task) throw new Error(`task key ${taskKey} is not in ${arg('fixture')}`);
 const launchOnly = process.argv.includes('--launch-only');
 const IDLE_SECONDS = 45;
+const NO_TRANSCRIPT_MS = 120_000;
 const TIMEOUT_MS = Number(arg('timeout-min') ?? 25) * 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -117,6 +118,22 @@ while (Date.now() - t0 < TIMEOUT_MS) {
       nativeId = /--session-id\s+(\S+)/.exec(sh('ps', ['-o', 'command=', '-p', pid]))?.[1] ?? null;
     }
   }
+  // A lane that writes no transcript is stuck before its first request. Seen
+  // live: Claude's workspace-trust prompt, when the spawn's pre-trust entry in
+  // ~/.claude.json lost a write race to another claude process. Fail it fast
+  // (the row keeps measureError) instead of idling to the timeout.
+  if (Date.now() - t0 > NO_TRANSCRIPT_MS) {
+    let f = null;
+    try {
+      f = worktree && transcriptFor(worktree, nativeId);
+    } catch {
+      f = null;
+    }
+    if (!f) {
+      ended = 'no-transcript';
+      break;
+    }
+  }
   if (launchOnly) {
     const f = worktree && transcriptFor(worktree, nativeId);
     if (f && readFileSync(f, 'utf8').includes('"type":"assistant"')) {
@@ -161,7 +178,13 @@ let measured = null;
 let measureError = null;
 try {
   if (!transcript) throw new Error(`no transcript for ${worktree} (native ${nativeId})`);
-  if (!linked.length) throw new Error(`task ${taskKey} has no linked ids, so no absent-from-index miss could be counted`);
+  // An empty linked set is refused (a lost list would hide every
+  // absent-from-index miss) UNLESS the task genuinely has no links: the fixture
+  // says so explicitly (links: []) and the launch recorded no references.
+  const noLinks = Array.isArray(task.links) && task.links.length === 0
+    && !(manifest.context?.entries ?? []).some((e) => e.group === 'references')
+    && !manifest.context?.groups?.references?.unread;
+  if (!linked.length && !noLinks) throw new Error(`task ${taskKey} has no linked ids, so no absent-from-index miss could be counted`);
   measured = measureLane({ manifest, transcriptLines: readFileSync(transcript, 'utf8').split('\n'), linked });
   measured.needleOpened = task.needleId ? measured.reads.some((r) => r.id === task.needleId) : null;
   measured.needleMissed = task.needleId ? task.needleId in measured.miss.ids : null;
