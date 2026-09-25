@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
@@ -1681,7 +1681,7 @@ export function ChatHomeScreen({
             ? threadGroups.map((group) => (
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
-                  {group.rows.map((thread) => (
+                  {group.rows.map((thread) => withChatSubject(thread, onOpenEntity, (
                     <button
                       type="button"
                       key={thread.rootId}
@@ -1718,7 +1718,7 @@ export function ChatHomeScreen({
                         <Timestamp at={thread.updatedAt} />
                       </span>
                     </button>
-                  ))}
+                  )))}
                 </div>
               ))
             : null}
@@ -2644,4 +2644,30 @@ function describeError(error: unknown): string {
 
 function defaultMutationId(prefix: string): string {
   return `${prefix}:${crypto.randomUUID()}`;
+}
+
+/**
+ * A Chats-list row, with its SUBJECT when the server named one (entity chat
+ * §3.6): "about ‹title›" as a chip that opens the subject, not the chat.
+ *
+ * The chip sits BESIDE the row button rather than inside it — a button cannot
+ * nest a button, the `.tch-task-row` precedent. A row with no subject (or from
+ * a port that predates §3.6) is returned exactly as it was.
+ */
+function withChatSubject(
+  thread: ChatThreadSummary,
+  onOpenEntity: ((id: EntityId) => void) | undefined,
+  row: ReactNode,
+): ReactNode {
+  if (!thread.about) return <Fragment key={thread.rootId}>{row}</Fragment>;
+  const { id, kind, title } = thread.about;
+  return (
+    <div key={thread.rootId} className="tch-chat-row" data-testid="chat-row-with-subject">
+      {row}
+      <div className="tch-thread__about" data-testid="chat-row-about">
+        <span className="tch-about__word">about</span>
+        <EntityChip refInfo={{ id, kind, title }} onOpen={onOpenEntity} />
+      </div>
+    </div>
+  );
 }

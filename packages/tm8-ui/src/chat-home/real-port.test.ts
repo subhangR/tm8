@@ -342,6 +342,31 @@ describe('real chat-home seam adapter', () => {
     expect(rows.map((row) => row.aboutId)).toEqual([null, null, null]);
   });
 
+  /**
+   * §3.6 — the subject comes back ON the summary (`state.about`, batched by the
+   * server for the whole page), so the list carries it with the SAME zero
+   * per-row reads the case above pins. Absent stays absent: a server that
+   * predates §3.6 must not read as "every chat has no subject".
+   */
+  it('lists each chat\'s subject off its summary, still with no per-row read', async () => {
+    const withSubject = chatSummary();
+    withSubject.state = {
+      ...withSubject.state,
+      about: { id: ABOUT, kind: 'task', title: 'Ship the launch' },
+    } as typeof withSubject.state;
+    const bare = chatSummary({ id: '019f0000-0000-7000-8000-000000000301' });
+    bare.state = { ...bare.state, about: null } as typeof bare.state;
+    const legacy = chatSummary({ id: '019f0000-0000-7000-8000-000000000302' });
+    const { seam, connections } = seamStub([withSubject, bare, legacy]);
+
+    const rows = await createChatHomePortFromSeam(seam).listThreads('space-1');
+    expect(connections).not.toHaveBeenCalled();
+    expect(rows.map((row) => row.aboutId)).toEqual([ABOUT, null, null]);
+    expect(rows[0]?.about).toEqual({ id: ABOUT, kind: 'task', title: 'Ship the launch' });
+    expect(rows[1]?.about).toBeNull();
+    expect(rows[2] && 'about' in rows[2]).toBe(false);
+  });
+
   it('reads the subject for the ONE chat being opened, and surfaces it', async () => {
     const { seam, connections } = seamStub();
     (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
