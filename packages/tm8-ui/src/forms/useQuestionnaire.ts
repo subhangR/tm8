@@ -18,13 +18,25 @@
  * A reload re-walks from the top THROUGH the oldest row the reader loaded, so
  * a live event never collapses their pages back to page 1, a new submission
  * never pushes a loaded row out of view, and a superseded row drops out.
+ *
+ * A FRESH delivery (pending, never attempted, inside `DELIVERING_GRACE_MS` of
+ * its submit: delivery.ts) usually settles through the server's fast path in
+ * a second or two, so while one is shown the block re-reads sooner, at the
+ * `DELIVERY_FAST_POLL_MS` backoff (visible only), and the backstop stands
+ * aside until that burst ends. A new fresh row (this viewer's submit, or one
+ * a `responses` change brought in) starts a new burst. This viewer's own
+ * submit time (`markSubmitted`) also dates their row, so a server clock
+ * behind the browser's cannot age it out early.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DELIVERING_GRACE_MS, deliveryStart } from './delivery';
 import { FormsPortError, formContentOf, useFormsPort, type FormResponseView, type FormState, type MyFormSlot } from './seam';
 
 export { formContentOf } from './seam';
 
 export const DELIVERY_POLL_MS = 15_000;
+/** Gaps between the re-reads of a fresh delivery's burst (≈1 s, 3 s, 7 s, 15 s after it starts). */
+export const DELIVERY_FAST_POLL_MS = [1_000, 2_000, 4_000, 8_000] as const;
 
 export function errorText(e: unknown): string {
   if (e instanceof FormsPortError) return e.message;
@@ -57,6 +69,24 @@ function pendingSessions(rows: readonly (FormResponseView | null | undefined)[])
   const out = new Set<string>();
   for (const r of rows) for (const d of r?.deliveries ?? []) if (d.status === 'pending') out.add(d.workSessionId);
   return out;
+}
+
+/** Fresh deliveries (pending, never attempted, still inside the grace window) as one stable key. */
+function freshDeliveries(
+  rows: readonly (FormResponseView | null | undefined)[],
+  since: (r: FormResponseView) => number | null,
+  now: number,
+): string {
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (!r) continue;
+    const start = since(r);
+    if (start === null || now - start >= DELIVERING_GRACE_MS) continue;
+    for (const d of r.deliveries) {
+      if (d.status === 'pending' && d.attempts === 0 && !d.lastError) out.add(`${r.id}:${d.workSessionId}`);
+    }
+  }
+  return [...out].sort().join(' ');
 }
 
 const pageVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
@@ -157,6 +187,19 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
+  /** When this viewer last submitted (their clock), for the grace window. */
+  const [localSubmitAt, setLocalSubmitAt] = useState<number | null>(null);
+  const currentId = mine?.current?.id ?? null;
+  const deliverySince = useCallback(
+    (r: FormResponseView) => deliveryStart(r.submittedAt, r.id === currentId ? localSubmitAt : null),
+    [currentId, localSubmitAt],
+  );
+  const markSubmitted = useCallback(() => setLocalSubmitAt(Date.now()), []);
+  const fresh = useMemo(
+    () => freshDeliveries([mine?.current, ...(responses ?? [])], deliverySince, Date.now()),
+    [mine, responses, deliverySince],
+  );
+
   useEffect(() => {
     void reload();
     return port.subscribe(detail.id, (change) => {
@@ -171,12 +214,35 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     });
   }, [port, detail.id, reload, refetchForm]);
 
+  // The fast burst while a fresh delivery is shown: visible only, and over
+  // once the rows settle (the key empties) or the backoff runs out.
+  const bursting = useRef(false);
+  useEffect(() => {
+    if (!fresh) return;
+    let step = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const next = () => {
+      bursting.current = step < DELIVERY_FAST_POLL_MS.length;
+      if (!bursting.current) return;
+      timer = setTimeout(() => {
+        step += 1;
+        if (pageVisible()) void reload();
+        next();
+      }, DELIVERY_FAST_POLL_MS[step]);
+    };
+    next();
+    return () => {
+      clearTimeout(timer);
+      bursting.current = false;
+    };
+  }, [fresh, reload]);
+
   // The backstop poll: responses only, visible only, pending only.
   const hasPending = pending.size > 0;
   useEffect(() => {
     if (!hasPending) return;
     const timer = setInterval(() => {
-      if (pageVisible()) void reload();
+      if (pageVisible() && !bursting.current) void reload();
     }, DELIVERY_POLL_MS);
     return () => clearInterval(timer);
   }, [hasPending, reload]);
@@ -199,6 +265,10 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     detailError,
     reload,
     refetchForm,
+    /** When a response's delivery started, for `DeliveryChip`/`DeliveryNote`'s grace window. */
+    deliverySince,
+    /** This viewer just submitted: date their row by their own clock (call before `reload`). */
+    markSubmitted,
   };
 }
 

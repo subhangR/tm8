@@ -3,7 +3,7 @@
  * `QuestionField` and `AnswerView` resolve an entry in the UI registry and
  * hand it a config/answer the contract's schemas parsed.
  */
-import { createContext, useContext, useId, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from 'react';
 import {
   formAnswersEqual,
   type FormAnswerIssue,
@@ -14,7 +14,7 @@ import {
 } from '@tm8/contract';
 import { Markdown, Pill, Timestamp, type PillTone } from '../kit';
 import { parseAnswer, resolveQuestion } from './question-types';
-import { readDelivery, type DeliveryState } from './delivery';
+import { DELIVERING_GRACE_MS, readDelivery, type DeliveryReading, type DeliveryState } from './delivery';
 import { FormsPortError, type FormDeliveryView, type FormResponseView } from './seam';
 
 // ---------------------------------------------------------------------------
@@ -33,8 +33,10 @@ export function FormStatusChip({ status }: { status: FormStatus }) {
   return <Pill tone={chip.tone} dot="solid">{chip.word}</Pill>;
 }
 
-/** Each real delivery state (delivery.ts) → its chip. */
-export const DELIVERY_CHIP: Record<DeliveryState, { tone: PillTone; word: string }> = {
+/** Each real delivery state (delivery.ts) → its chip. The pulse is the kit's
+    live marker (it holds still under `prefers-reduced-motion`). */
+export const DELIVERY_CHIP: Record<DeliveryState, { tone: PillTone; word: string; dot?: 'pulse' }> = {
+  delivering: { tone: 'info', word: 'Delivering…', dot: 'pulse' },
   queued: { tone: 'wait', word: 'Queued' },
   retrying: { tone: 'wait', word: 'Retrying' },
   redelivering: { tone: 'info', word: 'Sending to new session' },
@@ -44,14 +46,41 @@ export const DELIVERY_CHIP: Record<DeliveryState, { tone: PillTone; word: string
   cancelled: { tone: 'block', word: 'Not delivered' },
 };
 
-export function DeliveryChip({ delivery }: { delivery: Pick<FormDeliveryView, 'status' | 'attempts' | 'lastError'> }) {
-  const { state, error, reason } = readDelivery(delivery);
-  const chip = DELIVERY_CHIP[state];
+/**
+ * A delivery's age against `since` (epoch ms; null ⇒ unknown), re-rendering
+ * once when the "Delivering…" grace window runs out so the row falls back to
+ * "Queued" on its own, with no response re-read.
+ */
+function useDeliveryAge(since: number | null | undefined): number | null {
+  const [, tick] = useState(0);
+  const age = since == null ? null : Math.max(0, Date.now() - since);
+  const inWindow = age !== null && age < DELIVERING_GRACE_MS;
+  useEffect(() => {
+    if (!inWindow || since == null) return;
+    const timer = setTimeout(() => tick((n) => n + 1), Math.max(0, since + DELIVERING_GRACE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [since, inWindow]);
+  return age;
+}
+
+function DeliveryPill({ status, reading }: { status: FormDeliveryView['status']; reading: DeliveryReading }) {
+  const chip = DELIVERY_CHIP[reading.state];
   return (
-    <span data-testid="delivery-chip" data-status={delivery.status} data-state={state} title={reason ?? error ?? undefined}>
-      <Pill tone={chip.tone}>{chip.word}</Pill>
+    <span data-testid="delivery-chip" data-status={status} data-state={reading.state} title={reading.reason ?? reading.error ?? undefined}>
+      <Pill tone={chip.tone} dot={chip.dot}>{chip.word}</Pill>
     </span>
   );
+}
+
+export function DeliveryChip({
+  delivery,
+  since,
+}: {
+  delivery: Pick<FormDeliveryView, 'status' | 'attempts' | 'lastError'>;
+  /** When the delivery started (`deliveryStart`); absent ⇒ no grace window. */
+  since?: number | null;
+}) {
+  return <DeliveryPill status={delivery.status} reading={readDelivery(delivery, useDeliveryAge(since))} />;
 }
 
 /**
@@ -73,20 +102,24 @@ const REFUSAL_TEXT: Record<string, string> = {
  * One delivery's chip, the line it owes the reader (§7.3), and its door:
  * "Resume now" on a queued/retrying row, "Send to a new session" on a
  * cancelled one — both through `forms.responses.redeliver`, disabled with the
- * reason when the node lacks it.
+ * reason when the node lacks it. A fresh row inside the grace window reads
+ * "Delivering…" and offers no door yet.
  */
 export function DeliveryNote({
   delivery,
+  since,
   redeliver,
   onSettled,
 }: {
   delivery: FormDeliveryView;
+  /** When the delivery started (`deliveryStart`); absent ⇒ no grace window. */
+  since?: number | null;
   /** `port.redeliver` bound to this response; undefined ⇒ the op is missing. */
   redeliver?: (workSessionId: string, to: 'resume' | 'new_session') => Promise<void>;
   /** After an action (done or refused): re-read the responses. */
   onSettled?: () => void;
 }) {
-  const reading = readDelivery(delivery);
+  const reading = readDelivery(delivery, useDeliveryAge(since));
   const openEntity = useContext(FormsNavContext);
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle');
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,6 +144,9 @@ export function DeliveryNote({
 
   let text: ReactNode;
   switch (reading.state) {
+    case 'delivering':
+      text = <>Delivering to the requesting session…</>;
+      break;
     case 'queued':
       text = <>Answer saved; it will be delivered when the session resumes. {RESUME_LATENCY}</>;
       break;
@@ -149,7 +185,7 @@ export function DeliveryNote({
 
   return (
     <div className="qn-delivery" data-testid="delivery-note" data-state={reading.state}>
-      <DeliveryChip delivery={delivery} />
+      <DeliveryPill status={delivery.status} reading={reading} />
       <span className="qn-delivery__text">
         {text}
         {reading.redeliveredFrom ? <span className="qn-muted"> Re-sent from an earlier delivery.</span> : null}

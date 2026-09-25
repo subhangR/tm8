@@ -90,6 +90,7 @@ function Individual({
         key={open.id}
         form={form}
         response={open}
+        since={q.deliverySince(open)}
         port={q.port}
         onBack={() => setOpenId(null)}
         onSettled={() => void q.reload()}
@@ -131,7 +132,7 @@ function Individual({
               <td>{answeredCount(questions, r.answers)}/{r.questionsSnapshot?.questions.length ?? total}</td>
               <td>
                 {r.deliveries.length > 0
-                  ? r.deliveries.map((d) => <DeliveryChip key={d.workSessionId} delivery={d} />)
+                  ? r.deliveries.map((d) => <DeliveryChip key={d.workSessionId} delivery={d} since={q.deliverySince(r)} />)
                   : <span className="qn-muted">—</span>}
               </td>
             </tr>
@@ -153,10 +154,11 @@ interface DetailNav {
 }
 
 function ResponseDetail({
-  form, response, port, onBack, onSettled, nav,
+  form, response, since, port, onBack, onSettled, nav,
 }: {
   form: FormState;
   response: FormResponseView;
+  since: number | null;
   port: FormsPort;
   onBack(): void;
   onSettled(): void;
@@ -190,7 +192,7 @@ function ResponseDetail({
         Revision {response.revision} · submitted <Timestamp at={response.submittedAt} />
       </p>
       {response.deliveries.map((d) => (
-        <DeliveryNote key={d.workSessionId} delivery={d} redeliver={redeliverFor(port, response.id)} onSettled={onSettled} />
+        <DeliveryNote key={d.workSessionId} delivery={d} since={since} redeliver={redeliverFor(port, response.id)} onSettled={onSettled} />
       ))}
       <AnswerList
         response={response}
