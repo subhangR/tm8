@@ -5,7 +5,8 @@
  * THE SAME SERIALIZERS SPAWN USES, ON THE SAME TEXT. A memory is its whole
  * `<entry>` (`serializeMemoryEntry` over `renderMemoryText`, redacted as the
  * manifest redacts it). Anything else is its `<context_index>` entry, built by
- * the spawn path's own builders (`skillIndexEntry`, `referenceIndexEntry`)
+ * the spawn path's own builders (`skillIndexEntry`, `referenceIndexEntry`,
+ * `rosterEntry`)
  * from the same resolved header and measured by `contextEntryBytes`. So for an
  * unchanged graph the set the launch sheet ticks within a budget is the set
  * spawn keeps whole (`jev-suggest-equals-spawn.pg.test.ts`).
@@ -25,8 +26,10 @@ import {
   computeEffectiveSkills,
   redactSecretsDeep,
   referenceIndexEntry,
+  rosterEntry,
   skillIndexEntry,
   type ContextVia,
+  type DispatcherRoster,
   type ResolvedSkillRow,
 } from '@tm8/execution';
 import { contextEntryBytes, serializeMemoryEntry, serializeSkillIndexEntry, utf8Bytes, type ContextIndexVia } from '@tm8/prompt';
@@ -73,4 +76,18 @@ export function referencePromptBytes(
 ): number {
   if (!measure.contextIndex) return 0;
   return contextEntryBytes(redactSecretsDeep(referenceIndexEntry(ref, header)));
+}
+
+/**
+ * A teammate's entry as a dispatcher's roster renders it (I8, `rosterEntry`):
+ * its `mode` and `model` columns are control attributes. 0 while
+ * `<context_index>` is off, which renders no roster.
+ */
+export function teammatePromptBytes(
+  row: DispatcherRoster['members'][number],
+  header: SelectionHeader | undefined,
+  measure: MeasureContext,
+): number {
+  if (!measure.contextIndex) return 0;
+  return contextEntryBytes(redactSecretsDeep(rosterEntry(row, header)));
 }

@@ -5,8 +5,8 @@
  * collapsed item a launch carries — skills, references, teammates — is one
  * `<entry>` in a named `<group>`, with its header text inside an
  * `untrusted_data type="entry-header"` block and every control attribute
- * (id, kind, link, via, bytes, source, stale, load, the skill attrs) derived
- * by the server.
+ * (id, kind, link, via, bytes, source, stale, load, the skill attrs, a roster
+ * teammate's mode and model) derived by the server.
  *
  * ONE SERIALIZER. `serializeContextEntry` renders an entry and is also what
  * the launch manifest measures it with (`contextEntryBytes`), so a recorded
@@ -35,7 +35,7 @@ export type ContextIndexGroupName = 'memories' | 'references' | 'teammates' | 's
 export const CONTEXT_INDEX_GROUPS: readonly ContextIndexGroupName[] = ['memories', 'references', 'teammates', 'skills'];
 
 /** How an entry entered the launch set. */
-export type ContextIndexVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'builtin';
+export type ContextIndexVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'builtin' | 'roster';
 
 /** The header text of one entry. Untrusted graph content; rendered only inside `untrusted_data`. */
 export interface ContextEntryHeaderText {
@@ -58,6 +58,12 @@ export interface PromptContextEntry {
   load: string;
   /** Skill-only control attributes, carried over from today's `<skill>` line. */
   skill?: { name: string; provider: string; level: string; native: boolean; implicit: boolean };
+  /**
+   * A dispatcher roster entry's launch defaults (the teammate's `mode` and
+   * `model` columns), read by the server: control attributes, never header
+   * text. A null value is not rendered.
+   */
+  teammate?: { mode: string | null; model: string | null };
   /** Absent: the kind has no header (id-only line). */
   header?: ContextEntryHeaderText | null;
   /** Level-1 trim: the header text was dropped for the byte budget. */
@@ -158,6 +164,8 @@ export function serializeContextEntry(entry: PromptContextEntry): string {
       ['implicit', String(entry.skill.implicit)],
     );
   }
+  if (entry.teammate?.mode) attrs.push(['mode', entry.teammate.mode]);
+  if (entry.teammate?.model) attrs.push(['model', entry.teammate.model]);
   if (entry.link) attrs.push(['link', entry.link]);
   attrs.push(['via', entry.via]);
   if (typeof entry.bytes === 'number') attrs.push(['bytes', entry.bytes]);
@@ -410,6 +418,7 @@ export function parseContextIndex(raw: unknown): PromptContextIndex | undefined 
       const load = str(e.load);
       if (!id || !kind || !load) return [];
       const skill = isRecord(e.skill) ? e.skill : undefined;
+      const teammate = isRecord(e.teammate) ? e.teammate : undefined;
       const header = isRecord(e.header) ? e.header : undefined;
       return [{
         id, kind, load,
@@ -421,6 +430,7 @@ export function parseContextIndex(raw: unknown): PromptContextIndex | undefined 
         ...(skill
           ? { skill: { name: str(skill.name) ?? 'unnamed', provider: str(skill.provider) ?? 'tm8', level: str(skill.level) ?? 'space', native: skill.native === true, implicit: skill.implicit !== false } }
           : {}),
+        ...(teammate ? { teammate: { mode: str(teammate.mode) ?? null, model: str(teammate.model) ?? null } } : {}),
         ...(header ? { header: { name: str(header.name) ?? null, whenToUse: str(header.whenToUse) ?? null, summary: str(header.summary) ?? null } } : {}),
         ...(e.headerDropped === true ? { headerDropped: true } : {}),
         ...(Array.isArray(e.clipped) && e.clipped.length > 0 ? { clipped: e.clipped.filter((c): c is string => typeof c === 'string') } : {}),

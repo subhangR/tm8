@@ -1,4 +1,5 @@
 import { resolveHeaders } from '../headers/resolve.js';
+import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
 import { loadSkillsById } from '../skills/equipment.js';
@@ -51,6 +52,7 @@ import {
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
   type ContextDrop,
+  type DispatcherRoster,
   type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
@@ -832,6 +834,15 @@ export class DbGraphPort implements GraphPort {
     // `<context_index>` headers (design 01a0d348 §2.1): one statement in the
     // caller's transaction, so RLS decides what resolves.
     return this.db.tx(this.claims(auth), async (q) => [...(await resolveHeaders(q, input.spaceId, input.ids)).values()]);
+  }
+
+  async loadDispatcherRoster(
+    auth: GraphAuth,
+    input: { spaceId: string; excludeTeamMemberId: string; limit: number },
+  ): Promise<DispatcherRoster> {
+    // A dispatcher's `<context_index>` teammates (design 01a0d348 §8 I8),
+    // under the caller's RLS.
+    return this.db.tx(this.claims(auth), (q) => loadDispatcherRoster(q, input));
   }
 
   async loadMemoryScores(

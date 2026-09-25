@@ -24,7 +24,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult, RankedEntity } from '@tm8/contract';
-import { composeManifest, contextHeaderIds, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
+import { composeManifest, contextHeaderIds, DISPATCHER_ROSTER_READ_MAX, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
 import { contextEntryBytes, serializeContextGroup, serializeMemoryEntry, serializeSkillIndexEntry, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -109,6 +109,11 @@ beforeAll(async () => {
 
     ids.teammate = await entity(c, s, 'team_member');
     await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Draco', 'PTY', 'persona')`, [ids.teammate, member]);
+    // Two more teammates a dispatcher's roster lists: one with launch defaults, one without.
+    ids.lead = await entity(c, s, 'team_member');
+    await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity, mode, model) values ($1, $2, 'Lead', 'Architect', 'Designs the seams.', 'coordinator', 'claude-opus-5-5')`, [ids.lead, member]);
+    ids.scout = await entity(c, s, 'team_member');
+    await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Scout', 'Research', 'Reads widely.')`, [ids.scout, member]);
     ids.task = await entity(c, s, 'task');
     await c.query(`insert into public.tasks(entity_id, title, description) values ($1, 'Fix the deploy', 'The deploy target is wrong.')`, [ids.task]);
 
@@ -156,13 +161,13 @@ const jev: JevAdvisorPort = {
   model: async () => { throw new Error('not asked'); },
 };
 
-async function suggest(profileSnapshot: unknown, runId: string): Promise<LaunchSuggestResult> {
+async function suggest(profileSnapshot: unknown, runId: string, groups: string[] = ['memories', 'skills', 'references']): Promise<LaunchSuggestResult> {
   const registry = new HandlerRegistry();
   const deps = { db, config: {}, owner: async () => ({ identityId: IDENTITY, isNodeAdmin: false }) } as unknown as FacadeDeps;
   registerJevHandlers(registry, deps, { advisor: jev, env: {}, resolveProfile: async () => profileSnapshot });
   return registry.get('launch.suggest')!({
     params: { spaceId: ids.space }, query: new URLSearchParams(), requestId: randomUUID(),
-    body: { runId, requestId: randomUUID(), subjectId: ids.task, teamMemberId: ids.teammate, groups: ['memories', 'skills', 'references'] },
+    body: { runId, requestId: randomUUID(), subjectId: ids.task, teamMemberId: ids.teammate, groups },
     identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/',
   } as unknown as RequestContext) as Promise<LaunchSuggestResult>;
 }
@@ -274,5 +279,27 @@ describe('suggest-ticked == spawn-kept, byte for byte (design 01a0d348 §10 Q5.8
     expect(manifest.skills.map((s) => utf8Bytes(serializeSkillIndexEntry(s)) + 1)).toEqual(
       selection.skillIds.map((id) => skills.items.find((item) => item.entityId === id)!.promptBytes),
     );
+  });
+
+  it('a teammate Jev ranks measures as a dispatcher\'s roster renders it (I8 rosterEntry: mode and model included)', async () => {
+    const result = await suggest(PROFILE, randomUUID(), ['teammates']);
+    const teammates = result.groups.teammates;
+    if (teammates?.status !== 'ok') throw new Error(`teammates is ${teammates?.status}`);
+    // Spawn a DISPATCHER exactly as SpawnService.loadIndexHeaders does: roster first, then its headers.
+    const context: SpawnContext = await port.loadSpawnContext(claims(), { spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!] });
+    context.roster = await port.loadDispatcherRoster(claims(), { spaceId: ids.space!, excludeTeamMemberId: ids.teammate!, limit: DISPATCHER_ROSTER_READ_MAX });
+    context.headers = await port.loadContextHeaders(claims(), { spaceId: ids.space!, ids: contextHeaderIds(context) });
+    const request = { spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!], mode: 'dispatcher' as const };
+    const manifest = composeManifest({
+      sessionId: 'session', request, context, launch: resolveLaunchConfig(request, context, {}),
+      workdir: { mode: 'project', path: '/repo' }, command: 'test', baseUrl: 'http://localhost',
+      contextIndex: { source: 'env' },
+    });
+    const roster = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries;
+    expect(roster.map((entry) => entry.id).sort()).toEqual([ids.lead, ids.scout].sort());
+    // The one with launch defaults renders them, so its bytes include them.
+    expect(roster.find((entry) => entry.id === ids.lead)?.teammate).toEqual({ mode: 'coordinator', model: 'claude-opus-5-5' });
+    const promptBytes = new Map(teammates.value.items.map((item) => [item.entityId, item.promptBytes]));
+    for (const entry of roster) expect(promptBytes.get(entry.id), entry.id).toBe(contextEntryBytes(entry));
   });
 });

@@ -310,7 +310,14 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
       ...(unreadReferences > 0 ? { unread: unreadReferences } : {}),
     },
     // Selection cannot name teammates: the teammate pick is its own click.
-    teammates: { mode: 'default', reason: 'not-selectable' },
+    // A dispatcher's roster rows past its read are counted, as unread links are.
+    teammates: {
+      mode: 'default',
+      reason: 'not-selectable',
+      ...(input.index && context.roster && context.roster.total > context.roster.members.length
+        ? { unread: context.roster.total - context.roster.members.length }
+        : {}),
+    },
   };
   return { groups, entries, dropped };
 }

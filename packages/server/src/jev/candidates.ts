@@ -44,7 +44,7 @@ import { clip, HEADER_TEXT_LIMIT } from '../headers/derive.js';
 import { jevText } from '../headers/render.js';
 import { resolveHeaderViews } from '../headers/resolve.js';
 import { loadSkillsById } from '../skills/equipment.js';
-import { memoryPromptBytes, referencePromptBytes, skillPromptBytes, type MeasureContext } from './measure.js';
+import { memoryPromptBytes, referencePromptBytes, skillPromptBytes, teammatePromptBytes, type MeasureContext } from './measure.js';
 import type { JevSubject } from './port.js';
 
 /**
@@ -256,8 +256,8 @@ export async function requireTeammate(q: Querier, spaceId: string, teamMemberId:
  * inherits from its ancestors, which is what it would actually carry.
  */
 export async function loadTeammates(q: Querier, spaceId: string, measure: MeasureContext): Promise<CandidateSet> {
-  const rows = await q.query<{ id: string; total: string | number }>(
-    `select e.id, count(*) over () as total
+  const rows = await q.query<{ id: string; name: string; mode: string | null; model: string | null; total: string | number }>(
+    `select e.id, tm.name, tm.mode, tm.model, count(*) over () as total
        from public.team_members tm
        join public.entities e on e.id = tm.entity_id
       where e.space_id = $1 and e.kind = 'team_member' and e.deleted_at is null
@@ -297,8 +297,8 @@ export async function loadTeammates(q: Querier, spaceId: string, measure: Measur
       sources: ['space'],
       // Picking who runs the launch is not a context group: nothing is a default.
       default: false,
-      // As the index carries a teammate a task links (I8's roster entry replaces this when it lands).
-      promptBytes: referencePromptBytes({ entityId: row.id, kind: 'team_member', via: 'linked', link: 'relates_to', title: header.name }, header, measure),
+      // As a dispatcher's roster renders it (I8's `rosterEntry`): mode and model included.
+      promptBytes: teammatePromptBytes({ entityId: row.id, name: row.name, mode: row.mode, model: row.model }, header, measure),
       header: rankedHeader(header),
     }];
   });
