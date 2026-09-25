@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const require_ = createRequire(import.meta.url);
 import assert from 'node:assert/strict';
-import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory } from './report.mjs';
+import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory, annotateCrossLane } from './report.mjs';
 import { guardMemoryDir, memoryDirFor } from './lanes.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
 import { syntheticStart } from './measure-row.mjs';
@@ -378,4 +378,31 @@ test('D11 guard: a non-empty memory dir is MOVED to <dataDir>/evidence before a 
   assert.deepEqual(readdirSync(g.memoryDirMovedTo), ['MEMORY.md'], 'the evidence is kept');
   rmSync(home, { recursive: true });
   rmSync(dataDir, { recursive: true });
+});
+
+test('D9 (h): "opened another copy of my task" counts a READ of a sibling task-copy id, never its own id or a mention in a message', () => {
+  const A = '01a0d9a0-0000-7000-8000-00000000000a';
+  const B = '01a0d9a0-0000-7000-8000-00000000000b';
+  const bash = (command) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command } }] } });
+  const files = {
+    a: [bash(`tm8 entity context ${A} --format json`), bash(`tm8 entity context ${B} --format json`)].join('\n'),
+    b: [bash(`tm8 entity context ${B}`), bash(`tm8 message send --to ${B} "saw ${A} in the doc connections"`)].join('\n'),
+    c: bash(`tm8 message list --for ${A} --limit 20`),
+  };
+  const rows = [
+    row({ sessionId: 'sa', taskId: A, transcript: 'a' }),
+    row({ sessionId: 'sb', rep: 2, taskId: B, transcript: 'b' }),
+    row({ sessionId: 'sc', rep: 3, taskId: '01a0d9a0-0000-7000-8000-00000000000c', transcript: 'c' }),
+  ];
+  annotateCrossLane(rows, (f) => files[f] ?? null);
+  assert.deepEqual(rows[0].openedSiblingCopy, [{ taskId: B, sessionId: 'sb' }], 'reading a sibling copy counts; its own copy does not');
+  assert.equal(rows[1].openedSiblingCopy, undefined, 'a mention inside a message body is not a read');
+  assert.deepEqual(rows[2].openedSiblingCopy, [{ taskId: A, sessionId: 'sa' }], 'listing a sibling copy\'s messages (its closeout) counts');
+  const r = buildReport(rows, null);
+  assert.equal(r.json.crossLane.openedSiblingCopy.length, 2);
+  assert.match(r.md, /2 row\(s\) OPENED another lane's copy of their task/);
+  // negative control: no reads, no hops
+  const quiet = rows.map((x) => ({ ...x, openedSiblingCopy: undefined }));
+  annotateCrossLane(quiet, () => bash('ls'));
+  assert.equal(quiet.filter((x) => x.openedSiblingCopy).length, 0);
 });

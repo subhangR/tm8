@@ -152,6 +152,13 @@ lanes.mjs has no graceful stop, and three coordinators each wrote a PID-killing 
 - `--exclude-families <list>`, the complement of `--families`.
 - `--rep-start <n>`: a re-run of one cell carries the right rep label, instead of repeating rep 1.
 
+### 8.6 Fixture v3: per-lane NEEDLE doc — SPEC (designer msg 01a0d9a8-0020, from C4 msg 01a0d9a7-9ff6)
+
+Today a task copy is fresh, but its NEEDLE doc is shared by every copy of that task on the node. Three c4 stress60 lanes read 'Balance rounding policy', and its `connections` listed the other lanes' task copies. A lane that followed one of those ids would reach another lane's task and its closeout: the contamination the fresh copy was built to stop, one hop away. In the first run the hop was never taken. report.mjs's `openedSiblingCopy` (a read of another row's task-copy id: `tm8 entity context|get` or `tm8 message list --for`) counted 0 across all 152 rows of c1-c4.
+- lanes.mjs copies the needle doc per lane along with the task: one `entity create doc` plus one edge, since the needle is the only fact carrier. It records `needleId` on the row (the copy's id), and needle state/opened are measured against the copy.
+- Distractors, skills, memories and the file stay shared: they carry no task fact, and copying 60 distractors per lane would cost more than it protects.
+- Replica links follow the same rule once v3 gives replicas a deliverable (a replica's linked docs are copied per lane; today they are shared).
+
 ### 8.2 Also next run (schema 4)
 
 - `blindFetchBytes` is structurally 0 in fixture v2 (an entry's `bytes` is its index line, ≤ 655 B; no body > 4.5 KB). Redefine it on the read's RESULT bytes, and add a fixture body > 20 KB.

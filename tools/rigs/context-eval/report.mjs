@@ -12,7 +12,7 @@
 // built on another one (their numbers would not be comparable).
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { missLevel } from '../context-measure/measure.mjs';
+import { missLevel, readsOf } from '../context-measure/measure.mjs';
 import { COMPONENTS_SCHEMA } from './components.mjs';
 import { ARMS, ARM_ENV } from './node-registry.mjs';
 
@@ -116,6 +116,42 @@ export function annotateContamination(rows, read = (f) => (f && existsSync(f) ? 
   }
   return rows;
 }
+/**
+ * D9 (h) sub-count, report-time (advisor msg 01a0d9a8-331b): did a lane OPEN
+ * another lane's copy of its task? Every copy's id is in the rows; the shared
+ * needle doc's connections make siblings VISIBLE (C4 msg 01a0d9a7-9ff6), and
+ * following one reaches that lane's closeout. A read = measure.mjs's own read
+ * classifier (`tm8 entity context|get <id>`, ...) or `tm8 message list --for
+ * <id>`, on an id that is another row's taskId, never the row's own. A mention
+ * inside a message body is not a read.
+ */
+const MESSAGE_LIST = /tm8\s+message\s+list\b[^|;&\n]*--for\s+([0-9a-f-]{36})/g;
+export function annotateCrossLane(rows, read = (f) => (f && existsSync(f) ? readFileSync(f, 'utf8') : null)) {
+  const copies = new Map(rows.filter((r) => r.taskId).map((r) => [r.taskId, r]));
+  for (const r of rows) {
+    const t = read(r.transcript);
+    if (t == null) continue;
+    const opened = new Set();
+    for (const line of t.split('\n')) {
+      if (!line.includes('tool_use')) continue;
+      let x;
+      try {
+        x = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      for (const b of x.message?.content ?? []) {
+        if (b.type !== 'tool_use') continue;
+        const ids = readsOf(b).map((rd) => rd.id);
+        if (b.name === 'Bash') for (const m of String(b.input?.command ?? '').matchAll(MESSAGE_LIST)) ids.push(m[1]);
+        for (const id of ids) if (id && id !== r.taskId && copies.has(id)) opened.add(id);
+      }
+    }
+    if (opened.size) r.openedSiblingCopy = [...opened].map((id) => ({ taskId: id, sessionId: copies.get(id).sessionId }));
+  }
+  return rows;
+}
+
 /** A row set aside: excluded by hand/auto, or contaminated (D11). */
 export const setAside = (r) => !!(r.excluded || r.contaminated);
 export const asideReason = (r) => r.excluded?.reason ?? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})`;
@@ -370,6 +406,9 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   const moved = rows.filter((r) => r.memoryDirState === 'moved');
   json.contamination = { wroteAutoMemory: writers.map((r) => ({ slice: r.slice, port: r.node?.port, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId })), contaminated: contaminated.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, ...r.contaminated, excluded: !!r.excluded })), memoryDirMoved: moved.map((r) => ({ slice: r.slice, sessionId: r.sessionId, at: r.memoryDirMovedAt, files: r.memoryDirMovedFiles })) };
   md.push('', `Auto-memory (decision D11): ${writers.length} lane(s) WROTE Claude auto-memory${writers.length ? ` (${writers.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId}`).join('; ')})` : ''}; ${contaminated.length} row(s) LOADED lane-written memory and are set aside above${contaminated.length ? ` (${contaminated.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} by ${r.contaminated.by}`).join('; ')})` : ''}; the runner's guard moved a non-empty memory dir before ${moved.length} lane start(s).`);
+  const hopped = rows.filter((r) => r.openedSiblingCopy);
+  json.crossLane = { openedSiblingCopy: hopped.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, opened: r.openedSiblingCopy })) };
+  md.push('', `Cross-lane (D9 (h)): ${hopped.length} row(s) OPENED another lane's copy of their task${hopped.length ? ` (${hopped.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} -> ${r.openedSiblingCopy.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. A shared needle doc makes sibling copies visible; this counts the hop.`);
   md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
@@ -437,7 +476,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   };
   if (!files.length) refuse('usage: node report.mjs results/<run>.jsonl [--baseline <prior>.jsonl] [--out <path-without-ext>]');
-  const rows = annotateContamination(readRows(files));
+  const rows = annotateCrossLane(annotateContamination(readRows(files)));
   if (!rows.length) refuse(`${files.join(', ')}: no rows`);
   const { unmeasured } = classify(rows);
   if (unmeasured.length) refuse(`${unmeasured.length} row(s) neither measured nor excluded: ${unmeasured.map((r) => `${r.arm}/${r.model}/${r.taskKey}#${r.rep} (${r.sessionId}) ${r.measureError ?? 'no firstRequestTokens'}`).join('; ')}. Fix the measurement or set it aside with exclude.mjs --reason.`);
