@@ -34,10 +34,16 @@ export interface QuestionnaireDetail {
 }
 
 /** The newer of two states for the same form (a null never wins). */
+/**
+ * The host's detail (`a`) against this hook's own write or refetch (`b`).
+ * A TIE GOES TO `b`: the host bumps its detail's version from the thin entity
+ * event, which carries no questions, and keeps the content it already had, so
+ * at an equal version only `b` is known to hold that version's content.
+ */
 function newer(a: FormState | null, b: FormState | null): FormState | null {
   if (!a) return b;
   if (!b) return a;
-  return b.version > a.version ? b : a;
+  return b.version >= a.version ? b : a;
 }
 
 /** Work sessions with a pending delivery among these responses. */
