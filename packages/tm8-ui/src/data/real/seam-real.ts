@@ -372,6 +372,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       abort: (folderUploadId, input) => ops.folderUploadAbort(folderUploadId, input),
     },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
+    // The session tile chip and panel banner read (FORMS-DESIGN §10). The
+    // seam declares it optional, so a missing line here renders NOTHING,
+    // silently — seam-real.test.ts pins that it is present.
+    formsPendingForSessions: (input) => ops.formsPendingForSessions(input),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
     connections: (id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
     activity: (id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>> => ops.activity(id, opts),

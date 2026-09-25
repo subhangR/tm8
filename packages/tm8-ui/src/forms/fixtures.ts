@@ -19,7 +19,15 @@
  * Drafts reach only their respondent (decision 10): the only draft here is the
  * viewer's own.
  */
-import { FormSettingsSchema, type FormQuestionRow, type FormSectionRow, type FormSettingsInput } from '@tm8/contract';
+import {
+  FORMS_PENDING_MAX_FORMS,
+  FormSettingsSchema,
+  type FormPendingSession,
+  type FormQuestionRow,
+  type FormSectionRow,
+  type FormSettingsInput,
+  type FormsPendingForSessionsResult,
+} from '@tm8/contract';
 import type { FormContentView, FormResponseView, FormSnapshot, FormState, FormViewer } from './seam';
 
 export const FORM_FIXTURE_VIEWER: FormViewer = { memberId: 'act-ada', displayName: 'Ada' };
@@ -233,12 +241,25 @@ function submitted(
   };
 }
 
+/**
+ * The session that asked the open forms: forge's live session in the fixture
+ * graph (`sessionLive` in fixtures/entities.ts — a literal here, because that
+ * module imports this one). The fixture graph records no `authored_from`
+ * edges (D7.3), so this map IS the requesting session the pending read uses.
+ */
+export const FORM_FIXTURE_REQUESTING_SESSION = '019f0000-0000-7000-8000-000000000031';
+export const FORM_FIXTURE_REQUESTED_FROM: Readonly<Record<string, string>> = {
+  [FORM_FIXTURE_IDS.release]: FORM_FIXTURE_REQUESTING_SESSION,
+  [FORM_FIXTURE_IDS.migration]: FORM_FIXTURE_REQUESTING_SESSION,
+  [FORM_FIXTURE_IDS.onboarding]: FORM_FIXTURE_REQUESTING_SESSION,
+};
+
 const delivery = (
   status: FormResponseView['deliveries'][number]['status'],
   createdAt: string,
   extra: Partial<FormResponseView['deliveries'][number]> = {},
 ) => ({
-  workSessionId: 'ws-release-agent',
+  workSessionId: FORM_FIXTURE_REQUESTING_SESSION,
   status,
   spawnedSessionId: null,
   lastError: null,
@@ -327,3 +348,49 @@ export const FORM_FIXTURE_RESPONSES: FormResponseView[] = [
     deliveries: [delivery('delivered', at(18, 14), { workSessionId: 'ws-retro' })],
   }),
 ];
+
+/**
+ * `forms.pendingForSessions` over the fixtures, for FORM_FIXTURE_VIEWER (a
+ * member): the rules of the server read (221), so the fixture app shows the
+ * session chip and banner the real node would. A form waits while it is open
+ * and the viewer's slot has no current response (single: the form's; unlimited:
+ * any submitted row of the viewer); `queued` = pending deliveries to the session.
+ */
+export function fixturePendingForSessions(
+  sessionIds: readonly string[],
+  forms: readonly FormState[] = FORM_FIXTURE_FORMS,
+  responses: readonly FormResponseView[] = FORM_FIXTURE_RESPONSES,
+): FormsPendingForSessionsResult {
+  const viewer = FORM_FIXTURE_VIEWER.memberId;
+  const done = (f: FormState) => responses.some((r) => r.formId === f.id && r.status === 'submitted' && (
+    f.content.settings.responses === 'single' ? r.isCurrent
+      : f.content.settings.responses === 'unlimited' ? r.respondentId === viewer
+        : r.isCurrent && r.respondentId === viewer));
+  const sessions: FormPendingSession[] = [];
+  for (const workSessionId of new Set(sessionIds)) {
+    const waiting = forms
+      .filter((f) => FORM_FIXTURE_REQUESTED_FROM[f.id] === workSessionId && f.content.status === 'open' && !done(f))
+      .sort((a, b) => (b.content.openedAt ?? '').localeCompare(a.content.openedAt ?? ''));
+    const queued = responses.reduce((n, r) =>
+      n + r.deliveries.filter((d) => d.workSessionId === workSessionId && d.status === 'pending').length, 0);
+    if (waiting.length === 0 && queued === 0) continue;
+    sessions.push({
+      workSessionId,
+      total: waiting.length,
+      queued,
+      forms: waiting.slice(0, FORMS_PENDING_MAX_FORMS).map((f) => {
+        const draft = responses.find((r) => r.formId === f.id && r.status === 'draft' && r.respondentId === viewer);
+        return {
+          formId: f.id,
+          title: f.title,
+          version: f.version,
+          structureVersion: f.content.structureVersion,
+          questionCount: f.content.questions.length,
+          openedAt: f.content.openedAt,
+          draft: draft ? { id: draft.id, version: draft.version } : null,
+        };
+      }),
+    });
+  }
+  return { sessions };
+}

@@ -24,44 +24,18 @@
  * With no provider mounted every hook answers `null`, so a tile renders no chip.
  */
 import { createContext, createElement, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import type { DurableWorkspaceEvent } from '@tm8/contract';
+import {
+  FORMS_PENDING_MAX_SESSIONS,
+  type DurableWorkspaceEvent,
+  type FormPendingItem,
+  type FormPendingSession,
+  type FormsPendingForSessionsResult,
+} from '@tm8/contract';
 import type { QuestionnaireDetail } from './useQuestionnaire';
 
-// ---------------------------------------------------------------------------
-// The wire shape, mirrored from the agent-guidance PR's contract
-// (`packages/contract/src/forms.ts`: FormPendingItemSchema,
-// FormPendingSessionSchema, FormsPendingForSessionsResultSchema). Import those
-// once they are on main; this block is the only thing that changes.
-// ---------------------------------------------------------------------------
-
-/** The most session ids one forms.pendingForSessions call reads. */
-export const FORMS_PENDING_MAX_SESSIONS = 100;
-
-export interface FormPendingItem {
-  formId: string;
-  title: string;
-  version: number;
-  structureVersion: number;
-  questionCount: number;
-  openedAt: string | null;
-  /** The viewer's own draft, when they started answering. */
-  draft: { id: string; version: number } | null;
-}
-
-export interface FormPendingSession {
-  workSessionId: string;
-  /** Every form waiting on the viewer for this session (the chip count). */
-  total: number;
-  /** Answers already submitted to this session and still waiting for it to run (R4). */
-  queued: number;
-  /** Newest opened first, capped server-side. */
-  forms: FormPendingItem[];
-}
-
-export interface FormsPendingForSessionsResult {
-  /** Only sessions with total > 0 or queued > 0. A missing session is empty. */
-  sessions: FormPendingSession[];
-}
+// The wire shape is the contract's (packages/contract/src/forms.ts).
+export { FORMS_PENDING_MAX_SESSIONS };
+export type { FormPendingItem, FormPendingSession, FormsPendingForSessionsResult };
 
 // ---------------------------------------------------------------------------
 // The source (the adapter the host builds from its seam)
