@@ -180,7 +180,7 @@ test('rubric: aliasCheck is n/a on index-off arms (lean, inherit) and out of the
   assert.equal(r.json.accuracy['sonnet5/lean/memory'].rubricMean, 1, 'lean: aliasCheck excluded');
   assert.equal(r.json.accuracy['sonnet5/inherit/memory'].rubricMean, 1);
   assert.equal(r.json.accuracy['sonnet5/index-derived/memory'].rubricMean, 0.8, 'index arm: aliasCheck counts');
-  assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*aliasCheck n\/a \(index off\)/);
+  assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*aliasCheck 0\/1 \(n\/a for the mean: index off\)/);
   assert.match(r.md, /\| sonnet5 \| memory \| index-derived \| 1 \|[^\n]*aliasCheck 0\/1/);
 });
 

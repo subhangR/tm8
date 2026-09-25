@@ -90,7 +90,13 @@ export function rubricScore(r) {
 /** Per rubric item: `name k/n`, or `name n/a (index off)`. */
 function rubricItems(rs, arm) {
   const names = [...new Set(rs.flatMap((r) => (r.rubric?.items ?? []).map((i) => i.name)))];
-  return names.map((name) => (itemApplies(arm, name) ? `${name} ${rs.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length}/${rs.length}` : `${name} n/a (index off)`)).join(' · ');
+  // An n/a item still prints its k/n: on inherit c4 saw Sonnet miss the alias
+  // with the whole memory in the prompt, which is a model signal worth reading
+  // even though it cannot separate the arms and stays out of the mean.
+  return names.map((name) => {
+    const k = rs.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length;
+    return itemApplies(arm, name) ? `${name} ${k}/${rs.length}` : `${name} ${k}/${rs.length} (n/a for the mean: index off)`;
+  }).join(' · ');
 }
 const mean = (xs) => {
   const v = xs.filter((x) => typeof x === 'number' && Number.isFinite(x));
