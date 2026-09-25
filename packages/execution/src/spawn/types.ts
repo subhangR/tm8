@@ -1255,6 +1255,13 @@ export interface Tm8Manifest {
      * tools, whose surface is not managed.
      */
     harness?: LaunchHarnessRecord;
+    /**
+     * Set by the workspace-trust watchdog when this lane booted into Claude
+     * Code's trust dialog despite the seeded entry and tm8 answered it through
+     * the PTY. Absent otherwise — never false. Written to the manifest FILE
+     * only; the recorded manifest row is the immutable launch record.
+     */
+    trustRecovered?: true;
   };
 
   session: {

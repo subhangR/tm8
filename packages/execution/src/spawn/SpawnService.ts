@@ -26,7 +26,14 @@ import {
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
-import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import { resolveClaudeTrustRoot, trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import {
+  decideTrustWatchdog,
+  readTrustDialog,
+  TRUST_CONFIRM_KEYS,
+  TRUST_PROMPT_UNANSWERED,
+  TRUST_SELECT_YES_KEYS,
+} from './trust-watchdog.js';
 import {
   preflightCodexNetworkPolicy,
   type CodexNetworkPreflight,
@@ -177,6 +184,13 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /**
+   * How long after a claude-code launch (spawn or resume) the workspace-trust
+   * watchdog looks for the trust dialog. Default 120s; 0 disables it.
+   */
+  trustWatchdogMs?: number;
+  /** Screen-read interval of that watchdog. Default 500ms. */
+  trustWatchdogPollMs?: number;
   /**
    * Production's closed-loop PTY settlement bridge. When present, a fresh
    * spawn queues its first task through the same verified submit path as every
@@ -450,6 +464,8 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly trustWatchdogMs: number;
+  private readonly trustWatchdogPollMs: number;
   private readonly promptSettlement: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'> | undefined;
   private readonly firstPromptSettlementMs: number;
   private readonly failedTransitionRetryMs: number;
@@ -505,6 +521,8 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.trustWatchdogMs = options.trustWatchdogMs ?? 120_000;
+    this.trustWatchdogPollMs = options.trustWatchdogPollMs ?? 500;
     this.promptSettlement = options.promptSettlement;
     this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 150_000;
     this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
@@ -1580,7 +1598,11 @@ export class SpawnService {
       // use. Passing the server environment here writes into the node account
       // even when `env` points Claude/Codex at a member-specific home, leaving
       // the child untrusted and reintroducing shared mutable provider state.
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
+      // The stable trust root is what survives a booting claude's stale
+      // rewrite of the shared config; see trustClaudeWorkspace.
+      if (launch.agentTool === 'claude-code') {
+        await this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env);
+      }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
       // Prompts accepted between here and the PTY being live must not be
@@ -1654,6 +1676,9 @@ export class SpawnService {
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
       this.notifySessionLive(sessionId, 'spawn');
+      if (launch.agentTool === 'claude-code' && !reused) {
+        this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
+      }
 
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
@@ -2287,8 +2312,11 @@ export class SpawnService {
       await this.writeManifestFile(manifestPath, manifest);
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
-      // Resume must seed the exact same member-scoped home as a fresh spawn.
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
+      // Resume must seed the exact same member-scoped home as a fresh spawn,
+      // with the same stable trust root and the same watchdog after exec.
+      if (launch.agentTool === 'claude-code') {
+        await this.seedClaudeTrust(sessionId, cwd, info.workdirMode, manifest.project, env);
+      }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
       this.pty.beginPromptHandoff(sessionId);
@@ -2318,6 +2346,9 @@ export class SpawnService {
 
       this.logger?.info('SpawnService: session resumed', { sessionId, cwd, reused });
       this.notifySessionLive(sessionId, 'resume');
+      if (launch.agentTool === 'claude-code' && !reused) {
+        this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
+      }
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
@@ -2326,6 +2357,134 @@ export class SpawnService {
       if (!this.pty.hasSession(sessionId)) await this.scrubSpaceSecrets(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
+    }
+  }
+
+  /**
+   * Seed Claude's trust for `cwd` and its stable trust root, immediately before
+   * exec. An `unverified` outcome means a concurrent rewrite kept dropping the
+   * entry; the launch goes ahead and the watchdog is the backstop.
+   */
+  private async seedClaudeTrust(
+    sessionId: string,
+    cwd: string,
+    workdirMode: string,
+    project: Tm8Manifest['project'],
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const trustRoot = await resolveClaudeTrustRoot(cwd, workdirMode, this.dataDir, project).catch(() => null);
+    const outcome = await trustClaudeWorkspace(cwd, env, { trustRoot });
+    if (outcome === 'unverified') {
+      this.logger?.warn?.('SpawnService: workspace trust entry did not survive re-assertion', {
+        sessionId, cwd, trustRoot,
+      });
+    }
+  }
+
+  /**
+   * THE WORKSPACE-TRUST WATCHDOG (task 01a0d79e-1b86). Seeding can still lose
+   * to a booting claude's stale rewrite of the shared config, and a lane that
+   * lost it sits at the trust dialog forever: `idle`, no transcript, no report.
+   * For `trustWatchdogMs` after exec this reads the PTY's screen, and if the
+   * dialog is up it answers "Yes, I trust this folder" through the PTY, records
+   * `launch.trustRecovered: true` in the manifest file, and logs it. A dialog
+   * that survives every keystroke fails the lane with a NAMED reason instead
+   * of leaving it idle. The decision itself is `decideTrustWatchdog`.
+   *
+   * Fire-and-forget: it never delays or fails the launch it watches, and it
+   * stands down the moment the PTY exits or is replaced.
+   */
+  private watchWorkspaceTrust(
+    sessionId: string,
+    manifestPath: string,
+    manifest: Tm8Manifest,
+    env: NodeJS.ProcessEnv,
+  ): void {
+    if (this.trustWatchdogMs <= 0) return;
+    // Test doubles that model no screen have nothing to watch.
+    if (typeof (this.pty as Partial<PtyHostService>).readScreen !== 'function') return;
+    void this.runTrustWatchdog(sessionId, manifestPath, manifest, env).catch((error: unknown) => {
+      this.logger?.warn?.('SpawnService: workspace-trust watchdog failed', {
+        sessionId, error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private async runTrustWatchdog(
+    sessionId: string,
+    manifestPath: string,
+    manifest: Tm8Manifest,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const epoch = this.pty.getEpoch(sessionId);
+    const autoTrust = env['TM8_AUTO_TRUST_WORKSPACE'] !== 'false';
+    const start = Date.now();
+    let keystrokes = 0;
+    let absentReads = 0;
+    for (;;) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, this.trustWatchdogPollMs).unref?.();
+      });
+      if (epoch === null || this.pty.getEpoch(sessionId) !== epoch) return;
+      const screen = await this.pty.readScreen(sessionId);
+      if (screen === null) return;
+      const action = decideTrustWatchdog({
+        screen,
+        elapsedMs: Date.now() - start,
+        windowMs: this.trustWatchdogMs,
+        keystrokes,
+        absentReads,
+        autoTrust,
+      });
+      switch (action.kind) {
+        case 'wait':
+          absentReads = readTrustDialog(screen).visible ? 0 : absentReads + 1;
+          continue;
+        case 'select-yes':
+        case 'confirm':
+          this.pty.write(sessionId, action.kind === 'confirm' ? TRUST_CONFIRM_KEYS : TRUST_SELECT_YES_KEYS);
+          keystrokes += 1;
+          absentReads = 0;
+          continue;
+        case 'recovered':
+          this.logger?.warn?.('SpawnService: answered a workspace-trust prompt the seeded entry should have prevented', {
+            sessionId, keystrokes, afterMs: Date.now() - start,
+          });
+          // The manifest ROW is the immutable launch record; the FILE is the
+          // lane's live copy (re-read at boot) and what the rig measures.
+          await this.writeManifestFile(manifestPath, {
+            ...manifest,
+            launch: { ...manifest.launch, trustRecovered: true },
+          }).catch((error: unknown) => {
+            this.logger?.warn?.('SpawnService: could not record trustRecovered in the manifest', {
+              sessionId, error: error instanceof Error ? error.message : String(error),
+            });
+          });
+          return;
+        case 'stop':
+          if (action.reason === 'opted_out') {
+            this.loud(
+              `session ${sessionId} is waiting at Claude Code's workspace-trust prompt and ` +
+                `TM8_AUTO_TRUST_WORKSPACE=false, so tm8 will not answer it — a person must, in its terminal.`,
+            );
+          }
+          return;
+        case 'fail':
+          this.loud(
+            `session ${sessionId} is stuck at Claude Code's workspace-trust prompt after ` +
+              `${String(keystrokes)} keystrokes — failing it as ${action.reason}.`,
+          );
+          await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+            onNotFound: 'skip',
+            status: 'failed',
+            error: () =>
+              `${TRUST_PROMPT_UNANSWERED}: Claude Code's workspace-trust prompt stayed up after ` +
+              `${String(keystrokes)} answering keystrokes`,
+            endedKind: 'unknown',
+            endedReason: "Stopped: the agent was stuck at Claude Code's folder-trust question.",
+          });
+          return;
+      }
     }
   }
 

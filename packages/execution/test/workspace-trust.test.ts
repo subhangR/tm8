@@ -5,11 +5,16 @@
 // are tested at least as hard as the writing ones. Every test redirects the
 // config location via env, so nothing here can reach the developer's own files.
 
-import { mkdtemp, readFile, writeFile, stat, mkdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, realpath, writeFile, stat, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { trustClaudeWorkspace, trustCodexWorkspace } from '../src/spawn/workspace-trust.js';
+import {
+  resolveClaudeTrustRoot,
+  trustClaudeWorkspace,
+  trustCodexWorkspace,
+} from '../src/spawn/workspace-trust.js';
 
 async function sandbox(): Promise<{ home: string; workspace: string }> {
   const home = await mkdtemp(join(tmpdir(), 'tm8-trust-'));
@@ -82,6 +87,105 @@ describe('trustClaudeWorkspace', () => {
 
     const config = JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'));
     expect(Object.keys(config.projects)).toHaveLength(2);
+  });
+});
+
+describe('resolveClaudeTrustRoot', () => {
+  // Trusting a directory trusts what Claude resolves through it, so only
+  // directories tm8 owns, or the checkout an operator registered AND trusted,
+  // may qualify. Each null below is a directory tm8 must not vouch for.
+  function repoWithWorktree(home: string): { repo: string; lane: string } {
+    const repo = join(home, 'code', 'repo');
+    const lane = join(home, 'data', 'worktrees', 'project-1', 'lane-1');
+    execFileSync('mkdir', ['-p', repo]);
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+    git('init', '--initial-branch', 'main');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'root');
+    git('worktree', 'add', '-b', 'lane-1', lane);
+    return { repo, lane };
+  }
+
+  it("answers a worktree lane's MAIN REPOSITORY ROOT when it is the registered, trusted checkout", async () => {
+    // Not the worktree's parent directory: Claude does not walk up from a git
+    // worktree (measured), it consults the main repository root.
+    const { home } = await sandbox();
+    const { repo, lane } = repoWithWorktree(home);
+    const root = await resolveClaudeTrustRoot(lane, 'worktree', join(home, 'data'), {
+      workingDir: repo,
+      trust: 'trusted',
+    });
+    expect(root).toBe(await realpath(repo));
+  });
+
+  it('refuses the repository root of a project that is not tm8-trusted', async () => {
+    // A --confirm-untrusted launch consents to ONE lane, not to the checkout.
+    const { home } = await sandbox();
+    const { repo, lane } = repoWithWorktree(home);
+    expect(
+      await resolveClaudeTrustRoot(lane, 'worktree', join(home, 'data'), { workingDir: repo, trust: 'untrusted' }),
+    ).toBeNull();
+    expect(await resolveClaudeTrustRoot(lane, 'worktree', join(home, 'data'), null)).toBeNull();
+  });
+
+  it('refuses when the registered directory is not the repository root Claude looks up', async () => {
+    const { home } = await sandbox();
+    const { repo, lane } = repoWithWorktree(home);
+    await mkdir(join(repo, 'sub'), { recursive: true });
+    expect(
+      await resolveClaudeTrustRoot(lane, 'worktree', join(home, 'data'), {
+        workingDir: join(repo, 'sub'),
+        trust: 'trusted',
+      }),
+    ).toBeNull();
+  });
+
+  it('answers null for a worktree-mode path that is not a git worktree at all', async () => {
+    const { home } = await sandbox();
+    const lane = join(home, 'data', 'worktrees', 'p', 'lane');
+    await mkdir(lane, { recursive: true });
+    expect(
+      await resolveClaudeTrustRoot(lane, 'worktree', join(home, 'data'), { workingDir: lane, trust: 'trusted' }),
+    ).toBeNull();
+  });
+
+  it('answers the scratch root for a scratch lane', async () => {
+    const { home } = await sandbox();
+    const lane = join(home, 'data', 'scratch', 'session-1');
+    await mkdir(lane, { recursive: true });
+    const root = await resolveClaudeTrustRoot(lane, 'scratch', join(home, 'data'), null);
+    expect(root).toBe(await realpath(join(home, 'data', 'scratch')));
+  });
+
+  it('refuses a scratch parent outside the data dir, the data dir itself, and a look-alike sibling', async () => {
+    const { home } = await sandbox();
+    const stray = join(home, 'elsewhere', 'lane');
+    const direct = join(home, 'data', 'lane');
+    const sibling = join(home, 'data-other', 'scratch', 'lane');
+    for (const dir of [stray, direct, sibling]) await mkdir(dir, { recursive: true });
+    for (const dir of [stray, direct, sibling]) {
+      expect(await resolveClaudeTrustRoot(dir, 'scratch', join(home, 'data'), null)).toBeNull();
+    }
+  });
+
+  it('compares canonically when the data dir is spelled through a symlink', async () => {
+    const { home } = await sandbox();
+    await mkdir(join(home, 'real-data', 'scratch', 'lane'), { recursive: true });
+    await symlink(join(home, 'real-data'), join(home, 'link-data'));
+    const root = await resolveClaudeTrustRoot(
+      join(home, 'real-data', 'scratch', 'lane'),
+      'scratch',
+      join(home, 'link-data'),
+      null,
+    );
+    expect(root).toBe(await realpath(join(home, 'real-data', 'scratch')));
+  });
+
+  it("never answers anything for a project-mode lane — it runs in the operator's checkout", async () => {
+    const { home } = await sandbox();
+    const { repo } = repoWithWorktree(home);
+    expect(
+      await resolveClaudeTrustRoot(repo, 'project', join(home, 'data'), { workingDir: repo, trust: 'trusted' }),
+    ).toBeNull();
   });
 });
 

@@ -110,6 +110,27 @@ export class TerminalStateMirror {
   }
 
   /**
+   * Read the whole visible viewport as text, one right-trimmed line per row.
+   * Same promise-chain boundary as {@link readCursorRegion}. Used by the
+   * workspace-trust watchdog, whose dialog is a full-screen frame rather than
+   * a band at the cursor. Disposed-safe: returns ''.
+   */
+  readViewport(): Promise<string> {
+    if (this.disposed) return Promise.resolve('');
+    const boundary = this.tail;
+    return boundary.then(() => {
+      if (this.disposed) return '';
+      const buffer = this.terminal.buffer.active;
+      const lines: string[] = [];
+      for (let row = buffer.viewportY; row < buffer.viewportY + this.terminal.rows; row += 1) {
+        const line = buffer.getLine(row);
+        if (line) lines.push(line.translateToString(true));
+      }
+      return lines.join('\n');
+    });
+  }
+
+  /**
    * Serialize the terminal after every operation queued before this call, but
    * before operations queued afterward. Prefixing RIS makes the payload safe
    * even for a client that did not explicitly reset before applying it.
