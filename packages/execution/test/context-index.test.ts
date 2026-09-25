@@ -5,7 +5,9 @@ import {
   BYTE_BUDGETS,
   composePrompt,
   contextEntryBytes,
+  INDEX_DERIVED_HEADER_CHARS,
   serializeContextIndex,
+  untrustedData,
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
@@ -218,5 +220,89 @@ describe('carry-overs from #741', () => {
     const { manifest } = compose(ctx(), { replay: ['sales'], installed: ['marketing@synced', 'sales@synced'] });
     expect(manifest.launch.command).toBe('claude plugins=sales');
     expect(manifest.launch.harness?.plugins?.allowed).toEqual([{ id: 'sales@synced', source: 'effective-skill' }]);
+  });
+});
+
+describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, derived text cut short', () => {
+  const linked = [
+    { entityId: 'doc-1', kind: 'doc', link: 'relates_to', title: 'Doc one' },
+    { entityId: 'doc-2', kind: 'doc', link: 'relates_to', title: 'Doc two' },
+  ];
+  const long = 'derived text '.repeat(40); // 520 chars
+  const context = ctx({
+    tasks: [task({ linked, linkedTotal: 46 })],
+    headers: [
+      docHeader('doc-1', long),
+      { ...docHeader('doc-2', long), source: 'authored', whenToUse: 'w'.repeat(300), clipped: ['keywords', 'whenToUse'] },
+    ],
+  });
+
+  it('(d) cuts a DERIVED header to INDEX_DERIVED_HEADER_CHARS per field and declares it; authored text is untouched', () => {
+    const { manifest, prompt } = compose(context, { on: true });
+    const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
+    const derived = refs.entries.find((e) => e.id === 'doc-1')!;
+    expect(Array.from(derived.header!.summary!)).toHaveLength(INDEX_DERIVED_HEADER_CHARS);
+    expect(derived.header!.summary!.endsWith('…')).toBe(true);
+    expect(derived.clipped).toEqual(['summary']);
+    const authored = refs.entries.find((e) => e.id === 'doc-2')!;
+    expect(authored.header!.summary).toBe(long);
+    expect(authored.header!.whenToUse).toBe('w'.repeat(300));
+    // An authored clip already declared by resolveHeaders is carried, not
+    // re-cut; `keywords` is not text the index shows, so it is not named.
+    expect(authored.clipped).toEqual(['whenToUse']);
+    expect(prompt.system).toContain('clipped="summary"');
+    expect(prompt.system).toContain('clipped="whenToUse"');
+    expect(prompt.system).not.toContain('keywords');
+  });
+
+  it('(d) redacts a credential BEFORE the cut, so a cut through one never ships its prefix', () => {
+    // The token starts inside the 200 kept characters and ends past them: cut
+    // first, `sk-` plus 12 characters is too short for the pattern.
+    const secret = `${'a'.repeat(183)} sk-${'Z'.repeat(40)} tail`;
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked: [linked[0]!], linkedTotal: 1 })],
+      headers: [{ ...docHeader('doc-1', secret), whenToUse: secret }],
+    }), { on: true });
+    const entry = manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries[0]!;
+    expect(entry.header!.summary).toBe(`${'a'.repeat(183)} [credential-red…`);
+    expect(entry.header!.whenToUse).toBe(entry.header!.summary);
+    expect(entry.clipped).toEqual(['summary', 'whenToUse']);
+    expect(prompt.system).not.toContain('sk-Z');
+  });
+
+  it('(b) links past the spawn read are the references group\'s omitted count, with the command that lists them', () => {
+    const { manifest, prompt } = compose(context, { on: true });
+    const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
+    expect(refs.omitted).toBe(44);
+    expect(refs.fetch).toBe('tm8 entity context task-1 --sections connections');
+    expect(prompt.system).toContain('<group name="references" count="2" omitted="44" fetch="tm8 entity context task-1 --sections connections">');
+    // The audit keeps recording the same number.
+    expect(manifest.context!.groups.references).toMatchObject({ unread: 44 });
+  });
+
+  it('(b) a selected reference set replaces the default links, so nothing unread is declared', () => {
+    const selected = ctx({
+      ...context,
+      references: [{ entityId: 'doc-1', kind: 'doc', title: 'Doc one', via: 'selection' }],
+    });
+    const { manifest } = compose(selected, { on: true });
+    expect(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.omitted).toBe(0);
+  });
+
+  it('(a) the v1 snapshot drops only the titles the index names; <linked> keeps every id', () => {
+    const { prompt } = compose(context, { on: true });
+    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
+    expect(prompt.task).toContain('<entity id="doc-2" kind="doc" link="relates_to" />');
+    expect(prompt.task).toContain('omitted="44"');
+    expect(prompt.task).not.toContain('type="linked-names"');
+  });
+
+  it('(a) off: the snapshot is byte-identical to before (titles in linked-names)', () => {
+    const { manifest, prompt } = compose(context);
+    expect(manifest.contextIndex).toBeUndefined();
+    expect(prompt.task).toContain(untrustedData({
+      type: 'linked-names',
+      body: JSON.stringify([{ entityId: 'doc-1', name: 'Doc one' }, { entityId: 'doc-2', name: 'Doc two' }]),
+    }));
   });
 });

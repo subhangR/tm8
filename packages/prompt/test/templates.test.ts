@@ -182,6 +182,22 @@ describe('§14.3 task assignment reply route', () => {
     expect(xml).not.toMatch(/<reply [^>]*anchor_id="tsk_1"/);
   });
 
+  it('leaves out only the linked titles the context index names; no index is byte-identical', () => {
+    const linked = [
+      { entityId: 'doc_1', kind: 'doc', link: 'relates_to', title: 'Doc one' },
+      { entityId: 'doc_2', kind: 'doc', link: 'relates_to', title: 'Doc two' },
+    ];
+    const base = taskAssignmentInjection({ ...facts, linked, linkedTotal: 2 });
+    expect(taskAssignmentInjection({ ...facts, linked, linkedTotal: 2, namedInIndex: new Set() })).toBe(base);
+    const one = taskAssignmentInjection({ ...facts, linked, linkedTotal: 2, namedInIndex: new Set(['doc_1']) });
+    expect(one).toContain('<entity id="doc_1" kind="doc" link="relates_to" />');
+    expect(one).not.toContain('Doc one');
+    expect(one).toContain('Doc two');
+    const both = taskAssignmentInjection({ ...facts, linked, linkedTotal: 2, namedInIndex: new Set(['doc_1', 'doc_2']) });
+    expect(both).not.toContain('type="linked-names"');
+    expect(both).toContain('<linked count="2"');
+  });
+
   it('always declares task attachments, and keeps author-controlled names untrusted', () => {
     expect(taskAssignmentInjection(facts)).toContain('<attachments count="0" />');
 

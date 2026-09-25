@@ -12,6 +12,8 @@
 
 import {
   BYTE_BUDGETS,
+  clipIndexText,
+  INDEX_DERIVED_HEADER_CHARS,
   loadPointerFor,
   type ContextIndexGroupName,
   type ContextIndexVia,
@@ -19,6 +21,7 @@ import {
   type PromptContextGroup,
 } from '@tm8/prompt';
 import { SPAWN_SELECTION_REFERENCE_KINDS, type SelectionHeader } from '@tm8/contract';
+import { redactSecretTokens } from './secret-redaction.js';
 import type { ContextVia, ManifestSkillContext, SpawnContext } from './types.js';
 
 /** `TM8_CONTEXT_INDEX` values that turn the index on, and off, for every launch on the node. */
@@ -95,13 +98,37 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
   return (row?.depth ?? 0) > 0 ? 'inherited' : 'teammate';
 }
 
-function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header'> {
+/** The header fields a `<context_index>` entry renders, so the only ones `clipped` may name. */
+const INDEX_TEXT_FIELDS: ReadonlySet<string> = new Set(['whenToUse', 'summary']);
+
+/**
+ * An entry's header fields. DERIVED text (nobody wrote it for routing) is cut
+ * to `INDEX_DERIVED_HEADER_CHARS` per field here, and only here: Jev keeps its
+ * 600 (`jevText`), and authored and native text is never cut. Every cut field
+ * is named in `clipped`, together with any authored clip `resolveHeaders`
+ * already declared, so a cut is never silent.
+ */
+function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header' | 'clipped'> {
   if (!header) return fallbackName ? { header: { name: fallbackName } } : {};
+  // Only the fields the index renders: an authored `keywords` clip is not
+  // text this entry shows, so declaring it here would name nothing.
+  const clipped = new Set<string>((header.clipped ?? []).filter((field) => INDEX_TEXT_FIELDS.has(field)));
+  let { whenToUse, summary } = header;
+  if (header.source === 'derived') {
+    // Redact BEFORE the cut: a cut through a credential leaves a prefix too
+    // short for the pattern, and the manifest-wide redaction after it would
+    // ship that prefix.
+    const cutWhen = clipIndexText(whenToUse === null ? null : redactSecretTokens(whenToUse), INDEX_DERIVED_HEADER_CHARS);
+    if (cutWhen !== null) { whenToUse = cutWhen; clipped.add('whenToUse'); }
+    const cutSummary = clipIndexText(summary === null ? null : redactSecretTokens(summary), INDEX_DERIVED_HEADER_CHARS);
+    if (cutSummary !== null) { summary = cutSummary; clipped.add('summary'); }
+  }
   return {
     bytes: header.bytes,
     source: header.source,
     stale: header.stale,
-    header: { name: header.name, whenToUse: header.whenToUse, summary: header.summary },
+    header: { name: header.name, whenToUse, summary },
+    ...(clipped.size > 0 ? { clipped: [...clipped].sort() } : {}),
   };
 }
 
@@ -203,8 +230,22 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
 
   const firstTask = context.tasks[0]?.id;
   const connections = (id: string): string => `tm8 entity context ${id} --sections connections`;
+  // Links past the spawn's row read have no ids, so they cannot be entries;
+  // they are DECLARED in the references group's omitted count, with the
+  // command that lists them (the first task that has some). A selected
+  // reference set replaces the default links, so there is nothing unread to
+  // declare in the index (the audit's `groups.references.unread` still counts
+  // them; unselected, it is this same number).
+  const unreadByTask = selected
+    ? []
+    : context.tasks.map((task) => ({
+      id: task.id,
+      unread: Math.max(0, (task.linkedTotal ?? (task.linked ?? []).length) - (task.linked ?? []).length),
+    }));
+  const unread = unreadByTask.reduce((n, t) => n + t.unread, 0);
+  const referencesFetch = unreadByTask.find((t) => t.unread > 0)?.id ?? firstTask;
   const groups: PromptContextGroup[] = [
-    { name: 'references', entries: references, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
+    { name: 'references', entries: references, omitted: unread, ...(referencesFetch ? { fetch: connections(referencesFetch) } : {}) },
     { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },
   ];

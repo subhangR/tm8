@@ -320,6 +320,14 @@ export interface TaskAssignmentFacts {
    */
   linked?: readonly TaskLinkedEntity[];
   linkedTotal?: number;
+  /**
+   * Linked ids the launch's `<context_index>` already names (an entry with
+   * header text). Their titles are left out of `linked-names`: the index
+   * carries the same name, so the snapshot would only repeat it. The
+   * `<linked>` id list is unchanged; it is the task's identity list (§2.2).
+   * Absent or empty (the index is off), the output is byte-identical to before.
+   */
+  namedInIndex?: ReadonlySet<string>;
 }
 
 /**
@@ -359,7 +367,7 @@ export function serializeLinkedEntity(item: TaskLinkedEntity): string {
     ' />';
 }
 
-function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
+function linkedManifest(all: readonly TaskLinkedEntity[], total: number, namedInIndex?: ReadonlySet<string>): {
   control: string[];
   names: string;
 } {
@@ -372,7 +380,7 @@ function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
     (omitted > 0 ? ` omitted="${omitted}"` : '') +
     ' fetch_with="tm8 entity context &lt;entity-id&gt;">';
   const named = shown.flatMap((item) => {
-    if (item.kind === ID_ONLY_KIND || !item.title) return [];
+    if (item.kind === ID_ONLY_KIND || !item.title || namedInIndex?.has(item.entityId)) return [];
     const name = item.title.length > LINKED_NAME_MAX_CHARS
       ? `${item.title.slice(0, LINKED_NAME_MAX_CHARS)}…`
       : item.title;
@@ -391,7 +399,7 @@ function linkedManifest(all: readonly TaskLinkedEntity[], total: number): {
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
   const attachments = attachmentManifest(f.attachments ?? []);
-  const linked = linkedManifest(f.linked ?? [], f.linkedTotal ?? 0);
+  const linked = linkedManifest(f.linked ?? [], f.linkedTotal ?? 0, f.namedInIndex);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
