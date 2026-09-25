@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-6d1f4c77-c2.jsonl, 2026-09-25-6d1f4c77-c2-rep2.jsonl",
-  "generatedAt": "2026-09-25T17:34:40.791Z",
+  "generatedAt": "2026-09-25T17:51:53.379Z",
   "rows": 34,
   "measured": 34,
   "excluded": 0,
@@ -1901,6 +1901,7 @@
       "headerReads": 5,
       "needleLaunches": 14,
       "silentContextFailures": 0,
+      "silentPassed": 0,
       "success": 13,
       "flag": true
     },
@@ -1912,6 +1913,7 @@
       "headerReads": 6,
       "needleLaunches": 14,
       "silentContextFailures": 0,
+      "silentPassed": 0,
       "success": 8,
       "flag": true
     }
@@ -2074,5 +2076,9 @@
     "wroteAutoMemory": [],
     "contaminated": [],
     "memoryDirMoved": []
+  },
+  "crossLane": {
+    "readSiblingWorktree": [],
+    "openedSiblingCopy": []
   }
 }
