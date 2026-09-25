@@ -259,6 +259,8 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       'MEMORIES',
       // I9: the task's references, the third selection group.
       'REFERENCES',
+      // I7: this launch's per-group budget override, collapsed.
+      'BUDGET FOR THIS LAUNCH',
     ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
     expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
