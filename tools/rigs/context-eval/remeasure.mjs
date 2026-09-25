@@ -64,8 +64,15 @@ for (const row of rows) {
     console.error(`${tag}: measured (first=${row.firstRequestTokens} entryMiss=${row.miss.entry.count} headerMiss=${row.miss.header.count} memCollapsed=${row.memoriesCollapsed})${before ? ` — was: ${before}` : ''}`);
   } catch (e) {
     row.measureError = String(e.message ?? e);
-    failed++;
-    console.error(`${tag}: STILL NOT MEASURED: ${row.measureError}`);
+    if (e.startFailure) {
+      // A synthetic first reply: a start failure, set aside as lanes.mjs does live.
+      row.ended = e.startFailure.ended;
+      row.excluded = { reason: `start failure: ${e.startFailure.reason}`, by: 'remeasure', at: new Date().toISOString() };
+      console.error(`${tag}: SET ASIDE: ${row.excluded.reason}`);
+    } else {
+      failed++;
+      console.error(`${tag}: STILL NOT MEASURED: ${row.measureError}`);
+    }
   }
   row.remeasuredAt = new Date().toISOString();
   row.remeasureRig = rigSha;

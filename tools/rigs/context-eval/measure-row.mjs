@@ -23,6 +23,32 @@ export function countToolCalls(transcriptText) {
 }
 
 /**
+ * A lane whose FIRST assistant record is synthetic sent no API request (its
+ * usage is all zero), so measure.mjs would report firstRequestTokens 0: a start
+ * failure, never a measured lane. "Not logged in" is the keychain case (a node
+ * started from a sandboxed shell); anything else (an API error) is set aside too.
+ */
+export function syntheticStart(transcriptText) {
+  for (const line of transcriptText.split('\n')) {
+    if (!line.includes('"assistant"')) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (r.type !== 'assistant') continue;
+    if (r.message?.model !== '<synthetic>') return null;
+    const content = r.message?.content;
+    const text = (Array.isArray(content) ? content.map((b) => b.text ?? '').join(' ') : String(content ?? '')).trim();
+    return /Not logged in/.test(text)
+      ? { ended: 'auth-error', reason: 'auth-error: the lane was not logged in (synthetic reply); start the node with dev-node.sh (USER/SHELL/LANG in its env)' }
+      : { ended: 'synthetic-start', reason: `synthetic first reply, no API request sent: ${text.slice(0, 160)}` };
+  }
+  return null;
+}
+
+/**
  * @param manifest  <dataDir>/manifests/<sessionId>.json, parsed
  * @param transcriptText  the lane's Claude Code transcript
  * @param tpl  the template record (linkedIds, needleId) from fixtures/node-<port>.json
@@ -31,10 +57,9 @@ export function countToolCalls(transcriptText) {
 export function measureRow({ manifest, transcriptText, tpl, taskKey }) {
   const noLinks = tpl.linkedIds.length === 0 && !(manifest.context?.entries ?? []).some((e) => e.group === 'references') && !manifest.context?.groups?.references?.unread;
   if (!tpl.linkedIds.length && !noLinks) throw new Error(`task ${taskKey} has no linked ids, so no absent-from-index miss could be counted`);
-  // A lane whose first reply is synthetic ("Not logged in · Please run /login")
-  // sent no request: its keychain read failed (a node started without USER).
-  // It is set aside, never measured as a 0-token lane.
-  if (/"model":"<synthetic>"/.test(transcriptText) && /Not logged in/.test(transcriptText)) throw new Error('auth-error: the lane was not logged in (synthetic reply); start the node with dev-node.sh (USER/SHELL/LANG in its env)');
+  // Set aside, never measured as a 0-token lane: the error carries `startFailure`.
+  const start = syntheticStart(transcriptText);
+  if (start) throw Object.assign(new Error(start.reason), { startFailure: start });
   const measured = measureLane({ manifest, transcriptLines: transcriptText.split('\n'), linked: tpl.linkedIds });
   measured.needleOpened = tpl.needleId ? measured.reads.some((r) => r.id === tpl.needleId) : null;
   measured.needleMissed = tpl.needleId ? tpl.needleId in measured.miss.ids : null;

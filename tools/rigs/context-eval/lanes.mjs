@@ -41,6 +41,16 @@ export const MODELS = { sonnet5: 'Sonnet 5 Teammate', haiku45: 'Haiku 4.5 Teamma
 const IDLE_SECONDS = 45;
 const NO_TRANSCRIPT_MS = 120_000;
 const LOAD_TIERS = { two: 40, one: 80 };
+// The fixture repo's `main` carries exactly these commits (dev-node.sh, fixture.mjs).
+// Every lane branches from it, so a lane that merged its work into `main` would
+// hand every later lane a solved base: the slice stops scheduling instead.
+const FIXTURE_COMMITS = ['ledger-lite fixture', 'fixture skills'];
+
+/** `git log --format='%h %s'` lines on the fixture repo's main that no fixture step made. */
+export function foreignMainCommits(lines) {
+  return lines.filter((l) => l && !FIXTURE_COMMITS.includes(l.slice(l.indexOf(' ') + 1)));
+}
+
 
 /** Interleaved plan: for each rep, for each task key, the models alternate (starting model rotates per key). */
 export function planSlice({ keys, models, reps }) {
@@ -119,18 +129,24 @@ async function waitIdle(tm8, sessionId, worktree, getNative, deadline, { needTra
   return { ended: 'timeout', sawRunning };
 }
 
+/** A row's identity; `base` is the fixture repo's `main` sha the lane branched from. */
+function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
+  const tpl = nodeFx.tasks[cell.taskKey];
+  return {
+    schema: 'context-eval.row.v1', slice, arm: node.arm, node: { port: node.port, db: node.db, env: node.env }, buildSha: node.buildSha, fixtureVersion,
+    model: cell.model, teammateId: node.teammates[MODELS[cell.model]], family: tpl.family, taskKey: cell.taskKey, rep: cell.rep,
+    templateTaskId: tpl.templateId, taskId: null, sessionId: null, worktree: null, base,
+    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, waitedSeconds: cell.waitedSeconds ?? 0,
+    laneTm8: null, turn: null,
+  };
+}
+
 async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtureVersion }) {
   const tpl = nodeFx.tasks[cell.taskKey];
   const teammateId = node.teammates[MODELS[cell.model]];
   const tag = `${slice}/${cell.model}/${cell.taskKey}#${cell.rep}`;
   const base = sh('git', ['-C', node.repo, 'rev-parse', 'main']);
-  const row = {
-    schema: 'context-eval.row.v1', slice, arm: node.arm, node: { port: node.port, db: node.db, env: node.env }, buildSha: node.buildSha, fixtureVersion,
-    model: cell.model, teammateId, family: tpl.family, taskKey: cell.taskKey, rep: cell.rep,
-    templateTaskId: tpl.templateId, taskId: null, sessionId: null, worktree: null, base,
-    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, waitedSeconds: cell.waitedSeconds ?? 0,
-    laneTm8: null, turn: null,
-  };
+  const row = newRow({ node, nodeFx, cell, slice, fixtureVersion, base });
   const finish = (extra) => {
     Object.assign(row, extra);
     appendFileSync(out, JSON.stringify(row) + '\n');
@@ -163,7 +179,8 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
       pid = lanePid(row.sessionId);
       if (pid) {
         row.laneTm8 = laneCli(pid);
-        nativeId = nativeSessionId(pid);
+        // A resumed lane runs `--resume <id>`, not `--session-id`: keep the id we had.
+        nativeId = nativeSessionId(pid) ?? nativeId;
       }
     }
     return nativeId;
@@ -214,6 +231,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   // Measure (context-measure's classifier) + components + judge.
   let measured = null;
   let measureError = null;
+  let startFailure = null;
   let manifest = null;
   try {
     manifest = JSON.parse(readFileSync(join(node.dataDir, 'manifests', `${row.sessionId}.json`), 'utf8'));
@@ -225,6 +243,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
     measured = measureRow({ manifest, transcriptText: readFileSync(transcript, 'utf8'), tpl, taskKey: cell.taskKey });
   } catch (e) {
     measureError = String(e.message ?? e);
+    startFailure = e.startFailure ?? null;
   }
   let success = null;
   let checkResults = null;
@@ -241,8 +260,8 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   const rubric = judgeError ? null : rubricFor(tpl.family, { success, turn: row.turn, checkResults });
   const excluded = row.ended === 'no-transcript'
     ? { reason: 'start failure: no transcript within 120s (workspace-trust hang, task 01a0d79e)', by: 'auto' }
-    : measureError?.startsWith('auth-error') ? { reason: `start failure: ${measureError}`, by: 'auto' } : undefined;
-  if (excluded && measureError?.startsWith('auth-error')) row.ended = 'auth-error';
+    : startFailure ? { reason: `start failure: ${startFailure.reason}`, by: 'auto' } : undefined;
+  if (startFailure) row.ended = startFailure.ended;
   const done = finish({ ...measured, ...(measureError ? { measureError } : {}), success, checkResults, rubric, ...(judgeError ? { judgeError } : {}), ...(excluded ? { excluded } : {}) });
   console.error(`${tag} ${done.ended} ${done.wallSeconds}s first=${measured?.firstRequestTokens ?? '-'} entryMiss=${measured?.miss?.entry?.count ?? '-'} score=${rubric?.score?.toFixed(2) ?? '-'} $${measured?.costUsd?.toFixed(3) ?? '-'}${measureError ? ` NOT MEASURED: ${measureError}` : ''}${excluded ? ` EXCLUDED: ${excluded.reason}` : ''}`);
   return done;
@@ -293,13 +312,28 @@ async function main() {
     const load = load1();
     const allowed = allowedConcurrency(load, maxConc);
     if (i < plan.length && running.size < allowed) {
+      const foreign = foreignMainCommits(sh('git', ['-C', node.repo, 'log', '--format=%h %s', 'main']).split('\n'));
+      if (foreign.length) {
+        const base = sh('git', ['-C', node.repo, 'rev-parse', 'main']);
+        const reason = `fixture-repo-contaminated: ${node.repo} main ${base.slice(0, 12)} carries non-fixture commit(s) ${foreign.slice(0, 3).join(' | ')}; a lane merged into main, so this lane would have started solved`;
+        const left = plan.slice(i);
+        console.error(`\n${'!'.repeat(72)}\nSTOPPING SLICE: ${reason}\nwriting ${left.length} excluded row(s) for the lanes not run; reset main to the fixture commit and re-run them with --only\n${'!'.repeat(72)}\n`);
+        for (const cell of left) {
+          const row = newRow({ node, nodeFx, cell, slice: slice ?? explicitArm, fixtureVersion, base });
+          appendFileSync(out, JSON.stringify({ ...row, ended: 'not-run', excluded: { reason, by: 'auto', at: new Date().toISOString() } }) + '\n');
+        }
+        process.exitCode = 1;
+        i = plan.length;
+        continue;
+      }
       const cell = plan[i++];
       const p = runLane({ node, nodeFx, tm8, cell, slice: slice ?? explicitArm, out, timeoutMin, fixtureVersion }).catch((e) => console.error(`lane ${cell.model}/${cell.taskKey}#${cell.rep} crashed: ${e.stack ?? e}`)).finally(() => running.delete(p));
       running.add(p);
       await sleep(3_000);
       continue;
     }
-    if (i < plan.length && allowed <= running.size) {
+    // Only a LOAD wait counts: waiting for a free slot at full concurrency is the plan.
+    if (i < plan.length && allowed <= running.size && allowed < maxConc) {
       plan[i].waitedSeconds = (plan[i].waitedSeconds ?? 0) + 20;
       if (allowed === 0) console.error(`load ${load} > ${LOAD_TIERS.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
     }

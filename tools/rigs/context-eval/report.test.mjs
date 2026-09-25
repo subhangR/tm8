@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReport, classify, upperBound95, stats } from './report.mjs';
-import { planSlice, allowedConcurrency, rubricFor } from './lanes.mjs';
+import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
+import { syntheticStart } from './measure-row.mjs';
 import { componentsOf } from './components.mjs';
 import { laneCostUsd } from './pricing.mjs';
 
@@ -124,4 +125,35 @@ test('pricing: haiku is cheaper than sonnet for the same usage; an unknown model
   assert.ok(laneCostUsd('claude-haiku-4-5-20251001', usage) < laneCostUsd('claude-sonnet-5', usage));
   assert.equal(laneCostUsd('claude-mystery', usage), null);
   assert.deepEqual(stats([3, 1, 2]), { n: 3, median: 2, min: 1, max: 3 });
+});
+
+test('start failures: a synthetic FIRST reply is set aside (auth or API error); a later synthetic reply is not', () => {
+  const rec = (model, text) => JSON.stringify({ type: 'assistant', message: { model, content: [{ type: 'text', text }], usage: { input_tokens: 0 } } });
+  const user = JSON.stringify({ type: 'user', message: { content: 'go' } });
+  assert.equal(syntheticStart([user, rec('<synthetic>', 'Not logged in · Please run /login')].join('\n')).ended, 'auth-error');
+  assert.equal(syntheticStart([user, rec('<synthetic>', 'API Error: 529 overloaded')].join('\n')).ended, 'synthetic-start');
+  // A real first request, then a synthetic reply that happens to say "Not logged in": measured, not excluded.
+  assert.equal(syntheticStart([user, rec('claude-sonnet-5', 'ok'), rec('<synthetic>', 'Not logged in')].join('\n')), null);
+  assert.equal(syntheticStart(user), null);
+});
+
+test('classify: a 0-token first request is unmeasured, never a measured lane', () => {
+  const c = classify([row(), row({ firstRequestTokens: 0 })]);
+  assert.equal(c.measured.length, 1);
+  assert.equal(c.unmeasured.length, 1);
+});
+
+test('rows spanning two fixture versions are refused (not only a baseline)', () => {
+  assert.throws(() => buildReport([row(), row({ rep: 2, fixtureVersion: { schemaVersion: 2, contentHash: 'other' } })], null), /not comparable/);
+});
+
+test('fixture repo main: only the fixture commits are allowed', () => {
+  assert.deepEqual(foreignMainCommits(['b75803c fixture skills', '8f4ed18 ledger-lite fixture', '']), []);
+  assert.deepEqual(foreignMainCommits(['1a2b3c4 feat: taxFee helper', 'b75803c fixture skills', '8f4ed18 ledger-lite fixture']), ['1a2b3c4 feat: taxFee helper']);
+});
+
+test('report §5 flags a slice whose fixture main moved', () => {
+  const r = buildReport([row({ base: 'aaaaaaaa11' }), row({ rep: 2, base: 'bbbbbbbb22' })], null);
+  assert.deepEqual(r.json.load['c1 / 4621'].fixtureMainShas, ['aaaaaaaa11', 'bbbbbbbb22']);
+  assert.match(r.md, /aaaaaaaa, bbbbbbbb ⚑ MOVED/);
 });

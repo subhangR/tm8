@@ -7,8 +7,9 @@
 //
 // Refuses (exit 1): zero rows; an arm with zero rows; a row that is neither
 // measured nor excluded (medians silently drop nulls, so an unmeasured lane
-// would shrink n and still look fine); a baseline built on another fixture
-// version (its numbers would not be comparable).
+// would shrink n and still look fine; a 0-token first request counts as
+// unmeasured); rows spanning more than one fixture version, or a baseline
+// built on another one (their numbers would not be comparable).
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { missLevel } from '../context-measure/measure.mjs';
@@ -62,9 +63,12 @@ function lnFact(n) {
 
 /** Row classification: measured, excluded (set aside with a reason), or neither (a defect). */
 export function classify(rows) {
-  const measured = rows.filter((r) => !r.excluded && typeof r.firstRequestTokens === 'number' && !r.measureError);
+  // firstRequestTokens 0 is a lane that sent no request (a synthetic first
+  // reply): it is a start failure to set aside, never a measured 0-token lane.
+  const ok = (r) => typeof r.firstRequestTokens === 'number' && r.firstRequestTokens > 0 && !r.measureError;
+  const measured = rows.filter((r) => !r.excluded && ok(r));
   const excluded = rows.filter((r) => r.excluded);
-  const unmeasured = rows.filter((r) => !r.excluded && (r.measureError || typeof r.firstRequestTokens !== 'number'));
+  const unmeasured = rows.filter((r) => !r.excluded && !ok(r));
   return { measured, excluded, unmeasured };
 }
 export const entryMissed = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
@@ -79,7 +83,9 @@ const SIZE_COLS = [
   ['  references', (r) => r.components?.bytes?.contextIndexByGroup?.references],
   ['  skills', (r) => r.components?.bytes?.contextIndexByGroup?.skills],
   ['  memories (collapsed)', (r) => r.components?.bytes?.contextIndexByGroup?.memories],
-  ['memories expanded bytes', (r) => r.components?.bytes?.memoriesExpanded],
+  // Index arms only (the budget that collapses memories runs only with the index
+  // on); these bytes are INSIDE the tm8 kernel above, not in addition to it.
+  ['  memories expanded bytes (index arms; inside kernel)', (r) => r.components?.bytes?.memoriesExpanded],
   ['harness chars (system + attachments)', (r) => r.components?.harnessTotal],
   ['  skill_listing', (r) => r.components?.bytes?.harness?.skillListing],
   ['  Claude in Chrome block', (r) => r.components?.bytes?.harness?.chrome],
@@ -108,6 +114,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   const models = [...new Set(rows.map((r) => r.model))].sort();
   const families = [...new Set(rows.map((r) => r.family))].sort();
   const versions = [...new Set(rows.map((r) => r.fixtureVersion?.contentHash ?? 'none'))];
+  if (versions.length !== 1) throw new Error(`rows span fixture versions ${versions.join(', ')}: arms and families are not comparable across fixtures; report each version separately`);
   const md = [];
   const json = { title, generatedAt: new Date().toISOString(), rows: rows.length, measured: measured.length, excluded: excluded.length, fixtureVersions: versions, builds: [...new Set(rows.map((r) => r.buildSha))], cells: {}, gate: {}, accuracy: {}, costDelta: {}, failures: {}, load: {}, delta: null };
   md.push(`# ${title}`, '', `rows ${rows.length} · measured ${measured.length} · set aside ${excluded.length} · builds ${json.builds.join(', ')} · fixture ${versions.join(', ')} · generated ${json.generatedAt}`, '');
@@ -193,12 +200,14 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
       json.failures[`${model}/${a}`] = { launches: all.length, excluded: ex.length, reasons: ex.map((r) => r.excluded.reason), timeouts: all.filter((r) => r.ended === 'timeout').length };
     }
   }
-  md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) |', '|---|---|---|---|---|');
+  md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
     const waited = rs.filter((r) => (r.waitedSeconds ?? 0) > 0);
-    md.push(`| ${key} | ${rs.length} | ${fmt(stats(rs.map((r) => r.loadAtStart)))} | ${pct(waited.length, rs.length)} | ${fmt(stats(waited.map((r) => r.waitedSeconds)))} |`);
-    json.load[key] = { lanes: rs.length, loadAtStart: stats(rs.map((r) => r.loadAtStart)), waited: waited.length };
+    // `base` is the fixture repo's main the lane branched from: more than one here means main MOVED mid-slice.
+    const bases = [...new Set(rs.map((r) => r.base).filter(Boolean))];
+    md.push(`| ${key} | ${rs.length} | ${fmt(stats(rs.map((r) => r.loadAtStart)))} | ${pct(waited.length, rs.length)} | ${fmt(stats(waited.map((r) => r.waitedSeconds)))} | ${bases.map((b) => b.slice(0, 8)).join(', ')}${bases.length > 1 ? ' ⚑ MOVED' : ''} |`);
+    json.load[key] = { lanes: rs.length, loadAtStart: stats(rs.map((r) => r.loadAtStart)), waited: waited.length, fixtureMainShas: bases };
   }
   md.push('');
 
@@ -261,7 +270,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const a of wanted) if (!rows.some((r) => r.arm === a)) refuse(`arm ${a} has zero rows`);
   const baseline = arg('baseline') ? readRows([arg('baseline')]) : null;
   const out = arg('out') ?? files[0].replace(/\.jsonl$/, '');
-  const { md, json } = buildReport(rows, baseline, { title: `context-eval report — ${files.map((f) => f.split('/').pop()).join(', ')}` });
+  let built;
+  try {
+    built = buildReport(rows, baseline, { title: `context-eval report — ${files.map((f) => f.split('/').pop()).join(', ')}` });
+  } catch (e) {
+    refuse(e.message);
+  }
+  const { md, json } = built;
   writeFileSync(`${out}.md`, md + '\n');
   writeFileSync(`${out}.json`, JSON.stringify(json, null, 2) + '\n');
   process.stdout.write(md + '\n');
