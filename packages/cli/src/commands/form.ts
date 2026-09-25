@@ -441,7 +441,10 @@ export function renderCreated(dto: unknown, base = ''): string {
     `url: ${base}${String(d.url ?? '')}`,
     `answers go to: ${d.requestingSessionId ? `session ${String(d.requestingSessionId)}` : '(no requesting session)'}` +
       (attached.length > 0 ? `  ·  attached to ${attached.join(', ')}` : ''),
-    `next: tm8 form response list ${id}`,
+    // A draft takes no answers yet: its next step is opening it, not reading responses.
+    d.entity?.content?.status === 'draft'
+      ? `next: tm8 form open ${id} --expect-version ${String(d.entity.version ?? '?')}`
+      : `next: tm8 form response list ${id}`,
   ].join('\n');
 }
 

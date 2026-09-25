@@ -22,6 +22,7 @@ import {
   validateAnswers,
 } from '../src/form-input.js';
 import { CliError } from '../src/exit.js';
+import { renderCreated } from '../src/commands/form.js';
 
 async function tm8(argv: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const out: string[] = [];
@@ -279,6 +280,23 @@ describe('tm8 form create — forms.create', () => {
   it('--format json passes the Server DTO through', async () => {
     const r = await tm8(['form', 'create', '--space', SPACE, '--title', 'P', '--question', 'a:long_text:A', '--format', 'json']);
     expect(JSON.parse(r.stdout)).toMatchObject({ url: `/#/s/${SPACE}/e/${FORM}` });
+  });
+});
+
+describe('the create receipt', () => {
+  const created = (status: string) => ({
+    entity: { id: 'f1', version: 1, title: 'T', content: { status, questions: [{}], structureVersion: 1 } },
+    url: '/#/s/sp/e/f1',
+    requestingSessionId: null,
+    attachedTo: [],
+  });
+
+  it('a draft names opening it as the next step, with the version to guard on', () => {
+    expect(renderCreated(created('draft')).split('\n').at(-1)).toBe('next: tm8 form open f1 --expect-version 1');
+  });
+
+  it('an open form names reading its responses', () => {
+    expect(renderCreated(created('open')).split('\n').at(-1)).toBe('next: tm8 form response list f1');
   });
 });
 
