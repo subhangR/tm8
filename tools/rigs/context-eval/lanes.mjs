@@ -23,7 +23,8 @@
 // once more. The row's `turn` records each step; the rubric scores the
 // injected change's checks and whether the resume relaunched.
 
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { devCli } from '../context-measure/dev-cli.mjs';
 import { lanePid, laneCli, load1, nativeSessionId, sh, sleep, transcriptFor, uptime } from '../context-measure/lane.mjs';
@@ -45,6 +46,27 @@ const LOAD_TIERS = { two: 40, one: 80 };
 // Every lane branches from it, so a lane that merged its work into `main` would
 // hand every later lane a solved base: the slice stops scheduling instead.
 const FIXTURE_COMMITS = ['ledger-lite fixture', 'fixture skills'];
+
+/**
+ * Claude Code keys auto-memory to the PROJECT root (the node's fixture repo),
+ * not the lane's worktree: `~/.claude/projects/<slug of the repo>/memory/`. A
+ * lane that writes there has its notes loaded into every later lane's first
+ * request on the node (decision D11; C3 msg 01a0d994-59e7). Before EVERY spawn
+ * the dir must be absent or empty; otherwise it is MOVED (never deleted) to
+ * `<dataDir>/evidence/memory-<ts>/` and the next row records it.
+ */
+export const memoryDirFor = (repo, home = homedir()) => join(home, '.claude', 'projects', repo.replace(/[^A-Za-z0-9]/g, '-'), 'memory');
+export function guardMemoryDir(repo, dataDir, { home = homedir(), now = new Date() } = {}) {
+  const dir = memoryDirFor(repo, home);
+  if (!existsSync(dir)) return { memoryDirState: 'absent' };
+  const files = readdirSync(dir);
+  if (!files.length) return { memoryDirState: 'empty' };
+  const to = join(dataDir, 'evidence', `memory-${now.toISOString().replace(/[:.]/g, '-')}`);
+  mkdirSync(join(dataDir, 'evidence'), { recursive: true });
+  cpSync(dir, to, { recursive: true }); // copy then remove: ~/.claude and <dataDir> may sit on different volumes
+  rmSync(dir, { recursive: true, force: true });
+  return { memoryDirState: 'moved', memoryDirMovedAt: now.toISOString(), memoryDirMovedFiles: files, memoryDirMovedTo: to };
+}
 
 /** `git log --format='%h %s'` lines on the fixture repo's main that no fixture step made. */
 export function foreignMainCommits(lines) {
@@ -138,6 +160,7 @@ function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
     templateTaskId: tpl.templateId, taskId: null, sessionId: null, worktree: null, base,
     startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, waitedSeconds: cell.waitedSeconds ?? 0,
     laneTm8: null, turn: null,
+    ...(cell.memoryGuard ?? {}),
   };
 }
 
@@ -327,6 +350,10 @@ async function main() {
         continue;
       }
       const cell = plan[i++];
+      cell.memoryGuard = guardMemoryDir(node.repo, node.dataDir);
+      if (cell.memoryGuard.memoryDirState === 'moved') {
+        console.error(`\n${'!'.repeat(72)}\nAUTO-MEMORY GUARD: ${memoryDirFor(node.repo)} held ${cell.memoryGuard.memoryDirMovedFiles.join(', ')}: a lane wrote Claude auto-memory, which would load into every later lane. MOVED to ${cell.memoryGuard.memoryDirMovedTo}; rows started since the write are contaminated (report.mjs flags them).\n${'!'.repeat(72)}\n`);
+      }
       const p = runLane({ node, nodeFx, tm8, cell, slice: slice ?? explicitArm, out, timeoutMin, fixtureVersion }).catch((e) => console.error(`lane ${cell.model}/${cell.taskKey}#${cell.rep} crashed: ${e.stack ?? e}`)).finally(() => running.delete(p));
       running.add(p);
       await sleep(3_000);

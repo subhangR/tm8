@@ -8,7 +8,8 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const require_ = createRequire(import.meta.url);
 import assert from 'node:assert/strict';
-import { buildReport, classify, upperBound95, stats } from './report.mjs';
+import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory } from './report.mjs';
+import { guardMemoryDir, memoryDirFor } from './lanes.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
 import { syntheticStart } from './measure-row.mjs';
 import { componentsOf } from './components.mjs';
@@ -319,4 +320,62 @@ test('subagents: the subagent transcripts of a lane fold into requests / usage /
 
 test('floor: a row measured without its subagent transcripts is refused (remeasure --all)', () => {
   assert.throws(() => buildReport([row(), row({ rep: 2, subagentsMeasured: undefined })], null), /without their subagent transcripts.*remeasure/);
+});
+
+test('D11: a lane that LOADED lane-written auto-memory is contaminated {by writer} and set aside; the writer is flagged', () => {
+  const write = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Write', input: { file_path: '/Users/x/.claude/projects/-private-tmp-ctxeval-node1-fixture-repo/memory/MEMORY.md', content: 'note' } }] } });
+  const loaded = JSON.stringify({ type: 'user', message: { content: 'Contents of /Users/x/.claude/projects/-private-tmp-ctxeval-node1-fixture-repo/memory/MEMORY.md (user\'s auto-memory, persists across conversations):' } });
+  const pathOnly = JSON.stringify({ type: 'attachment', attachment: { type: 'x', content: 'You have a persistent memory at /Users/x/.claude/projects/-private-tmp-ctxeval-node1-fixture-repo/memory/' } });
+  const files = { w: write, a: loaded, b: pathOnly, c: loaded };
+  const rows = [
+    row({ sessionId: 'writer', transcript: 'w', startedAt: '2026-09-25T17:00:00Z' }),
+    row({ sessionId: 'after', rep: 2, transcript: 'a', startedAt: '2026-09-25T17:05:00Z' }),
+    row({ sessionId: 'clean', rep: 3, transcript: 'b', startedAt: '2026-09-25T17:06:00Z' }),
+    row({ sessionId: 'other-node', rep: 4, transcript: 'c', startedAt: '2026-09-25T17:07:00Z', node: { port: 4624 } }),
+  ];
+  annotateContamination(rows, (f) => files[f] ?? null);
+  assert.equal(rows[0].wroteAutoMemory, true);
+  assert.deepEqual(rows[1].contaminated, { by: 'writer', via: 'auto-memory' });
+  assert.equal(rows[2].contaminated, undefined, 'the bare memory path in the harness instructions is not a load');
+  assert.deepEqual(rows[3].contaminated, { by: 'unknown', via: 'auto-memory' }, 'a writer on another node is not the source');
+  const r = buildReport(rows, null);
+  assert.equal(r.measured.length, 2, 'contaminated rows are set aside from every comparison');
+  assert.equal(r.json.failures['sonnet5/lean'].excluded, 2);
+  assert.equal(r.json.contamination.wroteAutoMemory.length, 1);
+  assert.match(r.md, /2 row\(s\) LOADED lane-written memory/);
+  // negative control: without the injection header nothing is contaminated
+  const rows2 = rows.map((x) => ({ ...x, contaminated: undefined, wroteAutoMemory: undefined }));
+  annotateContamination(rows2, (f) => (f === 'w' ? write : pathOnly));
+  assert.equal(rows2.filter((x) => x.contaminated).length, 0);
+  assert.equal(wroteAutoMemory(pathOnly), false);
+  const bash = (command) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command } }] } });
+  const M = '/Users/x/.claude/projects/-p-fixture-repo/memory';
+  assert.equal(wroteAutoMemory(bash(`cat ${M}/notes.md 2>/dev/null; echo ---`)), false, 'a read with a stderr redirect is not a write');
+  assert.equal(wroteAutoMemory(bash(`ls -la ${M}/ 2>&1`)), false);
+  assert.equal(wroteAutoMemory(bash(`cat ${M}/x > /tmp/copy`)), false, 'reading memory into /tmp is not a write');
+  assert.equal(wroteAutoMemory(bash(`echo note >> ${M}/MEMORY.md`)), true);
+  assert.equal(wroteAutoMemory(bash(`cp /tmp/n.md ${M}/n.md`)), true);
+  assert.equal(wroteAutoMemory(bash(`mkdir -p ${M}`)), true);
+});
+
+test('D11 guard: a non-empty memory dir is MOVED to <dataDir>/evidence before a spawn (never deleted); absent/empty pass', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const home = mkdtempSync(join(tmpdir(), 'ctxeval-home-'));
+  const dataDir = mkdtempSync(join(tmpdir(), 'ctxeval-data-'));
+  const repo = '/private/tmp/ctxeval/node9/fixture-repo';
+  assert.equal(guardMemoryDir(repo, dataDir, { home }).memoryDirState, 'absent');
+  const dir = memoryDirFor(repo, home);
+  assert.ok(dir.endsWith('/.claude/projects/-private-tmp-ctxeval-node9-fixture-repo/memory'));
+  mkdirSync(dir, { recursive: true });
+  assert.equal(guardMemoryDir(repo, dataDir, { home }).memoryDirState, 'empty');
+  writeFileSync(join(dir, 'MEMORY.md'), 'lane note');
+  const g = guardMemoryDir(repo, dataDir, { home, now: new Date('2026-09-25T17:30:00Z') });
+  assert.equal(g.memoryDirState, 'moved');
+  assert.deepEqual(g.memoryDirMovedFiles, ['MEMORY.md']);
+  assert.ok(!existsSync(dir), 'the live memory dir is gone');
+  assert.deepEqual(readdirSync(g.memoryDirMovedTo), ['MEMORY.md'], 'the evidence is kept');
+  rmSync(home, { recursive: true });
+  rmSync(dataDir, { recursive: true });
 });

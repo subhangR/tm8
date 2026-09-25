@@ -11,7 +11,7 @@
 // unmeasured); rows spanning more than one fixture version, or a baseline
 // built on another one (their numbers would not be comparable).
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { missLevel } from '../context-measure/measure.mjs';
 import { COMPONENTS_SCHEMA } from './components.mjs';
 import { ARMS, ARM_ENV } from './node-registry.mjs';
@@ -62,14 +62,72 @@ function lnFact(n) {
   return s;
 }
 
+// Decision D11: Claude Code's auto-memory is keyed to the fixture repo, so a
+// lane that wrote memory had it loaded into every later lane on that node.
+// Claude Code's injection header marks a lane that LOADED it (a bare memory
+// path appears in every transcript via the harness's memory instructions).
+const MEMORY_LOADED = /Contents of \S*\/memory\/MEMORY\.md \(user/;
+const MEMORY_WRITE_PATH = /\/\.claude\/projects\/[^\s'"]*\/memory\//;
+// The memory path must be the TARGET of the write: `cat <memory>/x 2>/dev/null` reads.
+const MEM = String.raw`['"]?[^\s'"]*\/\.claude\/projects\/[^\s'"]*\/memory\/?[^\s'"]*['"]?`;
+const SHELL_MEMORY_WRITES = [
+  new RegExp(String.raw`(?:>>?|\btee\b(?:\s+-a)?)\s*` + MEM),
+  new RegExp(String.raw`\b(?:cp|mv|rsync)\b[^;&|\n]*\s` + MEM + String.raw`\s*(?:$|[;&|\n])`),
+  new RegExp(String.raw`\b(?:mkdir|touch)\b[^;&|\n]*` + MEM),
+];
+/** Did this transcript WRITE Claude auto-memory (a Write/Edit to, or a shell write into, a project memory dir)? */
+export function wroteAutoMemory(text) {
+  for (const line of text.split('\n')) {
+    if (!line.includes('tool_use') || !line.includes('memory')) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    for (const b of r.message?.content ?? []) {
+      if (b.type !== 'tool_use') continue;
+      const p = String(b.input?.file_path ?? '');
+      if (['Write', 'Edit', 'MultiEdit'].includes(b.name) && MEMORY_WRITE_PATH.test(p)) return true;
+      const c = String(b.input?.command ?? '');
+      if (b.name === 'Bash' && SHELL_MEMORY_WRITES.some((re) => re.test(c))) return true;
+    }
+  }
+  return false;
+}
+/**
+ * Report-time, from each row's transcript (no measured field changes): the
+ * writer rows get `wroteAutoMemory: true`; a row that LOADED lane-written
+ * memory gets `contaminated: {by, via: 'auto-memory'}`, `by` = the latest
+ * writer on the same node that started before it ('unknown' if none in these
+ * files). Contaminated rows are set aside from every comparison (§5).
+ */
+export function annotateContamination(rows, read = (f) => (f && existsSync(f) ? readFileSync(f, 'utf8') : null)) {
+  const texts = new Map(rows.map((r) => [r, read(r.transcript)]));
+  for (const r of rows) {
+    const t = texts.get(r);
+    if (t != null && wroteAutoMemory(t)) r.wroteAutoMemory = true;
+  }
+  for (const r of rows) {
+    const t = texts.get(r);
+    if (t == null || !MEMORY_LOADED.test(t)) continue;
+    const writers = rows.filter((w) => w.wroteAutoMemory && w !== r && w.node?.port === r.node?.port && w.startedAt && r.startedAt && w.startedAt < r.startedAt).sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
+    r.contaminated = { by: writers.at(-1)?.sessionId ?? 'unknown', via: 'auto-memory' };
+  }
+  return rows;
+}
+/** A row set aside: excluded by hand/auto, or contaminated (D11). */
+export const setAside = (r) => !!(r.excluded || r.contaminated);
+export const asideReason = (r) => r.excluded?.reason ?? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})`;
+
 /** Row classification: measured, excluded (set aside with a reason), or neither (a defect). */
 export function classify(rows) {
   // firstRequestTokens 0 is a lane that sent no request (a synthetic first
   // reply): it is a start failure to set aside, never a measured 0-token lane.
   const ok = (r) => typeof r.firstRequestTokens === 'number' && r.firstRequestTokens > 0 && !r.measureError;
-  const measured = rows.filter((r) => !r.excluded && ok(r));
-  const excluded = rows.filter((r) => r.excluded);
-  const unmeasured = rows.filter((r) => !r.excluded && !ok(r));
+  const measured = rows.filter((r) => !setAside(r) && ok(r));
+  const excluded = rows.filter(setAside);
+  const unmeasured = rows.filter((r) => !setAside(r) && !ok(r));
   return { measured, excluded, unmeasured };
 }
 export const entryMissed = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
@@ -301,12 +359,17 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
     for (const a of arms) {
       const all = rows.filter((r) => r.model === model && r.arm === a);
       if (!all.length) continue;
-      const ex = all.filter((r) => r.excluded);
-      const reasons = [...new Set(ex.map((r) => r.excluded.reason.slice(0, 60)))].join('; ');
+      const ex = all.filter(setAside);
+      const reasons = [...new Set(ex.map((r) => asideReason(r).slice(0, 60)))].join('; ');
       md.push(`| ${model} | ${a} | ${all.length} | ${pct(ex.length, all.length)} | ${reasons} | ${all.filter((r) => r.ended === 'timeout').length} |`);
-      json.failures[`${model}/${a}`] = { launches: all.length, excluded: ex.length, reasons: ex.map((r) => r.excluded.reason), timeouts: all.filter((r) => r.ended === 'timeout').length };
+      json.failures[`${model}/${a}`] = { launches: all.length, excluded: ex.length, reasons: ex.map(asideReason), timeouts: all.filter((r) => r.ended === 'timeout').length };
     }
   }
+  const writers = rows.filter((r) => r.wroteAutoMemory);
+  const contaminated = rows.filter((r) => r.contaminated);
+  const moved = rows.filter((r) => r.memoryDirState === 'moved');
+  json.contamination = { wroteAutoMemory: writers.map((r) => ({ slice: r.slice, port: r.node?.port, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId })), contaminated: contaminated.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, ...r.contaminated, excluded: !!r.excluded })), memoryDirMoved: moved.map((r) => ({ slice: r.slice, sessionId: r.sessionId, at: r.memoryDirMovedAt, files: r.memoryDirMovedFiles })) };
+  md.push('', `Auto-memory (decision D11): ${writers.length} lane(s) WROTE Claude auto-memory${writers.length ? ` (${writers.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId}`).join('; ')})` : ''}; ${contaminated.length} row(s) LOADED lane-written memory and are set aside above${contaminated.length ? ` (${contaminated.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} by ${r.contaminated.by}`).join('; ')})` : ''}; the runner's guard moved a non-empty memory dir before ${moved.length} lane start(s).`);
   md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
@@ -374,15 +437,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   };
   if (!files.length) refuse('usage: node report.mjs results/<run>.jsonl [--baseline <prior>.jsonl] [--out <path-without-ext>]');
-  const rows = readRows(files);
+  const rows = annotateContamination(readRows(files));
   if (!rows.length) refuse(`${files.join(', ')}: no rows`);
   const { unmeasured } = classify(rows);
   if (unmeasured.length) refuse(`${unmeasured.length} row(s) neither measured nor excluded: ${unmeasured.map((r) => `${r.arm}/${r.model}/${r.taskKey}#${r.rep} (${r.sessionId}) ${r.measureError ?? 'no firstRequestTokens'}`).join('; ')}. Fix the measurement or set it aside with exclude.mjs --reason.`);
   const present = ARMS.filter((a) => rows.some((r) => r.arm === a));
-  for (const a of present) if (!rows.some((r) => r.arm === a && !r.excluded && typeof r.firstRequestTokens === 'number')) refuse(`arm ${a} has rows but none measured`);
+  for (const a of present) if (!rows.some((r) => r.arm === a && !setAside(r) && typeof r.firstRequestTokens === 'number')) refuse(`arm ${a} has rows but none measured`);
   const wanted = (arg('arms') ?? '').split(',').filter(Boolean);
   for (const a of wanted) if (!rows.some((r) => r.arm === a)) refuse(`arm ${a} has zero rows`);
-  const baseline = arg('baseline') ? readRows([arg('baseline')]) : null;
+  const baseline = arg('baseline') ? annotateContamination(readRows([arg('baseline')])) : null;
   const out = arg('out') ?? files[0].replace(/\.jsonl$/, '');
   let built;
   try {
