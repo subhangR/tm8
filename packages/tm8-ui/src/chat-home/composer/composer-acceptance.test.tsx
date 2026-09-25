@@ -109,6 +109,33 @@ describe('composer acceptance', () => {
     expect(controls.roots[0]).toMatchObject({ workdirMode: 'project', projectId: '019f0000-0000-7000-8000-00000000b001' });
   });
 
+  it('B2 · a project chosen in one space does not ride into a chat started after a space switch', async () => {
+    const SPACE_B = '019f0000-0000-7000-8000-000000000091';
+    const PROJECT_A = '019f0000-0000-7000-8000-00000000b001' as EntityId;
+    const PROJECT_B = '019f0000-0000-7000-8000-00000000b002' as EntityId;
+    const { port, controls } = portWith({
+      listProjects: async (spaceId) => spaceId === SPACE_ID
+        ? [{ id: PROJECT_A, name: 'alpha-repo' }]
+        : [{ id: PROJECT_B, name: 'beta-repo' }],
+    });
+    const view = await openNewChat(port);
+    await waitFor(() => { fireEvent.click(view.getByLabelText('Project')); expect(view.getByTestId(`tch-rail-project-${PROJECT_A}`)).toBeTruthy(); });
+    fireEvent.click(view.getByTestId(`tch-rail-project-${PROJECT_A}`));
+    expect(view.getByLabelText('Project').textContent).toContain('alpha-repo');
+
+    view.rerender(<ChatHomeScreen port={port} spaceId={SPACE_B} models={MODELS} newMutationId={(p) => `${p}:t`} />);
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() => expect(view.getByLabelText('Project')).toBeTruthy());
+    expect(view.getByLabelText('Project').textContent).not.toContain('alpha-repo');
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hello from B' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
+    expect(controls.roots[0]).toMatchObject({ spaceId: SPACE_B, workdirMode: 'scratch' });
+    expect(controls.roots[0]).not.toHaveProperty('projectId');
+  });
+
   it('ac_6 · BUILD under Read-only is surfaced between composer and rail with a one-click raise', async () => {
     const view = await openNewChat(portWith().port);
     fireEvent.click(view.getByLabelText('Permissions'));

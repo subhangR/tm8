@@ -305,6 +305,29 @@ export interface PanelState {
   contentSurface: Record<EntityId, ContentSurface>;
   /** `session` — auto-opens only when `p` and `pin` are both absent. */
   session: EntityId | null;
+  /**
+   * `ca` / `ct` — THE CHAT SLOT (entity chat, design 01a0da4e §3.1): a chat
+   * ABOUT one entity, open beside whatever the surface is showing.
+   *
+   * SEPARATE FROM `stack`, and that is the reason it exists at all: the stack
+   * holds entity ids, and a chat that has not been started yet has none.
+   * `thread: 'new'` is that chat — the composer with the subject bound — and
+   * it becomes the created id (a REPLACE, never a push) the moment the first
+   * message lands.
+   *
+   * Every layout reads this one field and places it its own way (Home's third
+   * column, Work's centre, the phone's sheet); none of them owns a copy.
+   * `null` ⇒ no chat is open, and the params are omitted.
+   */
+  chat: ChatSlot | null;
+}
+
+/** The chat slot's value — see `PanelState.chat`. */
+export interface ChatSlot {
+  /** The entity the chat is about. Always a real id. */
+  about: EntityId;
+  /** An existing chat about `about`, or `'new'` for the composer. */
+  thread: EntityId | 'new';
 }
 
 export interface Route {
@@ -326,7 +349,8 @@ export type DropClass =
   | 'origin'
   | 'mode'
   | 'session'
-  | 'anchor';
+  | 'anchor'
+  | 'chat';
 
 export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
   tabs: 'tab and surface state',
@@ -342,6 +366,7 @@ export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
   mode: 'layout choice',
   session: 'the session to open',
   anchor: 'the message anchor',
+  chat: 'the open chat',
 };
 
 /**
@@ -418,5 +443,5 @@ export const MAX_HASH_LENGTH = 2048;
 export const UNADDRESSED_HASH = '#/';
 
 export function emptyPanels(): PanelState {
-  return { stack: [], pinned: [], cursor: null, tabs: {}, contentSurface: {}, session: null };
+  return { stack: [], pinned: [], cursor: null, tabs: {}, contentSurface: {}, session: null, chat: null };
 }

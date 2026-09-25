@@ -98,6 +98,25 @@ describe('pty transport — offset resume', () => {
     expect(reattached).toEqual([]); // a first attach is not a reset
   });
 
+  it('commits attached.next only when the replay frame ARRIVES — a lost replay is re-requested', () => {
+    ptyTransport.openSession('s1');
+    last().text({ type: 'attached', base: 0, gap: 0, next: 700_000, hasReplay: true, epoch: 'e1' });
+    // The socket dies before the replay frame lands (the server used to destroy
+    // it on ordinary write backpressure right after queueing a big replay).
+    expect(ptyTransport.__received('s1')).toBe(0);
+    const before = FakeWebSocket.instances.length;
+    last().close();
+    ptyTransport.suspend('s1');
+    ptyTransport.resume('s1');
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(before);
+    // The reconnect asks for the whole stream again, not for its end.
+    expect(offsetOf(last())).toBe(0);
+    last().text({ type: 'attached', base: 0, gap: 0, next: 700_000, hasReplay: true, epoch: 'e1' });
+    last().bin('history');
+    expect(ptyTransport.__received('s1')).toBe(700_000);
+    expect(out.some((o) => o.data === 'history')).toBe(true);
+  });
+
   it('routes a remote session through the selected server relay', () => {
     ptyTransport.openSession('s1', '/v2/server-connections/ec2/proxy');
     const url = new URL(last().url);
@@ -205,6 +224,10 @@ describe('pty transport — offset resume', () => {
     last().text({ type: 'attached', base: 0, gap: 0, next: 10, hasReplay: false, epoch: 'e1' });
     last().text({ type: 'attached', base: 500, gap: 490, next: 900, hasReplay: true, replayKind: 'snapshot', epoch: 'e1' });
     expect(reattached).toEqual(['s1']);
+    // Until the snapshot lands, a reconnect must not resume inside a stream
+    // whose bytes this client never received.
+    expect(ptyTransport.__received('s1')).toBe(0);
+    last().bin('SNAPSHOT');
     expect(ptyTransport.__received('s1')).toBe(900);
   });
 

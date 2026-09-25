@@ -1513,7 +1513,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="live"
         onAction={(ref) => fired.push(ref)}
-        wiredActions={['terminate']}
+        /* `chat-about` — Chat beside Run (entity chat §3.2) — is wired too,
+           so the bar's only refusal-free claim stays about this host. */
+        wiredActions={['terminate', 'chat-about']}
         /* ▶ (continue this session, migration 200) shares the bar; with launch
            sources it is a live flow verb rather than an unwired one. */
         launch={LAUNCH_SOURCES}
@@ -1561,7 +1563,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="exited"
         onAction={(ref) => dispatched.push(ref)}
-        wiredActions={['terminate', 'resume']}
+        wiredActions={['terminate', 'resume', 'chat-about']}
         launch={LAUNCH_SOURCES}
       />,
     );
@@ -1595,7 +1597,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="unknown"
         onAction={() => {}}
-        wiredActions={['terminate', 'resume']}
+        wiredActions={['terminate', 'resume', 'chat-about']}
         launch={LAUNCH_SOURCES}
       />,
     );

@@ -783,7 +783,10 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
    */
   'chat-about': define(
     'chat-about',
-    'Chat about this',
+    /* "Chat", not "Chat about this" (design 01a0da4e §3.2): the verb now sits
+       beside Run in every detail header, where the subject is the panel it is
+       drawn on and a longer word only costs the bar its width. */
+    'Chat',
     '❝',
     /*
      * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one

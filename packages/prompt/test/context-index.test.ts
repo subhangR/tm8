@@ -59,7 +59,8 @@ describe('serializeContextEntry', () => {
     // The name is header text, so it is only in the JSON body, never an attribute.
     const open = text.split('\n')[0]!;
     expect(open).not.toContain('rm -rf');
-    expect(open).toContain('load="tm8 entity context doc-1"');
+    // The default pointer is not repeated on the line (D5 ii); the instruction says it once.
+    expect(open).not.toContain('load=');
   });
 
   it('renders a skill name as an attribute, not header text', () => {
@@ -68,11 +69,45 @@ describe('serializeContextEntry', () => {
     expect(text).not.toContain('"name"');
   });
 
-  it('renders an id-only line for a kind with no header, and header="dropped" after a level-1 trim', () => {
+  it('renders an id-only line for a kind with no header, and dropped="summary" with the whenToUse kept', () => {
     expect(serializeContextEntry({ id: 'ws-1', kind: 'work_session', via: 'linked', load: loadPointerFor('work_session', 'ws-1') })).toMatch(/\/>$/);
-    const dropped = serializeContextEntry({ ...ref(2), headerDropped: true });
-    expect(dropped).toContain('header="dropped"');
-    expect(dropped).not.toContain('untrusted_data');
+    const dropped = serializeContextEntry({ ...ref(2), summaryDropped: true });
+    expect(dropped.split('\n')[0]).toContain(' stale="false" dropped="summary">');
+    expect(dropped).toContain('&quot;whenToUse&quot;:&quot;when 2&quot;');
+    expect(dropped).toContain('&quot;name&quot;:&quot;Doc 2&quot;');
+    expect(dropped).not.toContain('summary&quot;');
+  });
+
+  it('still renders a stored pre-floor-rule entry as header="dropped", and round-trips both marks', () => {
+    const legacy = serializeContextEntry({ ...ref(2), headerDropped: true });
+    expect(legacy).toContain('header="dropped"');
+    expect(legacy).not.toContain('untrusted_data');
+    const index = { groups: [group('references', [{ ...ref(1), summaryDropped: true }, { ...ref(2), headerDropped: true }])] };
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify(index)))!;
+    expect(parsed.groups[0]!.entries.map((e) => [e.summaryDropped === true, e.headerDropped === true])).toEqual([[true, false], [false, true]]);
+    expect(serializeContextIndex(parsed)).toContain('summaries_dropped="1" headers_dropped="1"');
+  });
+
+  it('renders load only when it is not the default pointer, and keeps it in the data (D5 ii)', () => {
+    const plain = ref(1);
+    expect(serializeContextEntry(plain)).not.toContain('load=');
+    expect(contextEntryBytes(plain)).toBe(utf8Bytes(serializeContextEntry(plain)) + 1);
+    const native = { ...skill(1), load: '/skill1' };
+    expect(serializeContextEntry(native).split('\n')[0]).toContain(' load="/skill1"');
+    const odd = { ...ref(2), load: 'tm8 entity context doc-2 --sections assignment' };
+    expect(serializeContextEntry(odd)).toContain('load="tm8 entity context doc-2 --sections assignment"');
+    // A pointer naming ANOTHER id is not the default, so it is rendered.
+    expect(serializeContextEntry({ ...ref(3), load: 'tm8 entity context doc-9' })).toContain('load="tm8 entity context doc-9"');
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify({ groups: [group('references', [plain])] })))!;
+    expect(parsed.groups[0]!.entries[0]!.load).toBe('tm8 entity context doc-1');
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('with tm8 entity context <its id>, or the command in its load attribute when it has one');
+  });
+
+  it('renders a summary that repeats its whenToUse once (a native skill routes by its description)', () => {
+    const same = { ...skill(1), header: { whenToUse: 'Use for CSV parsing.', summary: 'Use for CSV parsing.' } };
+    const prefix = { ...skill(2), header: { whenToUse: 'Use for CSV parsing, and more.', summary: 'Use for CSV…' } };
+    for (const e of [same, prefix]) expect(serializeContextEntry(e)).not.toContain('summary&quot;');
+    expect(serializeContextEntry({ ...skill(3), header: { whenToUse: 'Use for CSV.', summary: 'Parses CSV.' } })).toContain('summary&quot;');
   });
 });
 
@@ -85,7 +120,7 @@ describe('serializeContextIndex', () => {
   });
 });
 
-describe('fitContextIndex — the two-level trim-and-record', () => {
+describe('fitContextIndex — the floor rule: summaries, then whole entries, whenToUse never alone', () => {
   const refs = Array.from({ length: 30 }, (_, i) => ref(i));
   const skills = Array.from({ length: 30 }, (_, i) => skill(i));
 
@@ -101,40 +136,119 @@ describe('fitContextIndex — the two-level trim-and-record', () => {
     expect(utf8Bytes(serializeContextGroup(refGroup)) + 2).toBeLessThanOrEqual(8192);
   });
 
-  it('drops header text from the bottom before any whole entry, and records every drop', () => {
+  /**
+   * Every rendered entry whose CANDIDATE had a whenToUse still shows it, whole.
+   * Read from the candidates, not the output, so a trim that blanks a
+   * whenToUse cannot pass by making the check vacuous; and at least one
+   * rendered entry must carry one, so an empty result cannot pass either.
+   */
+  const whenOf = new Map([...refs, ...skills].map((e) => [e.id, e.header?.whenToUse ?? null]));
+  const floorsIntact = (fit: ReturnType<typeof fitContextIndex>, atLeast = 1): void => {
+    const text = serializeContextIndex(fit.index);
+    let checked = 0;
+    for (const g of fit.index.groups) {
+      for (const e of g.entries) {
+        expect(e.headerDropped, e.id).not.toBe(true);
+        const when = whenOf.get(e.id);
+        if (!when) continue;
+        checked += 1;
+        expect(text, e.id).toContain(`&quot;whenToUse&quot;:&quot;${when}&quot;`);
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(atLeast);
+  };
+
+  it('drops summaries from the bottom before any whole entry, keeps every whenToUse, and records every drop', () => {
     const fit = fitContextIndex({
       groups: [group('references', refs.slice(0, 20))],
       available: 30_000,
       caps: [{ groups: ['references'], cap: 8192 }],
     });
     const g = fit.index.groups[0]!;
-    // Level 1 only: every entry kept, the lowest-ranked ones bare.
+    // Detail only: every entry kept, the lowest-ranked ones without a summary.
     expect(g.entries).toHaveLength(20);
     expect(g.omitted).toBe(0);
-    const bare = g.entries.map((e) => e.headerDropped === true);
+    const bare = g.entries.map((e) => e.summaryDropped === true);
     expect(bare.indexOf(true)).toBeGreaterThan(0);
     expect(bare.slice(bare.indexOf(true)).every(Boolean)).toBe(true);
-    expect(fit.drops.every((d) => d.level === 'header')).toBe(true);
-    expect(fit.drops.map((d) => d.id).sort()).toEqual(g.entries.filter((e) => e.headerDropped).map((e) => e.id).sort());
+    expect(fit.drops.every((d) => d.level === 'summary')).toBe(true);
+    expect(fit.drops.map((d) => d.id).sort()).toEqual(g.entries.filter((e) => e.summaryDropped).map((e) => e.id).sort());
+    expect(utf8Bytes(serializeContextGroup(g)) + 2).toBeLessThanOrEqual(8192);
+    floorsIntact(fit);
   });
 
-  it('then drops whole entries from the bottom, declared as omitted with the fetch path', () => {
+  it('lets the floor borrow past its sub-cap when the ceiling has room: no entry is dropped for the sub-cap alone', () => {
     const fit = fitContextIndex({
       groups: [group('references', refs)],
       available: 30_000,
       caps: [{ groups: ['references'], cap: 2000 }],
     });
     const g = fit.index.groups[0]!;
+    expect(g.entries).toHaveLength(30);
+    expect(g.omitted).toBe(0);
+    expect(g.entries.every((e) => e.summaryDropped)).toBe(true);
+    expect(utf8Bytes(serializeContextGroup(g)) + 2).toBeGreaterThan(2000);
+    floorsIntact(fit);
+  });
+
+  it('when the ceiling is short, a borrower gives back whole entries from the bottom first, declared with the fetch path', () => {
+    const mates = Array.from({ length: 4 }, (_, i) => ({ ...skill(i), id: `s-${i}` }));
+    const fit = fitContextIndex({
+      groups: [group('references', refs), group('skills', mates)],
+      available: 7_000,
+      caps: [{ groups: ['references'], cap: 2000 }],
+    });
+    const g = fit.index.groups.find((x) => x.name === 'references')!;
     expect(g.omitted).toBeGreaterThan(0);
-    expect(g.entries.every((e) => e.headerDropped)).toBe(true);
+    // The borrower paid first: skills, within no cap, kept every entry.
+    expect(fit.index.groups.find((x) => x.name === 'skills')!.entries).toHaveLength(4);
     const entryDrops = fit.drops.filter((d) => d.level === 'entry').map((d) => d.id);
     expect(entryDrops).toHaveLength(g.omitted);
-    // An entry dropped whole is not also recorded as a header drop.
-    expect(fit.drops.filter((d) => d.level === 'header' && entryDrops.includes(d.id))).toEqual([]);
+    expect(entryDrops).toEqual(refs.slice(30 - g.omitted).map((r) => r.id).reverse());
+    // An entry dropped whole is not also recorded as a summary drop.
+    expect(fit.drops.filter((d) => d.level === 'summary' && entryDrops.includes(d.id))).toEqual([]);
     const text = serializeContextIndex(fit.index);
     expect(text).toContain(`omitted="${g.omitted}" fetch="tm8 entity context task-1 --sections connections"`);
+    expect(fit.bytes).toBeLessThanOrEqual(7_000);
     // Text is never clipped: every rendered header is whole.
     for (const e of g.entries) expect(text).toContain(serializeContextEntry(e));
+    floorsIntact(fit);
+  });
+
+  it('sheds summaries of entries that have a whenToUse before those that route by their summary alone', () => {
+    const summaryOnly = (i: number): PromptContextEntry => ({ ...ref(i), id: `so-${i}`, header: { name: `So ${i}`, whenToUse: null, summary: 'z'.repeat(300) } });
+    const entries = [summaryOnly(1), ref(2), summaryOnly(3), ref(4)];
+    const bytes = entries.reduce((n, e) => n + contextEntryBytes(e), 0);
+    const fit = fitContextIndex({
+      groups: [group('references', entries)],
+      available: 30_000,
+      // Room for all but about two summaries.
+      caps: [{ groups: ['references'], cap: bytes - 400 }],
+    });
+    expect(fit.index.groups[0]!.entries.map((e) => e.summaryDropped === true)).toEqual([false, true, false, true]);
+  });
+
+  it('never renders an entry without its whenToUse, at any ceiling (the floor rule, swept)', () => {
+    const mixed = [...refs.slice(0, 12), ...skills.slice(0, 12)];
+    let rendered = 0;
+    for (let available = 0; available <= 20_000; available += 750) {
+      for (const cap of [0, 1000, 4000, 8192]) {
+        const fit = fitContextIndex({
+          groups: [group('references', mixed.slice(0, 12)), group('skills', mixed.slice(12))],
+          available,
+          caps: [{ groups: ['references'], cap }],
+        });
+        expect(fit.bytes, `${available}/${cap}`).toBeLessThanOrEqual(Math.max(available, 0));
+        expect(fit.bytes).toBe(fit.index.groups.length === 0 ? 0 : utf8Bytes(serializeContextIndex(fit.index)) + 1);
+        floorsIntact(fit, 0);
+        // Every candidate is either rendered or recorded as an entry drop: nothing vanishes.
+        const shown = fit.index.groups.reduce((n, g) => n + g.entries.length, 0);
+        expect(shown + fit.drops.filter((d) => d.level === 'entry').length).toBe(24);
+        rendered += shown;
+      }
+    }
+    // The sweep is not vacuous: most ceilings render entries.
+    expect(rendered).toBeGreaterThan(24 * 20);
   });
 
   it('shares one cap between references and teammates, and skills take what remains', () => {
@@ -192,10 +306,11 @@ describe('both prompt frames', () => {
 });
 
 describe('I5a follow-ups: declared clip, names the index carries', () => {
-  it('renders clipped="…" as a server attribute, never for a header-dropped entry, and reads it back', () => {
+  it('renders clipped="…" as a server attribute, never for a field it no longer shows, and reads it back', () => {
     const cut: PromptContextEntry = { ...ref(1, 'short'), clipped: ['summary', 'whenToUse'] };
-    expect(serializeContextEntry(cut)).toContain(' clipped="summary,whenToUse" load=');
+    expect(serializeContextEntry(cut)).toContain(' clipped="summary,whenToUse">');
     expect(serializeContextEntry({ ...cut, headerDropped: true })).not.toContain('clipped=');
+    expect(serializeContextEntry({ ...cut, summaryDropped: true })).toContain(' clipped="whenToUse" dropped="summary">');
     expect(serializeContextEntry(ref(2, 'short'))).not.toContain('clipped=');
     const parsed = parseContextIndex(JSON.parse(JSON.stringify({ groups: [group('references', [cut])] })));
     expect(parsed!.groups[0]!.entries[0]!.clipped).toEqual(['summary', 'whenToUse']);
@@ -208,20 +323,22 @@ describe('I5a follow-ups: declared clip, names the index carries', () => {
     expect(INDEX_DERIVED_HEADER_CHARS).toBe(200);
   });
 
-  it('contextIndexNames: entries with a rendered name, not header-dropped ones, not skills, nothing when off', () => {
+  it('contextIndexNames: entries with a rendered name (a summary drop keeps it), not header-dropped ones, not skills, nothing when off', () => {
     const index = {
       groups: [
-        group('references', [ref(1, 'a'), { ...ref(2, 'b'), headerDropped: true }]),
+        group('references', [ref(1, 'a'), { ...ref(2, 'b'), headerDropped: true }, { ...ref(3, 'c'), summaryDropped: true }]),
         group('skills', [skill(1)]),
       ],
     };
-    expect([...contextIndexNames(index)]).toEqual(['doc-1']);
+    expect([...contextIndexNames(index)]).toEqual(['doc-1', 'doc-3']);
     expect(contextIndexNames(undefined).size).toBe(0);
     expect(contextIndexNames({ groups: [] }).size).toBe(0);
   });
 
-  it('the instruction names the clipped attribute and what omitted counts', () => {
+  it('the instruction names the clipped attribute, the summary drop, the whole whenToUse, and what omitted counts', () => {
     expect(CONTEXT_INDEX_INSTRUCTION).toContain('clipped names header fields shown cut short, so load the entry');
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('A whenToUse is always shown whole; dropped="summary" means the summary was left out');
+    expect(CONTEXT_INDEX_INSTRUCTION).not.toContain('header="dropped"');
     // `omitted` also counts links past the launch's read (I5a follow-up b), not only the budget's drops.
     expect(CONTEXT_INDEX_INSTRUCTION).toContain('omitted count is entries left out, for the budget or past the launch\'s read');
   });
@@ -239,5 +356,34 @@ describe('profile budgets fit the prompt (§10 Q5.6)', () => {
       baseline: 10_240, promised: 12_288 + 8192 + 4096, cap: 32_768, over: 10_240 + 24_576 - 32_768,
     });
     expect(contextBudgetOverrun({ promptPolicy: { ...policy, initialContextMaxBytes: 16_384 }, contextBudgets: {} })).not.toBeNull();
+  });
+});
+
+describe('I8: a roster teammate entry (design 01a0d348 §8 I8)', () => {
+  const mate: PromptContextEntry = {
+    id: 'tm-1', kind: 'team_member', via: 'roster', teammate: { mode: 'worker', model: 'claude-opus-5' },
+    load: 'tm8 entity context tm-1', source: 'authored', stale: false,
+    header: { name: 'Reviewer" onload="x', whenToUse: 'pick me for review', summary: null },
+  };
+
+  it('renders mode and model as control attributes and the name only inside the entry-header block', () => {
+    const text = serializeContextEntry(mate);
+    const open = text.split('\n')[0]!;
+    expect(open).toBe('    <entry id="tm-1" kind="team_member" mode="worker" model="claude-opus-5" via="roster" source="authored" stale="false">');
+    expect(open).not.toContain('Reviewer');
+    expect(text).toContain('<untrusted_data type="entry-header"');
+  });
+
+  it('omits a null mode or model rather than rendering it empty', () => {
+    const open = serializeContextEntry({ ...mate, teammate: { mode: null, model: 'm' } }).split('\n')[0]!;
+    expect(open).not.toContain('mode=');
+    expect(open).toContain('model="m"');
+  });
+
+  it('round-trips through a stored manifest', () => {
+    const index = { groups: [{ name: 'teammates' as const, entries: [mate], omitted: 3, fetch: 'tm8 entity query --kind team_member' }] };
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify(index)))!;
+    expect(parsed).toEqual(index);
+    expect(serializeContextIndex(parsed)).toBe(serializeContextIndex(index));
   });
 });

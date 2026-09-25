@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
+import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
@@ -57,6 +58,7 @@ import type {
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnFrame,
+  NewChatSeed,
 } from './types';
 /* THE REFUSAL VOCABULARY'S STYLESHEET, IMPORTED WHERE ITS COMPONENTS ARE USED.
    This screen renders `DisabledIconControl` (the refused attach) but reached it
@@ -110,6 +112,15 @@ export interface ChatHomeScreenProps {
    * no other host passes it.
    */
   composerSeed?: { text: string; nonce: number } | undefined;
+  /**
+   * NEW-CHAT SETTINGS SEED — the entity chat's settings card or its
+   * skip-when-default rule (design 01a0da4e §3.4) choosing teammate, model,
+   * mode and project before the first message. Read ONCE, as the new-thread
+   * composer's starting chips; every chip stays editable. A teammate or model
+   * this node does not list falls back to the composer's own default. Absent ⇒
+   * the composer's own defaults, unchanged.
+   */
+  newChatSeed?: NewChatSeed | undefined;
   /**
    * What the NEW-CONVERSATION state says above the composer, when the host
    * knows better than the generic greeting (Craft explains what the craft
@@ -240,6 +251,15 @@ export interface ChatHomeScreenProps {
    */
   soloConversation?: boolean;
   /**
+   * WHAT A COLD START OPENS. `'latest'` (the default, ruled 2026-08-15) opens
+   * the space's most recent conversation so the pane is never empty.
+   * `'composer'` opens the new-conversation composer instead, and is what the
+   * entity chat slot asks for when its thread is `new`: that host has ALREADY
+   * decided no existing chat is wanted, and auto-opening the space's latest
+   * chat — about some other entity entirely — would contradict the address.
+   */
+  coldStart?: 'latest' | 'composer';
+  /**
    * The loaded thread list, published up for a host that draws its own
    * selector. ONE read stays behind it: a host that re-listed for its picker
    * would have a second list free to disagree with this one about what
@@ -343,6 +363,7 @@ export function ChatHomeScreen({
   aboutId,
   pinnedMode,
   composerSeed,
+  newChatSeed,
   newThreadIntro,
   toolNote,
   models,
@@ -367,6 +388,7 @@ export function ChatHomeScreen({
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
+  coldStart = 'latest',
   onThreadsChange,
   onSelectionChange,
   stage = null,
@@ -435,8 +457,14 @@ export function ChatHomeScreen({
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
-  const [modelId, setModelId] = useState(models[0]?.model ?? '');
-  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
+  const [modelId, setModelId] = useState(() =>
+    newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
+      ? newChatSeed.model
+      : (models[0]?.model ?? ''));
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? 'ask');
+  /* The seed is a STARTING value: the roster read below lands after mount, so
+     the seeded teammate is kept in a ref and applied when it does. */
+  const newChatSeedRef = useRef(newChatSeed);
   /* THE REST OF THE COMPOSER'S SHAPE. Per-turn: effort (remembered PER MODE),
      the ⚙ options, the ＋ menu's enabled skills. Thread-scope: the project
      binding (write-once on the server) and the permission ceiling. `null`
@@ -445,7 +473,7 @@ export function ChatHomeScreen({
   const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
   const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
-  const [projectChoice, setProjectChoice] = useState('');
+  const [projectChoice, setProjectChoice] = useState(newChatSeed?.projectId ?? '');
   const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
   const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
   const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
@@ -527,6 +555,13 @@ export function ChatHomeScreen({
     setThreads([]);
     setSelectedRootId(null);
     setDetail(null);
+    /* doc 15 B2: the composer's project binding is a `projects.id` linked to
+       the space being LEFT. Carried across, the next chat started here would
+       name a project this space may not have — refused by `chat_start`
+       ("project is not linked to this space"), or, where both spaces link
+       the same folder, silently bound to it without the viewer choosing it
+       in this space. Back to the default (scratch) on every switch. */
+    setProjectChoice('');
   }, [spaceId]);
 
   useEffect(() => {
@@ -703,8 +738,8 @@ export function ChatHomeScreen({
       return;
     }
     if (selectionSpaceRef.current === spaceId) return;
-    chooseRoot(next[0]?.rootId ?? null);
-  }, [chooseRoot, port, spaceId]);
+    chooseRoot(coldStart === 'composer' ? null : (next[0]?.rootId ?? null));
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   /** Read a thread snapshot and replay every cached frame over it, so frames
    *  published after the read began are never lost. Phase is NOT derived here —
@@ -782,9 +817,14 @@ export function ChatHomeScreen({
            included. A space the viewer HAS chosen in fails the test on its own,
            so entering a different space is still a cold start. */
         if (selectionSpaceRef.current !== spaceId) {
-          chooseRoot(nextThreads[0]?.rootId ?? null);
+          chooseRoot(coldStart === 'composer' ? null : (nextThreads[0]?.rootId ?? null));
         }
-        setTeammateId(nextTeammates[0]?.id ?? '');
+        const seeded = newChatSeedRef.current?.teammateId;
+        setTeammateId(
+          seeded && nextTeammates.some((teammate) => teammate.id === seeded)
+            ? seeded
+            : (nextTeammates[0]?.id ?? ''),
+        );
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -795,7 +835,7 @@ export function ChatHomeScreen({
     return () => {
       alive = false;
     };
-  }, [chooseRoot, port, spaceId]);
+  }, [chooseRoot, coldStart, port, spaceId]);
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;
@@ -1242,6 +1282,16 @@ export function ChatHomeScreen({
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedNonce]);
+  /* "Start chat" hands the viewer the message box (§3.4): focus it once,
+     after the opening read has put the composer on screen. */
+  const seedFocusedRef = useRef(false);
+  useEffect(() => {
+    if (seedFocusedRef.current || !newChatSeedRef.current?.focus || loading) return;
+    const area = composer.current;
+    if (!area) return;
+    seedFocusedRef.current = true;
+    area.focus();
+  }, [loading]);
   const attachments = rich.attachments!;
   /* Read at SEND time through a ref, not closed over: `send` is memoised on
      the facts of the conversation, and the staged list changes with every
@@ -1464,6 +1514,9 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
+      /* The next new chat's last-used mode, teammate and model (§3.4, §5).
+         A host that pins its mode (Craft) is not the viewer choosing. */
+      if (!pinnedMode) rememberChatStart({ mode: chatMode, teammateId, model: selectedModel.model });
       setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
       // The select effect owns loading the new chat — a second concurrent read
@@ -1505,7 +1558,7 @@ export function ChatHomeScreen({
     selectedRootId,
     spaceId,
     teammateId,
-    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId,
+    newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -1681,7 +1734,7 @@ export function ChatHomeScreen({
             ? threadGroups.map((group) => (
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
-                  {group.rows.map((thread) => (
+                  {group.rows.map((thread) => withChatSubject(thread, onOpenEntity, (
                     <button
                       type="button"
                       key={thread.rootId}
@@ -1718,7 +1771,7 @@ export function ChatHomeScreen({
                         <Timestamp at={thread.updatedAt} />
                       </span>
                     </button>
-                  ))}
+                  )))}
                 </div>
               ))
             : null}
@@ -2644,4 +2697,30 @@ function describeError(error: unknown): string {
 
 function defaultMutationId(prefix: string): string {
   return `${prefix}:${crypto.randomUUID()}`;
+}
+
+/**
+ * A Chats-list row, with its SUBJECT when the server named one (entity chat
+ * §3.6): "about ‹title›" as a chip that opens the subject, not the chat.
+ *
+ * The chip sits BESIDE the row button rather than inside it — a button cannot
+ * nest a button, the `.tch-task-row` precedent. A row with no subject (or from
+ * a port that predates §3.6) is returned exactly as it was.
+ */
+function withChatSubject(
+  thread: ChatThreadSummary,
+  onOpenEntity: ((id: EntityId) => void) | undefined,
+  row: ReactNode,
+): ReactNode {
+  if (!thread.about) return <Fragment key={thread.rootId}>{row}</Fragment>;
+  const { id, kind, title } = thread.about;
+  return (
+    <div key={thread.rootId} className="tch-chat-row" data-testid="chat-row-with-subject">
+      {row}
+      <div className="tch-thread__about" data-testid="chat-row-about">
+        <span className="tch-about__word">about</span>
+        <EntityChip refInfo={{ id, kind, title }} onOpen={onOpenEntity} />
+      </div>
+    </div>
+  );
 }

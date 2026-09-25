@@ -27,6 +27,7 @@ import {
   normalize,
   parse,
   redirect,
+  type ChatSlot,
   type ContentSurface,
   type DropClass,
   type NavView,
@@ -92,6 +93,13 @@ export interface NavState {
   contentSurface: Record<EntityId, ContentSurface>;
   session: EntityId | null;
   /**
+   * THE CHAT SLOT (`ca`/`ct`) — see `PanelState.chat`. Held apart from
+   * `stack` because a chat that has not been started has no id; every Trail
+   * and stack verb leaves it untouched, which is what pins a chat to its
+   * subject while the viewer walks elsewhere (Q4).
+   */
+  chat: ChatSlot | null;
+  /**
    * How the NEXT URL write should enter history. `push` = user navigation and
    * explicit pin/unpin; `replace` = responsive normalization and surface
    * toggles (LLD §6 history discipline).
@@ -122,7 +130,13 @@ export interface NavActions {
    * space you have already left.
    */
   setSpace(spaceId: SpaceId): void;
-  /** Dedupes; an already-hosted id is RAISED to the stack top, never doubled. */
+  /**
+   * Dedupes; an already-hosted id is RAISED to the stack top, never doubled.
+   *
+   * ON WORK IT ALSO CLEARS THE CHAT SLOT (§3.1 Pinned, Work arm): the chat
+   * occupies Work's centre, so opening an entity there must show the entity,
+   * in the same history entry. Every other surface keeps the slot pinned.
+   */
   push(id: EntityId): void;
   /** Esc: stack top only, never pins. */
   pop(): void;
@@ -182,6 +196,27 @@ export interface NavActions {
   trailForward(): void;
   /** Return the centre to its resting state (Home: the conversation). */
   clearStack(): void;
+  /**
+   * OPEN THE CHAT SLOT — a PUSH, so one Back closes it (§3.1).
+   *
+   * `view`, when given, lands the viewer on that surface in the SAME
+   * transition — one history entry, not two. It is the interim for a surface
+   * that has no slot host yet (the shell sends those to Home); a surface that
+   * hosts the slot itself calls this without one and stays where it is.
+   *
+   * Re-opening the slot that is already open is a no-op rather than a second
+   * entry: Back must never need two presses to leave one chat.
+   */
+  openChat(slot: ChatSlot, view?: NavView): void;
+  /**
+   * MOVE WITHIN THE OPEN SLOT — the switcher, `+ New`, and `new` becoming the
+   * created id. REPLACE, never push (§3.1): however many chats the viewer
+   * flicks through, one Back still returns to the entity. A no-op while no
+   * slot is open — there is nothing to move within.
+   */
+  setChatThread(thread: EntityId | 'new'): void;
+  /** Close the slot. A push, like every other close the viewer performs. */
+  closeChat(): void;
 }
 
 export type NavStore = NavState & NavActions;
@@ -195,6 +230,7 @@ const INITIAL: NavState = {
   tabs: {},
   contentSurface: {},
   session: null,
+  chat: null,
   history: 'replace',
   revision: 0,
 };
@@ -275,14 +311,17 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
 
   push(id) {
     const s = get();
+    /* The chat replaces Work's centre, so opening anything into that centre
+       must uncover it. Scoped to Work: Home's slot survives stack moves (Q4). */
+    const chat = s.view.view === 'workspace' ? null : s.chat;
     // Already pinned: opening it again RAISES/focuses rather than duplicating
     // it onto the stack (single-host law, WLT §5.2c).
     if (s.pinned.includes(id)) {
-      set({ history: 'push', revision: s.revision + 1 });
+      set({ chat, history: 'push', revision: s.revision + 1 });
       return;
     }
     const stack = [...s.stack.filter((x) => x !== id), id];
-    set({ stack, cursor: atTop(stack), history: 'push', revision: s.revision + 1 });
+    set({ stack, cursor: atTop(stack), chat, history: 'push', revision: s.revision + 1 });
   },
 
   pop() {
@@ -467,6 +506,30 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     set({ cursor: s.cursor + 1, history: 'push', revision: s.revision + 1 });
   },
 
+  openChat(slot, view) {
+    const s = get();
+    const same = s.chat !== null && s.chat.about === slot.about && s.chat.thread === slot.thread;
+    if (same && view === undefined) return;
+    set({
+      chat: { about: slot.about, thread: slot.thread },
+      ...(view !== undefined ? { view } : {}),
+      history: 'push',
+      revision: s.revision + 1,
+    });
+  },
+
+  setChatThread(thread) {
+    const s = get();
+    if (s.chat === null || s.chat.thread === thread) return;
+    set({ chat: { about: s.chat.about, thread }, history: 'replace', revision: s.revision + 1 });
+  },
+
+  closeChat() {
+    const s = get();
+    if (s.chat === null) return;
+    set({ chat: null, history: 'push', revision: s.revision + 1 });
+  },
+
   clearStack() {
     const s = get();
     if (s.stack.length === 0) return;
@@ -563,6 +626,11 @@ export function selectSurface(s: NavState, id: EntityId): ContentSurface | null 
   return s.contentSurface[id] ?? null;
 }
 
+/** The open chat slot, or `null` — the ONE read every slot host makes. */
+export function selectChatSlot(s: NavState): ChatSlot | null {
+  return s.chat;
+}
+
 /** Empty centre: the live-session roster + grammar hint renders (02-LAYOUT §2.2). */
 export function selectIsCentreEmpty(s: NavState): boolean {
   return s.stack.length === 0 && s.pinned.length === 0;
@@ -583,6 +651,7 @@ export function routeOf(s: NavState): Route {
     tabs: s.tabs,
     contentSurface: s.contentSurface,
     session: s.session,
+    chat: s.chat,
   };
   return { spaceId: s.spaceId, target: s.view, panels };
 }

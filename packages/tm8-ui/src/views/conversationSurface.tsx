@@ -39,6 +39,7 @@ import type { TranscriptSeam } from '../transcript/TranscriptSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { TriggerOption } from '../rich-input';
 import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
+import type { NewChatSeed } from '../chat-home/types';
 
 /**
  * The chat surface behind a route boundary, exactly as the other three arms
@@ -285,6 +286,56 @@ export function chatThreadSurfaceFor(
         nodeKey={host.nodeKey}
         soloConversation
         routeThreadId={entityId}
+        onOpenEntity={host.onOpenEntity}
+        {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
+        {...(host.viewerName ? { viewerName: host.viewerName } : {})}
+        {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
+      />
+    </Suspense>
+  );
+}
+
+/** What the entity chat slot's body needs — a strict subset of the host. */
+export type EntityChatSurfaceHost = Pick<
+  ConversationSurfaceHost,
+  'seam' | 'spaceId' | 'nodeKey' | 'onOpenEntity' | 'skillOptions' | 'viewerName' | 'viewerMemberId'
+>;
+
+/**
+ * THE ENTITY CHAT SLOT'S BODY (design 01a0da4e §3.3) — the SAME solo chat
+ * surface `chatThreadSurfaceFor` mounts, for both of the slot's states:
+ *
+ *   · an existing chat: `routeThreadId` names it, exactly as the chat panel;
+ *   · `'new'`: `routeThreadId: null` with `aboutId` bound — the composer, and
+ *     `chat.start` writes the `about` edge. `coldStart: 'composer'` stops the
+ *     screen auto-opening the SPACE's most recent chat, which would be about
+ *     something else.
+ *
+ * `onThreadSelected` is how `new` becomes the created id (the host REPLACES
+ * the slot's thread, §3.1); a `null` from the screen is its own "new
+ * conversation", reported as `'new'`. `seed` is the new chat's starting
+ * chips, chosen by the settings card or the kind's default (§3.4).
+ */
+export function entityChatSurfaceFor(
+  aboutId: EntityId,
+  thread: EntityId | 'new',
+  host: EntityChatSurfaceHost,
+  onThreadSelected: (thread: EntityId | 'new') => void,
+  seed?: NewChatSeed,
+): ReactNode {
+  const isNew = thread === 'new';
+  return (
+    <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
+      <LazyChatThreadSurface
+        seam={host.seam}
+        spaceId={host.spaceId}
+        nodeKey={host.nodeKey}
+        soloConversation
+        coldStart="composer"
+        routeThreadId={isNew ? null : thread}
+        {...(isNew ? { aboutId } : {})}
+        {...(isNew && seed ? { newChatSeed: seed } : {})}
+        onThreadSelected={(id) => onThreadSelected(id ?? 'new')}
         onOpenEntity={host.onOpenEntity}
         {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
         {...(host.viewerName ? { viewerName: host.viewerName } : {})}

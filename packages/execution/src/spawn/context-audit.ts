@@ -21,6 +21,7 @@ import {
   serializeSkillIndexEntry,
   utf8Bytes,
   type FitContextIndexResult,
+  type PromptContextEntry,
 } from '@tm8/prompt';
 import { SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import type { SkippedSkill, SpawnSelection, SpawnSelectionDefaultReason, SpawnSelectionGroup } from '@tm8/contract';
@@ -80,6 +81,12 @@ function selectionGroupsOf(selection: SpawnSelection | undefined): SpawnSelectio
   ];
 }
 
+/** An index entry's audit state: what the budget left of its header. */
+function indexState(entry: PromptContextEntry): 'collapsed' | 'summary-dropped' | 'header-dropped' {
+  if (entry.headerDropped) return 'header-dropped';
+  return entry.summaryDropped ? 'summary-dropped' : 'collapsed';
+}
+
 /** `groups`, `entries` and `dropped`; the caller keeps `memoryIds`. */
 export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index' | 'budgets'>> {
   const { context } = input;
@@ -114,7 +121,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
         kind: 'memory',
         group: 'memories',
         via,
-        state: entry.headerDropped ? 'header-dropped' : 'collapsed',
+        state: indexState(entry),
         bytes: contextEntryBytes(entry),
       });
       return;
@@ -133,8 +140,8 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   // the manifest's own budget pass counts it.
   const rows = new Map((context.skillEquips ?? context.skills ?? []).map((row) => [row.entityId, row]));
   const selectionOnly = new Set(audit?.selectionOnlySkillIds ?? []);
-  // Under `<context_index>` an entry's bytes are its index line, and a level-1
-  // trim shows as `header-dropped`.
+  // Under `<context_index>` an entry's bytes are its index line, and a summary
+  // the trim dropped shows as `summary-dropped`.
   const indexed = new Map(
     (input.index?.index.groups ?? []).flatMap((group) => group.entries.map((entry) => [`${group.name}:${entry.id}`, entry] as const)),
   );
@@ -156,7 +163,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
         ? (() => {
             const entry = indexed.get(`skills:${skill.entityId}`);
             return {
-              state: entry?.headerDropped ? ('header-dropped' as const) : ('collapsed' as const),
+              state: entry ? indexState(entry) : ('collapsed' as const),
               bytes: entry ? contextEntryBytes(entry) : 0,
             };
           })()
@@ -208,7 +215,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
           group: group.name,
           via: entry.via as ContextVia,
           ...(entry.link ? { link: entry.link } : {}),
-          state: entry.headerDropped ? 'header-dropped' : 'collapsed',
+          state: indexState(entry),
           bytes: contextEntryBytes(entry),
         });
       }
@@ -310,7 +317,14 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
       ...(unreadReferences > 0 ? { unread: unreadReferences } : {}),
     },
     // Selection cannot name teammates: the teammate pick is its own click.
-    teammates: { mode: 'default', reason: 'not-selectable' },
+    // A dispatcher's roster rows past its read are counted, as unread links are.
+    teammates: {
+      mode: 'default',
+      reason: 'not-selectable',
+      ...(input.index && context.roster && context.roster.total > context.roster.members.length
+        ? { unread: context.roster.total - context.roster.members.length }
+        : {}),
+    },
   };
   return { groups, entries, dropped };
 }

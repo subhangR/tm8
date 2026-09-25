@@ -265,6 +265,12 @@ const LIVE_VERBS = [
   // Configs: the NAV ROW only. The section is read-only (`spaces.configs`)
   // and draws no control of its own.
   /^Configs$/,
+  // Chat defaults (entity-chat §3.4): `spaces.chatDefaults.get/set` are real
+  // catalog ops on the seam. The fake port here carries no chat-defaults
+  // wiring, so only the nav row renders; the per-kind pickers are held in
+  // chat-defaults-section.test.tsx.
+  /^Chat defaults$/,
+  /^default (teammate|model) for /,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

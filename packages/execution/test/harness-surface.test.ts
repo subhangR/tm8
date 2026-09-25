@@ -5,7 +5,7 @@
 
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildAgentCommand,
@@ -22,7 +22,9 @@ import {
   laneSkillOverrides,
   laneSkillPlan,
   pluginDecisions,
+  asRecordedSkillPlan,
   readConfigHomeSkills,
+  readProjectSkillKeys,
   pluginSettings,
   readInstalledClaudePlugins,
   claudePluginConfigDir,
@@ -419,6 +421,54 @@ describe('laneSkillPlan', () => {
   });
 });
 
+describe('laneSkillPlan: a key reaches every skill of that name, so a project one is never hit', () => {
+  const home = [
+    { key: 'astro', level: 'user' as const },
+    { key: 'docx', level: 'synced' as const },
+    { key: 'tools:deploy', level: 'command' as const },
+    { key: 'lint', level: 'command' as const },
+  ];
+
+  it('no collision: bare keys, commands off as command-unselected', () => {
+    const plan = laneSkillPlan(home, []);
+    expect(plan.settings).toMatchObject({ astro: 'off', docx: 'off', 'tools:deploy': 'off', lint: 'off' });
+    expect(plan.record.off).toContainEqual({ name: 'tools:deploy', source: 'command-unselected' });
+    expect(plan.record.kept).toBeUndefined();
+  });
+
+  it('a project skill sharing the name: user/command/bundled are left alone, synced goes qualified, all recorded', () => {
+    const plan = laneSkillPlan(home, [], ['astro', 'docx', 'lint', 'run']);
+    for (const key of ['astro', 'docx', 'lint', 'run']) expect(plan.settings).not.toHaveProperty(key);
+    expect(plan.settings['anthropic-skills:docx']).toBe('off');
+    expect(plan.record.off).toContainEqual({ name: 'anthropic-skills:docx', source: 'synced-unselected' });
+    expect(plan.record.kept).toEqual(['astro', 'docx', 'lint', 'run'].map((name) => ({ name, because: 'project-collision' })));
+    // The ones nothing collides with are still trimmed.
+    expect(plan.settings).toMatchObject({ 'tools:deploy': 'off', init: 'off' });
+  });
+});
+
+describe('asRecordedSkillPlan: resume replays what the launch recorded', () => {
+  it('round-trips a fresh plan exactly: settings, --no-chrome and record', () => {
+    const plan = laneSkillPlan([{ key: 'astro', level: 'user' }, { key: 'docx', level: 'synced' }], [{ level: 'user', loadPointer: '/graphify' }], ['docx']);
+    const replayed = asRecordedSkillPlan(JSON.parse(JSON.stringify(plan.record)));
+    expect(replayed).toEqual(plan);
+  });
+
+  it('a pre-#803 record (bundled trim only, no chrome entry) replays without --no-chrome', () => {
+    const replayed = asRecordedSkillPlan({ off: [{ name: 'init', source: 'builtin-trim' }] });
+    expect(replayed?.settings).toEqual({ init: 'off' });
+    expect(replayed?.noChrome).toBe(false);
+    expect(buildAgentCommand(LAUNCH, {}, { skillOverrides: replayed!.settings, noChrome: false })).not.toContain('--no-chrome');
+  });
+
+  it('refuses anything malformed rather than half-apply it', () => {
+    for (const bad of [null, [], {}, { off: 'x' }, { off: [{ name: 'a' }] }, { off: [{ name: 'a', source: 'made-up' }] },
+      { off: [], nameOnly: [{ name: 'b', source: 'builtin-trim' }] }, { off: [], nameOnly: 'x' }, { off: [{ name: '', source: 'builtin-trim' }] }]) {
+      expect(asRecordedSkillPlan(bad)).toBeNull();
+    }
+  });
+});
+
 describe('readConfigHomeSkills', () => {
   let dir: string | null = null;
   afterEach(async () => {
@@ -440,6 +490,57 @@ describe('readConfigHomeSkills', () => {
       { key: 'astro', level: 'user' },
       { key: 'docx', level: 'synced' },
     ]);
+  });
+
+  it('lists legacy commands keyed by their path joined with ":" (a bare name misses a nested one)', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    await mkdir(join(dir, 'commands/tools'), { recursive: true });
+    await writeFile(join(dir, 'commands/lint.md'), 'x');
+    await writeFile(join(dir, 'commands/tools/deploy.md'), 'x');
+    await writeFile(join(dir, 'commands/notes.txt'), 'x');
+    expect(readConfigHomeSkills(dir)).toEqual([
+      { key: 'lint', level: 'command' },
+      { key: 'tools:deploy', level: 'command' },
+    ]);
+  });
+
+  it('readProjectSkillKeys: the workdir own skills and commands', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    await mkdir(join(dir, '.claude/skills/review'), { recursive: true });
+    await mkdir(join(dir, '.claude/skills/no-file'), { recursive: true });
+    await mkdir(join(dir, '.claude/commands/ops'), { recursive: true });
+    await writeFile(join(dir, '.claude/skills/review/SKILL.md'), 'x');
+    await writeFile(join(dir, '.claude/commands/ops/ship.md'), 'x');
+    expect(readProjectSkillKeys(dir, dirname(dir))).toEqual(['ops:ship', 'review']);
+    expect(readProjectSkillKeys(join(dir, 'missing'), join(dir, 'missing'))).toEqual([]);
+  });
+
+  it('readProjectSkillKeys: a workdir inside a repo also lists every parent up to the git root, as the harness does', async () => {
+    // Probed on 2.1.280: cwd `repo/app` lists `repo/.claude` skills and
+    // commands, and not a skill above the git root.
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    const repo = join(dir, 'repo');
+    await mkdir(join(dir, '.claude/skills/above'), { recursive: true });
+    await writeFile(join(dir, '.claude/skills/above/SKILL.md'), 'x');
+    await mkdir(join(repo, '.git'), { recursive: true });
+    await mkdir(join(repo, '.claude/skills/rooted'), { recursive: true });
+    await writeFile(join(repo, '.claude/skills/rooted/SKILL.md'), 'x');
+    await mkdir(join(repo, '.claude/commands'), { recursive: true });
+    await writeFile(join(repo, '.claude/commands/ship.md'), 'x');
+    await mkdir(join(repo, 'packages/app/.claude/skills/own'), { recursive: true });
+    await writeFile(join(repo, 'packages/app/.claude/skills/own/SKILL.md'), 'x');
+    expect(readProjectSkillKeys(join(repo, 'packages/app'), '/nonexistent-home')).toEqual(['own', 'rooted', 'ship']);
+    // A worktree's `.git` is a file; the walk stops there too.
+    await writeFile(join(repo, 'packages/.git'), 'gitdir: x');
+    expect(readProjectSkillKeys(join(repo, 'packages/app'), '/nonexistent-home')).toEqual(['own']);
+  });
+
+  it('readProjectSkillKeys: outside a repo, the walk stops below home, whose .claude is the operator\'s', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    await mkdir(join(dir, '.claude/skills/operator'), { recursive: true });
+    await writeFile(join(dir, '.claude/skills/operator/SKILL.md'), 'x');
+    await mkdir(join(dir, 'scratch/lane'), { recursive: true });
+    expect(readProjectSkillKeys(join(dir, 'scratch/lane'), dir)).toEqual([]);
   });
 
   it('returns nothing for a home without skills', async () => {

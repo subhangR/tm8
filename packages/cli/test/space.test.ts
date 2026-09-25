@@ -300,7 +300,7 @@ const READS = [
 describe('the registered command set', () => {
   it('registers all 27 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(31); // +1 space configs get (task 01a0d350)
+    expect(paths).toHaveLength(33); // +2 space chat-defaults get/set (entity chat G) // +1 space configs get (task 01a0d350)
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -456,6 +456,36 @@ describe('the `|none` idiom clears rather than sends the literal string', () => 
   it('a real channel id is sent as itself', async () => {
     await drive(['space', 'default-channel', 'set', CHANNEL, '--expect-revision', '1']);
     expect((seen[0]?.body as { channelId?: unknown }).channelId).toBe(CHANNEL);
+  });
+});
+
+describe('space chat-defaults (entity chat §3.4)', () => {
+  const TEAMMATE = '66666666-6666-7666-8666-666666666666';
+
+  it('`set <kind> --teammate --model` sends a one-kind PATCH to spaces.chatDefaults.set', async () => {
+    const r = await drive(['space', 'chat-defaults', 'set', 'task', '--teammate', TEAMMATE, '--model', 'claude-opus-5-5']);
+    expect(r.code).toBe(0);
+    expect([seen[0]?.method, seen[0]?.pathname]).toEqual(['PUT', `/v2/spaces/${SPACE}/chat-defaults`]);
+    expect((seen[0]?.body as { defaults?: unknown }).defaults).toEqual({ task: { teammateId: TEAMMATE, model: 'claude-opus-5-5' } });
+  });
+
+  it('an omitted flag leaves that field out; `--clear` sends null', async () => {
+    await drive(['space', 'chat-defaults', 'set', 'doc', '--model', 'gpt-5']);
+    expect((seen[0]?.body as { defaults?: unknown }).defaults).toEqual({ doc: { model: 'gpt-5' } });
+    seen = [];
+    await drive(['space', 'chat-defaults', 'set', 'doc', '--clear']);
+    expect((seen[0]?.body as { defaults?: unknown }).defaults).toEqual({ doc: null });
+  });
+
+  it('refuses a set with nothing to set, and --clear beside a value', async () => {
+    expect((await drive(['space', 'chat-defaults', 'set', 'doc'])).code).not.toBe(0);
+    expect((await drive(['space', 'chat-defaults', 'set', 'doc', '--clear', '--model', 'x'])).code).not.toBe(0);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('`get` reads spaces.chatDefaults.get', async () => {
+    await drive(['space', 'chat-defaults', 'get']);
+    expect([seen[0]?.method, seen[0]?.pathname]).toEqual(['GET', `/v2/spaces/${SPACE}/chat-defaults`]);
   });
 });
 

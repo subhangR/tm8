@@ -58,6 +58,7 @@ import type {
   UpdateSpaceInput,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
+import { loadChatDefaultsOptions, type ChatDefaultsOptions, type ChatDefaultsSeam } from '../chat-defaults';
 import { allKinds } from '../domain';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 
@@ -272,6 +273,19 @@ export interface SettingsPort {
   loadConfigs?(): Promise<SpaceConfigsView>;
 
   /**
+   * Settings → Chat defaults (`spaces.chatDefaults.get/set`, entity-chat
+   * §3.4). The SEAM itself rides here, not a pair of verbs, so the section and
+   * the chat panel share one cached read (`useChatDefaults`) and a save here is
+   * what the next Chat click sees. Optional for the same reason as
+   * `loadConfigs`: without it the section says it is not wired.
+   */
+  chatDefaults?: {
+    seam: ChatDefaultsSeam;
+    spaceId: string;
+    loadOptions(): Promise<ChatDefaultsOptions>;
+  };
+
+  /**
    * Write / delete one type value's vocabulary. Every rule is the server's
    * and comes back as its own words: space-admin authorization, the
    * duplicate-status refusal, the structural {open,working,done} check
@@ -404,6 +418,12 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
 
     loadConfigs() {
       return seam.spaceConfigs(spaceId);
+    },
+
+    chatDefaults: {
+      seam,
+      spaceId,
+      loadOptions: () => loadChatDefaultsOptions(seam, spaceId),
     },
 
     async loadWorkflows() {

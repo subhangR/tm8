@@ -33,6 +33,8 @@ export interface ChatHomeSurfaceProps {
   pinnedMode?: ChatHomeScreenProps['pinnedMode'];
   /** Pass-through: a host seeding the composer draft (Craft's "Ask about this"). */
   composerSeed?: ChatHomeScreenProps['composerSeed'];
+  /** Pass-through: the entity chat's new-chat settings (§3.4). */
+  newChatSeed?: ChatHomeScreenProps['newChatSeed'];
   /** Pass-through: the host's own new-conversation intro. */
   newThreadIntro?: ChatHomeScreenProps['newThreadIntro'];
   /** Pass-through: a host's note under a tool call. */
@@ -63,6 +65,7 @@ export interface ChatHomeSurfaceProps {
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   /** Craft's solo conversation + the two publishes a hosted picker needs. */
   soloConversation?: ChatHomeScreenProps['soloConversation'];
+  coldStart?: ChatHomeScreenProps['coldStart'];
   onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
   onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];
   stage?: ChatHomeScreenProps['stage'];

@@ -55,6 +55,7 @@ import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { navStore, selectTrailEntity, useNavStore } from '../stores/navStore';
 import { chatAboutTarget, composeListActions, useChatAbout } from './useChatAbout';
+import { openEntityChat, useChatSlot } from '../entity-chat';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
@@ -132,6 +133,19 @@ export const HOME_LIST_CHROME = 8;
 export const HOME_RAIL_COLLAPSED = 72;
 export const HOME_RAIL_EXPANDED = 172;
 
+/* THE CHAT SLOT'S THIRD COLUMN (entity chat 01a0da4e §3.1): rail · list ·
+   entity · CHAT. Resizable on the same `PanelResizer`/`usePanelWidth` as
+   column A, 420 by default, one remembered width. Below
+   `HOME_CHAT_COLUMN_MIN_VIEWPORT` the same box is an overlay sheet over the
+   Trail instead (Q7) — that switch is a media query in `home-page.css`, whose
+   `max-width` is this number minus one. */
+export const HOME_CHAT_MIN = 320;
+export const HOME_CHAT_DEFAULT = 420;
+export const HOME_CHAT_MAX = 720;
+/** The chat column's separator track, as A's. */
+export const HOME_CHAT_CHROME = 8;
+export const HOME_CHAT_COLUMN_MIN_VIEWPORT = 1200;
+
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
   reasons: DetailReasons;
@@ -167,6 +181,14 @@ export interface HomeViewProps {
    */
   focus?: boolean;
   onToggleFocus?(): void;
+  /**
+   * THE CHAT SLOT (entity chat §3.1) — the host's `EntityChatSlot`, built
+   * where its seam wiring lives. This screen only PLACES it: a third column
+   * after the Trail, or an overlay sheet on a narrow window. It is drawn
+   * while `PanelState.chat` is set and reads nothing else, so walking the
+   * Trail or re-rooting A leaves it exactly where it is (Q4).
+   */
+  chatSlot?: ReactNode;
 }
 
 /** What the host's chat mount needs from this screen's region state. */
@@ -404,7 +426,13 @@ export function HomeView(props: HomeViewProps) {
    * `navStore` for its own root and thread addresses.
    */
   const chatAbout = useChatAbout({
-    open: (aboutId) => navStore.getState().navigate(chatAboutTarget(aboutId)),
+    /* WITH a subject: the chat slot beside the entity, its latest chat or the
+       composer (entity chat §3.2). WITHOUT one — the Chats list header — it
+       is still bare Home's new conversation. */
+    open: (aboutId) => {
+      if (aboutId) void openEntityChat(data.seam, aboutId);
+      else navStore.getState().navigate(chatAboutTarget(null));
+    },
   });
   /* MEMOISED because `birthFor` below depends on it: `composeListActions`
      builds a fresh object every call, and an always-changing dependency turns
@@ -571,6 +599,23 @@ export function HomeView(props: HomeViewProps) {
      asked for. */
   const listWidth = focus ? 0 : Math.min(Math.max(HOME_LIST_MIN, listPref.width), listCeiling);
 
+  /* THE CHAT COLUMN pays after A: its ceiling is what is left once the rail,
+     A and B's floor are paid, floored at its own minimum. Only ever the paint
+     width — the preference survives a narrow window, as A's does. On the
+     overlay (narrow) layout the stylesheet caps the sheet itself. */
+  const chatSlotOpen = useChatSlot() !== null && props.chatSlot != null;
+  const chatPref = usePanelWidth('home.chat', HOME_CHAT_DEFAULT, HOME_CHAT_MIN);
+  const chatCeiling = outerWidth > 0
+    ? Math.max(
+        HOME_CHAT_MIN,
+        Math.min(
+          HOME_CHAT_MAX,
+          outerWidth - railWidth - (focus ? 0 : listWidth + HOME_LIST_CHROME) - HOME_CENTER_MIN - HOME_CHAT_CHROME,
+        ),
+      )
+    : HOME_CHAT_MAX;
+  const chatWidth = Math.min(Math.max(HOME_CHAT_MIN, chatPref.width), chatCeiling);
+
 
   /* ESC STEPS THE CURSOR BACK, AND NEVER TRUNCATES (U11/D7). At the root it
      returns B to the conversation, which is already mounted behind it (D8).
@@ -607,6 +652,7 @@ export function HomeView(props: HomeViewProps) {
     launchPort,
     rowLifecycle,
     attachments,
+    chatAbout,
     serverBaseUrl: props.serverBaseUrl,
     viewerMemberId: props.viewerMemberId,
   };
@@ -830,7 +876,11 @@ export function HomeView(props: HomeViewProps) {
            live in `.hr-rail`. */
         '--hp-list': `${listWidth}px`,
         '--hp-rail': `${railWidth}px`,
+        '--hp-chat': `${chatWidth}px`,
+        /* The overlay is not squeezed by the row, so it paints the preference. */
+        '--hp-chat-pref': `${Math.max(HOME_CHAT_MIN, chatPref.width)}px`,
       } as React.CSSProperties}
+      data-chat-open={chatSlotOpen || undefined}
     >
       <HomePage
         data={data}
@@ -843,6 +893,33 @@ export function HomeView(props: HomeViewProps) {
         onOpenEntity={(id) => openEntity(id as EntityId)}
         onOpenWorkspace={props.onOpenWorkspace}
       />
+      {/* THE CHAT SLOT (entity chat §3.1): a column after the Trail on a wide
+          window, an overlay sheet over it below ~1200px (`home-page.css`).
+          One box for both, so switching layouts never remounts the chat. */}
+      {chatSlotOpen ? (
+        <>
+          <div className="hp-chatsep" data-testid="hp-chat-separator">
+            <PanelResizer
+              side="right"
+              label="Chat"
+              controls="home-view-chat"
+              width={chatWidth}
+              minWidth={HOME_CHAT_MIN}
+              maxWidth={chatCeiling}
+              onResize={chatPref.setWidth}
+              onReset={chatPref.reset}
+            />
+          </div>
+          <aside
+            className="hp-chatcol"
+            id="home-view-chat"
+            aria-label="Chat"
+            data-testid="hp-chat-column"
+          >
+            {props.chatSlot}
+          </aside>
+        </>
+      ) : null}
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase
           Esc closes it without popping C underneath. */}

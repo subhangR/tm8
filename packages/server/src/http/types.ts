@@ -64,7 +64,22 @@ export interface RequestIdentity {
    * why `messages.post` and `execution.spawn` may treat it as provenance.
    */
   runtimeChatId?: string;
+  /**
+   * The one space this session may act in (226 `auth_sessions.space_id`),
+   * bound as `tm8.session_space_id`. Set only for agent kinds, and only while
+   * `TM8_SPACE_SESSIONS` is not `off`. Off the verified session row, like
+   * `authKind`.
+   */
+  sessionSpaceId?: string;
 }
+
+/**
+ * `TM8_SPACE_SESSIONS` (plan W0a). `agents` (default) pins `agent` and
+ * `agent_runtime` sessions to their space; `off` pins nothing, so every
+ * membership helper answers exactly as before 227. `enforce` is reserved for
+ * W3 (human sessions) and behaves as `agents` until then.
+ */
+export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
 
 /** Everything a handler is allowed to know about one request. */
 export interface RequestContext {

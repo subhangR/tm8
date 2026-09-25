@@ -28,6 +28,8 @@ import type {
 interface ChatListItem {
   chatId: EntityId;
   aboutId: EntityId | null;
+  /** The subject as the server projected it (`state.about`); absent when it did not. */
+  about?: ChatThreadSummary['about'];
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
@@ -54,7 +56,10 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
   const state = summary.state;
   return {
     chatId: summary.id,
-    aboutId,
+    /* The server's subject when it projected one (§3.6); the caller's own
+       answer otherwise — `startThread` knows what it just asked for. */
+    aboutId: state.about?.id ?? aboutId,
+    ...(state.about !== undefined ? { about: state.about } : {}),
     teammateId: state.teammateId,
     model: state.model,
     mode: state.mode,
@@ -144,7 +149,18 @@ export function createChatHomePortFromSeam(
       sort: 'activityAt_desc',
       limit: 100,
     });
-    return result.page.items.map((item) => ({ id: item.id, name: item.title }));
+    /* `projects.id`, NOT the project ENTITY's id (doc 15 B1). A chat binds to
+       `public.projects(id)` (176: `chats.project_id references projects`), and
+       `chat_start` resolves the directory by that id joined to
+       `space_projects`. The entity id is a different uuid, so sending it made
+       every project-bound chat fail with "project is not linked to this
+       space". The listed row carries the real id as `state.projectId`; a row
+       without one cannot be bound to and is not offered. */
+    return result.page.items.flatMap((item) => (
+      item.state?.kind === 'project' && item.state.projectId
+        ? [{ id: item.state.projectId, name: item.title }]
+        : []
+    ));
   };
 
   /**
@@ -153,8 +169,9 @@ export function createChatHomePortFromSeam(
    * Wave 1 read this for every row of every list (`aboutTargets`, one
    * `connections` call per chat) so that Craft's picker could filter by
    * subject. That was a documented N+1 on the one read whose count scales with
-   * the space, and it is gone: the list no longer claims to know each chat's
-   * subject, `readThread` answers for the chat actually on screen, and a host
+   * the space, and it is gone: the list now reads each chat's subject off its
+   * summary (`state.about`, batched server-side — §3.6), `readThread` answers
+   * for the chat actually on screen, and a host
    * that wants "the chats about X" asks X (see `chatIdsAbout`).
    *
    * A subject that cannot be read is not a reason to fail the thread.
@@ -228,8 +245,8 @@ export function createChatHomePortFromSeam(
     ]);
     const labels = new Map(teammates.map((teammate) => [teammate.id, teammate.label]));
     const items = result.page.items
-      /* `aboutId: null` — the LIST does not claim to know each chat's subject.
-         See `aboutTargetOf` for the read this replaced. */
+      /* The subject rides each summary's `state.about` (§3.6), batched by the
+         server for the whole page — no read per row here. */
       .map((summary) => itemFromSummary(summary, null))
       .filter((item): item is ChatListItem => item !== null);
     for (const item of items) {
@@ -239,6 +256,7 @@ export function createChatHomePortFromSeam(
     return items.map<ChatThreadSummary>((item) => ({
       rootId: item.chatId,
       aboutId: item.aboutId,
+      ...(item.about !== undefined ? { about: item.about } : {}),
       title: item.title?.trim() || 'Conversation',
       preview: item.title?.trim() || 'Open to read this chat',
       updatedAt: item.lastTurnAt ?? item.createdAt,
