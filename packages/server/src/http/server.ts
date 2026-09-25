@@ -290,6 +290,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           operations: router.mounted().length,
           implemented: registry.size,
           ...(dbOk === undefined ? {} : { db: dbOk ? 'ok' : 'unavailable' }),
+          // The read gate in front of the pool: `queued` > 0 is a read wave
+          // being held off the connections commands need.
+          ...(opts.readAdmission ? { readAdmission: opts.readAdmission.stats() } : {}),
           ...(jobs === undefined ? {} : {
             jobs: jobs.jobs.map((job) => ({
               name: job.name,
@@ -363,7 +366,27 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // connection (`resolve_auth_session`/`touch_auth_session`), and a queued
       // read must not hold one while it waits. Commands never wait here.
       if (opts.readAdmission && match.op.kind === 'read') {
-        releaseRead = await opts.readAdmission.acquire();
+        // A client that leaves while its read is queued takes the read with it:
+        // the waiter is dropped and the handler never runs (read-admission.ts).
+        // `res` 'close' before a response is written is the disconnect. Not
+        // `req` 'close' or `req.destroyed`: Node closes and destroys the
+        // request stream as soon as its body has been consumed, which by now
+        // it always has, so those would drop every read.
+        const client = new AbortController();
+        const onClose = (): void => {
+          if (!res.writableFinished) client.abort();
+        };
+        res.once('close', onClose);
+        if (res.destroyed || req.socket.destroyed) client.abort();
+        try {
+          releaseRead = await opts.readAdmission.acquire(client.signal);
+        } catch (err) {
+          // Nobody is left to answer.
+          if (client.signal.aborted) return;
+          throw err;
+        } finally {
+          res.off('close', onClose);
+        }
       }
 
       let identity: Awaited<ReturnType<typeof resolveIdentity>>;

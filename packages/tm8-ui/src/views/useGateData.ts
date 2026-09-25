@@ -2732,20 +2732,19 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [boards],
   );
 
-  useEffect(() => {
-    if (!ready || !spaceId || pendingBoards.current.size === 0) return;
-    const keys = [...pendingBoards.current];
-    const generation = spaceGeneration.current;
-    pendingBoards.current.clear();
-    for (const key of keys) {
+  // ONE grouped read of one board key, written into `boards` unless the space
+  // moved on underneath it. Returned as a promise so the event re-read can
+  // await it — see the trigger below for why that matters.
+  const fetchBoard = useCallback(
+    (space: SpaceId, key: string, generation: number): Promise<void> => {
       const [kind, groupBy, filterPart] = key.split('::');
       const query = {
-        spaceId,
+        spaceId: space,
         kinds: [kind],
         groupBy,
         ...(filterPart && filterPart !== '*' ? { filters: JSON.parse(filterPart) } : {}),
       } as unknown as CollectionQuery;
-      void seam
+      return seam
         .query(query)
         .then((result) => {
           if (generation !== spaceGeneration.current) return;
@@ -2762,7 +2761,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         })
         .catch((error: unknown) => {
           if (generation !== spaceGeneration.current) return;
-          setBoards((current) => ({
+          // A failed REFRESH keeps the last good board: the next round retries,
+          // and an incident (a queue-full 503 lands exactly when the node is
+          // busy) must not turn every open board into an error panel. Only a
+          // key with nothing good to show gets the error snapshot.
+          setBoards((current) => current[key] !== undefined && current[key].error === undefined ? current : ({
             ...current,
             [key]: {
               groups: [],
@@ -2777,22 +2780,53 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             },
           }));
         });
-    }
-  }, [ready, spaceId, seam, boardTick]);
+    },
+    [seam],
+  );
+
+  // First reads and retries: the keys `boardFor` missed on.
+  useEffect(() => {
+    if (!ready || !spaceId || pendingBoards.current.size === 0) return;
+    const keys = [...pendingBoards.current];
+    const generation = spaceGeneration.current;
+    pendingBoards.current.clear();
+    for (const key of keys) void fetchBoard(spaceId, key, generation);
+  }, [ready, spaceId, fetchBoard, boardTick]);
+
+  const boardsReady = useRef(ready);
+  boardsReady.current = ready;
 
   // Keep the board current from the durable stream, debounced like the
-  // counters read: any event re-arms every cached key. The STALE snapshot
+  // counters read: any event re-reads every cached key. The STALE snapshot
   // keeps rendering until the fresh one lands — a refetch must never flash
   // skeletons over a board someone is dragging on.
+  //
+  // The round AWAITS its reads, through `runLimited`. It used to only mark
+  // every key pending and bump `boardTick`, so the drain effect above fired
+  // every cached board's grouped query at once and the round "finished"
+  // before any of them had: the single-flight guarded nothing, boards are
+  // never evicted, and under a continuous stream with grouped reads slower
+  // than the 2s ceiling the waves overlapped again (PR #769 review, M1).
   useEffect(() => {
     if (!spaceId) return undefined;
     const trigger = createCoalescedTrigger({
       quietMs: EVENT_REFRESH_QUIET_MS,
       maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
-      run: () => {
-        if (boardKeys.current.length === 0) return;
-        for (const key of boardKeys.current) pendingBoards.current.add(key);
-        setBoardTick((n) => n + 1);
+      run: async () => {
+        // Not ready means a reset is under way, and a reset clears `boards`.
+        if (!boardsReady.current) return;
+        // A key already pending is about to be read by the drain effect.
+        const keys = boardKeys.current.filter((key) => !pendingBoards.current.has(key));
+        if (keys.length === 0) return;
+        const generation = spaceGeneration.current;
+        await runLimited(
+          // Checked as each task STARTS: disposing the trigger does not cancel
+          // a running round, and a space switch would otherwise still send the
+          // old space's queued reads only to discard their answers.
+          keys.map((key) => () =>
+            generation === spaceGeneration.current ? fetchBoard(spaceId, key, generation) : Promise.resolve()),
+          EVENT_REFRESH_CONCURRENCY,
+        );
       },
     });
     const unsubscribe = seam.onEvent(() => trigger.note());
@@ -2800,7 +2834,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       trigger.dispose();
       unsubscribe();
     };
-  }, [seam, spaceId]);
+  }, [seam, spaceId, fetchBoard]);
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
   // Summary first — see the docblock on `GateData.capabilitiesOf`. Both reads
