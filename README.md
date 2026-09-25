@@ -6,7 +6,35 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 
 **Documentation:** [`docs/README.md`](docs/README.md) is the map — ten sections, each with its own index. Paths changed on 2026-08-02; [`docs/MOVED-PATHS.md`](docs/MOVED-PATHS.md) translates the old ones.
 
-## Getting started
+## Desktop app — one command (macOS, Apple silicon)
+
+```bash
+git clone https://github.com/subhangR/tm8.git && cd tm8
+bun run desktop
+```
+
+That's it. The first run installs dependencies (including Electron), builds the
+server and the UI, downloads a checksum-verified Postgres 18, and opens tm8 in
+its own window. Later runs open in a few seconds; `bun run desktop --no-build`
+skips the rebuild. If tm8 is already open, the command just focuses that
+window. Quitting the app stops its server and its Postgres; nothing else on the
+machine is touched.
+
+- **Needs:** macOS on Apple silicon, [bun](https://bun.sh), Node (current LTS), and network
+  on the first run. No Postgres, Docker or service install.
+- **Its own node:** its own Postgres (socket-only, so it cannot collide with a
+  dev cluster on 5442), an ephemeral HTTP port, and its data under
+  `~/Library/Application Support/tm8`.
+- **Agents** need a logged-in `claude` or `codex` on the machine, or connect an
+  Anthropic/OpenAI account from the launch page when you start a session.
+
+`bun run desktop` is the only launcher; the app is `apps/desktop`, a thin
+Electron shell that forks the SAME `packages/server/dist` and serves the SAME
+`packages/tm8-ui/dist` a server install does. Icons (tab favicon, PWA, dock)
+are all cut from the in-app ribbon mark by
+`packages/tm8-ui/scripts/gen-pwa-icons.py`.
+
+## Getting started — server install
 
 ```bash
 ./install.sh          # cluster, database, roles, migrations, build — then RUNS it
@@ -30,10 +58,11 @@ in (or `npm i -g @openai/codex` then `codex login`).
 node, make a Space, put an agent on a task and talk to it while it works. Every
 command in it was run against a fresh install.
 
-**Nothing in this repo starts Postgres.** `packages/server/src/sidecar/` looks
-like it does and is dead code (only `import type` reaches it), so `bun install &&
-bun run dev` on its own gives you a server that logs `graph: NOT CONFIGURED` and
-answers `501` to every operation. Run the installer once first.
+**Only the desktop app starts its own Postgres.** `packages/server/src/sidecar/`
+runs under the desktop profile (`TM8_DESKTOP=1`) and nowhere else, so `bun
+install && bun run dev` on its own gives you a server that logs `graph: NOT
+CONFIGURED` and answers `501` to every operation. Run the installer once first,
+or use `bun run desktop`.
 
 ## Workspace layout
 
@@ -44,10 +73,13 @@ answers `501` to every operation. Run the installer once first.
 | `packages/execution` | PTY host (server-side spawn — the only spawn path), SpawnService, manifest composition | **node** |
 | `packages/cli` | Graph CLI + compat adapter + manifest reader (worker init) | node |
 | `packages/tm8-ui` | **The web app — the only one.** Entity-component UI + terminal components; served by vite in dev, as a built bundle in prod | bun/vite |
+| `apps/desktop` | macOS Electron shell (`bun run desktop`): one window, forks `packages/server/dist` with a bundled Postgres, loads the UI it serves. No preload, no IPC spawn surface. | electron |
 | `db/migrations` | ONE clean migration sequence (no legacy history) | — |
 | `tools/conformance` | Contract conformance suite — runs against any base URL (M1 gate artifact) | bun |
 
-There is **no `apps/desktop`** (AM-1): the UI is a browser app talking to tm8-server over HTTP/WS. Agent sessions spawn as server-side PTYs; the `session:spawn` payload shape is preserved verbatim on the server path (R29). Terminals render in the browser via xterm (WebGL renderer on Chromium, DOM fallback); exited-session terminals unmount; log memory is bounded.
+The UI is a browser app talking to tm8-server over HTTP/WS — in a browser tab,
+or in the desktop window, which is the same web client with no desktop-only
+branch (AM-1 ruled out Tauri; the Electron shell was approved 2026-08-21). Agent sessions spawn as server-side PTYs; the `session:spawn` payload shape is preserved verbatim on the server path (R29). Terminals render in the browser via xterm (WebGL renderer on Chromium, DOM fallback); exited-session terminals unmount; log memory is bounded.
 
 ## Ports, databases & data dirs
 

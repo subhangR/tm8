@@ -2,7 +2,9 @@ import {
   spawn as spawnChild,
   type ChildProcessWithoutNullStreams,
 } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { Logger } from '../pty/types.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
@@ -25,6 +27,24 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 // Match SpawnService's measured early-death window. This cannot mean "Claude
 // initialized" (stream-json init is turn-framed and only follows input); it
 // catches missing binaries and wrappers that die immediately after spawning.
+/**
+ * Whether ANY project directory of the child's Claude config home holds
+ * `<nativeSessionId>.jsonl`. Deliberately not one encoded path: a miss must
+ * mean "no transcript anywhere", never "the slug rule changed". An unreadable
+ * projects directory answers true, which keeps today's `--resume` behaviour.
+ */
+function claudeTranscriptExists(env: NodeJS.ProcessEnv, nativeSessionId: string): boolean {
+  const configDir = env['CLAUDE_CONFIG_DIR']?.trim() || join(env['HOME'] || homedir(), '.claude');
+  const projects = join(configDir, 'projects');
+  let dirs: string[];
+  try {
+    dirs = readdirSync(projects);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+  return dirs.some((dir) => existsSync(join(projects, dir, `${nativeSessionId}.jsonl`)));
+}
+
 const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
@@ -154,14 +174,13 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     // Own an immutable snapshot. Retaining a caller-owned object would let a
     // later `input.threadId = ...` make exit cleanup delete the wrong registry
     // key and leave a live-looking ghost behind.
-    const config: StartAgentThreadInput = {
+    let config: StartAgentThreadInput = {
       ...input,
       availableTools: [...input.availableTools],
       allowedTools: [...input.allowedTools],
       ...(input.env ? { env: { ...input.env } } : {}),
     };
 
-    const args = this.buildArgs(config);
     // ALLOW-LIST, never a wholesale copy. `{ ...this.env }` here handed the
     // chat child the server's own environment, which on a deployed node
     // carries `TM8_DATABASE_URL` — a SUPERUSER connection string, for which
@@ -169,6 +188,30 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     // to read an environment variable; the full tool set is what makes it
     // live. See chat-env.ts for the measurement and the argument.
     const childEnv: NodeJS.ProcessEnv = { ...composeChatEnv(this.env), ...config.env };
+
+    // A resume whose transcript is GONE can never succeed: claude answers
+    // `No conversation found with session ID` and every later turn of the
+    // chat fails the same way, for ever ("Claude failed the turn"). Claude
+    // Code deletes transcripts older than `cleanupPeriodDays` (30 by default),
+    // so any chat idle for a month hits this. Measured 2026-09-25 on the
+    // desktop node: a chat last used 21 Aug, native session f0f9a027…, no
+    // .jsonl under any config home. Start a FRESH native session under the
+    // same id instead — `--session-id` is valid exactly when no transcript
+    // holds it. The model loses its own memory of the thread; tm8's messages
+    // are untouched and the chat works again. Only the case where the id is
+    // in NO project directory falls back, so a transcript claude CAN resume is
+    // never shadowed by a path-encoding guess.
+    if (config.resume === 'post_interrupt' && !claudeTranscriptExists(childEnv, config.nativeSessionId)) {
+      this.logger?.warn('ClaudeHeadlessAdapter: native transcript is gone; starting a fresh session', {
+        threadId: config.threadId,
+        nativeSessionId: config.nativeSessionId,
+      });
+      this.interruptedThreads.delete(config.threadId);
+      const { resume: _expired, ...fresh } = config;
+      config = fresh;
+    }
+
+    const args = this.buildArgs(config);
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawnChild(this.command, args, {

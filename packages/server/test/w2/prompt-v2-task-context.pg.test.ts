@@ -99,4 +99,23 @@ describe('prompt v2 task-context snapshot', () => {
     expect(spawnerView.asOfSeq).toBe(snapshot.asOfSeq);
     expect(neutral(snapshot)).toEqual(neutral(spawnerView));
   });
+
+  it('loadTaskVersions reads the version and status a fresh entities.context serves (task 01a0daa4-ed02)', async () => {
+    // The spawn re-reads its tasks after `execution_spawn` started them, so the
+    // task turn names the version the agent's first versioned write must carry.
+    const port = new DbGraphPort(pgDb);
+    const auth = { identityId: IDENTITY, nodeAdmin: false, requestId: 'spawn' };
+    const fresh = await readAsSpawner();
+    const rows = await port.loadTaskVersions(auth, { taskIds: [F.T] });
+    expect(rows).toEqual([{ id: F.T, version: fresh.version, status: expect.stringMatching(/^[a-z_]+$/) }]);
+    // Moving the task moves the read: it is the row, not a cached context.
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('update public.entities set version = version + 1 where id = $1', [F.T]);
+    });
+    const [after] = await port.loadTaskVersions(auth, { taskIds: [F.T] });
+    expect(after!.version).toBe(fresh.version + 1);
+    expect((await readAsSpawner()).version).toBe(after!.version);
+    expect(await port.loadTaskVersions(auth, { taskIds: [] })).toEqual([]);
+  });
 });

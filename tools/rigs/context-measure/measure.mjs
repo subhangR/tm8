@@ -53,19 +53,31 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
   const ctx = manifest.context;
   if (!ctx || !Array.isArray(ctx.entries)) throw new Error(`manifest ${manifest.sessionId}: no context audit (manifest.context.entries)`);
   const entries = new Map(ctx.entries.map((e) => [e.entityId, e]));
+  // One drop per id. An id can carry TWO: a memory collapsed at `body` level
+  // whose index line the trim then dropped too (`entry` level). The deeper
+  // drop wins, so that memory reads as absent from the prompt (entry-level, D2).
   const dropped = new Map();
-  for (const d of ctx.dropped ?? []) if (!dropped.has(d.entityId)) dropped.set(d.entityId, d);
+  for (const d of ctx.dropped ?? []) {
+    const prev = dropped.get(d.entityId);
+    if (!prev || (missLevel(`:${prev.level ?? '-'}`) === 'header' && missLevel(`:${d.level ?? '-'}`) === 'entry')) dropped.set(d.entityId, d);
+  }
   // The two lists must agree, or the header/entry miss split is meaningless:
-  // a header-level drop is a listed entry whose header was trimmed, anything
+  // a header-level drop is a listed entry whose header was trimmed; a
+  // summary-level drop (the floor rule, task 01a0da5a) a listed entry that kept
+  // its whenToUse; a BODY-level drop (Q1: a memory past the memoryInjection cap,
+  // still listed, body cut) a collapsed entry, or NO entry when the index trim
+  // dropped its line as well (an entry-level drop on the same id); anything
   // else dropped was never listed.
+  const listedAs = { header: 'header-dropped', summary: 'summary-dropped' };
   for (const d of ctx.dropped ?? []) {
     const e = entries.get(d.entityId);
-    if (d.level === 'header' ? e?.state !== 'header-dropped' : e) {
-      throw new Error(`manifest ${manifest.sessionId}: dropped ${d.entityId} (${d.reason}:${d.level ?? '-'}) vs entry state ${e?.state ?? 'absent'}`);
-    }
+    const trimmedToo = !e && missLevel(`:${dropped.get(d.entityId)?.level ?? '-'}`) === 'entry';
+    const ok = listedAs[d.level] ? e?.state === listedAs[d.level] : d.level === 'body' ? e?.state === 'collapsed' || trimmedToo : !e;
+    if (!ok) throw new Error(`manifest ${manifest.sessionId}: dropped ${d.entityId} (${d.reason}:${d.level ?? '-'}) vs entry state ${e?.state ?? 'absent'}`);
   }
   for (const e of entries.values()) {
     if (e.state === 'header-dropped' && dropped.get(e.entityId)?.level !== 'header') throw new Error(`manifest ${manifest.sessionId}: entry ${e.entityId} header-dropped with no header-level drop`);
+    if (e.state === 'summary-dropped' && dropped.get(e.entityId)?.level !== 'summary') throw new Error(`manifest ${manifest.sessionId}: entry ${e.entityId} summary-dropped with no summary-level drop`);
   }
   const skills = skillLookup(manifest.skills ?? []);
   const linkedSet = new Set(linked);
@@ -166,7 +178,8 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
   for (const read of row.reads) {
     const entry = read.id ? entries.get(read.id) : null;
     const drop = read.id ? dropped.get(read.id) : null;
-    read.class = entry && entry.state !== 'header-dropped' && !drop ? 'expand'
+    // A summary-dropped entry still showed its whenToUse, so opening it is an expand.
+    read.class = entry && entry.state !== 'header-dropped' && (!drop || drop.level === 'summary') ? 'expand'
       : drop ? 'miss'
         : entry ? 'miss'
           : read.id && linkedSet.has(read.id) ? 'miss'

@@ -1,0 +1,1229 @@
+{
+  "schemaVersion": 2,
+  "skills": [
+    [
+      "csv-hygiene",
+      "Checklist for touching CSV parsing or writing: header lines, trailing newlines, BOMs, delimiters."
+    ],
+    [
+      "test-first",
+      "Write the failing node --test case before the implementation, then make it pass."
+    ],
+    [
+      "commit-style",
+      "How to word and scope commits in small repos: one change per commit, imperative subject."
+    ],
+    [
+      "error-codes",
+      "How helpers report failure: throw an Error that carries a string `code` property."
+    ],
+    [
+      "changelog-entry",
+      "Add a CHANGELOG line for every user-visible helper you add or change."
+    ],
+    [
+      "date-handling",
+      "Keep dates as ISO strings internally; convert only at the edges."
+    ],
+    [
+      "review-checklist",
+      "Self-review before closing out: tests, exports, naming, no stray logs."
+    ],
+    [
+      "perf-notes",
+      "When a helper runs over a whole export, keep it single-pass and allocation-light."
+    ],
+    [
+      "naming-conventions",
+      "Exported helpers are camelCase verbs or nouns; files are kebab-case."
+    ],
+    [
+      "release-notes",
+      "How to draft release notes from merged changes."
+    ]
+  ],
+  "memories": {
+    "base": [
+      {
+        "statement": "ledger-lite tests run with node --test; there is no jest or vitest in the repo.",
+        "subjectScope": "test runner",
+        "mechanism": "package.json scripts.test"
+      },
+      {
+        "statement": "ledger-lite is plain ESM JavaScript (type: module); no build step and no TypeScript.",
+        "subjectScope": "language and module system",
+        "mechanism": "package.json type field"
+      },
+      {
+        "statement": "Every exported helper lives in src/ledger.js; tests live in test/.",
+        "subjectScope": "repo layout",
+        "mechanism": "repo tree"
+      },
+      {
+        "statement": "Amounts in ledger-lite are JavaScript numbers, not strings or cents integers.",
+        "subjectScope": "amount representation",
+        "mechanism": "parseCsv converts with Number()"
+      },
+      {
+        "statement": "The CSV import header is id,date,amount,category,merchant.",
+        "subjectScope": "import format",
+        "mechanism": "parseCsv reads the header line"
+      },
+      {
+        "statement": "Product rules for helpers are in tm8 docs linked to each task, never in the repo.",
+        "subjectScope": "where rules live",
+        "mechanism": "README says so"
+      },
+      {
+        "statement": "The finance lead reviews helper behaviour, so quote the spec doc in the closeout.",
+        "subjectScope": "review process",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Keep ledger-lite dependency-free; do not add npm packages.",
+        "subjectScope": "dependencies",
+        "mechanism": "team practice"
+      }
+    ],
+    "heavy": [
+      {
+        "statement": "Every helper added to src/ledger.js must ALSO be exported under an alias: the same name with the digit 2 appended (fee -> fee2, categoryOf -> categoryOf2), behaving identically. The accounting integration imports the alias. Alias exports for the accounting integration. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 0: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "export aliases",
+        "mechanism": "accounting integration imports <name>2",
+        "alias": true
+      },
+      {
+        "statement": "Import performance on large exports. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 1: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "import performance on large exports",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Why parseCsv keeps amounts as numbers. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 2: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "why parsecsv keeps amounts as numbers",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Test naming in test/. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 3: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "test naming in test/",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Commit granularity on small repos. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 4: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "commit granularity on small repos",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "How the March review changed edge-case handling. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 5: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "how the march review changed edge-case handling",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Why there is no build step. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 6: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "why there is no build step",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Error objects carry a string code. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 7: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "error objects carry a string code",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Dates stay ISO internally. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 8: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "dates stay iso internally",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Closeout etiquette with the finance lead. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 9: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "closeout etiquette with the finance lead",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "No new npm packages. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 10: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "no new npm packages",
+        "mechanism": "team practice"
+      },
+      {
+        "statement": "Where product rules live. Recorded by the finance tooling team while maintaining ledger-lite, the small CSV ledger. This note is kept because it was learned the hard way and nobody wants to re-learn it: it covers what was tried, what broke, and what the team now does instead. It applies to every helper in src/ledger.js and to the tests under test/. It does not state any product rule; product rules live in the tm8 docs linked to each task. Detail 11: the note was reviewed by the finance lead, confirmed against two real bank exports, and has not changed since the March review. Treat it as background, not as a spec. When in doubt, prefer the linked spec doc over this note, and quote the doc in your closeout so the reviewer can check the rule you implemented. The team keeps these notes short on purpose; if you find one wrong, say so in the closeout rather than silently ignoring it. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. Nothing in this note overrides a linked spec; it exists so a new lane does not repeat an old mistake, and it is safe to skim. ",
+        "subjectScope": "where product rules live",
+        "mechanism": "team practice"
+      }
+    ]
+  },
+  "sampleCsv": "id,date,amount,category,merchant\n1,2026-01-02,10.50,food,Corner Deli\n2,2026-01-03,-2.50,food,Corner Deli\n3,2026-01-05,950.00,rent,Harbor Flats\n",
+  "tasks": {
+    "fee": {
+      "key": "fee",
+      "family": "needle",
+      "title": "Add a transaction fee helper to ledger-lite",
+      "fn": "fee",
+      "content": {
+        "description": "Add `fee` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`fee` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Transaction fees: spec v2",
+          "body": "# Transaction fees: spec v2\n\nThis page is the working reference for transaction fees in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nThe fee is 0.35% of the absolute amount, with a minimum fee of 0.40. The result is rounded to 2 decimals. A refund (negative amount) is charged on its absolute value, the same as a payment.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When implementing or changing the fee helper",
+            "summary": "The fee formula (rate, minimum, rounding) and how refunds are charged."
+          }
+        }
+      ],
+      "needleAt": 5,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "fee(100)",
+          0.4
+        ],
+        [
+          "fee(1000)",
+          3.5
+        ],
+        [
+          "fee(-2000)",
+          7
+        ],
+        [
+          "fee(200)",
+          0.7
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "category": {
+      "key": "category",
+      "family": "needle",
+      "title": "Add a category helper to ledger-lite",
+      "fn": "categoryOf",
+      "content": {
+        "description": "Add `categoryOf` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`categoryOf` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Category mapping v3",
+          "body": "# Category mapping v3\n\nThis page is the working reference for category mapping in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nKnown categories are exactly: food, rent, travel, utilities. categoryOf(txn) returns the transaction's category when it is one of these. Anything else (an unknown value, an empty string, or a missing category) maps to the catch-all bucket `misc-7`.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When mapping transaction categories",
+            "summary": "The list of known categories and where unknown ones go."
+          }
+        }
+      ],
+      "needleAt": 5,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "categoryOf({ category: 'food' })",
+          "food"
+        ],
+        [
+          "categoryOf({ category: 'Pets' })",
+          "misc-7"
+        ],
+        [
+          "categoryOf({ category: '' })",
+          "misc-7"
+        ],
+        [
+          "categoryOf({})",
+          "misc-7"
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "rounding": {
+      "key": "rounding",
+      "family": "needle",
+      "title": "Add a rounded balance helper to ledger-lite",
+      "fn": "roundedBalance",
+      "content": {
+        "description": "Add `roundedBalance` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`roundedBalance` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Balance rounding policy",
+          "body": "# Balance rounding policy\n\nThis page is the working reference for balance rounding in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nroundedBalance(txns) sums the amounts and rounds the final sum ONCE to 2 decimals using round-half-to-even (banker's rounding): a value exactly halfway between two cents goes to the even cent. So 0.125 becomes 0.12 and 0.375 becomes 0.38.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When rounding balances",
+            "summary": "Which rounding mode balances use and when it is applied."
+          }
+        }
+      ],
+      "needleAt": 5,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "roundedBalance([{ amount: 0.125 }])",
+          0.12
+        ],
+        [
+          "roundedBalance([{ amount: 0.375 }])",
+          0.38
+        ],
+        [
+          "roundedBalance([{ amount: 0.5 }, { amount: 0.125 }])",
+          0.62
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "stress30": {
+      "key": "stress30",
+      "family": "stress",
+      "title": "Enforce the single-transaction limit in ledger-lite (30 linked docs)",
+      "fn": "checkLimit",
+      "content": {
+        "description": "Add `checkLimit` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`checkLimit` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Code review guidelines",
+          "body": "# Code review guidelines\n\nNotes on code review guidelines for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Test data policy",
+          "body": "# Test data policy\n\nNotes on test data policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Branch naming",
+          "body": "# Branch naming\n\nNotes on branch naming for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "On-call handbook",
+          "body": "# On-call handbook\n\nNotes on on-call handbook for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Quarterly roadmap Q3",
+          "body": "# Quarterly roadmap Q3\n\nNotes on quarterly roadmap q3 for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Quarterly roadmap Q4",
+          "body": "# Quarterly roadmap Q4\n\nNotes on quarterly roadmap q4 for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Security review notes",
+          "body": "# Security review notes\n\nNotes on security review notes for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Dependency policy",
+          "body": "# Dependency policy\n\nNotes on dependency policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Logging conventions",
+          "body": "# Logging conventions\n\nNotes on logging conventions for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Performance budget",
+          "body": "# Performance budget\n\nNotes on performance budget for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Accessibility of reports",
+          "body": "# Accessibility of reports\n\nNotes on accessibility of reports for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Data retention",
+          "body": "# Data retention\n\nNotes on data retention for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Vendor list",
+          "body": "# Vendor list\n\nNotes on vendor list for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: kickoff",
+          "body": "# Meeting notes: kickoff\n\nNotes on meeting notes: kickoff for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: March review",
+          "body": "# Meeting notes: March review\n\nNotes on meeting notes: march review for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Transaction limits",
+          "body": "# Transaction limits\n\nThis page is the working reference for transaction limits in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nA single transaction may not exceed 9750.00 in absolute value; exactly 9750.00 is allowed. checkLimit(txn) returns nothing for an allowed transaction and throws an Error whose `code` property is the string `E_LIMIT_77` otherwise.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When validating transaction size",
+            "summary": "The per-transaction limit and the error code raised when it is exceeded."
+          }
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: planning week",
+          "body": "# Meeting notes: planning week\n\nNotes on meeting notes: planning week for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Architecture overview",
+          "body": "# Architecture overview\n\nNotes on architecture overview for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Deployment runbook",
+          "body": "# Deployment runbook\n\nNotes on deployment runbook for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Backup and restore",
+          "body": "# Backup and restore\n\nNotes on backup and restore for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Support escalation path",
+          "body": "# Support escalation path\n\nNotes on support escalation path for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Customer FAQ draft",
+          "body": "# Customer FAQ draft\n\nNotes on customer faq draft for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Import troubleshooting",
+          "body": "# Import troubleshooting\n\nNotes on import troubleshooting for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Error message style guide",
+          "body": "# Error message style guide\n\nNotes on error message style guide for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Changelog conventions",
+          "body": "# Changelog conventions\n\nNotes on changelog conventions for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Versioning policy",
+          "body": "# Versioning policy\n\nNotes on versioning policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        }
+      ],
+      "needleAt": 20,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "(() => { checkLimit({ amount: 9750 }); return \"ok\"; })()",
+          "ok"
+        ],
+        [
+          "(() => { try { checkLimit({ amount: -9750.01 }); return \"no-throw\"; } catch (e) { return e.code; } })()",
+          "E_LIMIT_77"
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "stress60": {
+      "key": "stress60",
+      "family": "stress",
+      "title": "Add a rounded balance helper to ledger-lite (60 linked docs)",
+      "fn": "roundedBalance",
+      "content": {
+        "description": "Add `roundedBalance` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`roundedBalance` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Code review guidelines",
+          "body": "# Code review guidelines\n\nNotes on code review guidelines for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Test data policy",
+          "body": "# Test data policy\n\nNotes on test data policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Branch naming",
+          "body": "# Branch naming\n\nNotes on branch naming for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "On-call handbook",
+          "body": "# On-call handbook\n\nNotes on on-call handbook for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Quarterly roadmap Q3",
+          "body": "# Quarterly roadmap Q3\n\nNotes on quarterly roadmap q3 for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Quarterly roadmap Q4",
+          "body": "# Quarterly roadmap Q4\n\nNotes on quarterly roadmap q4 for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Security review notes",
+          "body": "# Security review notes\n\nNotes on security review notes for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Dependency policy",
+          "body": "# Dependency policy\n\nNotes on dependency policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Logging conventions",
+          "body": "# Logging conventions\n\nNotes on logging conventions for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Performance budget",
+          "body": "# Performance budget\n\nNotes on performance budget for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Accessibility of reports",
+          "body": "# Accessibility of reports\n\nNotes on accessibility of reports for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Data retention",
+          "body": "# Data retention\n\nNotes on data retention for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Vendor list",
+          "body": "# Vendor list\n\nNotes on vendor list for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: kickoff",
+          "body": "# Meeting notes: kickoff\n\nNotes on meeting notes: kickoff for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: March review",
+          "body": "# Meeting notes: March review\n\nNotes on meeting notes: march review for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Meeting notes: planning week",
+          "body": "# Meeting notes: planning week\n\nNotes on meeting notes: planning week for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Architecture overview",
+          "body": "# Architecture overview\n\nNotes on architecture overview for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Deployment runbook",
+          "body": "# Deployment runbook\n\nNotes on deployment runbook for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Backup and restore",
+          "body": "# Backup and restore\n\nNotes on backup and restore for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Support escalation path",
+          "body": "# Support escalation path\n\nNotes on support escalation path for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Customer FAQ draft",
+          "body": "# Customer FAQ draft\n\nNotes on customer faq draft for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Import troubleshooting",
+          "body": "# Import troubleshooting\n\nNotes on import troubleshooting for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Error message style guide",
+          "body": "# Error message style guide\n\nNotes on error message style guide for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Changelog conventions",
+          "body": "# Changelog conventions\n\nNotes on changelog conventions for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Versioning policy",
+          "body": "# Versioning policy\n\nNotes on versioning policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Balance rounding policy",
+          "body": "# Balance rounding policy\n\nThis page is the working reference for balance rounding in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nroundedBalance(txns) sums the amounts and rounds the final sum ONCE to 2 decimals using round-half-to-even (banker's rounding): a value exactly halfway between two cents goes to the even cent. So 0.125 becomes 0.12 and 0.375 becomes 0.38.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When rounding balances",
+            "summary": "Which rounding mode balances use and when it is applied."
+          }
+        },
+        {
+          "role": "distractor",
+          "title": "Localisation plan",
+          "body": "# Localisation plan\n\nNotes on localisation plan for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Reporting UI wireframes",
+          "body": "# Reporting UI wireframes\n\nNotes on reporting ui wireframes for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Finance lead contacts",
+          "body": "# Finance lead contacts\n\nNotes on finance lead contacts for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Audit trail requirements",
+          "body": "# Audit trail requirements\n\nNotes on audit trail requirements for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Feature flag policy",
+          "body": "# Feature flag policy\n\nNotes on feature flag policy for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Sandbox environment setup",
+          "body": "# Sandbox environment setup\n\nNotes on sandbox environment setup for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Postmortem template",
+          "body": "# Postmortem template\n\nNotes on postmortem template for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Decision log",
+          "body": "# Decision log\n\nNotes on decision log for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Team rituals",
+          "body": "# Team rituals\n\nNotes on team rituals for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Hiring rubric",
+          "body": "# Hiring rubric\n\nNotes on hiring rubric for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Offboarding checklist",
+          "body": "# Offboarding checklist\n\nNotes on offboarding checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Budget tracking",
+          "body": "# Budget tracking\n\nNotes on budget tracking for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Tax season prep",
+          "body": "# Tax season prep\n\nNotes on tax season prep for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Reconciliation notes",
+          "body": "# Reconciliation notes\n\nNotes on reconciliation notes for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Bank API evaluation",
+          "body": "# Bank API evaluation\n\nNotes on bank api evaluation for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Old parser design (retired)",
+          "body": "# Old parser design (retired)\n\nNotes on old parser design (retired) for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Spreadsheet macros (retired)",
+          "body": "# Spreadsheet macros (retired)\n\nNotes on spreadsheet macros (retired) for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Metrics we track",
+          "body": "# Metrics we track\n\nNotes on metrics we track for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "User interviews summary",
+          "body": "# User interviews summary\n\nNotes on user interviews summary for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Competitor notes",
+          "body": "# Competitor notes\n\nNotes on competitor notes for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Pricing experiments",
+          "body": "# Pricing experiments\n\nNotes on pricing experiments for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Training plan",
+          "body": "# Training plan\n\nNotes on training plan for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Documentation map",
+          "body": "# Documentation map\n\nNotes on documentation map for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Style guide for docs",
+          "body": "# Style guide for docs\n\nNotes on style guide for docs for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Keyboard shortcuts in the report UI",
+          "body": "# Keyboard shortcuts in the report UI\n\nNotes on keyboard shortcuts in the report ui for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Accessibility audit",
+          "body": "# Accessibility audit\n\nNotes on accessibility audit for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Data model sketch",
+          "body": "# Data model sketch\n\nNotes on data model sketch for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Integration test plan",
+          "body": "# Integration test plan\n\nNotes on integration test plan for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Load test results",
+          "body": "# Load test results\n\nNotes on load test results for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Cost review",
+          "body": "# Cost review\n\nNotes on cost review for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        }
+      ],
+      "needleAt": 30,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "roundedBalance([{ amount: 0.125 }])",
+          0.12
+        ],
+        [
+          "roundedBalance([{ amount: 0.375 }])",
+          0.38
+        ],
+        [
+          "roundedBalance([{ amount: 0.5 }, { amount: 0.125 }])",
+          0.62
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "mem-fee": {
+      "key": "mem-fee",
+      "family": "memory",
+      "title": "Add a transaction fee helper to ledger-lite",
+      "fn": "fee",
+      "content": {
+        "description": "Add `fee` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`fee` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Transaction fees: spec v2",
+          "body": "# Transaction fees: spec v2\n\nThis page is the working reference for transaction fees in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nThe fee is 0.35% of the absolute amount, with a minimum fee of 0.40. The result is rounded to 2 decimals. A refund (negative amount) is charged on its absolute value, the same as a payment.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When implementing or changing the fee helper",
+            "summary": "The fee formula (rate, minimum, rounding) and how refunds are charged."
+          }
+        }
+      ],
+      "needleAt": 5,
+      "file": true,
+      "skills": true,
+      "memories": "heavy",
+      "checks": [
+        [
+          "fee(100)",
+          0.4
+        ],
+        [
+          "fee(1000)",
+          3.5
+        ],
+        [
+          "fee(-2000)",
+          7
+        ],
+        [
+          "fee(200)",
+          0.7
+        ],
+        [
+          "fee2(1000)",
+          3.5
+        ],
+        [
+          "fee2(100)",
+          0.4
+        ]
+      ],
+      "headerCarriesFact": false
+    },
+    "turn-date": {
+      "key": "turn-date",
+      "family": "multiturn",
+      "title": "Parse export dates in ledger-lite",
+      "fn": "parseDate",
+      "content": {
+        "description": "Add `parseDate` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`parseDate` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "role": "distractor",
+          "title": "Onboarding notes for the ledger team",
+          "body": "# Onboarding notes for the ledger team\n\nNotes on onboarding notes for the ledger team for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Release checklist",
+          "body": "# Release checklist\n\nNotes on release checklist for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Incident review: duplicated March import",
+          "body": "# Incident review: duplicated March import\n\nNotes on incident review: duplicated march import for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "distractor",
+          "title": "Glossary of ledger terms",
+          "body": "# Glossary of ledger terms\n\nNotes on glossary of ledger terms for the ledger-lite team. This page is informational and does not define helper behaviour.\n\n## Summary\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Details\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied. Whether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n"
+        },
+        {
+          "role": "needle",
+          "title": "Bank export date format",
+          "body": "# Bank export date format\n\nThis page is the working reference for the bank export date format in ledger-lite, the small CSV ledger the finance tooling team maintains. It records what we agreed, why, and what is still open. Read it before changing the related code; the repo itself carries no product rules.\n\n## Background\n\nledger-lite started as a script that summed a bank export. It grew a parser, then a handful of helpers that product asked for one at a time. Each helper was specified in a short page like this one, reviewed by the finance lead, and then implemented with a unit test. Several earlier drafts were discussed in chat and never written down, which is why this page exists.\n\n## Scope\n\nIn scope: the behaviour of the one exported helper this page is about, its inputs and outputs, and the error it raises. Out of scope: persistence, currency conversion, and the reporting UI, which are owned elsewhere.\n\n## History\n\nThe first draft was written during the Q1 planning week. It was revised after the March review, when two edge cases turned up in real exports. The revision below is the one to implement; nothing earlier should be copied.\n\n## Rules\n\nThe bank export writes dates as DD.MM.YYYY (day first, dot separated, zero padded). parseDate(s) converts that to an ISO date string YYYY-MM-DD. Example: 03.02.2026 is the 3rd of February 2026.\n\n## Open questions\n\nWhether the helper should also accept a string amount is undecided. For now callers pass numbers. Localisation of messages is not needed yet.\n",
+          "header": {
+            "whenToUse": "When parsing dates from the bank export",
+            "summary": "The date format the bank export uses and the format parseDate must return."
+          }
+        }
+      ],
+      "needleAt": 5,
+      "file": true,
+      "skills": true,
+      "memories": "base",
+      "checks": [
+        [
+          "parseDate('03.02.2026')",
+          "2026-02-03"
+        ],
+        [
+          "parseDate('31.12.2025')",
+          "2025-12-31"
+        ]
+      ],
+      "headerCarriesFact": false,
+      "turn": {
+        "message": "Change request from the finance lead: also export `parseDateStrict` from src/ledger.js. It behaves exactly like `parseDate` but throws an Error with code `E_INPUT_12` when its first argument is undefined or null. Add a test, commit, and post a short closeout on this task when done.",
+        "checks": [
+          [
+            "(() => { try { parseDateStrict(undefined); return 'no-throw'; } catch (e) { return e.code; } })()",
+            "E_INPUT_12"
+          ],
+          [
+            "parseDateStrict('03.02.2026')",
+            "2026-02-03"
+          ]
+        ]
+      }
+    },
+    "replica-01a0d742": {
+      "key": "replica-01a0d742",
+      "source": "01a0d742-ab2d-7992-a670-e615cf7841e2",
+      "title": "Explain the Selection stage (I6): what a launch gets and who controls it",
+      "content": {
+        "description": "Subhang wants to understand the SELECTION stage of the launch pipeline: what context a launched session gets (memories, skills, references, teammates), WHO controls it at each point, and how. This is an explanation task. Change NO code. Answer his follow-up questions in this task's thread and stay available; do not exit after the first answer.\n\nExplain, starting from the beginning and in plain language, with concrete examples:\n1. What \"selection\" is: the groups (memories, skills, references, teammates), and what \"absent group = edge defaults, present group = exact set\" means.\n2. WHO CONTROLS IT, at every control point:\n   - the edges that define the defaults: who writes remembers / equips / attached_to / relates_to, and through which UI and CLI verbs;\n   - the person on the Launch sheet / Run composer (ticks; the ··· Harness/Plugins menu);\n   - Jev (only suggests; it never applies anything);\n   - the CLI `tm8 session spawn` (--memory, and selectionReasons=cli);\n   - the dispatcher and coordinators, which spawn through the CLI;\n   - the teammate persona (capabilities.launch.plugins / mcpServers);\n   - the interaction profile (contextIndex, contextBudgets once I5b lands);\n   - server-side checks (assertSelectionIds: live, same space, readable under the caller's RLS, allowed kind; the 240 ceiling);\n   - the byte budgets that cut after selection;\n   - resume, which replays the recorded selection.\n   Say who can override whom, and what is recorded when they do.\n3. What is recorded, and where to see it: manifest.launch.selection / selectionReasons, and manifest.context.groups / entries / dropped with each reason (not-selected, unavailable, replay-invalid, not-rendered, count-cap, byte-budget, ...). Also the session's Launch context section in the UI (#728).\n4. What exists on main TODAY versus what I6 PR #746 changes (it is approved, not merged). Also how F3 #765 (a plugin tick becomes skill ids) and I5a #759 (rendering references in <context_index>) build on it.\n5. The deploy constraint: from I6 on, deploy the server first, or server and CLI together.\n\nWrite it as a tm8 doc attached to this task, then post a short message on this task naming the doc id, and raise `tm8 entity attention <this-task-id> --reason \"selection explainer ready\" --points 50`.\n\nRead first:\n- Explainer doc 01a0d6d7-428a-7aff-97a1-894c6be0e838 (§6, §7).\n- Integrated design doc 01a0d348-feaa-7b70-9a56-b61e249c0a70 (§1, §5, §6, §10 Q5).\n- `gh pr view 746` and `gh pr diff 746`, plus #765 for F3.\n- The code on main: packages/server/src/facade/execution-handlers.ts (assertSelectionIds, loadSpawnContext), packages/contract/src/contract.ts (SpawnSelection), packages/cli/src/commands/session.ts (spawn), packages/tm8-ui/src/jev/useJevSuggestions.ts and views/LaunchSheet.tsx, and packages/execution/src/spawn/context-audit.ts.\nUse graphify (graphify-out/merged-graph.json) for structural questions before grepping.\n\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main` must be 0. If it isn't, `git merge --ff-only origin/main`.\n",
+        "acceptanceCriteria": [
+          {
+            "id": "doc",
+            "done": false,
+            "text": "Explainer doc on selection: control points, who overrides whom, what is recorded, main vs #746",
+            "doneAt": "2026-09-25T06:40:26.227Z",
+            "doneBy": "01a0cb4c-c0d8-79e7-b63f-edb646e8013c"
+          },
+          {
+            "id": "qa",
+            "done": false,
+            "text": "Follow-up questions from Subhang answered in this task thread"
+          }
+        ]
+      },
+      "links": [
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "Explain the latest Launch Integration pipeline",
+          "body": "# Explain the latest Launch Integration pipeline\n\n{\n  \"kind\": \"task\",\n  \"description\": \"there is lot happening, lot of prs raised, added some new table for headers, start from begining, explainnig what we are doing in the integrated context pipeline, how we are making the entities in the new model, how jev is getting integrated, everything that is going in the headrers, context slection, jev, all that.\",\n  \"acceptanceCriteria\": [],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d6d1-f6e4-7a65-a8d2-2939b48c5c5d"
+        }
+      ],
+      "family": "replica",
+      "checks": []
+    },
+    "replica-01a0d780": {
+      "key": "replica-01a0d780",
+      "source": "01a0d780-97c1-7015-91bd-5d5d77c403d1",
+      "title": "Review, fix and merge PR #800 (derived header preview, header=resolved)",
+      "content": {
+        "description": "You are the REVIEWER-MERGER for PR #800 (the I9a derived-header preview, `header=resolved`, on entities.get and entities.context, plus the UI \"No header\" state; author session 01a0d74a-4d7a, still live, so ask it directly; lane task 01a0d749-a518; base main at e109cce8). Subhang's standing rule: every PR gets its own reviewer, who reviews it, MAKES the fixes and merges it.\n\n1. REVIEW for correctness first. The author's load-bearing claims, each of which you must independently verify:\n   - A read that does NOT ask is BYTE-IDENTICAL to `header=authored`, for both get and context. It's pinned in header-ops.pg.test.ts. Confirm the pin compares bytes of the whole response, not one field.\n   - On context, `resolved` spends the context budget (the header is a core section), so the body page can shrink. Confirm it's declared (budget/omitted), never a silent truncation, and that `truncated`/cursors stay correct.\n   - `resolved` loads on explicit-sections reads, but never on a cursor page.\n   - Header text stays inside untrusted_data in the CLI text render. The derived header is labelled derived and version 0 in the UI.\n   - The resolved read runs in the caller's RLS tx (resolveHeaders), with no extra per-row query (no N+1 on a list).\n   Also check it against Subhang's ruling (1), \"instruct, don't refuse\" (msg 01a0d6f1-5cc4 on task 01a0d3b0): the PR REFUSES an unknown `header=` mode. The preferred behaviour for an agent-facing read is to fall back to the default (authored) plus a warning naming the valid values. Change it unless you find a concrete reason not to. If unsure, ask advisor session 01a0d777-8b84-7734-b41c-35def00bdf53.\n2. FIX what you find, as commits ON the PR branch (`gh pr checkout 800`), each with a test and a negative control. Never force-push over the author's commits, except a rebase onto main with --force-with-lease.\n3. VERIFY: rebase onto the current origin/main, then run typecheck, the focused suites (server header-ops.pg / entity-headers.pg / feed-context-v2 size gates, contract, cli entity, the tm8-ui panels/data suites) and the build. `uptime` first; if the load is above ~80, wait. CI must be green on the head you merge. The only acceptable red is one byte-identical to a red on main's latest concluded run (a known intermittent is receipt.test.ts link-pr 15s; a fix lane is on it). Prove it on the task.\n4. MERGE: `gh pr view 800 --json baseRefName` must be main. Post \"MERGING #800\" on task 01a0d747-c69a-7483-a79a-aec76e3a6479. If another MERGING is open there, wait for its MERGED, then rebase. `gh pr merge 800 --squash --admin` (the ruleset lets only subhangR update main; NOT a licence to merge red). Then post \"MERGED #800 <sha>\".\n5. AFTER: re-run typecheck and the focused suites on the merged tree. Post the findings, fixes and merge sha on THIS task and on 01a0d749-a518, then close this task.\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, `bun install`, then `bun run build`.\n",
+        "acceptanceCriteria": [
+          {
+            "id": "review",
+            "done": false,
+            "text": "Reviewed #800; byte-identity + budget claims independently verified"
+          },
+          {
+            "id": "fix",
+            "done": false,
+            "text": "Defects fixed on the branch (incl. unknown-mode lenient fallback unless justified)"
+          },
+          {
+            "id": "merge",
+            "done": false,
+            "text": "Merged to main with green CI; merged tree re-verified"
+          }
+        ]
+      },
+      "links": [
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "I9a: header view/edit UI in the entity panel + optional header on UI creates (lenient)",
+          "body": "# I9a: header view/edit UI in the entity panel + optional header on UI creates (lenient)\n\n{\n  \"kind\": \"task\",\n  \"description\": \"I9a (the header half of I9, parent task 01a0d3b2-3cc2): let a PERSON see and write an entity's selection header in the UI. Today only the CLI can (`tm8 entity header set`, I4 #767, merged 66845969).\\n\\nUI = packages/tm8-ui ONLY (tm8_ui_2.0 is deleted). Its vitest suite is the CI gate.\\n\\nBuild:\\n1. A Header section in the entity detail panel for the header kinds (team_member, doc, artifact, drawing, file, task, collection). It shows whenToUse, summary and keywords, plus source (authored or not), a `stale` badge (\\\"written for vN, body is now vM\\\"), and the body size.\\n   - `entities.get` / `entities.context` carry `header` ONLY when one is authored (I4's rule).\\n   - For an entity with no authored header, show \\\"No header: later launches see its derived summary\\\". A derived preview needs a read that doesn't exist yet. Propose the smallest way to get one (e.g. an opt-in read flag) in the PR description; don't build a new op without flagging it.\\n2. Edit and clear through the existing ops `entities.header.set` / `entities.header.clear`. Pass the header's OWN version (`header.version`; 0 = none) as expectedVersion. A write never touches the entity's version. \\\"Mark current\\\" = re-save the same text (it re-pins a stale header).\\n3. Optional \\\"When should an agent open this?\\\" / \\\"What does it hold?\\\" fields on the UI's doc and artifact CREATE flows, sent as `header` on the same create call (`entities.create` / `artifacts.create` accept it).\\n4. LENIENT, per Subhang's ruling (msg 01a0d6f1-5cc4 on task 01a0d3b0): NO hard limits in the UI. Show soft guidance (\\\"aim for ≤ 400 / ≤ 600 chars\\\") and a live count; never disable Save because of length. The server-side refusals are being removed by the lenient rework (builder session 01a0d72c-2e12, migration 222). Until that lands, show a server refusal's message inline, and don't block client-side.\\n5. Header text is untrusted graph content. Render it as text, never as HTML or markdown that executes.\\n\\nOut of scope: the \\\"Suggest header\\\" button (needs a model call; ask Subhang before adding it) and anything Jev.\\n\\nTraps (memory): fixtures default to CAPS_FULL, so write explicit caps in the tests. A module's CSS is imported only by its index.ts, so never deep-import a component. jsdom has no ResizeObserver. Before any test run, `uptime`, and wait if the load is above ~80.\\n\\nDeliver: one PR against main, linked with `tm8 task link-pr`. Typecheck, focused tm8-ui vitest and the build must be green. Screenshots in the PR if you can drive the UI. Do not merge: merger session 01a0d748-b6d3 (task 01a0d747) merges. Post the PR on this task.\\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, run `bun install`, then `bun run build`.\\n\",\n  \"acceptanceCriteria\": [],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d749-a518-7fcd-88d0-8b504f3a05b5"
+        },
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "Merge the pending context-pipeline PRs: I6 #746 → F3 #765 → I5a #759 → (I5b #761 on Q5.6) + lenient headers",
+          "body": "# Merge the pending context-pipeline PRs: I6 #746 → F3 #765 → I5a #759 → (I5b #761 on Q5.6) + lenient headers\n\n{\n  \"kind\": \"task\",\n  \"description\": \"Subhang wants the pending integrated-context-pipeline PRs MERGED. You are the merger. Act on his authority (2026-09-25), carefully.\\n\\nQueue, in order:\\n1. I6 #746 (head df901cb6, base main, approved by owner B). Rebase it onto the current origin/main if it's behind, wait for CI, and squash-merge.\\n2. F3 #765 (head a771c851) is STACKED: its base is tm8/i6-selection-contract, NOT main. After #746 merges: `gh pr edit 765 --base main`, then `git rebase --onto origin/main df901cb6` (NEVER a plain rebase: the anchor is I6's head), push, wait for CI, squash-merge. Check `gh pr view <n> --json baseRefName` before EVERY merge. A stacked PR \\\"merges\\\" into its base branch and reaches nothing.\\n3. I5a #759 (head b4f75136, base main). Before merging, confirm the <context_index> instruction fix from change doc 01a0d6f7-3e46 §3.1 has been folded in. Builder session 01a0d72c-2e12 is delivering it (to the #759 author, or as one commit on the #759 branch). Rebase onto main after I6 and reconcile with I6's `not-rendered` seam (see #759's \\\"Seams\\\" section). Then CI, then merge.\\n4. I5b #761 is stacked on #759's branch and currently CONFLICTING. Retarget it to main after #759 merges and `rebase --onto` #759's head. Do NOT merge it until Subhang answers Q5.6: the profile-save budget refusal. His lenient-validation ruling (msg 01a0d6f1-5cc4 on task 01a0d3b0) argues for a warning instead of a refusal. Prepare it, post on this task that it is ready apart from that decision, and hold.\\n5. The lenient-headers rework PR from builder session 01a0d72c-2e12 (task 01a0d6f1-f383): merge it when its author says it's ready and CI is green. It adds migration 222. Before merging, confirm on the merged tree that no other migration took 222 and that the highest-numbered file replacing set/clear_entity_header carries every arm.\\n\\nMerge rules:\\n- Required checks must be green. The ONE exception is a red that is byte-identical to a red on main's latest CONCLUDED run: same test, same message. Prove it by diffing the failure names AND messages, record the proof on this task, then `gh pr merge --squash --admin`. Anything else red: fix it if it's in the PR's own change, otherwise stop and report.\\n- After each merge, fetch and run the FOCUSED suites for what merged (execution spawn/context tests; prompt tests; server spawn-selection pg + headers). Run typecheck and the build on the merged main. A green PR can still red the merged tree, especially stacked or colliding PRs.\\n- Before running tests, run `uptime`. If the load is above ~80, wait. Heavy parallel lanes fake failures.\\n- Link each merged PR to its task with `tm8 task link-pr` if it isn't linked. Mark I6 (01a0d3b2-28c9), F3 (01a0d3b2-474a) and I5 (01a0d3b2-22ce) done once all their parts have merged.\\n- Never force-push a branch you don't own without rebasing ON TOP of its current head. Never `git branch -D` by pattern. Never `git stash`.\\n\\nCoordination: FIRST, post on coordinator task 01a0d3b0-339e-7d9b-ab82-4c87139fa22d and on the owner tasks A (01a0d45a-9ff5), B (01a0d45a-a201) and C (01a0d45a-a315) that you are now the merger for this queue at Subhang's request, so nobody double-merges. If an owner replies that a merge is already in flight, let theirs finish.\\nPost a milestone message on THIS task after each merge (PR, merge sha, suites run). Deploy notes doc 01a0d454-9e01-74f2-a115-71c97b0424b0: update it with what each merge changes on deploy. From I6 on, deploy the server first, or server and CLI together. You do NOT deploy.\\n\\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, run `bun install`.\\n\",\n  \"acceptanceCriteria\": [\n    {\n      \"id\": \"i6\",\n      \"done\": false,\n      \"text\": \"I6 #746 merged; focused suites green on merged main\"\n    },\n    {\n      \"id\": \"f3\",\n      \"done\": false,\n      \"text\": \"F3 #765 retargeted to main, rebased --onto, merged\"\n    },\n    {\n      \"id\": \"i5a\",\n      \"done\": false,\n      \"text\": \"I5a #759 (with §3.1 instruction fix) merged\"\n    },\n    {\n      \"id\": \"i5b\",\n      \"done\": false,\n      \"text\": \"I5b #761 rebased and ready; merged only after Subhang answers Q5.6\"\n    },\n    {\n      \"id\": \"lenient\",\n      \"done\": false,\n      \"text\": \"Lenient-headers rework PR merged (migration 222 verified on merged tree)\"\n    }\n  ],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d747-c69a-7483-a79a-aec76e3a6479"
+        }
+      ],
+      "family": "replica",
+      "checks": []
+    },
+    "replica-01a0d778": {
+      "key": "replica-01a0d778",
+      "source": "01a0d778-0f17-78f1-a797-494ea7f942ae",
+      "title": "Harness lane: trim unselected user/plugin skills, native double-listing, Chrome block (H2+H3+I10a findings)",
+      "content": {
+        "description": "HARNESS LANE: cut what every lean Claude Code lane still loads that its launch did not choose. This covers H2 (task 01a0d3b2-5292), H3 (task 01a0d3b2-5886) and two new items I10a measured (msg 01a0d767-7003 on task 01a0d3b2-4106). Subhang has delegated the go-ahead. The \"probe permission\" H2/H3 waited on is GRANTED, on a separate dev node only.\n\nMeasured on +lean today (I10a, first request, median): 33.4k tokens. Remaining items:\n1. skill_listing = ~20k chars (~5k tokens), mostly the operator's USER skills in ~/.claude/skills. Minimal mode doesn't trim them, so every lane lists all of them.\n2. The Claude in Chrome block is ~4.1k chars in every lane's harness system prompt. It is not MCP config, so --strict-mcp-config doesn't remove it.\n3. H2: an allowed plugin enables ALL its skills (e.g. sales ≈ 36). Set skillOverrides 'off' for the unselected ones.\n4. H3: an equipped native skill is listed twice (the harness skill_listing and tm8's index). Consider skillOverrides 'name-only' so tm8's header is the only description.\n\nRule (integrated design doc 01a0d348 §3): the harness loads only what the launch chose. The source is the post-budget EFFECTIVE skill set plus the fixed built-in keep-four (code-review, simplify, security-review, workflow-authoring). Every trim is RECORDED in manifest.launch.harness (skillOverrides.off[{name, source}]); never silent. harnessSurface=inherit / TM8_HARNESS_SURFACE stays the escape hatch that restores everything.\n\nSteps:\nA. PROBE FIRST, on a separate dev node (never 7778; copy I10a's pattern: dev node :46xx, fresh DB, built from the commit under test, rig in tools/rigs/context-measure/ once #799 merges, or on its branch).\n   Verify on a REAL claude-code lane:\n   - the exact skillOverrides key format that turns off (a) a user skill, (b) one skill of an enabled plugin, (c) name-only for a native skill;\n   - which setting or flag drops the Claude in Chrome block for a lane without breaking the operator's own Chrome use. Read the Claude Code docs/settings; probe, never guess. The memory notes: model ids and features must be PROBED, never grepped from the binary.\n   Record each probe's result (the command, the setting, the before/after skill_listing chars) on this task.\nB. Implement in packages/execution/src/spawn/harness-surface.ts + manifest.ts buildAgentCommand, minimal surface only:\n   - user skills not in the effective set → off;\n   - plugin skills not selected → off;\n   - equipped native skills → name-only, ONLY if the probe shows /name still works;\n   - the Chrome block → off.\n   Record every one in launch.harness.skillOverrides with its source ('user-unselected', 'plugin-unselected', 'native-name-only', 'chrome'). Also mirror it on resume: SpawnService has TWO loadSpawnContext call sites (spawn AND resume), and a new manifest field must be set on both.\nC. Measure before/after with the I10a rig: first-request tokens and skill_listing chars, main vs +lean vs +lean+this. Target: remove most of the remaining ~6k tokens.\nD. PR against main, linked to H2 and H3 with `tm8 task link-pr`. Any new constant goes in the configs registry in the same PR. Tests: harness-surface/manifest unit tests plus a negative control. When the PR is open, message the orchestrator session 01a0d6d3-9f64-70ff-8651-b243fabb9e11 with \"PR READY #N\"; it spawns your reviewer-merger. Do NOT merge.\nQuestions or decisions → the advisor session 01a0d777-8b84-7734-b41c-35def00bdf53 (task 01a0d777-7b11).\nLoad: `uptime` before tests or lanes; wait if it's above ~80. Run probe lanes one at a time.\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, `bun install`, then `bun run build`.\n",
+        "acceptanceCriteria": []
+      },
+      "links": [
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "H2: skillOverrides 'off' for unselected skills of an allowed plugin",
+          "body": "# H2: skillOverrides 'off' for unselected skills of an allowed plugin\n\n{\n  \"kind\": \"task\",\n  \"description\": \"Integrated doc §8 M5 H2. After verifying the skillOverrides key format on a real lane, set 'off' for unselected skills of an allowed plugin; recorded in launch.harness.\\n\\nSpec: doc 01a0d348-feaa-7b70-9a56-b61e249c0a70 (integrated design v16, task 01a0d340-def6); headers detail doc 01a0d31e-be0e-799e-9a25-00d2ead249d8. Where they differ, the integrated doc and its §10 decisions win. Coordinator task: 01a0d3b0-339e.\\n\\nInvariants: 32 KiB budget and sub-caps; every drop recorded (silent truncation is a contract failure); RLS on every read; Jev only suggests; selection never writes edges; header text only inside untrusted_data blocks. New settings registered in the configs registry (packages/server/src/configs/registry.ts) in the same PR.\",\n  \"acceptanceCriteria\": [\n    {\n      \"id\": \"ac_1\",\n      \"done\": false,\n      \"text\": \"key format verified on a real lane\"\n    },\n    {\n      \"id\": \"ac_2\",\n      \"done\": false,\n      \"text\": \"unselected plugin skills off\"\n    },\n    {\n      \"id\": \"ac_3\",\n      \"done\": false,\n      \"text\": \"PR linked, CI green, reviewed, squash-merged\"\n    }\n  ],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d3b2-5292-7f9c-a8bd-196680222a4a"
+        },
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "H3: skillOverrides 'name-only' for equipped native skills (probe first)",
+          "body": "# H3: skillOverrides 'name-only' for equipped native skills (probe first)\n\n{\n  \"kind\": \"task\",\n  \"description\": \"Integrated doc §8 M5 H3, §3.4. Probe first; then skillOverrides:'name-only' for equipped native skills to remove the double listing.\\n\\nSpec: doc 01a0d348-feaa-7b70-9a56-b61e249c0a70 (integrated design v16, task 01a0d340-def6); headers detail doc 01a0d31e-be0e-799e-9a25-00d2ead249d8. Where they differ, the integrated doc and its §10 decisions win. Coordinator task: 01a0d3b0-339e.\\n\\nInvariants: 32 KiB budget and sub-caps; every drop recorded (silent truncation is a contract failure); RLS on every read; Jev only suggests; selection never writes edges; header text only inside untrusted_data blocks. New settings registered in the configs registry (packages/server/src/configs/registry.ts) in the same PR.\",\n  \"acceptanceCriteria\": [\n    {\n      \"id\": \"ac_1\",\n      \"done\": false,\n      \"text\": \"probe result posted\"\n    },\n    {\n      \"id\": \"ac_2\",\n      \"done\": false,\n      \"text\": \"double listing removed (or finding that it can't be)\"\n    },\n    {\n      \"id\": \"ac_3\",\n      \"done\": false,\n      \"text\": \"PR linked, CI green, reviewed, squash-merged\"\n    }\n  ],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d3b2-5886-76af-960c-383e44d8fccc"
+        },
+        {
+          "link": "relates_to",
+          "kind": "doc",
+          "title": "I10a: measurement — main / +lean / +index arms + switch A/B; promote only with Subhang's OK",
+          "body": "# I10a: measurement — main / +lean / +index arms + switch A/B; promote only with Subhang's OK\n\n{\n  \"kind\": \"task\",\n  \"description\": \"Integrated doc v17 §7, §8 M6 I10, §10 Q2. SPLIT (msg 01a0d3b4-45bf): this task (I10a) runs the first three arms, main / +lean / +index, on the same launch mode, plus the TM8_CONTEXT_INDEX A/B (success not worse, miss rate < 5%). That is enough to decide on promoting the index. The +Jev arm is I10b, which waits for I7. Post the numbers; the promote decision is Subhang's, so do not flip the default.\\n\\nSpec: doc 01a0d348-feaa-7b70-9a56-b61e249c0a70 v17. Coordinator task: 01a0d3b0-339e.\\n\\nRUN ENVIRONMENT (hard rule, msg 01a0d45c-4806): run every measurement arm on a SEPARATE dev node (e.g. the :4610/:4611 dev node pattern the #731 reviewer used), built from the commit under test. NEVER redeploy, restart or reconfigure the 7778 server; 7778 hosts every session and deploys are Subhang's alone. Flip TM8_CONTEXT_INDEX only on the dev node.\\n\\nOwnership: the coordinator (01a0d3b0-734c) owns I10a/I10b and escalates the promote decision to Subhang. Any code PR these raise (e.g. a measurement harness) is reviewed and merged by owner B (session 01a0d45b-8e85).\",\n  \"acceptanceCriteria\": [\n    {\n      \"id\": \"ac_1\",\n      \"done\": true,\n      \"text\": \"3-arm bytes measurement posted (main / +lean / +index)\",\n      \"doneAt\": \"2026-09-25T14:30:44.892Z\",\n      \"doneBy\": \"01a0cb4c-c0d8-79e7-b63f-edb646e8013c\"\n    },\n    {\n      \"id\": \"ac_2\",\n      \"done\": true,\n      \"text\": \"A/B success + miss rate posted\",\n      \"doneAt\": \"2026-09-25T14:30:44.892Z\",\n      \"doneBy\": \"01a0cb4c-c0d8-79e7-b63f-edb646e8013c\"\n    },\n    {\n      \"id\": \"ac_3\",\n      \"done\": true,\n      \"text\": \"promote decision escalated to Subhang\",\n      \"doneAt\": \"2026-09-25T14:30:44.892Z\",\n      \"doneBy\": \"01a0cb4c-c0d8-79e7-b63f-edb646e8013c\"\n    }\n  ],\n  \"pointsEstimate\": null\n}\n",
+          "substitutedFor": "task",
+          "source": "01a0d3b2-4106-72de-b3e8-a7fa98426417"
+        }
+      ],
+      "family": "replica",
+      "checks": []
+    }
+  },
+  "contentHash": "8ef7c99a61dc4589"
+}

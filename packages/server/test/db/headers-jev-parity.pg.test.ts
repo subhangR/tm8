@@ -8,6 +8,12 @@
  *     description, astral characters on the 600 cut, …), the whole candidate
  *     set — ids, order, titles, text, sources, considered, total — equals the
  *     frozen pre-header loaders (`jev-candidates-legacy.ts`) byte for byte;
+ *   · EXCEPT where headers T4 changed the text on purpose (integrated design
+ *     01a0d348 §8 I7): a memory's text now ends with ` (scope: <subject_scope>)`,
+ *     so the memory goldens compare the legacy text plus that suffix. Teammate
+ *     and skill text is still byte-identical (no authored header here). The
+ *     loaders' new fields (default, promptBytes, header) are not the legacy
+ *     loaders' and are projected away before comparing;
  *   · a handful of texts are also pinned as literals, so a change to BOTH
  *     sides still fails;
  *   · `resolveHeaders` reads under RLS: another space's entity, a restricted
@@ -27,6 +33,18 @@ import { legacyLoadMemories, legacyLoadSkills, legacyLoadTeammates } from './jev
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 300_000 });
+
+/** How the I7 loaders measure; irrelevant to the text these goldens pin. */
+const MEASURE = { contextIndex: false, agentTool: 'claude-code' };
+/** Every memory in this fixture is scoped `scratch` (headers T4 appends it). */
+const T4_SCOPE = ' (scope: scratch)';
+/** The fields the pre-header loaders produced: the I7 fields are projected away. */
+function legacyShape<T extends { items: Array<Record<string, unknown>> }>(set: T) {
+  return {
+    ...set,
+    items: set.items.map(({ entityId, kind, title, text, sources }) => ({ entityId, kind, title, text, sources })),
+  };
+}
 
 const OWNER = 'headers-owner';
 const STRANGER = 'headers-stranger';
@@ -203,11 +221,11 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('golden: Jev candidate text is byte-identical to the pre-header loaders', () => {
+describe('golden: Jev candidate text is the pre-header loaders\' (memories: plus T4\'s scope)', () => {
   it('teammates', async () => {
-    const [now, before] = await asCaller(async (q) => [await loadTeammates(q, ids.space!), await legacyLoadTeammates(q, ids.space!)]);
+    const [now, before] = await asCaller(async (q) => [await loadTeammates(q, ids.space!, MEASURE), await legacyLoadTeammates(q, ids.space!)]);
     expect(now.items.length).toBeGreaterThanOrEqual(7);
-    expect(now).toEqual(before);
+    expect(legacyShape(now)).toEqual(before);
     for (let i = 0; i < now.items.length; i += 1) expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
   });
 
@@ -217,9 +235,11 @@ describe('golden: Jev candidate text is byte-identical to the pre-header loaders
       await legacyLoadMemories(q, ids.space!, ids.draco!, ids.task!),
     ]);
     expect(now.items.length).toBeGreaterThanOrEqual(6);
-    expect(now).toEqual(before);
+    // T4: the legacy text plus the scope, and nothing else moved.
+    const t4 = { ...before, items: before.items.map((item) => ({ ...item, text: `${item.text}${T4_SCOPE}` })) };
+    expect(legacyShape(now)).toEqual(t4);
     for (let i = 0; i < now.items.length; i += 1) {
-      expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
+      expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(`${before.items[i]!.text}${T4_SCOPE}`));
       expect(Buffer.from(now.items[i]!.title)).toEqual(Buffer.from(before.items[i]!.title));
     }
   });
@@ -229,23 +249,33 @@ describe('golden: Jev candidate text is byte-identical to the pre-header loaders
       await loadMemories(q, ids.space!, ids.draco!, null),
       await legacyLoadMemories(q, ids.space!, ids.draco!, null),
     ]);
-    expect(now).toEqual(before);
+    expect(legacyShape(now)).toEqual({ ...before, items: before.items.map((item) => ({ ...item, text: `${item.text}${T4_SCOPE}` })) });
   });
 
   it('skills', async () => {
+    // One deliberate break from the pre-header loader (task 01a0da5a, D4): a
+    // skill that routes by `when_to_use` alone shows it WHOLE, where the old
+    // loader cut it at 600. Every other skill is byte-identical.
+    const whole = (set: { items: Array<{ entityId: string; text: string }> }) =>
+      ({ ...set, items: set.items.map((item) => (item.entityId === ids.sWhen ? { ...item, text: '<when-only>' } : item)) });
     for (const teammate of [ids.draco!, ids.noRole!]) {
-      const [now, before] = await asCaller(async (q) => [await loadSkills(q, ids.space!, teammate), await legacyLoadSkills(q, ids.space!, teammate)]);
+      // No task: the pool the legacy loader read (I7 adds the task's equips as defaults).
+      const [now, before] = await asCaller(async (q) => [await loadSkills(q, ids.space!, teammate, null, MEASURE), await legacyLoadSkills(q, ids.space!, teammate)]);
       expect(now.items.length).toBeGreaterThanOrEqual(8);
-      expect(now).toEqual(before);
-      for (let i = 0; i < now.items.length; i += 1) expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
+      expect(now.items.some((item) => item.entityId === ids.sWhen)).toBe(true);
+      expect(whole(legacyShape(now))).toEqual(whole(before));
+      for (let i = 0; i < now.items.length; i += 1) {
+        if (now.items[i]!.entityId === ids.sWhen) continue;
+        expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
+      }
     }
   });
 
   it('pinned literals', async () => {
     const [teammates, memories, skills] = await asCaller(async (q) => [
-      await loadTeammates(q, ids.space!),
+      await loadTeammates(q, ids.space!, MEASURE),
       await loadMemories(q, ids.space!, ids.draco!, ids.task!),
-      await loadSkills(q, ids.space!, ids.draco!),
+      await loadSkills(q, ids.space!, ids.draco!, null, MEASURE),
     ]);
     const text = (set: { items: Array<{ entityId: string; text: string }> }, id: string) => set.items.find((item) => item.entityId === id)?.text;
     expect(text(teammates, ids.draco!)).toBe(
@@ -255,11 +285,12 @@ describe('golden: Jev candidate text is byte-identical to the pre-header loaders
     expect(text(teammates, ids.blankRole!)).toBe('Blanca.');
     expect(text(teammates, ids.blankPersona!)).toBe('Wes — Reviewer.');
     expect(text(teammates, ids.astral!)).toBe(`Astra — Emoji edge. ${'a'.repeat(599)}😀`);
-    expect(text(memories, ids.mTask!)).toBe('task memory');
-    expect(text(memories, ids.mAstral!)).toBe(`${'a'.repeat(599)}😀`);
+    expect(text(memories, ids.mTask!)).toBe('task memory (scope: scratch)');
+    expect(text(memories, ids.mAstral!)).toBe(`${'a'.repeat(599)}😀 (scope: scratch)`);
     expect(text(skills, ids.sEquipped!)).toBe('deploy-runbook: deploy-runbook does a thing');
     expect(text(skills, ids.sInherited!)).toBe('design-review: design-review does a thing');
-    expect(text(skills, ids.sWhen!)).toBe(`when-only: ${`Use when ${'q'.repeat(700)}`.slice(0, 600)}`);
+    // A whenToUse is never cut (D4): the whole `when_to_use`, where the pre-header loader cut at 600.
+    expect(text(skills, ids.sWhen!)).toBe(`when-only: Use when ${'q'.repeat(700)}`);
     expect(text(skills, ids.sBare!)).toBe('bare');
     expect(text(skills, ids.sEmptyWhen!)).toBe('empty-when');
     expect(text(skills, ids.sSpace!)).toBe('spacey:  ');
@@ -289,7 +320,9 @@ describe('resolveHeaders', () => {
       source: 'native', stale: false, bytes: 4, loadPointer: `tm8 entity context ${ids.sInherited}`,
     });
     expect(got.get(ids.sWhen!)).toMatchObject({ summary: null, source: 'native' });
-    expect([...got.get(ids.sWhen!)!.whenToUse!]).toHaveLength(600);
+    // A whenToUse is never cut (task 01a0da5a): all 709 characters, nothing declared.
+    expect(got.get(ids.sWhen!)!.whenToUse).toBe(`Use when ${'q'.repeat(700)}`);
+    expect(got.get(ids.sWhen!)!.clipped).toBeUndefined();
     expect(got.get(ids.sBare!)).toMatchObject({ whenToUse: null, summary: null, source: 'derived' });
     expect(got.get(ids.sLong!)).toMatchObject({ bytes: 5000 });
     expect(got.get(ids.mTask!)).toMatchObject({

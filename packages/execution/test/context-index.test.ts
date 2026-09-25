@@ -6,12 +6,14 @@ import {
   composePrompt,
   contextEntryBytes,
   INDEX_DERIVED_HEADER_CHARS,
+  serializeContextEntry,
   serializeContextIndex,
   untrustedData,
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
-import { collapseMemories, contextBudgetsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch } from '../src/spawn/context-index.js';
+import { collapseMemories, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
+import { replayedSelection } from '../src/spawn/SpawnService.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
 import type { ContextVia, SpawnContext, SpawnRequest, TaskContext } from '../src/spawn/types.js';
@@ -38,9 +40,9 @@ const docHeader = (id: string, summary = 'a summary '.repeat(40)): SelectionHead
   source: 'derived', stale: false, bytes: 4096, loadPointer: `tm8 entity context ${id}`,
 });
 
-function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[]; installed?: string[] } = {}) {
+function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[]; installed?: string[]; request?: SpawnRequest } = {}) {
   const manifest = composeManifest({
-    sessionId: 'session', request, context, launch: resolveLaunchConfig(request, context, {}),
+    sessionId: 'session', request: opts.request ?? request, context, launch: resolveLaunchConfig(request, context, {}),
     workdir: { mode: 'project', path: '/repo' }, baseUrl: 'http://localhost', homeDir: HOME,
     agentConfigDir: `${HOME}/.claude`, now: new Date('2026-09-24T00:00:00Z'),
     command: (plugins) => `claude plugins=${plugins.join(',')}`,
@@ -100,8 +102,10 @@ describe('on: one index for skills, references and teammates', () => {
       ['teammates', ['mate-1']],
       ['skills', ['s1']],
     ]);
-    expect(prompt.system).toContain('load="tm8 entity context doc-1"');
-    expect(prompt.system).toContain('load="tm8 entity context s1"');
+    // The default pointer is said once, in the instruction (D5 ii), not on each line.
+    expect(prompt.system).toContain('<entry id="doc-1" kind="doc"');
+    expect(prompt.system).toContain('<entry id="s1" kind="skill"');
+    expect(prompt.system).not.toContain('load="tm8 entity context doc-1"');
     expect(manifest.context?.index).toMatchObject({ source: 'env' });
     expect(manifest.context?.index?.caps).toContainEqual({ groups: ['references', 'teammates'], cap: BYTE_BUDGETS.referenceIndex });
   });
@@ -117,8 +121,9 @@ describe('on: one index for skills, references and teammates', () => {
 });
 
 describe('on: the trim records every drop (§2.3)', () => {
-  it('references over their 8 KiB sub-cap lose header text first, then whole entries — all recorded', () => {
-    const linked = Array.from({ length: 60 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
+  it('references over their 8 KiB sub-cap lose summaries first, then whole entries — all recorded, every whenToUse whole', () => {
+    // 150: past what even the handed-back title room can hold, so whole entries go too.
+    const linked = Array.from({ length: 150 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
     const { manifest, prompt } = compose(ctx({
       tasks: [task({ linked, linkedTotal: linked.length })],
       headers: linked.map((l) => docHeader(l.entityId)),
@@ -127,11 +132,63 @@ describe('on: the trim records every drop (§2.3)', () => {
     expect(group.omitted).toBeGreaterThan(0);
     const dropped = manifest.context!.dropped!.filter((d) => d.group === 'references' && d.reason === 'byte-budget');
     expect(dropped.filter((d) => d.level === 'entry')).toHaveLength(group.omitted);
-    expect(dropped.filter((d) => d.level === 'header').length)
-      .toBe(group.entries.filter((e) => e.headerDropped).length);
+    expect(dropped.filter((d) => d.level === 'summary').length)
+      .toBe(group.entries.filter((e) => e.summaryDropped).length);
+    expect(dropped.filter((d) => d.level === 'header')).toEqual([]);
     const states = manifest.context!.entries!.filter((e) => e.group === 'references').map((e) => e.state);
-    expect(states).toContain('header-dropped');
+    expect(states).toContain('summary-dropped');
+    expect(states).not.toContain('header-dropped');
+    for (const e of group.entries) expect(prompt.system).toContain(`&quot;whenToUse&quot;:&quot;open ${e.id} when designing&quot;`);
     expect(prompt.system).toContain(`omitted="${group.omitted}" fetch="tm8 entity context task-1 --sections connections"`);
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+  });
+
+  it('hands the task turn\'s title room back to the index: past the baseline\'s reservation, to within an entry of the ceiling', () => {
+    // The baseline lists every linked title; the titles the index names leave
+    // the task turn (≈ 4 KB for these). Fitted against the baseline alone, the
+    // prompt would end that far under the ceiling; handed back, under two entries.
+    const linked = Array.from({ length: 150 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `A longer linked document title, number ${i}` }));
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked, linkedTotal: linked.length })],
+      headers: linked.map((l) => docHeader(l.entityId)),
+    }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
+    expect(group.omitted).toBeGreaterThan(0);
+    const total = utf8Bytes(`${prompt.system}\n\n${prompt.task}`);
+    expect(total).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+    const perEntry = utf8Bytes(serializeContextEntry(group.entries[0]!)) + 1;
+    expect(BYTE_BUDGETS.combinedInitialInjection - total).toBeLessThan(perEntry * 2);
+    expect(prompt.task).not.toContain('A longer linked document title, number 0');
+  });
+
+  it('never buys the index room by moving an inline task body out to references (review #832)', () => {
+    // A task body near the ceiling: the baseline inlines it, and handing the
+    // title room back must not grow the index until the composer gives up on
+    // inlining. Swept, because only some body sizes land on the edge.
+    const linked = Array.from({ length: 60 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `A long linked document title, number ${i} ${'t'.repeat(60)}` }));
+    let inlineBaselines = 0;
+    let credited = 0;
+    for (let size = 8000; size <= 20000; size += 250) {
+      const context = ctx({ tasks: [task({ description: 'd'.repeat(size), linked, linkedTotal: linked.length })], headers: linked.map((l) => docHeader(l.entityId)) });
+      if (compose(context).prompt.task.includes('delivery="reference"')) continue;
+      inlineBaselines += 1;
+      const { manifest, prompt } = compose(context, { on: true });
+      expect(prompt.task, `description ${size}`).not.toContain('delivery="reference"');
+      expect(prompt.task).toContain('d'.repeat(size));
+      const total = utf8Bytes(`${prompt.system}\n\n${prompt.task}`);
+      expect(total).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+      // And the credit still does its job inline: with entries left out, the
+      // prompt ends within two entries of the ceiling, not a title block short.
+      const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references');
+      if (refs && refs.omitted > 0 && refs.entries.length > 0) {
+        credited += 1;
+        const perEntry = utf8Bytes(serializeContextEntry(refs.entries[0]!)) + 1;
+        expect(BYTE_BUDGETS.combinedInitialInjection - total, `description ${size}`).toBeLessThan(perEntry * 2);
+      }
+    }
+    // Not vacuous: most sizes inline, and entries were left out (so the credit ran) on them.
+    expect(inlineBaselines).toBeGreaterThan(30);
+    expect(credited).toBeGreaterThan(30);
   });
 
   it('skills take what remains: a whole-entry skill drop is byte-budget in every record', () => {
@@ -144,7 +201,7 @@ describe('on: the trim records every drop (§2.3)', () => {
     expect(manifest.effectiveSkills!.skipped.filter((s) => s.reason === 'byte-budget')).toHaveLength(skills.omitted);
     const drops = manifest.context!.dropped!.filter((d) => d.group === 'skills' && d.reason === 'byte-budget');
     expect(drops.filter((d) => d.level === 'entry')).toHaveLength(skills.omitted);
-    expect(drops.filter((d) => d.level === 'header')).toHaveLength(skills.entries.filter((e) => e.headerDropped).length);
+    expect(drops.filter((d) => d.level === 'summary')).toHaveLength(skills.entries.filter((e) => e.summaryDropped).length);
     expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
   });
 });
@@ -187,7 +244,7 @@ describe('on: I6 selected references (the #759 seam)', () => {
       ['ws-1', 'linked'],
     ]);
     expect(groups.get('teammates')!.map((e) => e.id)).toEqual(['mate-1']);
-    expect(prompt.system).toContain('load="tm8 entity context art-pick"');
+    expect(prompt.system).toContain('<entry id="art-pick" kind="artifact"');
     expect(prompt.system).not.toContain('doc-unticked');
     const refs = manifest.context!.entries!.filter((e) => e.group === 'references').map((e) => [e.entityId, e.via]);
     expect(refs).toEqual([['art-pick', 'selection'], ['doc-kept', 'linked'], ['ws-1', 'linked']]);
@@ -198,7 +255,8 @@ describe('on: I6 selected references (the #759 seam)', () => {
   });
 
   it('a selected reference the trim drops is byte-budget only, never also not-rendered', () => {
-    const picks = Array.from({ length: 60 }, (_, i) => ({ entityId: `art-${i}`, kind: 'artifact', title: `Art ${i}`, via: 'selection' as const }));
+    // 150: past what the ceiling holds even with the default load pointer left off the lines (D5 ii).
+    const picks = Array.from({ length: 150 }, (_, i) => ({ entityId: `art-${i}`, kind: 'artifact', title: `Art ${i}`, via: 'selection' as const }));
     const { manifest } = compose(selected(picks, { headers: picks.map((p) => docHeader(p.entityId)) }), { on: true });
     const group = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
     expect(group.omitted).toBeGreaterThan(0);
@@ -238,7 +296,7 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     ],
   });
 
-  it('(d) cuts a DERIVED header to INDEX_DERIVED_HEADER_CHARS per field and declares it; authored text is untouched', () => {
+  it('(d) cuts a DERIVED summary to INDEX_DERIVED_HEADER_CHARS and declares it; a whenToUse and authored text are untouched', () => {
     const { manifest, prompt } = compose(context, { on: true });
     const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references')!;
     const derived = refs.entries.find((e) => e.id === 'doc-1')!;
@@ -266,8 +324,10 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     }), { on: true });
     const entry = manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries[0]!;
     expect(entry.header!.summary).toBe(`${'a'.repeat(183)} [credential-red…`);
-    expect(entry.header!.whenToUse).toBe(entry.header!.summary);
-    expect(entry.clipped).toEqual(['summary', 'whenToUse']);
+    // A whenToUse is never cut (task 01a0da5a): it arrives whole, redacted.
+    expect(entry.header!.whenToUse!.startsWith(`${'a'.repeat(183)} [credential-redacted`)).toBe(true);
+    expect(entry.header!.whenToUse!.endsWith(' tail')).toBe(true);
+    expect(entry.clipped).toEqual(['summary']);
     expect(prompt.system).not.toContain('sk-Z');
   });
 
@@ -396,10 +456,51 @@ describe('I5b: memory collapse (§10 Q1)', () => {
     ]);
     expect(contextIndexCaps('dispatcher')[2]).toEqual({ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex });
   });
+
+  it('a profile\'s contextFloors are read the same way, 0..3 only', () => {
+    expect(contextFloorsFrom({ draft: { contextFloors: { memories: 1, skills: 3.5, references: -1, teammates: 0.5 } } })).toEqual({ memories: 1, teammates: 0.5 });
+    expect(contextFloorsFrom(null)).toEqual({});
+  });
 });
 
-describe('entries × dropped (index on): an id is shown with a header or body drop, never with any other', () => {
-  it('holds for a collapsed memory, a header-dropped reference and an entry-dropped skill in one launch', () => {
+describe('I7: the launch sheet\'s per-launch budget override (§10 Q5.4)', () => {
+  const texts = Array.from({ length: 6 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
+  const context = () => ctx({
+    teamMember: { ...member, memories: texts, memoryIds: texts.map((_, i) => `mem-${i}`) },
+    contextAudit: { selected: false, memoryVia: texts.map(() => 'teammate' as const), dropped: [] },
+  });
+
+  it('replaces the profile\'s budget for this launch, and is recorded where resume and the audit read it', () => {
+    // ~9 KB of memories fit the 12 KiB default whole…
+    expect(compose(context(), { on: true }).manifest.context!.dropped!.filter((d) => d.level === 'body')).toEqual([]);
+    // …and collapse under a 4 KiB override.
+    const { manifest } = compose(context(), { on: true, request: { ...request, contextBudgets: { memories: 4096 } } });
+    expect(manifest.context!.dropped!.filter((d) => d.level === 'body').length).toBeGreaterThan(0);
+    expect(manifest.context!.budgets).toMatchObject({ memoryInjection: { cap: 4096 }, launch: { memories: 4096 } });
+    expect(manifest.context!.budgets!.warning).toBeUndefined();
+    expect(manifest.launch.contextBudgets).toEqual({ memories: 4096 });
+  });
+
+  it('is lenient: budgets that cannot fit the prompt are warned and recorded, never refused', () => {
+    const { manifest, prompt } = compose(context(), { on: true, request: { ...request, contextBudgets: { memories: 30_000 } } });
+    expect(manifest.context!.budgets!.warning).toMatchObject({ code: 'context_budgets_over_ceiling', promised: 30_000 + BYTE_BUDGETS.referenceIndex });
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+  });
+
+  it('with the index off it changes nothing but is still recorded', () => {
+    const { manifest } = compose(context(), { request: { ...request, contextBudgets: { memories: 1024 } } });
+    expect(manifest.agent.memory).toHaveLength(6);
+    expect(manifest.context!.budgets).toEqual({ launch: { memories: 1024 } });
+  });
+
+  it('a resume replays it; a malformed record is dropped alone, never the selection with it', () => {
+    expect(replayedSelection({ contextBudgets: { skills: 2048 } } as never)).toEqual({ contextBudgets: { skills: 2048 } });
+    expect(replayedSelection({ contextBudgets: { skills: 'lots' }, selection: { memoryIds: [] } } as never)).toEqual({ selection: { memoryIds: [] } });
+  });
+});
+
+describe('entries × dropped (index on): an id is shown with a summary or body drop, never with any other', () => {
+  it('holds for a collapsed memory, a summary-dropped reference and an entry-dropped skill in one launch', () => {
     const texts = Array.from({ length: 12 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
     const linked = Array.from({ length: 40 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
     const { manifest } = compose(ctx({
@@ -417,17 +518,135 @@ describe('entries × dropped (index on): an id is shown with a header or body dr
     // Each case is present in this launch.
     const collapsedMemory = dropped.find((d) => d.group === 'memories' && d.level === 'body');
     expect(collapsedMemory && shown.has(key(collapsedMemory))).toBe(true);
-    const headerRef = dropped.find((d) => d.group === 'references' && d.level === 'header');
-    expect(headerRef && shown.has(key(headerRef))).toBe(true);
+    const summaryRef = dropped.find((d) => d.group === 'references' && d.level === 'summary');
+    expect(summaryRef && shown.has(key(summaryRef))).toBe(true);
     const entrySkill = dropped.find((d) => d.group === 'skills' && d.level === 'entry');
     expect(entrySkill && !shown.has(key(entrySkill))).toBe(true);
 
     // The invariant, over every drop.
     for (const drop of dropped) {
-      if (shown.has(key(drop))) expect(['header', 'body']).toContain(drop.level);
+      if (shown.has(key(drop))) expect(['summary', 'body']).toContain(drop.level);
     }
     // No id is dropped twice at the same level.
     const seen = new Set(dropped.map((d) => `${key(d)}:${d.reason}:${d.level ?? ''}`));
     expect(seen.size).toBe(dropped.length);
+  });
+});
+
+describe('I8: a dispatcher\'s roster is its teammates group (design 01a0d348 §8 I8, headers T6)', () => {
+  const dispatcherRequest: SpawnRequest = { spaceId: 'space', teamMemberId: 'persona', mode: 'dispatcher' };
+  const dispatcher: SpawnContext['teamMember'] = { ...member, name: 'Dispatcher', mode: 'dispatcher' };
+  const mate = (i: number) => ({ entityId: `tm-${i}`, name: `Mate ${i}`, mode: i % 2 ? 'worker' : null, model: `model-${i}` });
+  const mateHeader = (i: number, source: SelectionHeader['source'] = 'derived'): SelectionHeader => ({
+    entityId: `tm-${i}`, kind: 'team_member', name: `Mate ${i}`, whenToUse: `role ${i}: backend reviewer`,
+    summary: `persona ${i} `.repeat(60), keywords: [], source, stale: false, bytes: 2048, loadPointer: `tm8 entity context tm-${i}`,
+  });
+  const roster = (n: number, total = n): SpawnContext['roster'] => ({ members: Array.from({ length: n }, (_, i) => mate(i)), total });
+  const dctx = (extra: Partial<SpawnContext> = {}): SpawnContext => ctx({ tasks: [], teamMember: dispatcher, ...extra });
+
+  function composeDispatcher(context: SpawnContext, opts: { on?: boolean; snapshot?: Record<string, unknown> } = {}) {
+    const manifest = composeManifest({
+      sessionId: 'session', request: dispatcherRequest, context, launch: resolveLaunchConfig(dispatcherRequest, context, {}),
+      workdir: { mode: 'project', path: '/repo' }, baseUrl: 'http://localhost', homeDir: HOME,
+      agentConfigDir: `${HOME}/.claude`, now: new Date('2026-09-24T00:00:00Z'),
+      command: (plugins) => `claude plugins=${plugins.join(',')}`,
+      ...(opts.snapshot
+        ? { interactionProfile: { profileId: 'p', profileVersion: 1, templateKey: 'tm8.chat.core', templateVersion: 1, source: 'space_default' as const, resolvedHash: 'h', pinRevision: 1, snapshot: opts.snapshot } }
+        : {}),
+      ...(opts.on ? { contextIndex: { source: 'env' as const } } : {}),
+    });
+    return { manifest, prompt: composePrompt(manifest, { sessionId: 'session', baseUrl: 'http://localhost' }) };
+  }
+
+  it('on: renders every roster teammate as a teammates entry — mode and model as control attributes, header text only inside untrusted_data', () => {
+    const { manifest, prompt } = composeDispatcher(dctx({
+      roster: { members: [...roster(3)!.members, { entityId: 'persona', name: 'Dispatcher', mode: 'dispatcher', model: null }], total: 4 },
+      headers: [0, 1, 2].map((i) => mateHeader(i)),
+    }), { on: true });
+    expect(manifest.mode).toBe('dispatcher');
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    // The dispatcher itself is never on its own roster.
+    expect(group.entries.map((e) => e.id)).toEqual(['tm-0', 'tm-1', 'tm-2']);
+    expect(group.entries.every((e) => e.via === 'roster' && e.kind === 'team_member' && e.load === `tm8 entity context ${e.id}`)).toBe(true);
+    expect(group.fetch).toBe('tm8 entity query --kind team_member');
+    const line = prompt.system.split('\n').find((l) => l.includes('id="tm-1"'))!;
+    expect(line).toContain('mode="worker" model="model-1"');
+    // A null mode is not rendered, never rendered empty.
+    expect(prompt.system.split('\n').find((l) => l.includes('id="tm-0"'))).not.toContain('mode=');
+    // The name and the header are untrusted text: inside the entry-header block, never an attribute.
+    expect(line).not.toContain('Mate 1');
+    expect(prompt.system).toContain(untrustedData({ type: 'entry-header', encoding: 'escaped-json', body: JSON.stringify({
+      name: 'Mate 1', whenToUse: 'role 1: backend reviewer', summary: `${'persona 1 '.repeat(60).slice(0, INDEX_DERIVED_HEADER_CHARS - 1)}…`,
+    }) }));
+    expect(manifest.context!.entries!.filter((e) => e.group === 'teammates').map((e) => [e.entityId, e.via])).toEqual([
+      ['tm-0', 'roster'], ['tm-1', 'roster'], ['tm-2', 'roster'],
+    ]);
+  });
+
+  // D1 (task 01a0da5a, doc 01a0da65, PR #832): a sub-cap governs an entry's
+  // DETAIL only. Over rosterIndex a roster sheds summaries, never a whenToUse;
+  // each teammate's floor (line, name, role) borrows from the 32 KiB ceiling,
+  // and whole entries go only when the ceiling itself is short.
+  it('on: a roster over rosterIndex sheds summaries first and keeps every whenToUse (D1) — every drop recorded, the rest declared', () => {
+    const n = DISPATCHER_ROSTER_READ_MAX;
+    const { manifest, prompt } = composeDispatcher(dctx({ roster: roster(n, n + 7), headers: Array.from({ length: n }, (_, i) => mateHeader(i)) }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    const drops = manifest.context!.dropped!.filter((d) => d.group === 'teammates');
+    const summaryDrops = drops.filter((d) => d.level === 'summary');
+    const entryDrops = drops.filter((d) => d.level === 'entry');
+    expect(summaryDrops.length).toBeGreaterThan(0);
+    expect(drops.filter((d) => d.level === 'header')).toEqual([]);
+    expect(drops.every((d) => d.reason === 'byte-budget' && d.kind === 'team_member')).toBe(true);
+    // Every teammate shown carries its role whole: the floor is never cut on its own.
+    expect(group.entries.length).toBeGreaterThan(0);
+    for (const e of group.entries) {
+      expect(e.headerDropped).not.toBe(true);
+      expect(prompt.system).toContain(`&quot;whenToUse&quot;:&quot;role ${e.id.slice(3)}: backend reviewer&quot;`);
+    }
+    expect(summaryDrops.length).toBe(group.entries.filter((e) => e.summaryDropped).length);
+    // Conserved: every roster row read is shown or dropped whole, and the rows past the read are counted.
+    expect(group.entries.length + entryDrops.length).toBe(n);
+    expect(group.omitted).toBe(entryDrops.length + 7);
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable', unread: 7 });
+    // The prompt stays under the ceiling, and declares the omission with the command that lists it.
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
+    expect(prompt.system).toContain(`<group name="teammates" count="${group.entries.length}" omitted="${group.omitted}" fetch="tm8 entity query --kind team_member">`);
+    expect(manifest.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex }]) });
+  });
+
+  it('on: the profile\'s contextBudgets.teammates replaces rosterIndex: a tighter cap sheds more summaries, not teammates (D1)', () => {
+    // 12: past a 2 KiB cap, but with room for summaries under the node's rosterIndex.
+    const context = dctx({ roster: roster(12), headers: Array.from({ length: 12 }, (_, i) => mateHeader(i)) });
+    const node = composeDispatcher(context, { on: true }).manifest;
+    const tight = composeDispatcher(context, { on: true, snapshot: { draft: { contextBudgets: { teammates: 2048 } } } }).manifest;
+    const mates = (m: typeof node) => m.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries;
+    const summaries = (m: typeof node) => mates(m).filter((e) => !e.summaryDropped).length;
+    expect(summaries(node)).toBeGreaterThan(0);
+    expect(summaries(tight)).toBeLessThan(summaries(node));
+    // The ceiling has room, so the floor borrows past the 2 KiB cap: every teammate stays listed.
+    expect(mates(tight)).toHaveLength(12);
+    expect(mates(node)).toHaveLength(12);
+    expect(tight.context!.index).toMatchObject({ caps: expect.arrayContaining([{ groups: ['teammates'], cap: 2048 }]), profileBudgets: ['teammates'] });
+  });
+
+  it('off: the dispatcher prompt and manifest are byte-identical with or without a roster in the context', () => {
+    const bare = composeDispatcher(dctx());
+    // Rows past the read too, so the manifest's `unread` count is off-gated as well.
+    const withRoster = composeDispatcher(dctx({ roster: roster(26, 26 + 7), headers: Array.from({ length: 26 }, (_, i) => mateHeader(i)) }));
+    expect(withRoster.prompt.system).toBe(bare.prompt.system);
+    expect(withRoster.prompt.task).toBe(bare.prompt.task);
+    expect(JSON.stringify(withRoster.manifest)).toBe(JSON.stringify(bare.manifest));
+    expect(withRoster.prompt.system).not.toContain('<context_index');
+    expect(withRoster.prompt.system).not.toContain('tm-0');
+  });
+
+  it('on, worker: the roster group keeps its linked-teammate shape (no roster, no roster fetch)', () => {
+    const { manifest } = compose(ctx({
+      tasks: [task({ linked: [{ entityId: 'tm-9', kind: 'team_member', link: 'relates_to', title: 'Mate 9' }], linkedTotal: 1 })],
+    }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    expect(group.entries.map((e) => [e.id, e.via])).toEqual([['tm-9', 'linked']]);
+    expect(group.fetch).toBe('tm8 entity context task-1 --sections connections');
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable' });
   });
 });

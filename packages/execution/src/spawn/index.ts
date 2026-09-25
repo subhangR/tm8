@@ -3,6 +3,7 @@
 // jevText) redact with the SAME grammar as the manifest and the DB guard (086).
 export {
   containsSecretToken,
+  redactSecretsDeep,
   redactSecretTokens,
   REDACTION_MARKER,
   SECRET_TOKEN_SOURCE,
@@ -88,6 +89,7 @@ export {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 export { SpawnError } from './types.js';
+export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 export {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,
@@ -136,6 +138,7 @@ export type {
   ContextGroupAudit,
   ContextGroupName,
   ContextVia,
+  DispatcherRoster,
   LaunchHarnessRecord,
   ManifestContext,
   ManifestSkillContext,
@@ -168,3 +171,15 @@ export type {
 } from './types.js';
 
 export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';
+// The `<context_index>` entry builders and the profile readers, shared with
+// Ask Jev's `promptBytes` (design 01a0d348 §10 Q5.8) so the launch sheet
+// measures what spawn renders.
+export {
+  contextBudgetsFrom,
+  contextFloorsFrom,
+  contextHeaderIds,
+  contextIndexSwitch,
+  referenceIndexEntry,
+  rosterEntry,
+  skillIndexEntry,
+} from './context-index.js';

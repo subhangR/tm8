@@ -107,6 +107,11 @@ function ranked(
     score,
     level: levelOf(score),
     suggested: score >= 1.5,
+    default: sources.some((source) => source !== 'space'),
+    // A plausible entry size, stable per id: a meter has something to count.
+    promptBytes: 200 + (hash(`bytes:${row.id}`) % 1200),
+    header: { whenToUse: null, summary: row.excerpt || null, keywords: [], source: 'derived', version: 0 },
+    ...(score >= 1.5 ? {} : { reason: 'below-floor' as const }),
   };
 }
 
@@ -146,7 +151,7 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
     const calls = Math.ceil(considered.length / CHUNK);
     return {
       status: 'ok',
-      value: { items, considered: considered.length, total: rows.length },
+      value: { items, considered: considered.length, total: rows.length, budget: kind === 'memory' ? 12288 : null, floor: 1.5 },
       cost: costFor(calls, considered.length),
     };
   }
@@ -160,7 +165,7 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
     for (const item of items) item.suggested = item.score >= 1;
     return {
       status: 'ok',
-      value: { items, noFit: items.every((item) => item.score < 1) },
+      value: { items, noFit: items.every((item) => item.score < 1), floor: 1 },
       cost: costFor(Math.ceil(items.length / CHUNK), items.length),
     };
   }
@@ -195,6 +200,8 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
       case 'teammates': return teammatesGroup();
       case 'memories': return entityGroup('memory', input);
       case 'skills': return entityGroup('skill', input);
+      // No references in this fixture yet: nothing to rank.
+      case 'references': return { status: 'skipped', reason: 'no_candidates', cost: ZERO };
     }
   }
 
@@ -216,7 +223,7 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
       }
       const run = add(runTotals.get(input.runId) ?? ZERO, spent);
       runTotals.set(input.runId, run);
-      const result: LaunchSuggestResult = { runId: input.runId, groups, run };
+      const result: LaunchSuggestResult = { runId: input.runId, groups, contextIndex: 'on', run };
       answered.set(input.requestId, result);
       return structuredClone(result);
     },

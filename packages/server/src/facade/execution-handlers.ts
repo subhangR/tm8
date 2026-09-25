@@ -1,6 +1,8 @@
 import { resolveHeaders } from '../headers/resolve.js';
+import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
-import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
+import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
+import { loadSkillsById } from '../skills/equipment.js';
 import { linkSession } from '../jev/store.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
 import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
@@ -50,6 +52,7 @@ import {
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
   type ContextDrop,
+  type DispatcherRoster,
   type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
@@ -182,20 +185,6 @@ interface TaskRow {
 export const LINKED_ROW_CAP = 32;
 
 
-interface MemoryRow {
-  entity_id: string;
-  statement: string;
-  version: number;
-  /** In the teammate's `remembers` working set (vs. only requested by id). */
-  remembered: boolean;
-  /** In some spawn task's `remembers` working set (D9: remembers(task → memory)). */
-  task_remembered: boolean;
-  superseded: boolean;
-  disputed: boolean;
-  verified: boolean;
-  created_at: Date | string;
-}
-
 /**
  * Memory entities → the manifest's `agent.memory` strings, with their
  * epistemic state visible (design §4.2: the receiving agent must see what is
@@ -213,13 +202,7 @@ function renderMemories(
   requestedIds: string[],
   requestedVia: 'selection' | 'requested' = 'requested',
 ): { texts: string[]; ids: string[]; via: Array<'teammate' | 'task' | 'selection' | 'requested'> } {
-  const render = (r: MemoryRow): string => {
-    const marks: string[] = [];
-    if (r.superseded) marks.push('superseded');
-    if (r.disputed) marks.push('disputed');
-    if (r.verified) marks.push('verified');
-    return marks.length > 0 ? `${r.statement} [${marks.join(', ')}]` : r.statement;
-  };
+  const render = renderMemoryText;
   const emitted = new Set<string>();
   const out: string[] = [];
   // `ids` is built in the same pushes as `out`, so it is exactly the injected
@@ -353,29 +336,6 @@ async function pruneReplayedSelection(
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
 
-/**
- * Selected skills the teammate is NOT equipped with, read by id with the same
- * metadata projection as `loadSkillEquipment` (never the body). Read only: no
- * equip edge is written — the skill rides this one session (#646's rule).
- * Depth 0, as if the teammate itself equipped it: a same-name clash with
- * another selected skill then refuses loudly in `resolveSkills` instead of one
- * of them vanishing.
- */
-async function loadSkillsById(q: Querier, spaceId: string, ids: readonly string[]): Promise<ResolvedSkillRow[]> {
-  if (ids.length === 0) return [];
-  const rows = await q.query<{ entity_id: string; version: number; name: string; description: string; reference: Record<string, unknown> }>(
-    `select sk.entity_id, se.version, sk.name, sk.description, ${SKILL_REFERENCE_SQL} as reference
-       from public.skills sk
-       join public.entities se on se.id = sk.entity_id and se.kind = 'skill' and se.space_id = $2 and se.deleted_at is null
-      where sk.entity_id = any($1::uuid[])`,
-    [ids, spaceId],
-  );
-  return rows.map((row) => ({
-    ...skillReferenceOf(row.reference),
-    entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: 0,
-  }));
-}
-
 export class DbGraphPort implements GraphPort {
   constructor(
     private readonly db: Db,
@@ -467,23 +427,7 @@ export class DbGraphPort implements GraphPort {
       const memoriesSelected = selectedMemoryIds !== undefined;
       const requestedIds = selectedMemoryIds ?? input.memoryIds ?? [];
       const spawnTaskIds = input.taskIds ?? [];
-      const memoryRows = memoriesSelected ? await q.query<MemoryRow>(
-        `select m.entity_id, m.statement, e.version,
-                false as remembered, false as task_remembered,
-                exists (select 1 from public.edges s
-                         where s.type = 'supersedes' and s.dst_id = m.entity_id) as superseded,
-                exists (select 1 from public.edges d
-                         where d.type = 'disputes' and d.dst_id = m.entity_id
-                           and (d.props ->> 'pinnedVersion')::int = e.version) as disputed,
-                exists (select 1 from public.edges v
-                         where v.type = 'verifies' and v.dst_id = m.entity_id
-                           and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
-                m.created_at
-           from public.memories m
-           join public.entities e on e.id = m.entity_id and e.deleted_at is null
-          where e.space_id = $2 and m.entity_id = any($1::uuid[])`,
-        [requestedIds, input.spaceId],
-      ) : await q.query<MemoryRow>(
+      const memoryRows = memoriesSelected ? await loadMemoriesById(q, input.spaceId, requestedIds) : await q.query<MemoryRow>(
         `select m.entity_id, m.statement, e.version,
                 (r.dst_id is not null) as remembered,
                 exists (select 1 from public.edges t
@@ -892,6 +836,15 @@ export class DbGraphPort implements GraphPort {
     return this.db.tx(this.claims(auth), async (q) => [...(await resolveHeaders(q, input.spaceId, input.ids)).values()]);
   }
 
+  async loadDispatcherRoster(
+    auth: GraphAuth,
+    input: { spaceId: string; excludeTeamMemberId: string; limit: number },
+  ): Promise<DispatcherRoster> {
+    // A dispatcher's `<context_index>` teammates (design 01a0d348 §8 I8),
+    // under the caller's RLS.
+    return this.db.tx(this.claims(auth), (q) => loadDispatcherRoster(q, input));
+  }
+
   async loadMemoryScores(
     auth: GraphAuth,
     input: { spaceId: string; jevRunId: string; memoryIds: string[] },
@@ -1096,6 +1049,27 @@ export class DbGraphPort implements GraphPort {
     return view as unknown as Record<string, unknown>;
   }
 
+  /**
+   * The tasks' version and status as they stand now, read after
+   * `execution_spawn` started them. Same caller claims as `loadSpawnContext`.
+   */
+  async loadTaskVersions(
+    auth: GraphAuth,
+    input: { taskIds: string[] },
+  ): Promise<Array<{ id: string; version: number; status: string }>> {
+    if (input.taskIds.length === 0) return [];
+    const rows = await this.db.tx(this.claims(auth), (q) =>
+      q.query<{ entity_id: string; version: number | string; work_status: string }>(
+        `select t.entity_id, e.version, t.work_status
+           from public.tasks t
+           join public.entities e on e.id = t.entity_id
+          where t.entity_id = any($1::uuid[])`,
+        [input.taskIds],
+      ),
+    );
+    return rows.map((row) => ({ id: row.entity_id, version: Number(row.version), status: row.work_status }));
+  }
+
   async issueWorkSessionAgentToken(
     auth: GraphAuth,
     sessionId: string,
@@ -1243,7 +1217,9 @@ export class DbGraphPort implements GraphPort {
       harness_choice: unknown;
       selection: unknown;
       selection_reasons: unknown;
+      context_budgets: unknown;
       effective_plugins: unknown;
+      skill_overrides: unknown;
       context_index: string | null;
     }>(
       this.claims(auth),
@@ -1255,11 +1231,13 @@ export class DbGraphPort implements GraphPort {
               sm.manifest #>  '{launch,harnessChoice}'     as harness_choice,
               sm.manifest #>  '{launch,selection}'         as selection,
               sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons,
+              sm.manifest #>  '{launch,contextBudgets}'    as context_budgets,
               case when jsonb_typeof(sm.manifest #> '{launch,harness,plugins,allowed}') = 'array' then
                 coalesce((select jsonb_agg(p ->> 'id')
                             from jsonb_array_elements(sm.manifest #> '{launch,harness,plugins,allowed}') p
                            where p ->> 'source' = 'effective-skill'), '[]'::jsonb)
               end                                           as effective_plugins,
+              sm.manifest #>  '{launch,harness,skillOverrides}' as skill_overrides,
               sm.manifest #>> '{context,index,source}'    as context_index
          from public.session_manifests sm
         where sm.work_session_id = $1`,
@@ -3101,6 +3079,7 @@ function registerHandlers(
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
       ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
+      ...(input.contextBudgets ? { contextBudgets: input.contextBudgets } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
       ...(input.harnessSurface ? { harnessSurface: input.harnessSurface } : {}),
       ...(input.plugins ? { plugins: input.plugins } : {}),
@@ -3439,8 +3418,12 @@ export function sessionLaunchPostureFromRecord(row: {
   /** Resume's read carries these; the Forms spawn's does not (a new session never replays them). */
   selection?: unknown;
   selection_reasons?: unknown;
+  /** `launch.contextBudgets`: the launch's budget override, replayed by resume. */
+  context_budgets?: unknown;
   /** `launch.harness.plugins.allowed[source=effective-skill]` ids; null when none were recorded. */
   effective_plugins?: unknown;
+  /** `launch.harness.skillOverrides`, the skill plan resume replays; narrowed downstream. */
+  skill_overrides?: unknown;
   /** `context.index.source`. */
   context_index?: string | null;
 }): SessionLaunchPosture {
@@ -3483,10 +3466,16 @@ export function sessionLaunchPostureFromRecord(row: {
     // contract's own schemas; a malformed one is not replayed.
     ...(row.selection != null ? { selection: row.selection } : {}),
     ...(row.selection_reasons != null ? { selectionReasons: row.selection_reasons } : {}),
+    ...(row.context_budgets != null ? { contextBudgets: row.context_budgets } : {}),
     // The launch's effective-skill plugins, replayed by resume. Absent when
     // the manifest recorded no plugin decisions at all, so resume computes.
     ...(Array.isArray(row.effective_plugins)
       ? { effectivePlugins: row.effective_plugins.filter((id): id is string => typeof id === 'string') }
+      : {}),
+    // The launch's recorded skill plan, replayed by resume. Stored JSON,
+    // narrowed downstream (`asRecordedSkillPlan`); a bad one is recomputed.
+    ...(typeof row.skill_overrides === 'object' && row.skill_overrides !== null && !Array.isArray(row.skill_overrides)
+      ? { skillOverrides: row.skill_overrides as Record<string, unknown> }
       : {}),
     // The launch rendered `<context_index>`; its resume renders it too.
     ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),

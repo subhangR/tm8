@@ -9,6 +9,11 @@
 //
 // Shipped DARK (§10 Q2): nothing here runs unless `contextIndexSwitch` says
 // the node env or the pinned profile turned it on.
+//
+// A DISPATCHER's `teammates` group is its roster (§8 I8, headers T6): the
+// space's teammates, read under RLS with their headers, budgeted by
+// `rosterIndex` (or the profile's `contextBudgets.teammates`), with the rows
+// past the read declared in the group's `omitted` count.
 
 import {
   BYTE_BUDGETS,
@@ -23,9 +28,9 @@ import {
   type PromptContextEntry,
   type PromptContextGroup,
 } from '@tm8/prompt';
-import { SPAWN_SELECTION_REFERENCE_KINDS, type SelectionHeader } from '@tm8/contract';
+import { SPAWN_SELECTION_REFERENCE_KINDS, type ContextFloors, type SelectionHeader } from '@tm8/contract';
 import { redactSecretTokens } from './secret-redaction.js';
-import type { ContextVia, ManifestSkillContext, SpawnContext } from './types.js';
+import type { ContextVia, DispatcherRoster, ManifestSkillContext, SpawnContext } from './types.js';
 
 /** `TM8_CONTEXT_INDEX` values that turn the index on, and off, for every launch on the node. */
 const ON = new Set(['1', 'true', 'on']);
@@ -65,10 +70,20 @@ export function contextIndexForResume(
 }
 
 /**
+ * Teammates a dispatcher's roster reads at most. Past it they are counted,
+ * not read: `rosterIndex` (8 KiB) holds roughly 25 entries with headers and
+ * about 45 bare, so a larger read would only be trimmed.
+ */
+export const DISPATCHER_ROSTER_READ_MAX = 64;
+
+/** The command that lists every teammate; a roster's omitted entries point at it. */
+export const ROSTER_FETCH = 'tm8 entity query --kind team_member';
+
+/**
  * The ids whose headers the index renders: the selected references, the
- * tasks' linked rows and attached files, the equipped skills, and the
- * injected memories (a memory that collapses is routed by its
- * `subject_scope`, §10 Q1 rule 3).
+ * tasks' linked rows and attached files, the equipped skills, the injected
+ * memories (a memory that collapses is routed by its `subject_scope`, §10 Q1
+ * rule 3), and a dispatcher's roster.
  */
 export function contextHeaderIds(context: SpawnContext): string[] {
   return [...new Set([
@@ -79,6 +94,7 @@ export function contextHeaderIds(context: SpawnContext): string[] {
     ]),
     ...(context.skillEquips ?? context.skills ?? []).map((row) => row.entityId),
     ...(context.teamMember.memoryIds ?? []),
+    ...(context.roster?.members ?? []).map((row) => row.entityId),
   ])];
 }
 
@@ -95,6 +111,24 @@ export function contextBudgetsFrom(profileSnapshot: unknown): ContextBudgetSetti
   for (const key of ['memories', 'skills', 'references', 'teammates'] as const) {
     const value = at(raw, key);
     if (typeof value === 'number' && Number.isInteger(value) && value >= 0) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * The pinned profile's `contextFloors` (§10 Q5), read like
+ * `contextBudgetsFrom`: only scores in 0..3 count; anything else is the node
+ * default. Ask Jev's budget fill applies them; spawn has no scores to apply
+ * them to (Q5.5).
+ */
+export function contextFloorsFrom(profileSnapshot: unknown): ContextFloors {
+  const at = (v: unknown, key: string): unknown =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>)[key] : undefined;
+  const raw = at(at(profileSnapshot, 'draft'), 'contextFloors');
+  const out: ContextFloors = {};
+  for (const key of ['memories', 'skills', 'references', 'teammates'] as const) {
+    const value = at(raw, key);
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 3) out[key] = value;
   }
   return out;
 }
@@ -250,24 +284,24 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
 const INDEX_TEXT_FIELDS: ReadonlySet<string> = new Set(['whenToUse', 'summary']);
 
 /**
- * An entry's header fields. DERIVED text (nobody wrote it for routing) is cut
- * to `INDEX_DERIVED_HEADER_CHARS` per field here, and only here: Jev keeps its
- * 600 (`jevText`), and authored and native text is never cut. Every cut field
- * is named in `clipped`, together with any authored clip `resolveHeaders`
- * already declared, so a cut is never silent.
+ * An entry's header fields. A DERIVED summary (nobody wrote it for routing)
+ * is cut to `INDEX_DERIVED_HEADER_CHARS` here, and only here: Jev keeps its
+ * 600 (`jevText`), and authored and native text is never cut. A whenToUse is
+ * never cut, whatever its source (task 01a0da5a): it is the entry's floor, and
+ * the trim keeps it whole or leaves the entry out. Every cut field is named in
+ * `clipped`, together with any clip `resolveHeaders` already declared, so a
+ * cut is never silent.
  */
 function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header' | 'clipped'> {
   if (!header) return fallbackName ? { header: { name: fallbackName } } : {};
   // Only the fields the index renders: an authored `keywords` clip is not
   // text this entry shows, so declaring it here would name nothing.
   const clipped = new Set<string>((header.clipped ?? []).filter((field) => INDEX_TEXT_FIELDS.has(field)));
-  let { whenToUse, summary } = header;
+  let { summary } = header;
   if (header.source === 'derived') {
     // Redact BEFORE the cut: a cut through a credential leaves a prefix too
     // short for the pattern, and the manifest-wide redaction after it would
     // ship that prefix.
-    const cutWhen = clipIndexText(whenToUse === null ? null : redactSecretTokens(whenToUse), INDEX_DERIVED_HEADER_CHARS);
-    if (cutWhen !== null) { whenToUse = cutWhen; clipped.add('whenToUse'); }
     const cutSummary = clipIndexText(summary === null ? null : redactSecretTokens(summary), INDEX_DERIVED_HEADER_CHARS);
     if (cutSummary !== null) { summary = cutSummary; clipped.add('summary'); }
   }
@@ -275,7 +309,7 @@ function withHeader(header: SelectionHeader | undefined, fallbackName: string | 
     bytes: header.bytes,
     source: header.source,
     stale: header.stale,
-    header: { name: header.name, whenToUse, summary },
+    header: { name: header.name, whenToUse: header.whenToUse, summary },
     ...(clipped.size > 0 ? { clipped: [...clipped].sort() } : {}),
   };
 }
@@ -284,6 +318,71 @@ function withHeader(header: SelectionHeader | undefined, fallbackName: string | 
 const HEADERLESS = new Set(['work_session', 'chat', 'message']);
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
+
+/**
+ * ONE ENTRY BUILDER PER KIND OF ROW. The launch's index and Ask Jev's
+ * `promptBytes` (design 01a0d348 §10 Q5.8) both build entries here, so the
+ * bytes the launch sheet meters are the bytes the launch renders.
+ */
+
+/** A reference or linked teammate: a selected reference, a task's linked row, or its attached file. */
+export function referenceIndexEntry(
+  ref: { entityId: string; kind: string; via: ContextIndexVia; link?: string | null; title: string | null },
+  header: SelectionHeader | undefined,
+): PromptContextEntry {
+  return {
+    id: ref.entityId,
+    kind: ref.kind,
+    via: ref.via,
+    ...(ref.link ? { link: ref.link } : {}),
+    load: loadPointerFor(ref.kind, ref.entityId),
+    ...(HEADERLESS.has(ref.kind) ? {} : withHeader(header, ref.title)),
+  };
+}
+
+/** A kept skill, as `computeEffectiveSkills` described it. */
+export function skillIndexEntry(skill: ManifestSkillContext, via: ContextVia, header: SelectionHeader | undefined): PromptContextEntry {
+  return {
+    id: skill.entityId,
+    kind: 'skill',
+    via: via as ContextIndexVia,
+    // A native skill opens through the harness's own loader (its pointer was
+    // built by `loadPointerFor` in `computeEffectiveSkills`); every other
+    // skill is a tm8 entity and opens with `tm8 entity context`.
+    load: skill.native ? skill.loadPointer : loadPointerFor('skill', skill.entityId),
+    skill: {
+      name: skill.name,
+      provider: skill.provider ?? 'tm8',
+      level: skill.level ?? 'space',
+      native: skill.native === true,
+      implicit: skill.allowImplicitInvocation !== false,
+    },
+    ...(header
+      ? withHeader(header, null)
+      : skill.description
+        ? { header: { whenToUse: skill.description } }
+        : {}),
+  };
+}
+
+/**
+ * One roster teammate's index entry: its `mode` and `model` columns are
+ * control attributes, its name and header untrusted text. The one builder,
+ * so anything that measures a roster entry measures what the prompt renders.
+ */
+export function rosterEntry(
+  row: DispatcherRoster['members'][number],
+  header: SelectionHeader | undefined,
+): PromptContextEntry {
+  return {
+    id: row.entityId,
+    kind: 'team_member',
+    via: 'roster',
+    teammate: { mode: row.mode, model: row.model },
+    load: loadPointerFor('team_member', row.entityId),
+    ...withHeader(header, row.name),
+  };
+}
 
 export interface ContextIndexCandidatesInput {
   context: SpawnContext;
@@ -313,14 +412,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   for (const ref of context.references ?? []) {
     if (seen.has(ref.entityId)) continue;
     seen.add(ref.entityId);
-    references.push({
-      id: ref.entityId,
-      kind: ref.kind,
-      via: ref.via,
-      ...(ref.link ? { link: ref.link } : {}),
-      load: loadPointerFor(ref.kind, ref.entityId),
-      ...(HEADERLESS.has(ref.kind) ? {} : withHeader(headers.get(ref.entityId), ref.title)),
-    });
+    references.push(referenceIndexEntry(ref, headers.get(ref.entityId)));
   }
   for (const task of context.tasks) {
     for (const item of task.linked ?? []) {
@@ -329,54 +421,35 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
       if (selected && REFERENCE_KINDS.has(item.kind)) continue;
       if (seen.has(item.entityId)) continue;
       seen.add(item.entityId);
-      const entry: PromptContextEntry = {
-        id: item.entityId,
-        kind: item.kind,
-        via: 'linked',
-        link: item.link,
-        load: loadPointerFor(item.kind, item.entityId),
-        ...(HEADERLESS.has(item.kind) ? {} : withHeader(headers.get(item.entityId), item.title)),
-      };
+      const entry = referenceIndexEntry({ ...item, via: 'linked' }, headers.get(item.entityId));
       (teammate ? teammates : references).push(entry);
     }
     for (const file of selected ? [] : task.attachments ?? []) {
       if (seen.has(file.fileEntityId)) continue;
       seen.add(file.fileEntityId);
-      references.push({
-        id: file.fileEntityId,
-        kind: 'file',
-        via: 'attached',
-        link: 'attached_to',
-        load: loadPointerFor('file', file.fileEntityId),
-        ...withHeader(headers.get(file.fileEntityId), file.name),
-      });
+      references.push(referenceIndexEntry(
+        { entityId: file.fileEntityId, kind: 'file', via: 'attached', link: 'attached_to', title: file.name },
+        headers.get(file.fileEntityId),
+      ));
     }
   }
 
-  const skills: PromptContextEntry[] = input.skills.map((skill) => {
-    const header = headers.get(skill.entityId);
-    return {
-      id: skill.entityId,
-      kind: 'skill',
-      via: skillVia(context, skill.entityId) as ContextIndexVia,
-      // A native skill opens through the harness's own loader (its pointer was
-      // built by `loadPointerFor` in `computeEffectiveSkills`); every other
-      // skill is a tm8 entity and opens with `tm8 entity context`.
-      load: skill.native ? skill.loadPointer : loadPointerFor('skill', skill.entityId),
-      skill: {
-        name: skill.name,
-        provider: skill.provider ?? 'tm8',
-        level: skill.level ?? 'space',
-        native: skill.native === true,
-        implicit: skill.allowImplicitInvocation !== false,
-      },
-      ...(header
-        ? withHeader(header, null)
-        : skill.description
-          ? { header: { whenToUse: skill.description } }
-          : {}),
-    };
-  });
+  // A dispatcher's roster, after any teammate a task links (those were named
+  // for this work). Mode and model are the teammate's own columns, rendered as
+  // control attributes; its name and header stay untrusted text.
+  const roster = context.roster;
+  let rosterUnread = 0;
+  if (roster) {
+    for (const row of roster.members) {
+      if (row.entityId === self || seen.has(row.entityId)) continue;
+      seen.add(row.entityId);
+      teammates.push(rosterEntry(row, headers.get(row.entityId)));
+    }
+    rosterUnread = Math.max(0, roster.total - roster.members.length);
+  }
+
+  const skills: PromptContextEntry[] = input.skills.map((skill) =>
+    skillIndexEntry(skill, skillVia(context, skill.entityId), headers.get(skill.entityId)));
 
   const firstTask = context.tasks[0]?.id;
   const connections = (id: string): string => `tm8 entity context ${id} --sections connections`;
@@ -399,7 +472,9 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
     // teammate's or task's connections.
     { name: 'memories', entries: input.memories ?? [], omitted: 0, fetch: connections(self) },
     { name: 'references', entries: references, omitted: unread, ...(referencesFetch ? { fetch: connections(referencesFetch) } : {}) },
-    { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
+    roster
+      ? { name: 'teammates', entries: teammates, omitted: rosterUnread, fetch: ROSTER_FETCH }
+      : { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },
   ];
   return groups;

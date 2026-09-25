@@ -24,7 +24,7 @@ import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
 import { serializeLaunchIndex } from './context-index.js';
-import { coordinatorKindOf } from './templates.js';
+import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
 /** The frame attribute the agent reads on the v2 envelope. */
@@ -50,14 +50,20 @@ export type TaskContextSnapshot =
 // Change the words there, not here, and apply what they send verbatim.
 
 /**
- * Header authoring (doc 01a0d708 §1): rule 4 of the base, and the same sentence
- * on every v1 mode instruction, so both frames carry one wording. It names
- * `--when-to-use` and `--summary`, which the create verbs accept from I4 (#767).
+ * Header authoring (doc 01a0d708 §1, reworded by task 01a0da5a / doc 01a0da65
+ * D6): rule 4 of the base, and the same sentence on every v1 mode instruction,
+ * so both frames carry one wording. It names `--when-to-use` and `--summary`,
+ * which the create verbs accept from I4 (#767), and carries ONE good and ONE
+ * bad example, because a whenToUse is shown whole to every later agent and a
+ * restated title routes nothing. The examples are single-quoted: the v1 frame
+ * entity-escapes a double quote to six bytes. It fits every mode's approved
+ * ceiling (doc 01a0d456) at +22 B; the 400/600 numbers moved to
+ * `tm8 help entity header set`, and a long whenToUse is warned at write.
  */
 export const HEADER_AUTHORING_RULE =
   'When you create a doc, artifact, file, drawing, task or collection that a later ' +
-  'session may need, pass --when-to-use (when to open it, not its title) and ' +
-  '--summary (what it holds) in the same create call; aim for 400 and 600 chars at most.';
+  "session may need, pass --when-to-use (when to open it, not its title: 'Open when changing " +
+  "balance rounding', not 'Rounding doc') and --summary (what it holds) in the same create call.";
 
 /**
  * The base: what tm8 is, and the rules for every mode. Byte-identical in all
@@ -410,6 +416,16 @@ export function composePromptV2(
         `<assignment${attrs([...header, ['snapshot', 'unavailable'], ['reason', reason]])}>` +
           `${snapshotUnavailableLineV2(esc(primary.id))}</assignment>`,
       );
+    }
+    // The criteria ride the task turn even when the snapshot does not carry
+    // them (unavailable, or `acceptance` cut from it), so ticking never
+    // depends on a fetch (D13). The snapshot's own list, when present, is it.
+    const acceptance = acceptanceCriteriaOf(primary.acceptanceCriteria);
+    if (acceptance.length > 0 && !(dto && Array.isArray(dto.acceptance))) {
+      t.push(untrustedJson('acceptance', {
+        task: primary.id,
+        acceptance: acceptance.map((c) => ({ ...(c.id === null ? {} : { id: c.id }), done: c.done, text: c.text })),
+      }));
     }
     for (const other of tasks.slice(1)) t.push(untrustedJson('task-card', taskCardV2(other)));
   } else {

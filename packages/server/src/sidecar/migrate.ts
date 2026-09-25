@@ -15,10 +15,21 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { toolPath } from './binaries.js';
 import type { ResolvedSidecarConfig } from './config.js';
 import { SidecarError } from './errors.js';
 import { describeFailure, run } from './exec.js';
 import type { SidecarLogger } from './log.js';
+
+/**
+ * Under Electron, `process.execPath` is the Electron binary, not `node`. Run it
+ * without this and the "migration runner" is a second copy of the desktop app.
+ * It is normally inherited from our own environment; setting it explicitly
+ * means the runner does not depend on that having been true.
+ */
+export function electronAsNodeEnv(): Record<string, string> {
+  return process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: '1' };
+}
 
 /** Where the runner is expected to live, relative to the repo root. */
 export const MIGRATE_RUNNER_RELPATH = join('db', 'migrate.mjs');
@@ -102,6 +113,15 @@ export async function runSchemaMigrations(
       TM8_PG_DATABASE: cfg.database,
       TM8_PG_SUPERUSER: cfg.superuser,
       TM8_PG_APP_ROLE: cfg.appRole,
+      // `db/migrate.mjs` resolves psql from versioned SYSTEM paths and only
+      // then from PATH. Inside a `.app` neither exists, and on a developer's
+      // machine "whatever is on PATH" is a different cluster's client. Both
+      // facts are already ours to state, so state them: the binaries we are
+      // about to migrate against are the binaries whose psql we hand it.
+      TM8_PSQL: toolPath(cfg.binariesDir, 'psql'),
+      // …and without this the resolver's first candidate is major 16.
+      TM8_PG_MAJOR: String(cfg.pgMajor),
+      ...electronAsNodeEnv(),
     },
   });
 

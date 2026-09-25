@@ -60,3 +60,27 @@ export async function loadPluginSkills(q: Querier, spaceId: string): Promise<Res
       order by sk.name, sk.entity_id`, [spaceId]);
   return rows.map(row => ({ ...skillReferenceOf(row.reference), entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: 0 }));
 }
+
+/**
+ * Selected skills the teammate is NOT equipped with, read by id with the same
+ * metadata projection as `loadSkillEquipment` (never the body). Read only: no
+ * equip edge is written — the skill rides this one session (#646's rule).
+ * Shared with Ask Jev, which measures a skill it may suggest from the same row.
+ * Depth 0, as if the teammate itself equipped it: a same-name clash with
+ * another selected skill then refuses loudly in `resolveSkills` instead of one
+ * of them vanishing.
+ */
+export async function loadSkillsById(q: Querier, spaceId: string, ids: readonly string[]): Promise<ResolvedSkillRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await q.query<{ entity_id: string; version: number; name: string; description: string; reference: Record<string, unknown> }>(
+    `select sk.entity_id, se.version, sk.name, sk.description, ${SKILL_REFERENCE_SQL} as reference
+       from public.skills sk
+       join public.entities se on se.id = sk.entity_id and se.kind = 'skill' and se.space_id = $2 and se.deleted_at is null
+      where sk.entity_id = any($1::uuid[])`,
+    [ids, spaceId],
+  );
+  return rows.map((row) => ({
+    ...skillReferenceOf(row.reference),
+    entityId: row.entity_id, entityVersion: row.version, name: row.name, description: row.description, depth: 0,
+  }));
+}

@@ -26,11 +26,13 @@
  */
 import {
   AUTHORED_HEADER_LIMITS,
+  CONTEXT_FLOOR_DEFAULTS,
   FILE_MAX_SIZE_BYTES_DEFAULT,
+  HEADER_WHEN_TO_USE_BACKSTOP_CHARS,
   SPAWN_SELECTION_GROUP_LIMIT,
 } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
-import { LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
+import { DISPATCHER_ROSTER_READ_MAX, LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
 import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, INDEX_DERIVED_HEADER_CHARS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
 
 import { LINKED_ROW_CAP } from '../facade/execution-handlers.js';
@@ -41,7 +43,7 @@ import {
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
-import { CRITICAL_SCORE, MEMORY_TICK_LIMIT, TEAMMATE_FIT_SCORE, TICK_SCORE } from '../jev/groups.js';
+import { CRITICAL_SCORE } from '../jev/groups.js';
 
 export interface EnvKnob {
   name: string;
@@ -85,6 +87,7 @@ export interface SubjectKnob {
 
 const CONFIG = 'packages/server/src/http/config.ts';
 const SIDECAR = 'packages/server/src/sidecar/config.ts';
+const DESKTOP = 'packages/server/src/desktop.ts';
 const MANIFEST = 'packages/execution/src/spawn/manifest.ts';
 const SPAWN = 'packages/execution/src/spawn/SpawnService.ts';
 const EXEC_HANDLERS = 'packages/server/src/facade/execution-handlers.ts';
@@ -127,6 +130,9 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_PG_SUPERUSER', group: 'Storage & database', summary: 'Sidecar superuser (migrations).', default: 'tm8', definedIn: SIDECAR },
   { name: 'TM8_REPO_ROOT', group: 'Storage & database', summary: 'Checkout the sidecar reads migrations from.', default: 'the running checkout', definedIn: SIDECAR },
   { name: 'TM8_PG_BIN_DIR', group: 'Storage & database', summary: 'Postgres binaries the sidecar runs.', default: 'discovered on PATH', definedIn: SIDECAR },
+  { name: 'TM8_PG_SOCKET_DIR', group: 'Storage & database', summary: 'Directory the sidecar Postgres binds its unix socket in. Falls back under $TMPDIR when the path would exceed sun_path.', default: '<dataDir>/run', definedIn: SIDECAR },
+  { name: 'TM8_PG_LISTEN_ADDRESSES', group: 'Storage & database', summary: 'TCP addresses the sidecar Postgres listens on; empty for a socket-only node (the desktop app).', default: '127.0.0.1', definedIn: SIDECAR },
+  { name: 'TM8_DESKTOP', group: 'Storage & database', summary: 'Set to 1 by the desktop app (apps/desktop): the server starts its own bundled Postgres and reports readiness to the Electron shell.', default: null, definedIn: DESKTOP },
   { name: 'TM8_PG_LOCALE_PROVIDER', group: 'Storage & database', summary: 'initdb locale provider.', default: 'builtin', definedIn: 'packages/server/src/sidecar/cluster.ts' },
   { name: 'TM8_PG_LOCALE', group: 'Storage & database', summary: 'initdb locale.', default: 'C.UTF-8', definedIn: 'packages/server/src/sidecar/cluster.ts' },
   { name: 'TM8_PG_ENCODING', group: 'Storage & database', summary: 'initdb encoding.', default: 'UTF8', definedIn: 'packages/server/src/sidecar/cluster.ts' },
@@ -136,7 +142,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_AGENT_CMD', group: 'Lane launch', summary: 'Replaces the agent binary for every lane (an operator wrapper).', default: null, definedIn: MANIFEST, secret: true },
   { name: 'TM8_HARNESS_SURFACE', group: 'Lane launch', summary: 'minimal or inherit for every Claude lane. Outranks the persona setting.', default: 'minimal', definedIn: MANIFEST },
   { name: 'TM8_READ_HINTS', group: 'Lane launch', summary: 'Installs the large-read hint hook on every Claude lane. Outranks the persona setting.', default: 'off', definedIn: MANIFEST },
-  { name: 'TM8_CONTEXT_INDEX', group: 'Lane launch', summary: 'on or off for every launch: <context_index> (skills, references, teammates with headers, trimmed per group) in place of <skills>. Outranks the profile contextIndex. Shipped dark.', default: 'unset (profile decides; off)', definedIn: 'packages/execution/src/spawn/context-index.ts' },
+  { name: 'TM8_CONTEXT_INDEX', group: 'Lane launch', summary: 'on or off for every launch: <context_index> (skills, references, teammates with headers, trimmed per group) in place of <skills>; a dispatcher\'s teammates group is the space roster. Outranks the profile contextIndex. Shipped dark.', default: 'unset (profile decides; off)', definedIn: 'packages/execution/src/spawn/context-index.ts' },
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
@@ -248,18 +254,18 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
 
 export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'BYTE_BUDGETS', group: 'Prompt budgets', summary: 'Byte budgets. The hard ceilings (manifest, kernel, assignmentSnapshot, combinedInitialInjection, handoffEnvelope, incomingMessageInjection) are never larger on any profile. The context sub-caps (memoryInjection, referenceIndex, rosterIndex) are node defaults a profile may reallocate, up or down, through contextBudgets.* within combinedInitialInjection: warned at profile save when they cannot fit; the prompt is trimmed to the ceiling at launch.', definedIn: 'packages/prompt/src/budgets.ts', read: () => BYTE_BUDGETS },
-  { name: 'INDEX_DERIVED_HEADER_CHARS', group: 'Prompt budgets', summary: 'Characters a DERIVED whenToUse or summary keeps in the <context_index> (per field; the entry declares the cut in clipped="…"). Authored and native header text is never cut there; Jev keeps its own 600.', definedIn: 'packages/prompt/src/context-index.ts', read: () => INDEX_DERIVED_HEADER_CHARS },
+  { name: 'INDEX_DERIVED_HEADER_CHARS', group: 'Prompt budgets', summary: 'Characters a DERIVED summary keeps in the <context_index> (the entry declares the cut in clipped="…"). A whenToUse is never cut there, whatever its source; authored and native text is never cut there; Jev keeps its own 600. Under budget pressure a summary is also the first thing the index drops (dropped="summary"), before any whole entry.', definedIn: 'packages/prompt/src/context-index.ts', read: () => INDEX_DERIVED_HEADER_CHARS },
+  { name: 'HEADER_WHEN_TO_USE_BACKSTOP_CHARS', group: 'Jev selection', summary: 'The only cut a selection header\'s whenToUse ever gets, of any source, in every reader (the <context_index>, Jev\'s candidate text, entity get/context): a backstop against a pathological header, declared in clipped. Below it a whenToUse is shown whole; past the 400-character guidance the write warns header_long.', definedIn: 'packages/contract/src/selection-header.ts', read: () => HEADER_WHEN_TO_USE_BACKSTOP_CHARS },
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
-  { name: 'TEAMMATE_FIT_SCORE', group: 'Jev selection', summary: 'A teammate scoring at least this "fits" the work.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TEAMMATE_FIT_SCORE },
-  { name: 'TICK_SCORE', group: 'Jev selection', summary: 'A memory or skill at or above this is pre-ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TICK_SCORE },
-  { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'A row at or above this is always ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },
-  { name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories Ask Jev pre-ticks. The spawn ceiling is SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/groups.ts', read: () => MEMORY_TICK_LIMIT },
+  { name: 'DISPATCHER_ROSTER_READ_MAX', group: 'Prompt budgets', summary: 'Teammates a dispatcher\'s <context_index> roster reads (context index on). The rest are declared in the teammates group\'s omitted count; rosterIndex then trims what was read.', definedIn: 'packages/execution/src/spawn/context-index.ts', read: () => DISPATCHER_ROSTER_READ_MAX },
+  { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'Rows at or above this are considered first in the budget fill, and a critical memory is always ticked (spawn never collapses one).', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },
+  { name: 'CONTEXT_FLOOR_DEFAULTS', group: 'Jev selection', summary: 'Node score floors for the Ask Jev budget fill, per group (memories, skills, references, teammates). A row under its floor is never pre-ticked; a profile\'s contextFloors.* replaces each.', definedIn: 'packages/contract/src/context-budgets.ts', read: () => CONTEXT_FLOOR_DEFAULTS },
   { name: 'CANDIDATE_LIMIT', group: 'Jev selection', summary: 'Candidates Jev ranks per group per launch. Defined from SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => CANDIDATE_LIMIT },
   { name: 'SPAWN_SELECTION_GROUP_LIMIT', group: 'Jev selection', summary: 'Most ids one spawn selection group (memories, skills, references) may name. A safety ceiling equal to the candidate pool; the byte budget is the real limit.', definedIn: 'packages/contract/src/contract.ts', read: () => SPAWN_SELECTION_GROUP_LIMIT },
   { name: 'TEXT_LIMIT', group: 'Jev selection', summary: 'Characters of a memory, persona or skill description that may leave the server.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => TEXT_LIMIT },
-  { name: 'AUTHORED_HEADER_LIMITS', group: 'Jev selection', summary: 'Authored selection-header GUIDANCE (characters): whenToUse, summary, keyword count and length. Nothing refuses a longer header (migration 223); entity reads clip to these numbers and declare it in `clipped`.', definedIn: 'packages/contract/src/selection-header.ts', read: () => AUTHORED_HEADER_LIMITS },
+  { name: 'AUTHORED_HEADER_LIMITS', group: 'Jev selection', summary: 'Authored selection-header GUIDANCE (characters): whenToUse, summary, keyword count and length. Nothing refuses a longer header (migration 223). A longer whenToUse is shown whole (HEADER_WHEN_TO_USE_BACKSTOP_CHARS bounds it) and its write warns header_long; every reader clips the summary and keywords to these numbers and declares it in `clipped`.', definedIn: 'packages/contract/src/selection-header.ts', read: () => AUTHORED_HEADER_LIMITS },
   { name: 'LANE_BUNDLED_SKILLS_OFF', group: 'Lane launch', summary: 'Bundled Claude Code skills a minimal lane turns off (skillOverrides). Kept: code-review, simplify, security-review, workflow-authoring. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_BUNDLED_SKILLS_OFF },
   { name: 'LANE_SKILLS_ALWAYS_ON', group: 'Lane launch', summary: 'Skills a minimal lane always keeps fully listed. Every other operator skill (~/.claude/skills, claude.ai-synced) the launch did not equip is turned off with skillOverrides; an equipped native one goes name-only. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_SKILLS_ALWAYS_ON },
   { name: 'MINIMAL_MCP_CONFIG', group: 'Lane launch', summary: 'MCP config a minimal lane runs under --strict-mcp-config.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => MINIMAL_MCP_CONFIG },
@@ -309,10 +315,10 @@ export const PROFILE_KNOBS: readonly SubjectKnob[] = [
   { name: 'contextBudgets.skills', summary: 'Bytes of <context_index> skill entries; unset, skills take what the prompt has left. Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: 'what remains', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.skills', change: 'profile' },
   { name: 'contextBudgets.references', summary: 'Bytes of <context_index> reference entries (a worker\'s linked teammates share it unless teammates is set). Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: '8192 (BYTE_BUDGETS.referenceIndex)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.references', change: 'profile' },
   { name: 'contextBudgets.teammates', summary: 'Bytes of <context_index> teammate entries. Warned at save if the budgets cannot fit the prompt; the prompt is trimmed to the ceiling at launch.', default: 'shares references (worker); 8192 (BYTE_BUDGETS.rosterIndex, dispatcher)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextBudgets.teammates', change: 'profile' },
-  { name: 'contextFloors.memories', summary: 'Jev score floor for filling the memories budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.memories', change: 'profile' },
-  { name: 'contextFloors.skills', summary: 'Jev score floor for filling the skills budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.skills', change: 'profile' },
-  { name: 'contextFloors.references', summary: 'Jev score floor for filling the references budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.references', change: 'profile' },
-  { name: 'contextFloors.teammates', summary: 'Jev score floor for filling the teammates budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.0', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.teammates', change: 'profile' },
+  { name: 'contextFloors.memories', summary: 'Jev score floor for filling the memories budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.memories)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.memories', change: 'profile' },
+  { name: 'contextFloors.skills', summary: 'Jev score floor for filling the skills budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.skills)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.skills', change: 'profile' },
+  { name: 'contextFloors.references', summary: 'Jev score floor for filling the references budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.5 (CONTEXT_FLOOR_DEFAULTS.references)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.references', change: 'profile' },
+  { name: 'contextFloors.teammates', summary: 'Jev score floor for filling the teammates budget; lower-scored items never fill leftover space. Applied by Ask Jev, not spawn.', default: '1.0 (CONTEXT_FLOOR_DEFAULTS.teammates)', definedIn: 'packages/contract/src/context-budgets.ts', anchor: 'contextFloors.teammates', change: 'profile' },
   { name: 'initialContentSurface', summary: 'Surface a session on this profile opens on: terminal or chat. Unset defers to the pinned template.', default: null, definedIn: 'packages/contract/src/contract.ts', anchor: "initialContentSurface?: 'terminal' | 'chat';", change: 'profile' },
 ];
 
