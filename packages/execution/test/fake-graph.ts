@@ -72,6 +72,16 @@ export class FakeGraph implements GraphPort {
   readonly issuedAgentTokens: Array<{ sessionId: string; teamMemberId: string }> = [];
   readonly authSeen: GraphAuth[] = [];
 
+  /**
+   * Each task's version and status as the server would hold them.
+   * `loadSpawnContext` answers v1/open; `createWorkSession` starts an open
+   * task the way `execution_spawn` does (status working, version + 1), and
+   * `loadTaskVersions` answers from here.
+   */
+  readonly taskState = new Map<string, { version: number; status: string }>();
+  /** Every post-spawn version read, in order. */
+  readonly taskVersionReads: string[][] = [];
+
   /** Set to make the next createWorkSession throw, for the rollback test. */
   failNextCreate: Error | null = null;
   /** Return this existing session from the next create attempt as a ledger replay. */
@@ -157,6 +167,10 @@ export class FakeGraph implements GraphPort {
       };
     }
     this.created.push(input);
+    for (const id of input.taskIds ?? []) {
+      const task = this.taskState.get(id) ?? { version: 1, status: 'open' };
+      this.taskState.set(id, task.status === 'open' ? { version: task.version + 1, status: 'working' } : task);
+    }
     const sessionId = this.options.sessionId ?? randomUUID();
     return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
   }
@@ -225,6 +239,15 @@ export class FakeGraph implements GraphPort {
           resolvedHash: 'fixture-core-profile-hash',
           snapshot: this.options.profileSnapshot ?? { profile: { source: 'core_default' } },
         };
+  }
+
+  async loadTaskVersions(
+    auth: GraphAuth,
+    input: { taskIds: string[] },
+  ): Promise<Array<{ id: string; version: number; status: string }>> {
+    this.authSeen.push(auth);
+    this.taskVersionReads.push([...input.taskIds]);
+    return input.taskIds.map((id) => ({ id, ...(this.taskState.get(id) ?? { version: 1, status: 'open' }) }));
   }
 
   /** Every prompt-v2 context render this fake was asked for, with the auth it ran under. */

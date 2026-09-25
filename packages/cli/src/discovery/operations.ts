@@ -852,7 +852,7 @@ const ROWS: Record<OperationName, Row> = {
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
-      '--when-to-use (when a later session should open it: the situation, not a restated title) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
+      '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
@@ -880,7 +880,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['header', 'summary', 'when-to-use', 'keywords', 'describe', 'selection'],
     notes: [
       'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; every field is optional and nothing is refused for length — aim for --when-to-use ≤ 400 chars, --summary ≤ 600, --keyword ≤ 12 × ≤ 40; blank text is dropped',
-      '--when-to-use is routing text: when a later session should open this, not what it is called — good: "Open when changing how headers are stored or rendered"; bad: "Headers design doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it',
+      '--when-to-use is routing text, shown WHOLE to every later agent (never cut; past 400 chars the write warns header_long): the situation in which to open this, in one sentence — good: "Open when changing how balances are rounded"; bad: "Rounding policy doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it; it is cut at 600 and is the first thing a tight prompt leaves out',
       '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; none there means 0), never the entity\'s; omit it for last-writer-wins; a header write never moves the entity version',
       'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
       're-saving unchanged text re-pins a stale header to the current body ("mark current")',
@@ -2195,7 +2195,7 @@ const ROWS: Record<OperationName, Row> = {
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
-      'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity, summary what it holds; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
+      'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
   },

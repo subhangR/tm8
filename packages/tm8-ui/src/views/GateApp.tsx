@@ -37,7 +37,7 @@ import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../st
 import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { chatAboutTarget } from './useChatAbout';
-import { EntityChatDock, openEntityChat } from '../entity-chat';
+import { EntityChatDock, EntityChatSlot, openEntityChat, type EntityChatSlotProps } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -1449,6 +1449,20 @@ export function GateApp(props: GateAppProps = {}) {
     (id: EntityId) => data.launch.teammates.find((teammate) => teammate.id === id)?.name ?? null,
     [data.launch.teammates],
   );
+  /* ONE set of slot ports for every desktop host — the interim dock, Home and
+     Work — so they cannot disagree about where the subject chip leads. */
+  const chatSlotProps: EntityChatSlotProps = {
+    seam: data.seam,
+    spaceId: data.spaceId,
+    nodeKey,
+    skillOptions: data.skillOptions,
+    viewerName: data.viewerActor?.displayName,
+    viewerMemberId,
+    onOpenEntity: openChatSubject,
+    onOpenSubject: openChatSubject,
+    subjectOf: chatSubjectOf,
+    teammateLabel: chatTeammateLabel,
+  };
 
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
@@ -1841,6 +1855,9 @@ export function GateApp(props: GateAppProps = {}) {
            * arrival, and it goes to a screen this shell actually has.
            */
           onLaunchOpen={(id) => launch.open(id)}
+          /* The Chat verb — it opens the slot, which the phone draws as a
+             full-screen sheet (entity chat §3.1). */
+          onChatAbout={openChatAbout}
           launchSubjectId={launch.subjectId}
           launchRefusal={launchRefusal}
           launchInFlight={launching}
@@ -2051,18 +2068,7 @@ export function GateApp(props: GateAppProps = {}) {
               layout — see `surfaceHostsChatSlot`. Fixed-position, so where it
               sits in this tree does not matter. */}
           {data.ready ? (
-            <EntityChatDock
-              seam={data.seam}
-              spaceId={data.spaceId}
-              nodeKey={nodeKey}
-              skillOptions={data.skillOptions}
-              viewerName={data.viewerActor?.displayName}
-              viewerMemberId={viewerMemberId}
-              onOpenEntity={openChatSubject}
-              onOpenSubject={openChatSubject}
-              subjectOf={chatSubjectOf}
-              teammateLabel={chatTeammateLabel}
-            />
+            <EntityChatDock {...chatSlotProps} />
           ) : null}
           {/* R2: the rail is the ACTIVE TAB's contents — one group, no
               group-spine listing. Null when the active group is its own one
@@ -2432,6 +2438,10 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onLaunchSubmit={submitLaunch}
               onLaunchDispatch={submitDispatch}
+              /* THE CHAT SLOT, placed by Home itself (entity chat §3.1): its
+                 third column, or an overlay under ~1200px. The shell's dock
+                 stands aside on Home — see `surfaceHostsChatSlot`. */
+              chatSlot={<EntityChatSlot {...chatSlotProps} />}
               chat={(openEntity, regions) => (
                 <ChatHomeSurface
                   seam={data.seam}
@@ -2596,6 +2606,9 @@ export function GateApp(props: GateAppProps = {}) {
               viewerMemberId={viewerMemberId}
               serverBaseUrl={activeServer.routeBaseUrl}
               onChatAbout={openChatAbout}
+              /* Work hosts the slot in its centre (§3.1); the dock stands
+                 aside here — see `surfaceHostsChatSlot`. */
+              chatSlot={<EntityChatSlot {...chatSlotProps} />}
               nav={nav}
               leftKind={kinds.leftKind}
               rightKind={kinds.rightKind}

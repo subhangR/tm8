@@ -546,3 +546,49 @@
      re-fetch on every toggle. */
   visibility: hidden;
 }
+
+/* --- the entity chat slot (entity chat 01a0da4e §3.1) --------------------- */
+/* Wide: a THIRD COLUMN after the Trail — rail · list · entity · chat — at
+   `--hp-chat`, the width `HomeView` solves (420 by default, remembered, never
+   below `HOME_CHAT_MIN`). Its separator is a real 8px track, since the column
+   is a flex child of `.hp-host` rather than a grid track two levels down. */
+.cv2-root .hp-chatsep {
+  position: relative;
+  flex: none;
+  width: 8px;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .hp-chatsep .kit-resizer {
+  position: absolute;
+  inset: 0;
+  width: 8px;
+}
+.cv2-root .hp-chatcol {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: var(--hp-chat, 420px);
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-surface);
+}
+.cv2-root .hp-chatcol > * { flex: 1 1 auto; min-height: 0; }
+
+/* Narrow (< HOME_CHAT_COLUMN_MIN_VIEWPORT, Q7): the SAME box becomes an
+   overlay sheet from the right, over the Trail, so the entity keeps its
+   width and stays readable underneath. Nothing to drag: the sheet is capped
+   by the window, not by the row. */
+@media (max-width: 1199px) {
+  .cv2-root .hp-chatsep { display: none; }
+  .cv2-root .hp-chatcol {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(var(--hp-chat-pref, 420px), calc(100% - 48px));
+    border-left: 1px solid var(--pn-line);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  }
+}

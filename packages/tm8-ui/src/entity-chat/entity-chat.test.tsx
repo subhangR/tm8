@@ -226,7 +226,8 @@ describe('EntityChatSlot — the host the layouts place', () => {
   it('switching REPLACES the thread in the route; new→created is the same move', async () => {
     const seam = fakeSeam([aboutEdge(OLD), aboutEdge(NEW)]);
     act(() => navStore.getState().openChat({ about: TASK, thread: 'new' }));
-    render(<EntityChatSlot {...host(seam)} subjectOf={() => ({ title: 'Task A', kind: 'task' })} />);
+    /* A pass-through gate: this test is about the route, not the card (lane C). */
+    render(<EntityChatSlot {...host(seam)} newChatGate={(composerFor) => composerFor()} subjectOf={() => ({ title: 'Task A', kind: 'task' })} />);
     expect(screen.getByTestId('stub-body').dataset.thread).toBe('new');
     await waitFor(() => expect(screen.getByTestId('entity-chat-switcher').hasAttribute('disabled')).toBe(false));
 
@@ -248,7 +249,7 @@ describe('EntityChatSlot — the host the layouts place', () => {
 
   it('hands the composer to lane C’s gate only while the thread is new', () => {
     act(() => navStore.getState().openChat({ about: TASK, thread: 'new' }));
-    const gate = vi.fn((composer: React.ReactNode) => <div data-testid="gate">{composer}</div>);
+    const gate = vi.fn((composerFor: () => React.ReactNode) => <div data-testid="gate">{composerFor()}</div>);
     render(<EntityChatSlot {...host(fakeSeam([]))} newChatGate={gate} subjectOf={() => ({ title: 'T', kind: 'task' })} />);
     expect(screen.getByTestId('gate')).toBeTruthy();
     expect(gate).toHaveBeenCalledWith(expect.anything(), { id: TASK, kind: 'task' });
