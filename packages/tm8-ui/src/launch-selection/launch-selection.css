@@ -1,0 +1,27 @@
+/* The launch's per-group context (I9). Rows reuse the sheet's `ls__row`
+   anatomy; these rules add only what a selection needs on top of it: the
+   diff at the group head, the "default" tag, the removed state and the
+   header text. */
+.cv2-root .lsel__head { display: flex; align-items: baseline; gap: 8px; }
+.cv2-root .lsel__diff {
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-brand-2);
+}
+.cv2-root .lsel__item { display: flex; flex-direction: column; gap: 2px; }
+.cv2-root .lsel__tag { color: var(--pn-ink-2); font-weight: 600; }
+.cv2-root .lsel__tag--removed { color: var(--pn-block); }
+/* A removed default stays in the list, struck, so the removal is visible
+   and can be undone with one click. */
+.cv2-root .lsel__row--removed .lsel__name {
+  text-decoration: line-through; color: var(--pn-ink-3);
+}
+.cv2-root .lsel__text {
+  font-size: 11px; color: var(--pn-ink-2); line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cv2-root .lsel__derived {
+  font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line); border-radius: var(--pn-r-pill);
+  padding: 0 5px; margin-right: 5px;
+}
+.cv2-root .lsel__add { align-self: flex-start; padding: 2px 0; }
+.cv2-root .lsel__pool { max-height: 240px; overflow-y: auto; padding: 2px; }
