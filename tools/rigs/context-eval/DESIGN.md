@@ -82,3 +82,22 @@ Never 7778. Nodes only on 4620–4624 / tm8_eval0..4. No fleet default flipped. 
 ## 8. Later (not built for the first run)
 
 Opus arm; a Haiku judge; a second injected message after resume; Jev arms (parked); per-`source` expand split (manifest records none); live-7778 mode (real manifests, no copy) — the D5 staged rollout would use context-measure's summarize on 7778 manifests directly.
+
+### 8.1 Fixture v3 / schema 4: the memory family — SPEC (approved by the advisor, 01a0d777-7b11; designer's text, msg 01a0d97b-ac62)
+
+Why: in fixture v2 the equipped naming-conventions skill CONTRADICTS the alias memory (`HEAVY_MEMORIES[0]`: export every helper under a `<name>2` alias), and neither the spec doc nor the criteria mention the alias. So `aliasCheck` measures whether a lane trusts a memory over a conflicting skill and over the task text, not whether the memory was delivered. A careful model SHOULD refuse it: C1's Sonnet mem-fee#1 on lean flagged the memory as possibly injected, and the same model passed it in another lane, so the item is stochastic by construction.
+
+1. Split the memory family into two items, each measuring one thing.
+   - `memoryOpened` (index-on arms only): the lane opened the collapsed memory (`row.memoryExpands > 0`). This is the delivery question Q1 exists for. n/a on lean/inherit, where nothing collapses.
+   - `memoryFollowed` (every arm): the lane acted on a memory-only fact that NOTHING else contradicts.
+2. Replace the alias fact with a non-conflicting, low-cost convention that only the memory states and the deterministic checker can see at the committed head. The new test file must be named `test/<fn>.test.js`, and its first line must be the comment `// spec: <needle doc title>`. The check: the file exists at the committed head with that first line.
+3. The CONFLICTING variant may come back later as its own optional family (`memory-vs-skill`, marked as an instruction-following measure), never pooled with delivery.
+4. `success.success` applies the rubric's n/a rule: an item that is n/a on an arm is not a gate on that arm either.
+5. Fixture v3 = `schemaVersion` 3 (so `contentHash` changes); v2 and v3 runs never diff against each other (report.mjs refuses).
+
+THIS run (fixture v2), decision D7 (report-time, no remeasure, report.mjs): the alias item is printed with k/n as "alias memory trusted over conflicting skill", and it and its two hidden checks are out of the rubric mean AND out of success / deliverable correct on EVERY arm. Delivery on index arms is read from `memoryExpands` / the header-level read.
+
+### 8.2 Also next run (schema 4)
+
+- `blindFetchBytes` is structurally 0 in fixture v2 (an entry's `bytes` is its index line, ≤ 655 B; no body > 4.5 KB). Redefine it on the read's RESULT bytes, and add a fixture body > 20 KB.
+- Decision D6 (report-time, already in report.mjs): read D2 beside `silent context failure` (needle not inlined and never opened) and success. On index-off arms an entry-level miss on a stress needle is a recovery.

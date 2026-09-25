@@ -173,15 +173,13 @@ test('rows measured under components schema 1 are refused (kernel meaning change
   assert.throws(() => buildReport([row(), row({ rep: 2, components: { bytes: {} } })], null), /components schema 1.*remeasure/);
 });
 
-test('rubric: aliasCheck is n/a on index-off arms (lean, inherit) and out of their mean; it counts on index arms', () => {
+test('D7: the alias item is out of the rubric mean on EVERY arm, printed with k/n under its reading', () => {
   const items = (alias) => ['committed', 'checks', 'closeout', 'ticked'].map((name) => ({ name, pass: true })).concat([{ name: 'aliasCheck', pass: alias }]);
   const mem = (arm, alias) => row({ arm, family: 'memory', taskKey: 'mem-fee', rubric: { family: 'memory', items: items(alias), score: alias ? 1 : 0.8 } });
   const r = buildReport([mem('lean', false), mem('inherit', false), mem('index-derived', false)], null);
-  assert.equal(r.json.accuracy['sonnet5/lean/memory'].rubricMean, 1, 'lean: aliasCheck excluded');
-  assert.equal(r.json.accuracy['sonnet5/inherit/memory'].rubricMean, 1);
-  assert.equal(r.json.accuracy['sonnet5/index-derived/memory'].rubricMean, 0.8, 'index arm: aliasCheck counts');
-  assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*aliasCheck 0\/1 \(n\/a for the mean: index off\)/);
-  assert.match(r.md, /\| sonnet5 \| memory \| index-derived \| 1 \|[^\n]*aliasCheck 0\/1/);
+  for (const a of ['lean', 'inherit', 'index-derived']) assert.equal(r.json.accuracy[`sonnet5/${a}/memory`].rubricMean, 1, a);
+  assert.match(r.md, /\| sonnet5 \| memory \| index-derived \| 1 \|[^\n]*alias memory trusted over conflicting skill 0\/1 \(not in the mean or success: D7\)/);
+  assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*alias memory trusted over conflicting skill 0\/1/);
 });
 
 test('components: the index-off <skills> block leaves the kernel; on an index arm it is ignored (skills live in the index)', () => {
@@ -214,17 +212,18 @@ test('D6: a withheld needle that was never opened is a SILENT context failure th
   assert.match(buildReport([recovered, silent, inlined, noNeedle], null).md, /\| sonnet5 \| lean \| 4 \| 1 \| 25% \|[^\n]*\| 1\/3 \(33%\) \| 3\/4 \(75%\) \|/);
 });
 
-test('success on index-off arms ignores the n/a alias checks (as the rubric does); on index arms they still decide it', () => {
+test('D7: success and deliverable correct ignore the alias checks on EVERY arm; a failing base check still fails', () => {
   const checkResults = [{ expr: 'fee(100)', set: 'base', pass: true }, { expr: 'fee2(100)', set: 'alias', pass: false }];
   const success = { success: false, deliverableCorrect: false, committed: true, closeout: true, ticked: true, checks: { passed: 1, total: 2, failures: [{ expr: 'fee2(100)' }] } };
   const mem = (arm) => row({ arm, family: 'memory', taskKey: 'mem-fee', checkResults, success });
-  const r = buildReport([mem('lean'), mem('inherit'), mem('index-derived')], null).json;
-  assert.equal(r.accuracy['sonnet5/lean/memory'].success, 1);
-  assert.equal(r.accuracy['sonnet5/lean/memory'].deliverableCorrect, 1);
-  assert.equal(r.accuracy['sonnet5/inherit/memory'].success, 1);
-  assert.equal(r.accuracy['sonnet5/index-derived/memory'].success, 0, 'index arm: the alias check still counts');
-  assert.equal(r.gate['sonnet5/lean'].success, 1);
-  // a failing BASE check still fails success on lean
-  const baseFail = row({ arm: 'lean', family: 'memory', taskKey: 'mem-fee', success, checkResults: [{ expr: 'fee(100)', set: 'base', pass: false }, { expr: 'fee2(100)', set: 'alias', pass: true }] });
+  const r = buildReport([mem('lean'), mem('inherit'), mem('index-derived'), mem('index-authored')], null).json;
+  for (const a of ['lean', 'inherit', 'index-derived', 'index-authored']) {
+    assert.equal(r.accuracy[`sonnet5/${a}/memory`].success, 1, a);
+    assert.equal(r.accuracy[`sonnet5/${a}/memory`].deliverableCorrect, 1, a);
+    assert.equal(r.gate[`sonnet5/${a}`].success, 1, a);
+  }
+  const baseFail = row({ family: 'memory', taskKey: 'mem-fee', success, checkResults: [{ expr: 'fee(100)', set: 'base', pass: false }, { expr: 'fee2(100)', set: 'alias', pass: true }] });
   assert.equal(buildReport([baseFail], null).json.accuracy['sonnet5/lean/memory'].success, 0);
+  // a non-memory row keeps success.mjs's own verdict
+  assert.equal(buildReport([row({ success: { success: false, deliverableCorrect: true } })], null).json.accuracy['sonnet5/lean/needle'].success, 0);
 });

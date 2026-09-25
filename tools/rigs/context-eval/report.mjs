@@ -82,44 +82,42 @@ const SILENT_STATES = ['absent', 'collapsed', 'header-dropped'];
 export const hasNeedle = (r) => r.needleOpened === true || r.needleOpened === false;
 export const silentContextFailure = (r) => hasNeedle(r) && SILENT_STATES.includes(r.needleState) && r.needleOpened === false;
 export const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'header');
-// Q1's memory collapse runs only with the context index ON, so the memory
-// family's alias fact is inlined whole on an index-off arm and `aliasCheck`
-// cannot discriminate there: n/a, and out of the rubric mean on those arms.
-const INDEX_OFF_NA = ['aliasCheck'];
+// DECISION D7 (advisor 01a0d777-7b11, from c1 msg 01a0d97b-370c): the fixture's
+// naming-conventions skill CONTRADICTS the alias memory, so `aliasCheck` and its
+// two hidden checks measure whether a lane trusts a memory over a conflicting
+// skill (a careful model may rightly refuse it), not memory delivery. This run
+// they stay out of the rubric mean AND out of success / deliverable correct on
+// EVERY arm, printed per model with k/n under that name. Delivery on index arms
+// is memoryExpands / the header-level read. Fixture v3 removes the conflict.
+export const NOT_IN_MEAN = { aliasCheck: 'alias memory trusted over conflicting skill' };
 export const indexOff = (arm) => !ARM_ENV[arm]?.TM8_CONTEXT_INDEX;
-const itemApplies = (arm, name) => !(indexOff(arm) && INDEX_OFF_NA.includes(name));
-/** The row's rubric score over the items that apply on its arm. */
+/** The row's rubric score over the items that count (D7). */
 export function rubricScore(r) {
   const items = r.rubric?.items;
   if (!Array.isArray(items)) return r.rubric?.score ?? null;
-  const kept = items.filter((i) => itemApplies(r.arm, i.name));
+  const kept = items.filter((i) => !(i.name in NOT_IN_MEAN));
   return kept.length ? kept.filter((i) => i.pass).length / kept.length : null;
 }
 /**
- * success / deliverableCorrect over the checks that APPLY on the row's arm.
- * On an index-off arm the memory family's alias checks are n/a (as their
- * rubric item is), so they must not decide success there either: recomputed
- * from checkResults (each pass already requires the commit) exactly as
- * success.mjs defines both, minus the alias set.
+ * success / deliverableCorrect WITHOUT the alias hidden checks (D7), on every
+ * arm: recomputed from the row's per-check checkResults (each pass already
+ * requires the commit) exactly as success.mjs defines both, minus the alias
+ * set. A row with no alias checks keeps success.mjs's values.
  */
 export function outcomeOf(r) {
   const s = r.success;
   if (!s) return { success: false, deliverableCorrect: false };
-  const alias = (r.checkResults ?? []).some((c) => c.set === 'alias');
-  if (!(alias && indexOff(r.arm))) return { success: !!s.success, deliverableCorrect: !!s.deliverableCorrect };
+  if (!(r.checkResults ?? []).some((c) => c.set === 'alias')) return { success: !!s.success, deliverableCorrect: !!s.deliverableCorrect };
   const deliverableCorrect = !!s.committed && r.checkResults.filter((c) => c.set !== 'alias').every((c) => c.pass);
   return { success: deliverableCorrect && !!s.closeout && !!s.ticked, deliverableCorrect };
 }
 const succeeded = (r) => outcomeOf(r).success;
-/** Per rubric item: `name k/n`, or `name n/a (index off)`. */
-function rubricItems(rs, arm) {
+/** Per rubric item: `name k/n`; a D7 item under its reading, marked out of the mean. */
+function rubricItems(rs) {
   const names = [...new Set(rs.flatMap((r) => (r.rubric?.items ?? []).map((i) => i.name)))];
-  // An n/a item still prints its k/n: on inherit c4 saw Sonnet miss the alias
-  // with the whole memory in the prompt, which is a model signal worth reading
-  // even though it cannot separate the arms and stays out of the mean.
   return names.map((name) => {
     const k = rs.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length;
-    return itemApplies(arm, name) ? `${name} ${k}/${rs.length}` : `${name} ${k}/${rs.length} (n/a for the mean: index off)`;
+    return name in NOT_IN_MEAN ? `${NOT_IN_MEAN[name]} ${k}/${rs.length} (not in the mean or success: D7)` : `${name} ${k}/${rs.length}`;
   }).join(' · ');
 }
 const mean = (xs) => {
@@ -211,7 +209,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only).', '');
 
   // 3. accuracy per model × arm × family
-  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'On index-off arms (lean, inherit) the memory family\'s alias checks are n/a: they count in neither the rubric mean nor success / deliverable correct (the Q1 collapse runs only with the index on).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
+  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'Decision D7: the memory family\'s alias item measures whether a lane trusts a memory over a CONFLICTING skill (fixture v2\'s naming-conventions skill contradicts it), not delivery. On every arm it and its two hidden checks are out of the rubric mean and out of success / deliverable correct, printed with k/n as "alias memory trusted over conflicting skill". Read delivery on index arms from memoryExpands (the header-level read).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const family of families) {
       for (const a of arms) {
@@ -221,8 +219,8 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
         const del = rs.filter((r) => outcomeOf(r).deliverableCorrect).length;
         const rub = mean(rs.map(rubricScore));
         const needle = rs.filter((r) => r.needleOpened !== null);
-        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs, a)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
-        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: ok, deliverableCorrect: del, rubricMean: rub, rubricNa: indexOff(a) ? INDEX_OFF_NA : [] };
+        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
+        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: ok, deliverableCorrect: del, rubricMean: rub, notInMean: Object.keys(NOT_IN_MEAN) };
       }
     }
   }
