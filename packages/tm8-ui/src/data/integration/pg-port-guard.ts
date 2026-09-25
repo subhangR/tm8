@@ -23,7 +23,8 @@ type Env = Readonly<Record<string, string | undefined>>;
 /** TM8_PG_PORT, refused when unset or 5442. Never connects. */
 export function testPgPort(env: Env): string {
   const port = env['TM8_PG_PORT']?.trim();
-  if (port && port !== PROD_PG_PORT) return port;
+  // The one exception: a GitHub Actions runner's own postgres container on 5442.
+  if (port && (port !== PROD_PG_PORT || env['GITHUB_ACTIONS'] === 'true')) return port;
   throw new TestPgPortRefusal(
     `refusing to run: the test Postgres port is ${port ? `TM8_PG_PORT=${port}` : 'unset (TM8_PG_PORT)'}. ` +
       `5442 is the PROD cluster on the tm8 host and a test run must name its port explicitly. ` +

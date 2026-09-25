@@ -20,4 +20,9 @@ describe('UI real-node fixture — test Postgres port guard', () => {
   it('passes on 5443', () => {
     expect(testPgPort({ TM8_PG_PORT: '5443' })).toBe('5443');
   });
+
+  it('admits 5442 only on a GitHub Actions runner; unset is still refused there', () => {
+    expect(testPgPort({ GITHUB_ACTIONS: 'true', TM8_PG_PORT: '5442' })).toBe('5442');
+    expect(() => testPgPort({ GITHUB_ACTIONS: 'true' })).toThrow(TestPgPortRefusal);
+  });
 });

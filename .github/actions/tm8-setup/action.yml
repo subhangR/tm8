@@ -33,9 +33,9 @@ inputs:
     required: false
     default: "false"
   pg-url:
-    description: Superuser URL of the job's postgres service (trust auth, no password). 5443 — the port every test harness accepts (they refuse 5442).
+    description: Superuser URL of the job's postgres service (trust auth, no password).
     required: false
-    default: postgres://tm8@127.0.0.1:5443/postgres
+    default: postgres://tm8@127.0.0.1:5442/postgres
   node-version:
     description: node major. packages/server + packages/execution run under node (node-pty is broken under bun).
     required: false

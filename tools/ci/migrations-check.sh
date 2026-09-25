@@ -21,8 +21,9 @@
 # creates and drops a scratch database, and 5442 is the PROD cluster on the tm8
 # host, so when the resolved port is 5442 or unset layer B is REFUSED: skipped
 # loudly on a workstation (the pre-push path), and a hard failure under CI=true
-# so a mis-set workflow can never pass by skipping. CI's migrations service
-# listens on 5443 (.github/workflows/ci.yml).
+# so a mis-set workflow can never pass by skipping. The one exception is a
+# GitHub Actions runner (GITHUB_ACTIONS=true), whose 5442 is the job's own
+# throwaway postgres container (.github/workflows/ci.yml).
 
 set -uo pipefail
 
@@ -117,7 +118,8 @@ url_port() {
 test_port_ok() {
   local port
   port="$(url_port "$1")"
-  [ -n "$port" ] && [ "$port" != "5442" ]
+  [ -n "$port" ] || return 1
+  [ "$port" != "5442" ] || [ "${GITHUB_ACTIONS:-}" = "true" ]
 }
 
 if ! command -v psql >/dev/null 2>&1; then

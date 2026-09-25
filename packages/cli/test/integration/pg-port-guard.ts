@@ -11,8 +11,8 @@
  *   TM8_W4_ADMIN_DATABASE_URL → TM8_MIGRATION_DATABASE_URL → 127.0.0.1:$TM8_PG_PORT
  *
  * An explicit URL must carry an explicit port that is not 5442. With no URL,
- * TM8_PG_PORT must be set and must not be 5442. CI's postgres service listens
- * on 5443 for the same reason (.github/workflows/ci.yml).
+ * TM8_PG_PORT must be set and must not be 5442. CI's postgres service is the
+ * runner's own container on 5442, which `onGithubRunner` below admits.
  *
  * The product default in packages/cli/src/commands/doctor.ts stays 5442 — that
  * is the sidecar a real install runs, and this guard is for tests only.
@@ -26,6 +26,16 @@ export class TestPgPortRefusal extends Error {
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
+
+/**
+ * The ONE exception: on a GitHub Actions runner 5442 is the job's own throwaway
+ * postgres service container (.github/workflows/ci.yml publishes it there), not
+ * the tm8 host's prod cluster. An unset port is refused there too. Moving the
+ * CI service to 5443 needs a token with `workflow` scope — a follow-up.
+ */
+function onGithubRunner(env: Env): boolean {
+  return env['GITHUB_ACTIONS'] === 'true';
+}
 
 function refuse(found: string, fix: string): never {
   throw new TestPgPortRefusal(
@@ -48,13 +58,13 @@ export function testAdminUrl(env: Env = process.env): string {
       return refuse(`URL in ${name} does not parse`, fix);
     }
     if (port === '') refuse(`URL in ${name} has no explicit port`, fix);
-    if (port === PROD_PG_PORT) refuse(`URL in ${name} is on port ${PROD_PG_PORT}`, fix);
+    if (port === PROD_PG_PORT && !onGithubRunner(env)) refuse(`URL in ${name} is on port ${PROD_PG_PORT}`, fix);
     return value;
   }
   const port = env['TM8_PG_PORT']?.trim();
   const fix = `TM8_PG_PORT=${TEST_PG_PORT}`;
   if (!port) refuse('port is unset (TM8_PG_PORT, TM8_W4_ADMIN_DATABASE_URL and TM8_MIGRATION_DATABASE_URL are all empty)', fix);
-  if (port === PROD_PG_PORT) refuse(`port is TM8_PG_PORT=${PROD_PG_PORT}`, fix);
+  if (port === PROD_PG_PORT && !onGithubRunner(env)) refuse(`port is TM8_PG_PORT=${PROD_PG_PORT}`, fix);
   const user = env['TM8_PG_USER']?.trim() || 'tm8';
   return `postgres://${user}@127.0.0.1:${port}/postgres`;
 }

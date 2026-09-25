@@ -51,4 +51,12 @@ describe('CLI integration harness — test Postgres port guard', () => {
       TM8_MIGRATION_DATABASE_URL: 'postgres://tm8@127.0.0.1:5442/postgres',
     })).toBe('postgres://tm8@127.0.0.1:5443/postgres');
   });
+
+  it('admits 5442 only on a GitHub Actions runner (its own service container); unset is still refused there', () => {
+    expect(testAdminUrl({ GITHUB_ACTIONS: 'true', TM8_MIGRATION_DATABASE_URL: 'postgres://tm8@127.0.0.1:5442/postgres' }))
+      .toBe('postgres://tm8@127.0.0.1:5442/postgres');
+    expect(testAdminUrl({ GITHUB_ACTIONS: 'true', TM8_PG_PORT: '5442' })).toBe('postgres://tm8@127.0.0.1:5442/postgres');
+    expect(() => testAdminUrl({ GITHUB_ACTIONS: 'true' })).toThrow(/unset/);
+    expect(() => testAdminUrl({ GITHUB_ACTIONS: '1', TM8_PG_PORT: '5442' })).toThrow(TestPgPortRefusal);
+  });
 });

@@ -34,3 +34,11 @@ test('passes on 5443', () => {
     'postgres://tm8@127.0.0.1:5443/tm8_cygnus',
   );
 });
+
+test('admits 5442 only on a GitHub Actions runner; unset is still refused there', () => {
+  assert.equal(
+    testDatabaseUrl({ GITHUB_ACTIONS: 'true', TM8_DATABASE_URL: 'postgres://tm8@127.0.0.1:5442/tm8_test' }, 'x'),
+    'postgres://tm8@127.0.0.1:5442/tm8_test',
+  );
+  assert.throws(() => testDatabaseUrl({ GITHUB_ACTIONS: 'true' }, 'x'), TestPgPortRefusal);
+});

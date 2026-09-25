@@ -61,8 +61,8 @@ export const REPO_ROOT = new URL('../../../../', import.meta.url).pathname.repla
  * Resolved by `testAdminUrl()` (./pg-port-guard.ts), which REFUSES when the port
  * is 5442 (the PROD cluster on the tm8 host) or is not set at all. There is no
  * default port: export TM8_PG_PORT=5443, or TM8_W4_ADMIN_DATABASE_URL /
- * TM8_MIGRATION_DATABASE_URL with an explicit non-5442 port. CI sets
- * TM8_PG_PORT=5443 and a 5443 TM8_MIGRATION_DATABASE_URL.
+ * TM8_MIGRATION_DATABASE_URL with an explicit non-5442 port. The one exception
+ * is a GitHub Actions runner, whose own postgres container is on 5442.
  *
  * NOT 5432 either. A Homebrew Postgres also answers on 5432 on this host and it
  * requires a password for the login role — which is worse than being down,

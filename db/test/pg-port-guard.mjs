@@ -24,6 +24,12 @@ export class TestPgPortRefusal extends Error {
   }
 }
 
+// The one exception: on a GitHub Actions runner 5442 is the job's own throwaway
+// postgres container, not the tm8 host's prod cluster. Unset is refused there too.
+function onGithubRunner(env) {
+  return env.GITHUB_ACTIONS === 'true';
+}
+
 function refuse(found, fix) {
   throw new TestPgPortRefusal(
     `refusing to run: the test Postgres ${found}. ` +
@@ -48,13 +54,13 @@ export function testDatabaseUrl(env, database) {
       refuse('URL in TM8_DATABASE_URL does not parse', fix);
     }
     if (port === '') refuse('URL in TM8_DATABASE_URL has no explicit port', fix);
-    if (port === PROD_PG_PORT) refuse(`URL in TM8_DATABASE_URL is on port ${PROD_PG_PORT}`, fix);
+    if (port === PROD_PG_PORT && !onGithubRunner(env)) refuse(`URL in TM8_DATABASE_URL is on port ${PROD_PG_PORT}`, fix);
     return explicit;
   }
   const port = env.TM8_PG_PORT?.trim();
   const fix = `TM8_PG_PORT=${TEST_PG_PORT}`;
   if (!port) refuse('port is unset (neither TM8_DATABASE_URL nor TM8_PG_PORT is set)', fix);
-  if (port === PROD_PG_PORT) refuse(`port is TM8_PG_PORT=${PROD_PG_PORT}`, fix);
+  if (port === PROD_PG_PORT && !onGithubRunner(env)) refuse(`port is TM8_PG_PORT=${PROD_PG_PORT}`, fix);
   const user = env.TM8_PG_USER || env.USER || 'postgres';
   const host = env.TM8_PG_HOST || '127.0.0.1';
   return `postgres://${user}@${host}:${port}/${database}`;

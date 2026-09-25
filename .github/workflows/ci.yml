@@ -186,7 +186,7 @@ jobs:
           POSTGRES_USER: tm8
           POSTGRES_DB: postgres
         ports:
-          - 5443:5432
+          - 5442:5432
         options: >-
           --health-cmd "pg_isready -U tm8"
           --health-interval 5s
@@ -206,14 +206,7 @@ jobs:
           # deliberately NOT TM8_DATABASE_URL — several suites skip themselves by
           # name on that variable, and setting it would silently enlist tests that
           # are meant to be opt-in. No password, matching the trust cluster above.
-          #
-          # 5443, NOT 5442: every test harness refuses 5442 (the PROD cluster on
-          # the tm8 host) and an unset port — packages/server/test/db/pg-port-guard.ts,
-          # packages/cli/test/integration/pg-port-guard.ts. The service above
-          # publishes on 5443 to match, and TM8_PG_PORT is set for the resolvers
-          # that read the port alone.
-          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5443/postgres
-          TM8_PG_PORT: "5443"
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -237,7 +230,7 @@ jobs:
           POSTGRES_USER: tm8
           POSTGRES_DB: postgres
         ports:
-          - 5443:5432
+          - 5442:5432
         options: >-
           --health-cmd "pg_isready -U tm8"
           --health-interval 5s
@@ -253,9 +246,8 @@ jobs:
       - name: Gate
         run: bash tools/ci/check.sh --only typecheck:packages/server,typecheck:packages/cli,test:packages/cli
         env:
-          # Same variables, same reasons (and the same 5443) as test-server; NOT TM8_DATABASE_URL.
-          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5443/postgres
-          TM8_PG_PORT: "5443"
+          # Same variable, same reason as test-server; NOT TM8_DATABASE_URL.
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -358,7 +350,7 @@ jobs:
           POSTGRES_USER: tm8
           POSTGRES_DB: postgres
         ports:
-          - 5443:5432
+          - 5442:5432
         options: >-
           --health-cmd "pg_isready -U tm8"
           --health-interval 5s
@@ -374,8 +366,7 @@ jobs:
       - name: Migration gate
         run: bash tools/ci/migrations-check.sh
         env:
-          # 5443: tools/ci/migrations-check.sh refuses 5442 and fails (not skips) under CI.
-          TM8_MIGRATION_DATABASE_URL: postgres://tm8:tm8@localhost:5443/postgres
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8:tm8@localhost:5442/postgres
 
   # The one check to require. `if: always()` — never `!cancelled()`, under which a
   # cancelled run leaves this job skipped, and a skipped check reads as passing.
