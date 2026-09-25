@@ -50,6 +50,8 @@ export function QuestionnaireBlock({
   }
   const { content } = q.form;
   const count = q.responses?.length ?? 0;
+  // Only the loaded pages are counted: the list API carries no total.
+  const shown = `${count}${q.hasMore ? '+' : ''}`;
 
   return (
     <FormsNavContext.Provider value={onOpenEntity ?? null}>
@@ -62,7 +64,7 @@ export function QuestionnaireBlock({
           </span>
         ) : null}
         <span className="qn-muted">
-          {content.questions.length} question{content.questions.length === 1 ? '' : 's'} · {count} response{count === 1 ? '' : 's'}
+          {content.questions.length} question{content.questions.length === 1 ? '' : 's'} · {shown} response{count === 1 && !q.hasMore ? '' : 's'}
         </span>
       </div>
       {content.description ? <Markdown source={content.description} className="pn-prose qn-description" /> : null}
@@ -80,7 +82,7 @@ export function QuestionnaireBlock({
             onClick={() => setTab(t.id)}
           >
             {t.word}
-            {t.id === 'responses' && count > 0 ? <span className="qn-tab__count">{count}</span> : null}
+            {t.id === 'responses' && count > 0 ? <span className="qn-tab__count">{shown}</span> : null}
           </button>
         ))}
       </div>

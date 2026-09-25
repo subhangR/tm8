@@ -39,6 +39,8 @@ export interface FixtureFormsSeed {
   responses?: FormResponseView[];
   /** Clock for new rows (tests pin it). */
   now?: () => string;
+  /** Page `responses` like the server's keyset (default: one page). */
+  pageSize?: number;
 }
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -135,12 +137,17 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FixtureForm
       return clone(slot);
     },
 
-    async responses(formId) {
+    async responses(formId, cursor) {
       formOf(formId);
+      // The server's order and keyset: `submittedAt desc, id desc`, the cursor
+      // is the last row's key (so a new row never shifts a later page).
+      const key = (r: FormResponseView) => `${r.submittedAt ?? ''}|${r.id}`;
       const items = rows
-        .filter((r) => r.formId === formId && r.isCurrent)
-        .sort((a, b) => (b.submittedAt ?? '').localeCompare(a.submittedAt ?? ''));
-      return { items: clone(items), nextCursor: null };
+        .filter((r) => r.formId === formId && r.isCurrent && (!cursor || key(r) < cursor))
+        .sort((a, b) => key(b).localeCompare(key(a)));
+      const page = seed.pageSize ? items.slice(0, seed.pageSize) : items;
+      const nextCursor = page.length < items.length ? key(page[page.length - 1]!) : null;
+      return { items: clone(page), nextCursor };
     },
 
     async revisions(formId, lineageKey) {

@@ -4,7 +4,8 @@
  */
 import { useState } from 'react';
 import { ChosenOption, OptionText, OtherText } from './options';
-import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps } from './types';
+import { OtherAnswers, SummaryBars, optionBars } from './summary';
+import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps, type SummaryAnswer, type SummaryProps } from './types';
 
 type C = ConfigOf<'single_choice'>;
 type A = AnswerOf<'single_choice'>;
@@ -103,6 +104,22 @@ function SingleChoiceInput({ id, labelledBy, describedBy, config, value, onChang
   );
 }
 
+/** One bar per option (% of those who answered), then the write-ins. */
+function SingleChoiceSummary({ config, answers }: SummaryProps<C, A>) {
+  const counts = new Map<string, number>();
+  const others: SummaryAnswer<string>[] = [];
+  for (const a of answers) {
+    if ('value' in a.answer) counts.set(a.answer.value, (counts.get(a.answer.value) ?? 0) + 1);
+    else others.push({ ...a, answer: a.answer.other });
+  }
+  return (
+    <>
+      <SummaryBars bars={optionBars(config.options, counts, others.length, config.allowOther)} of={answers.length} />
+      <OtherAnswers items={others} />
+    </>
+  );
+}
+
 export const singleChoiceUI = defineQuestionUI<C, A>({
   Input: SingleChoiceInput,
   Answer: ({ config, answer }) =>
@@ -111,4 +128,5 @@ export const singleChoiceUI = defineQuestionUI<C, A>({
     const option = config.options.find((o) => o.recommended);
     return option ? { value: option.value } : null;
   },
+  Summary: SingleChoiceSummary,
 });

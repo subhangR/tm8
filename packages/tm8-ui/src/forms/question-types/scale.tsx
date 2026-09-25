@@ -1,5 +1,6 @@
 /** scale — one button per point, min..max, end labels. Answer: `{number}`. */
-import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps } from './types';
+import { SummaryBars } from './summary';
+import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps, type SummaryProps } from './types';
 
 type C = ConfigOf<'scale'>;
 type A = AnswerOf<'scale'>;
@@ -41,6 +42,25 @@ function ScaleInput({ id, labelledBy, describedBy, config, value, onChange, disa
   );
 }
 
+/** The distribution across min..max, with the end labels, and the average. */
+function ScaleSummary({ config, answers }: SummaryProps<C, A>) {
+  const average = answers.reduce((sum, a) => sum + a.answer.number, 0) / answers.length;
+  const bars = points(config).map((n) => ({
+    key: String(n),
+    label: n === config.min && config.minLabel ? `${n} (${config.minLabel})`
+      : n === config.max && config.maxLabel ? `${n} (${config.maxLabel})` : String(n),
+    count: answers.filter((a) => a.answer.number === n).length,
+  }));
+  return (
+    <>
+      <p className="qn-summary__stat" data-testid="summary-average">
+        Average <strong>{average.toFixed(1)}</strong> of {config.min}–{config.max}
+      </p>
+      <SummaryBars bars={bars} of={answers.length} />
+    </>
+  );
+}
+
 export const scaleUI = defineQuestionUI<C, A>({
   Input: ScaleInput,
   Answer: ({ config, answer }) => (
@@ -54,4 +74,5 @@ export const scaleUI = defineQuestionUI<C, A>({
       </span>
     </span>
   ),
+  Summary: ScaleSummary,
 });

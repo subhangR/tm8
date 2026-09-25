@@ -4,7 +4,8 @@
  */
 import { useState } from 'react';
 import { ChosenOption, OptionText, OtherText } from './options';
-import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps } from './types';
+import { OtherAnswers, SummaryBars, optionBars } from './summary';
+import { defineQuestionUI, type AnswerOf, type ConfigOf, type QuestionInputProps, type SummaryAnswer, type SummaryProps } from './types';
 
 type C = ConfigOf<'multi_choice'>;
 type A = AnswerOf<'multi_choice'>;
@@ -84,6 +85,23 @@ function MultiChoiceInput({ id, labelledBy, describedBy, config, value, onChange
   );
 }
 
+/** One bar per option, as a share of those who answered (a respondent can pick several). */
+function MultiChoiceSummary({ config, answers }: SummaryProps<C, A>) {
+  const counts = new Map<string, number>();
+  const others: SummaryAnswer<string>[] = [];
+  for (const a of answers) {
+    for (const v of new Set(a.answer.values)) counts.set(v, (counts.get(v) ?? 0) + 1);
+    if (a.answer.other !== undefined) others.push({ ...a, answer: a.answer.other });
+  }
+  return (
+    <>
+      <p className="qn-muted qn-summary__note">Respondents could pick more than one.</p>
+      <SummaryBars bars={optionBars(config.options, counts, others.length, config.allowOther)} of={answers.length} />
+      <OtherAnswers items={others} />
+    </>
+  );
+}
+
 export const multiChoiceUI = defineQuestionUI<C, A>({
   Input: MultiChoiceInput,
   Answer: ({ config, answer }) =>
@@ -99,4 +117,5 @@ export const multiChoiceUI = defineQuestionUI<C, A>({
     const values = config.options.filter((o) => o.recommended).map((o) => o.value);
     return values.length > 0 ? { values: config.maxSelected ? values.slice(0, config.maxSelected) : values } : null;
   },
+  Summary: MultiChoiceSummary,
 });
