@@ -86,6 +86,9 @@ Isolation (next run; decision D9, from C1 msg 01a0d98b-abf7; designer's wording 
 - (e) The read-only rule also covers the WORKING TREE of `<datadir>/fixture-repo` (designer msg 01a0d98d-aad5, from C1 msg 01a0d98d-6e34). After dev-node.sh commits the fixture skills, it runs `chmod -R a-w` on everything except `.git`; the fixture-main guard already catches a commit, and a stray write then fails loudly instead of being cleaned up by the lane. C1's Sonnet fee#2 wrote `test/fee.test.js` into the main fixture checkout, removed it, and redid the work in its worktree.
 
 PRODUCT finding (for the advisor, not a rig item): with the index OFF, a worktree lane's skill pointers name the MAIN checkout, e.g. `<project working dir>/.claude/skills/<name>/SKILL.md`. Verified on a c1 lean manifest, where every `skills[].loadPointer` / `sourcePath` is under `/private/tmp/ctxeval/node1/fixture-repo`. The lane itself runs in a worktree that carries the same committed files. A lane that follows the pointer lands in the main tree and may start working there. The fix belongs in the launch: resolve `loadPointer` / `sourcePath` against the lane's cwd when the project is checked out as a worktree. It is measurable here: split `reachedOutside` into "via a skill pointer" vs other.
+- (f) The dev node's owner wrapper and token live outside anything a lane can reach (an operator-only dir or the macOS keychain), not in `<datadir>`. Lanes run as the operator's OS user, so `chmod 600` does not protect them; one c3 lane posted with the owner token.
+- (g) Each lane gets its own `TMPDIR` under its worktree. In the first run, `/tmp` was shared by every node's lanes.
+- (h) `reachedOutside` also flags a message to another lane's session and any use of `<datadir>/t8`. Two c2 replica lanes found each other on the node and exchanged messages. Split the column into main lane vs subagent (§8.4).
 
 Harness noise (for the consolidated read, not a rig item): the mid-turn commit-attribution reminder is Claude Code's own. A model that flags it as injected is being careful; every Claude lane sees it on every arm, so it cancels across arms.
 Never 7778. Nodes only on 4620–4624 / tm8_eval0..4. No fleet default flipped. The rig's own CLI arguments instruct and warn; they never reject content.
@@ -120,6 +123,19 @@ THIS run (fixture v2), decision D7 (report-time, no remeasure, report.mjs): the 
 - Any replica whose body cannot be made checkable stays a size-and-miss-only row (`deliverableKind: none`).
 
 THIS run (fixture v2), decision D8 (report-time, no remeasure): `committed` is n/a on all three replicas. `ticked` applies to replica-01a0d742 and replica-01a0d780 only (replica-01a0d778 has no criteria). `closeout` applies to all. The map is `REPLICA_ITEMS` in report.mjs, printed in §3. Replica accuracy is labelled "not a context measure in fixture v2" and dropped from every success comparison. "Asked the human" is counted per model × arm and kept out of the replica mean and success.
+
+### 8.4 Subagent measurement — SPEC (schema 4; designer msg 01a0d98e-a1a4, approved; from C4 msg 01a0d98e-3268)
+
+A lane that delegates writes its subagent transcripts to `<transcript-dir>/<native-session-id>/subagents/agent-<id>.jsonl` (plus `.meta.json`), a sibling of the lane's `<native-session-id>.jsonl`. The first-run rig reads only the main file, so a delegating lane undercounts requests, tokens, tool calls, reads and $.
+1. measure-row reads the main transcript AND every `subagents/agent-*.jsonl` beside it. Each row gets a new `subagents: { count, requests, toolCalls, usage {input, cacheCreation, cacheRead, output}, reads, costUsd }`.
+   - The lane's existing totals (`requests`, `toolCalls`, `usage`, `costUsd`, `expand`, `miss`, `blindFetchBytes`) INCLUDE the subagents. A subagent's read of a linked or dropped id is the lane's read, since the lane chose to delegate it.
+   - `firstRequestTokens` and every first-request component stay the MAIN transcript's: the launch context is what is measured there. A subagent's first request is its own harness context, recorded under `subagents.firstRequestTokens[]` for the record, never pooled with the lane's.
+2. Report §1 gains "lanes that delegated" (a count) and prints requests/tokens/$ as lane totals (subagents included). A per-arm × model "of which subagents" line keeps delegation cost visible.
+3. `remeasure --all` recomputes it from disk; a row measured before schema 4 is refused by the floor as usual.
+4. Test: a synthetic lane with one subagent file.
+   - Positive control: the subagent's usage is added.
+   - Negative control: a subagent read of a dropped id counts as the lane's entry-level miss; removing the file drops it.
+5. `reachedOutside` is split into main lane vs subagent (§7 (h)). `gh` failing inside worktrees ("no git remotes found") is the fixture repo-url=none rule already working; the build dir was the only path to a remote.
 
 ### 8.2 Also next run (schema 4)
 
