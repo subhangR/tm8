@@ -201,7 +201,7 @@ button.ecp__subject:hover { background: var(--pn-hover); }
   border: 0;
   border-radius: var(--pn-r-sm);
   background: var(--pn-brand);
-  color: #fff;
+  color: var(--pn-card);
   font: inherit;
   cursor: pointer;
 }
