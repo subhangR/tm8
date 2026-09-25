@@ -246,6 +246,9 @@ export interface PgDbOptions {
  */
 const TX_WATCHDOG_MILLIS = 10_000;
 
+/** Timer rounding allowance when deciding a checkout ran out its deadline. */
+const POOL_TIMER_SLACK_MILLIS = 10;
+
 /**
  * A checkout that had to QUEUE because every pooled client was in use, and
  * then gave up at `connectionTimeoutMillis`.
@@ -264,9 +267,6 @@ const TX_WATCHDOG_MILLIS = 10_000;
  * the error text: a connect that failed WITHOUT queueing (database down, auth)
  * is a different fault and is rethrown untouched.
  */
-/** Timer rounding allowance when deciding a checkout ran out its deadline. */
-const POOL_TIMER_SLACK_MILLIS = 10;
-
 export class DbPoolExhaustedError extends CollabError {
   constructor(waitedMs: number, inUse: number, max: number, waiting: number) {
     super(

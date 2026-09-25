@@ -77,8 +77,16 @@ describe('pool exhaustion is named, not reported as internal server error', () =
     // pg-pool hands a queued waiter a NEW client when a slot frees; if the
     // server is down that connect fails long before the acquire deadline.
     const restarting = Object.assign(new Error('the database system is starting up'), { code: '57P03' });
-    const db = dbOverPool({ totalCount: 32, idleCount: 0, waitingCount: 4 }, 32, restarting, 1);
-    const err = await db.tx(CLAIMS, async () => 'unreachable').catch((e: unknown) => e);
-    expect(err).toBe(restarting);
+    // Fake timers (Date.now included) so a stalled event loop on a loaded host
+    // cannot stretch the 1ms failure past the deadline and flake this control.
+    vi.useFakeTimers();
+    try {
+      const db = dbOverPool({ totalCount: 32, idleCount: 0, waitingCount: 4 }, 32, restarting, 1);
+      const pending = db.tx(CLAIMS, async () => 'unreachable').catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toBe(restarting);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
