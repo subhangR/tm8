@@ -6681,6 +6681,13 @@ export interface InteractionProfileView {
   retiredAt: string | null;
   version: number;
   draft: InteractionProfileDraft;
+  /**
+   * Advisory notes on a save (propose / updateDraft) that did not refuse it:
+   * `context_budgets_over_ceiling` when `contextBudgets` promise more than the
+   * initial-context ceiling holds beside the frame baseline (design 01a0d348
+   * §10 Q5.6 — warned at save, trimmed and recorded at launch).
+   */
+  warnings?: ResultWarning[];
 }
 
 export interface ProfileValidationIssue {

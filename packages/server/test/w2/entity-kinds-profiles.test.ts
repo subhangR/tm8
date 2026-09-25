@@ -365,7 +365,7 @@ describe('W2.G12 entity-kind/profile handlers', () => {
     ]);
   });
 
-  it('refuses at save a profile whose contextBudgets cannot fit the prompt (design 01a0d348 §10 Q5.6)', async () => {
+  it('saves a profile whose contextBudgets cannot fit the prompt, and the result carries the warning naming the overrun (design 01a0d348 §10 Q5.6, D1)', async () => {
     const db = new FakeDb(async () => [], async () => PROFILE);
     const registry = registryFor(db);
     const over = { ...DRAFT, contextBudgets: { memories: 20_000, references: 8192 } };
@@ -373,35 +373,41 @@ describe('W2.G12 entity-kind/profile handlers', () => {
       ['interactionProfiles.propose', { clientMutationId: 'cmid-over', spaceId: SPACE_ID, draft: over }],
       ['interactionProfiles.updateDraft', { clientMutationId: 'cmid-over-2', expectedVersion: 1, draft: over }],
     ] as const) {
-      await expect(registry.get(op)!(context(op, body))).rejects.toMatchObject({
-        code: 'invalid_input',
+      const value = InteractionProfileViewSchema.parse(await registry.get(op)!(context(op, body)));
+      expect(value.warnings).toEqual([{
+        code: 'context_budgets_over_ceiling',
         message: expect.stringContaining('bytes over the'),
-      });
+      }]);
     }
-    expect(db.rpcCalls).toEqual([]);
-    // The defaults, set explicitly, fit beside the kernel + manifest baseline.
+    expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile', 'update_interaction_profile_draft']);
+    // The defaults, set explicitly, fit beside the kernel + manifest baseline: no warning.
     const fits = { ...DRAFT, contextBudgets: { memories: 12_288, references: 8192 }, contextFloors: { memories: 1.5 } };
-    await registry.get('interactionProfiles.propose')!(
+    const fitted = await registry.get('interactionProfiles.propose')!(
       context('interactionProfiles.propose', { clientMutationId: 'cmid-fits', spaceId: SPACE_ID, draft: fits }),
     );
-    expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile']);
+    expect(InteractionProfileViewSchema.parse(fitted)).toEqual(PROFILE);
   });
 
-  it('lets a profile raise a sub-cap above its node default when the budgets still fit, and refuses it naming the overrun when not', async () => {
+  it('lets a profile raise a sub-cap above its node default when the budgets still fit, and warns naming the overrun when not', async () => {
     const db = new FakeDb(async () => [], async () => PROFILE);
     const registry = registryFor(db);
     // references 12 KiB (default 8 KiB) + memories 8 KiB + a 10 KiB baseline = 30 KiB: fits.
     const raised = { ...DRAFT, contextBudgets: { references: 12_288, memories: 8192 } };
-    await registry.get('interactionProfiles.propose')!(
+    const fitted = await registry.get('interactionProfiles.propose')!(
       context('interactionProfiles.propose', { clientMutationId: 'cmid-raised', spaceId: SPACE_ID, draft: raised }),
     );
+    expect(InteractionProfileViewSchema.parse(fitted).warnings).toBeUndefined();
     expect(db.rpcCalls.map(({ fn }) => fn)).toEqual(['propose_interaction_profile']);
-    // references 16 KiB + the 12 KiB memory default + 10 KiB: 6 KiB over.
+    // references 16 KiB + the 12 KiB memory default + 10 KiB: 6 KiB over — saved, with the warning.
     const tooHigh = { ...DRAFT, contextBudgets: { references: 16_384 } };
-    await expect(registry.get('interactionProfiles.propose')!(
+    const warned = await registry.get('interactionProfiles.propose')!(
       context('interactionProfiles.propose', { clientMutationId: 'cmid-too-high', spaceId: SPACE_ID, draft: tooHigh }),
-    )).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('6144 bytes over the 32768-byte') });
-    expect(db.rpcCalls).toHaveLength(1);
+    );
+    expect(InteractionProfileViewSchema.parse(warned).warnings).toEqual([{
+      code: 'context_budgets_over_ceiling',
+      message: expect.stringContaining('6144 bytes over the 32768-byte'),
+    }]);
+    expect(db.rpcCalls).toHaveLength(2);
   });
 
   it('takes Teammate authorship from the authenticated bearer context, not the strict DTO', async () => {

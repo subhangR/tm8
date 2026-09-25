@@ -4295,6 +4295,7 @@ export const InteractionProfileViewSchema: z.ZodType<InteractionProfileView> = z
   retiredAt: IsoTimestamp.nullable(),
   version: z.number().int().positive(),
   draft: InteractionProfileDraftSchema,
+  warnings: z.array(ResultWarningSchema).optional(),
 }).strict();
 
 export const ProfileValidationIssueSchema: z.ZodType<ProfileValidationIssue> = z.object({

@@ -20,7 +20,8 @@
  * never larger — plus the `<context_index>` sub-caps (`referenceIndex`,
  * `rosterIndex`, `memoryInjection`). Those are node DEFAULTS: a profile's
  * `contextBudgets` may reallocate them up or down inside
- * `combinedInitialInjection`, and the save-time fit check (§10 Q5.6) bounds it.
+ * `combinedInitialInjection`: a save that over-promises is warned (§10 Q5.6),
+ * and the launch trim bounds it.
  */
 export const BYTE_BUDGETS = {
   /** Agent-facing bootstrap manifest (§5.1). */
@@ -107,8 +108,8 @@ export interface ContextBudgetSettings {
  * The frame a profile's context budgets must fit beside (§10 Q5.6): the
  * kernel and manifest ceilings the profile allows. The assignment snapshot
  * ceiling is NOT part of it, because an assignment too large for the prompt is
- * delivered by reference rather than crowding the budgets. PENDING Subhang's
- * call (task 01a0d3b0-339e, option a); switching baselines is this one line.
+ * delivered by reference rather than crowding the budgets. Option (a),
+ * confirmed by decision D1 (doc 01a0d77b); switching baselines is this one line.
  */
 export function contextBudgetBaseline(policy: { kernelMaxBytes: number; manifestMaxBytes: number }): number {
   return policy.kernelMaxBytes + policy.manifestMaxBytes;

@@ -20,7 +20,9 @@ import {
   type CommandErrorCode,
   type EntityKindDef,
   type InteractionProfileDraft,
+  type InteractionProfileView,
   type OperationName,
+  type ResultWarning,
 } from '@tm8/contract';
 import type { z } from 'zod';
 import { contextBudgetOverrun } from '@tm8/prompt';
@@ -48,17 +50,25 @@ interface EntityKindRow {
 }
 
 /**
- * §10 Q5.6: a profile whose `contextBudgets` cannot fit the prompt beside its
- * frame baseline is refused at save, naming the overrun, so a budget never
- * promises more than the prompt can hold.
+ * §10 Q5.6 (decision D1, 01a0d77b): a profile whose `contextBudgets` cannot
+ * fit the prompt beside its frame baseline is SAVED with a warning naming the
+ * overrun — never refused (agent-facing APIs instruct, they do not refuse).
+ * Launch still enforces the ceiling: the index trims and records every drop.
  */
-function assertContextBudgetsFit(draft: InteractionProfileDraft): void {
+function contextBudgetsWarning(draft: InteractionProfileDraft): ResultWarning | null {
   const overrun = contextBudgetOverrun(draft);
-  if (!overrun) return;
-  throw invalidInput(
-    `contextBudgets promise ${overrun.promised} bytes beside a ${overrun.baseline}-byte frame baseline ` +
-      `(kernel + manifest ceilings), ${overrun.over} bytes over the ${overrun.cap}-byte initial-context ceiling`,
-  );
+  if (!overrun) return null;
+  return {
+    code: 'context_budgets_over_ceiling',
+    message:
+      `contextBudgets promise ${overrun.promised} bytes beside a ${overrun.baseline}-byte frame baseline ` +
+      `(kernel + manifest ceilings), ${overrun.over} bytes over the ${overrun.cap}-byte initial-context ceiling; ` +
+      'saved, and a launch trims the prompt to the ceiling, recording every drop',
+  };
+}
+
+function withWarning(view: InteractionProfileView, warning: ResultWarning | null): InteractionProfileView {
+  return warning ? { ...view, warnings: [...(view.warnings ?? []), warning] } : view;
 }
 
 function invalidInput(message: string): CollabError {
@@ -244,21 +254,21 @@ export class W2EntityKindsProfileService {
     const pathSpaceId = requireUuidParam(ctx, 'spaceId');
     const input = parseInput(ProposeInteractionProfileInputSchema, ctx.body, 'profile proposal input');
     if (input.spaceId !== pathSpaceId) throw invalidInput('body spaceId must match the route spaceId');
-    assertContextBudgetsFit(input.draft);
+    const budgetWarning = contextBudgetsWarning(input.draft);
     const envelope = requestEnvelope(ctx);
     const raw = await guarded('interactionProfiles.propose', () => this.deps.db.rpc<unknown>(
       claimsFor(owner, ctx, envelope),
       'propose_interaction_profile',
       [pathSpaceId, input.draft, envelope.actorId ?? null, input.clientMutationId],
     ));
-    return parseResult(InteractionProfileViewSchema, raw, 'profile proposal result');
+    return withWarning(parseResult(InteractionProfileViewSchema, raw, 'profile proposal result'), budgetWarning);
   };
 
   readonly interactionProfilesUpdateDraft: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const profileId = requireUuidParam(ctx, 'profileId');
     const input = parseInput(UpdateInteractionProfileDraftInputSchema, ctx.body, 'profile draft update input');
-    assertContextBudgetsFit(input.draft);
+    const budgetWarning = contextBudgetsWarning(input.draft);
     const envelope = requestEnvelope(ctx);
     const raw = await guarded('interactionProfiles.updateDraft', () => this.deps.db.rpc<unknown>(
       claimsFor(owner, ctx, envelope),
@@ -266,7 +276,7 @@ export class W2EntityKindsProfileService {
       [profileId, input.expectedVersion, input.draft, envelope.actorId ?? null,
         input.clientMutationId],
     ));
-    return parseResult(InteractionProfileViewSchema, raw, 'profile draft update result');
+    return withWarning(parseResult(InteractionProfileViewSchema, raw, 'profile draft update result'), budgetWarning);
   };
 
   readonly interactionProfilesValidate: OperationHandler = async (ctx) => {
