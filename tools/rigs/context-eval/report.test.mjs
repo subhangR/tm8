@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const require_ = createRequire(import.meta.url);
 import assert from 'node:assert/strict';
-import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory, annotateCrossLane, annotateSiblingWorktree } from './report.mjs';
+import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory, annotateCrossLane, annotateSiblingWorktree, annotateSiblingCommit } from './report.mjs';
 import { guardMemoryDir, memoryDirFor } from './lanes.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
 import { syntheticStart } from './measure-row.mjs';
@@ -442,4 +442,51 @@ test('D12 §2: "silent + passed" counts a never-opened withheld needle whose che
   assert.equal(g.silentContextFailures, 2);
   assert.equal(g.silentPassed, 1);
   assert.match(buildReport([silentPass, silentFail, opened], null).md, /\| 2\/3 \(67%\) \| 1\/2 \|/);
+});
+
+test('D12 twin: a git read of a commit NOT in the lane\'s own branch history is a sibling-commit copy; its own commits and the base are not', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const dataDir = mkdtempSync(join(tmpdir(), 'ctxeval-git-'));
+  const repo = join(dataDir, 'fixture-repo');
+  const g = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  writeFileSync(join(repo, 'a.js'), 'base\n');
+  g('add', '-A');
+  g('commit', '-qm', 'base');
+  const base = g('rev-parse', 'HEAD');
+  const own = 'aaaaaaaa-0000-7000-8000-000000000001';
+  const sib = 'aaaaaaaa-0000-7000-8000-000000000002';
+  g('checkout', '-qb', `tm8/${sib}`);
+  writeFileSync(join(repo, 'a.js'), 'the answer\n');
+  g('commit', '-qam', 'sibling answer');
+  const sibSha = g('rev-parse', 'HEAD');
+  g('checkout', '-q', 'main');
+  g('checkout', '-qb', `tm8/${own}`);
+  writeFileSync(join(repo, 'a.js'), 'mine\n');
+  g('commit', '-qam', 'own work');
+  const ownSha = g('rev-parse', 'HEAD');
+  const wt = (id) => join(dataDir, 'worktrees', 'proj', id);
+  const bash = (command) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command } }] } });
+  const texts = {
+    copier: [bash('git log --oneline --all'), bash(`git show ${sibSha.slice(0, 7)}:a.js`), bash(`git show ${ownSha.slice(0, 7)} && git diff ${base.slice(0, 7)}`)],
+    clean: [bash(`git show ${ownSha.slice(0, 7)} && git log --oneline -3`)],
+  };
+  const rows = [row({ sessionId: 'copier', worktree: wt(own) }), row({ sessionId: 'sib-lane', rep: 2, worktree: wt(sib) })];
+  annotateSiblingCommit(rows, (r) => (r.sessionId === 'copier' ? texts.copier : []));
+  assert.deepEqual(rows[0].readSiblingCommit, [{ sha: sibSha.slice(0, 12), sessionId: 'sib-lane' }], 'only the sibling commit; own commit and base are its own history');
+  assert.equal(rows[0].listedAllRefs, true);
+  assert.match(buildReport(rows, null).json.failures['sonnet5/lean'].reasons.join(' '), /copied from sibling commit/);
+  // negative control: the lane reading only its own commits is clean
+  const clean = [row({ sessionId: 'copier', worktree: wt(own) }), row({ sessionId: 'sib-lane', rep: 2, worktree: wt(sib) })];
+  annotateSiblingCommit(clean, (r) => (r.sessionId === 'copier' ? texts.clean : []));
+  assert.equal(clean[0].readSiblingCommit, undefined);
+  assert.equal(clean[0].listedAllRefs, undefined);
+  // no repo on this host: named shas are UNVERIFIED, never silently clean
+  const far = [row({ sessionId: 'far', worktree: '/nowhere/worktrees/proj/x' })];
+  annotateSiblingCommit(far, () => [bash(`git show ${sibSha.slice(0, 7)}`)]);
+  assert.deepEqual(far[0].readSiblingCommitUnverified, [sibSha.slice(0, 7)]);
+  rmSync(dataDir, { recursive: true });
 });
