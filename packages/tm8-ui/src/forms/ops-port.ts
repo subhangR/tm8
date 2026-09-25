@@ -14,6 +14,7 @@ import type {
   FormsQuestionsAddInput,
   FormsQuestionsMoveInput,
   FormsQuestionsUpdateInput,
+  FormsResponsesRedeliverInput,
   FormsResponsesSaveInput,
   FormsResponsesSubmitInput,
   FormsTransitionInput,
@@ -30,16 +31,12 @@ export interface FormsListQuery {
 }
 
 /**
- * `forms.responses.redeliver` (#766). `deliverySessionId` names the DELIVERY
- * row's session; `workSessionId` in a command body is the CALLER's session
- * context, never the row. `to` defaults to new_session.
- * Mirrors the contract's `FormsResponsesRedeliverInput` until #766 lands on
- * main; the rebase then imports it so a shape drift fails tsc.
+ * `forms.responses.redeliver` — the contract's input, so a shape drift fails
+ * tsc. `deliverySessionId` names the DELIVERY row's session; `workSessionId`
+ * in a command body is the CALLER's session context, never the row. `to`
+ * defaults to new_session.
  */
-export interface FormsRedeliverInput {
-  to?: 'new_session' | 'resume';
-  deliverySessionId?: string;
-}
+export type FormsRedeliverInput = Cmd<FormsResponsesRedeliverInput>;
 
 export interface FormsOps {
   update(formId: string, input: Cmd<FormsUpdateInput>): Promise<CommandResult>;

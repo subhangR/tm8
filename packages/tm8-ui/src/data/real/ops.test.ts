@@ -431,3 +431,20 @@ describe('ops: launch.suggest (Jev lane U)', () => {
     expect(f.last().body).toMatchObject(input);
   });
 });
+
+describe('ops: forms.responses.redeliver — feature-detected, now ON', () => {
+  it('the catalog carries the op, so seam.commands.forms.redeliver exists (the chip doors enable)', () => {
+    expect(isOperationName('forms.responses.redeliver')).toBe(true);
+    const { ops } = harness();
+    expect(typeof ops.forms.redeliver).toBe('function');
+  });
+
+  it('POSTs the catalog path with the delivery row as deliverySessionId, never workSessionId', async () => {
+    const { ops, f } = harness({ responseId: 'r-1', workSessionId: 'ws-1', to: 'resume', status: 'pending', redelivered: true });
+    await ops.forms.redeliver!('r-1', { deliverySessionId: 'ws-1', to: 'resume' });
+    const call = f.last();
+    expect(call.method).toBe('POST');
+    expect(call.url).toBe(bindPath('forms.responses.redeliver', { responseId: 'r-1' }));
+    expect(call.body).toEqual({ deliverySessionId: 'ws-1', to: 'resume', clientMutationId: 'form-response_fixed' });
+  });
+});
