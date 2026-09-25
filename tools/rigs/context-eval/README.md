@@ -36,3 +36,4 @@ identity (`slice, arm, node{port,db,env}, buildSha, fixtureVersion, model, teamm
 - Four arms on one Mac share wall-clock time; every row carries `loadAtStart`, `uptimeStart/End` and `node.port`, and report §5 shows per-slice load so a slow slice reads as load, not as the arm.
 - `resumed` is judged from the session's state after `session resume` (ran or reached idle), not from the transcript.
 - Prices in `pricing.mjs` are VERIFY-marked; $ is a comparative estimate.
+- `blindFetchBytes` is structurally 0 in fixture v2, so read it as no evidence rather than a clean result. measure.mjs gates it on a manifest entry's `bytes` > 20 KB, but an entry's `bytes` is its INDEX LINE (or snapshot row), at most 655 B across all 34 eval manifests. And no fixture body exceeds 4.5 KB. Redefining it (e.g. an unpaged read whose RESULT exceeds 20 KB) changes the measurement: a next-run item under the schema freeze at 703db99a.
