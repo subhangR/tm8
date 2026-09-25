@@ -65,15 +65,35 @@ A row that is neither measured nor excluded makes `report.mjs` exit 1 — that i
 
 ## 6. Report
 
-**Build integrity first (decision D9; this run).** Lanes are not sandboxed from the shared build: several replica lanes ran `git fetch` in `/private/tmp/ctxeval/build` and read the real GitHub with the host's `gh` login. The advisor made the build read-only by hand mid-run. Before the report, print and post:
+**Integrity first (decision D9; this run).** Lanes are not sandboxed from the shared build: several replica lanes ran `git fetch` in `/private/tmp/ctxeval/build` and read the real GitHub with the host's `gh` login. Mid-run the advisor made the build read-only AND SEVERED its `.git` worktree link. git commands there now fail by design, and a failing `git status` does NOT mean contamination. Before the report, print and post:
 ```sh
-git -C /private/tmp/ctxeval/build status --short     # must be empty
-git -C /private/tmp/ctxeval/build rev-parse HEAD     # must equal the report's builds line (6d1f4c77…)
+ls -ld /private/tmp/ctxeval/build                    # dr-xr-xr-x (read-only)
+ls -a /private/tmp/ctxeval/build | grep -c '^.git$'  # 0: no .git
+node -p 'require("'$CTX_EVAL_HOME'/nodes/<port>.json").buildSha'   # 6d1f4c77…, equal to the report's builds line
 git -C <datadir>/fixture-repo log --oneline main     # only the two fixture commits
+ls -A ~/.claude/projects/$(echo <datadir>/fixture-repo | sed 's/[^A-Za-z0-9]/-/g')/memory   # empty (decision D11)
 ```
-A non-empty status or a moved HEAD means the build tree changed under the run. Set the affected slice's rows aside with `exclude.mjs --reason "build tree changed under the run"` until the change is shown to be refs-only. The fixture-main guard in lanes.mjs covers runners started at d3b68c8b or later only, so the `log` check is the one that covers every runner.
+A changed build sets the affected slice's rows aside with `exclude.mjs --reason "build tree changed under the run"`. The fixture-main guard (d3b68c8b) and the auto-memory guard (7cc832d4) in lanes.mjs cover runners started at or after those commits only; the checks above cover every runner.
 
-First pull `ctx-eval/e1` and RE-MEASURE every file in place from the stored manifests + transcripts. Rows written by a runner started on an older rig carry `measureError` (Q1 body-level drops, fixed in 545e714e/10d0e431) or components schema 1 (the kernel used to include the expanded memories), and `report.mjs` refuses both. Run it from the checkout that holds `fixtures/node-<port>.json` (the one `fixture.mjs` ran in):
+**Owner-authored messages (decision D9 (g); this run).** Post the per-slice count of messages on lane task copies NOT authored by the lane's own teammate. One c3 lane posted with the node's owner token, so its BLOCKER/STATUS posts read as "Eval Owner". Closeout never credits them: only the lane's teammate counts.
+```sh
+node -e '
+const {execFileSync}=require("child_process");const [file,t8]=process.argv.slice(1);
+let n=0;for(const r of require("fs").readFileSync(file,"utf8").split("\n").filter(Boolean).map(JSON.parse)){if(!r.taskId)continue;
+const out=execFileSync(t8,["message","list","--for",r.taskId,"--limit","100","--format","json"],{encoding:"utf8"});const j=JSON.parse(out.slice(out.indexOf("{"),out.lastIndexOf("}")+1));
+const odd=(j.items??j.page?.items??[]).filter((m)=>m.state?.author?.id!==r.teammateId);
+if(odd.length){n+=odd.length;console.log(`${r.model}/${r.taskKey}#${r.rep}`,r.sessionId,odd.length,[...new Set(odd.map((m)=>m.state?.author?.displayName))].join(","))}}
+console.log("messages on lane task copies NOT authored by the lane:",n)' $RIG/results/<file>.jsonl <datadir>/t8
+```
+(On c3's file this prints `haiku45/replica-01a0d780#1 01a0d987-1a69… 2 Eval Owner`.)
+
+**Auto-memory contamination (decision D11; this run).** report.mjs reads each row's transcript and sets aside, automatically, every row that LOADED lane-written Claude auto-memory. It flags the writer (`wroteAutoMemory`) and lists both in §5. Still exclude them with `exclude.mjs --reason "loaded lane-written auto-memory from <writer session>"` so the file says so, and re-run those cells clean with a runner at 7cc832d4 or later (its guard moves a non-empty memory dir to `<datadir>/evidence/` before every spawn).
+
+**Shared /tmp (this run).** Lanes on every node write same-named scratch files to the host `/tmp` (`/tmp/sample-import.csv` from `tm8 file download`, ...). The bytes are the fixture's own, so this is a comparability hazard, not a defect. A per-lane TMPDIR is launch task 01a0d991-1570.
+
+**Stopping a runner (this run).** lanes.mjs has no drain yet. To stop at a lane boundary, wait until the log shows no lane in flight, then `pkill -f "lanes.mjs --slice <yours>"` (ONLY your pattern). Re-running a cell repeats its rep label, so note it on your task. DESIGN §8.5 specifies the drain.
+
+Then pull `ctx-eval/e1` and RE-MEASURE every file in place (floor **889efcf0**: report.mjs refuses rows measured before it) from the stored manifests + transcripts. Rows written by a runner started on an older rig carry `measureError` (Q1 body-level drops, fixed in 545e714e/10d0e431) or components schema 1 (the kernel used to include the expanded memories), and `report.mjs` refuses both. Run it from the checkout that holds `fixtures/node-<port>.json` (the one `fixture.mjs` ran in):
 ```sh
 git pull --ff-only origin ctx-eval/e1
 node $RIG/remeasure.mjs $RIG/results/<file>.jsonl --all     # identity/success/rubric untouched; adds remeasuredAt + remeasureRig
