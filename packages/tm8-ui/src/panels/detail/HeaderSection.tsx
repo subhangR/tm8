@@ -109,16 +109,16 @@ export function HeaderSection({
 
   const badges = (
     <div className="pn-header__badges">
-      <span className="pn-peers__rel pn-launch__badge" data-testid="header-source">
+      <span className="pn-header__badge" data-source={authored ? 'authored' : 'none'} data-testid="header-source">
         {authored ? 'authored' : 'not authored'}
       </span>
       {stale ? (
-        <span className="pn-peers__rel pn-header__stale" data-testid="header-stale" title="Mark current re-pins it to the body as it is now">
+        <span className="pn-header__badge pn-header__badge--stale" data-testid="header-stale" title="Mark current re-pins it to the body as it is now">
           {`stale · ${staleSentence(stale)}`}
         </span>
       ) : null}
       {authored && authored.bytes !== null ? (
-        <span className="pn-peers__rel" data-testid="header-bytes" title="Size of the body a load brings in">
+        <span className="pn-header__badge pn-header__badge--quiet" data-testid="header-bytes" title="Size of the body a load brings in">
           {`body ${formatSizeRow(authored.bytes)}`}
         </span>
       ) : null}
@@ -171,7 +171,7 @@ export function HeaderSection({
             <div className="pn-header__row">
               <dt>Keywords</dt>
               <dd className="pn-header__keywords" data-testid="header-keywords">
-                {authored.keywords.map((k) => <span className="pn-peers__rel" key={k}>{k}</span>)}
+                {authored.keywords.map((k) => <span className="pn-header__chip" key={k}>{k}</span>)}
               </dd>
             </div>
           ) : null}
