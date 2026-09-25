@@ -2219,6 +2219,27 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     ver: 'expectedVersion',
   },
+  'spaces.chatDefaults.get': {
+    cmd: ['space', 'chat-defaults', 'get'],
+    syn: 'tm8 space chat-defaults get [<space-id>]',
+    sum: 'Read the Space\'s per-kind chat defaults (teammate and model a new chat about an entity of that kind starts with)',
+    authz: 'space',
+    input: 'none',
+    tags: ['chat'],
+  },
+  'spaces.chatDefaults.set': {
+    cmd: ['space', 'chat-defaults', 'set'],
+    syn: 'tm8 space chat-defaults set <kind> [--teammate <team-member-id>] [--model <model-id>] [--clear] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Set or clear one kind\'s chat default for the whole Space',
+    authz: 'space',
+    input: 'bound',
+    tags: ['chat'],
+    notes: [
+      'requires an authenticated human Member with the Space owner/admin capability',
+      'a PATCH over kinds: the named kind is replaced by exactly the flags given; other kinds are untouched',
+      'never `message` or `chat` — a chat cannot be about either',
+    ],
+  },
   'spaces.interactionProfile.setDefault': {
     cmd: ['space', 'interaction-profile', 'set-default'],
     syn: 'tm8 space interaction-profile set-default <interaction-profile-id|none> [--space <space-id>] --expect-settings-revision <n> --yes [--mutation-id <id>]',

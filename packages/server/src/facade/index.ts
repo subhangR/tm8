@@ -2,6 +2,7 @@ import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.j
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
+import { registerChatDefaultsHandlers } from '../chat/defaults.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
@@ -205,6 +206,8 @@ export function registerFacadeHandlers(
   registerJevHandlers(registry, facade, deps.resolveJevAdvisor ? { resolveAdvisor: deps.resolveJevAdvisor } : {});
   // launch.defaults (I9): spawn's own default loaders, for the launch sheet's pre-ticks.
   registerLaunchDefaultsHandler(registry, facade);
+  // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 226.
+  registerChatDefaultsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs

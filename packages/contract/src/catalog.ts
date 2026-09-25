@@ -338,6 +338,11 @@ export const OPERATIONS = [
   { name: 'interactionProfiles.retire',                  method: 'POST',   path: '/v2/interaction-profiles/:profileId/retire',                         kind: 'command', status: 'v1' },
   { name: 'teamMembers.interactionProfile.setDefault',   method: 'PUT',    path: '/v2/team-members/:teamMemberId/interaction-profile-default',         kind: 'command', status: 'v1' },
   { name: 'spaces.interactionProfile.setDefault',        method: 'PUT',    path: '/v2/spaces/:spaceId/interaction-profile-default',                    kind: 'command', status: 'v1' },
+  // Per-kind chat defaults (entity-chat design 01a0da4e §3.4, migration 226):
+  // space-wide teammate + model per entity kind. Read by any member; written
+  // by a human owner/admin, the interactionProfile.setDefault gate.
+  { name: 'spaces.chatDefaults.get',                      method: 'GET',    path: '/v2/spaces/:spaceId/chat-defaults',                                  kind: 'read',    status: 'v1' },
+  { name: 'spaces.chatDefaults.set',                      method: 'PUT',    path: '/v2/spaces/:spaceId/chat-defaults',                                  kind: 'command', status: 'v1' },
   // A21 (D2/C-1): point-in-time PTY liveness for one space's work_sessions.
   { name: 'execution.liveness',                          method: 'GET',    path: '/v2/spaces/:spaceId/execution/liveness',                             kind: 'read',    status: 'v1' },
 

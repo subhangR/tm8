@@ -19,6 +19,7 @@ export * from './pty-protocol.js';
 export * from './skill-reference.js';
 export * from './launch-suggest.js';
 export * from './launch-defaults.js';
+export * from './chat-defaults.js';
 export * from './forms.js';
 export * from './kind-info.js';
 export * from './orchestration.js';
