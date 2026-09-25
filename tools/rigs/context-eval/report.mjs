@@ -11,6 +11,7 @@
 // unmeasured); rows spanning more than one fixture version, or a baseline
 // built on another one (their numbers would not be comparable).
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { missLevel, readsOf } from '../context-measure/measure.mjs';
 import { COMPONENTS_SCHEMA } from './components.mjs';
@@ -202,9 +203,78 @@ export function annotateSiblingWorktree(rows, texts = defaultTexts) {
   return rows;
 }
 
+/**
+ * D12 twin (C1 msg 01a0d9b8-5e69): every lane worktree shares the node's
+ * fixture-repo object store and refs, so a lane can read an earlier lane's
+ * COMMITTED answer with `git log --all` + `git show <sha>:src/ledger.js`;
+ * moving or locking worktrees cannot close that. A row whose git commands
+ * name a commit that is NOT an ancestor of its own branch (`tm8/<worktree
+ * id>`) read a sibling's commit: readSiblingCommit [{sha, sessionId (or branch)}],
+ * attributed via `git branch --contains`, and the row is SET ASIDE. Listing
+ * every ref (`git log --all`, `git branch -a`, ...) is recorded as
+ * listedAllRefs but sets nothing aside on its own. Needs the node's fixture
+ * repo on this host (<datadir>/fixture-repo, derived from the worktree path);
+ * without it the row gets readSiblingCommitUnverified.
+ */
+const GIT_REF_READ = /\bgit\b(?:\s+-C\s+\S+)?\s+(?:show|diff|checkout|switch|cat-file|cherry-pick|restore|archive|grep|log|blame|merge|rebase|reset|ls-tree)\b([^;&|\n]*)/g;
+const SHA_TOKEN = /(?<![0-9a-f-])[0-9a-f]{7,40}(?![0-9a-f-])/g;
+const LIST_ALL_REFS = /\bgit\b[^;&|\n]*\b(?:log|branch|rev-list|for-each-ref|show-ref)\b[^;&|\n]*(?:--all\b|--branches\b|--remotes\b|\s-a\b|\s-r\b)/;
+const defaultGit = (repo, args) => {
+  try {
+    return { ok: true, out: execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() };
+  } catch {
+    return { ok: false, out: '' };
+  }
+};
+export function annotateSiblingCommit(rows, texts = defaultTexts, git = defaultGit) {
+  const byWorktreeId = new Map(rows.filter((r) => r.worktree).map((r) => [r.worktree.split('/').filter(Boolean).pop(), r]));
+  for (const r of rows) {
+    if (!r.worktree) continue;
+    const id = r.worktree.split('/').filter(Boolean).pop();
+    const repo = r.worktree.includes('/worktrees/') ? `${r.worktree.split('/worktrees/')[0]}/fixture-repo` : null;
+    const own = `tm8/${id}`;
+    const shas = new Set();
+    let listed = false;
+    for (const t of texts(r)) {
+      for (const line of t.split('\n')) {
+        if (!line.includes('tool_use') || !line.includes('git')) continue;
+        let x;
+        try {
+          x = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        for (const b of x.message?.content ?? []) {
+          if (b.type !== 'tool_use' || b.name !== 'Bash') continue;
+          const c = String(b.input?.command ?? '');
+          if (LIST_ALL_REFS.test(c)) listed = true;
+          for (const m of c.matchAll(GIT_REF_READ)) for (const s of m[1].matchAll(SHA_TOKEN)) shas.add(s[0]);
+        }
+      }
+    }
+    if (listed) r.listedAllRefs = true;
+    if (!shas.size) continue;
+    if (!repo || !existsSync(repo) || !git(repo, ['rev-parse', '--verify', '-q', `${own}^{commit}`]).ok) {
+      r.readSiblingCommitUnverified = [...shas];
+      continue;
+    }
+    const found = new Map();
+    for (const sha of shas) {
+      const full = git(repo, ['rev-parse', '--verify', '-q', `${sha}^{commit}`]);
+      if (!full.ok || !full.out) continue; // not a commit here (a hex word, an id fragment)
+      if (git(repo, ['merge-base', '--is-ancestor', full.out, own]).ok) continue; // its own history (includes the fixture base)
+      const branches = git(repo, ['branch', '--contains', full.out, '--format=%(refname:short)']).out.split('\n').filter(Boolean);
+      const owner = branches.map((b) => byWorktreeId.get(b.replace(/^tm8\//, ''))).find((o) => o && o !== r);
+      found.set(full.out.slice(0, 12), owner ? owner.sessionId : branches[0] ?? 'unknown');
+    }
+    if (found.size) r.readSiblingCommit = [...found].map(([sha, sessionId]) => ({ sha, sessionId }));
+  }
+  return rows;
+}
+
 /** A row set aside: excluded by hand/auto, or contaminated (D11). */
-export const setAside = (r) => !!(r.excluded || r.contaminated || r.readSiblingWorktree);
-export const asideReason = (r) => r.excluded?.reason ?? (r.contaminated ? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})` : `copied from sibling worktree (${r.readSiblingWorktree.map((o) => o.sessionId).join(', ')})`);
+export const setAside = (r) => !!(r.excluded || r.contaminated || r.readSiblingWorktree || r.readSiblingCommit);
+export const asideReason = (r) => r.excluded?.reason ?? (r.contaminated ? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})` : r.readSiblingWorktree ? `copied from sibling worktree (${r.readSiblingWorktree.map((o) => o.sessionId).join(', ')})` : `copied from sibling commit (${r.readSiblingCommit.map((o) => `${o.sha} of ${o.sessionId}`).join(', ')})`);
 
 /** Row classification: measured, excluded (set aside with a reason), or neither (a defect). */
 export function classify(rows) {
@@ -460,9 +530,13 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', `Auto-memory (decision D11): ${writers.length} lane(s) WROTE Claude auto-memory${writers.length ? ` (${writers.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId}`).join('; ')})` : ''}; ${contaminated.length} row(s) LOADED lane-written memory and are set aside above${contaminated.length ? ` (${contaminated.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} by ${r.contaminated.by}`).join('; ')})` : ''}; the runner's guard moved a non-empty memory dir before ${moved.length} lane start(s).`);
   const hopped = rows.filter((r) => r.openedSiblingCopy);
   const copied = rows.filter((r) => r.readSiblingWorktree);
-  json.crossLane = { readSiblingWorktree: copied.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, excluded: !!r.excluded, from: r.readSiblingWorktree })), openedSiblingCopy: hopped.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, opened: r.openedSiblingCopy })) };
+  const copiedCommit = rows.filter((r) => r.readSiblingCommit);
+  const unverified = rows.filter((r) => r.readSiblingCommitUnverified);
+  const listedAll = rows.filter((r) => r.listedAllRefs);
+  json.crossLane = { readSiblingCommit: copiedCommit.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, excluded: !!r.excluded, from: r.readSiblingCommit })), readSiblingCommitUnverified: unverified.map((r) => r.sessionId), listedAllRefs: listedAll.map((r) => r.sessionId), readSiblingWorktree: copied.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, excluded: !!r.excluded, from: r.readSiblingWorktree })), openedSiblingCopy: hopped.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, opened: r.openedSiblingCopy })) };
   md.push('', `Cross-lane (D9 (h)): ${hopped.length} row(s) OPENED another lane's copy of their task${hopped.length ? ` (${hopped.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} -> ${r.openedSiblingCopy.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. A shared needle doc makes sibling copies visible; this counts the hop.`);
   md.push('', `Sibling worktree (D12): ${copied.length} row(s) READ another lane's worktree and are set aside above${copied.length ? ` (${copied.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId} <- ${r.readSiblingWorktree.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. Every lane worktree on a node is readable by every other lane; a copied answer passes the rubric, so it cannot count as the lane's own success.`);
+  md.push('', `Sibling commit (D12 twin): ${copiedCommit.length} row(s) READ a commit that is not in their own branch's history and are set aside above${copiedCommit.length ? ` (${copiedCommit.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId} <- ${r.readSiblingCommit.map((o) => `${o.sha} of ${o.sessionId}`).join(', ')}`).join('; ')})` : ''}; ${listedAll.length} row(s) listed every ref (git log --all / branch -a)${unverified.length ? `; ${unverified.length} row(s) named a sha but the node's fixture repo is not on this host (UNVERIFIED: ${unverified.map((r) => r.sessionId).join(', ')})` : ''}. Every worktree shares the node's object store, so moving or locking worktrees does not stop a git read.`);
   md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
@@ -530,7 +604,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   };
   if (!files.length) refuse('usage: node report.mjs results/<run>.jsonl [--baseline <prior>.jsonl] [--out <path-without-ext>]');
-  const rows = annotateSiblingWorktree(annotateCrossLane(annotateContamination(readRows(files))));
+  const rows = annotateSiblingCommit(annotateSiblingWorktree(annotateCrossLane(annotateContamination(readRows(files)))));
   if (!rows.length) refuse(`${files.join(', ')}: no rows`);
   const { unmeasured } = classify(rows);
   if (unmeasured.length) refuse(`${unmeasured.length} row(s) neither measured nor excluded: ${unmeasured.map((r) => `${r.arm}/${r.model}/${r.taskKey}#${r.rep} (${r.sessionId}) ${r.measureError ?? 'no firstRequestTokens'}`).join('; ')}. Fix the measurement or set it aside with exclude.mjs --reason.`);
