@@ -118,21 +118,28 @@ export const LAUNCH_MEMORIES: readonly LaunchMemory[] = [
  */
 export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
   memories: {
-    items: [{ entityId: 'ent-mem-tokens', kind: 'memory', title: 'tokens.css is verbatim — a byte-equality test guards it', via: 'teammate', headerText: 'packages/tm8-ui/src/styles/tokens.css', headerSource: 'native' }],
+    items: [{ entityId: 'ent-mem-tokens', kind: 'memory', title: 'tokens.css is verbatim — a byte-equality test guards it', via: 'teammate', headerText: 'packages/tm8-ui/src/styles/tokens.css', headerSource: 'native', promptBytes: 412 }],
     total: 1,
+    budget: 12288,
+    floor: 1.5,
   },
   skills: {
-    items: [{ entityId: 'ent-sk-review', kind: 'skill', title: 'code-review', via: 'teammate', headerText: 'Review a diff for defects', headerSource: 'native' }],
+    items: [{ entityId: 'ent-sk-review', kind: 'skill', title: 'code-review', via: 'teammate', headerText: 'Review a diff for defects', headerSource: 'native', promptBytes: 236 }],
     total: 1,
+    budget: null,
+    floor: 1.5,
   },
   references: {
     items: [
-      { entityId: 'ent-doc-spec', kind: 'doc', title: 'Launch spec', via: 'linked', headerText: 'Read before touching the launch sheet', headerSource: 'authored' },
-      { entityId: 'ent-file-log', kind: 'file', title: 'boot.log', via: 'attached', headerText: 'A boot log from the node', headerSource: 'derived' },
+      { entityId: 'ent-doc-spec', kind: 'doc', title: 'Launch spec', via: 'linked', headerText: 'Read before touching the launch sheet', headerSource: 'authored', promptBytes: 198 },
+      { entityId: 'ent-file-log', kind: 'file', title: 'boot.log', via: 'attached', headerText: 'A boot log from the node', headerSource: 'derived', promptBytes: 174 },
     ],
     total: 2,
+    budget: 8192,
+    floor: 1.5,
   },
   taskId: 'task-1',
+  contextIndex: 'on',
   warnings: [],
 };
 
