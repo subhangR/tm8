@@ -5,6 +5,7 @@ import {
   type MessageView,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../db/types.js';
+import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
 import { chatModeLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
@@ -127,7 +128,7 @@ const SPEAKER_NAME_MAX = 80;
  * and not a second speaker line, which is the same requirement, met by the same
  * strip.
  */
-function sanitizeSpeakerName(name: string): string {
+function sanitizeSpeakerName(name: string, max: number = SPEAKER_NAME_MAX): string {
   return name
     // C0/C1 controls, DEL, and the Unicode line breaks the model could render
     // as a new line: NEL (U+0085), LS (U+2028), PS (U+2029).
@@ -136,7 +137,7 @@ function sanitizeSpeakerName(name: string): string {
     .replace(/["\[\]·]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, SPEAKER_NAME_MAX);
+    .slice(0, max);
 }
 
 /**
@@ -207,15 +208,57 @@ function attributionLine(turn: ClaimedTurn): string | null {
   return `[from ${speaker ? `"${speaker}"` : 'unnamed member'}${memberId ? ` · member ${memberId}` : ''}]`;
 }
 
-function promptFor(turn: ClaimedTurn): string {
+/**
+ * The subject line (entity chat §3.5): `[about <kind> <id> · "<title>"]`.
+ *
+ * A chat opened from an entity carries an `about` edge to it, and until this
+ * line the teammate was never told: nothing on the way to the runtime read the
+ * edge. It is read from the LIVE edge on every turn — not captured at
+ * `chat.start` and not carried on the claim — because the edge is mutable by
+ * design (176: "filing errors must be correctable"), and a subject corrected
+ * in the UI has to reach the very next turn.
+ *
+ * Read as the configuring human, like every other read the turn makes, so a
+ * subject that human can no longer see is simply absent rather than leaked.
+ * The id and kind come from server rows; only the title is user-controlled,
+ * and it goes through the same strip as a display name so no title can close
+ * the quoted span or start a second bracket line.
+ */
+const ABOUT_TITLE_MAX = 120;
+
+async function aboutLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
+  return db.tx(claims(turn.requesterIdentityId), async (q) => {
+    const [edge] = await q.query<{ dst_id: string }>(
+      `/* chat.turn:about */
+       select dst_id::text as dst_id from public.edges
+        where src_id = $1 and type = 'about'
+        order by created_at desc, id desc limit 1`,
+      [turn.chatId],
+    );
+    if (!edge) return null;
+    // A point read (`e.id = $1`), the one shape that gets the cheap plan over
+    // the 25-way ENTITY_FROM join — see readAncestorRows in entity-read.ts.
+    const [row] = await q.query<EntityRow>(
+      `/* chat.turn:about-subject */
+       select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1 and e.deleted_at is null`,
+      [edge.dst_id],
+    );
+    if (!row) return null;
+    const title = sanitizeSpeakerName(titleOf(row), ABOUT_TITLE_MAX);
+    return `[about ${row.kind} ${row.id}${title ? ` · "${title}"` : ''}]`;
+  });
+}
+
+function promptFor(turn: ClaimedTurn, about: string | null): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
   // (the turn's own override, else the chat default; resolved in SQL).
   const mode = chatModeLine(turn.chatMode);
+  const subject = about ? [about] : [];
   const files = attachmentLines(turn);
   const attribution = attributionLine(turn);
   const from = attribution ? [attribution] : [];
-  return [mode, ...from, ...files, turn.body].join('\n');
+  return [mode, ...subject, ...from, ...files, turn.body].join('\n');
 }
 
 /**
@@ -368,6 +411,20 @@ export class ChatOrchestrator {
     }
   }
 
+  /**
+   * The subject is context, not a precondition: a failed read reports through
+   * onError and the turn goes out without the line, rather than failing a turn
+   * the human is waiting on.
+   */
+  private async readAbout(turn: ClaimedTurn): Promise<string | null> {
+    try {
+      return await aboutLine(this.options.db, turn);
+    } catch (error) {
+      this.options.onError?.(error);
+      return null;
+    }
+  }
+
   private async runTurn(turn: ClaimedTurn): Promise<void> {
     const agentMessageId = turn.agentMessageId ?? await this.createAgentMessage(turn);
     let seq = turn.agentMessageId ? Number(turn.nextSeq) : 0;
@@ -404,7 +461,8 @@ export class ChatOrchestrator {
 
     try {
       const threadId = await this.ensureRuntime(turn);
-      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn) })) {
+      const about = await this.readAbout(turn);
+      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn, about) })) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.

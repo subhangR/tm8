@@ -117,7 +117,7 @@ describe('the channel panel offers the two verbs its registry row declares', () 
     // derivation that puts it on the tile. The two assertions above still hold
     // because this host wires neither launch handler, so Run renders as a
     // refusal rather than as one of the bar's live buttons.
-    expect(getKind('channel').panel.primaries).toEqual(['run', 'edit', 'add-child']);
+    expect(getKind('channel').panel.primaries).toEqual(['run', 'chat-about', 'edit', 'add-child']);
   });
 
   it('a verb the host does NOT handle stays disabled-with-reason', () => {

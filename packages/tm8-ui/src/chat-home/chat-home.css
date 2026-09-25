@@ -129,6 +129,19 @@
 }
 
 .tch-thread__meta time { margin-left: auto; }
+
+/* A Chats-list row that has a SUBJECT (entity chat §3.6): the row button and
+   its "about ‹title›" chip are siblings — the chip opens the subject, and a
+   button cannot nest a button. The wrapper takes the row's own spacing. */
+.tch-chat-row { min-width: 0; margin: 0 0 2px; }
+.tch-chat-row .tch-thread { margin: 0; }
+.tch-thread__about {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 8px 4px;
+}
 .tch-hollow { padding: var(--pn-space-3); color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
 .tch-thread-refusal {
   margin: var(--pn-space-2);
@@ -1146,7 +1159,7 @@ button.tch-entity-chip:hover {
   .tch-root { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tch-sidebar { border-right: 0; border-bottom: 1px solid var(--pn-line); }
   .tch-thread-list { display: flex; gap: 4px; overflow-x: auto; padding: 5px 8px; }
-  .tch-thread { flex: 0 0 210px; margin: 0; }
+  .tch-thread, .tch-chat-row { flex: 0 0 210px; margin: 0; }
   .tch-conversation__head { align-items: flex-start; flex-direction: column; }
   .tch-transcript { padding: var(--pn-space-4); }
   .tch-composer-wrap { width: calc(100% - 20px); }

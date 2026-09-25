@@ -299,6 +299,7 @@ export function parse(hash: string): ParseOutcome {
       LEGACY_CONTENT_SURFACES,
     ),
     session: null,
+    chat: null,
   };
 
   /* `pc` NAMES AN ENTRY OF `p`, so a `pc` that is not in `p` is not a cursor —
@@ -331,6 +332,20 @@ export function parse(hash: string): ParseOutcome {
     const session = dec(sessionRaw);
     if (session === null || session.length === 0) drop('session')();
     else panels.session = session;
+  }
+
+  /* THE CHAT SLOT (`ca` subject, `ct` thread). `ct` OMITTED ⇒ `new`, which is
+     the canonical spelling `build` writes: a chat that does not exist yet has
+     no id to put there. A `ct` with no subject is not a slot — a chat panel is
+     always about something — so it drops under its own class rather than
+     opening a subject-less panel. */
+  const aboutRaw = query.get('ca');
+  const threadRaw = query.get('ct');
+  if (aboutRaw !== null || threadRaw !== null) {
+    const about = aboutRaw === null ? null : dec(aboutRaw);
+    const thread = threadRaw === null ? 'new' : dec(threadRaw);
+    if (!about || !thread) drop('chat')();
+    else panels.chat = { about, thread };
   }
 
   const target = parseTarget(rest, query, drop);
@@ -603,6 +618,13 @@ export function build(route: Route): BuildOutcome {
     if (t.msg) viewParams.push(['msg', enc(t.msg)]);
   }
   if (route.panels.session) viewParams.push(['session', enc(route.panels.session)]);
+  /* The chat slot rides with the VIEW params, outside every drop tier: it is
+     two ids at most, and a link that silently lost the open chat would land
+     on the entity with the conversation the sender meant nowhere in sight. */
+  if (route.panels.chat) {
+    viewParams.push(['ca', enc(route.panels.chat.about)]);
+    if (route.panels.chat.thread !== 'new') viewParams.push(['ct', enc(route.panels.chat.thread)]);
+  }
 
   const qParam: Param[] = t.view === 'kind' && t.q ? [['q', encodeQ(t.q)]] : [];
   const stackParam: Param[] = [];
@@ -722,7 +744,18 @@ export function normalize(route: Route): Route {
   return {
     spaceId: route.spaceId,
     target,
-    panels: { stack, pinned, cursor, tabs, contentSurface, session: route.panels.session },
+    panels: {
+      stack,
+      pinned,
+      cursor,
+      tabs,
+      contentSurface,
+      session: route.panels.session,
+      /* PINNED TO ITS SUBJECT, NOT TO THE STACK (Q4): the slot survives every
+         stack rule above untouched. A chat about an entity that is not open
+         is exactly the case the slot exists for. */
+      chat: route.panels.chat ?? null,
+    },
   };
 }
 

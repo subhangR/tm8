@@ -13,7 +13,10 @@
  *   · every Jev call is a `jev_calls` row (failures too), `chunk` is its index
  *     in `calls[]`, a retried `requestId` adds nothing, and `run` sums the run;
  *   · `jev_runs.suggestions` holds ids and numbers, never text;
- *   · the four groups are in flight at once.
+ *   · the four groups are in flight at once;
+ *   · I7: the references group, the default tags, promptBytes and each group's
+ *     budget and floor, from the profile the launch would pin; with the context
+ *     index off, no bytes that do not reach the prompt.
  */
 import { randomUUID } from 'node:crypto';
 
