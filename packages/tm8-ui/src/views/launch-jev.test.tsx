@@ -217,11 +217,13 @@ describe('a meter per group', () => {
     for (const group of ['memories', 'skills', 'references']) expect(view.getByTestId(`lsel-meter-${group}`)).toBeTruthy();
   });
 
-  it('after an Apply the memories meter measures the launch’s set against Jev’s budget', async () => {
+  it('after an Apply the memories meter measures the launch’s set against the budget the launch carries', async () => {
     const view = await asked();
     fireEvent.click(view.getByTestId('jev-apply-memories'));
     const meter = within(view.getByTestId('lsel-group-memories')).getByTestId('jev-meter-memories');
-    expect(meter.textContent).toContain('300 B / 1.0 KB');
+    /* launch.defaults (#829) states the node's 12 KB for the launch's own
+       harness and profile; it beats Jev's 1 KB, which can predate a change. */
+    expect(meter.textContent).toContain('300 B / 12 KB');
   });
 });
 
