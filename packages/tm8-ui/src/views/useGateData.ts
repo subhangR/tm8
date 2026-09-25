@@ -1,3 +1,5 @@
+import { createRealFormsPort } from '../forms/real-port';
+import { setDefaultFormsPort } from '../forms/seam';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
 import type { SkillPreviewResult } from '@tm8/contract';
@@ -836,6 +838,21 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       : createFixtureSeam();
   }
   const seam = seamRef.current;
+  // The questionnaire block's port rides the same seam, registered once for
+  // its lifetime: the real `forms.*` port, or (a seam without the ops) the
+  // honest unavailable port. Never fixtures.
+  const formsPortRef = useRef(false);
+  if (!formsPortRef.current) {
+    formsPortRef.current = true;
+    const formsOps = seam.commands.forms;
+    setDefaultFormsPort(formsOps
+      ? () => createRealFormsPort({
+          ops: formsOps,
+          entity: (id) => seam.entity(id as EntityId),
+          onEvent: (cb) => seam.onEvent(cb),
+        })
+      : null);
+  }
   const retainedEntityIdsRef = useRef<ReadonlySet<string>>(new Set());
 
   const domainRef = useRef<DomainStoreHandle | null>(null);

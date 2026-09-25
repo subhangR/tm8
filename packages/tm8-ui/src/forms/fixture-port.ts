@@ -1,11 +1,14 @@
 /**
- * The W1 forms port: in memory, over `fixtures.ts`. It enforces the rules the
+ * The TEST forms port: in memory, over `fixtures.ts`. Production never
+ * imports this file (no-fixture-import.test.ts); the real port is
+ * `real-port.ts`. It enforces the rules the
  * server will (FORMS-DESIGN §3.1, §5, §6) closely enough that the block's
  * error and state paths are real: the contract validators on save and
  * submit, the one freeze rule, the per-mode response limits, amend, the
- * lifecycle, and `expectedVersion`. W3 replaces it; see `seam.ts`.
+ * lifecycle, and `expectedVersion`.
  */
 import {
+  FORM_TRANSITIONS,
   FormQuestionSchema,
   formJsonEqual,
   validateFormAnswers,
@@ -13,9 +16,8 @@ import {
 } from '@tm8/contract';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_RESPONSES, FORM_FIXTURE_VIEWER } from './fixtures';
 import {
-  FORM_TRANSITIONS,
   FormsPortError,
-  setDefaultFormsPort,
+  type FormsChange,
   type FormDeliveryView,
   type FormResponseView,
   type FormsPort,
@@ -23,6 +25,13 @@ import {
   type FormViewer,
   type MyFormSlot,
 } from './seam';
+
+export type FixtureFormsPort = FormsPort & {
+  /** Every row, drafts included — tests only. */
+  readonly rows: FormResponseView[];
+  /** Every redeliver call, in order — tests only. */
+  readonly redelivered: { responseId: string; workSessionId: string; to: 'resume' | 'new_session' }[];
+};
 
 export interface FixtureFormsSeed {
   viewer?: FormViewer;
@@ -34,18 +43,17 @@ export interface FixtureFormsSeed {
 
 const clone = <T>(v: T): T => structuredClone(v);
 
-export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort & {
-  /** Every row, drafts included — tests only. */
-  readonly rows: FormResponseView[];
-} {
+export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FixtureFormsPort {
   const viewer = seed.viewer ?? FORM_FIXTURE_VIEWER;
   const forms = new Map(clone(seed.forms ?? FORM_FIXTURE_FORMS).map((f) => [f.id, f]));
   const rows: FormResponseView[] = clone(seed.responses ?? FORM_FIXTURE_RESPONSES);
   const now = seed.now ?? (() => new Date().toISOString());
-  const listeners = new Map<string, Set<() => void>>();
+  const listeners = new Map<string, Set<(change: FormsChange) => void>>();
+  const redelivered: FixtureFormsPort['redelivered'] = [];
   let seq = 0;
 
-  const notify = (formId: string) => listeners.get(formId)?.forEach((cb) => cb());
+  const notify = (formId: string, change: FormsChange = { kind: 'responses' }) =>
+    listeners.get(formId)?.forEach((cb) => cb(change));
   const formOf = (id: string): FormState => {
     const f = forms.get(id);
     if (!f) throw new FormsPortError('not_found', `no form ${id}`);
@@ -109,9 +117,13 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
     };
   }
 
-  const port: FormsPort & { readonly rows: FormResponseView[] } = {
+  const port: FixtureFormsPort = {
     rows,
-    viewer: () => viewer,
+    redelivered,
+
+    async form(formId) {
+      return clone(formOf(formId));
+    },
 
     async mine(formId) {
       formOf(formId);
@@ -144,7 +156,7 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
       const at = now();
       let draft = draftOf(formId);
       if (draft && draft.supersedesId !== input.supersedesId) {
-        throw new FormsPortError('conflict', 'a draft for another revision is in flight');
+        throw new FormsPortError('draft_in_flight', 'a draft for another revision is in flight', [], 'form_draft_in_flight', draft.id);
       }
       if (!draft) {
         const prev = input.supersedesId ? rows.find((r) => r.id === input.supersedesId) : null;
@@ -165,8 +177,8 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
       return clone(draft);
     },
 
-    async discardDraft(formId, draftId) {
-      const i = rows.findIndex((r) => r.id === draftId && r.status === 'draft' && r.respondentId === viewer.memberId);
+    async discardDraft(formId) {
+      const i = rows.findIndex((r) => r.formId === formId && r.status === 'draft' && r.respondentId === viewer.memberId);
       if (i >= 0) rows.splice(i, 1);
       notify(formId);
     },
@@ -237,7 +249,7 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
           d.structureVersion = f.content.structureVersion;
         }
       }
-      notify(formId);
+      notify(formId, { kind: 'form' });
       return clone(f);
     },
 
@@ -255,12 +267,12 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
         closedAt: to === 'open' ? null : at,
       };
       f.version += 1;
-      notify(formId);
+      notify(formId, { kind: 'form' });
       return clone(f);
     },
 
-    async resumeDelivery() {
-      // W3: the delivery door. Until then the button is honest about being a stub.
+    async redeliver(responseId, workSessionId, to) {
+      redelivered.push({ responseId, workSessionId, to });
     },
 
     subscribe(formId, onChange) {
@@ -272,6 +284,3 @@ export function createFixtureFormsPort(seed: FixtureFormsSeed = {}): FormsPort &
   };
   return port;
 }
-
-/** W1: with no provider mounted, the block reads the fixtures. W3 replaces this line. */
-setDefaultFormsPort(() => createFixtureFormsPort());

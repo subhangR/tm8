@@ -3,7 +3,7 @@
  * `QuestionField` and `AnswerView` resolve an entry in the UI registry and
  * hand it a config/answer the contract's schemas parsed.
  */
-import { useId, type ReactNode } from 'react';
+import { createContext, useContext, useId, useState, type ReactNode } from 'react';
 import {
   formAnswersEqual,
   type FormAnswerIssue,
@@ -14,7 +14,8 @@ import {
 } from '@tm8/contract';
 import { Markdown, Pill, Timestamp, type PillTone } from '../kit';
 import { parseAnswer, resolveQuestion } from './question-types';
-import type { FormDeliveryStatus, FormDeliveryView, FormResponseView } from './seam';
+import { readDelivery, type DeliveryState } from './delivery';
+import { FormsPortError, type FormDeliveryView, type FormResponseView } from './seam';
 
 // ---------------------------------------------------------------------------
 // Chips
@@ -32,58 +33,141 @@ export function FormStatusChip({ status }: { status: FormStatus }) {
   return <Pill tone={chip.tone} dot="solid">{chip.word}</Pill>;
 }
 
-/** `pending` reads as "queued" (W2 may split out an in-flight state). */
-export const DELIVERY_CHIP: Record<FormDeliveryStatus, { tone: PillTone; word: string }> = {
+/** Each real delivery state (delivery.ts) → its chip. */
+export const DELIVERY_CHIP: Record<DeliveryState, { tone: PillTone; word: string }> = {
+  queued: { tone: 'wait', word: 'Queued' },
+  retrying: { tone: 'wait', word: 'Retrying' },
+  redelivering: { tone: 'info', word: 'Sending to new session' },
   delivered: { tone: 'run', word: 'Delivered' },
-  pending: { tone: 'wait', word: 'Queued' },
-  spawned: { tone: 'info', word: 'Spawned' },
-  cancelled: { tone: 'idle', word: 'Cancelled' },
+  unverified: { tone: 'wait', word: 'Unverified' },
+  spawned: { tone: 'info', word: 'New session' },
+  cancelled: { tone: 'block', word: 'Not delivered' },
 };
 
-export function DeliveryChip({ status }: { status: FormDeliveryStatus }) {
-  const chip = DELIVERY_CHIP[status];
+export function DeliveryChip({ delivery }: { delivery: Pick<FormDeliveryView, 'status' | 'attempts' | 'lastError'> }) {
+  const { state, error, reason } = readDelivery(delivery);
+  const chip = DELIVERY_CHIP[state];
   return (
-    <span data-testid="delivery-chip" data-status={status}>
+    <span data-testid="delivery-chip" data-status={delivery.status} data-state={state} title={reason ?? error ?? undefined}>
       <Pill tone={chip.tone}>{chip.word}</Pill>
     </span>
   );
 }
 
-/** The one line a delivery state owes the reader beyond its chip (§7.3). */
+/**
+ * How a panel opens another entity (a spawned session). Provided by the
+ * block's host; absent ⇒ the session id is shown as text.
+ */
+export const FormsNavContext = createContext<((id: string) => void) | null>(null);
+
+const RESUME_LATENCY = 'Resuming can take a couple of minutes.';
+const NO_REDELIVER = 'This node can’t re-send deliveries yet (it lacks forms.responses.redeliver).';
+
+const REFUSAL_TEXT: Record<string, string> = {
+  delivery_not_cancelled: 'That delivery is no longer cancelled',
+  delivery_not_pending: 'That delivery is no longer queued',
+  session_deleted: 'That session was deleted',
+};
+
+/**
+ * One delivery's chip, the line it owes the reader (§7.3), and its door:
+ * "Resume now" on a queued/retrying row, "Send to a new session" on a
+ * cancelled one — both through `forms.responses.redeliver`, disabled with the
+ * reason when the node lacks it.
+ */
 export function DeliveryNote({
   delivery,
-  onResume,
-  resumeState,
+  redeliver,
+  onSettled,
 }: {
   delivery: FormDeliveryView;
-  onResume?: () => void;
-  resumeState?: 'idle' | 'requested';
+  /** `port.redeliver` bound to this response; undefined ⇒ the op is missing. */
+  redeliver?: (workSessionId: string, to: 'resume' | 'new_session') => Promise<void>;
+  /** After an action (done or refused): re-read the responses. */
+  onSettled?: () => void;
 }) {
-  let text: ReactNode = null;
-  switch (delivery.status) {
-    case 'pending':
-      text = 'Answer saved; will be delivered when the session resumes.';
+  const reading = readDelivery(delivery);
+  const openEntity = useContext(FormsNavContext);
+  const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle');
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const act = async (to: 'resume' | 'new_session') => {
+    if (!redeliver) return;
+    setPhase('busy');
+    setNotice(null);
+    try {
+      await redeliver(delivery.workSessionId, to);
+      setPhase('done');
+      setNotice(to === 'resume' ? `Resume requested. ${RESUME_LATENCY}` : 'Sent to a new session.');
+    } catch (e) {
+      setPhase('idle');
+      setNotice(e instanceof FormsPortError && e.code === 'delivery_refused'
+        ? `${REFUSAL_TEXT[e.reason ?? ''] ?? e.message}; showing the latest.`
+        : `Couldn’t re-send: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      onSettled?.();
+    }
+  };
+
+  let text: ReactNode;
+  switch (reading.state) {
+    case 'queued':
+      text = <>Answer saved; it will be delivered when the session resumes. {RESUME_LATENCY}</>;
+      break;
+    case 'retrying':
+      text = <>Delivery is being retried{delivery.attempts > 0 ? ` (attempt ${delivery.attempts})` : ''}{reading.error ? `: ${reading.error}` : ''}.</>;
+      break;
+    case 'redelivering':
+      text = <>Sending to a new session (before: {reading.reason}).</>;
+      break;
+    case 'unverified':
+      text = <>Sent, but the session didn’t confirm it arrived{reading.error ? ` (${reading.error})` : ''}.</>;
       break;
     case 'spawned':
-      text = delivery.spawnedSessionId ? `Delivered to a new session (${delivery.spawnedSessionId}).` : 'Delivered to a new session.';
+      text = delivery.spawnedSessionId ? (
+        <>Delivered to a new session:{' '}
+          {openEntity ? (
+            <button type="button" className="qn-link" data-testid="delivery-spawned-link" onClick={() => openEntity(delivery.spawnedSessionId!)}>
+              open it
+            </button>
+          ) : <code>{delivery.spawnedSessionId}</code>}
+        </>
+      ) : 'Delivered to a new session.';
       break;
     case 'cancelled':
-      text = `Not delivered: the session is gone${delivery.lastError ? ` (${delivery.lastError})` : ''}. The answer is stored.`;
+      text = <>Not delivered: {reading.reason}. The answer is stored.</>;
       break;
     default:
       text = 'Delivered to the requesting session.';
   }
+
+  const action = reading.action === 'resume'
+    ? { to: 'resume' as const, word: 'Resume now' }
+    : reading.action === 'new_session'
+      ? { to: 'new_session' as const, word: 'Send to a new session' }
+      : null;
+
   return (
-    <div className="qn-delivery" data-testid="delivery-note">
-      <DeliveryChip status={delivery.status} />
-      <span className="qn-delivery__text">{text}</span>
-      {delivery.status === 'pending' && onResume ? (
-        resumeState === 'requested' ? (
-          <span className="qn-muted">Resume requested (delivery wiring lands in W3).</span>
-        ) : (
-          <button type="button" className="pn-btn" onClick={onResume}>Resume now</button>
-        )
+    <div className="qn-delivery" data-testid="delivery-note" data-state={reading.state}>
+      <DeliveryChip delivery={delivery} />
+      <span className="qn-delivery__text">
+        {text}
+        {reading.redeliveredFrom ? <span className="qn-muted"> Re-sent from an earlier delivery.</span> : null}
+      </span>
+      {action && phase !== 'done' ? (
+        <button
+          type="button"
+          className="pn-btn"
+          disabled={!redeliver || phase === 'busy'}
+          title={redeliver ? undefined : NO_REDELIVER}
+          data-testid={`delivery-${action.to}`}
+          onClick={() => void act(action.to)}
+        >
+          {action.word}
+        </button>
       ) : null}
+      {notice ? <span className="qn-muted" role="status">{notice}</span> : null}
+      {action && !redeliver ? <span className="qn-muted">{NO_REDELIVER}</span> : null}
     </div>
   );
 }

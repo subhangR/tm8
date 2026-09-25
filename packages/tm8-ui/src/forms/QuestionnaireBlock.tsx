@@ -2,17 +2,17 @@
  * The `questionnaire` body block (FORMS-DESIGN §10): a form's panel body, with
  * Fill / Build / Responses tabs over one data hook. It reads the form's
  * structure from the entity detail and everything else through the forms
- * seam, so W3 wires it to the real ops without touching this file.
+ * seam (`useFormsPort()`): the real port in production, a fixture port in
+ * tests. It never imports a fixture itself.
  */
 import { useId, useState } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import { Markdown, Pill } from '../kit';
 import { BuildTab } from './BuildTab';
 import { FillTab } from './FillTab';
-import { FormStatusChip } from './parts';
+import { FormStatusChip, FormsNavContext } from './parts';
 import { ResponsesTab } from './ResponsesTab';
 import { useQuestionnaire } from './useQuestionnaire';
-import './fixture-port';
 import './questionnaire.css';
 
 export type QuestionnaireTab = 'fill' | 'build' | 'responses';
@@ -26,9 +26,12 @@ const TABS: { id: QuestionnaireTab; word: string }[] = [
 export function QuestionnaireBlock({
   detail,
   initialTab = 'fill',
+  onOpenEntity,
 }: {
   detail: Pick<EntityDetail, 'id' | 'title' | 'version' | 'content'> & Partial<Pick<EntityDetail, 'capabilities'>>;
   initialTab?: QuestionnaireTab;
+  /** Opens another entity (a delivery's spawned session). */
+  onOpenEntity?: (id: string) => void;
 }) {
   const q = useQuestionnaire(detail);
   const [tab, setTab] = useState<QuestionnaireTab>(initialTab);
@@ -37,12 +40,19 @@ export function QuestionnaireBlock({
   // capabilities mean not permitted, the contract's rule.
   const canEdit = detail.capabilities?.canEdit === true;
   if (!q.form) {
-    return <p className="qn-muted">This form’s questions didn’t load.</p>;
+    return q.detailError ? (
+      <p className="fq__issues" role="alert" data-testid="questionnaire-unavailable">
+        This form’s questions didn’t load: {q.detailError}
+      </p>
+    ) : (
+      <p className="qn-muted">Loading the form…</p>
+    );
   }
   const { content } = q.form;
   const count = q.responses?.length ?? 0;
 
   return (
+    <FormsNavContext.Provider value={onOpenEntity ?? null}>
     <div className="qn" data-testid="questionnaire">
       <div className="qn-head">
         <FormStatusChip status={content.status} />
@@ -76,8 +86,8 @@ export function QuestionnaireBlock({
       </div>
 
       <div role="tabpanel" id={`${base}-panel-${tab}`} aria-labelledby={`${base}-tab-${tab}`} className="qn-panel">
-        {q.error ? <p className="fq__issues" role="alert">{q.error}</p> : null}
-        {q.loading ? <p className="qn-muted">Loading…</p> : (
+        {q.error ? <p className="fq__issues" role="alert" data-testid="questionnaire-error">{q.error}</p> : null}
+        {q.loading ? (q.error ? null : <p className="qn-muted">Loading…</p>) : (
           <>
             {tab === 'fill' ? <FillTab q={q} /> : null}
             {tab === 'build' ? <BuildTab q={q} canEdit={canEdit} /> : null}
@@ -86,5 +96,6 @@ export function QuestionnaireBlock({
         )}
       </div>
     </div>
+    </FormsNavContext.Provider>
   );
 }

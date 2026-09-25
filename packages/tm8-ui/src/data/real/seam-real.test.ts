@@ -404,6 +404,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // reconcile, so nothing may journal it optimistically.
       'dispatch',
       'editMessage',
+      // Forms W3: `forms` — the questionnaire block's `forms.*` ops, one
+      // namespaced member like `skills`. Inserted at its sorted position.
+      'forms',
       // Git UI wave (2026-08-09): the session git rail's four verbs — the #76
       // verbs behind the facade, for surfaces with no machine to run git on.
       // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,

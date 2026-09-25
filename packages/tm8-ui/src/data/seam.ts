@@ -1,5 +1,6 @@
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
+import type { FormsOps } from '../forms/ops-port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
 import type { LaunchSuggestInput } from '@tm8/contract';
 /**
@@ -840,6 +841,12 @@ export interface Seam {
      * button refused-with-reason, never hidden.
      */
     jev?: JevPort;
+    /**
+     * `forms.*` — the questionnaire block's real port is built on it
+     * (`forms/real-port.ts`). Optional like `skills`: a seam without it gets
+     * the honest "unavailable" port, never fixtures.
+     */
+    forms?: FormsOps;
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     /**

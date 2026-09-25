@@ -11,10 +11,15 @@
  * config schema, and a new question starts from its type's contract
  * `example.config` — so Build knows no type either; the live preview is the
  * registry's own input component.
+ *
+ * SAVING is one diff, sent as ordered per-op calls (structure-diff.ts). A
+ * failure part-way keeps the working copy, adopts the form the last good step
+ * left, and says "Saved k of n"; Retry re-diffs, so only the rest is sent.
  */
 import { useMemo, useState } from 'react';
 import {
   DEFAULT_FORM_SETTINGS,
+  FORM_TRANSITIONS,
   FORM_QUESTION_TYPE_NAMES,
   FormSettingsSchema,
   FormSpecSchema,
@@ -27,7 +32,7 @@ import {
   type FormSettings,
 } from '@tm8/contract';
 import { Notice, QuestionField, QuestionFields } from './parts';
-import { FORM_TRANSITIONS, type FormState } from './seam';
+import { FormsPortError, FormsStructureSaveError, type FormState } from './seam';
 import { errorText, type Questionnaire } from './useQuestionnaire';
 
 interface Draft {
@@ -36,7 +41,26 @@ interface Draft {
   settings: FormSettings;
 }
 
-const TRANSITION_WORD = { open: 'Open', closed: 'Close', cancelled: 'Cancel form' } as const;
+type TransitionTarget = 'open' | 'closed' | 'cancelled';
+const TRANSITION_WORD: Record<TransitionTarget, string> = { open: 'Open', closed: 'Close', cancelled: 'Cancel form' };
+const isTarget = (s: string): s is TransitionTarget => s in TRANSITION_WORD;
+
+/** A failed write, as Build shows it. */
+type BuildFailure =
+  | { kind: 'partial'; done: number; total: number; step: string; reason: string }
+  | { kind: 'stale'; reason: string }
+  | { kind: 'error'; reason: string };
+
+function failureOf(e: unknown): BuildFailure {
+  if (e instanceof FormsStructureSaveError) {
+    const cause = e.cause instanceof FormsPortError && e.cause.code === 'version_conflict'
+      ? 'the form changed elsewhere'
+      : errorText(e.cause);
+    return { kind: 'partial', done: e.done, total: e.total, step: e.step, reason: cause };
+  }
+  if (e instanceof FormsPortError && e.code === 'version_conflict') return { kind: 'stale', reason: errorText(e) };
+  return { kind: 'error', reason: errorText(e) };
+}
 
 function draftOf(form: FormState): Draft {
   return {
@@ -79,7 +103,7 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
   const [work, setWork] = useState<Draft | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BuildFailure | null>(null);
   if (!form || !base) return null;
   const d = work ?? base;
   const dirty = work !== null && !formJsonEqual(work, base);
@@ -111,19 +135,26 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
       q.setForm(written);
       setWork(null);
     } catch (e) {
-      setError(errorText(e));
+      // Part-way: adopt what landed, keep the working copy; Retry re-diffs.
+      if (e instanceof FormsStructureSaveError) q.setForm(e.form);
+      setError(failureOf(e));
     } finally {
       setSaving(false);
     }
   };
 
-  const transition = async (to: 'open' | 'closed' | 'cancelled') => {
+  const transition = async (to: TransitionTarget) => {
     setError(null);
     try {
       q.setForm(await port.transition(form.id, to, form.version));
     } catch (e) {
-      setError(errorText(e));
+      setError(failureOf(e));
     }
+  };
+
+  const reload = async () => {
+    setError(null);
+    await q.refetchForm();
   };
 
   const move = (key: string, by: -1 | 1) => {
@@ -159,7 +190,7 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
       <div className="qn-bar">
         <span className="qn-bar__lead qn-muted">Structure version {form.content.structureVersion}</span>
         <span className="qn-bar__actions">
-          {FORM_TRANSITIONS[form.content.status].map((to) => (
+          {FORM_TRANSITIONS[form.content.status].filter(isTarget).map((to) => (
             <button
               key={to}
               type="button"
@@ -232,7 +263,19 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
           {issues.map((i) => <li key={i}>{i}</li>)}
         </ul>
       ) : null}
-      {error ? <p className="fq__issues" role="alert" data-testid="build-error">{error}</p> : null}
+      {error?.kind === 'partial' ? (
+        <div className="fq__issues" role="alert" data-testid="build-partial">
+          Saved {error.done} of {error.total} changes; stopped at {error.step}: {error.reason}.{' '}
+          <button type="button" className="pn-btn" disabled={saving} onClick={() => void save()}>Retry the rest</button>
+        </div>
+      ) : null}
+      {error?.kind === 'stale' ? (
+        <div className="fq__issues" role="alert" data-testid="build-stale">
+          The form changed since you loaded it. Reload it, then re-apply your edits.{' '}
+          <button type="button" className="pn-btn" onClick={() => void reload()}>Reload</button>
+        </div>
+      ) : null}
+      {error?.kind === 'error' ? <p className="fq__issues" role="alert" data-testid="build-error">{error.reason}</p> : null}
       <div className="qn-bar qn-bar--foot">
         <span className="qn-bar__lead qn-muted">{dirty ? 'Unsaved changes' : ''}</span>
         <span className="qn-bar__actions">

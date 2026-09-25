@@ -185,7 +185,7 @@ function ContentBlock({
          panel at another form must drop the previous one's unsaved answers
          rather than autosave them under the new id. */
       case 'questionnaire':
-        return <QuestionnaireBlock key={detail.id} detail={detail} />;
+        return <QuestionnaireBlock key={detail.id} detail={detail} {...(onOpenEntity ? { onOpenEntity } : {})} />;
       case 'artifact-preview':
         /* Keyed by entity id: a panel that re-points to another artifact must
            reset the viewer's whole run state (selected revision, mint timer,
