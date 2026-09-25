@@ -1109,6 +1109,27 @@ export class DbGraphPort implements GraphPort {
     return view as unknown as Record<string, unknown>;
   }
 
+  /**
+   * The tasks' version and status as they stand now, read after
+   * `execution_spawn` started them. Same caller claims as `loadSpawnContext`.
+   */
+  async loadTaskVersions(
+    auth: GraphAuth,
+    input: { taskIds: string[] },
+  ): Promise<Array<{ id: string; version: number; status: string }>> {
+    if (input.taskIds.length === 0) return [];
+    const rows = await this.db.tx(this.claims(auth), (q) =>
+      q.query<{ entity_id: string; version: number | string; work_status: string }>(
+        `select t.entity_id, e.version, t.work_status
+           from public.tasks t
+           join public.entities e on e.id = t.entity_id
+          where t.entity_id = any($1::uuid[])`,
+        [input.taskIds],
+      ),
+    );
+    return rows.map((row) => ({ id: row.entity_id, version: Number(row.version), status: row.work_status }));
+  }
+
   async issueWorkSessionAgentToken(
     auth: GraphAuth,
     sessionId: string,

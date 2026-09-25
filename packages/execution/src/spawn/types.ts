@@ -980,6 +980,18 @@ export interface GraphPort {
     auth: GraphAuth,
     input: { sessionId: string; taskId: string; totalBytes: number },
   ): Promise<Record<string, unknown>>;
+  /**
+   * The tasks' version and status as they stand NOW, read after
+   * `execution_spawn` has started them. `loadSpawnContext` reads before that
+   * transition, so its version is one behind for every task the spawn
+   * started, and the task turn's `tm8 task tick … --expect-version` then
+   * failed the agent's first tick with version_conflict. Optional: a graph
+   * without it keeps the pre-spawn values.
+   */
+  loadTaskVersions?(
+    auth: GraphAuth,
+    input: { taskIds: string[] },
+  ): Promise<Array<{ id: string; version: number; status: string }>>;
   /** Mint a credential bound to this exact work-session/persona pair. */
   issueWorkSessionAgentToken(
     auth: GraphAuth,

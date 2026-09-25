@@ -1273,6 +1273,32 @@ export class SpawnService {
     }
   }
 
+  /**
+   * `execution_spawn` starts every unstarted task it is handed, which bumps
+   * the task's version, but the context was read before it ran. Re-read the
+   * version and status so the manifest (and every version the prompt
+   * renders) matches the task the agent will write to. Stale by one, the
+   * task turn's version failed the agent's first versioned write with
+   * version_conflict (D13 re-run: 6 of 6 lanes that ticked from the turn).
+   * A failed read keeps the pre-spawn values and never fails the launch: a
+   * refused write names the current version.
+   */
+  private async refreshStartedTasks(auth: GraphAuth, context: SpawnContext): Promise<void> {
+    if (context.tasks.length === 0 || !this.graph.loadTaskVersions) return;
+    try {
+      const rows = await this.graph.loadTaskVersions(auth, { taskIds: context.tasks.map((t) => t.id) });
+      const now = new Map(rows.map((row) => [row.id, row]));
+      context.tasks = context.tasks.map((task) => {
+        const current = now.get(task.id);
+        return current ? { ...task, version: current.version, status: current.status } : task;
+      });
+    } catch (error) {
+      this.logger?.warn?.('spawn: task versions not refreshed after the start transition', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
@@ -1378,6 +1404,9 @@ export class SpawnService {
       confirmUntrusted: request.confirmUntrusted ?? false,
       clientMutationId: request.clientMutationId ?? null,
     });
+    // The RPC just started the tasks, so their version moved (a replay's did,
+    // the first time). Compose from the task as it stands now.
+    await this.refreshStartedTasks(auth, context);
 
     // A projectless scratch session's directory is named for the session, which
     // only exists now. Re-resolve so the manifest and the PTY agree.
