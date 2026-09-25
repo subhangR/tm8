@@ -9,7 +9,22 @@ export const METER_NULL_BUDGET_COPY = 'takes what the prompt has left';
 /** Lane A's words, so the hook and the meter cannot drift. */
 export const METER_INDEX_OFF_COPY = REFERENCES_OFF_NOTE;
 export const METER_SKILL_TOOLTIP = SKILL_BYTES_NOTE;
-export const METER_OVER_COPY = 'Allowed — your ticks, your call. Spawn trims to the budget and records what it left out.';
+/**
+ * What spawn does with a group over its budget (coordinator, 2026-09-26) —
+ * it depends on the context index and the group, so the meter says the one
+ * that applies. What happens, not attitude.
+ */
+export const METER_OVER_MEMORIES_COPY =
+  'Over budget is allowed. At launch the lowest-ranked memories collapse to a one-line entry the agent can open; each one is recorded.';
+export const METER_OVER_INDEX_COPY =
+  'Over budget is allowed. At launch the lowest-ranked entries lose their description first, then drop; each cut is recorded.';
+export const METER_OVER_INDEX_OFF_COPY =
+  'With the context index off, this budget isn’t enforced at launch; the whole prompt is still capped at 32 KiB.';
+
+export function meterOverCopy(group: BudgetMeterGroup, contextIndex: 'on' | 'off' | null): string {
+  if (contextIndex === 'off') return METER_OVER_INDEX_OFF_COPY;
+  return group === 'memories' ? METER_OVER_MEMORIES_COPY : METER_OVER_INDEX_COPY;
+}
 
 /** `300 B`, `1.2 KB`, `12 KB` — the prompt's size in words a person reads. */
 export function formatBytes(bytes: number): string {
@@ -34,7 +49,7 @@ const GROUP_WORD: Record<BudgetMeterGroup, string> = {
  * number (memory bytes stay real — they are whole entries either way). A null
  * budget is not "unlimited", it is "takes what the prompt has left", and it
  * says so. Over budget is SHOWN, never refused: a hand tick past the budget is
- * the person's choice, and spawn trims and records it.
+ * the person's choice, and the meter says what spawn will do with it.
  */
 export function BudgetMeter({ group, usedBytes, budget, count, contextIndex, compact }: {
   group: BudgetMeterGroup;
@@ -119,7 +134,7 @@ export function BudgetMeter({ group, usedBytes, budget, count, contextIndex, com
       {tip}
       {over ? (
         <span className="jev-meter__over" id={noteId} data-testid={`jev-meter-${group}-over`}>
-          Over budget by {formatBytes(usedBytes - budget)}. {METER_OVER_COPY}
+          Over budget by {formatBytes(usedBytes - budget)}. {meterOverCopy(group, contextIndex)}
         </span>
       ) : null}
     </div>

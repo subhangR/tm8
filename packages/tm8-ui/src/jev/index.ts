@@ -33,14 +33,17 @@ export { JevGroupStatus } from './JevGroupStatus';
 export { JevRunBar } from './JevRunBar';
 export { JevStrip } from './JevStrip';
 export { JevReviewDrawer } from './JevReviewDrawer';
-export { JevEntryPoint, entryBadge, suggestedCount, appliedCount } from './JevEntryPoint';
+export { JevEntryPoint, ENTRY_TITLE, entryBadge, suggestedCount, appliedCount } from './JevEntryPoint';
 export { JevPanel, applyAllNotice, ledgerLines, untickedWhy, type JevPanelSource } from './JevPanel';
 export {
   BudgetMeter,
   formatBytes,
   METER_INDEX_OFF_COPY,
   METER_NULL_BUDGET_COPY,
-  METER_OVER_COPY,
+  METER_OVER_INDEX_COPY,
+  METER_OVER_INDEX_OFF_COPY,
+  METER_OVER_MEMORIES_COPY,
+  meterOverCopy,
   METER_SKILL_TOOLTIP,
   type BudgetMeterGroup,
 } from './BudgetMeter';

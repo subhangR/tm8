@@ -15,6 +15,9 @@ import {
   formatBytes,
   METER_INDEX_OFF_COPY,
   METER_NULL_BUDGET_COPY,
+  METER_OVER_INDEX_COPY,
+  METER_OVER_INDEX_OFF_COPY,
+  METER_OVER_MEMORIES_COPY,
   METER_SKILL_TOOLTIP,
 } from './BudgetMeter';
 import { entryBadge, JevEntryPoint } from './JevEntryPoint';
@@ -182,8 +185,9 @@ describe('JevEntryPoint', () => {
     };
     const view = render(<JevEntryPoint jev={source({ applied })} modelLabel="m" />);
     // model 1 + teammate 1 + memories 2 + skills 1 + references 1
-    expect(view.getByTestId('jev-entry-badge').textContent).toBe('✦ 6 suggested · 3 applied');
+    expect(view.getByTestId('jev-entry-badge').textContent).toBe('✦ 6 suggested · 3 changes applied');
     expect(view.getByTestId('jev-entry-cost').textContent).toBe('$0.00021');
+    expect(view.getByTestId('jev-entry-button').getAttribute('title')).toMatch(/A change is the model, the teammate/);
   });
 
   it('says asking, failed, partly failed, stale and unavailable', () => {
@@ -195,8 +199,8 @@ describe('JevEntryPoint', () => {
       groups: { ...ANSWERED, skills: failedGroup('timeout') } as JevGroups,
       entity: { memories: viewOf('memories'), skills: failedView('skills'), references: viewOf('references') },
     });
-    expect(entryBadge(skillsFailed)).toBe('✦ 5 suggested · 0 applied · 1 failed');
-    expect(entryBadge(source({ state: 'stale' }))).toBe('✦ 6 suggested · 0 applied · stale');
+    expect(entryBadge(skillsFailed)).toBe('✦ 5 suggested · 0 changes applied · 1 failed');
+    expect(entryBadge(source({ state: 'stale' }))).toBe('✦ 6 suggested · 0 changes applied · stale');
   });
 
   it('unavailable offers the key settings link', () => {
@@ -453,6 +457,84 @@ describe('JevPanel over useJevSuggestions', () => {
     expect(host.setModel).toHaveBeenCalledWith({ model: 'claude-sonnet-5', agentToolId: 'claude-code', reasoningEffort: 'high' });
     fireEvent.click(view.getByTestId('jev-apply-teammate'));
     expect(host.setTeammate).toHaveBeenCalledWith('ent-tm-scout');
-    expect(view.getByTestId('jev-entry-badge').textContent).toBe('✦ 6 suggested · 3 applied');
+    expect(view.getByTestId('jev-entry-badge').textContent).toBe('✦ 6 suggested · 3 changes applied');
+  });
+});
+
+describe('BudgetMeter', () => {
+  it('within budget: used / budget, as a meter', () => {
+    const view = render(<BudgetMeter group="memories" usedBytes={600} budget={12288} contextIndex="on" />);
+    const meter = view.getByTestId('jev-meter-memories');
+    expect(meter.dataset.meter).toBe('within');
+    expect(meter.textContent).toContain('600 B / 12 KB');
+    expect(view.getByRole('meter').getAttribute('aria-valuenow')).toBe('600');
+    expect(view.queryByTestId('jev-meter-memories-over')).toBeNull();
+  });
+
+  it('a null budget takes what the prompt has left', () => {
+    const view = render(<BudgetMeter group="skills" usedBytes={420} budget={null} contextIndex="on" />);
+    const meter = view.getByTestId('jev-meter-skills');
+    expect(meter.dataset.meter).toBe('no-budget');
+    expect(meter.textContent).toContain(`420 B · ${METER_NULL_BUDGET_COPY}`);
+    expect(view.queryByRole('meter')).toBeNull();
+  });
+
+  it('skills explain that their bytes assume indexed, not native', () => {
+    const view = render(<BudgetMeter group="skills" usedBytes={420} budget={2048} contextIndex="on" />);
+    expect(view.getByTestId('jev-meter-skills').getAttribute('title')).toBe(METER_SKILL_TOOLTIP);
+    expect(view.getByRole('img', { name: METER_SKILL_TOOLTIP })).toBeTruthy();
+    const mem = render(<BudgetMeter group="memories" usedBytes={1} budget={2} contextIndex="on" />);
+    expect(mem.getByTestId('jev-meter-memories').getAttribute('title')).toBeNull();
+  });
+
+  it('references with the context index off show no bytes', () => {
+    const view = render(<BudgetMeter group="references" usedBytes={380} budget={4096} contextIndex="off" />);
+    const meter = view.getByTestId('jev-meter-references');
+    expect(meter.dataset.meter).toBe('index-off');
+    expect(meter.textContent).toContain(METER_INDEX_OFF_COPY);
+    expect(meter.textContent).not.toMatch(/\bB\b|KB/);
+  });
+
+  it('memory bytes stay real with the context index off', () => {
+    const view = render(<BudgetMeter group="memories" usedBytes={600} budget={12288} contextIndex="off" />);
+    expect(view.getByTestId('jev-meter-memories').textContent).toContain('600 B / 12 KB');
+  });
+
+  it('over budget is visible, allowed, and says by how much', () => {
+    const view = render(<BudgetMeter group="references" usedBytes={5120} budget={4096} contextIndex="on" />);
+    const meter = view.getByTestId('jev-meter-references');
+    expect(meter.dataset.meter).toBe('over');
+    expect(view.getByTestId('jev-meter-references-over').textContent).toBe(`Over budget by 1.0 KB. ${METER_OVER_INDEX_COPY}`);
+    expect(view.getByRole('meter').getAttribute('aria-valuetext')).toBe('5.0 KB of 4.0 KB, over budget');
+  });
+
+  it('over budget says what spawn does, by group and context index', () => {
+    const mem = render(<BudgetMeter group="memories" usedBytes={5120} budget={4096} contextIndex="on" />);
+    expect(mem.getByTestId('jev-meter-memories-over').textContent).toBe(`Over budget by 1.0 KB. ${METER_OVER_MEMORIES_COPY}`);
+    mem.unmount();
+    const skills = render(<BudgetMeter group="skills" usedBytes={5120} budget={4096} contextIndex="on" />);
+    expect(skills.getByTestId('jev-meter-skills-over').textContent).toContain(METER_OVER_INDEX_COPY);
+    skills.unmount();
+    const off = render(<BudgetMeter group="memories" usedBytes={5120} budget={4096} contextIndex="off" />);
+    expect(off.getByTestId('jev-meter-memories-over').textContent).toContain(METER_OVER_INDEX_OFF_COPY);
+    expect(METER_OVER_INDEX_OFF_COPY).toMatch(/32 KiB/);
+  });
+
+  it('unknown bytes show the count only — no bar, no invented bytes', () => {
+    const view = render(<BudgetMeter group="memories" usedBytes={null} budget={12288} count={3} contextIndex="on" />);
+    const meter = view.getByTestId('jev-meter-memories');
+    expect(meter.dataset.meter).toBe('count-only');
+    expect(meter.textContent).toContain('3 ticked');
+    expect(meter.textContent).toContain('budget 12 KB');
+    expect(view.queryByRole('meter')).toBeNull();
+    view.unmount();
+    const none = render(<BudgetMeter group="skills" usedBytes={null} budget={null} count={0} contextIndex="on" />);
+    expect(none.getByTestId('jev-meter-skills').textContent).toContain(METER_NULL_BUDGET_COPY);
+  });
+
+  it('formats bytes', () => {
+    expect(formatBytes(300)).toBe('300 B');
+    expect(formatBytes(1229)).toBe('1.2 KB');
+    expect(formatBytes(12288)).toBe('12 KB');
   });
 });

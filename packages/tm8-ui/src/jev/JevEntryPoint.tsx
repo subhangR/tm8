@@ -33,7 +33,11 @@ function failedCount(jev: JevPanelSource): number {
   }).length;
 }
 
-/** The button's words for the run's state: `✦ 12 suggested · 3 applied`. */
+/** The button's tooltip: the badge counts CHANGES, not rows, and says what one is. */
+export const ENTRY_TITLE =
+  'Jev’s recommendations for this launch. A change is the model, the teammate, and each memory, skill or reference added or default removed. Nothing changes until you apply it.';
+
+/** The button's words for the run's state: `✦ 12 suggested · 3 changes applied`. */
 export function entryBadge(jev: JevPanelSource): string {
   if (jev.state === 'idle') return '✦ Ask Jev';
   if (jev.state === 'asking') return '✦ Asking Jev…';
@@ -41,7 +45,8 @@ export function entryBadge(jev: JevPanelSource): string {
   const failed = failedCount(jev);
   const touched = LAUNCH_SUGGEST_GROUPS.filter((group) => jev.groups[group].status !== 'idle').length;
   if (failed > 0 && failed === touched) return '✦ Jev failed';
-  const parts = [`✦ ${String(suggestedCount(jev))} suggested`, `${String(appliedCount(jev))} applied`];
+  const changes = appliedCount(jev);
+  const parts = [`✦ ${String(suggestedCount(jev))} suggested`, `${String(changes)} ${changes === 1 ? 'change' : 'changes'} applied`];
   if (failed > 0) parts.push(`${String(failed)} failed`);
   if (jev.state === 'stale') parts.push('stale');
   return parts.join(' · ');
@@ -109,8 +114,7 @@ export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenCha
           aria-controls={open ? panelId : undefined}
           aria-disabled={refused ? true : undefined}
           aria-busy={asking || undefined}
-          title={jev.askRefusal ?? (jev.state === 'unavailable' ? JEV_UNAVAILABLE_COPY
-            : 'Jev’s recommendations for this launch. Nothing changes until you apply it.')}
+          title={jev.askRefusal ?? (jev.state === 'unavailable' ? JEV_UNAVAILABLE_COPY : ENTRY_TITLE)}
           onClick={(event) => {
             event.stopPropagation();
             if (refused) return;
