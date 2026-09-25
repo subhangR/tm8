@@ -3015,7 +3015,8 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (headers I4): + entities.header.set/clear; matched to the regenerated manifest.
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
-  'sha256:3b5b61f29de562cdcd00e4331a074e430db8838ed4c7137c24e923c6b7645053';
+  // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
+  'sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2';
 
 export const GRAMMAR_VERSION = '2';
 
