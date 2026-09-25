@@ -1,6 +1,7 @@
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
+import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
@@ -202,6 +203,8 @@ export function registerFacadeHandlers(
   registerSkillMutations(registry, facade);
   // launch.suggest (Jev, UI-only advice). One registration; see jev/handlers.ts.
   registerJevHandlers(registry, facade, deps.resolveJevAdvisor ? { resolveAdvisor: deps.resolveJevAdvisor } : {});
+  // launch.defaults (I9): spawn's own default loaders, for the launch sheet's pre-ticks.
+  registerLaunchDefaultsHandler(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs
