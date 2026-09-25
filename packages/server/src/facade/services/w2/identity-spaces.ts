@@ -353,6 +353,9 @@ async function loadMembers(q: Querier, spaceId: string): Promise<MemberView[]> {
     `select member_row.entity_id, member_row.role, member_row.joined_at
        from public.members member_row
       where member_row.space_id = $1
+        -- 230: a left/removed row is kept (its authorship still renders) but
+        -- is no longer a member of the space.
+        and member_row.status = 'active'
       order by member_row.joined_at asc, member_row.entity_id asc`,
     [spaceId],
   );

@@ -737,6 +737,9 @@ interface ActorRow {
   space_id: string;
   member_display_name: string | null;
   member_role: string | null;
+  /** 230: `members.status` of the member row, or of the persona's owner. */
+  member_status: string | null;
+  team_member_owner_status: string | null;
   team_member_name: string | null;
   team_member_avatar: string | null;
   team_member_owner_id: string | null;
@@ -774,13 +777,16 @@ export async function loadActors(
   const rows = await q.query<ActorRow>(
     `select e.id, e.kind, e.space_id,
             mem.display_name as member_display_name, mem.role as member_role,
+            mem.status as member_status,
             tm.name as team_member_name, tm.avatar as team_member_avatar,
             tm.owner_member_id as team_member_owner_id,
+            tm_owner.status as team_member_owner_status,
             up.display_name as profile_display_name, up.avatar as profile_avatar,
             ws.title as session_title
        from public.entities e
        left join public.members mem on mem.entity_id = e.id
        left join public.team_members tm on tm.entity_id = e.id
+       left join public.members tm_owner on tm_owner.entity_id = tm.owner_member_id
        left join public.user_profiles up on up.identity_id = mem.identity_id
        left join public.work_sessions ws on ws.entity_id = e.id
       where e.id = any($1::uuid[])`,
@@ -793,7 +799,13 @@ export async function loadActors(
   const sessionIds = rows.filter((r) => r.kind === 'work_session').map((r) => r.id);
   const personaOf = new Map<
     string,
-    { persona_id: string; name: string | null; avatar: string | null; owner_member_id: string | null }
+    {
+      persona_id: string;
+      name: string | null;
+      avatar: string | null;
+      owner_member_id: string | null;
+      owner_status: string | null;
+    }
   >();
   if (sessionIds.length > 0) {
     const personaRows = await q.query<{
@@ -802,12 +814,14 @@ export async function loadActors(
       name: string | null;
       avatar: string | null;
       owner_member_id: string | null;
+      owner_status: string | null;
     }>(
       `select distinct on (pe.dst_id)
               pe.dst_id as session_id, pe.src_id as persona_id,
-              tm.name, tm.avatar, tm.owner_member_id
+              tm.name, tm.avatar, tm.owner_member_id, owner_row.status as owner_status
          from public.edges pe
          join public.team_members tm on tm.entity_id = pe.src_id
+         left join public.members owner_row on owner_row.entity_id = tm.owner_member_id
         where pe.type = 'participates_in' and pe.dst_id = any($1::uuid[])
         order by pe.dst_id, pe.created_at desc`,
       [sessionIds],
@@ -831,6 +845,7 @@ export async function loadActors(
               avatar: persona.avatar,
               role: null,
               ...(persona.owner_member_id ? { ownerMemberId: persona.owner_member_id } : {}),
+              ...endedStatus(persona.owner_status),
               isAgent: true,
               via: { sessionId: row.id },
             }
@@ -858,10 +873,22 @@ export async function loadActors(
       avatar: isAgent ? row.team_member_avatar : row.profile_avatar,
       role: isAgent ? null : row.member_role,
       ...(isAgent && row.team_member_owner_id ? { ownerMemberId: row.team_member_owner_id } : {}),
+      ...endedStatus(isAgent ? row.team_member_owner_status : row.member_status),
       isAgent,
     });
   }
   return out;
+}
+
+/**
+ * G6 (230): a member who left or was removed keeps their row, their persona
+ * and their authorship — old content still renders under their name. The
+ * summary says the membership ended (`memberStatus`); the client appends
+ * "(left)". A persona carries its owner's status. Absent while active, so
+ * every existing summary is byte-identical.
+ */
+function endedStatus(status: string | null | undefined): Pick<ActorSummary, 'memberStatus'> {
+  return status === 'left' || status === 'removed' ? { memberStatus: status } : {};
 }
 
 /**

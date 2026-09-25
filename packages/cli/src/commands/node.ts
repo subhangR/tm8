@@ -15,9 +15,10 @@
  * reports the mode and names where the switch lives, and offers no way to move
  * it.
  */
-import type { AuthClaimStatusResult } from '@tm8/contract';
+import type { AccountDisableResult, AuthClaimStatusResult } from '@tm8/contract';
 
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
@@ -44,4 +45,37 @@ async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-export const NODE_COMMANDS: CommandModule[] = [{ path: ['node', 'mode'], run: nodeMode }];
+/**
+ * `node account disable <account-id> --yes` — `accounts.disable` (G6, T15).
+ *
+ * The one WRITE under `node`: disabling an account is a node-admin act, not a
+ * Space one. Every session of the account is revoked in the same transaction
+ * and its running agent sessions are stopped; the account row is kept.
+ * Refused for yourself and for the node owner.
+ */
+async function nodeAccountDisable(cmd: CommandContext): Promise<ExitCode> {
+  const accountId = cmd.args[0];
+  if (cmd.args.length !== 1 || !accountId) {
+    throw new CliError('usage: tm8 node account disable <account-id> --yes', EXIT_USAGE);
+  }
+  if (!cmd.options.bool('yes')) {
+    throw new CliError('`tm8 node account disable` is destructive and requires --yes', EXIT_USAGE, {
+      hint: 'non-interactive execution never prompts, and --format json is not consent',
+    });
+  }
+  const data = await observedInvoke<AccountDisableResult>(clientFor(cmd.ctx), 'accounts.disable', {
+    params: { accountId },
+    body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(
+    data,
+    (r) =>
+      `disabled  account ${r.accountId}  sessions revoked ${r.revokedSessionCount}  agent sessions stopped ${r.stoppedSessionIds.length}`,
+  );
+  return EXIT_OK;
+}
+
+export const NODE_COMMANDS: CommandModule[] = [
+  { path: ['node', 'mode'], run: nodeMode },
+  { path: ['node', 'account', 'disable'], run: nodeAccountDisable },
+];

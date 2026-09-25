@@ -53,6 +53,8 @@ import {
   type CollectionResult,
   type CommandContext,
   type CommandResult,
+  type MembershipEndResult,
+  type AccountDisableResult,
   type ContainersCreateInput,
   type ContainersDestroyInput,
   type ContainersLifecycleInput,
@@ -329,6 +331,33 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('spaces.members.updateRole', {
         params: { spaceId, memberId },
         body: input,
+      });
+    },
+
+    /**
+     * G6 (230): end a membership. The row is kept (`left` / `removed`), so the
+     * member's authorship still renders; the server revokes, stops and clears
+     * in one transaction and closes their sockets on the Space.
+     */
+    leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult> {
+      return http.call<MembershipEndResult>('spaces.leave', {
+        params: { spaceId },
+        body: { clientMutationId: newId('leave') },
+      });
+    },
+
+    removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult> {
+      return http.call<MembershipEndResult>('spaces.members.remove', {
+        params: { spaceId, memberId },
+        body: { clientMutationId: newId('memremove') },
+      });
+    },
+
+    /** Node admin only: revoke every session of an account and stop its agents. */
+    disableAccount(accountId: string): Promise<AccountDisableResult> {
+      return http.call<AccountDisableResult>('accounts.disable', {
+        params: { accountId },
+        body: { clientMutationId: newId('acctdisable') },
       });
     },
 

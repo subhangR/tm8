@@ -300,7 +300,7 @@ const READS = [
 describe('the registered command set', () => {
   it('registers all 27 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(33); // +2 space chat-defaults get/set (entity chat G) // +1 space configs get (task 01a0d350)
+    expect(paths).toHaveLength(35); /* +2 space leave, space member remove (G6, 230). MEASURED. */ // +2 space chat-defaults get/set (entity chat G) // +1 space configs get (task 01a0d350)
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);

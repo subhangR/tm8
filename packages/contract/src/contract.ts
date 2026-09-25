@@ -127,6 +127,13 @@ export interface ActorSummary {
    * a consumer that ignores it renders the persona and is still truthful.
    */
   via?: { sessionId: EntityId };
+  /**
+   * Present only when the membership behind this actor has ENDED (migration
+   * 230): a `member` who left or was removed, or a `team_member` whose owner
+   * did. The actor and everything they authored still render; the client adds
+   * "(left)". Absent means active. Additive.
+   */
+  memberStatus?: 'left' | 'removed';
 }
 
 export interface EntityCounters {

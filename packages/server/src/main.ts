@@ -390,6 +390,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       },
       ...(credentials ? { credentials } : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
+      membership: {
+        sockets: subscriptions,
+        ...(execution ? { sessions: execution.spawnService } : {}),
+      },
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
         ? {

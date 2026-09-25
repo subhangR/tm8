@@ -328,6 +328,7 @@ export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
   via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
+  memberStatus: z.enum(['left', 'removed']).optional(),
 }).strict();
 
 export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
