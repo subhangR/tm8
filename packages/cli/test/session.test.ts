@@ -397,7 +397,13 @@ describe('session spawn', () => {
   it('omits every optional field the caller did not give', async () => {
     const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
     expect(r.code).toBe(0);
-    expect(Object.keys(body()).sort()).toEqual(['clientMutationId', 'spaceId', 'teamMemberId']);
+    expect(Object.keys(body()).sort()).toEqual(['clientMutationId', 'selectionReasons', 'spaceId', 'teamMemberId']);
+  });
+
+  it('tells the launch audit every group kept its defaults because this is the CLI', async () => {
+    const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
+    expect(r.code).toBe(0);
+    expect(body().selectionReasons).toEqual({ memories: 'cli', skills: 'cli', references: 'cli' });
   });
 
   it('requires --teammate', async () => {

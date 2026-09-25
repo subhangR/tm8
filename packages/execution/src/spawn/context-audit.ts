@@ -20,7 +20,8 @@ import {
   serializeSkillIndexEntry,
   utf8Bytes,
 } from '@tm8/prompt';
-import type { SkippedSkill } from '@tm8/contract';
+import { SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
+import type { SkippedSkill, SpawnSelection, SpawnSelectionDefaultReason, SpawnSelectionGroup } from '@tm8/contract';
 import type {
   ContextDrop,
   ContextDropReason,
@@ -47,15 +48,31 @@ export interface ManifestContextInput {
   skills: readonly ManifestSkillContext[];
   /** `effectiveSkills.skipped`, including the byte-budget drops. */
   skippedSkills: readonly SkippedSkill[];
-  /** Whether the request carried a selection; the loader's audit wins when present. */
-  requestSelected: boolean;
+  /** The request's selection; the loader's audit of which groups it selected wins when present. */
+  requestSelection?: SpawnSelection;
+  /** The request's per-group reasons for keeping defaults (audit-only, validated at the wire). */
+  selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /** A resume could not parse the launch's recorded selection (`SpawnRequest.selectionReplayInvalid`). */
+  selectionReplayInvalid?: boolean;
+}
+
+const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
+
+/** The groups a selection names, each as an exact set. */
+function selectionGroupsOf(selection: SpawnSelection | undefined): SpawnSelectionGroup[] {
+  if (!selection) return [];
+  return [
+    ...(selection.memoryIds !== undefined ? ['memories' as const] : []),
+    ...(selection.skillIds !== undefined ? ['skills' as const] : []),
+    ...(selection.referenceIds !== undefined ? ['references' as const] : []),
+  ];
 }
 
 /** `groups`, `entries` and `dropped`; the caller keeps `memoryIds`. */
 export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds'>> {
   const { context } = input;
   const audit = context.contextAudit;
-  const selected = audit?.selected ?? input.requestSelected;
+  const selectedGroups = new Set<SpawnSelectionGroup>(audit?.selectedGroups ?? selectionGroupsOf(input.requestSelection));
   const entries: ContextEntryRecord[] = [];
   const dropped: ContextDrop[] = [...(audit?.dropped ?? [])];
   const ranks: Record<ContextGroupName, number> = { memories: 0, skills: 0, references: 0, teammates: 0 };
@@ -72,7 +89,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
       entityId,
       kind: 'memory',
       group: 'memories',
-      via: audit?.memoryVia[index] ?? (selected ? 'selection' : 'teammate'),
+      via: audit?.memoryVia[index] ?? (selectedGroups.has('memories') ? 'selection' : 'teammate'),
       state: 'expanded',
       bytes: typeof text === 'string' ? utf8Bytes(serializeMemoryEntry(text)) : 0,
     });
@@ -117,13 +134,23 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   // past the spawn read it has no id, so it is counted as `unread`.
   // Shown rows first across every task, so an entity one task shows and
   // another caps is recorded as shown.
-  const seen = new Set<string>();
+  //
+  // Every id lands in exactly one place. The loader's drops are claimed first,
+  // and when references were SELECTED a snapshot row of a selectable kind
+  // outside the set is not a context entry: the snapshot still names it (its
+  // <linked> list is the task's identity list, §2.2), but it is recorded only
+  // as the loader's `not-selected`.
+  const seen = new Set<string>(dropped.map((drop) => `${drop.group}:${drop.entityId}`));
+  const selectedReferences = context.references ? new Set(context.references.map((ref) => ref.entityId)) : null;
+  const outsideSelection = (kind: string, entityId: string): boolean =>
+    selectedReferences !== null && REFERENCE_KINDS.has(kind) && !selectedReferences.has(entityId);
   const capped: ContextDrop[] = [];
   let unreadReferences = 0;
   for (const task of context.tasks) {
     const linked = task.linked ?? [];
     linked.forEach((item, index) => {
       const group: ContextGroupName = item.kind === 'team_member' ? 'teammates' : 'references';
+      if (outsideSelection(item.kind, item.entityId)) return;
       if (index >= LINKED_MANIFEST_MAX) {
         capped.push({ entityId: item.entityId, kind: item.kind, group, reason: 'count-cap', level: 'entry' });
         return;
@@ -142,6 +169,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     });
     unreadReferences += Math.max(0, (task.linkedTotal ?? linked.length) - linked.length);
     (task.attachments ?? []).forEach((file, index) => {
+      if (outsideSelection('file', file.fileEntityId)) return;
       if (index >= ATTACHMENT_MANIFEST_MAX) {
         capped.push({ entityId: file.fileEntityId, kind: 'file', group: 'references', reason: 'count-cap', level: 'entry' });
         return;
@@ -166,21 +194,38 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     dropped.push(drop);
   }
 
-  const selectable = (): ContextGroupAudit =>
-    selected ? { mode: 'selected' } : { mode: 'default', reason: 'no-selection' };
+  // A selected reference that is not one of the tasks' own links has no
+  // rendering yet: the snapshot lists only task links, and no context index
+  // renders references. Recorded, so the selection never shrinks silently.
+  // A selected DEFAULT the snapshot never read (past the spawn read's row
+  // cap, so only counted in `unread`) gets its own per-id `count-cap`.
+  for (const reference of context.references ?? []) {
+    const key = `references:${reference.entityId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dropped.push(reference.via === 'selection'
+      ? { entityId: reference.entityId, kind: reference.kind, group: 'references', reason: 'not-rendered', level: 'entry' }
+      : { entityId: reference.entityId, kind: reference.kind, group: 'references', reason: 'count-cap', level: 'entry' });
+  }
+
+  const selectable = (group: SpawnSelectionGroup): ContextGroupAudit =>
+    selectedGroups.has(group)
+      ? { mode: 'selected' }
+      : {
+        mode: 'default',
+        reason: input.selectionReplayInvalid ? 'replay-invalid' : input.selectionReasons?.[group] ?? 'no-selection',
+      };
   const groups: Record<ContextGroupName, ContextGroupAudit> = {
     memories: {
-      ...selectable(),
+      ...selectable('memories'),
       ...(audit?.legacyMemoriesDropped ? { legacyDropped: audit.legacyMemoriesDropped } : {}),
     },
-    skills: selectable(),
-    // Selection cannot name references or teammates yet (I6), so they are
-    // always the edge defaults.
+    skills: selectable('skills'),
     references: {
-      mode: 'default',
-      reason: 'not-selectable',
+      ...selectable('references'),
       ...(unreadReferences > 0 ? { unread: unreadReferences } : {}),
     },
+    // Selection cannot name teammates: the teammate pick is its own click.
     teammates: { mode: 'default', reason: 'not-selectable' },
   };
   return { groups, entries, dropped };

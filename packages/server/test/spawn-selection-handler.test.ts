@@ -144,6 +144,19 @@ describe('execution.spawn — selection and jevRunId', () => {
     expect(db.rpcCalls).not.toContain('public.execution_spawn');
   });
 
+  it('refuses a referenceIds entry that is not a reference kind, by name, before any write', async () => {
+    const { db, error } = await spawn({
+      taskIds: ['99999999-9999-4999-8999-999999999999'],
+      selection: { referenceIds: [NOT_A_MEMORY, MEMORY] },
+    });
+    expect(error).toMatchObject({ code: 'invalid_input' });
+    // The task is a reference kind; the memory is not.
+    expect(String((error as Error).message)).toContain(`referenceIds ${MEMORY}`);
+    expect(String((error as Error).message)).not.toContain(NOT_A_MEMORY);
+    expect(db.rpcCalls).not.toContain('public.derive_task_for_entity');
+    expect(db.rpcCalls).not.toContain('public.execution_spawn');
+  });
+
   it('links the Ask Jev run to the new session after the spawn succeeds', async () => {
     const { db, error } = await spawn({ selection: { memoryIds: [MEMORY], skillIds: [SKILL] }, jevRunId: RUN });
     expect(error).toBeUndefined();

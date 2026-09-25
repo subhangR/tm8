@@ -68,4 +68,13 @@ describe('DbGraphPort.loadSessionLaunchPosture harness choice', () => {
     expect(await load({ harness_choice: null })).not.toHaveProperty('harnessChoice');
     expect(await load({ harness_choice: ['inherit'] })).not.toHaveProperty('harnessChoice');
   });
+
+  it('carries the recorded launch.selection and selectionReasons for resume to replay', async () => {
+    const posture = await load({ selection: { memoryIds: ['m'] }, selection_reasons: { skills: 'cli' } });
+    expect(posture!.selection).toEqual({ memoryIds: ['m'] });
+    expect(posture!.selectionReasons).toEqual({ skills: 'cli' });
+    const none = await load({ selection: null, selection_reasons: null });
+    expect(none).not.toHaveProperty('selection');
+    expect(none).not.toHaveProperty('selectionReasons');
+  });
 });

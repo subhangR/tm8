@@ -29,7 +29,7 @@ export const TEAMMATE_FIT_SCORE = 1.0;
 export const TICK_SCORE = 1.5;
 /** Critical: always ticked — it outranks every merely useful row for the 32 slots. */
 export const CRITICAL_SCORE = 2.5;
-/** The spawn schema's `selection.memoryIds` bound. */
+/** How many memories are pre-ticked (the spawn schema's own ceiling is `SPAWN_SELECTION_GROUP_LIMIT`). */
 export const MEMORY_TICK_LIMIT = 32;
 
 const LEVELS: readonly RelevanceLevel[] = ['irrelevant', 'background', 'useful', 'critical'];

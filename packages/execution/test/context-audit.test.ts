@@ -148,20 +148,22 @@ describe('manifest.context: entries, dropped, groups', () => {
         linked, linkedTotal: 40,
       }],
       contextAudit: {
-        selected: true,
+        selectedGroups: ['memories', 'skills'],
         memoryVia: ['selection', 'selection'],
         selectionOnlySkillIds: ['picked'],
         dropped: [{ entityId: 'm-default', kind: 'memory', group: 'memories', reason: 'not-selected' }],
         legacyMemoriesDropped: 1,
       },
     });
-    const { manifest } = compose(context, { req: { ...request, selection: { memoryIds: ['m1', 'm2'], skillIds: ['picked'] } } });
+    const { manifest } = compose(context, {
+      req: { ...request, selection: { memoryIds: ['m1', 'm2'], skillIds: ['picked'] }, selectionReasons: { references: 'jev-failed' } },
+    });
     const audit = manifest.context!;
     expect(audit.memoryIds).toEqual(['m1', 'm2']);
     expect(audit.groups).toEqual({
       memories: { mode: 'selected', legacyDropped: 1 },
       skills: { mode: 'selected' },
-      references: { mode: 'default', reason: 'not-selectable', unread: 22 },
+      references: { mode: 'default', reason: 'jev-failed', unread: 22 },
       teammates: { mode: 'default', reason: 'not-selectable' },
     });
     const by = (group: string) => audit.entries!.filter((e) => e.group === group);
@@ -197,11 +199,105 @@ describe('manifest.context: entries, dropped, groups', () => {
     expect(manifest.context?.groups).toEqual({
       memories: { mode: 'default', reason: 'no-selection' },
       skills: { mode: 'default', reason: 'no-selection' },
-      references: { mode: 'default', reason: 'not-selectable' },
+      references: { mode: 'default', reason: 'no-selection' },
       teammates: { mode: 'default', reason: 'not-selectable' },
     });
     expect(manifest.context?.entries).toEqual([]);
     expect(manifest.context?.dropped).toEqual([]);
+  });
+
+  it('records the client reason per defaulted group: the CLI, a failed or pending Jev group, never asked', () => {
+    const cli = compose(ctx(), { req: { ...request, selectionReasons: { memories: 'cli', skills: 'cli', references: 'cli' } } });
+    expect(cli.manifest.context?.groups).toEqual({
+      memories: { mode: 'default', reason: 'cli' },
+      skills: { mode: 'default', reason: 'cli' },
+      references: { mode: 'default', reason: 'cli' },
+      teammates: { mode: 'default', reason: 'not-selectable' },
+    });
+    const sheet = compose(ctx({ contextAudit: { selectedGroups: ['skills'], memoryVia: [], dropped: [] } }), {
+      req: { ...request, selection: { skillIds: [] }, selectionReasons: { memories: 'jev-pending', references: 'not-asked' } },
+    });
+    expect(sheet.manifest.context?.groups).toMatchObject({
+      memories: { mode: 'default', reason: 'jev-pending' },
+      skills: { mode: 'selected' },
+      references: { mode: 'default', reason: 'not-asked' },
+    });
+  });
+
+  it('selected references: mode per group, removed defaults not-selected, unrendered selection-only ones recorded', () => {
+    const context = ctx({
+      tasks: [{
+        id: 'task-1', version: 1, title: 'T', description: '', priority: 'low', status: 'open', acceptanceCriteria: [],
+        attachments: [], linked: [{ entityId: 'doc-kept', kind: 'doc', link: 'attached_to', title: 'kept' }], linkedTotal: 1,
+      }],
+      references: [
+        { entityId: 'doc-kept', kind: 'doc', title: 'kept', via: 'linked', link: 'attached_to' },
+        { entityId: 'jev-pick', kind: 'artifact', title: 'Quarterly Plan', via: 'selection' },
+      ],
+      contextAudit: {
+        selectedGroups: ['references'],
+        memoryVia: [],
+        dropped: [{ entityId: 'doc-unticked', kind: 'drawing', group: 'references', reason: 'not-selected' }],
+      },
+    });
+    const { manifest } = compose(context, { req: { ...request, selection: { referenceIds: ['doc-kept', 'jev-pick'] } } });
+    expect(manifest.context?.groups?.references).toEqual({ mode: 'selected' });
+    expect(manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
+    expect(manifest.context?.dropped).toEqual([
+      { entityId: 'doc-unticked', kind: 'drawing', group: 'references', reason: 'not-selected' },
+      { entityId: 'jev-pick', kind: 'artifact', group: 'references', reason: 'not-rendered', level: 'entry' },
+    ]);
+    expect(manifest.context?.entries?.map((e) => e.entityId)).toEqual(['doc-kept']);
+    expect(JSON.stringify(manifest.context)).not.toContain('Quarterly Plan');
+  });
+
+  it('puts every id in exactly one place: a de-selected snapshot row is only not-selected; an unread kept default is count-cap', () => {
+    const context = ctx({
+      tasks: [{
+        id: 'task-1', version: 1, title: 'T', description: '', priority: 'low', status: 'open', acceptanceCriteria: [],
+        attachments: [{ fileEntityId: 'file-unticked', name: 'a.txt', mime: 'text/plain' }],
+        linked: [
+          { entityId: 'doc-kept', kind: 'doc', link: 'attached_to', title: 'kept' },
+          { entityId: 'doc-unticked', kind: 'doc', link: 'attached_to', title: 'gone' },
+          { entityId: 'run-1', kind: 'work_session', link: 'relates_to', title: null },
+        ],
+        // One more link than the spawn read: 'doc-unread' is past LINKED_ROW_CAP.
+        linkedTotal: 4,
+      }],
+      references: [
+        { entityId: 'doc-kept', kind: 'doc', title: 'kept', via: 'linked', link: 'attached_to' },
+        { entityId: 'doc-unread', kind: 'doc', title: 'unread', via: 'linked', link: 'relates_to' },
+      ],
+      contextAudit: {
+        selectedGroups: ['references'],
+        memoryVia: [],
+        dropped: [
+          { entityId: 'doc-unticked', kind: 'doc', group: 'references', reason: 'not-selected' },
+          { entityId: 'file-unticked', kind: 'file', group: 'references', reason: 'not-selected' },
+        ],
+      },
+    });
+    const audit = compose(context, { req: { ...request, selection: { referenceIds: ['doc-kept', 'doc-unread'] } } }).manifest.context!;
+    // A session link is not a selectable kind: it stays an entry.
+    expect(audit.entries?.map((e) => e.entityId)).toEqual(['doc-kept', 'run-1']);
+    expect(audit.dropped).toEqual([
+      { entityId: 'doc-unticked', kind: 'doc', group: 'references', reason: 'not-selected' },
+      { entityId: 'file-unticked', kind: 'file', group: 'references', reason: 'not-selected' },
+      { entityId: 'doc-unread', kind: 'doc', group: 'references', reason: 'count-cap', level: 'entry' },
+    ]);
+    const entryIds = new Set(audit.entries?.map((e) => e.entityId));
+    expect(audit.dropped?.filter((d) => entryIds.has(d.entityId))).toEqual([]);
+    expect(new Set(audit.dropped?.map((d) => d.entityId)).size).toBe(audit.dropped?.length);
+  });
+
+  it('a resume that could not parse the recorded selection says replay-invalid, never no-selection', () => {
+    const { manifest } = compose(ctx(), { req: { ...request, selectionReplayInvalid: true } });
+    expect(manifest.context?.groups).toMatchObject({
+      memories: { mode: 'default', reason: 'replay-invalid' },
+      skills: { mode: 'default', reason: 'replay-invalid' },
+      references: { mode: 'default', reason: 'replay-invalid' },
+      teammates: { mode: 'default', reason: 'not-selectable' },
+    });
   });
 });
 

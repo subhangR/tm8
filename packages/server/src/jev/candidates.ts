@@ -20,7 +20,7 @@
  * the text comes from the header module — `jevText(resolveHeaders(ids))` — so
  * no loader builds its own snippet (headers design 01a0d31e §7).
  */
-import type { RankedEntityKind, RankedEntitySource } from '@tm8/contract';
+import { SPAWN_SELECTION_GROUP_LIMIT, type RankedEntityKind, type RankedEntitySource } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -31,8 +31,12 @@ import { resolveHeaders } from '../headers/resolve.js';
 import { loadSkillEquipment } from '../skills/equipment.js';
 import type { JevSubject } from './port.js';
 
-/** 4 chunks of 60, each one parallel Jev call (§4.1). */
-export const CANDIDATE_LIMIT = 240;
+/**
+ * 4 chunks of 60, each one parallel Jev call (§4.1). Defined FROM the spawn
+ * selection's per-group ceiling (design 01a0d348 §10 Q5.7): nothing outside
+ * the pool can be ticked, so the two are one number.
+ */
+export const CANDIDATE_LIMIT = SPAWN_SELECTION_GROUP_LIMIT;
 /** Characters of a memory statement, a persona, or a skill description that may leave the server (§9). */
 export const TEXT_LIMIT = HEADER_TEXT_LIMIT;
 

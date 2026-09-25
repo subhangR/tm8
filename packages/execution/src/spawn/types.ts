@@ -14,7 +14,14 @@
 //      capture trigger and the F1/F2 guards; keeping SQL out of this package
 //      makes that mistake impossible to make here.
 
-import type { EffectiveSkills, SkillIndexEntry, CredentialProviderName, SpawnSelection } from '@tm8/contract';
+import type {
+  EffectiveSkills,
+  SkillIndexEntry,
+  CredentialProviderName,
+  SpawnSelection,
+  SpawnSelectionDefaultReason,
+  SpawnSelectionGroup,
+} from '@tm8/contract';
 import type { CoordinatorKind, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
@@ -273,14 +280,23 @@ export interface LoadSpawnContextInput {
    */
   memoryIds?: string[];
   /**
-   * The EXACT memory and skill sets for this session (design 01a0cb80 §5.2).
-   * When present it replaces the teammate's working set, the tasks'
-   * `remembers` sets and the equipped skills; a selected skill the teammate
-   * is not equipped with is loaded for this session only (no edge is
-   * written), and equipped skills left out are audited as `not-selected`.
-   * Absent, the load is exactly what it was before the field existed.
+   * The EXACT memory, skill and reference sets for this session (design
+   * 01a0d348 §5.1). Each group it names replaces that group's defaults (the
+   * teammate's working set and the tasks' `remembers` sets; the equipped
+   * skills; the tasks' linked references); a group it omits keeps them. A
+   * selected entity that is not a default is loaded for this session only
+   * (no edge is written), and defaults left out are audited as
+   * `not-selected`. Absent, the load is exactly what it was before the field
+   * existed.
    */
   selection?: SpawnSelection;
+  /**
+   * `selection` is a RESUME replaying the launch's recorded selection. An id
+   * that no longer resolves is then left out and recorded `unavailable`, not
+   * refused: the resumer did not choose it, and one deleted memory must not
+   * make a session impossible to resume.
+   */
+  selectionReplay?: boolean;
 }
 
 /**
@@ -330,6 +346,13 @@ export interface SessionLaunchPosture {
    * launched with, if any. Stored JSON, so narrowed by the resolver.
    */
   harnessChoice?: Record<string, unknown> | null;
+  /**
+   * `launch.selection` / `launch.selectionReasons`, which resume replays.
+   * Stored JSON, so they are read as `unknown` and parsed with the contract's
+   * own schemas before use. A child session never inherits them.
+   */
+  selection?: unknown;
+  selectionReasons?: unknown;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -457,11 +480,31 @@ export interface SpawnContext {
    * 01a0d348 §6). Absent from contexts that predate it.
    */
   contextAudit?: SpawnContextAudit;
+  /**
+   * The EXACT reference set when the launch selected references
+   * (`selection.referenceIds`, design 01a0d348 §5.1), in the selected order:
+   * each is a live, same-space doc, artifact, drawing, file or task the caller
+   * can read. `via` says whether it is one of the spawn tasks' defaults
+   * (`linked` / `attached`, with its edge) or rides this launch only
+   * (`selection`). Absent when references were not selected: the defaults are
+   * then the tasks' `linked` and `attachments`. Resolved and audited here;
+   * rendering it is the context index's job.
+   */
+  references?: Array<{
+    entityId: string;
+    kind: string;
+    title: string | null;
+    via: 'selection' | 'linked' | 'attached';
+    link?: string;
+  }>;
 }
 
 export interface SpawnContextAudit {
-  /** True when `selection` replaced the edge-driven memory and skill defaults. */
-  selected: boolean;
+  /**
+   * The selection groups the launch sent as exact sets, replacing that
+   * group's edge-driven defaults. A group not listed kept its defaults.
+   */
+  selectedGroups: ReadonlyArray<SpawnSelectionGroup>;
   /** One per `teamMember.memoryIds` entry, same order. */
   memoryVia: ContextVia[];
   /** Skills that are in the session only because the selection named them. */
@@ -494,10 +537,13 @@ export interface ContextGroupAudit {
    */
   mode: 'selected' | 'default';
   /**
-   * Why the defaults were used. `no-selection`: the launch sent no selection;
-   * `not-selectable`: selection cannot name this group yet.
+   * Why the defaults were used. `no-selection`: the launch did not select this
+   * group and said nothing more; `not-selectable`: selection cannot name this
+   * group; otherwise the client's own `selectionReasons` entry (an enum,
+   * validated at the wire, audit-only). `replay-invalid`: a resume found the
+   * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable';
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
   /** Linked rows beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
@@ -524,7 +570,20 @@ export type ContextDropReason =
   | 'byte-budget'
   | 'task-name-collision'
   | 'native-shadowed'
-  | 'count-cap';
+  | 'count-cap'
+  /**
+   * Selected and resolved, but this launch's prompt has nothing that renders
+   * it: a selected reference that is not one of the tasks' own links, while
+   * no context index renders references (design 01a0d348 §2.2).
+   */
+  | 'not-rendered'
+  /**
+   * A resume replayed the launch's selection, and this id no longer resolves
+   * (deleted, moved, or unreadable to the resumer). The rest of the selection
+   * still replays. `kind` is the entity's kind when it is still readable,
+   * else `'unknown'`.
+   */
+  | 'unavailable';
 
 export interface ContextDrop {
   entityId: string;
@@ -1094,6 +1153,13 @@ export interface Tm8Manifest {
     /** The Ask Jev run this launch came from, when it came from one. Absent otherwise — never null. */
     jevRunId?: string;
     /**
+     * The launch's `selection` and `selectionReasons`, exactly as requested.
+     * Absent when the launch sent none. Resume replays them, so a resumed
+     * session carries the same sets and the same audit as its launch.
+     */
+    selection?: SpawnSelection;
+    selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+    /**
      * The launch UI's harness pick (or the one a resume replays), when there
      * was one; claude-code lanes only. See `ResolvedLaunchConfig.harnessChoice`.
      */
@@ -1186,8 +1252,15 @@ export interface SpawnRequest {
   promptExtra?: string | null;
   /** Spawn-time memory hand-off (D3a); see `LoadSpawnContextInput.memoryIds`. */
   memoryIds?: string[];
-  /** The exact memory and skill sets; see `LoadSpawnContextInput.selection`. */
+  /** The exact memory, skill and reference sets; see `LoadSpawnContextInput.selection`. */
   selection?: SpawnSelection;
+  /** Why unselected groups kept their defaults; audit-only (`ExecutionSpawnInput.selectionReasons`). */
+  selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /**
+   * Set by resume only, never from the wire: the recorded selection could not
+   * be parsed, so every group loaded its defaults. Audited as `replay-invalid`.
+   */
+  selectionReplayInvalid?: true;
   /**
    * The Ask Jev run this launch came from. Written to the manifest as
    * `launch.jevRunId` and otherwise never interpreted by execution.

@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
-import { SpawnService } from '../src/spawn/SpawnService.js';
+import { SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
 import { resolveAgentBinary } from '../src/spawn/manifest.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
@@ -203,6 +203,60 @@ describe('SpawnService.resume — guards and orchestration', () => {
 
     expect(result.manifest.coordinator).toEqual({ sessionId: chatId, kind: 'chat' });
     expect(graph.spawnContextInputs.at(-1)?.parentSessionId).toBe(chatId);
+  });
+
+  // --- the launch's selection survives resume (#741 review, finding 1) ------
+
+  it('replays the recorded selection and reasons, so the resumed manifest keeps its audit', async () => {
+    const memory = '77777777-7777-4777-8777-777777777777';
+    const doc = '88888888-8888-4888-8888-888888888888';
+    graph.postures.set(SESSION_ID, {
+      accessMode: null, permissionMode: null,
+      selection: { memoryIds: [memory], referenceIds: [doc] },
+      selectionReasons: { skills: 'jev-failed' },
+    });
+    graph.resumeReplayed = true;
+
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(graph.spawnContextInputs.at(-1)).toMatchObject({
+      selection: { memoryIds: [memory], referenceIds: [doc] },
+      selectionReplay: true,
+    });
+    expect(result.manifest.launch.selection).toEqual({ memoryIds: [memory], referenceIds: [doc] });
+    expect(result.manifest.launch.selectionReasons).toEqual({ skills: 'jev-failed' });
+    expect(result.manifest.context?.groups).toMatchObject({
+      memories: { mode: 'selected' },
+      skills: { mode: 'default', reason: 'jev-failed' },
+      references: { mode: 'selected' },
+    });
+  });
+
+  it('a session launched without a selection resumes on the defaults, as before', async () => {
+    graph.postures.set(SESSION_ID, { accessMode: null, permissionMode: null });
+    graph.resumeReplayed = true;
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+    expect(graph.spawnContextInputs.at(-1)).not.toHaveProperty('selection');
+    expect(result.manifest.launch).not.toHaveProperty('selection');
+    expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
+  });
+
+  it('never half-applies a malformed recorded selection, and flags it', () => {
+    const posture = { accessMode: null, permissionMode: null };
+    expect(replayedSelection({ ...posture, selection: { memoryIds: ['not-a-uuid'] } })).toEqual({ invalid: true });
+    expect(replayedSelection({ ...posture, selection: { memoryIds: [] }, selectionReasons: { skills: 'x' } })).toEqual({ invalid: true });
+    const tooMany = Array.from({ length: 241 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect(replayedSelection({ ...posture, selection: { skillIds: tooMany } })).toEqual({ invalid: true });
+    expect(replayedSelection(posture)).toEqual({});
+    expect(replayedSelection(null)).toEqual({});
+  });
+
+  it('a resume whose recorded selection is malformed loads the defaults and audits replay-invalid', async () => {
+    graph.postures.set(SESSION_ID, { accessMode: null, permissionMode: null, selection: { memoryIds: 'nope' } });
+    graph.resumeReplayed = true;
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+    expect(graph.spawnContextInputs.at(-1)).not.toHaveProperty('selection');
+    expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'replay-invalid' });
   });
 
   it('does not boot a second child on a ledger replay', async () => {

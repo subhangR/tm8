@@ -103,6 +103,7 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
+import { SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
@@ -1872,6 +1873,20 @@ export class SpawnService {
       );
     }
 
+    // The posture is the one launch fact `work_sessions` does NOT carry (the
+    // row has model/mode/agent_tool and no permission column), so re-resolving
+    // from the row alone silently demoted every resumed session to the persona
+    // default — a session launched `fullAccess` came back on `auto` and stalled
+    // on its first approval. The recorded manifest is where that fact is
+    // durable, and resume does not rewrite it, so it still describes the launch.
+    // Read BEFORE the context: the launch's selection lives there too.
+    const recorded = await this.recordedPosture(auth, sessionId);
+    const recordedPosture = recorded.posture;
+    // The launch's exact sets, replayed (design 01a0d348 §5.1). Without this a
+    // resumed session came back on the edge defaults while its rewritten
+    // manifest claimed it had never selected anything.
+    const launchSelection = replayedSelection(recordedPosture);
+
     const context = await this.graph.loadSpawnContext(auth, {
       spaceId: info.spaceId,
       teamMemberId: info.teamMemberId,
@@ -1883,16 +1898,8 @@ export class SpawnService {
       // recorded manifest, because a chat that has since been deleted should
       // stop being described as one.
       parentSessionId: info.parentSessionId,
+      ...(launchSelection.selection ? { selection: launchSelection.selection, selectionReplay: true } : {}),
     });
-
-    // The posture is the one launch fact `work_sessions` does NOT carry (the
-    // row has model/mode/agent_tool and no permission column), so re-resolving
-    // from the row alone silently demoted every resumed session to the persona
-    // default — a session launched `fullAccess` came back on `auto` and stalled
-    // on its first approval. The recorded manifest is where that fact is
-    // durable, and resume does not rewrite it, so it still describes the launch.
-    const recorded = await this.recordedPosture(auth, sessionId);
-    const recordedPosture = recorded.posture;
 
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
@@ -1908,6 +1915,9 @@ export class SpawnService {
       agentTool: info.agentTool,
       title: info.title || null,
       clientMutationId: request.clientMutationId ?? null,
+      ...(launchSelection.selection ? { selection: launchSelection.selection } : {}),
+      ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
+      ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -3285,4 +3295,27 @@ export class SpawnService {
   async discardManifest(sessionId: string): Promise<void> {
     await rm(this.manifestPathFor(sessionId), { force: true });
   }
+}
+
+/**
+ * The selection a session was launched with, from its recorded manifest, for
+ * resume to replay. Stored JSON, so it is parsed with the contract's own
+ * schemas. A malformed (or over-ceiling) record is never half-applied: the
+ * resume loads the defaults and `invalid` makes its audit say
+ * `replay-invalid`, so it is never misread as a launch that selected nothing.
+ */
+export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
+  selection?: SpawnSelection;
+  selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
+  invalid?: true;
+} {
+  const hasSelection = posture?.selection !== undefined;
+  const hasReasons = posture?.selectionReasons !== undefined;
+  const selection = SpawnSelectionSchema.safeParse(posture?.selection);
+  const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true };
+  return {
+    ...(hasSelection && selection.success ? { selection: selection.data } : {}),
+    ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
+  };
 }

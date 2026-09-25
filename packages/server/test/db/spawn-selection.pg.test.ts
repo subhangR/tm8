@@ -134,6 +134,11 @@ beforeAll(async () => {
     await c.query(`insert into public.documents(entity_id, title) values ($1, 'Gone')`, [ids.deletedDoc]);
     await edge(c, s, ids.deletedDoc, ids.paletteTask, 'attached_to');
     await c.query(`update public.entities set deleted_at = now() where id = $1`, [ids.deletedDoc]);
+    // Linked to nothing: only a selection can bring these into a launch.
+    ids.freeDoc = await entity(c, s, 'doc');
+    await c.query(`insert into public.documents(entity_id, title) values ($1, 'Jev pick')`, [ids.freeDoc]);
+    ids.docElsewhere = await entity(c, ids.otherSpace, 'doc');
+    await c.query(`insert into public.documents(entity_id, title) values ($1, 'Foreign')`, [ids.docElsewhere]);
 
     // Two DIFFERENT skills sharing one name, both equipped on one task: the
     // palette can write this, and it must not fail the task's spawns.
@@ -217,6 +222,49 @@ describe('with selection', () => {
   });
 });
 
+describe('each selection group is independent (design 01a0d348 §5.1)', () => {
+  it('a selection naming only skills keeps the memory and reference defaults, recorded per group', async () => {
+    const context = await load({ selection: { skillIds: [ids.sFree] } });
+    expect(context.teamMember.memories).toEqual(['working set memory', 'task memory', 'legacy jsonb note']);
+    expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sFree]);
+    expect('references' in context).toBe(false);
+    const audit = manifestOf(context).context!;
+    expect(audit.groups).toMatchObject({
+      memories: { mode: 'default', reason: 'no-selection' },
+      skills: { mode: 'selected' },
+      references: { mode: 'default', reason: 'no-selection' },
+    });
+    expect(audit.dropped?.filter((d) => d.group === 'memories')).toEqual([]);
+  });
+
+  it('a selection naming only memories keeps the equipped skills', async () => {
+    const context = await load({ selection: { memoryIds: [ids.mA] } });
+    expect(context.teamMember.memories).toEqual(['selected A']);
+    expect(context.skillEquips?.map((s) => s.entityId)).toEqual([ids.sEquipped, ids.sInherited]);
+    expect('skippedSkills' in context).toBe(false);
+  });
+});
+
+describe('a resume replaying the launch selection', () => {
+  it('leaves out ids that no longer resolve, recorded unavailable, instead of refusing the resume', async () => {
+    const context = await load({
+      selection: { memoryIds: [ids.mA, ids.mDeleted], skillIds: [ids.sElsewhere], referenceIds: [ids.mB] },
+      selectionReplay: true,
+    });
+    expect(context.teamMember.memories).toEqual(['selected A']);
+    expect(context.skillEquips).toEqual([]);
+    expect(context.references).toEqual([]);
+    const audit = manifestOf(context).context!;
+    expect(audit.groups).toMatchObject({ memories: { mode: 'selected' }, skills: { mode: 'selected' }, references: { mode: 'selected' } });
+    // The real kind when the entity is still readable here; else 'unknown'.
+    expect(audit.dropped?.filter((d) => d.reason === 'unavailable')).toEqual([
+      { entityId: ids.mDeleted, kind: 'unknown', group: 'memories', reason: 'unavailable' },
+      { entityId: ids.sElsewhere, kind: 'unknown', group: 'skills', reason: 'unavailable' },
+      { entityId: ids.mB, kind: 'memory', group: 'references', reason: 'unavailable' },
+    ]);
+  });
+});
+
 describe('without selection', () => {
   it('is the load it always was: working set, task set, legacy remainder, equipped skills, no not-selected audit', async () => {
     const context = await load();
@@ -291,6 +339,56 @@ describe('a task dressed by the attach palette', () => {
     ]);
     // D9 still injects the remembered memory whole.
     expect(context.teamMember.memories).toContain('palette memory');
+  });
+
+  it('referenceIds is the exact set: a removed default is not-selected, a pick rides this launch, no edge is written', async () => {
+    const edges = async () => Number((await database.query<{ n: string }>('select count(*)::text n from public.edges'))[0]!.n);
+    const before = await edges();
+    const context = await loadPalette({ selection: { referenceIds: [ids.freeDoc, ids.task] } });
+    expect(await edges()).toBe(before);
+    expect(context.references).toEqual([
+      { entityId: ids.freeDoc, kind: 'doc', title: 'Jev pick', via: 'selection' },
+      { entityId: ids.task, kind: 'task', title: 'Fix login', via: 'selection' },
+    ]);
+    const audit = manifestOf(context).context!;
+    expect(audit.groups?.references).toMatchObject({ mode: 'selected' });
+    // The task's own doc was the only selectable default: the teammate and
+    // the session links are not reference kinds, and the deleted doc is gone.
+    expect(audit.dropped?.filter((d) => d.group === 'references')).toEqual([
+      { entityId: ids.doc, kind: 'doc', group: 'references', reason: 'not-selected' },
+      { entityId: ids.freeDoc, kind: 'doc', group: 'references', reason: 'not-rendered', level: 'entry' },
+      { entityId: ids.task, kind: 'task', group: 'references', reason: 'not-rendered', level: 'entry' },
+    ]);
+    // Each id lands in exactly one place: the de-selected doc is still named
+    // by the snapshot's identity list, but it is not a context entry.
+    const entryIds = new Set(audit.entries?.map((e) => e.entityId));
+    expect(audit.dropped?.filter((d) => entryIds.has(d.entityId))).toEqual([]);
+    expect(audit.entries?.map((e) => e.entityId)).not.toContain(ids.doc);
+    // Memories and skills were not selected: their defaults stand.
+    expect(context.teamMember.memories).toContain('palette memory');
+    expect(context.skillEquips?.map((s) => s.entityId)).toContain(ids.sTask);
+  });
+
+  it('a kept default reference keeps its edge and via, and nothing is recorded as removed', async () => {
+    const context = await loadPalette({ selection: { referenceIds: [ids.doc] } });
+    expect(context.references).toEqual([
+      { entityId: ids.doc, kind: 'doc', title: 'Design notes', via: 'linked', link: 'attached_to' },
+    ]);
+    expect(manifestOf(context).context?.dropped?.filter((d) => d.group === 'references')).toEqual([]);
+  });
+
+  it('refuses referenceIds that are not live, same-space references — by name, all of them', async () => {
+    const unknown = randomUUID();
+    const refusal = loadPalette({
+      selection: { referenceIds: [ids.doc, ids.deletedDoc, ids.docElsewhere, ids.mA, ids.parent, ids.session2, unknown] },
+    });
+    await expect(refusal).rejects.toMatchObject({ code: 'invalid_input' });
+    const message = String((await refusal.catch((e: Error) => e)).message);
+    for (const bad of [ids.deletedDoc, ids.docElsewhere, ids.mA, ids.parent, ids.session2, unknown]) {
+      expect(message).toContain(bad);
+    }
+    expect(message).toMatch(/referenceIds/);
+    expect(message).not.toContain(ids.doc);
   });
 
   it('reaches the first-turn task prompt: the session by id only, never its title', async () => {

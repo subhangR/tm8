@@ -49,10 +49,15 @@ describe('manifest', () => {
     const manifest = compose(base);
     expect('jevRunId' in manifest.launch).toBe(false);
     const selected = compose({ ...base, selection: SELECTION });
-    // The only difference a selection makes here is the recorded group mode.
+    // The only differences a selection makes here: the recorded group mode,
+    // and the selection itself on `launch` (which resume replays).
     expect(selected.context?.groups?.memories).toEqual({ mode: 'selected' });
     expect(manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'no-selection' });
-    const withoutGroups = (m: typeof manifest) => JSON.stringify({ ...m, context: { ...m.context, groups: null } });
+    expect(selected.launch.selection).toEqual(SELECTION);
+    expect('selection' in manifest.launch).toBe(false);
+    const withoutGroups = (m: typeof manifest) => JSON.stringify({
+      ...m, launch: { ...m.launch, selection: null }, context: { ...m.context, groups: null },
+    });
     expect(withoutGroups(selected)).toBe(withoutGroups(manifest));
   });
 

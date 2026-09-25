@@ -64,7 +64,7 @@ import {
   type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
-import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
+import { CollabError, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
@@ -257,31 +257,135 @@ function renderMemories(
 }
 
 /**
- * `execution.spawn.selection` names only live memories and skills of THIS
- * space that the caller can read (design 01a0cb80 §5.2, §8). Anything else is
- * refused with `invalid_input` NAMING every bad id — a selected entity deleted
- * before launch is surfaced, never silently dropped.
+ * `execution.spawn.selection` names only live entities of THIS space that the
+ * caller can read (the query runs under the caller's RLS), each of its group's
+ * kind (design 01a0d348 §5.1, §8 I6): memories, skills, and references —
+ * docs, artifacts, drawings, files and tasks. Anything else is refused with
+ * `invalid_input` NAMING every bad id — a selected entity deleted before
+ * launch is surfaced, never silently dropped. An absent group is not checked:
+ * it means that group's defaults.
  */
 export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
-  const ids = [...selection.memoryIds, ...selection.skillIds];
+  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds } =
+    await invalidSelectionIds(q, spaceId, selection);
+  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0) return;
+  const named = [
+    ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
+    ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
+    ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
+  ].join('; ');
+  throw fail(
+    'invalid_input',
+    'selection names entities that are not live memories/skills/references '
+      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
+    { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
+  );
+}
+
+/** Per group, the selected ids that are not live, readable entities of that group's kind in this space. */
+async function invalidSelectionIds(
+  q: Querier,
+  spaceId: string,
+  selection: SpawnSelection,
+): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; kinds: ReadonlyMap<string, string> }> {
+  const memoryIds = selection.memoryIds ?? [];
+  const skillIds = selection.skillIds ?? [];
+  const referenceIds = selection.referenceIds ?? [];
+  const ids = [...new Set([...memoryIds, ...skillIds, ...referenceIds])];
   const rows = ids.length === 0 ? [] : await q.query<{ id: string; kind: string }>(
     `select e.id, e.kind from public.entities e
       where e.id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
     [ids, spaceId],
   );
   const kinds = new Map(rows.map((row) => [row.id, row.kind]));
-  const memoryIds = [...new Set(selection.memoryIds.filter((id) => kinds.get(id) !== 'memory'))];
-  const skillIds = [...new Set(selection.skillIds.filter((id) => kinds.get(id) !== 'skill'))];
-  if (memoryIds.length === 0 && skillIds.length === 0) return;
-  const named = [
-    ...(memoryIds.length ? [`memoryIds ${memoryIds.join(', ')}`] : []),
-    ...(skillIds.length ? [`skillIds ${skillIds.join(', ')}`] : []),
-  ].join('; ');
-  throw fail(
-    'invalid_input',
-    `selection names entities that are not live memories/skills in this space: ${named}`,
-    { invalidMemoryIds: memoryIds, invalidSkillIds: skillIds },
+  const bad = (group: readonly string[], ok: (kind: string | undefined) => boolean): string[] =>
+    [...new Set(group.filter((id) => !ok(kinds.get(id))))];
+  const badMemoryIds = bad(memoryIds, (kind) => kind === 'memory');
+  const badSkillIds = bad(skillIds, (kind) => kind === 'skill');
+  const badReferenceIds = bad(referenceIds, (kind) => REFERENCE_KINDS.has(kind ?? ''));
+  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, kinds };
+}
+
+/**
+ * `ContextDrop.kind` for an `unavailable` id whose entity cannot be read at
+ * all (deleted, in another space, or hidden by RLS): there is no kind to tell.
+ */
+export const UNAVAILABLE_KIND = 'unknown';
+
+/**
+ * A resume's replayed selection with every id that no longer resolves left
+ * out, and each one recorded `unavailable`. The groups stay exactly as the
+ * launch named them, so a group that was selected stays selected even when
+ * nothing in it survives.
+ */
+async function pruneReplayedSelection(
+  q: Querier,
+  spaceId: string,
+  selection: SpawnSelection,
+): Promise<{ selection: SpawnSelection; dropped: ContextDrop[] }> {
+  const bad = await invalidSelectionIds(q, spaceId, selection);
+  // The entity's real kind when it is still live and readable here (a kind
+  // that no longer fits its group); otherwise `UNAVAILABLE_KIND`.
+  const drop = (group: ContextDrop['group']) => (entityId: string): ContextDrop =>
+    ({ entityId, kind: bad.kinds.get(entityId) ?? UNAVAILABLE_KIND, group, reason: 'unavailable' });
+  const dropped: ContextDrop[] = [
+    ...bad.memoryIds.map(drop('memories')),
+    ...bad.skillIds.map(drop('skills')),
+    ...bad.referenceIds.map(drop('references')),
+  ];
+  const keep = (ids: string[] | undefined, gone: string[]): string[] | undefined =>
+    ids === undefined ? undefined : ids.filter((id) => !gone.includes(id));
+  const memoryIds = keep(selection.memoryIds, bad.memoryIds);
+  const skillIds = keep(selection.skillIds, bad.skillIds);
+  const referenceIds = keep(selection.referenceIds, bad.referenceIds);
+  return {
+    selection: {
+      ...(memoryIds ? { memoryIds } : {}),
+      ...(skillIds ? { skillIds } : {}),
+      ...(referenceIds ? { referenceIds } : {}),
+    },
+    dropped,
+  };
+}
+
+const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
+
+/**
+ * The spawn tasks' reference DEFAULTS, uncapped: live same-space peers of a
+ * selectable reference kind that a task links by outgoing `relates_to` or
+ * incoming `attached_to` (a file attached to a task is its attachment). The
+ * same edges the assignment snapshot's `linked` / `attachments` read, minus
+ * its row cap, because a default left out of an exact set must be recorded
+ * even when the snapshot never read it. Edge order, first link wins.
+ */
+async function loadReferenceDefaults(
+  q: Querier,
+  spaceId: string,
+  taskIds: readonly string[],
+): Promise<Array<{ entityId: string; kind: string; link: string }>> {
+  if (taskIds.length === 0) return [];
+  const rows = await q.query<{ entity_id: string; kind: string; link: string }>(
+    `select d.entity_id, d.kind, d.link
+       from (
+         select distinct on (l.peer_id) l.peer_id as entity_id, pe.kind, l.link, l.created_at, l.edge_id
+           from (
+             select r.dst_id as peer_id, 'relates_to'::text as link, r.created_at, r.id as edge_id
+               from public.edges r
+              where r.src_id = any($1::uuid[]) and r.type = 'relates_to'
+             union all
+             select a.src_id, 'attached_to', a.created_at, a.id
+               from public.edges a
+              where a.dst_id = any($1::uuid[]) and a.type = 'attached_to'
+           ) l
+           join public.entities pe
+             on pe.id = l.peer_id and pe.space_id = $2 and pe.deleted_at is null
+            and pe.kind = any($3::text[])
+          order by l.peer_id, l.created_at, l.edge_id
+       ) d
+      order by d.created_at, d.edge_id`,
+    [taskIds, spaceId, [...SPAWN_SELECTION_REFERENCE_KINDS]],
   );
+  return rows.map((row) => ({ entityId: row.entity_id, kind: row.kind, link: row.link }));
 }
 
 /**
@@ -377,15 +481,28 @@ export class DbGraphPort implements GraphPort {
       // caller cannot read, or that is not a memory, must refuse rather than
       // quietly inject less than was asked.
       //
-      // `selection` (design 01a0cb80 §5.2) REPLACES all of that: the session
-      // carries exactly the selected memories, in the selected order, and
-      // nothing else — not the working set, not the task sets, not the legacy
-      // jsonb remainder. Validated first, so a bad id refuses by name.
-      const selection = input.selection;
-      if (selection) await assertSelectionIds(q, input.spaceId, selection);
-      const requestedIds = selection ? selection.memoryIds : input.memoryIds ?? [];
+      // `selection.memoryIds` (design 01a0d348 §5.1) REPLACES all of that:
+      // the session carries exactly the selected memories, in the selected
+      // order, and nothing else — not the working set, not the task sets, not
+      // the legacy jsonb remainder. Each selection group is independent: one
+      // the selection omits keeps its defaults. Validated first, so a bad id
+      // refuses by name.
+      // A resume's replay is pruned rather than refused (see
+      // `LoadSpawnContextInput.selectionReplay`); a launch's is refused by name.
+      let selection = input.selection;
+      const unavailableDrops: ContextDrop[] = [];
+      if (selection && input.selectionReplay) {
+        const pruned = await pruneReplayedSelection(q, input.spaceId, selection);
+        selection = pruned.selection;
+        unavailableDrops.push(...pruned.dropped);
+      } else if (selection) {
+        await assertSelectionIds(q, input.spaceId, selection);
+      }
+      const selectedMemoryIds = selection?.memoryIds;
+      const memoriesSelected = selectedMemoryIds !== undefined;
+      const requestedIds = selectedMemoryIds ?? input.memoryIds ?? [];
       const spawnTaskIds = input.taskIds ?? [];
-      const memoryRows = selection ? await q.query<MemoryRow>(
+      const memoryRows = memoriesSelected ? await q.query<MemoryRow>(
         `select m.entity_id, m.statement, e.version,
                 false as remembered, false as task_remembered,
                 exists (select 1 from public.edges s
@@ -433,18 +550,18 @@ export class DbGraphPort implements GraphPort {
       const missing = requestedIds.filter((id) => !foundIds.has(id));
       if (missing.length > 0) {
         throw fail(
-          selection ? 'invalid_input' : 'not_found',
-          `${selection ? 'selection.memoryIds' : 'memoryIds'} not found in this space (or not memory entities): ${missing.join(', ')}`,
+          memoriesSelected ? 'invalid_input' : 'not_found',
+          `${memoriesSelected ? 'selection.memoryIds' : 'memoryIds'} not found in this space (or not memory entities): ${missing.join(', ')}`,
         );
       }
-      const injectedMemories = renderMemories(memoryRows, requestedIds, selection ? 'selection' : 'requested');
+      const injectedMemories = renderMemories(memoryRows, requestedIds, memoriesSelected ? 'selection' : 'requested');
       // A selection REPLACES the defaults, so every default it left out is an
       // explicit removal, recorded as `not-selected` — the memory half of the
       // audit skills already had. The defaults are exactly what the no-selection
       // path injects: the teammate's and the tasks' `remembers`, minus
       // superseded. Read under the same RLS, in this transaction.
       const memoryDrops: ContextDrop[] = [];
-      if (selection) {
+      if (memoriesSelected) {
         const defaults = await q.query<{ entity_id: string }>(
           `select m.entity_id
              from public.memories m
@@ -545,8 +662,9 @@ export class DbGraphPort implements GraphPort {
       let skillEquips = equipped;
       let skippedSkills: SkippedSkill[] | undefined;
       let selectionOnlySkillIds: string[] = [];
-      if (selection) {
-        const wanted = [...new Set(selection.skillIds)];
+      const selectedSkillIds = selection?.skillIds;
+      if (selectedSkillIds) {
+        const wanted = [...new Set(selectedSkillIds)];
         const byId = new Map(equipped.map((row) => [row.entityId, row]));
         selectionOnlySkillIds = wanted.filter((id) => !byId.has(id));
         for (const row of await loadSkillsById(q, input.spaceId, selectionOnlySkillIds)) {
@@ -676,6 +794,56 @@ export class DbGraphPort implements GraphPort {
               [taskIds, input.spaceId],
             );
 
+      // `selection.referenceIds`: exactly the selected references, in the
+      // selected order (design 01a0d348 §5.1). Read here, in this transaction
+      // and under the caller's RLS, so the set describes the same instant as
+      // everything else; rendering them is the context index's job, not this
+      // loader's. Every default the set leaves out is recorded `not-selected`.
+      // The assignment snapshot's `linked` / `attachments` are untouched: they
+      // stay the task's own identity list (§2.2). Nothing is written.
+      let references: SpawnContext['references'];
+      const referenceDrops: ContextDrop[] = [];
+      const selectedReferenceIds = selection?.referenceIds;
+      if (selectedReferenceIds) {
+        const defaults = await loadReferenceDefaults(q, input.spaceId, spawnTaskIds);
+        const byDefault = new Map(defaults.map((row) => [row.entityId, row]));
+        const wanted = [...new Set(selectedReferenceIds)];
+        const found = new Map((await q.query<{ id: string; kind: string; title: string | null }>(
+          `select e.id, e.kind,
+                  coalesce(d.title, dr.title, ar.name, t.title, f.name) as title
+             from public.entities e
+             left join public.documents d on d.entity_id = e.id
+             left join public.drawings dr on dr.entity_id = e.id
+             left join public.artifacts ar on ar.entity_id = e.id
+             left join public.tasks t on t.entity_id = e.id
+             left join public.files f on f.entity_id = e.id
+            where e.id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null
+              and e.kind = any($3::text[])`,
+          [wanted, input.spaceId, [...SPAWN_SELECTION_REFERENCE_KINDS]],
+        )).map((row) => [row.id, row]));
+        const missing = wanted.filter((id) => !found.has(id));
+        if (missing.length > 0) {
+          throw fail('invalid_input', `selection.referenceIds not found in this space (or not references): ${missing.join(', ')}`);
+        }
+        references = wanted.map((id) => {
+          const row = found.get(id)!;
+          const dflt = byDefault.get(id);
+          return {
+            entityId: id,
+            kind: row.kind,
+            title: row.title,
+            via: dflt ? (dflt.link === 'attached_to' && row.kind === 'file' ? 'attached' : 'linked') : 'selection',
+            ...(dflt ? { link: dflt.link } : {}),
+          };
+        });
+        const kept = new Set(wanted);
+        for (const row of defaults) {
+          if (!kept.has(row.entityId)) {
+            referenceDrops.push({ entityId: row.entityId, kind: row.kind, group: 'references', reason: 'not-selected' });
+          }
+        }
+      }
+
       return {
         spaceId: input.spaceId,
         parentKind,
@@ -689,7 +857,7 @@ export class DbGraphPort implements GraphPort {
           // writers) rides along so no entry silently vanishes mid-cutover.
           memories: [
             ...injectedMemories.texts,
-            ...(!selection && Array.isArray(member.memories) ? member.memories : []),
+            ...(!memoriesSelected && Array.isArray(member.memories) ? member.memories : []),
           ],
           memoryIds: injectedMemories.ids,
           model: member.model,
@@ -752,13 +920,18 @@ export class DbGraphPort implements GraphPort {
         ...(skippedSkills ? { skippedSkills } : {}),
         skillsScannedAt,
         droppedSkills: [],
+        ...(references ? { references } : {}),
         contextAudit: {
-          selected: selection !== undefined,
+          selectedGroups: [
+            ...(memoriesSelected ? ['memories' as const] : []),
+            ...(selectedSkillIds ? ['skills' as const] : []),
+            ...(references ? ['references' as const] : []),
+          ],
           memoryVia: injectedMemories.via,
           ...(selectionOnlySkillIds.length > 0 ? { selectionOnlySkillIds } : {}),
-          dropped: memoryDrops,
-          // A selection replaces the legacy jsonb remainder too; it has no ids.
-          ...(selection && Array.isArray(member.memories) && member.memories.length > 0
+          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops],
+          // A memory selection replaces the legacy jsonb remainder too; it has no ids.
+          ...(memoriesSelected && Array.isArray(member.memories) && member.memories.length > 0
             ? { legacyMemoriesDropped: member.memories.length }
             : {}),
         },
@@ -1093,6 +1266,8 @@ export class DbGraphPort implements GraphPort {
       credential_sources: unknown;
       space_credential_ids: unknown;
       harness_choice: unknown;
+      selection: unknown;
+      selection_reasons: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
@@ -1100,7 +1275,9 @@ export class DbGraphPort implements GraphPort {
               sm.manifest #>> '{launch,credentialSource}' as credential_source,
               sm.manifest #>  '{launch,credentialSources}' as credential_sources,
               sm.manifest #>  '{launch,spaceCredentialIds}' as space_credential_ids,
-              sm.manifest #>  '{launch,harnessChoice}'     as harness_choice
+              sm.manifest #>  '{launch,harnessChoice}'     as harness_choice,
+              sm.manifest #>  '{launch,selection}'         as selection,
+              sm.manifest #>  '{launch,selectionReasons}'  as selection_reasons
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -2874,7 +3051,7 @@ function registerHandlers(
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
 
-    // `selection` names exact memories and skills (design 01a0cb80 §5.2).
+    // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
     // below may mint a derived task, and a launch that is going to be refused
     // must not leave one behind. loadSpawnContext re-checks inside its own
@@ -2939,6 +3116,7 @@ function registerHandlers(
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
       ...(input.harnessSurface ? { harnessSurface: input.harnessSurface } : {}),
       ...(input.plugins ? { plugins: input.plugins } : {}),
@@ -3274,6 +3452,9 @@ export function sessionLaunchPostureFromRecord(row: {
   credential_sources: unknown;
   space_credential_ids: unknown;
   harness_choice: unknown;
+  /** Resume's read carries these; the Forms spawn's does not (a new session never replays them). */
+  selection?: unknown;
+  selection_reasons?: unknown;
 }): SessionLaunchPosture {
   const storedCredentialSources =
     typeof row.credential_sources === 'object' &&
@@ -3310,5 +3491,9 @@ export function sessionLaunchPostureFromRecord(row: {
     ...(typeof row.harness_choice === 'object' && row.harness_choice !== null && !Array.isArray(row.harness_choice)
       ? { harnessChoice: row.harness_choice as Record<string, unknown> }
       : {}),
+    // The launch's selection, for resume to replay. Parsed there with the
+    // contract's own schemas; a malformed one is not replayed.
+    ...(row.selection != null ? { selection: row.selection } : {}),
+    ...(row.selection_reasons != null ? { selectionReasons: row.selection_reasons } : {}),
   };
 }

@@ -584,12 +584,16 @@ export interface LaunchConfig {
    */
   memoryIds?: readonly EntityId[];
   /**
-   * ✦ Ask Jev's EXACT memory and skill sets (design 01a0cb80 §5.2) — what was
-   * ticked, replacing the teammate's own. Present only when a surface is in Jev
-   * mode with both sets known; `buildSpawnInput` then drops `memoryIds`, since
-   * the contract refuses the pair.
+   * ✦ Ask Jev's EXACT sets (design 01a0d348 §5.1) — what was ticked, each
+   * group replacing that group's defaults; a group left out keeps them.
+   * `buildSpawnInput` then drops `memoryIds`, since the contract refuses the
+   * pair.
    */
-  selection?: { readonly memoryIds: readonly EntityId[]; readonly skillIds: readonly EntityId[] };
+  selection?: {
+    readonly memoryIds?: readonly EntityId[];
+    readonly skillIds?: readonly EntityId[];
+    readonly referenceIds?: readonly EntityId[];
+  };
   /** The Ask Jev run that informed this launch, linked for cost. Never interpreted. */
   jevRunId?: EntityId;
 }
@@ -911,9 +915,11 @@ export function buildSpawnInput(args: {
        it, so the node refuses both together. Copied, never sliced — a
        truncated exact set would be a different set than the one ticked, and
        the node's own limit refusal is the honest answer to an oversized one. */
+    const { memoryIds, skillIds, referenceIds } = config.selection;
     input.selection = {
-      memoryIds: [...config.selection.memoryIds],
-      skillIds: [...config.selection.skillIds],
+      ...(memoryIds ? { memoryIds: [...memoryIds] } : {}),
+      ...(skillIds ? { skillIds: [...skillIds] } : {}),
+      ...(referenceIds ? { referenceIds: [...referenceIds] } : {}),
     };
   } else if (config.memoryIds?.length) {
     input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);

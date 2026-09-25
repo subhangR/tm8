@@ -24,7 +24,11 @@
  * `env.TM8_*` read appears in a package source without an entry here or on
  * `NOT_CONFIG_ENV` below.
  */
-import { AUTHORED_HEADER_LIMITS, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import {
+  AUTHORED_HEADER_LIMITS,
+  FILE_MAX_SIZE_BYTES_DEFAULT,
+  SPAWN_SELECTION_GROUP_LIMIT,
+} from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
 import { LANE_BUNDLED_SKILLS_OFF, MINIMAL_MCP_CONFIG } from '@tm8/execution';
 import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
@@ -247,8 +251,9 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'TEAMMATE_FIT_SCORE', group: 'Jev selection', summary: 'A teammate scoring at least this "fits" the work.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TEAMMATE_FIT_SCORE },
   { name: 'TICK_SCORE', group: 'Jev selection', summary: 'A memory or skill at or above this is pre-ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => TICK_SCORE },
   { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'A row at or above this is always ticked.', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },
-  { name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories a launch can carry.', definedIn: 'packages/server/src/jev/groups.ts', read: () => MEMORY_TICK_LIMIT },
-  { name: 'CANDIDATE_LIMIT', group: 'Jev selection', summary: 'Candidates Jev ranks per launch.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => CANDIDATE_LIMIT },
+  { name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories Ask Jev pre-ticks. The spawn ceiling is SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/groups.ts', read: () => MEMORY_TICK_LIMIT },
+  { name: 'CANDIDATE_LIMIT', group: 'Jev selection', summary: 'Candidates Jev ranks per group per launch. Defined from SPAWN_SELECTION_GROUP_LIMIT.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => CANDIDATE_LIMIT },
+  { name: 'SPAWN_SELECTION_GROUP_LIMIT', group: 'Jev selection', summary: 'Most ids one spawn selection group (memories, skills, references) may name. A safety ceiling equal to the candidate pool; the byte budget is the real limit.', definedIn: 'packages/contract/src/contract.ts', read: () => SPAWN_SELECTION_GROUP_LIMIT },
   { name: 'TEXT_LIMIT', group: 'Jev selection', summary: 'Characters of a memory, persona or skill description that may leave the server.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => TEXT_LIMIT },
   { name: 'AUTHORED_HEADER_LIMITS', group: 'Jev selection', summary: 'Authored selection-header GUIDANCE (characters): whenToUse, summary, keyword count and length. Nothing refuses a longer header (migration 223); entity reads clip to these numbers and declare it in `clipped`.', definedIn: 'packages/contract/src/selection-header.ts', read: () => AUTHORED_HEADER_LIMITS },
   { name: 'LANE_BUNDLED_SKILLS_OFF', group: 'Lane launch', summary: 'Bundled Claude Code skills a minimal lane turns off (skillOverrides). Kept: code-review, simplify, security-review, workflow-authoring. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_BUNDLED_SKILLS_OFF },
