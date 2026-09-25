@@ -6,9 +6,9 @@
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { DurableWorkspaceEvent, EntitySummary, QueryFilter, StatusCategory } from '@tm8/contract';
+import type { DurableWorkspaceEvent, EntitySummary, StatusCategory } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
-import type { ActionContext } from '../domain';
+import type { ActionContext, QueryFilter } from '../domain';
 import { EntityListPanel } from '../panels';
 import { createFixtureFormsPort } from './fixture-port';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS, FORM_FIXTURE_RESPONSES } from './fixtures';

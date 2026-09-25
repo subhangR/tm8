@@ -79,9 +79,9 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { fireEvent, render } from '@testing-library/react';
-import type { EntitySummary, QueryFilter, StatusCategory } from '@tm8/contract';
+import type { EntitySummary, StatusCategory } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
-import type { ActionContext } from '../domain';
+import type { ActionContext, QueryFilter } from '../domain';
 import { EntityListPanel } from './index';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
