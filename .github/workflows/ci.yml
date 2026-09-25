@@ -22,8 +22,8 @@
 # (HEAD^1..HEAD) through tools/ci/affected.sh and each test job runs only when its
 # module is affected; typecheck and ci-scripts always run. push, schedule and
 # workflow_dispatch are ALL, and so is any error inside changes.sh (loudly: a
-# ::warning:: and reason "fallback: <why>"). ci-shadow.yml calls this file with
-# force_all: true to run the full gate beside the filtered one.
+# ::warning:: and reason "fallback: <why>"). A workflow_call with force_all: true
+# runs the full gate whatever the diff (the Wave 4 shadow that used it is retired).
 #
 # BUILD LISTS ARE LITERAL. A test job's `typecheck:<project>` stages are its build
 # step (`tsc -b` emits dist), and `tsc -b <pkg>` alone does NOT build everything
@@ -54,12 +54,12 @@ on:
   schedule:
     # Nightly full run of main (schedule only ever runs on the default branch).
     - cron: "17 3 * * *"
-  # ci-shadow.yml's full gate. Inside a called workflow `github.event_name` is the
+  # A caller's full gate. Inside a called workflow `github.event_name` is the
   # CALLER's (pull_request), so force_all is what tells changes.sh to emit ALL.
   workflow_call:
     inputs:
       force_all:
-        description: Run every job whatever the diff (ci-shadow.yml's full gate).
+        description: Run every job whatever the diff (a caller's full gate).
         type: boolean
         default: false
 
@@ -69,15 +69,15 @@ on:
 # middle one. Every non-PR run therefore gets a group of its own (its run_id).
 # github.workflow is part of the key because groups are repo-wide, not
 # per-workflow. Inside a workflow_call `github.workflow` is the CALLER's name, so
-# the 'full'/'filtered' part keeps ci-shadow's call ("ci-shadow-full-<ref>") apart
-# from its caller ("ci-shadow-<ref>", which would otherwise deadlock) and from this
+# the 'full'/'filtered' part keeps a force_all call ("<caller>-full-<ref>") apart
+# from its caller ("<caller>-<ref>", which would otherwise deadlock) and from this
 # file's own PR run ("ci-filtered-<ref>").
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.force_all && 'full' || 'filtered' }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only token: no job here writes to the repo (artifacts use the runtime token).
-# A caller (ci-shadow.yml) can only narrow this, never widen it.
+# A workflow_call caller can only narrow this, never widen it.
 permissions:
   contents: read
 
@@ -88,7 +88,7 @@ env:
   TM8_VITEST_JSON_DIR: vitest-reports
 
 jobs:
-  # Which modules this run must test. tools/ci/changes.sh: on pull_request (not the shadow)
+  # Which modules this run must test. tools/ci/changes.sh: on pull_request (not force_all)
   # it diffs the PR merge commit HEAD^1..HEAD through tools/ci/affected.sh; every other event
   # is ALL. Any error inside it is ALL too, with a ::warning:: naming the reason. Only a
   # failure of the job itself leaves it non-success, which skips every gated job below and
@@ -121,7 +121,7 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # logged so the concurrency comment above is checkable from a run: inside
-          # ci-shadow's call this prints the CALLER's name, "ci-shadow"
+          # a workflow_call this prints the CALLER's name
           WORKFLOW: ${{ github.workflow }}
         run: |
           echo "github.workflow=$WORKFLOW force_all=$FORCE_ALL event=$EVENT_NAME"
@@ -359,8 +359,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tm8-setup
-      - name: Install postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The runner image ships psql. Required here because migrations-check.sh
+      # only WARNS and skips the apply check when psql is missing.
+      - name: Require postgres client
+        run: command -v psql && psql --version
       - name: Migration gate
         run: bash tools/ci/migrations-check.sh
         env:
@@ -371,7 +373,7 @@ jobs:
   # The verdict is tools/ci/ci-ok.sh (table-tested in ci-scripts): red unless
   # `changes` succeeded with a non-empty, parseable module set, and every job whose
   # module is affected succeeded. A skipped job passes ONLY when its module is
-  # unaffected; failure and cancelled are always red. Non-PR events and the shadow
+  # unaffected; failure and cancelled are always red. Non-PR events and force_all
   # must be all=true. The needs list is pinned in ci-ok.sh (PINNED_COUNT and its job
   # map), so dropping or adding a job here without it is red too.
   ci-ok:

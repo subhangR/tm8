@@ -4,7 +4,7 @@
 #
 # ENV (all from the workflow; nothing else is read)
 #   EVENT_NAME     github.event_name
-#   FORCE_ALL      "true" when ci.yml runs as the shadow's full gate (workflow_call input)
+#   FORCE_ALL      "true" when a caller runs ci.yml as a full gate (workflow_call input)
 #   EXPECTED_SHA   github.sha: the PR merge commit on pull_request
 #   PR_HEAD_SHA    github.event.pull_request.head.sha (empty on other events)
 #   AFFECTED       optional: another affected.sh (tests)
@@ -16,7 +16,7 @@
 # Only `pull_request` without FORCE_ALL is ever narrowed, and only when HEAD is exactly the
 # merge commit the event names: two parents, the second being the PR head. Then the diff is
 # HEAD^1..HEAD, which is what merging the PR changes. Every other event — push, schedule,
-# workflow_dispatch, the shadow, any event added later — is ALL.
+# workflow_dispatch, a force_all call, any event added later — is ALL.
 #
 # Fail-safe: whatever goes wrong here (an assert, affected.sh exiting non-zero, a block
 # that does not validate), the block written is ALL. This script exits 0 whenever it has
