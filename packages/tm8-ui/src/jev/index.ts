@@ -3,8 +3,20 @@ export {
   JEV_ADD_KEY_COPY,
   JEV_UNAVAILABLE_COPY,
   JEV_UNWIRED_REASON,
+  JEV_ENTITY_GROUPS,
   MEMORY_LIMIT_REASON,
+  REFERENCES_OFF_NOTE,
+  SKILL_BYTES_NOTE,
+  TICK_CEILING_REASON,
   useJevSuggestions,
+  type JevAppliedLedger,
+  type JevApplyHost,
+  type JevApplyReport,
+  type JevApplyTarget,
+  type JevEntityGroup,
+  type JevEntityGroupView,
+  type JevModelChoice,
+  type JevRow,
   type JevGroupState,
   type JevGroups,
   type JevOverallState,
@@ -22,7 +34,7 @@ export { JevRunBar } from './JevRunBar';
 export { JevStrip } from './JevStrip';
 export { JevReviewDrawer } from './JevReviewDrawer';
 export { JevEntryPoint, entryBadge, suggestedCount, appliedCount } from './JevEntryPoint';
-export { JevPanel, ledgerLines, untickedWhy, type JevPanelSource } from './JevPanel';
+export { JevPanel, applyAllNotice, ledgerLines, untickedWhy, type JevPanelSource } from './JevPanel';
 export {
   BudgetMeter,
   formatBytes,

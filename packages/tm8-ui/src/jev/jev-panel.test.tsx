@@ -235,10 +235,12 @@ describe('JevPanel', () => {
   });
 
   it('Apply all says what it skipped and why', () => {
-    const jev = source({ applyAll: vi.fn(() => ({ applied: ['model', 'teammate'] as const, skipped: { memories: 'ranked for the old teammate' } })) });
+    const skipped = { memories: 'ranked for the old teammate', skills: 'ranked for the old teammate', references: 'not answered' };
+    const jev = source({ applyAll: vi.fn(() => ({ applied: ['model', 'teammate'] as const, skipped })) });
     const view = panel(jev);
     fireEvent.click(view.getByTestId('jev-apply-all'));
-    expect(view.getByTestId('jev-panel-notice').textContent).toBe('Applied 2. Not applied: Memories — ranked for the old teammate');
+    expect(view.getByTestId('jev-panel-notice').textContent)
+      .toBe('Applied 2. Not applied — Memories, Skills: ranked for the old teammate · References: not answered');
   });
 
   it('a refused action says its reason instead of swallowing it', () => {
@@ -339,7 +341,8 @@ describe('JevPanel', () => {
     expect(row.textContent).toContain('teammate');
     expect(row.textContent).toContain('space');
     expect(view.getByTestId('jev-header-source-mem-a').textContent).toBe('derived header');
-    expect(view.getByTestId('jev-header-text-mem-a').textContent).toBe('Invite links are single-use');
+    // The fixture's derived summary IS the title, so it is not said twice.
+    expect(view.queryByTestId('jev-header-text-mem-a')).toBeNull();
   });
 
   it('header text and titles render as plain text, never HTML', () => {

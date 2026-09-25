@@ -7,6 +7,7 @@ import { JevCostLine } from './JevCostLine';
 import { JevGroupStatus } from './JevGroupStatus';
 import {
   JEV_ENTITY_GROUPS,
+  type JevApplyReport,
   type JevApplyTarget,
   type JevEntityGroup,
   type JevEntityGroupView,
@@ -129,10 +130,10 @@ function Chips({ item }: { item: RankedEntity }) {
   );
 }
 
-/** Graph content: header text is plain text, never markup. */
+/** Graph content: header text is plain text, never markup. A summary that only repeats the title says nothing, so it is left out. */
 function HeaderText({ item }: { item: RankedEntity }) {
   const text = item.header.summary ?? item.header.whenToUse;
-  return text ? <p className="jev-prow__text" data-testid={`jev-header-text-${item.entityId}`}>{text}</p> : null;
+  return text && text.trim() !== item.title.trim() ? <p className="jev-prow__text" data-testid={`jev-header-text-${item.entityId}`}>{text}</p> : null;
 }
 
 function EntityRow({ row, view, refusal, onToggle }: {
@@ -253,6 +254,20 @@ export function ledgerLines(jev: JevPanelSource, modelLabel: string): LedgerLine
 }
 
 /**
+ * What Apply all did not apply, one line per REASON: a teammate change skips
+ * all three groups for the same reason, and saying it three times buries it.
+ */
+export function applyAllNotice(report: JevApplyReport): string | null {
+  const byReason = new Map<string, JevApplyTarget[]>();
+  for (const [target, why] of Object.entries(report.skipped) as [JevApplyTarget, string][]) {
+    byReason.set(why, [...(byReason.get(why) ?? []), target]);
+  }
+  if (byReason.size === 0) return null;
+  const lines = [...byReason].map(([why, targets]) => `${targets.map((t) => TARGET_WORD[t]).join(', ')}: ${why}`);
+  return `Applied ${String(report.applied.length)}. Not applied — ${lines.join(' · ')}`;
+}
+
+/**
  * JEV PANEL — every recommendation in one view (Subhang's I9b note): Model,
  * Teammate, Memories, Skills and References, each with its own Apply and Undo,
  * Apply all on top, and "Applied to this launch" at the bottom, built from the
@@ -281,9 +296,7 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
 
   const applyAll = () => {
     const report = jev.applyAll();
-    const skipped = Object.entries(report.skipped) as [JevApplyTarget, string][];
-    setNotice(skipped.length === 0 ? null
-      : `Applied ${String(report.applied.length)}. Not applied: ${skipped.map(([target, why]) => `${TARGET_WORD[target]} — ${why}`).join(' · ')}`);
+    setNotice(applyAllNotice(report));
   };
 
   return (
