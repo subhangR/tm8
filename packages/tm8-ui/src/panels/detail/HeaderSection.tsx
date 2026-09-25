@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import type { CommandResult, EntityDetail, EntityHeaderView } from '@tm8/contract';
+import type { CommandResult, EntityDetail, EntityHeaderResult, EntityHeaderView } from '@tm8/contract';
 import { Eyebrow } from '../../kit';
 import {
   HEADER_GUIDANCE,
@@ -35,9 +35,16 @@ import { DisabledAction, type UnavailableReason } from '../honesty/DisabledWithR
  * `entity.upsert` echoes it. The result carries the entity with its header,
  * which the host ingests through `onSaved`; until it does, the result is shown.
  *
- * LENIENT (Subhang's ruling, msg 01a0d6f1): length is GUIDANCE — a live count
- * against "aim for ≤ N" — and never disables Save. A server refusal is shown
- * in its own words.
+ * LENIENT (Subhang's ruling, msg 01a0d6f1; migration 223): length is
+ * GUIDANCE — a live count against "aim for ≤ N" — and never disables Save.
+ * The node normalises rather than refuses and says so in `warnings`, which
+ * are shown as notes; anything it does refuse is shown in its own words.
+ *
+ * CLIPPED READS. An entity read cuts header text to the guidance for display
+ * and names the fields it cut (`header.clipped`); only a write's result
+ * carries the full text. Re-saving what a clipped read showed would SHORTEN
+ * the stored header, so Mark current refuses on a clipped header and the
+ * editor says plainly that it holds the shortened text.
  *
  * UNTRUSTED TEXT. Header text is graph content anyone with edit rights wrote:
  * it renders as React text nodes only, never as HTML or markdown.
@@ -62,12 +69,14 @@ export function HeaderSection({
   const [draft, setDraft] = useState<HeaderDraft>(() => headerDraftOf(authored));
   const [busy, setBusy] = useState<'save' | 'clear' | 'mark' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // A different entity in the same panel instance starts clean.
   useEffect(() => {
     setWritten(null);
     setEditing(false);
     setError(null);
+    setNotice(null);
     setBusy(null);
   }, [detail.id]);
 
@@ -80,14 +89,19 @@ export function HeaderSection({
       : null;
 
   const stale = authored ? headerStaleness(authored, detail.version) : null;
+  const clipped = authored?.clipped ?? [];
 
-  async function run(kind: 'save' | 'clear' | 'mark', op: () => Promise<CommandResult & { header: EntityHeaderView }>) {
+  async function run(kind: 'save' | 'clear' | 'mark', op: () => Promise<EntityHeaderResult>) {
     if (busy) return;
     setBusy(kind);
     setError(null);
+    setNotice(null);
     try {
       const result = await op();
-      setWritten({ base: detail, header: result.header.version > 0 ? result.header : undefined });
+      // No `header` ⇒ the node stored none for this kind (`header_not_stored`).
+      setWritten({ base: detail, header: result.header && result.header.version > 0 ? result.header : undefined });
+      const warnings = result.warnings ?? [];
+      if (warnings.length > 0) setNotice(warnings.map((w) => w.message).join(' '));
       setEditing(false);
       onSaved?.(result);
     } catch (e) {
@@ -133,9 +147,14 @@ export function HeaderSection({
         <Eyebrow faint>HEADER</Eyebrow>
         {badges}
         <HeaderFields draft={draft} onChange={setDraft} disabled={busy !== null} />
+        {clipped.length > 0 ? (
+          <p className="pn-launch__note pn-header__clip-note" data-testid="header-clipped-note">
+            {`This read showed ${clipped.join(', ')} shortened. Saving writes exactly what is in these fields, so restore anything the stored text had beyond it.`}
+          </p>
+        ) : null}
         {hasText || !authored ? null : (
           <p className="pn-launch__note" data-testid="header-blank-note">
-            Both fields are empty. To remove the header, use Clear.
+            Both fields are empty, so saving changes nothing. To remove the header, use Clear.
           </p>
         )}
         {error ? <p className="pn-header__error" role="alert" data-testid="header-error">{error}</p> : null}
@@ -181,6 +200,12 @@ export function HeaderSection({
           No header: later launches see its derived summary.
         </p>
       )}
+      {clipped.length > 0 ? (
+        <p className="pn-launch__note" data-testid="header-clipped">
+          {`Shown shortened (${clipped.join(', ')}): the stored header is longer.`}
+        </p>
+      ) : null}
+      {notice ? <p className="pn-launch__note" role="status" data-testid="header-notice">{notice}</p> : null}
       {error ? <p className="pn-header__error" role="alert" data-testid="header-error">{error}</p> : null}
       <div className="pn-header__actions">
         {unavailable ? (
@@ -192,7 +217,14 @@ export function HeaderSection({
             <button type="button" className="pn-btn" onClick={startEdit} data-testid="header-edit">
               {authored ? 'Edit' : 'Write header'}
             </button>
-            {authored && stale ? (
+            {authored && stale && clipped.length > 0 ? (
+              <DisabledAction
+                reason={{ cause: 'This read shows the header shortened', remedy: 're-saving it would cut the stored text; use Edit instead' }}
+                label="Mark current"
+              >
+                Mark current
+              </DisabledAction>
+            ) : authored && stale ? (
               <button
                 type="button"
                 className="pn-btn"

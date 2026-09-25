@@ -149,6 +149,7 @@ import {
   type HeaderTextInput,
   type SelectionHeaderKind,
   type SetEntityHeaderInput,
+  type ResultWarning,
 } from '@tm8/contract';
 import type {
   ConnectionState,
@@ -1813,16 +1814,19 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /**
-   * `set_entity_header`'s rules as the fixture can state them: the kind
-   * allowlist, the header's own optimistic version, and today's "whenToUse
-   * or summary" refusal (which the UI shows in the node's words rather than
-   * pre-empting). NO length bounds — the lenient ruling (migration 222)
-   * removes them at the node, and a fixture that kept them would test a
-   * refusal the UI is told never to pre-empt.
+   * `set_entity_header` as migration 223 left it — LENIENT: the header's own
+   * optimistic version is the one refusal (an opted-in concurrency guard).
+   * Content is normalised, never refused: text is trimmed, blanks and
+   * duplicate keywords dropped, and a header with nothing left is a no-op with
+   * a warning, as is a kind that stores no header.
    */
-  function writeHeader(s: EntitySummary, text: HeaderTextInput, expectedVersion: number | undefined): EntityHeaderView {
+  function writeHeader(
+    s: EntitySummary,
+    text: HeaderTextInput,
+    expectedVersion: number | undefined,
+  ): { header: EntityHeaderView | undefined; warnings: ResultWarning[] } {
     if (!headerAuthorable(s.kind)) {
-      throw new CollabError('invalid_input', `a ${s.kind} cannot carry an authored header`);
+      return { header: undefined, warnings: [{ code: 'header_not_stored', message: `A ${s.kind} stores no header; nothing was written.` }] };
     }
     const current = headers.get(s.id)?.version ?? 0;
     if (expectedVersion !== undefined && expectedVersion !== current) {
@@ -1830,22 +1834,33 @@ export function createFixtureSeam(): FixtureSeam {
     }
     const whenToUse = text.whenToUse?.trim() || null;
     const summary = text.summary?.trim() || null;
-    if (whenToUse === null && summary === null) {
-      throw new CollabError('invalid_input', 'a header needs whenToUse or summary');
+    const keywords = [...new Set((text.keywords ?? []).map((k) => k.trim()).filter(Boolean))];
+    if (whenToUse === null && summary === null && keywords.length === 0) {
+      return { header: headerViewOf(s) ?? fallbackHeaderOf(s), warnings: [{ code: 'header_empty', message: 'The header was empty after trimming; nothing was written.' }] };
     }
     headers.set(s.id, {
       entityId: s.id,
       kind: s.kind as SelectionHeaderKind,
       whenToUse,
       summary,
-      keywords: (text.keywords ?? []).map((k) => k.trim()).filter(Boolean),
+      keywords,
       source: 'authored',
       bytes: null,
       loadPointer: `tm8 entity get ${s.id}`,
       version: current + 1,
       pinnedVersion: s.version,
     });
-    return headerViewOf(s)!;
+    return { header: headerViewOf(s)!, warnings: [] };
+  }
+
+  /* At the node the fallback is the resolved native/derived header, version 0.
+     The fixture has no resolver, so it answers the derived shape, empty. */
+  function fallbackHeaderOf(s: EntitySummary): EntityHeaderView {
+    return {
+      entityId: s.id, kind: s.kind as SelectionHeaderKind, name: s.title,
+      whenToUse: null, summary: null, keywords: [], source: 'derived', stale: false,
+      bytes: null, loadPointer: `tm8 entity get ${s.id}`, version: 0, pinnedVersion: null,
+    };
   }
 
   function detailOf(id: EntityId): EntityDetail {
@@ -3504,25 +3519,27 @@ export function createFixtureSeam(): FixtureSeam {
       },
       async setEntityHeader(id, input: SetEntityHeaderInput): Promise<EntityHeaderResult> {
         const s = requireSummary(id);
-        const header = writeHeader(s, input, input.expectedVersion);
-        return { ...commandResult(s, { patches: [] }), header };
+        const { header, warnings } = writeHeader(s, input, input.expectedVersion);
+        return {
+          ...commandResult(s, { patches: [] }),
+          ...(header ? { header } : {}),
+          ...(warnings.length > 0 ? { warnings } : {}),
+        };
       },
       async clearEntityHeader(id, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
         const s = requireSummary(id);
+        if (!headerAuthorable(s.kind)) {
+          return { ...commandResult(s, { patches: [] }), warnings: [{ code: 'header_not_stored', message: `A ${s.kind} stores no header.` }] };
+        }
         const current = headers.get(id)?.version ?? 0;
-        if (current === 0 || input.expectedVersion !== current) {
+        if (current === 0) {
+          return { ...commandResult(s, { patches: [] }), header: fallbackHeaderOf(s), warnings: [{ code: 'header_absent', message: 'There was no authored header to clear.' }] };
+        }
+        if (input.expectedVersion !== undefined && input.expectedVersion !== current) {
           throw new CollabError('version_conflict', `expected header version ${input.expectedVersion}, have ${current}`);
         }
         headers.delete(id);
-        /* Back to the fallback: at the node `header` is the resolved native or
-           derived one with version 0. The fixture has no resolver, so it
-           answers the derived shape with nothing derived in it. */
-        const header: EntityHeaderView = {
-          entityId: id, kind: s.kind as SelectionHeaderKind, name: s.title,
-          whenToUse: null, summary: null, keywords: [], source: 'derived', stale: false,
-          bytes: null, loadPointer: `tm8 entity get ${id}`, version: 0, pinnedVersion: null,
-        };
-        return { ...commandResult(s, { patches: [] }), header };
+        return { ...commandResult(s, { patches: [] }), header: fallbackHeaderOf(s) };
       },
       async patchEntity(id, input: PatchEntityInput) {
         const s = requireSummary(id);

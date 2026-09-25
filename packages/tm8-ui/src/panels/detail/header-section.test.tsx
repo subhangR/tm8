@@ -200,6 +200,47 @@ describe('HeaderSection — writing', () => {
     await waitFor(() => expect(screen.queryByTestId('header-stale')).toBeNull());
   });
 
+  it('shows the node\'s warnings as a note after a no-op save (lenient: nothing is refused for content)', async () => {
+    const detail = doc({ header: authored() });
+    const commands = commandsFor(detail);
+    commands.setEntityHeader.mockResolvedValueOnce({
+      ...resultWith(detail, authored()),
+      warnings: [{ code: 'header_empty', message: 'The header was empty after trimming; nothing was written.' }],
+    });
+    render(<HeaderSection detail={detail} commands={commands} />);
+    fireEvent.click(screen.getByTestId('header-edit'));
+    fireEvent.change(screen.getByTestId('header-input-when'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('header-input-summary'), { target: { value: '' } });
+    expect(screen.getByTestId('header-blank-note')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('header-save'));
+    const note = await screen.findByTestId('header-notice');
+    expect(note.textContent).toBe('The header was empty after trimming; nothing was written.');
+    expect(screen.getByTestId('header-when').textContent).toBe('When laying out the panel grid');
+  });
+
+  it('a CLIPPED read: says so, refuses Mark current (it would cut the stored text), warns in the editor', () => {
+    const detail = doc({ version: 7, header: authored({ stale: true, pinnedVersion: 4, clipped: ['summary'] }) });
+    const commands = commandsFor(detail);
+    render(<HeaderSection detail={detail} commands={commands} />);
+    expect(screen.getByTestId('header-clipped').textContent).toContain('summary');
+    expect(screen.queryByTestId('header-mark-current')).toBeNull();
+    expect(screen.getByTestId('header-section').textContent).toContain('This read shows the header shortened');
+    fireEvent.click(screen.getByTestId('header-edit'));
+    expect(screen.getByTestId('header-clipped-note').textContent).toContain('Saving writes exactly what is in these fields');
+    expect(commands.setEntityHeader).not.toHaveBeenCalled();
+  });
+
+  it('a result with NO header (a kind that stores none) falls back to "no header"', async () => {
+    const detail = doc({ header: authored() });
+    const commands = commandsFor(detail);
+    commands.setEntityHeader.mockResolvedValueOnce({ entity: detail, patches: [], warnings: [{ code: 'header_not_stored', message: 'not stored' }] });
+    render(<HeaderSection detail={detail} commands={commands} />);
+    fireEvent.click(screen.getByTestId('header-edit'));
+    fireEvent.click(screen.getByTestId('header-save'));
+    await screen.findByTestId('header-none');
+    expect(screen.getByTestId('header-notice').textContent).toBe('not stored');
+  });
+
   it('Clear sends the header version and falls back to "no header"', async () => {
     const detail = doc({ header: authored({ version: 4 }) });
     const commands = commandsFor(detail);

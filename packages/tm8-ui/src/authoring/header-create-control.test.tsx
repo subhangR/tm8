@@ -138,16 +138,21 @@ describe('the fixture seam keeps the header on its own version', () => {
     expect(isCollabError(conflict) && conflict.code).toBe('version_conflict');
 
     const cleared = await seam.commands.clearEntityHeader(id, { expectedVersion: 2 });
-    expect(cleared.header.version).toBe(0);
+    expect(cleared.header?.version).toBe(0);
     expect((await seam.entity(id)).header).toBeUndefined();
   });
 
-  it('refuses a header on a kind that cannot carry one', async () => {
+  it('LENIENT: a kind with no header, or an empty header, is a no-op with a warning — never a refusal', async () => {
     const seam = createFixtureSeam();
     const channel = (await seam.commands.createEntity({ spaceId: SPACE, kind: 'channel', title: 'c', clientMutationId: 'fx-2' })).entity!;
-    const refused = await seam.commands.setEntityHeader(channel.id, { summary: 's' }).catch((e: unknown) => e);
-    expect(isCollabError(refused) && refused.code).toBe('invalid_input');
-    // And a real header kind in the dataset accepts one.
-    await expect(seam.commands.setEntityHeader(docLayoutSpec.id, { summary: 's', expectedVersion: 0 })).resolves.toBeTruthy();
+    const notStored = await seam.commands.setEntityHeader(channel.id, { summary: 's' });
+    expect(notStored.header).toBeUndefined();
+    expect(notStored.warnings?.map((w) => w.code)).toEqual(['header_not_stored']);
+
+    const empty = await seam.commands.setEntityHeader(docLayoutSpec.id, { whenToUse: '   ', keywords: [' '], expectedVersion: 0 });
+    expect(empty.warnings?.map((w) => w.code)).toEqual(['header_empty']);
+    expect(empty.header?.version).toBe(0);
+
+    await expect(seam.commands.setEntityHeader(docLayoutSpec.id, { summary: 's', expectedVersion: 0 })).resolves.toMatchObject({ header: { version: 1 } });
   });
 });
