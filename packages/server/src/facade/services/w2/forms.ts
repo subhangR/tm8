@@ -1,5 +1,6 @@
 /**
- * Forms W1 — the thirteen `forms.*` operations (FORMS-DESIGN §6; migration 211).
+ * Forms — the fifteen `forms.*` operations (FORMS-DESIGN §6; migrations 211 +
+ * 221: W3 adds responses.redeliver and pendingForSessions).
  *
  * Every command is ONE call to its SECURITY DEFINER door in ONE transaction;
  * the doors own the ledger, authorisation, locks and the closed error
@@ -42,6 +43,10 @@ import {
   type FormsQuestionsRemoveInput,
   type FormsQuestionsUpdateInput,
   type FormsResponsesDiscardInput,
+  type FormsResponsesRedeliverInput,
+  type FormsResponsesRedeliverResult,
+  FormsPendingForSessionsParamsSchema,
+  type FormsPendingForSessionsResult,
   type FormsResponsesSaveInput,
   type FormsResponsesSubmitInput,
   type FormsTransitionInput,
@@ -78,6 +83,12 @@ export interface W2FormsServiceOptions {
    * like the submit hook: the outbox is the durable path.
    */
   readonly onFormCancelled?: (event: { formId: string }) => void | Promise<void>;
+  /**
+   * W3: after forms.responses.redeliver commits, drain that response now, so
+   * "Send to a new session" and "Resume now" happen on the click rather than
+   * on the next tick. Best-effort, like the others: the row is the durable path.
+   */
+  readonly onResponseRedelivered?: (event: { responseId: string; workSessionId: string }) => void | Promise<void>;
 }
 
 interface SaveRpcResult { formId: string; responseId: string }
@@ -571,6 +582,48 @@ export class W2FormsService {
     const id = requireUuidParam(ctx, 'responseId');
     const { claims } = await this.access(ctx, false);
     return this.deps.db.tx(claims, (q) => loadResponseView(q, id));
+  };
+
+  /**
+   * forms.responses.redeliver: "Send to a new session" on a cancelled delivery,
+   * "Resume now" on a queued one (221 D). The door decides; this only drains.
+   */
+  readonly responsesRedeliver: OperationHandler = async (ctx) => {
+    const responseId = requireUuidParam(ctx, 'responseId');
+    const input = ctx.body as FormsResponsesRedeliverInput;
+    const { claims, envelope } = await this.access(ctx);
+    const result = await this.deps.db.tx(claims, (q) => q.rpc<FormsResponsesRedeliverResult>(
+      'redeliver_form_response',
+      [responseId, input.to ?? 'new_session', input.deliverySessionId ?? null,
+        envelope.actorId ?? null, input.clientMutationId],
+    ));
+    if (result.status === 'pending' && this.options.onResponseRedelivered) {
+      try {
+        await this.options.onResponseRedelivered({ responseId, workSessionId: result.workSessionId });
+      } catch (error) {
+        console.error('[forms] onResponseRedelivered hook failed', error);
+      }
+    }
+    return result;
+  };
+
+  /**
+   * forms.pendingForSessions: the session tile chip and banner (§10). One
+   * statement (221 E), run under the caller's RLS. `sessionIds` is a comma
+   * list, a repeated key, or both.
+   */
+  readonly pendingForSessions: OperationHandler = async (ctx) => {
+    const parsed = FormsPendingForSessionsParamsSchema.safeParse({
+      spaceId: ctx.query.get('spaceId') ?? '',
+      sessionIds: ctx.query.getAll('sessionIds').flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean),
+    });
+    if (!parsed.success) {
+      throw new CollabError('invalid_input', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    const { claims } = await this.access(ctx, false);
+    return this.deps.db.tx(claims, (q) => q.rpc<FormsPendingForSessionsResult>(
+      'forms_pending_for_sessions', [parsed.data.spaceId, parsed.data.sessionIds],
+    ));
   };
 
   /** forms.responses.mine: what the caller has submitted, across a space, newest first. */

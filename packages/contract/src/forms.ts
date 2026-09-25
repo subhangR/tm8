@@ -943,3 +943,78 @@ export const FormResponsePageSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type FormResponsePage = z.infer<typeof FormResponsePageSchema>;
+
+// -- W3: redeliver and the pending read (FORMS-DESIGN §7.3, §10) --
+
+/**
+ * forms.responses.redeliver — the two buttons on a delivery (W2 R1/R4).
+ * `to: 'new_session'` (default) re-routes a CANCELLED delivery to a fresh
+ * session ("Send to a new session"); `to: 'resume'` resumes the target of a
+ * still-PENDING queued one ("Resume now"). `deliverySessionId` names the
+ * delivery row, and is needed only when the response has more than one;
+ * `workSessionId` stays the caller's own session, as on every form command.
+ */
+export const FormRedeliverTargetSchema = z.enum(['new_session', 'resume']);
+export type FormRedeliverTarget = z.infer<typeof FormRedeliverTargetSchema>;
+
+export interface FormsResponsesRedeliverInput extends FormCommandContext {
+  to?: FormRedeliverTarget;
+  deliverySessionId?: string;
+}
+export const FormsResponsesRedeliverInputSchema: z.ZodType<FormsResponsesRedeliverInput> = z.object({
+  ...formCommandShape,
+  to: FormRedeliverTargetSchema.optional(),
+  deliverySessionId: z.string().uuid().optional(),
+}).strict();
+
+export const FormsResponsesRedeliverResultSchema = z.object({
+  responseId: z.string(),
+  workSessionId: z.string(),
+  to: FormRedeliverTargetSchema,
+  status: FormDeliveryStatusSchema,
+  /** false when the row was already routed this way (idempotent replay). */
+  redelivered: z.boolean(),
+});
+export type FormsResponsesRedeliverResult = z.infer<typeof FormsResponsesRedeliverResultSchema>;
+
+/** The most session ids one forms.pendingForSessions call reads. */
+export const FORMS_PENDING_MAX_SESSIONS = 100;
+/** The most forms listed per session (`total` still counts them all). */
+export const FORMS_PENDING_MAX_FORMS = 20;
+
+/** forms.pendingForSessions — the tile chip and session banner read. */
+export const FormsPendingForSessionsParamsSchema = z.object({
+  spaceId: z.string().uuid(),
+  sessionIds: z.array(z.string().uuid()).min(1).max(FORMS_PENDING_MAX_SESSIONS)
+    .refine((ids) => new Set(ids).size === ids.length, 'sessionIds must be distinct'),
+}).strict();
+export type FormsPendingForSessionsParams = z.infer<typeof FormsPendingForSessionsParamsSchema>;
+
+export const FormPendingItemSchema = z.object({
+  formId: z.string(),
+  title: z.string(),
+  version: z.number().int().positive(),
+  structureVersion: z.number().int().positive(),
+  questionCount: z.number().int().nonnegative(),
+  openedAt: z.string().nullable(),
+  /** The caller's own draft, so Fill can chain forms.responses.save. */
+  draft: z.object({ id: z.string(), version: z.number().int().positive() }).nullable(),
+});
+export type FormPendingItem = z.infer<typeof FormPendingItemSchema>;
+
+export const FormPendingSessionSchema = z.object({
+  workSessionId: z.string(),
+  /** Every form waiting on the caller for this session (the chip count). */
+  total: z.number().int().nonnegative(),
+  /** Deliveries still pending to this session (a queued answer, R4). */
+  queued: z.number().int().nonnegative(),
+  /** Newest opened first, at most FORMS_PENDING_MAX_FORMS. */
+  forms: z.array(FormPendingItemSchema),
+});
+export type FormPendingSession = z.infer<typeof FormPendingSessionSchema>;
+
+export const FormsPendingForSessionsResultSchema = z.object({
+  /** Only sessions with total > 0 or queued > 0, in request order. */
+  sessions: z.array(FormPendingSessionSchema),
+});
+export type FormsPendingForSessionsResult = z.infer<typeof FormsPendingForSessionsResultSchema>;

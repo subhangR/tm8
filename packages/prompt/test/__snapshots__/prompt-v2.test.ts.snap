@@ -34,6 +34,7 @@ exports[`prompt versions > keeps v1 byte-identical for a manifest stamped "1" 1`
     <command usage="tm8 attention resolve-entity &lt;entity-id&gt;">explicitly resolve every pending attention request for an entity without opening the UI</command>
     <command usage="tm8 message send --to &lt;anchor-entity-id&gt; &quot;&lt;body&gt;&quot;">durable communication — a result, a milestone or a blocker is a message on an anchor</command>
     <command usage="tm8 artifact publish &lt;dir&gt; --name &quot;&lt;name&gt;&quot;">publish a directory of HTML/JS/CSS AS A TM8 ARTIFACT — the only way a built page becomes an entity in this space; your harness's own artifact/canvas tool publishes elsewhere and leaves nothing in tm8</command>
+    <command usage="tm8 form create --title &quot;&lt;title&gt;&quot; --question 'key:type:title[:options]'">to ask a human a question, create a form instead of asking in prose; the answer arrives as a form_response turn (or \`tm8 form wait &lt;form-id&gt;\`); \`tm8 help form\` has the rest</command>
     <command usage="tm8 message send --to &lt;work-session-id&gt; &quot;&lt;body&gt;&quot;">a work session is an anchor like any other; this is how you reach a coordinator or a sibling</command>
   </command_surface>
 </tm8_system_prompt><tm8_task_prompt count="1">

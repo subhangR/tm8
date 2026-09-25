@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(236); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(SURFACE).toHaveLength(238); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(236); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(rows).toHaveLength(238); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(236); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(new Set(rows.map((r) => r.op)).size).toBe(238); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
   });
 
   /**
@@ -1069,7 +1069,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   MEASURED: ls db/migrations/*.sql | wc -l -> 188, duplicate prefixes -> 0.
     // 188 -> 189 (M5/S1): 207_task_keyed_session_nudges. MEASURED:
     //   ls db/migrations/*.sql | wc -l -> 189, duplicate prefixes -> 0.
-    expect(server.appliedMigrations.length).toBe(197); // 196 -> 197: 218_rls_membership_once_per_statement (#770). MEASURED. // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
+    expect(server.appliedMigrations.length).toBe(199); // 197 -> 199: 220_secdef_membership_once_per_statement (#777, landed unpinned) + 221_forms_redeliver_and_pending (Forms W3). MEASURED. // 196 -> 197: 218_rls_membership_once_per_statement (#770). MEASURED. // 195 -> 196: 216_entity_headers (headers I3). MEASURED. // 194 -> 195: 215_forms_delivery_spawn_modes (Forms W2 spawn modes). MEASURED. // 193 -> 194: 214_forms_delivery (Forms W2). MEASURED. // 192 -> 193: 212_orchestration_flow_edges (Craft produces/consumes). MEASURED. // 191 -> 192: 211_forms_ops (Forms W1). MEASURED. // 189 -> 190: 208_event_subject_ids_canonical_set (change feed step 3); 190 -> 191: 209_forms_foundation (Forms W0). MEASURED.
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
@@ -1367,6 +1367,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'entities.commands.linkPr',
   'entityKinds.create',
   'entityKinds.update',
+  // Forms W3: forms.pendingForSessions refuses a missing spaceId/sessionIds
+  // in-handler, as forms.responses.mine does below.
+  'forms.pendingForSessions',
   // Forms W1: forms.responses.mine without ?spaceId= is refused in-handler
   // (the attentionRequests.list precedent), a handler-reached 400.
   'forms.responses.mine',

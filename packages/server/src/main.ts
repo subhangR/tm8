@@ -388,7 +388,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
-        ? { formDelivery: { onResponseSubmitted: formDelivery.onResponseSubmitted, onFormCancelled: formDelivery.onFormCancelled } }
+        ? {
+            formDelivery: {
+              onResponseSubmitted: formDelivery.onResponseSubmitted,
+              onFormCancelled: formDelivery.onFormCancelled,
+              onResponseRedelivered: formDelivery.onResponseSubmitted,
+            },
+          }
         : {}),
       // launch.suggest's Jev key, chosen PER REQUEST (Lane K): the caller's own
       // TypeSafe key from Settings → agent credentials, else this node's
