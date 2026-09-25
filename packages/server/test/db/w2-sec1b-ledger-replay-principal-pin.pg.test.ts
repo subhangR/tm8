@@ -233,6 +233,10 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   ['public.chat_threads', '176_chat_entity.sql'],
   ['public.start_chat_thread', '176_chat_entity.sql'],
   ['internal.queue_chat_human_reply', '176_chat_entity.sql'],
+  // 223 makes selection headers lenient: header text is no longer validated,
+  // so 216's keyword-shape check has no caller and is dropped rather than left
+  // orphaned. See db/migrations/223_entity_headers_lenient.sql.
+  ['internal.valid_header_keywords', '223_entity_headers_lenient.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {
