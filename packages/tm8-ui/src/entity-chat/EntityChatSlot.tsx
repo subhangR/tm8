@@ -18,11 +18,18 @@ import { navStore, selectChatSlot, useNavStore } from '../stores/navStore';
 import { entityChatSurfaceFor, type EntityChatSurfaceHost } from '../views/conversationSurface';
 import { EntityChatPanel, type EntityChatSubject } from './EntityChatPanel';
 import { useChatsAbout } from './chatsAbout';
+import { NewChatSettings } from './NewChatSettings';
+import type { NewChatSeed } from '../chat-home/types';
 
 /** The open slot, or `null`. The ONE subscription every slot host makes. */
 export function useChatSlot(): ChatSlot | null {
   return useNavStore(selectChatSlot);
 }
+
+export type NewChatGate = (
+  composerFor: (seed?: NewChatSeed) => ReactNode,
+  subject: { id: EntityId; kind: string | null },
+) => ReactNode;
 
 export interface EntityChatSlotProps extends EntityChatSurfaceHost {
   /**
@@ -35,13 +42,14 @@ export interface EntityChatSlotProps extends EntityChatSurfaceHost {
   /** The subject chip's press — "open it" means something different per layout. */
   onOpenSubject?: ((id: EntityId) => void) | undefined;
   /**
-   * LANE C'S SEAM — the new-chat settings card (§3.4). Called only while the
-   * thread is `new`, with the composer this slot would otherwise render; the
-   * return value is what the panel body shows. A gate that wants the card
-   * FIRST renders the card and withholds the composer until "Start chat".
-   * Absent ⇒ the composer renders straight away.
+   * THE NEW-CHAT GATE (§3.4). Called only while the thread is `new`, with a
+   * function that builds this slot's composer from its starting chips; the
+   * return value is what the panel body shows. Absent ⇒ `NewChatSettings`:
+   * the kind's default skips straight to the composer, anything else shows
+   * the settings card first. It is the DEFAULT so every layout that mounts
+   * the slot gets the same rule without passing anything.
    */
-  newChatGate?: ((composer: ReactNode, subject: { id: EntityId; kind: string | null }) => ReactNode) | undefined;
+  newChatGate?: NewChatGate | undefined;
 }
 
 function useSubject(
@@ -83,10 +91,19 @@ export function EntityChatSlot({
     glyph: known ? getKind(known.kind).chip.glyph : undefined,
   };
   const select = (thread: EntityId | 'new') => navStore.getState().setChatThread(thread);
-  const surface = entityChatSurfaceFor(slot.about, slot.thread, host, select);
-  const body = slot.thread === 'new' && newChatGate
-    ? newChatGate(surface, { id: slot.about, kind: known?.kind ?? null })
-    : surface;
+  const surfaceFor = (seed?: NewChatSeed) => entityChatSurfaceFor(slot.about, slot.thread, host, select, seed);
+  const gate: NewChatGate = newChatGate ?? ((composerFor, subjectRef) => (
+    <NewChatSettings
+      seam={host.seam}
+      spaceId={host.spaceId}
+      nodeKey={host.nodeKey}
+      subject={subjectRef}
+      composerFor={composerFor}
+    />
+  ));
+  const body = slot.thread === 'new'
+    ? gate(surfaceFor, { id: slot.about, kind: known?.kind ?? null })
+    : surfaceFor();
 
   return (
     <EntityChatPanel
