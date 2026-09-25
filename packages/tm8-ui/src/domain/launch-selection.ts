@@ -29,6 +29,8 @@ import {
   type LaunchDefaultItem,
   type LaunchDefaultsGroup,
   type LaunchDefaultVia,
+  type RankedEntity,
+  type RankedEntityReason,
   type SpawnSelection,
   type SpawnSelectionDefaultReason,
   type SpawnSelectionGroup,
@@ -250,28 +252,28 @@ const SELECTION_KEY = {
 } as const satisfies Record<SpawnSelectionGroup, keyof SpawnSelection>;
 
 /**
- * The spawn fields for a launch. `override` (Ask Jev's groups, while the sheet
- * is in Jev mode) replaces the manual outcome of the groups it names.
+ * The spawn fields for a launch: each group's ordinary outcome, nothing else.
+ * Ask Jev reaches this function only through the edits a person APPLIED (they
+ * are `manual` outcomes like any other), so there is no Jev override here.
  *
  * `selection` is left out when no group is sent, so an untouched launch loads
  * exactly today's defaults. `selectionReasons` names EVERY omitted group — an
- * audit-only field the node records in `manifest.context.groups`, so a failed
- * Jev group is visible rather than a generic "no selection".
+ * audit-only field the node records in `manifest.context.groups` — and
+ * `defaultReasons` replaces a bare `not-asked` with why a group Jev was asked
+ * about still launches on its defaults (`jev-failed`, `jev-pending`).
  *
  * Never sends a group above the ceiling: such a group falls back to its
- * defaults. `toggleRow` makes that unreachable from the sheet; this is the
- * floor under any other caller.
+ * defaults. `toggleRow` and `applyJevToEdit` make that unreachable from the
+ * sheet; this is the floor under any other caller.
  */
-export function composeSelection(
+export function composeLaunchSelection(
   manual: Readonly<Record<SpawnSelectionGroup, GroupOutcome>>,
-  override: Partial<Record<SpawnSelectionGroup, GroupOutcome>> = {},
-  /** Why a group left on its defaults got there, when it is more than `not-asked` (a failed or pending Jev group). */
   defaultReasons: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>> = {},
 ): LaunchSelectionFields {
   const selection: SpawnSelection = {};
   const reasons: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>> = {};
   for (const group of LAUNCH_SELECTION_GROUPS) {
-    const outcome = override[group] ?? manual[group];
+    const outcome = manual[group];
     if ('send' in outcome && outcome.send.length <= SPAWN_SELECTION_GROUP_LIMIT) {
       selection[SELECTION_KEY[group]] = [...outcome.send];
     } else {
@@ -282,5 +284,166 @@ export function composeSelection(
   return {
     ...(Object.keys(selection).length > 0 ? { selection } : {}),
     ...(Object.keys(reasons).length > 0 ? { selectionReasons: reasons } : {}),
+  };
+}
+
+/**
+ * @deprecated TRANSITIONAL — call `composeLaunchSelection(outcomes, defaultReasons)`.
+ * The `override` (the retired "Jev mode") is ignored when absent and still
+ * honoured when a not-yet-migrated caller passes one; `useJevSuggestions` no
+ * longer produces it. Deleted once LaunchSheet and the Run popup move over.
+ */
+export function composeSelection(
+  manual: Readonly<Record<SpawnSelectionGroup, GroupOutcome>>,
+  override: Partial<Record<SpawnSelectionGroup, GroupOutcome>> = {},
+  defaultReasons: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>> = {},
+): LaunchSelectionFields {
+  const merged = { ...manual };
+  for (const group of LAUNCH_SELECTION_GROUPS) {
+    const replaced = override[group];
+    if (replaced) merged[group] = replaced;
+  }
+  return composeLaunchSelection(merged, defaultReasons);
+}
+
+/* ------------------------------------------------------------------------ *
+ * APPLYING ASK JEV (Jev UX lane A). Jev only suggests; a person's Apply click
+ * turns Jev's ticks for ONE group into that group's ordinary edit, and Undo
+ * turns them back. Nothing here runs without that click.
+ * ------------------------------------------------------------------------ */
+
+/** One row Jev ranked, as Apply needs it: its id, and whether it is a default of this launch. */
+export interface JevRankedRow {
+  readonly id: EntityId;
+  /** `RankedEntity.default`: spawn loads it for this group when nothing is selected. */
+  readonly isDefault: boolean;
+}
+
+/**
+ * What Applying Jev's ticks does to a group, as a diff against the launch's
+ * defaults: `removed` = defaults Jev left unticked, `added` = picks that are
+ * not defaults. Only rows JEV RANKED are decided — a default Jev never saw, or
+ * a row the person added that Jev didn't rank, keeps its state.
+ */
+export function jevGroupDiff(rows: readonly JevRankedRow[], ticked: readonly EntityId[]): LaunchGroupEdit {
+  const on = new Set(ticked);
+  const removed: EntityId[] = [];
+  const added: EntityId[] = [];
+  for (const row of rows) {
+    if (row.isDefault && !on.has(row.id)) removed.push(row.id);
+    if (!row.isDefault && on.has(row.id)) added.push(row.id);
+  }
+  // Additions go in tick (rank) order, which is the order `ticked` is in.
+  const addedSet = new Set(added);
+  return { removed, added: ticked.filter((id) => addedSet.has(id)) };
+}
+
+/**
+ * The group's edit after Applying Jev's ticks on top of the person's current
+ * edit. Each row Jev ranked takes Jev's verdict; every other row is untouched.
+ */
+export function applyJevToEdit(
+  current: LaunchGroupEdit,
+  rows: readonly JevRankedRow[],
+  ticked: readonly EntityId[],
+): LaunchGroupEdit {
+  const decided = new Set(rows.map((row) => row.id));
+  const jev = jevGroupDiff(rows, ticked);
+  const added = [...current.added.filter((id) => !decided.has(id)), ...jev.added];
+  return {
+    removed: [...current.removed.filter((id) => !decided.has(id)), ...jev.removed],
+    added: [...new Set(added)],
+  };
+}
+
+/**
+ * Undo an Apply: every row the Apply decided goes back to its state in
+ * `before` (the edit just before the Apply); rows the person changed since on
+ * their own, outside Jev's rows, keep those changes.
+ */
+export function restoreRows(
+  current: LaunchGroupEdit,
+  before: LaunchGroupEdit,
+  touched: readonly EntityId[],
+): LaunchGroupEdit {
+  const decided = new Set(touched);
+  return {
+    removed: [...current.removed.filter((id) => !decided.has(id)), ...before.removed.filter((id) => decided.has(id))],
+    added: [...current.added.filter((id) => !decided.has(id)), ...before.added.filter((id) => decided.has(id))],
+  };
+}
+
+/**
+ * Why Applying `next` to this group must be refused; null when it may. A
+ * locked group (defaults unread, or past the ceiling) launches on its defaults
+ * whatever its edit says, so an Apply there would look applied and not be.
+ */
+export function jevApplyRefusal(defaults: LaunchGroupDefaults, next: LaunchGroupEdit): string | null {
+  const lock = groupLock(defaults);
+  if (lock) return lock;
+  if (groupIds(defaults, next).length > SPAWN_SELECTION_GROUP_LIMIT) return CEILING_REFUSAL;
+  return null;
+}
+
+/** Jev's answer for one group, as Apply reads it: the ranked rows and Jev's CURRENT ticks. */
+export interface JevGroupSuggestion {
+  readonly items: readonly RankedEntity[];
+  /** Ticked ids in rank order (Jev's seed, plus any re-ticks the person made in the panel). */
+  readonly ticked: readonly string[];
+}
+
+export interface JevGroupEditResult {
+  /** The group's edit after Apply. */
+  readonly edit: LaunchGroupEdit;
+  /** Display rows for every id the edit ADDS — hand them to the sheet so a Jev pick keeps its title. */
+  readonly rows: readonly LaunchContextRow[];
+  /** Why each default Jev left unticked is out (`over-budget` / `below-floor`), so the row says it — never a silent drop. */
+  readonly reasons: Readonly<Record<string, RankedEntityReason>>;
+  /** The diff Jev itself decided (ledger material): removed defaults, added picks. */
+  readonly diff: LaunchGroupEdit;
+  /** Every id Apply decided — what Undo restores via `restoreRows`. */
+  readonly touched: readonly EntityId[];
+  /** Why Apply must be refused on this group (locked, or past the ceiling); null when it may. */
+  readonly refusal: string | null;
+}
+
+/** A ranked row in the launch sheet's shape, for a row Apply adds. Plain text: graph content. */
+export function jevContextRow(item: RankedEntity): LaunchContextRow {
+  const text = item.header.whenToUse ?? item.header.summary;
+  return {
+    id: item.entityId as EntityId,
+    kind: item.kind,
+    title: item.title,
+    text,
+    derived: text !== null && item.header.source !== 'authored',
+    via: null,
+  };
+}
+
+/**
+ * APPLYING JEV TO ONE GROUP — the one pure function every surface calls
+ * (agreed with lanes B/C/D). Jev's ticks become the group's ordinary edit:
+ * each row Jev ranked takes Jev's verdict, every other row keeps its state.
+ */
+export function jevGroupEdit(
+  defaults: LaunchGroupDefaults,
+  edit: LaunchGroupEdit,
+  suggestion: JevGroupSuggestion,
+): JevGroupEditResult {
+  const decided = suggestion.items.map((item) => ({ id: item.entityId as EntityId, isDefault: item.default }));
+  const ticked = suggestion.ticked as readonly EntityId[];
+  const next = applyJevToEdit(edit, decided, ticked);
+  const diff = jevGroupDiff(decided, ticked);
+  const adding = new Set<string>(diff.added);
+  const removing = new Set<string>(diff.removed);
+  const reasons: Record<string, RankedEntityReason> = {};
+  for (const item of suggestion.items) if (removing.has(item.entityId) && item.reason) reasons[item.entityId] = item.reason;
+  return {
+    edit: next,
+    rows: suggestion.items.filter((item) => adding.has(item.entityId)).map(jevContextRow),
+    reasons,
+    diff,
+    touched: decided.map((row) => row.id),
+    refusal: jevApplyRefusal(defaults, next),
   };
 }
