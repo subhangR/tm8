@@ -21,6 +21,17 @@ export { JevGroupStatus } from './JevGroupStatus';
 export { JevRunBar } from './JevRunBar';
 export { JevStrip } from './JevStrip';
 export { JevReviewDrawer } from './JevReviewDrawer';
+export { JevEntryPoint, entryBadge, suggestedCount, appliedCount } from './JevEntryPoint';
+export { JevPanel, ledgerLines, untickedWhy, type JevPanelSource } from './JevPanel';
+export {
+  BudgetMeter,
+  formatBytes,
+  METER_INDEX_OFF_COPY,
+  METER_NULL_BUDGET_COPY,
+  METER_OVER_COPY,
+  METER_SKILL_TOOLTIP,
+  type BudgetMeterGroup,
+} from './BudgetMeter';
 export { modelApplyRefusal, modelLabel } from './model-apply';
 export { formatGroupCost, formatRunCost, formatUsd } from './format';
 import './jev.css';
