@@ -584,6 +584,12 @@ describe.sequential('W2.G03 edges and placements PostgreSQL semantics', () => {
         `select public.write_edge($1, $2, 'in_project', '{}'::jsonb, $3, 'g03-unlink-race')`,
         [fixture.workSessionId, race.projectEntityId, fixture.memberId],
       )).rejects.toMatchObject({ code: '23514', detail: 'project_not_linked' });
+      // If a step below throws first, `await createRejects` is never reached:
+      // the finally's rollback frees the lock, the create SUCCEEDS, and the
+      // expectation rejects with no handler, a second unhandled rejection on
+      // top of the real failure. A side handler marks it handled; the
+      // `await` below still throws on the success path.
+      void createRejects.catch(() => undefined);
       // The race only exists if the create is PARKED on the locker's row lock
       // when the link is removed. Without this wait the delete can commit first
       // and the create is refused by the ordinary not-linked check — the same
