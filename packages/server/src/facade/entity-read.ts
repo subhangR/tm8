@@ -774,13 +774,17 @@ export async function loadActors(
   const out = new Map<string, ActorSummary>();
   if (unique.length === 0) return out;
 
+  // `members.status` (230) is read through `to_jsonb(row) ->> 'status'`, not
+  // `mem.status`: position-pinned suites apply the chain only up to their own
+  // migration and then run this current code, and a plain column reference
+  // fails there. Before 230 the key is absent, which reads as active.
   const rows = await q.query<ActorRow>(
     `select e.id, e.kind, e.space_id,
             mem.display_name as member_display_name, mem.role as member_role,
-            mem.status as member_status,
+            to_jsonb(mem) ->> 'status' as member_status,
             tm.name as team_member_name, tm.avatar as team_member_avatar,
             tm.owner_member_id as team_member_owner_id,
-            tm_owner.status as team_member_owner_status,
+            to_jsonb(tm_owner) ->> 'status' as team_member_owner_status,
             up.display_name as profile_display_name, up.avatar as profile_avatar,
             ws.title as session_title
        from public.entities e
@@ -818,7 +822,7 @@ export async function loadActors(
     }>(
       `select distinct on (pe.dst_id)
               pe.dst_id as session_id, pe.src_id as persona_id,
-              tm.name, tm.avatar, tm.owner_member_id, owner_row.status as owner_status
+              tm.name, tm.avatar, tm.owner_member_id, to_jsonb(owner_row) ->> 'status' as owner_status
          from public.edges pe
          join public.team_members tm on tm.entity_id = pe.src_id
          left join public.members owner_row on owner_row.entity_id = tm.owner_member_id

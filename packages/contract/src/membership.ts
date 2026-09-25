@@ -47,8 +47,26 @@ export interface AccountDisableResult {
   stoppedSessionIds: EntityId[];
 }
 
-const MutationOnlySchema = z.object({ clientMutationId: z.string().trim().min(1) }).strict();
+/** The body of spaces.leave: the Space is the path's `:spaceId`. */
+export interface SpacesLeaveInput {
+  clientMutationId: string;
+}
 
-export const SpacesLeaveInputSchema = MutationOnlySchema;
-export const SpacesMembersRemoveInputSchema = MutationOnlySchema;
-export const AccountsDisableInputSchema = MutationOnlySchema;
+/** The body of spaces.members.remove: Space and member are path params. */
+export interface SpacesMembersRemoveInput {
+  clientMutationId: string;
+}
+
+/** The body of accounts.disable: the account is the path's `:accountId`. */
+export interface AccountsDisableInput {
+  clientMutationId: string;
+}
+
+// One object per operation, typed against its declared input, so the
+// input-schema seam guard (server test/facade/input-schema-seam.test.ts)
+// compares each binding with its contract type.
+const mutationOnly = () => z.object({ clientMutationId: z.string().trim().min(1) }).strict();
+
+export const SpacesLeaveInputSchema: z.ZodType<SpacesLeaveInput> = mutationOnly();
+export const SpacesMembersRemoveInputSchema: z.ZodType<SpacesMembersRemoveInput> = mutationOnly();
+export const AccountsDisableInputSchema: z.ZodType<AccountsDisableInput> = mutationOnly();
