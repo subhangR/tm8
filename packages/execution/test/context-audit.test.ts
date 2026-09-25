@@ -139,7 +139,7 @@ const userSkill = (id: string, extra: Partial<ResolvedSkillRow> = {}): ResolvedS
   provider: 'claude', level: 'user', sourcePath: `${HOME}/.claude/skills/${id}/SKILL.md`, ...extra,
 });
 const HOME_SKILLS: ConfigHomeSkill[] = [
-  { key: 'anthropic-skills:docx', level: 'synced' },
+  { key: 'docx', level: 'synced' },
   { key: 'astro', level: 'user' },
   { key: 'code-review', level: 'user' },
   { key: 'graphify', level: 'user' },
@@ -149,13 +149,13 @@ describe('the harness loads only what the launch chose: operator skills, name-on
   it('turns off unequipped operator skills, name-only for an equipped native one, argv == record', () => {
     const { manifest, overrides } = compose(ctx({ skills: [userSkill('graphify')] }), { homeSkills: HOME_SKILLS });
     expect(manifest.effectiveSkills?.native.map((s) => s.loadPointer)).toEqual(['/graphify']);
-    expect(overrides).toMatchObject({ 'anthropic-skills:docx': 'off', astro: 'off', graphify: 'name-only' });
+    expect(overrides).toMatchObject({ docx: 'off', astro: 'off', graphify: 'name-only' });
     // The always-on list is never named, even by an operator skill sharing a name.
     for (const name of LANE_SKILLS_ALWAYS_ON) expect(overrides).not.toHaveProperty(name);
     const record = manifest.launch.harness?.skillOverrides;
     expect(record?.nameOnly).toEqual([{ name: 'graphify', source: 'native-name-only' }]);
     expect(record?.off).toEqual(expect.arrayContaining([
-      { name: 'anthropic-skills:docx', source: 'synced-unselected' },
+      { name: 'docx', source: 'synced-unselected' },
       { name: 'astro', source: 'user-unselected' },
       { name: 'claude-in-chrome', source: 'chrome' },
     ]));

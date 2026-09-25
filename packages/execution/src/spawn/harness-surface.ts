@@ -99,7 +99,12 @@ export function laneSkillOverrides(): Record<string, 'off'> {
 
 /** A skill the lane's config home would list: `skills/<dir>` (`user`) or claude.ai-synced (`synced`). */
 export interface ConfigHomeSkill {
-  /** The `skillOverrides` key: the dir name, or `anthropic-skills:<dir>` for a synced skill. */
+  /**
+   * The `skillOverrides` key: the dir name, synced skills included. Claude
+   * Code 2.1.251 lists a synced skill as bare `<dir>` and 2.1.280+ as
+   * `anthropic-skills:<dir>`; a bare key reaches it on both, a qualified key
+   * only on the newer (probed, PR #803).
+   */
   key: string;
   level: 'user' | 'synced';
 }
@@ -126,6 +131,9 @@ export const CHROME_RECORD_NAME = 'claude-in-chrome';
  */
 const NAME_ONLY_LEVELS: ReadonlySet<string> = new Set(['user', 'synced', 'project']);
 
+/** The namespace 2.1.280+ lists synced skills under; keys drop it (see `ConfigHomeSkill.key`). */
+const SYNCED_QUALIFIER = 'anthropic-skills:';
+
 /**
  * What a `minimal` lane's `skillOverrides` says, and why, from the lane's
  * POST-BUDGET effective skills (design 01a0d348 §3): the harness loads only
@@ -149,7 +157,10 @@ export function laneSkillPlan(
   const nameOnly = new Set(
     native
       .filter((skill) => NAME_ONLY_LEVELS.has(skill.level) && skill.loadPointer.startsWith('/'))
-      .map((skill) => skill.loadPointer.slice(1))
+      .map((skill) => {
+        const key = skill.loadPointer.slice(1);
+        return skill.level === 'synced' && key.startsWith(SYNCED_QUALIFIER) ? key.slice(SYNCED_QUALIFIER.length) : key;
+      })
       // A command name never holds a '/'; a path-shaped pointer is not one.
       .filter((key) => key !== '' && !key.includes('/') && !kept.has(key)),
   );
@@ -175,9 +186,9 @@ export function laneSkillPlan(
 /**
  * The skills a Claude config home lists besides bundled and plugin ones:
  * `skills/<dir>/SKILL.md`, and the claude.ai-synced skills under
- * `skills/synced/<bucket>/<dir>/SKILL.md`, which the CLI namespaces
- * `anthropic-skills:<dir>` (a bare `<dir>` key also matches them; the
- * qualified one cannot hit an operator skill of the same name). Best-effort,
+ * `skills/synced/<bucket>/<dir>/SKILL.md`, keyed by bare `<dir>` (see
+ * `ConfigHomeSkill.key`). A user and a synced skill sharing a dir share one
+ * key, so one override covers both. Best-effort,
  * like `readInstalledClaudePlugins`: no skills directory is the ordinary case.
  */
 export function readConfigHomeSkills(configDir: string): ConfigHomeSkill[] {
@@ -187,7 +198,7 @@ export function readConfigHomeSkills(configDir: string): ConfigHomeSkill[] {
     if (dir === 'synced') {
       for (const bucket of listDirs(join(root, dir))) {
         for (const skill of listDirs(join(root, dir, bucket))) {
-          if (hasSkillFile(join(root, dir, bucket, skill))) out.push({ key: `anthropic-skills:${skill}`, level: 'synced' });
+          if (hasSkillFile(join(root, dir, bucket, skill))) out.push({ key: skill, level: 'synced' });
         }
       }
     } else if (hasSkillFile(join(root, dir))) {

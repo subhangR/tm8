@@ -347,7 +347,7 @@ describe('readInstalledClaudePlugins', () => {
 
 describe('laneSkillPlan', () => {
   const home = [
-    { key: 'anthropic-skills:docx', level: 'synced' as const },
+    { key: 'docx', level: 'synced' as const },
     { key: 'astro', level: 'user' as const },
     { key: 'graphify', level: 'user' as const },
     { key: 'simplify', level: 'user' as const },
@@ -363,17 +363,24 @@ describe('laneSkillPlan', () => {
       { level: 'user', loadPointer: '/home/x/.claude/skills/y/SKILL.md' },
     ]);
     expect(plan.settings).toMatchObject({
-      'anthropic-skills:docx': 'off', astro: 'off', graphify: 'name-only', 'repo-skill': 'name-only', init: 'off',
+      docx: 'off', astro: 'off', graphify: 'name-only', 'repo-skill': 'name-only', init: 'off',
     });
     expect(Object.keys(plan.settings)).toEqual([...Object.keys(plan.settings)].sort());
     expect(plan.settings).not.toHaveProperty('sales:call-prep');
     expect(plan.record.off).toContainEqual({ name: 'astro', source: 'user-unselected' });
-    expect(plan.record.off).toContainEqual({ name: 'anthropic-skills:docx', source: 'synced-unselected' });
+    expect(plan.record.off).toContainEqual({ name: 'docx', source: 'synced-unselected' });
     expect(plan.record.off.at(-1)).toEqual({ name: 'claude-in-chrome', source: 'chrome' });
     expect(plan.record.nameOnly).toEqual([
       { name: 'graphify', source: 'native-name-only' },
       { name: 'repo-skill', source: 'native-name-only' },
     ]);
+  });
+
+  it('keys an equipped synced skill bare, so name-only reaches it on 2.1.251 and 2.1.280+ alike', () => {
+    const plan = laneSkillPlan([{ key: 'pdf', level: 'synced' }], [{ level: 'synced', loadPointer: '/anthropic-skills:pdf' }]);
+    expect(plan.settings.pdf).toBe('name-only');
+    expect(plan.settings).not.toHaveProperty('anthropic-skills:pdf');
+    expect(plan.record.nameOnly).toEqual([{ name: 'pdf', source: 'native-name-only' }]);
   });
 
   it('never names the always-on list, even for an operator skill sharing a name or an equip', () => {
@@ -407,7 +414,7 @@ describe('readConfigHomeSkills', () => {
     dir = null;
   });
 
-  it('lists user skill dirs and synced skills as anthropic-skills:<dir>, only where SKILL.md exists', async () => {
+  it('lists user skill dirs and synced skills by bare dir (2.1.251 lists them bare), only where SKILL.md exists', async () => {
     dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
     for (const d of ['skills/astro', 'skills/empty', 'skills/.hidden', 'skills/synced/bucket/docx', 'skills/synced/.bucket/pdf']) {
       await mkdir(join(dir, d), { recursive: true });
@@ -418,8 +425,8 @@ describe('readConfigHomeSkills', () => {
     await writeFile(join(dir, 'skills/synced/.bucket/pdf/SKILL.md'), 'x');
     await writeFile(join(dir, 'skills/synced/bucket/manifest.json'), '{}');
     expect(readConfigHomeSkills(dir)).toEqual([
-      { key: 'anthropic-skills:docx', level: 'synced' },
       { key: 'astro', level: 'user' },
+      { key: 'docx', level: 'synced' },
     ]);
   });
 
