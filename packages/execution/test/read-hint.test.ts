@@ -185,7 +185,7 @@ describe('read-hint spawn settings', () => {
     expect(settingsOf(cmd)).toEqual({ enabledPlugins: { 'sales@synced': false }, skillOverrides: laneSkillOverrides(), hooks: HOOKS });
     expect(cmd).toBe(
       "claude --permission-mode acceptEdits --model 'opus' --session-id 'uuid-1' " +
-        `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '` +
+        `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-chrome --settings '` +
         JSON.stringify({ enabledPlugins: { 'sales@synced': false }, skillOverrides: laneSkillOverrides(), hooks: HOOKS }).replace(/'/g, `'\\''`) +
         "'",
     );
