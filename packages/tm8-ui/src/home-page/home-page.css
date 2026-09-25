@@ -35,8 +35,16 @@
   overflow: hidden;
 }
 .cv2-root .hp-chat > * { flex: 1; min-width: 0; }
-.cv2-root .hp-chat .tch-root { grid-template-columns: minmax(0, 1fr); height: 100%; }
-.cv2-root .hp-chat .tch-sidebar { display: none; }
+/* CHILD COMBINATORS, NOT DESCENDANT, on every `.tch-*` rule in this file.
+   Home's chat is not the only `.tch-root` under `.hp-chat`: opening a chat
+   ENTITY puts its panel in the centre, and that panel's Chat tab mounts a
+   second `ChatHomeScreen` in solo mode. A descendant selector reached it and,
+   at (0,3,0), beat its own `.tch-root--solo` (0,1,0), so the nested chat got
+   Home's `var(--hp-list) 1fr` tracks and was squeezed into the 340px list
+   column with the rest of the pane empty (task 01a0d9a3). `>` scopes each
+   rule to the screen Home actually hosts. */
+.cv2-root .hp-chat > .tch-root { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.cv2-root .hp-chat > .tch-root > .tch-sidebar { display: none; }
 
 /* --- rails ---------------------------------------------------------------- */
 .cv2-root .hp-rail__head { display: flex; align-items: center; }
@@ -432,7 +440,7 @@
    switch. The shared spec is sized for the widest occupant — the hosted
    workspace list, whose tree, lifecycle tabs and in-panel search were cut
    for ~320px — and the chat rows simply enjoy the room. */
-.cv2-root .hp-chat--full .tch-root {
+.cv2-root .hp-chat--full > .tch-root {
   /* Was `minmax(300px, 380px)` — a fluid track nobody could move. It is now
      the width the viewer set, solved and clamped by `HomeView` and handed
      down as `--hp-list` (task 01a00ac2). The fallback is the ruled default.
@@ -444,7 +452,7 @@
      separator is publishing through `aria-valuenow`. */
   grid-template-columns: var(--hp-list, 340px) minmax(0, 1fr);
 }
-.cv2-root .hp-chat--full .tch-sidebar { display: flex; }
+.cv2-root .hp-chat--full > .tch-root > .tch-sidebar { display: flex; }
 
 /* --- column A's separator and the collapsed reveal (task 01a00ac2) -------- */
 /* The section is the positioning context: it starts and ends exactly where
@@ -528,10 +536,10 @@
    The rail is unmounted by the host, so there is nothing to hide there; A is
    a grid track inside a surface this page does not own, so it collapses to a
    single 10px column that holds the reveal button and nothing else. */
-.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full .tch-root {
+.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full > .tch-root {
   grid-template-columns: 10px minmax(0, 1fr);
 }
-.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full .tch-sidebar {
+.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full > .tch-root > .tch-sidebar {
   /* Not `display: none`: the list keeps its scroll position, its loaded page
      and any in-flight request across a collapse, exactly as the conversation
      pane stays MOUNTED behind a centre override (D8). Unmounting it would
