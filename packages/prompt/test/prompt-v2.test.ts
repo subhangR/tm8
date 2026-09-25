@@ -5,6 +5,8 @@ import {
   BASE_PROMPT_V2,
   BYTE_BUDGETS,
   composePrompt,
+  HEADER_AUTHORING_RULE,
+  instructionFor,
   DEFAULT_PROMPT_VERSION,
   isPromptVersion,
   KERNEL_TEMPLATE_V2,
@@ -252,11 +254,12 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
   };
   const docRuntime: PromptRuntime = { sessionId: DOC_SESSION, baseUrl: 'http://127.0.0.1:7778' };
   const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
-    worker: { bytes: 2724, ceiling: 2800, graph: true },
-    'coordinated-worker': { bytes: 3066, ceiling: 3150, graph: true },
-    coordinator: { bytes: 3632, ceiling: 3700, graph: true },
-    'coordinated-coordinator': { bytes: 3974, ceiling: 4050, graph: true },
-    dispatcher: { bytes: 2928, ceiling: 3000, graph: false },
+    // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B).
+    worker: { bytes: 2967, ceiling: 3000, graph: true },
+    'coordinated-worker': { bytes: 3309, ceiling: 3350, graph: true },
+    coordinator: { bytes: 3875, ceiling: 4000, graph: true },
+    'coordinated-coordinator': { bytes: 4217, ceiling: 4250, graph: true },
+    dispatcher: { bytes: 3171, ceiling: 3200, graph: false },
   };
 
   it('renders each mode at the doc\'s size, within its ceiling', () => {
@@ -268,8 +271,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     }
   });
 
-  it('keeps the base at 1,469 B', () => {
-    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1469);
+  it('keeps the base at 1,712 B (1,469 approved + rule 4)', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1712);
   });
 
   it('matches its snapshot, per mode', () => {
@@ -277,6 +280,34 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
       const e = composePrompt({ ...doc, mode }, { ...docRuntime, codeGraph: sizes[mode].graph });
       expect(e.system).toMatchSnapshot(mode);
     }
+  });
+});
+
+describe('header authoring rule (doc 01a0d708)', () => {
+  it('is the last rule of the base, and the base names each flag exactly once', () => {
+    expect(BASE_PROMPT_V2.endsWith(`\n4. ${HEADER_AUTHORING_RULE}\n</tm8>`)).toBe(true);
+    expect(count(BASE_PROMPT_V2, '--when-to-use')).toBe(1);
+    expect(count(BASE_PROMPT_V2, '--summary')).toBe(1);
+  });
+
+  it('is not repeated by any role layer or the modifier', () => {
+    for (const lines of Object.values(ROLE_LAYERS_V2)) {
+      expect(lines.join('\n')).not.toMatch(/--when-to-use|--summary/);
+    }
+    for (const mode of AGENT_MODES) {
+      const m: PromptManifest = { ...base, mode, coordinator: { sessionId: COORD } };
+      const e = composePrompt(m, runtime);
+      expect(count(e.system, '--when-to-use'), mode).toBe(1);
+      expect(count(e.system, '--summary'), mode).toBe(1);
+    }
+  });
+
+  it('is mirrored, as the same sentence, at the end of every v1 mode instruction', () => {
+    for (const mode of AGENT_MODES) {
+      expect(instructionFor(mode).endsWith(` ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
+      expect(count(instructionFor(mode), '--when-to-use'), mode).toBe(1);
+    }
+    expect(utf8Bytes(HEADER_AUTHORING_RULE)).toBe(239);
   });
 });
 

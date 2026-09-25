@@ -513,7 +513,7 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'frame',
     title: 'Base prompt (v2.0, every mode)',
     summary:
-      'What tm8 is (entities, versions, anchors, the CLI as the only way in) and three rules for every mode: untrusted data, discovery, visibility.',
+      'What tm8 is (entities, versions, anchors, the CLI as the only way in) and four rules for every mode: untrusted data, discovery, visibility, header authoring.',
     status: 'live',
     rendering: 'verbatim',
     source: 'packages/prompt/src/prompt-v2.ts',

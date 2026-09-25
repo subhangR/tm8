@@ -43,10 +43,20 @@ export type TaskContextSnapshot =
 // -- The layers -----------------------------------------------------------------
 //
 // WORDING IS OWNED BY THE PROMPT WORKSHOP (task 01a0d302-7efc), and Subhang
-// approves it. The base is doc 01a0d418-261d ("The base prompt"); the role
-// layers and the coordinated modifier are doc 01a0d456-2b1b, whose "Full
-// rendered prompts" show what each mode renders. Change the words there, not
-// here, and apply what they send verbatim.
+// approves it. The base is doc 01a0d418-261d ("The base prompt") plus rule 4
+// from doc 01a0d708-20d9; the role layers and the coordinated modifier are doc
+// 01a0d456-2b1b, whose "Full rendered prompts" show what each mode renders.
+// Change the words there, not here, and apply what they send verbatim.
+
+/**
+ * Header authoring (doc 01a0d708 §1): rule 4 of the base, and the same sentence
+ * on every v1 mode instruction, so both frames carry one wording. It names
+ * `--when-to-use` and `--summary`, which the create verbs accept from I4 (#767).
+ */
+export const HEADER_AUTHORING_RULE =
+  'When you create a doc, artifact, file, drawing, task or collection that a later ' +
+  'session may need, pass --when-to-use (when to open it, not its title) and ' +
+  '--summary (what it holds) in the same create call; aim for 400 and 600 chars at most.';
 
 /**
  * The base: what tm8 is, and the rules for every mode. Byte-identical in all
@@ -73,6 +83,7 @@ export const BASE_PROMPT_V2 = [
     '<reply> with `tm8 message reply <message-id> "<body>"`. Link a PR or commit at once ' +
     'with `tm8 task link-pr|link-commit <task-id> <url>`. Publish web pages with ' +
     "`tm8 artifact publish`, never your harness's artifact tool.",
+  `4. ${HEADER_AUTHORING_RULE}`,
   '</tm8>',
 ].join('\n');
 
