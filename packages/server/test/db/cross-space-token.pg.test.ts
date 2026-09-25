@@ -12,7 +12,7 @@ import { createDb } from '../../src/db/client.js';
 import type { Db, Querier } from '../../src/db/types.js';
 import { loadConfig } from '../../src/http/config.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
-import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
+import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 
 import {
@@ -175,6 +175,8 @@ afterAll(async () => {
  */
 describe('T26 relay — dispatch after resolveIdentity, human session required', () => {
   let relayServer: BootstrappedServer;
+  /** Same database, auto-owner arm ON — only the cells that document it use this. */
+  let ownerRelayServer: BootstrappedServer;
   let upstream: Server;
   let arrived: IncomingHttpHeaders[] = [];
   let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
@@ -213,20 +215,27 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
       );
     });
 
-    const configured = loadConfig({
-      ...process.env,
-      TM8_BIND: '127.0.0.1',
-      TM8_PORT: '4610',
-      TM8_DATABASE_URL: database.url,
-      TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-t26-')),
-      TM8_DISABLE_AUTO_OWNER: '1',
-    });
-    relayServer = await bootstrap({ config: { ...configured, port: 0 } });
+    const start = async (disableAutoOwner: '1' | '0'): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-t26-')),
+        TM8_DISABLE_AUTO_OWNER: disableAutoOwner,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    relayServer = await start('1');
+    ownerRelayServer = await start('0');
   }, 180_000);
 
   afterAll(async () => {
-    await relayServer?.server.close();
-    await relayServer?.db?.end();
+    for (const server of [relayServer, ownerRelayServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
     await new Promise<void>((resolve) => (upstream ? upstream.close(() => resolve()) : resolve()));
     await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
@@ -240,9 +249,12 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     });
   }, 180_000);
 
-  async function relay(headers: Record<string, string>): Promise<{ status: number; seen: IncomingHttpHeaders | undefined }> {
+  async function relay(
+    headers: Record<string, string>,
+    server: BootstrappedServer = relayServer,
+  ): Promise<{ status: number; seen: IncomingHttpHeaders | undefined }> {
     arrived = [];
-    const response = await fetch(new URL(`/v2/server-connections/${CONNECTION}/proxy/health`, relayServer.url), {
+    const response = await fetch(new URL(`/v2/server-connections/${CONNECTION}/proxy/health`, server.url), {
       headers: { [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE, ...headers },
     });
     await response.arrayBuffer();
@@ -313,5 +325,70 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     expect(seen?.authorization).toBe(`Bearer ${remotePass}`);
     expect(seen !== undefined && 'cookie' in seen).toBe(false);
     expect(JSON.stringify(seen).includes(token)).toBe(false);
+  });
+  async function revoke(token: string): Promise<void> {
+    const sessionId = parseToken(token)?.sessionId;
+    if (!sessionId) throw new Error('minted token did not parse');
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('update public.auth_sessions set revoked_at = now() where id = $1::uuid', [sessionId]);
+    });
+  }
+
+  it('auto-owner off: an Authorization unknown here, no cookie, is refused 401 and nothing reaches the remote', async () => {
+    const unknown = 'tm8s_00000000-0000-0000-0000-000000000000.not-a-session-here';
+    const { status, seen } = await relay(bearer(unknown));
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  /**
+   * F1 / W2 PIN — TODAY'S BEHAVIOUR, WHICH W2 CHANGES. Loopback peer, single
+   * mode, auto-owner arm on, no token, no X-Forwarded-For: the NODE-WIDE
+   * loopback auto-owner rule (security.ts `autoOwnerResolver`) makes the
+   * request the node owner on every route, and the relay admits the owner like
+   * any other human. This is plan finding F1, and the fix is phase-1a task W2
+   * (01a0d9fd-6957-7da5-a590-9655ebbf2ace: launch cookie,
+   * TM8_AUTO_OWNER_COOKIE=required), not the relay. W2 flips this expectation
+   * to 401; until then nothing may change it silently in either direction.
+   */
+  it('F1/W2 pin: loopback, single mode, no token, no X-Forwarded-For — relay admits as owner TODAY', async () => {
+    const { status, seen } = await relay({}, ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen).toBeDefined();
+  });
+
+  /**
+   * DOCUMENTS A KNOWN GAP (review round 1, item 2). A LOCAL token that no
+   * longer resolves (revoked, expired) is indistinguishable here from a
+   * remote's pass: both are `tm8s_<uuid>.<secret>`, and `tm8_app` cannot read
+   * `auth_sessions` to ask "was this session id ever ours?" — that needs a new
+   * security-definer RPC, i.e. a migration, which this PR does not add. So
+   * next to a live cookie such a token is FORWARDED. It is dead on this node,
+   * so the remote cannot replay it here; the disclosure is of a spent secret.
+   * When the RPC lands, flip this cell to `false`.
+   */
+  it('KNOWN GAP: a revoked LOCAL token beside H\'s cookie is forwarded as if it were a remote pass', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await revoke(dead);
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(dead) });
+    expect(status).toBe(200);
+    expect(seen?.authorization === `Bearer ${dead}`).toBe(true);
+    expect(JSON.stringify(seen).includes(cookieToken)).toBe(false);
+  });
+
+  it('a revoked LOCAL token alone is refused 401 with auto-owner off, and nothing reaches the remote', async () => {
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await revoke(dead);
+    const { status, seen } = await relay(bearer(dead));
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  it('positive — the same cli credential, before revocation, reaches the connection', async () => {
+    const live = await mintCli(fixture.accountH, fixture.identityH);
+    const { status } = await relay(bearer(live));
+    expect(status).toBe(200);
   });
 });
