@@ -165,6 +165,9 @@ try {
   measured = measureLane({ manifest, transcriptLines: readFileSync(transcript, 'utf8').split('\n'), linked });
   measured.needleOpened = task.needleId ? measured.reads.some((r) => r.id === task.needleId) : null;
   measured.needleMissed = task.needleId ? task.needleId in measured.miss.ids : null;
+  // D2 item 5: how the needle was listed. 'header-dropped' = findable by TITLE only;
+  // 'collapsed' = listed with its header; 'absent' = not in the index at all.
+  measured.needleState = task.needleId ? ((manifest.context?.entries ?? []).find((e) => e.entityId === task.needleId)?.state ?? 'absent') : null;
   delete measured.reads;
 } catch (e) {
   measureError = String(e.message ?? e);

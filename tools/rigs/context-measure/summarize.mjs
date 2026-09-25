@@ -8,6 +8,7 @@
 // expand, miss, blind fetch and resident cost.
 
 import { readFileSync } from 'node:fs';
+import { missLevel } from './measure.mjs';
 
 const file = process.argv[2];
 const arg = (name) => {
@@ -81,9 +82,18 @@ if (arms.some((a) => full(a).length)) {
   out.push(`| task success (all four gates) | ${arms.map((a) => count(a, (r) => r.success.success)).join(' | ')} |`);
   out.push(`| deliverable correct | ${arms.map((a) => count(a, (r) => r.success.deliverableCorrect)).join(' | ')} |`);
   out.push(`| launches with >= 1 MISS | ${arms.map((a) => count(a, (r) => r.miss?.launchMissed)).join(' | ')} |`);
-  const entryMiss = (r) => Object.values(r.miss?.ids ?? {}).some((why) => !why.endsWith(':header'));
-  out.push(`|   of which ENTRY-level (id not in the prompt) | ${arms.map((a) => count(a, entryMiss)).join(' | ')} |`);
-  out.push(`|   of which header-level only (entry listed, header trimmed) | ${arms.map((a) => count(a, (r) => r.miss?.launchMissed && !entryMiss(r))).join(' | ')} |`);
+  // Decision D2: the < 5% gate counts launches with an ENTRY-level miss.
+  const entryMiss = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
+  const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'header');
+  out.push(`| **GATE: launches with an ENTRY-level miss (< 5%)** | ${arms.map((a) => count(a, entryMiss)).join(' | ')} |`);
+  out.push(`| entry-level miss reads / tm8 reads (per read) | ${arms.map((a) => pct(full(a).reduce((s, r) => s + (r.miss?.entryMissReads ?? 0), 0), full(a).reduce((s, r) => s + (r.miss?.reads ?? 0), 0))).join(' | ')} |`);
+  out.push(`| launches with a HEADER-level read (flag > 25%) | ${arms.map((a) => {
+    const n = full(a).length;
+    const k = full(a).filter(headerRead).length;
+    return `${pct(k, n)}${n && k / n > 0.25 ? ' ⚑ headers too thin or sub-caps too small' : ''}`;
+  }).join(' | ')} |`);
+  out.push(`| bytes fetched by header-level reads (launches with one) | ${arms.map((a) => fmt(stats(full(a).filter(headerRead).map((r) => r.miss?.header?.bytes)))).join(' | ')} |`);
+  out.push(`| needle listed as: collapsed / header-dropped / absent | ${arms.map((a) => ['collapsed', 'header-dropped', 'absent'].map((st) => full(a).filter((r) => r.needleState === st).length).join(' / ')).join(' | ')} |`);
   out.push(`| needle opened | ${arms.map((a) => count(a, (r) => r.needleOpened)).join(' | ')} |`);
   out.push(`| lanes that hit the timeout | ${arms.map((a) => count(a, (r) => r.ended === 'timeout')).join(' | ')} |`);
 }

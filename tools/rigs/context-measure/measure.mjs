@@ -160,6 +160,7 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
   // Classify reads.
   const expanded = new Set();
   const missed = new Map();
+  const missBytes = new Map();
   let blindFetchBytes = 0;
   const blindCalls = new Set();
   for (const read of row.reads) {
@@ -171,7 +172,10 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
           : read.id && linkedSet.has(read.id) ? 'miss'
             : 'other';
     if (read.class === 'expand' || (entry && read.class === 'miss')) expanded.add(read.id);
-    if (read.class === 'miss') missed.set(read.id, drop ? `${drop.reason}:${drop.level ?? '-'}` : entry ? 'byte-budget:header' : 'absent-from-index');
+    if (read.class === 'miss') {
+      missed.set(read.id, drop ? `${drop.reason}:${drop.level ?? '-'}` : entry ? 'byte-budget:header' : 'absent-from-index');
+      missBytes.set(read.id, (missBytes.get(read.id) ?? 0) + read.resultBytes);
+    }
     // One result per tool call: a Bash line with two reads counts its bytes once.
     if (entry && entry.state !== 'expanded' && (entry.bytes ?? 0) > 20_000 && !read.paged && !blindCalls.has(read.toolUseId)) {
       blindCalls.add(read.toolUseId);
@@ -188,10 +192,34 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
     rateOfCollapsed: collapsed.length ? openedCollapsed / collapsed.length : null,
     byGroup: countBy([...expanded].map((id) => entries.get(id)).filter(Boolean), (e) => e.group),
   };
-  row.miss = { count: missed.size, ids: Object.fromEntries(missed), launchMissed: missed.size > 0 };
+  // Decision D2 (advisor 01a0d777, doc 01a0d77b): the promote gate counts
+  // ENTRY-level misses only (the id was absent from the prompt: dropped at
+  // entry level, never selected, or past the spawn's link read). A read of an
+  // entry that WAS listed with its header (or a memory's body) trimmed is a
+  // HEADER-level read: expand on demand, reported but not gated.
+  const byLevel = { entry: {}, header: {} };
+  for (const [id, why] of missed) byLevel[missLevel(why)][id] = why;
+  const headerReadBytes = Object.keys(byLevel.header).reduce((s, id) => s + (missBytes.get(id) ?? 0), 0);
+  row.miss = {
+    count: missed.size,
+    ids: Object.fromEntries(missed),
+    launchMissed: missed.size > 0,
+    entry: { count: Object.keys(byLevel.entry).length, ids: byLevel.entry },
+    header: { count: Object.keys(byLevel.header).length, ids: byLevel.header, bytes: headerReadBytes },
+    launchEntryMissed: Object.keys(byLevel.entry).length > 0,
+    launchHeaderRead: Object.keys(byLevel.header).length > 0,
+    // Per READ, for the report; the gate itself is per launch.
+    reads: row.reads.filter((r) => r.id || r.skill).length,
+    entryMissReads: row.reads.filter((r) => r.class === 'miss' && missLevel(missed.get(r.id)) === 'entry').length,
+  };
   row.blindFetchBytes = blindFetchBytes;
   row.omittedFetches = row.reads.filter((r) => r.sections === 'connections').length;
   return row;
+}
+
+/** D2: a drop at `header` or `body` level left the entry listed; anything else hid the id. */
+export function missLevel(why) {
+  return /:(header|body)$/.test(why ?? '') ? 'header' : 'entry';
 }
 
 function attachmentText(a) {
