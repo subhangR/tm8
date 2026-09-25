@@ -5,7 +5,7 @@
 
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildAgentCommand,
@@ -511,8 +511,36 @@ describe('readConfigHomeSkills', () => {
     await mkdir(join(dir, '.claude/commands/ops'), { recursive: true });
     await writeFile(join(dir, '.claude/skills/review/SKILL.md'), 'x');
     await writeFile(join(dir, '.claude/commands/ops/ship.md'), 'x');
-    expect(readProjectSkillKeys(dir)).toEqual(['ops:ship', 'review']);
-    expect(readProjectSkillKeys(join(dir, 'missing'))).toEqual([]);
+    expect(readProjectSkillKeys(dir, dirname(dir))).toEqual(['ops:ship', 'review']);
+    expect(readProjectSkillKeys(join(dir, 'missing'), join(dir, 'missing'))).toEqual([]);
+  });
+
+  it('readProjectSkillKeys: a workdir inside a repo also lists every parent up to the git root, as the harness does', async () => {
+    // Probed on 2.1.280: cwd `repo/app` lists `repo/.claude` skills and
+    // commands, and not a skill above the git root.
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    const repo = join(dir, 'repo');
+    await mkdir(join(dir, '.claude/skills/above'), { recursive: true });
+    await writeFile(join(dir, '.claude/skills/above/SKILL.md'), 'x');
+    await mkdir(join(repo, '.git'), { recursive: true });
+    await mkdir(join(repo, '.claude/skills/rooted'), { recursive: true });
+    await writeFile(join(repo, '.claude/skills/rooted/SKILL.md'), 'x');
+    await mkdir(join(repo, '.claude/commands'), { recursive: true });
+    await writeFile(join(repo, '.claude/commands/ship.md'), 'x');
+    await mkdir(join(repo, 'packages/app/.claude/skills/own'), { recursive: true });
+    await writeFile(join(repo, 'packages/app/.claude/skills/own/SKILL.md'), 'x');
+    expect(readProjectSkillKeys(join(repo, 'packages/app'), '/nonexistent-home')).toEqual(['own', 'rooted', 'ship']);
+    // A worktree's `.git` is a file; the walk stops there too.
+    await writeFile(join(repo, 'packages/.git'), 'gitdir: x');
+    expect(readProjectSkillKeys(join(repo, 'packages/app'), '/nonexistent-home')).toEqual(['own']);
+  });
+
+  it('readProjectSkillKeys: outside a repo, the walk stops below home, whose .claude is the operator\'s', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'tm8-skills-'));
+    await mkdir(join(dir, '.claude/skills/operator'), { recursive: true });
+    await writeFile(join(dir, '.claude/skills/operator/SKILL.md'), 'x');
+    await mkdir(join(dir, 'scratch/lane'), { recursive: true });
+    expect(readProjectSkillKeys(join(dir, 'scratch/lane'), dir)).toEqual([]);
   });
 
   it('returns nothing for a home without skills', async () => {

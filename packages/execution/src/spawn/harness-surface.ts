@@ -40,9 +40,9 @@
 // `inherit` restores the bare command exactly, for a teammate that genuinely
 // needs the operator's plugins or connectors.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type HarnessSurface = 'minimal' | 'inherit';
@@ -129,11 +129,12 @@ export interface LaneSkillPlan {
     off: { name: string; source: SkillOverrideSource }[];
     nameOnly: { name: string; source: 'native-name-only' }[];
     /**
-     * Keys the lane left alone because a project skill or command in its
-     * workdir has the same name, and a `skillOverrides` key reaches every
-     * skill of that name: the repo's own skill stays listed. A synced skill
-     * is still turned off under its qualified key (2.1.280+ only), recorded
-     * in `off` under that key. Absent when nothing collided.
+     * Keys the lane left alone because a project skill or command (in its
+     * workdir or a parent up to the git root) has the same name, and a
+     * `skillOverrides` key reaches every skill of that name: the repo's own
+     * skill stays listed. A synced skill is still turned off under its
+     * qualified key (2.1.280+ only), recorded in `off` under that key.
+     * Absent when nothing collided.
      */
     kept?: { name: string; because: 'project-collision' }[];
   };
@@ -295,11 +296,24 @@ export function readConfigHomeSkills(configDir: string): ConfigHomeSkill[] {
  * `.claude/commands/**` — the repo's choice, which the lane never turns off.
  * `laneSkillPlan` needs them because a `skillOverrides` key reaches every
  * skill with that name, operator's and repo's alike.
+ *
+ * Claude Code reads both from the workdir AND every parent up to the git root
+ * (probed on 2.1.280: a workdir in a monorepo package lists the repo root's
+ * skills and commands; a skill above the git root is not listed). So the walk
+ * goes up to the first directory holding `.git` (a worktree's is a file).
+ * Outside a repo it stops below the home dir, whose `.claude` is the operator's
+ * own: reading it here would make every operator skill a "project" one.
  */
-export function readProjectSkillKeys(workdir: string): string[] {
-  const root = join(workdir, '.claude', 'skills');
-  const keys = listDirs(root).filter((dir) => hasSkillFile(join(root, dir)));
-  return [...new Set([...keys, ...readCommandKeys(join(workdir, '.claude', 'commands'))])].sort();
+export function readProjectSkillKeys(workdir: string, homeDir: string = homedir()): string[] {
+  const home = resolve(homeDir);
+  const keys = new Set<string>();
+  for (let dir = resolve(workdir); dir !== home; dir = dirname(dir)) {
+    const root = join(dir, '.claude', 'skills');
+    for (const skill of listDirs(root)) if (hasSkillFile(join(root, skill))) keys.add(skill);
+    for (const command of readCommandKeys(join(dir, '.claude', 'commands'))) keys.add(command);
+    if (existsSync(join(dir, '.git')) || dirname(dir) === dir) break;
+  }
+  return [...keys].sort();
 }
 
 /** `commands/a/b.md` → `a:b` (see `ConfigHomeSkill.key`); four levels deep at most. */

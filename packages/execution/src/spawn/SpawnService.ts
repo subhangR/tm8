@@ -904,19 +904,19 @@ export class SpawnService {
     return readInstalledClaudePlugins(claudePluginConfigDir(credentialConfigDir, this.env));
   }
 
+  /** The workdir's own skill and command names, read under the same conditions as the home's. */
+  private projectSkillKeysFor(launch: ResolvedLaunchConfig, workdir: string): string[] {
+    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
+    if (this.env.TM8_AGENT_CMD?.trim()) return [];
+    return readProjectSkillKeys(workdir, this.env.HOME ?? homedir());
+  }
+
   /**
    * The operator skills the same config home lists, read under the same
    * conditions as its plugins, for `laneSkillPlan` to turn off the ones this
    * launch did not equip. Spawn AND resume read it, so a resumed lane keeps
    * the trim.
    */
-  /** The workdir's own skill and command names, read under the same conditions as the home's. */
-  private projectSkillKeysFor(launch: ResolvedLaunchConfig, workdir: string): string[] {
-    if (launch.agentTool !== 'claude-code' || launch.harnessSurface === 'inherit') return [];
-    if (this.env.TM8_AGENT_CMD?.trim()) return [];
-    return readProjectSkillKeys(workdir);
-  }
-
   private configHomeSkillsFor(
     launch: ResolvedLaunchConfig,
     credentialConfigDir: string | undefined,

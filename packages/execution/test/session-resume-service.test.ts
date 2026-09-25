@@ -367,6 +367,11 @@ describe('SpawnService.resume — guards and orchestration', () => {
     const binDir = join(dataDir, 'bin');
     await mkdir(binDir, { recursive: true });
     await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    // A recorded minimal plan does not survive the switch: inherit outranks replay.
+    graph.postures.set(SESSION_ID, {
+      accessMode: null, permissionMode: null,
+      skillOverrides: { off: [{ name: 'init', source: 'builtin-trim' }, { name: 'claude-in-chrome', source: 'chrome' }] },
+    });
     let command = '';
     vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(((input: { command: string }) => {
       command = input.command;
