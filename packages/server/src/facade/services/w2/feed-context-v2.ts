@@ -49,8 +49,10 @@ import {
   SELECTION_HEADER_KINDS,
   decodeCursor,
   encodeCursor,
+  headerReadMode,
   type EntityContextAssignee,
   type EntityHeaderReadMode,
+  type ResultWarning,
   type EntityContextAssignment,
   type EntityContextBlocker,
   type EntityContextConnection,
@@ -1123,7 +1125,13 @@ function assignmentOf(root: EntityRow, offset: number | undefined): Record<strin
   };
 }
 
-function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: number | undefined): View {
+function assemble(
+  id: string,
+  loaded: Loaded,
+  plan: ContextV2LoadPlan,
+  offset: number | undefined,
+  warnings: readonly ResultWarning[] = [],
+): View {
   const { root } = loaded;
   const header = {
     schemaVersion: V2_SCHEMA_VERSION,
@@ -1134,7 +1142,16 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
   };
   const status = statusOf(root);
   const notLoaded = plan.notLoaded.map((section) => notLoadedEntry(id, section));
-  const tail = { omitted: loaded.omitted, notLoaded, errors: loaded.errors, budget: { requested: 0, used: 0 } };
+  const tail = {
+    omitted: loaded.omitted,
+    notLoaded,
+    errors: loaded.errors,
+    // Only when the read normalised something the caller sent (an unknown
+    // `header` mode), so every other read is byte-identical. Before `fit`,
+    // so the budget counts it.
+    ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
+    budget: { requested: 0, used: 0 },
+  };
 
   const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};
 
@@ -1440,16 +1457,18 @@ export async function loadContextV2(
     edgeType?: string | undefined;
     /** Decoded by `decodeV2Cursor` before the transaction opens. */
     after?: ContextV2After | null;
-    header?: EntityHeaderReadMode | undefined;
+    /** The raw `header` query value: read leniently by `headerReadMode`. */
+    header?: string | undefined;
   },
 ): Promise<EntityContextV2View> {
+  const { mode, warning } = headerReadMode(input.header);
   const { loaded, plan } = await loadV2(q, id, {
     sections: input.sections,
     edgeType: input.edgeType ?? null,
     after: input.after ?? null,
-    header: input.header ?? 'authored',
+    header: mode,
   });
-  const view = assemble(id, loaded, plan, input.offset);
+  const view = assemble(id, loaded, plan, input.offset, warning ? [warning] : []);
   if (!plan.explicit && BODY_FETCH[loaded.root.kind]) withBodyFetch(view, loaded.root);
   const messagesAreCore = plan.messages?.core === true;
   return fit(view, id, input.totalBytes, input, messagesAreCore, loaded.pagers);

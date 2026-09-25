@@ -700,6 +700,12 @@ export interface EntityDetail extends EntitySummary {
    * detail already carries. Header text is graph content: untrusted.
    */
   header?: EntityHeaderView;
+  /**
+   * Present only when the read normalised something the caller sent — an
+   * unknown `header` mode read as `authored` (I9a). Absent otherwise, so a
+   * read that asks nothing odd is byte-identical to one that never could.
+   */
+  warnings?: ResultWarning[];
 }
 
 /**
@@ -6330,8 +6336,10 @@ export interface EntityContextQuery {
    * native or derived one (version 0) when none is authored — and load it on
    * an explicit-sections read too. Absent or `authored`: the default, the
    * header only when one is authored, so a default read stays byte-identical.
+   * Any other value is read as `authored`, with a `warnings[]` entry naming
+   * the valid modes (instruct, don't refuse).
    */
-  header?: EntityHeaderReadMode;
+  header?: string;
 }
 
 /**
@@ -6343,9 +6351,12 @@ export interface EntityContextQuery {
  */
 export type EntityHeaderReadMode = 'authored' | 'resolved';
 
-/** GET /v2/entities/:id query. */
+/**
+ * GET /v2/entities/:id query. `header` is an {@link EntityHeaderReadMode};
+ * any other value is read as `authored`, with a `warnings[]` entry.
+ */
 export interface GetEntityQuery {
-  header?: EntityHeaderReadMode;
+  header?: string;
 }
 
 export interface EntityContextView {
@@ -6551,6 +6562,11 @@ export interface EntityContextV2View {
   omitted: EntityContextOmitted[];
   notLoaded: EntityContextNotLoaded[];
   errors: EntityContextError[];
+  /**
+   * Present only when the read normalised something the caller sent — an
+   * unknown `header` mode read as `authored` (I9a). Counted in the budget.
+   */
+  warnings?: ResultWarning[];
   budget: { requested: number; used: number };
 }
 

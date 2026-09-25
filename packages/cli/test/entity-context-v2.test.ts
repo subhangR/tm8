@@ -438,4 +438,13 @@ describe('S5 rendering and rollout', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/errors: none/);
   });
+
+  it('[I9a] a warnings[] entry prints by name, in the server\'s words (never silently dropped)', async () => {
+    const message = "header=\"derived\" is not a header mode; read as 'authored' (the default). Valid: authored, resolved";
+    reply = ok({ ...V2_TASK, warnings: [{ code: 'header_mode_unknown', message }] });
+    const r = await drive(['entity', 'context', ENT]);
+    expect(r.code).toBe(0);
+    expect(r.stdout.split('\n')).toContain(`warnings: header_mode_unknown: ${message}`);
+    expect(r.stdout).not.toContain('[object Object]');
+  });
 });

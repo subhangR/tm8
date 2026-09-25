@@ -9,7 +9,7 @@ import {
   decodeCursor,
   encodeCursor,
   isCollabError,
-  GetEntityQuerySchema,
+  headerReadMode,
   SELECTION_HEADER_KINDS,
   type ActivityItem,
   type ActorSummary,
@@ -950,22 +950,6 @@ async function withHeader(q: Querier, detail: EntityDetail, mode: EntityHeaderRe
 }
 
 /**
- * The `header` query key of `entities.get`. Only this key is read: the route
- * took no query before, and it still ignores every other key rather than
- * start refusing them. An unknown MODE is refused by name — it is a switch,
- * and a silently ignored typo would read as "no header".
- */
-function headerReadModeOf(query: URLSearchParams): EntityHeaderReadMode {
-  const raw = query.get('header');
-  if (raw === null) return 'authored';
-  const parsed = GetEntityQuerySchema.safeParse({ header: raw });
-  if (!parsed.success) {
-    throw new CollabError('invalid_input', `header must be 'authored' or 'resolved', got '${raw}'`);
-  }
-  return parsed.data.header ?? 'authored';
-}
-
-/**
  * A header command's result: the command result, the header now in effect —
  * after a clear, the native/derived one, at version 0 — and the RPC's
  * warnings. A kind with no header at all (work_session, chat, message, c:*)
@@ -1333,8 +1317,12 @@ export class W2EntitiesCommandsTrackingService {
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
-    const mode = headerReadModeOf(ctx.query);
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
+    // Only `header` is read: the route took no query before, and it still
+    // ignores every other key. An unknown mode reads as the default and says
+    // so in `warnings` (instruct, don't refuse).
+    const { mode, warning } = headerReadMode(ctx.query.get('header'));
+    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
+    return warning ? { ...detail, warnings: [warning] } : detail;
   };
 
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {

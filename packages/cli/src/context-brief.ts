@@ -100,7 +100,7 @@ export function renderHeaderLines(header: Record<string, unknown>): string[] {
 const KNOWN = new Set([
   'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq', 'priority', 'gate', 'assignees',
   'header', 'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
-  'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'budget',
+  'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'warnings', 'budget',
 ]);
 
 export function renderContextBrief(view: Row): string {
@@ -203,6 +203,9 @@ export function renderContextBrief(view: Row): string {
   const errors = rows(view['errors']);
   if (errors.length === 0) out.push('errors: none');
   else block('errors', errors.map((e) => `${str(e['section'])} ${str(e['code'])}${e['retry'] === true ? ' (retry)' : ''}`));
+  // Something the caller sent was normalised (an unknown `header` mode): the
+  // server's own words, so the reader learns the valid values.
+  block('warnings', rows(view['warnings']).map((w) => `${str(w['code'])}: ${str(w['message'])}`));
   if (isRow(view['budget'])) {
     out.push(`budget: ${bytesOf(view['budget']['used'])} of ${bytesOf(view['budget']['requested'])}`);
   }
