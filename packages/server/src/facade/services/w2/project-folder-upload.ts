@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { secretReason } from './project-file-policy.js';
@@ -240,15 +240,6 @@ async function verifiedBytes(
     throw new Error(`checksum mismatch for ${file.relativePath}`);
   }
   return bytes;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
