@@ -195,7 +195,6 @@ function SelectionGroup({
       )}
       {expanded ? (
       <div id={bodyId} className="lsel__body">
-      {collapsed && diff.line ? <span className="lsel__diff" data-testid={`lsel-diff-${group}`}>{diff.line}</span> : null}
       {lock ? <p className="ls__profile-empty" role="status">{lock}</p> : null}
       {defaults.status === 'ready' && defaultRows.length === 0 && addedRows.length === 0 ? (
         <p className="ls__profile-empty" role="status">

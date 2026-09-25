@@ -648,7 +648,7 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
     const { launches, onLaunch } = launchesOf();
     const { getByRole, getByTestId } = await renderWithDefaults({ onLaunch });
     fireEvent.click(getByTestId('lsel-row-references-ent-file-log'));
-    expect(getByTestId('lsel-diff-references').textContent).toBe('−1 default removed');
+    expect(getByTestId('lsel-toggle-references').textContent).toMatch(/2 defaults · −1 default removed/);
     const row = getByTestId('lsel-row-references-ent-file-log');
     expect(row.getAttribute('aria-checked')).toBe('false');
     expect(within(row).getByText('default · removed')).toBeTruthy();
@@ -664,7 +664,7 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
     const group = view.getByTestId('lsel-group-memories');
     fireEvent.click(within(group).getByRole('button', { name: /add memories/ }));
     fireEvent.click(within(group).getByText('The fixture seam drops fields it does not know'));
-    expect(view.getByTestId('lsel-diff-memories').textContent).toBe('+1 added');
+    expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default · \+1 added/);
     fireEvent.click(view.getByRole('button', { name: /Launch/ }));
     expect(launches[0]!.selection).toEqual({ memoryIds: ['ent-mem-tokens', 'ent-mem-disputed'] });
     // The additive field is gone: the node refuses it beside `selection`.

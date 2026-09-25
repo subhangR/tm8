@@ -34,10 +34,10 @@
 .cv2-root .lsel__head--edited .lsel__summary { color: var(--pn-brand-2); }
 .cv2-root .lsel__caret { color: var(--pn-ink-3); font-size: 10px; }
 .cv2-root .lsel__body { display: flex; flex-direction: column; gap: 5px; }
-.cv2-root .lsel__how { font-family: var(--pn-mono); font-size: 9px; }
+.cv2-root .lsel__how { align-self: flex-start; text-align: left; padding: 2px 0; }
 
 /* The Run composer's compact form: three count chips, one popover. */
-.cv2-root .lsel-chips { display: flex; flex-direction: column; gap: 6px; }
+.cv2-root .lsel-chips { display: flex; flex-direction: column; gap: 6px; margin: 0 20px 2px; }
 .cv2-root .lsel-chips__row { display: flex; flex-wrap: wrap; gap: 6px; }
 .cv2-root .lsel-chip {
   display: inline-flex; align-items: center; gap: 5px;
