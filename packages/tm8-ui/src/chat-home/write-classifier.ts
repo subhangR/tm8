@@ -65,6 +65,7 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'entities.create',
   'entities.patch',
   'entities.header.set',
+  'spaces.chatDefaults.set',
   'entities.header.clear',
   'entities.move',
   'entities.delete',

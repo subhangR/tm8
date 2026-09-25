@@ -30,6 +30,7 @@ import { MembersSection, viewerRoleIn } from './MembersSection';
 import { SharingSection } from './SharingSection';
 import { ownerRoleRef } from './port';
 import { ModelsSection } from './ModelsSection';
+import { ChatDefaultsSection } from './ChatDefaultsSection';
 import { InvitesPanel } from './InviteFrames';
 import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
@@ -352,6 +353,11 @@ function SectionBody({
       // Browser-local, so it needs no port and cannot be refused by the seam.
       // The node key comes from the shell because the catalog is per node.
       return <ModelsSection nodeKey={nodeKey} heading={def.heading} />;
+    case 'chat-defaults':
+      // Space-wide and server-stored; self-loading through the shared
+      // `useChatDefaults` cache. Writes are NOT caught here — the section
+      // renders the server's refusal beside the row it belongs to.
+      return <ChatDefaultsSection heading={def.heading} nodeKey={nodeKey} wiring={port.chatDefaults} />;
     case 'axes':
       /* W2 — the real registry, read off the same settings round trip as
          invites. The refusal this replaces (AXES_UNREADABLE) was measured

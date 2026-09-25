@@ -200,6 +200,7 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
   'spaces.defaultChannel.set',
   'interactionProfiles.propose',
   'spaces.interactionProfile.setDefault',
+  'spaces.chatDefaults.set',
 ]);
 
 // `container` is deliberately ABSENT from EDITABLE_KINDS: `entities.patch`

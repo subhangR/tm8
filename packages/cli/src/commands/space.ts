@@ -695,7 +695,7 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
 /** The three read-only Space projections, which differ only in row and renderer. */
 function spaceProjection(
   command: string,
-  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs',
+  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs' | 'spaces.chatDefaults.get',
   render: (dto: unknown) => string,
 ): (cmd: CommandContext) => Promise<ExitCode> {
   return async (cmd) => {
@@ -1199,6 +1199,48 @@ async function spaceDefaultChannelSet(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** One line per kind: `task: teammate <id> · model <m>`. */
+function renderChatDefaults(dto: unknown): string {
+  const defaults = dto !== null && typeof dto === 'object' ? (dto as Record<string, unknown>).defaults : undefined;
+  const rows = defaults !== null && typeof defaults === 'object' ? Object.entries(defaults as Record<string, unknown>) : [];
+  if (rows.length === 0) return `no chat defaults (revision ${field(dto, 'revision') ?? 0})`;
+  return rows
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([kind, entry]) => `${kind}: teammate ${field(entry, 'teammateId') ?? '-'} · model ${field(entry, 'model') ?? '-'}`)
+    .join('\n');
+}
+
+/**
+ * Entity-chat §3.4. Sets ONE kind's default: the entry is replaced by exactly
+ * the flags given (an omitted flag leaves that field empty), and `--clear`
+ * removes the kind's default. Other kinds are untouched: the op is a PATCH
+ * over kinds. Owner/admin only, enforced by the server.
+ */
+async function spaceChatDefaultsSet(cmd: CommandContext): Promise<ExitCode> {
+  const command = 'space chat-defaults set';
+  const kind = requireArg(command, cmd.args[0], 'a <kind>');
+  noExtraArgs(command, cmd.args, 1);
+  const spaceId = requireSpace(cmd.ctx);
+  const teammateId = noneAsNull(cmd.options.value('teammate')) ?? undefined;
+  const model = noneAsNull(cmd.options.value('model')) ?? undefined;
+  const clear = cmd.options.bool('clear');
+  if (clear && (teammateId !== undefined || model !== undefined)) {
+    throw new CliError(`\`tm8 ${command}\` takes --clear OR --teammate/--model, not both`, EXIT_USAGE);
+  }
+  if (!clear && teammateId === undefined && model === undefined) {
+    throw new CliError(`\`tm8 ${command}\` needs --teammate, --model or --clear`, EXIT_USAGE, {
+      hint: `read its exact syntax with \`tm8 help ${command}\``,
+    });
+  }
+  const body = authorlessMutationBody(command, cmd);
+  body.defaults = {
+    [kind]: clear ? null : { ...(teammateId !== undefined ? { teammateId } : {}), ...(model !== undefined ? { model } : {}) },
+  };
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.chatDefaults.set', { params: { spaceId }, body });
+  cmd.out.data(data, renderChatDefaults);
+  return EXIT_OK;
+}
+
 export const SPACE_COMMANDS: CommandModule[] = [
   { path: ['space', 'list'], run: spaceList },
   { path: ['space', 'create'], run: spaceCreate },
@@ -1240,4 +1282,9 @@ export const SPACE_COMMANDS: CommandModule[] = [
   { path: ['space', 'menu', 'get'], run: spaceMenuGet },
   { path: ['space', 'menu', 'update'], run: spaceMenuUpdate },
   { path: ['space', 'default-channel', 'set'], run: spaceDefaultChannelSet },
+  {
+    path: ['space', 'chat-defaults', 'get'],
+    run: spaceProjection('space chat-defaults get', 'spaces.chatDefaults.get', renderChatDefaults),
+  },
+  { path: ['space', 'chat-defaults', 'set'], run: spaceChatDefaultsSet },
 ];

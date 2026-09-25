@@ -23,6 +23,7 @@ export type SettingsSectionId =
   | 'axes'
   | 'workflows'
   | 'models'
+  | 'chat-defaults'
   | 'credentials'
   | 'space-credentials'
   | 'node-credentials'
@@ -69,6 +70,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      will look, and the section itself states its real scope rather than
      letting its neighbours imply one. */
   { id: 'models', label: 'Models', heading: 'Models' },
+  /* Entity chat §3.4 — directly after Models because it answers the next
+     question ("which of those does a chat start with?"), and deliberately
+     beside it because the two state OPPOSITE scopes at their tops: Models is
+     this browser, Chat defaults is the whole space. */
+  { id: 'chat-defaults', label: 'Chat defaults', heading: 'Chat defaults' },
   /* Agent credentials — the viewer's OWN logins, built in
      `settings-credentials/` and injected through `sections`. It sits beside
      Models because both answer "what can I launch with", and directly after it

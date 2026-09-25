@@ -1,0 +1,82 @@
+/* ===========================================================================
+   CHAT DEFAULTS — the per-kind chat defaults section's own stylesheet.
+   Imported from `ChatDefaultsSection.tsx` (SECTION-CONTRACT.md §5); every
+   class is `.set-chatdef__*`. The scope banner mirrors `.set-models__scope`
+   on purpose: the two neighbours state opposite scopes in the same place.
+   TOKENS ONLY (§6): `src/hex-ban.test.ts` walks this file.
+   =========================================================================== */
+
+.set-chatdef__scope {
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.3);
+  border-radius: var(--pn-r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.set-chatdef__scope-head {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-brand-2);
+  text-transform: uppercase;
+}
+.set-chatdef__scope-body {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+.set-chatdef__loading {
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.set-chatdef__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.set-chatdef__table th,
+.set-chatdef__table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--pn-line);
+  vertical-align: middle;
+}
+.set-chatdef__table thead th {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-chatdef__kind {
+  font-weight: 500;
+  color: var(--pn-ink);
+  white-space: nowrap;
+}
+.set-chatdef__custom {
+  margin-left: 6px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  padding: 0 4px;
+}
+.set-chatdef__table select {
+  width: 100%;
+  min-width: 0;
+  max-width: 260px;
+}
+.set-chatdef__refusal {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--pn-block);
+}
