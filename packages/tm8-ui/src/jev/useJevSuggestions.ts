@@ -51,6 +51,7 @@ export interface JevGroupValues {
   teammates: TeammateSuggestion;
   memories: EntitySuggestion;
   skills: EntitySuggestion;
+  references: EntitySuggestion;
 }
 
 export type JevGroups = { [G in LaunchSuggestGroup]: JevGroupState<JevGroupValues[G]> };
@@ -114,6 +115,7 @@ const IDLE: JevGroups = {
   teammates: { status: 'idle' },
   memories: { status: 'idle' },
   skills: { status: 'idle' },
+  references: { status: 'idle' },
 };
 
 const ZERO_COST: JevCost = { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 };
@@ -126,6 +128,7 @@ const GROUP_WORD: Record<LaunchSuggestGroup, string> = {
   teammates: 'Teammates',
   memories: 'Memories',
   skills: 'Skills',
+  references: 'References',
 };
 
 export function newJevId(): string {
