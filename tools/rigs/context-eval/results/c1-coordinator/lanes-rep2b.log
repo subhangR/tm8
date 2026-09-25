@@ -1,0 +1,4 @@
+slice c1 arm lean node 4621 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 1 lanes (haiku45 × 1 tasks × 1 reps), max 1 concurrent, out results/2026-09-25-6d1f4c77-c1-rep2.jsonl
+c1/haiku45/stress30#1 session 01a0d9b3-a5e9-75e0-adac-34a2fb1f3beb load 10.37 12.65 20.25
+c1/haiku45/stress30#1 idle 249s first=29771 entryMiss=0 score=1.00 $0.352
+slice done

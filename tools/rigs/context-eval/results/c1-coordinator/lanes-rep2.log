@@ -1,0 +1,26 @@
+23:06:14 memory dir entries=0; 23:06  up 20:23, 2 users, load averages: 30.44 30.19 31.80
+slice c1 arm lean node 4621 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 8 lanes (sonnet5,haiku45 × 4 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c1-rep2.jsonl
+c1/sonnet5/fee#1 session 01a0d9a3-b563-79b1-a628-ef7d454f1365 load 28.72 29.84 31.66
+c1/haiku45/fee#1 session 01a0d9a3-d613-79cf-8dd2-86b5284d2b6e load 29.06 29.90 31.67
+c1/haiku45/fee#1 idle 134s first=28637 entryMiss=0 score=1.00 $0.080
+c1/haiku45/category#1 session 01a0d9a6-3421-71f7-8f93-6c36de6a792c load 33.54 33.24 32.85
+c1/sonnet5/fee#1 idle 178s first=38250 entryMiss=0 score=1.00 $0.515
+c1/sonnet5/category#1 session 01a0d9a6-a030-7f58-818f-c24de69e0b6d load 32.50 33.14 32.83
+c1/haiku45/category#1 idle 128s first=28638 entryMiss=0 score=1.00 $0.106
+c1/sonnet5/rounding#1 session 01a0d9a8-4ac2-7a75-8ae2-2c8e784ec14e load 21.53 29.28 31.36
+c1/sonnet5/category#1 idle 138s first=38243 entryMiss=0 score=1.00 $0.357
+c1/haiku45/rounding#1 session 01a0d9a9-17d7-72d3-9206-a4489fea2dbc load 21.71 28.12 30.82
+c1/sonnet5/rounding#1 idle 126s first=38270 entryMiss=0 score=0.75 $0.345
+c1/haiku45/stress30#1 session 01a0d9aa-829e-7e16-8d3e-35701a14a3da load 18.89 26.17 29.82
+c1/haiku45/rounding#1 idle 131s first=28639 entryMiss=0 score=1.00 $0.094
+c1/sonnet5/stress30#1 session 01a0d9ab-55e8-7a98-8506-873390aea530 load 14.79 23.80 28.71
+c1/haiku45/stress30#1 idle 157s first=29765 entryMiss=0 score=1.00 $0.160
+c1/sonnet5/stress30#1 idle 145s first=39612 entryMiss=1 score=1.00 $0.496
+slice done
+23:17:23 memory dir entries=0; 23:17  up 20:35, 2 users, load averages: 9.35 18.26 25.59
+slice c1 arm lean node 4621 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 1 lanes (haiku45 × 1 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c1-rep2.jsonl
+c1/haiku45/turn-date#1 session 01a0d9ad-fdc6-7d82-8239-c32861eb67d1 load 10.65 18.25 25.50
+c1/haiku45/turn-date#1 idle 322s first=28626 entryMiss=0 score=1.00 $0.204
+slice done
+23:23:01 memory dir entries=0; 23:23  up 20:40, 2 users, load averages: 7.09 12.71 20.65
+rerun-done

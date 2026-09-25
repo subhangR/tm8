@@ -1,0 +1,190 @@
+{
+ "lean · mem-fee · Sonnet 5 · lane 1": {
+  "id": "01a0d964-002f-7941-b994-dd4e5147c009",
+  "hash": "1ff694c4b79a99a2"
+ },
+ "lean · mem-fee · Haiku 4.5 · lane 2": {
+  "id": "01a0d964-1fb7-751c-92b4-c19eed47ae52",
+  "hash": "7ee2dba64a4ef493"
+ },
+ "lean · turn-date · Haiku 4.5 · lane 3": {
+  "id": "01a0d964-2fe2-743f-918d-8a6ba6dab1a7",
+  "hash": "7429828395c53502"
+ },
+ "lean · turn-date · Sonnet 5 · lane 4": {
+  "id": "01a0d964-3dfa-7374-8279-b5ba726f8e97",
+  "hash": "ae42e359f3bd48d0"
+ },
+ "lean · fee · Sonnet 5 · lane 5": {
+  "id": "01a0d968-1290-7cf2-a9b2-4629802c7954",
+  "hash": "e8c0ae9e0803a34f"
+ },
+ "lean · fee · Haiku 4.5 · lane 6": {
+  "id": "01a0d969-0f0f-7a83-a5f3-4dd7c56f9eca",
+  "hash": "8e6d4a9524758b9e"
+ },
+ "lean · category · Haiku 4.5 · lane 7": {
+  "id": "01a0d96a-fb79-7f1a-966b-22623c15b997",
+  "hash": "e26595cb6082a29c"
+ },
+ "lean · category · Sonnet 5 · lane 8": {
+  "id": "01a0d96c-0279-757b-a240-fb269b0ae5ab",
+  "hash": "a331163bda768ce8"
+ },
+ "lean · rounding · Sonnet 5 · lane 9": {
+  "id": "01a0d96d-e609-7991-b3cd-b40588346de4",
+  "hash": "0ebd1004804f4558"
+ },
+ "lean · rounding · Haiku 4.5 · lane 10": {
+  "id": "01a0d96f-ce24-7be7-9843-df36cee0ded0",
+  "hash": "f08e9cc101947001"
+ },
+ "lean · stress30 · Haiku 4.5 · lane 11": {
+  "id": "01a0d971-b867-7f9c-a57b-06400036efd1",
+  "hash": "ccb9af5863a554e7"
+ },
+ "lean · stress30 · Sonnet 5 · lane 12": {
+  "id": "01a0d973-9a77-746f-83d6-7241d03d3950",
+  "hash": "56d52dda924658cb"
+ },
+ "lean · stress60 · Sonnet 5 · lane 13": {
+  "id": "01a0d975-7e23-7860-b2dd-aad6ab180d57",
+  "hash": "cfcb42bf5dfe564b"
+ },
+ "lean · mem-fee · Haiku 4.5 · lane 14": {
+  "id": "01a0d978-479a-7fb0-9834-c500b76d6d13",
+  "hash": "2fdd32823fb82e68"
+ },
+ "lean · stress60 · Haiku 4.5 · lane 15": {
+  "id": "01a0d978-49e3-7b0f-a34f-62b5d79f90eb",
+  "hash": "a052ab92a95c24eb"
+ },
+ "lean · mem-fee · Sonnet 5 · lane 16": {
+  "id": "01a0d97a-2bc7-7786-96c0-f5eec05e8477",
+  "hash": "1bbd6edb22f78929"
+ },
+ "lean · turn-date · Sonnet 5 · lane 17": {
+  "id": "01a0d97c-ffda-7e35-83d2-583337f3dacb",
+  "hash": "843484c833860bc2"
+ },
+ "lean · turn-date · Haiku 4.5 · lane 18": {
+  "id": "01a0d97f-c6e3-7831-ba12-55264f95f90d",
+  "hash": "1734c495ff412c74"
+ },
+ "lean · replica-01a0d742 · Haiku 4.5 · lane 19": {
+  "id": "01a0d981-a394-79af-b33d-3d60ac9875a1",
+  "hash": "7f68ca0a5c35d7ea"
+ },
+ "lean · replica-01a0d742 · Sonnet 5 · lane 20": {
+  "id": "01a0d981-a7a4-7210-99ee-a513b85cf378",
+  "hash": "3e3fd78c38976282"
+ },
+ "lean · replica-01a0d780 · Sonnet 5 · lane 21": {
+  "id": "01a0d983-8521-778e-beb6-bb0c596c3bd9",
+  "hash": "541293ebc14264a6"
+ },
+ "lean · replica-01a0d780 · Haiku 4.5 · lane 22": {
+  "id": "01a0d986-4865-7629-856a-e0b958308cda",
+  "hash": "3d98edc81e7f0a9d"
+ },
+ "lean · replica-01a0d778 · Sonnet 5 · lane 23": {
+  "id": "01a0d989-0aed-7379-b4bc-2de48ddb995e",
+  "hash": "f418d0fe66ebe216"
+ },
+ "lean · replica-01a0d778 · Haiku 4.5 · lane 24": {
+  "id": "01a0d989-f8bc-7e18-beca-24bbb13cfd36",
+  "hash": "8d57976763590df7"
+ },
+ "lean · fee · Sonnet 5 · lane 25": {
+  "id": "01a0d98b-d15c-7454-953e-9ec309944582",
+  "hash": "1a2ed9c01b788cd2"
+ },
+ "lean · fee · Haiku 4.5 · lane 26": {
+  "id": "01a0d98d-c182-70d7-b6f7-8647a0553799",
+  "hash": "f6739ee673645749"
+ },
+ "lean · category · Haiku 4.5 · lane 27": {
+  "id": "01a0d98e-bb45-7861-9048-51492924f43d",
+  "hash": "6bfb96bb74926d2b"
+ },
+ "lean · category · Sonnet 5 · lane 28": {
+  "id": "01a0d990-93d8-7670-af9d-5465bf02a8df",
+  "hash": "280a7812590d21ea"
+ },
+ "lean · rounding · Sonnet 5 · lane 29": {
+  "id": "01a0d991-83cc-7d32-b05a-cbe3a56eb784",
+  "hash": "07eef8246b8f1a46"
+ },
+ "lean · rounding · Haiku 4.5 · lane 30": {
+  "id": "01a0d993-60ac-7855-aba4-d8fbbaae107a",
+  "hash": "8b13298bf2d09049"
+ },
+ "lean · stress30 · Sonnet 5 · lane 31": {
+  "id": "01a0d997-2c76-7b12-8c4e-ca0a794f25ec",
+  "hash": "b3ec06f6002f37ec"
+ },
+ "lean · stress30 · Haiku 4.5 · lane 32": {
+  "id": "01a0d997-2d91-76fc-84d8-57a2c531cac9",
+  "hash": "450c05012bceb8d1"
+ },
+ "lean · stress60 · Sonnet 5 · lane 33": {
+  "id": "01a0d999-f27d-721e-97cc-a10d5dd36c75",
+  "hash": "ee8eb99c89027e76"
+ },
+ "lean · stress60 · Haiku 4.5 · lane 34": {
+  "id": "01a0d99b-cc3b-7ccb-81e2-8b5b991db215",
+  "hash": "5721ec1ac3a3bec2"
+ },
+ "lean · mem-fee · Haiku 4.5 · lane 35": {
+  "id": "01a0d99d-a8a1-7d61-a695-d6cfaefa110b",
+  "hash": "f91a555051ef9c3d"
+ },
+ "lean · mem-fee · Sonnet 5 · lane 36": {
+  "id": "01a0d99e-9dca-75cf-b66f-1afc7eeb018c",
+  "hash": "b4ce699aefb05db0"
+ },
+ "lean · turn-date · Sonnet 5 · lane 37": {
+  "id": "01a0d9a3-3d66-7143-adf6-7417629be10d",
+  "hash": "15e0154b6be7f661"
+ },
+ "lean · fee · Haiku 4.5 · lane 38 · rep2 re-run": {
+  "id": "01a0d9a6-0cc4-7716-9e1c-7756a1fcc25d",
+  "hash": "4f14a40477db5fbf"
+ },
+ "lean · fee · Sonnet 5 · lane 39 · rep2 re-run": {
+  "id": "01a0d9a7-01ee-7de8-bc78-02f84755a063",
+  "hash": "a1b4246834c72696"
+ },
+ "lean · category · Haiku 4.5 · lane 40 · rep2 re-run": {
+  "id": "01a0d9a8-e05d-7166-8d70-779c892d3b75",
+  "hash": "4c03ac4e3deb1612"
+ },
+ "lean · category · Sonnet 5 · lane 41 · rep2 re-run": {
+  "id": "01a0d9a8-e166-7aa2-846a-675c128e97b0",
+  "hash": "6c7639d57a626c59"
+ },
+ "lean · rounding · Sonnet 5 · lane 42 · rep2 re-run": {
+  "id": "01a0d9aa-bdf3-702d-b73a-9e2e77182c53",
+  "hash": "15b1f6f3eb4c46be"
+ },
+ "lean · rounding · Haiku 4.5 · lane 43 · rep2 re-run": {
+  "id": "01a0d9ab-be40-79a3-b4d4-b0723b3de9e9",
+  "hash": "8a9bce26e63ed3e6"
+ },
+ "lean · stress30 · Haiku 4.5 · lane 44 · rep2 re-run": {
+  "id": "01a0d9ad-96cb-705f-9aea-1f407f975fce",
+  "hash": "7e5cd8d326f23501"
+ },
+ "lean · stress30 · Sonnet 5 · lane 45 · rep2 re-run": {
+  "id": "01a0d9ad-9777-7492-85a5-27e845686bbb",
+  "hash": "a76af5d066962acc"
+ },
+ "lean · turn-date · Haiku 4.5 · lane 46 · rep2 re-run": {
+  "id": "01a0d9b3-1cc8-7167-98db-13c2e128cb9d",
+  "hash": "6cbf78da308afee4"
+ },
+ "lean · stress30 · Haiku 4.5 · lane 47 · rep2 re-run": {
+  "id": "01a0d9b9-e2d9-7169-b12e-0817daf65d5a",
+  "hash": "45154cbba006eba5"
+ }
+}
