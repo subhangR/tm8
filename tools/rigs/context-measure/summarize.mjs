@@ -49,7 +49,7 @@ const FULL = [
   ['resident tm8 bytes', (r) => r.residentTm8Bytes],
   ['total input-side tokens', (r) => (r.usage ? r.usage.input + r.usage.cacheCreation + r.usage.cacheRead : null)],
   ['output tokens', (r) => r.usage?.output],
-  ['expand rate (opened / collapsed)', (r) => (r.expand?.rate ?? null) === null ? null : r.expand.rate * 100],
+  ['expand rate % (opened / collapsed)', (r) => (r.expand?.rate ?? null) === null ? null : r.expand.rate * 100],
   ['blind-fetch bytes', (r) => r.blindFetchBytes],
 ];
 
@@ -63,6 +63,9 @@ if (arms.some((a) => full(a).length)) {
   out.push(`| task success (all four gates) | ${arms.map((a) => count(a, (r) => r.success.success)).join(' | ')} |`);
   out.push(`| deliverable correct | ${arms.map((a) => count(a, (r) => r.success.deliverableCorrect)).join(' | ')} |`);
   out.push(`| launches with >= 1 MISS | ${arms.map((a) => count(a, (r) => r.miss?.launchMissed)).join(' | ')} |`);
+  const entryMiss = (r) => Object.values(r.miss?.ids ?? {}).some((why) => !why.endsWith(':header'));
+  out.push(`|   of which ENTRY-level (id not in the prompt) | ${arms.map((a) => count(a, entryMiss)).join(' | ')} |`);
+  out.push(`|   of which header-level only (entry listed, header trimmed) | ${arms.map((a) => count(a, (r) => r.miss?.launchMissed && !entryMiss(r))).join(' | ')} |`);
   out.push(`| needle opened | ${arms.map((a) => count(a, (r) => r.needleOpened)).join(' | ')} |`);
   out.push(`| lanes that hit the timeout | ${arms.map((a) => count(a, (r) => r.ended === 'timeout')).join(' | ')} |`);
 }

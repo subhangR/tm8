@@ -8,15 +8,21 @@
 // TM8_AGENT_TOKEN, TM8_SPACE_ID). Docs are created WITHOUT authored headers;
 // `headers.mjs` writes them for the authored-header pass.
 //
-// Link order is deliberate: each task relates_to its distractors first and
-// its needle LAST, so under the referenceIndex cap the needle is the first
-// entry to lose its header, then itself.
+// Link order is deliberate. A normal task relates_to its 4 distractors, then
+// its needle. The stress task links STRESS_NEEDLE_AT - 1 distractors, the
+// needle, then the rest: inside the spawn's 32-link read, but late enough
+// that the referenceIndex cap (8 KiB) drops its header. A needle past the
+// read cap (position 33+) is invisible to BOTH arms, so it cannot tell them
+// apart.
+//
+// REUSE=<fixture.json> reuses its skills, memories and distractors, and
+// (re)creates only the tasks named in ONLY=<key,key>.
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TASKS, STRESS_LINKS, SKILLS, MEMORIES, SAMPLE_CSV, needleDoc, distractorDocs } from './fixture-data.mjs';
+import { TASKS, STRESS_LINKS, STRESS_NEEDLE_AT, SKILLS, MEMORIES, SAMPLE_CSV, needleDoc, distractorDocs } from './fixture-data.mjs';
 
 const CLI = process.env.TM8_CLI;
 const PROJECT = process.env.PROJECT_ID;
@@ -34,8 +40,11 @@ function createDoc(doc) {
   return idOf(tm8('entity', 'create', 'doc', doc.title, '--content', JSON.stringify({ kind: 'doc', body: doc.body, format: 'markdown' })));
 }
 
-const fx = { skills: {}, memories: [], distractors: [], tasks: {} };
+const REUSE = process.env.REUSE ? JSON.parse(readFileSync(process.env.REUSE, 'utf8')) : null;
+const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
+const fx = REUSE ?? { skills: {}, memories: [], distractors: [], tasks: {} };
 
+if (!REUSE) {
 for (const [name, description] of SKILLS) {
   const body = `# ${name}\n\n${description}\n`;
   fx.skills[name] = idOf(tm8('skill', 'create', '--root', PROJECT, '--name', name, '--provider', 'claude', '--level', 'project', '--description', description, '--body', body));
@@ -49,14 +58,16 @@ for (const [statement, subjectScope, mechanism] of MEMORIES) {
   fx.memories.push(idOf(tm8('entity', 'create', 'memory', statement.slice(0, 80), '--content', JSON.stringify(content))));
 }
 
+const pool = distractorDocs(STRESS_LINKS - 1);
+fx.distractors = pool.map((d) => ({ title: d.title, id: createDoc(d) }));
+}
+
 const dir = mkdtempSync(join(tmpdir(), 'i10a-'));
 const csvPath = join(dir, 'sample-import.csv');
 writeFileSync(csvPath, SAMPLE_CSV);
 
-const pool = distractorDocs(STRESS_LINKS - 1);
-fx.distractors = pool.map((d) => ({ title: d.title, id: createDoc(d) }));
-
 for (const [i, task] of TASKS.entries()) {
+  if (ONLY && !ONLY.includes(task.key)) continue;
   const needle = needleDoc(task);
   const needleId = createDoc(needle);
   const distractors = task.stress ? fx.distractors : [0, 1, 2, 3].map((k) => fx.distractors[(i * 4 + k) % fx.distractors.length]);
@@ -72,12 +83,14 @@ for (const [i, task] of TASKS.entries()) {
     ],
   };
   const taskId = idOf(tm8('entity', 'create', 'task', task.title, '--content', JSON.stringify(content)));
-  for (const d of distractors) tm8('edge', 'create', taskId, 'relates_to', d.id);
+  const at = task.stress ? STRESS_NEEDLE_AT - 1 : distractors.length;
+  for (const d of distractors.slice(0, at)) tm8('edge', 'create', taskId, 'relates_to', d.id);
   tm8('edge', 'create', taskId, 'relates_to', needleId);
+  for (const d of distractors.slice(at)) tm8('edge', 'create', taskId, 'relates_to', d.id);
   const fileId = idOf(tm8('file', 'upload', csvPath, '--name', 'sample-import.csv', '--mime', 'text/csv', '--attach-to', taskId));
   for (const skillId of Object.values(fx.skills)) tm8('edge', 'create', taskId, 'equips', skillId);
   for (const memoryId of fx.memories) tm8('edge', 'create', taskId, 'remembers', memoryId);
-  fx.tasks[task.key] = { id: taskId, needleId, fileId, fn: task.fn, links: distractors.length + 1, stress: !!task.stress };
+  fx.tasks[task.key] = { id: taskId, needleId, fileId, fn: task.fn, links: distractors.length + 1, needleAt: at + 1, stress: !!task.stress };
   console.error(`task ${task.key} ${taskId} (${distractors.length + 1} docs)`);
 }
 

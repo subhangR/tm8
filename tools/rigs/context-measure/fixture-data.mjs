@@ -174,8 +174,8 @@ export const TASKS = [
     key: 'rounding',
     title: 'Add a rounded balance helper to ledger-lite',
     fn: 'roundedBalance',
-    // The stress task: its needle is linked LAST among STRESS_LINKS docs, so
-    // the referenceIndex sub-cap (8 KiB) has to trim.
+    // The stress task: STRESS_LINKS docs, needle at STRESS_NEEDLE_AT, so the
+    // referenceIndex sub-cap (8 KiB) has to trim around it.
     stress: true,
     needle: {
       title: 'Balance rounding policy',
@@ -194,6 +194,8 @@ export const TASKS = [
 ];
 
 export const STRESS_LINKS = 60;
+/** 1-based link position of the stress needle: within the 32-link spawn read. */
+export const STRESS_NEEDLE_AT = 30;
 
 export function needleDoc(task) {
   return { title: task.needle.title, body: needleBody(task.needle.title, task.needle.topic, task.needle.rule), header: task.needle.header };
