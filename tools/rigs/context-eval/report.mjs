@@ -11,8 +11,8 @@
 // unmeasured); rows spanning more than one fixture version, or a baseline
 // built on another one (their numbers would not be comparable).
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { missLevel } from '../context-measure/measure.mjs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { missLevel, readsOf } from '../context-measure/measure.mjs';
 import { COMPONENTS_SCHEMA } from './components.mjs';
 import { ARMS, ARM_ENV } from './node-registry.mjs';
 
@@ -116,9 +116,95 @@ export function annotateContamination(rows, read = (f) => (f && existsSync(f) ? 
   }
   return rows;
 }
+/**
+ * D9 (h) sub-count, report-time (advisor msg 01a0d9a8-331b): did a lane OPEN
+ * another lane's copy of its task? Every copy's id is in the rows; the shared
+ * needle doc's connections make siblings VISIBLE (C4 msg 01a0d9a7-9ff6), and
+ * following one reaches that lane's closeout. A read = measure.mjs's own read
+ * classifier (`tm8 entity context|get <id>`, ...) or `tm8 message list --for
+ * <id>`, on an id that is another row's taskId, never the row's own. A mention
+ * inside a message body is not a read.
+ */
+const MESSAGE_LIST = /tm8\s+message\s+list\b[^|;&\n]*--for\s+([0-9a-f-]{36})/g;
+export function annotateCrossLane(rows, read = (f) => (f && existsSync(f) ? readFileSync(f, 'utf8') : null)) {
+  const copies = new Map(rows.filter((r) => r.taskId).map((r) => [r.taskId, r]));
+  for (const r of rows) {
+    const t = read(r.transcript);
+    if (t == null) continue;
+    const opened = new Set();
+    for (const line of t.split('\n')) {
+      if (!line.includes('tool_use')) continue;
+      let x;
+      try {
+        x = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      for (const b of x.message?.content ?? []) {
+        if (b.type !== 'tool_use') continue;
+        const ids = readsOf(b).map((rd) => rd.id);
+        if (b.name === 'Bash') for (const m of String(b.input?.command ?? '').matchAll(MESSAGE_LIST)) ids.push(m[1]);
+        for (const id of ids) if (id && id !== r.taskId && copies.has(id)) opened.add(id);
+      }
+    }
+    if (opened.size) r.openedSiblingCopy = [...opened].map((id) => ({ taskId: id, sessionId: copies.get(id).sessionId }));
+  }
+  return rows;
+}
+
+/**
+ * DECISION D12 (C1 msg 01a0d9ae-e864): every lane's worktree sits under
+ * <datadir>/worktrees/<project>/ and is readable by every other lane on the
+ * node, so a lane that could not find the spec copied a SIBLING's
+ * implementation, and the rubric could not see it (c1 haiku45/stress30,
+ * c4 haiku45/stress30#2). A row whose tool calls (main AND subagent
+ * transcripts) name another row's worktree, matched on its
+ * `<project>/<lane-id>` tail so a relative path after `cd <datadir>` counts,
+ * gets readSiblingWorktree [{sessionId, worktree}] and is SET ASIDE: its
+ * success is not the lane's own.
+ */
+const defaultTexts = (r) => {
+  if (!r.transcript || !existsSync(r.transcript)) return [];
+  const out = [readFileSync(r.transcript, 'utf8')];
+  const sub = r.transcript.replace(/\.jsonl$/, '') + '/subagents';
+  if (existsSync(sub)) for (const f of readdirSync(sub).filter((x) => x.endsWith('.jsonl')).sort()) out.push(readFileSync(`${sub}/${f}`, 'utf8'));
+  return out;
+};
+const worktreeTail = (w) => (w ? w.split('/').filter(Boolean).slice(-2).join('/') : null);
+export function annotateSiblingWorktree(rows, texts = defaultTexts) {
+  const others = rows.filter((r) => r.worktree).map((r) => ({ r, tail: worktreeTail(r.worktree) }));
+  for (const r of rows) {
+    const own = worktreeTail(r.worktree);
+    const found = new Map();
+    for (const t of texts(r)) {
+      for (const line of t.split('\n')) {
+        if (!line.includes('tool_use')) continue;
+        let x;
+        try {
+          x = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        for (const b of x.message?.content ?? []) {
+          if (b.type !== 'tool_use') continue;
+          const input = JSON.stringify(b.input ?? {});
+          for (const { r: o, tail } of others) {
+            if (o === r || !tail || tail === own || !input.includes(tail)) continue;
+            // The path as the tool named it (absolute, or relative after `cd <datadir>`).
+            const path = input.match(new RegExp(`[^\\s"'\\\\]*${tail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\s"'\\\\]*`))?.[0] ?? o.worktree;
+            if (!found.has(o.sessionId)) found.set(o.sessionId, path);
+          }
+        }
+      }
+    }
+    if (found.size) r.readSiblingWorktree = [...found].map(([sessionId, path]) => ({ path, sessionId }));
+  }
+  return rows;
+}
+
 /** A row set aside: excluded by hand/auto, or contaminated (D11). */
-export const setAside = (r) => !!(r.excluded || r.contaminated);
-export const asideReason = (r) => r.excluded?.reason ?? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})`;
+export const setAside = (r) => !!(r.excluded || r.contaminated || r.readSiblingWorktree);
+export const asideReason = (r) => r.excluded?.reason ?? (r.contaminated ? `contaminated: loaded lane-written auto-memory (by ${r.contaminated.by})` : `copied from sibling worktree (${r.readSiblingWorktree.map((o) => o.sessionId).join(', ')})`);
 
 /** Row classification: measured, excluded (set aside with a reason), or neither (a defect). */
 export function classify(rows) {
@@ -298,7 +384,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   }
 
   // 2. D2 gate rows per model × arm (all non-replica families pooled: the gate is per launch)
-  md.push('## 2. D2 gate (per LAUNCH): launches with an ENTRY-level miss', '', '| model | arm | launches | entry-level missed | rate | exact 95% upper bound | header-level reads | silent context failure (D6) | success | flag |', '|---|---|---|---|---|---|---|---|---|---|');
+  md.push('## 2. D2 gate (per LAUNCH): launches with an ENTRY-level miss', '', '| model | arm | launches | entry-level missed | rate | exact 95% upper bound | header-level reads | silent context failure (D6) | of which silent + passed | success | flag |', '|---|---|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const a of arms) {
       const rs = measured.filter((r) => r.model === model && r.arm === a && r.family !== 'replica');
@@ -309,12 +395,14 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
       const flag = rs.length && h / rs.length > 0.25 ? '⚑ headers too thin or sub-caps too small' : '';
       const needles = rs.filter(hasNeedle);
       const silent = needles.filter(silentContextFailure).length;
+      // The COPY signature (D12 / spec (n)): needle never opened, yet every check passed.
+      const silentPassed = needles.filter((r) => silentContextFailure(r) && outcomeOf(r).deliverableCorrect).length;
       const ok = rs.filter(succeeded).length;
-      md.push(`| ${model} | ${a} | ${rs.length} | ${k} | ${Math.round((100 * k) / rs.length)}% | ${(100 * ub).toFixed(1)}% | ${pct(h, rs.length)} | ${needles.length ? pct(silent, needles.length) : 'n/a'} | ${pct(ok, rs.length)} | ${flag} |`);
-      json.gate[`${model}/${a}`] = { launches: rs.length, entryMissed: k, rate: k / rs.length, upperBound95: ub, headerReads: h, needleLaunches: needles.length, silentContextFailures: silent, success: ok, flag: !!flag };
+      md.push(`| ${model} | ${a} | ${rs.length} | ${k} | ${Math.round((100 * k) / rs.length)}% | ${(100 * ub).toFixed(1)}% | ${pct(h, rs.length)} | ${needles.length ? pct(silent, needles.length) : 'n/a'} | ${needles.length ? `${silentPassed}/${silent}` : 'n/a'} | ${pct(ok, rs.length)} | ${flag} |`);
+      json.gate[`${model}/${a}`] = { launches: rs.length, entryMissed: k, rate: k / rs.length, upperBound95: ub, headerReads: h, needleLaunches: needles.length, silentContextFailures: silent, silentPassed, success: ok, flag: !!flag };
     }
   }
-  md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only).', '');
+  md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only). "silent + passed" (D12) is the COPY signature: needle never opened, yet every check passed. Rows that read a sibling lane\'s worktree are already set aside; one that remains reasoned the rule out, or took it from a header or memory, and deserves a transcript read.', '');
 
   // 3. accuracy per model × arm × family
   md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'Decision D7: the memory family\'s alias item measures whether a lane trusts a memory over a CONFLICTING skill (fixture v2\'s naming-conventions skill contradicts it), not delivery. On every arm it and its two hidden checks are out of the rubric mean and out of success / deliverable correct, printed with k/n as "alias memory trusted over conflicting skill". Read delivery on index arms from memoryExpands (the header-level read).', '', 'Decision D8: replica accuracy is ' + REPLICA_LABEL + '. It is printed for completeness and dropped from every success comparison (§2 gate, §6 delta). Applicable items per key (AUTHORITY fixtures/replicas-v2.json): ' + Object.entries(REPLICA_ITEMS).map(([k, v]) => `${k} (${v.kind}): ${v.applies.join(' + ')}`).join('; ') + '; committed is n/a on all three. "asked the human" (ended idle after at most 2 requests, no commit, no closeout) is a named outcome: counted per cell and kept out of the replica mean and success rate. The replica family\'s real measures are its sizes, misses and blind-fetch (§1).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
@@ -370,6 +458,11 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   const moved = rows.filter((r) => r.memoryDirState === 'moved');
   json.contamination = { wroteAutoMemory: writers.map((r) => ({ slice: r.slice, port: r.node?.port, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId })), contaminated: contaminated.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, ...r.contaminated, excluded: !!r.excluded })), memoryDirMoved: moved.map((r) => ({ slice: r.slice, sessionId: r.sessionId, at: r.memoryDirMovedAt, files: r.memoryDirMovedFiles })) };
   md.push('', `Auto-memory (decision D11): ${writers.length} lane(s) WROTE Claude auto-memory${writers.length ? ` (${writers.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId}`).join('; ')})` : ''}; ${contaminated.length} row(s) LOADED lane-written memory and are set aside above${contaminated.length ? ` (${contaminated.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} by ${r.contaminated.by}`).join('; ')})` : ''}; the runner's guard moved a non-empty memory dir before ${moved.length} lane start(s).`);
+  const hopped = rows.filter((r) => r.openedSiblingCopy);
+  const copied = rows.filter((r) => r.readSiblingWorktree);
+  json.crossLane = { readSiblingWorktree: copied.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, excluded: !!r.excluded, from: r.readSiblingWorktree })), openedSiblingCopy: hopped.map((r) => ({ slice: r.slice, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, opened: r.openedSiblingCopy })) };
+  md.push('', `Cross-lane (D9 (h)): ${hopped.length} row(s) OPENED another lane's copy of their task${hopped.length ? ` (${hopped.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} -> ${r.openedSiblingCopy.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. A shared needle doc makes sibling copies visible; this counts the hop.`);
+  md.push('', `Sibling worktree (D12): ${copied.length} row(s) READ another lane's worktree and are set aside above${copied.length ? ` (${copied.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId} <- ${r.readSiblingWorktree.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. Every lane worktree on a node is readable by every other lane; a copied answer passes the rubric, so it cannot count as the lane's own success.`);
   md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
@@ -437,7 +530,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   };
   if (!files.length) refuse('usage: node report.mjs results/<run>.jsonl [--baseline <prior>.jsonl] [--out <path-without-ext>]');
-  const rows = annotateContamination(readRows(files));
+  const rows = annotateSiblingWorktree(annotateCrossLane(annotateContamination(readRows(files))));
   if (!rows.length) refuse(`${files.join(', ')}: no rows`);
   const { unmeasured } = classify(rows);
   if (unmeasured.length) refuse(`${unmeasured.length} row(s) neither measured nor excluded: ${unmeasured.map((r) => `${r.arm}/${r.model}/${r.taskKey}#${r.rep} (${r.sessionId}) ${r.measureError ?? 'no firstRequestTokens'}`).join('; ')}. Fix the measurement or set it aside with exclude.mjs --reason.`);

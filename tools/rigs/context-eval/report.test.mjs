@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const require_ = createRequire(import.meta.url);
 import assert from 'node:assert/strict';
-import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory } from './report.mjs';
+import { buildReport, classify, upperBound95, stats, annotateContamination, wroteAutoMemory, annotateCrossLane, annotateSiblingWorktree } from './report.mjs';
 import { guardMemoryDir, memoryDirFor } from './lanes.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
 import { syntheticStart } from './measure-row.mjs';
@@ -213,7 +213,7 @@ test('D6: a withheld needle that was never opened is a SILENT context failure th
   // negative control: the same row opened is no longer silent
   const g2 = buildReport([recovered, { ...silent, needleOpened: true }, inlined, noNeedle], null).json.gate['sonnet5/lean'];
   assert.equal(g2.silentContextFailures, 0);
-  assert.match(buildReport([recovered, silent, inlined, noNeedle], null).md, /\| sonnet5 \| lean \| 4 \| 1 \| 25% \|[^\n]*\| 1\/3 \(33%\) \| 3\/4 \(75%\) \|/);
+  assert.match(buildReport([recovered, silent, inlined, noNeedle], null).md, /\| sonnet5 \| lean \| 4 \| 1 \| 25% \|[^\n]*\| 1\/3 \(33%\) \| 0\/1 \| 3\/4 \(75%\) \|/);
 });
 
 test('D7: success and deliverable correct ignore the alias checks on EVERY arm; a failing base check still fails', () => {
@@ -378,4 +378,68 @@ test('D11 guard: a non-empty memory dir is MOVED to <dataDir>/evidence before a 
   assert.deepEqual(readdirSync(g.memoryDirMovedTo), ['MEMORY.md'], 'the evidence is kept');
   rmSync(home, { recursive: true });
   rmSync(dataDir, { recursive: true });
+});
+
+test('D9 (h): "opened another copy of my task" counts a READ of a sibling task-copy id, never its own id or a mention in a message', () => {
+  const A = '01a0d9a0-0000-7000-8000-00000000000a';
+  const B = '01a0d9a0-0000-7000-8000-00000000000b';
+  const bash = (command) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command } }] } });
+  const files = {
+    a: [bash(`tm8 entity context ${A} --format json`), bash(`tm8 entity context ${B} --format json`)].join('\n'),
+    b: [bash(`tm8 entity context ${B}`), bash(`tm8 message send --to ${B} "saw ${A} in the doc connections"`)].join('\n'),
+    c: bash(`tm8 message list --for ${A} --limit 20`),
+  };
+  const rows = [
+    row({ sessionId: 'sa', taskId: A, transcript: 'a' }),
+    row({ sessionId: 'sb', rep: 2, taskId: B, transcript: 'b' }),
+    row({ sessionId: 'sc', rep: 3, taskId: '01a0d9a0-0000-7000-8000-00000000000c', transcript: 'c' }),
+  ];
+  annotateCrossLane(rows, (f) => files[f] ?? null);
+  assert.deepEqual(rows[0].openedSiblingCopy, [{ taskId: B, sessionId: 'sb' }], 'reading a sibling copy counts; its own copy does not');
+  assert.equal(rows[1].openedSiblingCopy, undefined, 'a mention inside a message body is not a read');
+  assert.deepEqual(rows[2].openedSiblingCopy, [{ taskId: A, sessionId: 'sa' }], 'listing a sibling copy\'s messages (its closeout) counts');
+  const r = buildReport(rows, null);
+  assert.equal(r.json.crossLane.openedSiblingCopy.length, 2);
+  assert.match(r.md, /2 row\(s\) OPENED another lane's copy of their task/);
+  // negative control: no reads, no hops
+  const quiet = rows.map((x) => ({ ...x, openedSiblingCopy: undefined }));
+  annotateCrossLane(quiet, () => bash('ls'));
+  assert.equal(quiet.filter((x) => x.openedSiblingCopy).length, 0);
+});
+
+test('D12: a row that READ another lane\'s worktree (absolute or relative path, main or subagent transcript) is set aside; its own worktree is not', () => {
+  const W = '/private/tmp/ctxeval/node1/worktrees/01a0d95e-2639-789c-9c43-b9fe010cfaad';
+  const tool = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } });
+  const texts = {
+    copier: [tool('Read', { file_path: `${W}/lane-own/src/ledger.js` }), tool('Bash', { command: 'cd /private/tmp/ctxeval/node1 && cat worktrees/01a0d95e-2639-789c-9c43-b9fe010cfaad/lane-sib/test/check-limit.test.js' })],
+    sib: [tool('Read', { file_path: `${W}/lane-sib/src/ledger.js` })],
+    viaSub: [tool('Read', { file_path: `${W}/lane-3/src/ledger.js` }), tool('Grep', { path: `${W}/lane-sib`, pattern: 'LIMIT' })],
+  };
+  const rows = [
+    row({ sessionId: 'copier', worktree: `${W}/lane-own` }),
+    row({ sessionId: 'sib', rep: 2, worktree: `${W}/lane-sib` }),
+    row({ sessionId: 'viaSub', rep: 3, worktree: `${W}/lane-3` }),
+  ];
+  annotateSiblingWorktree(rows, (r) => texts[r.sessionId]);
+  assert.deepEqual(rows[0].readSiblingWorktree, [{ path: 'worktrees/01a0d95e-2639-789c-9c43-b9fe010cfaad/lane-sib/test/check-limit.test.js', sessionId: 'sib' }], 'a relative path after cd <datadir> counts, and the path is recorded as named');
+  assert.equal(rows[1].readSiblingWorktree, undefined, 'reading its own worktree is not a sibling read');
+  assert.deepEqual(rows[2].readSiblingWorktree.map((o) => o.sessionId), ['sib'], 'a subagent/Grep path counts');
+  const r = buildReport(rows, null);
+  assert.equal(r.measured.length, 1, 'both copiers are set aside');
+  assert.match(r.json.failures['sonnet5/lean'].reasons.join(' '), /copied from sibling worktree \(sib\)/);
+  assert.match(r.md, /2 row\(s\) READ another lane's worktree/);
+  // negative control: no sibling paths, nothing set aside
+  const clean = rows.map((x) => ({ ...x, readSiblingWorktree: undefined }));
+  annotateSiblingWorktree(clean, (x) => [texts.sib[0].replace('lane-sib', x.worktree.split('/').pop())]);
+  assert.equal(clean.filter((x) => x.readSiblingWorktree).length, 0);
+});
+
+test('D12 §2: "silent + passed" counts a never-opened withheld needle whose checks all passed (the copy signature)', () => {
+  const silentPass = row({ needleState: 'absent', needleOpened: false, success: { success: true, deliverableCorrect: true, committed: true, closeout: true, ticked: true } });
+  const silentFail = row({ rep: 2, needleState: 'absent', needleOpened: false, success: { success: false, deliverableCorrect: false } });
+  const opened = row({ rep: 3, needleState: 'absent', needleOpened: true });
+  const g = buildReport([silentPass, silentFail, opened], null).json.gate['sonnet5/lean'];
+  assert.equal(g.silentContextFailures, 2);
+  assert.equal(g.silentPassed, 1);
+  assert.match(buildReport([silentPass, silentFail, opened], null).md, /\| 2\/3 \(67%\) \| 1\/2 \|/);
 });
