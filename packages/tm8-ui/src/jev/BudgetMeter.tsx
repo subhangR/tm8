@@ -1,12 +1,14 @@
 import { useId } from 'react';
 
+import { REFERENCES_OFF_NOTE, SKILL_BYTES_NOTE } from './useJevSuggestions';
+
 /** The groups a launch budgets in bytes. */
 export type BudgetMeterGroup = 'memories' | 'skills' | 'references' | 'teammates';
 
 export const METER_NULL_BUDGET_COPY = 'takes what the prompt has left';
-export const METER_INDEX_OFF_COPY = 'not in the prompt while the context index is off';
-export const METER_SKILL_TOOLTIP =
-  'Skill bytes assume each skill is indexed, not native: whether a skill is native depends on the launch’s workdir, so a native skill may cost less than this.';
+/** Lane A's words, so the hook and the meter cannot drift. */
+export const METER_INDEX_OFF_COPY = REFERENCES_OFF_NOTE;
+export const METER_SKILL_TOOLTIP = SKILL_BYTES_NOTE;
 export const METER_OVER_COPY = 'Allowed — your ticks, your call. Spawn trims to the budget and records what it left out.';
 
 /** `300 B`, `1.2 KB`, `12 KB` — the prompt's size in words a person reads. */
@@ -34,10 +36,13 @@ const GROUP_WORD: Record<BudgetMeterGroup, string> = {
  * says so. Over budget is SHOWN, never refused: a hand tick past the budget is
  * the person's choice, and spawn trims and records it.
  */
-export function BudgetMeter({ group, usedBytes, budget, contextIndex, compact }: {
+export function BudgetMeter({ group, usedBytes, budget, count, contextIndex, compact }: {
   group: BudgetMeterGroup;
-  usedBytes: number;
+  /** Null: the bytes are not known (a surface without measured rows) — the meter shows the count only, never invented bytes. */
+  usedBytes: number | null;
   budget: number | null;
+  /** How many rows are ticked; shown beside the bytes, and alone when the bytes are unknown. */
+  count?: number;
   /** Null before any answer said which: treated as on. */
   contextIndex: 'on' | 'off' | null;
   /** Drop the group word, for a meter that sits under its own heading. */
@@ -46,12 +51,28 @@ export function BudgetMeter({ group, usedBytes, budget, contextIndex, compact }:
   const noteId = useId();
   const label = compact ? null : <span className="jev-meter__group">{GROUP_WORD[group]}</span>;
   const tooltip = group === 'skills' ? METER_SKILL_TOOLTIP : undefined;
+  const counted = count === undefined ? null : <span className="jev-meter__count">{count} ticked</span>;
+  const tip = tooltip ? <span className="jev-meter__tip" aria-label={tooltip} role="img">ⓘ</span> : null;
 
   if (group === 'references' && contextIndex === 'off') {
     return (
       <div className="jev-meter jev-meter--off" data-testid={`jev-meter-${group}`} data-meter="index-off">
         {label}
+        {counted}
         <span className="jev-meter__text">{METER_INDEX_OFF_COPY}</span>
+      </div>
+    );
+  }
+
+  if (usedBytes === null) {
+    return (
+      <div className="jev-meter" data-testid={`jev-meter-${group}`} data-meter="count-only" title={tooltip}>
+        {label}
+        {counted}
+        <span className="jev-meter__text">
+          {budget === null ? METER_NULL_BUDGET_COPY : `budget ${formatBytes(budget)}`}
+        </span>
+        {tip}
       </div>
     );
   }
@@ -60,10 +81,11 @@ export function BudgetMeter({ group, usedBytes, budget, contextIndex, compact }:
     return (
       <div className="jev-meter" data-testid={`jev-meter-${group}`} data-meter="no-budget" title={tooltip}>
         {label}
+        {counted}
         <span className="jev-meter__text">
           {formatBytes(usedBytes)} · {METER_NULL_BUDGET_COPY}
         </span>
-        {tooltip ? <span className="jev-meter__tip" aria-label={tooltip} role="img">ⓘ</span> : null}
+        {tip}
       </div>
     );
   }
@@ -78,6 +100,7 @@ export function BudgetMeter({ group, usedBytes, budget, contextIndex, compact }:
       title={tooltip}
     >
       {label}
+      {counted}
       <span
         className="jev-meter__bar"
         role="meter"
@@ -93,7 +116,7 @@ export function BudgetMeter({ group, usedBytes, budget, contextIndex, compact }:
       <span className="jev-meter__text">
         {formatBytes(usedBytes)} / {formatBytes(budget)}
       </span>
-      {tooltip ? <span className="jev-meter__tip" aria-label={tooltip} role="img">ⓘ</span> : null}
+      {tip}
       {over ? (
         <span className="jev-meter__over" id={noteId} data-testid={`jev-meter-${group}-over`}>
           Over budget by {formatBytes(usedBytes - budget)}. {METER_OVER_COPY}

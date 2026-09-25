@@ -22,7 +22,7 @@ export { JevRunBar } from './JevRunBar';
 export { JevStrip } from './JevStrip';
 export { JevReviewDrawer } from './JevReviewDrawer';
 export { JevEntryPoint, entryBadge, suggestedCount, appliedCount } from './JevEntryPoint';
-export { JevPanel, untickedWhy } from './JevPanel';
+export { JevPanel, ledgerLines, untickedWhy, type JevPanelSource } from './JevPanel';
 export {
   BudgetMeter,
   formatBytes,
@@ -32,7 +32,6 @@ export {
   METER_SKILL_TOOLTIP,
   type BudgetMeterGroup,
 } from './BudgetMeter';
-export type { JevPanelSource, JevLedgerEntry, JevGroupMeter, JevEntityGroup, JevApplyTarget } from './lane-a-stub';
 export { modelApplyRefusal, modelLabel } from './model-apply';
 export { formatGroupCost, formatRunCost, formatUsd } from './format';
 import './jev.css';

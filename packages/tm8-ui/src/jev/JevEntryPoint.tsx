@@ -3,9 +3,8 @@ import { LAUNCH_SUGGEST_GROUPS } from '@tm8/contract';
 
 import { openJevKeySettings } from './credentials-link';
 import { formatUsd } from './format';
-import { JevPanel } from './JevPanel';
-import { JEV_ENTITY_GROUPS, type JevPanelSource } from './lane-a-stub';
-import { JEV_ADD_KEY_COPY, JEV_UNAVAILABLE_COPY } from './useJevSuggestions';
+import { JevPanel, type JevPanelSource } from './JevPanel';
+import { JEV_ADD_KEY_COPY, JEV_ENTITY_GROUPS, JEV_UNAVAILABLE_COPY } from './useJevSuggestions';
 
 /** How many rows Jev pre-ticked or picked, across every group that answered. */
 export function suggestedCount(jev: JevPanelSource): number {
@@ -13,18 +12,18 @@ export function suggestedCount(jev: JevPanelSource): number {
   if (jev.groups.model.status === 'ok') n += 1;
   const teammates = jev.groups.teammates;
   if (teammates.status === 'ok' && !teammates.value.noFit && teammates.value.items.some((item) => item.suggested)) n += 1;
-  for (const group of JEV_ENTITY_GROUPS) {
-    const state = jev.groups[group];
-    if (state.status === 'ok') n += state.value.items.filter((item) => item.suggested).length;
-  }
+  for (const group of JEV_ENTITY_GROUPS) n += jev.entity[group].rows.filter((row) => row.suggested).length;
   return n;
 }
 
 /** How many changes Apply has made to this launch: one per model or teammate, one per id added or default removed. */
 export function appliedCount(jev: JevPanelSource): number {
-  return jev.applied.reduce((n, entry) => (
-    entry.group === 'model' || entry.group === 'teammates' ? n + 1 : n + entry.added.length + entry.removed.length
-  ), 0);
+  let n = (jev.applied.model ? 1 : 0) + (jev.applied.teammate ? 1 : 0);
+  for (const group of JEV_ENTITY_GROUPS) {
+    const entry = jev.applied[group];
+    if (entry) n += entry.added.length + entry.removed.length;
+  }
+  return n;
 }
 
 function failedCount(jev: JevPanelSource): number {
@@ -58,11 +57,11 @@ export function entryBadge(jev: JevPanelSource): string {
  * launch config stays reachable. Opening moves focus to the panel's heading;
  * Escape or Close puts it back on the button.
  */
-export function JevEntryPoint({ jev, modelLabel, modelRefusal, teammateRefusal, open: controlledOpen, onOpenChange, defaultOpen = false }: {
+export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenChange, defaultOpen = false }: {
+  /** `useJevSuggestions(...)` with the surface's `host`: every Apply goes through it, so the ledger knows. */
   jev: JevPanelSource;
+  /** The catalog's words for Jev's model (`modelLabel(suggestion, catalog)`). */
   modelLabel: string;
-  modelRefusal: string | null;
-  teammateRefusal?: string | null;
   /** Controlled open state; omit to let the entry point own it. */
   open?: boolean;
   onOpenChange?(open: boolean): void;
@@ -151,8 +150,6 @@ export function JevEntryPoint({ jev, modelLabel, modelRefusal, teammateRefusal, 
             id={panelId}
             jev={jev}
             modelLabel={modelLabel}
-            modelRefusal={modelRefusal}
-            teammateRefusal={teammateRefusal}
             onClose={close}
           />
         </div>
