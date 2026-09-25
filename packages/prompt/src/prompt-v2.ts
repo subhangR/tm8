@@ -24,7 +24,7 @@ import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
 import { serializeLaunchIndex } from './context-index.js';
-import { coordinatorKindOf } from './templates.js';
+import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
 /** The frame attribute the agent reads on the v2 envelope. */
@@ -410,6 +410,16 @@ export function composePromptV2(
         `<assignment${attrs([...header, ['snapshot', 'unavailable'], ['reason', reason]])}>` +
           `${snapshotUnavailableLineV2(esc(primary.id))}</assignment>`,
       );
+    }
+    // The criteria ride the task turn even when the snapshot does not carry
+    // them (unavailable, or `acceptance` cut from it), so ticking never
+    // depends on a fetch (D13). The snapshot's own list, when present, is it.
+    const acceptance = acceptanceCriteriaOf(primary.acceptanceCriteria);
+    if (acceptance.length > 0 && !(dto && Array.isArray(dto.acceptance))) {
+      t.push(untrustedJson('acceptance', {
+        task: primary.id,
+        acceptance: acceptance.map((c) => ({ ...(c.id === null ? {} : { id: c.id }), done: c.done, text: c.text })),
+      }));
     }
     for (const other of tasks.slice(1)) t.push(untrustedJson('task-card', taskCardV2(other)));
   } else {
