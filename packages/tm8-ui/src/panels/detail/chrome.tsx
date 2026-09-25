@@ -925,6 +925,8 @@ export interface PanelMenuInput {
   readonly wiredActions?: readonly ActionRef[];
   readonly onOpenLaunch?: (entityId: string) => void;
   readonly launchSubjectId?: string;
+  /** The same counts `ActionBar.primaryCounts` draws — `❝ Chat · 3` (§3.2). */
+  readonly primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
 }
 
 /**
@@ -997,10 +999,12 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
         def.flow != null && !wiring.opensSheet && !wiring.wired
           ? NO_PHONE_FLOW_REASON
           : actionRefusal(ref, ctx, wiring);
+      const count = input.primaryCounts?.[ref];
       return {
         id: ref,
         label: def.label,
         ...(def.icon ? { glyph: def.icon } : {}),
+        ...(typeof count === 'number' ? { count } : {}),
         ...(reason
           ? { reason: captionOf(reason) }
           : {

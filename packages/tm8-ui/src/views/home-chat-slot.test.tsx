@@ -171,10 +171,12 @@ describe('the slot is PINNED on Home (Q4)', () => {
 });
 
 describe('surfaceHostsChatSlot', () => {
-  it('is true for Home only — the dock still covers every other surface', () => {
+  it('is true for Home and Work (lane E) — the dock still covers every other surface', () => {
     expect(surfaceHostsChatSlot({ view: 'home' })).toBe(true);
     expect(surfaceHostsChatSlot({ view: 'home', root: { type: 'chats', threadId: null } })).toBe(true);
-    expect(surfaceHostsChatSlot({ view: 'workspace' } as never)).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'workspace' })).toBe(true);
+    expect(surfaceHostsChatSlot({ view: 'inbox' })).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'feed' })).toBe(false);
   });
 });
 
