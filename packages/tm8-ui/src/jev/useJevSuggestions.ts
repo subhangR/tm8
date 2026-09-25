@@ -24,9 +24,9 @@ import {
 import { contextGroupFrameBytes } from '@tm8/prompt';
 
 import {
-  applyJevToEdit,
-  jevApplyRefusal,
+  jevContextRow,
   jevGroupDiff,
+  jevGroupEdit,
   restoreRows,
   type GroupOutcome,
   type LaunchContextRow,
@@ -374,18 +374,7 @@ export function usedBytesOf(
   return { used: entries + frame, frame };
 }
 
-/** A ranked row in the launch sheet's shape, for a row Apply adds. Plain text: graph content. */
-export function jevContextRow(item: RankedEntity): LaunchContextRow {
-  const text = item.header.whenToUse ?? item.header.summary;
-  return {
-    id: item.entityId as EntityId,
-    kind: item.kind,
-    title: item.title,
-    text,
-    derived: text !== null && item.header.source !== 'authored',
-    via: null,
-  };
-}
+export { jevContextRow };
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
@@ -600,10 +589,7 @@ export function useJevSuggestions(args: {
       let applyRefusal: string | null = null;
       if (!value) applyRefusal = JEV_NOT_ANSWERED_REASON;
       else if (!host) applyRefusal = JEV_NO_HOST_REASON;
-      else {
-        const next = applyJevToEdit(host.edits[group], rows.map((row) => ({ id: row.entityId as EntityId, isDefault: row.default })), ticked);
-        applyRefusal = jevApplyRefusal(host.defaults[group], next);
-      }
+      else applyRefusal = jevGroupEdit(host.defaults[group], host.edits[group], { items: rows, ticked }).refusal;
       out[group] = {
         group,
         state: g,
@@ -655,17 +641,16 @@ export function useJevSuggestions(args: {
     const { host: h, now } = live.current;
     const g = view.current.entity[group];
     if (g.applyRefusal || !h) return g.applyRefusal ?? JEV_NO_HOST_REASON;
-    const decided = g.rows.map((row) => ({ id: row.entityId as EntityId, isDefault: row.default }));
     const before = h.edits[group];
-    const next = applyJevToEdit(before, decided, g.ticked);
-    const addedRows = g.rows.filter((row) => g.proposal.added.includes(row.entityId as EntityId)).map(jevContextRow);
-    h.setEdit(group, next, addedRows);
+    const result = jevGroupEdit(h.defaults[group], before, { items: g.rows, ticked: g.ticked });
+    if (result.refusal) return result.refusal;
+    h.setEdit(group, result.edit, result.rows);
     const entry: JevAppliedGroup = {
       at: now(),
-      added: g.proposal.added,
-      removed: g.proposal.removed,
+      added: result.diff.added,
+      removed: result.diff.removed,
       ticks: g.ticked,
-      touched: decided.map((row) => row.id),
+      touched: result.touched,
       // A re-Apply keeps the ORIGINAL before, so Undo returns to the pre-Jev launch.
       before: view.current.applied[group]?.before ?? before,
       requestId: answers[group]?.requestId ?? '',
