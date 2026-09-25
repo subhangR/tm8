@@ -103,22 +103,39 @@ export interface ConfigHomeSkill {
    * The `skillOverrides` key: the dir name, synced skills included. Claude
    * Code 2.1.251 lists a synced skill as bare `<dir>` and 2.1.280+ as
    * `anthropic-skills:<dir>`; a bare key reaches it on both, a qualified key
-   * only on the newer (probed, PR #803).
+   * only on the newer (probed, PR #803). A legacy command's key is its path
+   * under `commands/` joined with ':' and without `.md` (`sub:name`); the bare
+   * name does not reach a nested one (probed on 2.1.251 and 2.1.280).
    */
   key: string;
-  level: 'user' | 'synced';
+  level: 'user' | 'synced' | 'command';
 }
 
 /** Why a `minimal` lane's `skillOverrides` names a skill. */
-export type SkillOverrideSource = 'builtin-trim' | 'user-unselected' | 'synced-unselected' | 'chrome';
+export type SkillOverrideSource =
+  | 'builtin-trim'
+  | 'user-unselected'
+  | 'synced-unselected'
+  | 'command-unselected'
+  | 'chrome';
 
 export interface LaneSkillPlan {
   /** The flag-level `skillOverrides`, sorted by key. */
   settings: Record<string, 'off' | 'name-only'>;
+  /** Whether argv carries `--no-chrome`; a replayed pre-#803 plan does not. */
+  noChrome: boolean;
   /** `launch.harness.skillOverrides`: the same keys, each with its reason. */
   record: {
     off: { name: string; source: SkillOverrideSource }[];
     nameOnly: { name: string; source: 'native-name-only' }[];
+    /**
+     * Keys the lane left alone because a project skill or command in its
+     * workdir has the same name, and a `skillOverrides` key reaches every
+     * skill of that name: the repo's own skill stays listed. A synced skill
+     * is still turned off under its qualified key (2.1.280+ only), recorded
+     * in `off` under that key. Absent when nothing collided.
+     */
+    kept?: { name: string; because: 'project-collision' }[];
   };
 }
 
@@ -156,7 +173,10 @@ const SYNCED_QUALIFIER = 'anthropic-skills:';
 export function laneSkillPlan(
   homeSkills: readonly ConfigHomeSkill[],
   native: readonly { level: string; loadPointer: string; described?: boolean }[],
+  projectKeys: readonly string[] = [],
 ): LaneSkillPlan {
+  const project = new Set(projectKeys);
+  const collided = new Set<string>();
   const kept = new Set(LANE_SKILLS_ALWAYS_ON);
   const nameOnly = new Set<string>();
   for (const skill of native) {
@@ -170,20 +190,76 @@ export function laneSkillPlan(
     else nameOnly.add(key);
   }
   const off = new Map<string, SkillOverrideSource>();
-  for (const name of LANE_BUNDLED_SKILLS_OFF) if (!nameOnly.has(name)) off.set(name, 'builtin-trim');
+  for (const name of LANE_BUNDLED_SKILLS_OFF) {
+    if (project.has(name)) collided.add(name);
+    else if (!nameOnly.has(name)) off.set(name, 'builtin-trim');
+  }
   for (const { key, level } of homeSkills) {
-    if (!kept.has(key) && !nameOnly.has(key) && !off.has(key)) off.set(key, `${level}-unselected`);
+    if (kept.has(key) || nameOnly.has(key)) continue;
+    if (project.has(key)) {
+      collided.add(key);
+      // Only a synced skill has a second, narrower name to turn off.
+      if (level === 'synced') off.set(`${SYNCED_QUALIFIER}${key}`, 'synced-unselected');
+    } else if (!off.has(key)) off.set(key, `${level}-unselected`);
   }
   const settings: Record<string, 'off' | 'name-only'> = {};
   for (const key of [...off.keys(), ...nameOnly].sort()) settings[key] = nameOnly.has(key) ? 'name-only' : 'off';
   return {
     settings,
+    noChrome: true,
     record: {
       off: [
         ...[...off].map(([name, source]) => ({ name, source })),
         { name: CHROME_RECORD_NAME, source: 'chrome' as const },
       ],
       nameOnly: [...nameOnly].sort().map((name) => ({ name, source: 'native-name-only' as const })),
+      ...(collided.size > 0
+        ? { kept: [...collided].sort().map((name) => ({ name, because: 'project-collision' as const })) }
+        : {}),
+    },
+  };
+}
+
+const SKILL_OVERRIDE_SOURCES: ReadonlySet<string> = new Set<SkillOverrideSource>([
+  'builtin-trim', 'user-unselected', 'synced-unselected', 'command-unselected', 'chrome',
+]);
+
+/**
+ * A recorded `launch.harness.skillOverrides` turned back into the plan it
+ * records, for resume to REPLAY (the way #765 replays plugins): a resumed
+ * conversation boots with the harness it launched with, even if its equips
+ * or the config home changed since. The record is stored JSON, so every
+ * entry is checked; anything malformed returns null and resume computes a
+ * fresh plan rather than half-apply one. `--no-chrome` is replayed only if
+ * the record carries it, so a pre-#803 lane resumes without it, as launched.
+ */
+export function asRecordedSkillPlan(value: unknown): LaneSkillPlan | null {
+  if (!isRecord(value) || !Array.isArray(value.off)) return null;
+  const entry = (item: unknown, sources: ReadonlySet<string>): { name: string; source: string } | null =>
+    isRecord(item) && typeof item.name === 'string' && item.name !== '' && typeof item.source === 'string' && sources.has(item.source)
+      ? { name: item.name, source: item.source }
+      : null;
+  const off = value.off.map((item) => entry(item, SKILL_OVERRIDE_SOURCES));
+  const nameOnly = (Array.isArray(value.nameOnly) ? value.nameOnly : []).map((item) => entry(item, new Set(['native-name-only'])));
+  if (value.nameOnly !== undefined && !Array.isArray(value.nameOnly)) return null;
+  if (off.includes(null) || nameOnly.includes(null)) return null;
+  const kept = Array.isArray(value.kept)
+    ? value.kept.filter((k): k is { name: string; because: 'project-collision' } =>
+      isRecord(k) && typeof k.name === 'string' && k.because === 'project-collision')
+    : [];
+  const settings: Record<string, 'off' | 'name-only'> = {};
+  const named = [
+    ...off.filter((o) => o!.source !== 'chrome').map((o) => [o!.name, 'off'] as const),
+    ...nameOnly.map((o) => [o!.name, 'name-only'] as const),
+  ].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [name, state] of named) settings[name] = state;
+  return {
+    settings,
+    noChrome: off.some((o) => o!.source === 'chrome'),
+    record: {
+      off: off.map((o) => ({ name: o!.name, source: o!.source as SkillOverrideSource })),
+      nameOnly: nameOnly.map((o) => ({ name: o!.name, source: 'native-name-only' as const })),
+      ...(kept.length > 0 ? { kept: kept.map((k) => ({ name: k.name, because: k.because })) } : {}),
     },
   };
 }
@@ -210,7 +286,39 @@ export function readConfigHomeSkills(configDir: string): ConfigHomeSkill[] {
       out.push({ key: dir, level: 'user' });
     }
   }
+  for (const key of readCommandKeys(join(configDir, 'commands'))) out.push({ key, level: 'command' });
   return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * The names a lane's workdir lists on its own: `.claude/skills/<dir>` and
+ * `.claude/commands/**` — the repo's choice, which the lane never turns off.
+ * `laneSkillPlan` needs them because a `skillOverrides` key reaches every
+ * skill with that name, operator's and repo's alike.
+ */
+export function readProjectSkillKeys(workdir: string): string[] {
+  const root = join(workdir, '.claude', 'skills');
+  const keys = listDirs(root).filter((dir) => hasSkillFile(join(root, dir)));
+  return [...new Set([...keys, ...readCommandKeys(join(workdir, '.claude', 'commands'))])].sort();
+}
+
+/** `commands/a/b.md` → `a:b` (see `ConfigHomeSkill.key`); four levels deep at most. */
+function readCommandKeys(root: string, prefix: readonly string[] = []): string[] {
+  if (prefix.length > 3) return [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const name of names) {
+    if (name.startsWith('.')) continue;
+    const path = join(root, name);
+    if (isDirectory(path)) out.push(...readCommandKeys(path, [...prefix, name]));
+    else if (name.endsWith('.md') && name.length > 3) out.push([...prefix, name.slice(0, -3)].join(':'));
+  }
+  return out;
 }
 
 function listDirs(path: string): string[] {

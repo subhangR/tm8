@@ -77,4 +77,14 @@ describe('DbGraphPort.loadSessionLaunchPosture harness choice', () => {
     expect(none).not.toHaveProperty('selection');
     expect(none).not.toHaveProperty('selectionReasons');
   });
+
+  it('carries the recorded launch.harness.skillOverrides for resume to replay, and reads it in SQL', async () => {
+    const recorded = { off: [{ name: 'init', source: 'builtin-trim' }], nameOnly: [] };
+    expect((await load({ skill_overrides: recorded }))!.skillOverrides).toEqual(recorded);
+    expect(await load({ skill_overrides: null })).not.toHaveProperty('skillOverrides');
+    expect(await load({ skill_overrides: [] })).not.toHaveProperty('skillOverrides');
+    const db = { query: vi.fn(async () => []), rpc: vi.fn(), tx: vi.fn(), end: vi.fn() } as unknown as Db;
+    await new DbGraphPort(db).loadSessionLaunchPosture({ identityId: 'i' }, '11111111-1111-4111-8111-111111111111');
+    expect(String((db.query as ReturnType<typeof vi.fn>).mock.calls[0]![1])).toContain(`'{launch,harness,skillOverrides}' as skill_overrides`);
+  });
 });
