@@ -197,3 +197,19 @@ test('components: the index-off <skills> block leaves the kernel; on an index ar
   assert.equal(on.bytes.skillsListing, 0);
   assert.equal(on.bytes.tm8Kernel, 15_000);
 });
+
+test('D6: a withheld needle that was never opened is a SILENT context failure the gate cannot see; a recovery fetch is not', () => {
+  const recovered = row({ needleState: 'absent', needleOpened: true, miss: { ids: { n: 'count-cap:entry' } } });
+  const silent = row({ rep: 2, needleState: 'absent', needleOpened: false, success: { success: false } });
+  const inlined = row({ rep: 3, needleState: 'expanded', needleOpened: false });
+  const noNeedle = row({ rep: 4, family: 'memory', taskKey: 'mem-fee', needleState: null, needleOpened: null });
+  const g = buildReport([recovered, silent, inlined, noNeedle], null).json.gate['sonnet5/lean'];
+  assert.equal(g.entryMissed, 1, 'the recovery is the only D2 miss');
+  assert.equal(g.silentContextFailures, 1, 'the never-opened absent needle is the silent failure');
+  assert.equal(g.needleLaunches, 3, 'a row without a needle is not in the denominator');
+  assert.equal(g.success, 3);
+  // negative control: the same row opened is no longer silent
+  const g2 = buildReport([recovered, { ...silent, needleOpened: true }, inlined, noNeedle], null).json.gate['sonnet5/lean'];
+  assert.equal(g2.silentContextFailures, 0);
+  assert.match(buildReport([recovered, silent, inlined, noNeedle], null).md, /\| sonnet5 \| lean \| 4 \| 1 \| 25% \|[^\n]*\| 1\/3 \(33%\) \| 3\/4 \(75%\) \|/);
+});

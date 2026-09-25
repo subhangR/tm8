@@ -73,6 +73,14 @@ export function classify(rows) {
   return { measured, excluded, unmeasured };
 }
 export const entryMissed = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
+// D6 (advisor 01a0d777-7b11): D2 counts a miss only when a lane READS an id the
+// launch withheld, so an entry-level miss on a stress needle is a RECOVERY, and
+// the lane that never fetched the withheld needle scores 0 misses. A SILENT
+// context failure is a needle that was not inlined whole (absent, collapsed or
+// header-dropped) and was never opened. Needle rows only.
+const SILENT_STATES = ['absent', 'collapsed', 'header-dropped'];
+export const hasNeedle = (r) => r.needleOpened === true || r.needleOpened === false;
+export const silentContextFailure = (r) => hasNeedle(r) && SILENT_STATES.includes(r.needleState) && r.needleOpened === false;
 export const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'header');
 // Q1's memory collapse runs only with the context index ON, so the memory
 // family's alias fact is inlined whole on an index-off arm and `aliasCheck`
@@ -168,7 +176,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   }
 
   // 2. D2 gate rows per model × arm (all non-replica families pooled: the gate is per launch)
-  md.push('## 2. D2 gate (per LAUNCH): launches with an ENTRY-level miss', '', '| model | arm | launches | entry-level missed | rate | exact 95% upper bound | header-level reads | flag |', '|---|---|---|---|---|---|---|---|');
+  md.push('## 2. D2 gate (per LAUNCH): launches with an ENTRY-level miss', '', '| model | arm | launches | entry-level missed | rate | exact 95% upper bound | header-level reads | silent context failure (D6) | success | flag |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const a of arms) {
       const rs = measured.filter((r) => r.model === model && r.arm === a && r.family !== 'replica');
@@ -177,11 +185,14 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
       const h = rs.filter(headerRead).length;
       const ub = upperBound95(k, rs.length);
       const flag = rs.length && h / rs.length > 0.25 ? '⚑ headers too thin or sub-caps too small' : '';
-      md.push(`| ${model} | ${a} | ${rs.length} | ${k} | ${Math.round((100 * k) / rs.length)}% | ${(100 * ub).toFixed(1)}% | ${pct(h, rs.length)} | ${flag} |`);
-      json.gate[`${model}/${a}`] = { launches: rs.length, entryMissed: k, rate: k / rs.length, upperBound95: ub, headerReads: h, flag: !!flag };
+      const needles = rs.filter(hasNeedle);
+      const silent = needles.filter(silentContextFailure).length;
+      const ok = rs.filter((r) => r.success?.success).length;
+      md.push(`| ${model} | ${a} | ${rs.length} | ${k} | ${Math.round((100 * k) / rs.length)}% | ${(100 * ub).toFixed(1)}% | ${pct(h, rs.length)} | ${needles.length ? pct(silent, needles.length) : 'n/a'} | ${pct(ok, rs.length)} | ${flag} |`);
+      json.gate[`${model}/${a}`] = { launches: rs.length, entryMissed: k, rate: k / rs.length, upperBound95: ub, headerReads: h, needleLaunches: needles.length, silentContextFailures: silent, success: ok, flag: !!flag };
     }
   }
-  md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '');
+  md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only).', '');
 
   // 3. accuracy per model × arm × family
   md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
