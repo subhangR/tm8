@@ -64,6 +64,9 @@ describeDb('team_member rows carry mode and permissionMode', () => {
       uiDir: undefined,
       maxBodyBytes: 8 * 1024 * 1024,
       databaseUrl: scratch.url,
+      // The calls below are the loopback owner with no credential. Since plan
+      // W2 (K4) that arm needs the launch cookie unless the node opts out.
+      autoOwnerCookie: 'off',
     } as unknown as ServerConfig;
     registerFacadeHandlers(registry, { db, config });
     server = createFacadeServer({ config, registry });

@@ -145,7 +145,7 @@ describe('remote server relay — caller resolution (G1)', () => {
     }
     return loopback ? { kind: 'auto-owner', identityId: 'owner', authKind: 'browser' } : { kind: 'anonymous' };
   };
-  const ctx = { remoteAddress: '127.0.0.1', disableAutoOwner: false };
+  const ctx = { remoteAddress: '127.0.0.1', disableAutoOwner: false, autoOwnerCookie: 'off' as const };
   const resolve = (headers: Record<string, string>, loopback = false) =>
     resolveRelayCaller(headers, resolver(loopback), ctx);
   const code = async (headers: Record<string, string>, loopback = false) =>

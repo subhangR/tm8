@@ -98,7 +98,19 @@ export function claimsFor(
     ...(ctx.identity?.authKind ? { authKind: ctx.identity.authKind } : {}),
     // 227. Forwarded exactly like authKind: only the resolver sets it.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
+    // W2. The auto-owner has no session row to carry a space, so its pin is
+    // the space the catalog PATH names (`/v2/spaces/:spaceId/...`). Space-less
+    // routes (`spaces.list`, `auth.*`, `/v2/entities/:id`) stay unpinned. A
+    // path segment that is not a uuid binds nothing — the handler refuses it
+    // as not_found before any SQL — rather than a claim that raises 22P02.
+    ...(ctx.identity?.kind === 'auto-owner' ? pathSpacePin(ctx) : {}),
   };
+}
+
+function pathSpacePin(ctx: RequestContext): { sessionSpaceId?: string } {
+  if (ctx.identity.pinToPathSpace !== true) return {};
+  const spaceId = ctx.params?.spaceId;
+  return spaceId && UUID_RE.test(spaceId) ? { sessionSpaceId: spaceId.toLowerCase() } : {};
 }
 
 // ---------------------------------------------------------------------------

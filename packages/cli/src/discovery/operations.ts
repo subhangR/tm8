@@ -314,9 +314,24 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
     notes: [
-      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (which now also needs the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
+    ],
+  },
+  'auth.launch': {
+    cmd: ['auth', 'open'],
+    syn: 'tm8 auth open',
+    sum: 'Print a one-time URL that signs this machine\'s browser in as the node owner, no password',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['open', 'launch', 'browser', 'cookie', 'no-login', 'owner', 'single-player'],
+    notes: [
+      'the node owner\'s own human session only (`tm8 auth login`): an agent token is refused, so an agent never sees the URL',
+      'the URL works once, for a few minutes, and only from a browser on the node\'s own machine (loopback, no forwarding headers); it sets an HttpOnly cookie the no-login owner path requires',
+      'nothing is written to the CLI credentials file; set TM8_AUTO_OWNER_COOKIE=off to restore the pre-cookie loopback behaviour',
+      '`tm8 open` is the root shorthand for the same command',
     ],
   },
   // ── node accounts (G6, migration 232) ──────────────────────────────────

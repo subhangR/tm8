@@ -42,7 +42,7 @@ import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
-  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult, AuthLaunchResult,
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
@@ -1902,6 +1902,11 @@ export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z
   token: z.string().min(1),
   claimUrl: z.string().min(1),
   tokenPath: z.string().nullable(),
+}).strict();
+
+export const AuthLaunchResultSchema: z.ZodType<AuthLaunchResult> = z.object({
+  url: z.string().min(1),
+  expiresAt: z.string().min(1),
 }).strict();
 
 /**
