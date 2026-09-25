@@ -2,7 +2,6 @@ import {
   MessagePartSchema,
   type ChatMode,
   type ChatTurnUsage,
-  type MessagePart,
   type MessageView,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../db/types.js';

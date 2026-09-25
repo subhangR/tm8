@@ -134,14 +134,6 @@ export interface IssuedLogin {
   };
 }
 
-export interface IssuedAgentSession {
-  token: string;
-  sessionId: string;
-  workSessionId: string;
-  actingAsTeamMemberId: string;
-  expiresAt: string;
-}
-
 export interface IssuedAgentRuntimeSession {
   token: string;
   sessionId: string;
@@ -149,45 +141,6 @@ export interface IssuedAgentRuntimeSession {
   runtimeChatId: string;
   actingAsTeamMemberId: string;
   expiresAt: string;
-}
-
-/**
- * Mint the credential for one concrete agent run.
- *
- * The dedicated RPC derives the account from the bound identity, verifies the
- * persona participates in this work session, and atomically revokes any token
- * from an earlier run (including resume). The human bearer is never copied.
- */
-export async function issueAgentSession(
-  db: Db,
-  claims: DbClaims,
-  input: { workSessionId: string; teamMemberId: string; label?: string | null },
-): Promise<IssuedAgentSession> {
-  const secret = generateSecret();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent).toISOString();
-  const session = await db.rpc<SessionRowJson>(claims, 'issue_agent_auth_session', [
-    input.workSessionId,
-    input.teamMemberId,
-    hashToken(secret),
-    expiresAt,
-    input.label ?? `agent:${input.workSessionId}`,
-  ]);
-  return {
-    token: formatToken(session.id, secret),
-    sessionId: session.id,
-    workSessionId: input.workSessionId,
-    actingAsTeamMemberId: input.teamMemberId,
-    expiresAt: session.expires_at,
-  };
-}
-
-/** Idempotent lifecycle cleanup. No token value is needed to revoke the run. */
-export async function revokeAgentSession(
-  db: Db,
-  claims: DbClaims,
-  workSessionId: string,
-): Promise<void> {
-  await db.rpc(claims, 'revoke_agent_auth_session', [workSessionId]);
 }
 
 /**
@@ -331,7 +284,6 @@ export async function loginWithPassword(
   if (row.status !== 'active') throw invalidCredentials();
 
   const kind: LoginKind = input.kind ?? 'browser';
-  const sessionId = randomUUID();
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS[kind]).toISOString();
 

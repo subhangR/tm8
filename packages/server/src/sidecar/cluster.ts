@@ -12,7 +12,6 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { toolPath } from './binaries.js';
-import type { ResolvedSidecarConfig } from './config.js';
 import { SidecarError } from './errors.js';
 import { describeFailure, run, tail } from './exec.js';
 import type { SidecarLogger } from './log.js';

@@ -94,14 +94,6 @@ export interface Account {
 
 export type PasswordAlgorithm = 'scrypt';
 
-export interface StoredCredential {
-  accountId: AccountId;
-  algorithm: PasswordAlgorithm;
-  /** Encoded verifier (salt + parameters + derived key). Never a plaintext secret. */
-  hash: string;
-  updatedAt: string;
-}
-
 /**
  * S8: browser sessions back the cookie/CSRF posture (S6); the other kinds are
  * bearer-token clients. `agent` is a work-session worker. `agent_runtime` is a
