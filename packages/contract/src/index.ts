@@ -13,6 +13,7 @@ export * from './excerpt.js';
 export * from './catalog.js';
 export * from './schemas.js';
 export * from './launch-models.js';
+export * from './house-teammates.js';
 export * from './agent-readable.js';
 export * from './artifact-manifest.js';
 export * from './pty-protocol.js';

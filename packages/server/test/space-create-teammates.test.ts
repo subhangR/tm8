@@ -8,9 +8,8 @@
  * pass is, and a refused persona insert does not cost the caller the space.
  */
 import { describe, expect, it } from 'vitest';
-import { LAUNCH_MODEL_CATALOG, getOperation, type OperationName } from '@tm8/contract';
+import { HOUSE_TEAMMATE_NAMES, getOperation, type OperationName } from '@tm8/contract';
 import { spacesCreate } from '../src/facade/handlers/spaces.js';
-import { DISPATCHER_SEED_NAME, DREAMER_SEED_NAME } from '../src/bootstrap/default-teammates.js';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import type { ServerConfig } from '../src/http/config.js';
 import type { RequestContext } from '../src/http/types.js';
@@ -112,22 +111,32 @@ const seedNames = (db: FakeDb): string[] =>
   db.calls.filter(({ fn }) => fn === 'public.create_team_member').map(({ args }) => String(args[1]));
 
 describe('spaces.create default teammates', () => {
-  it('seeds the launch catalog roster into the space it just created', async () => {
+  it('seeds the role roster — not one teammate per model — into the space it just created', async () => {
     const db = new FakeDb();
     const result = await handler(db, true)(request());
 
-    // The launch-catalog roster, then the Dispatcher (D8). It is seeded here
-    // and nowhere else: teammate creation is owner-governed, so an agent that
-    // needs a dispatcher can never bring one into being at runtime.
+    // Roles, in seeding order. The Dispatcher is seeded here and nowhere else:
+    // teammate creation is owner-governed, so an agent that needs a dispatcher
+    // can never bring one into being at runtime.
     expect(seedNames(db)).toEqual([
-      ...LAUNCH_MODEL_CATALOG.map((entry) => entry.seedName),
-      DREAMER_SEED_NAME,
-      DISPATCHER_SEED_NAME,
+      HOUSE_TEAMMATE_NAMES.worker,
+      HOUSE_TEAMMATE_NAMES.coordinator,
+      HOUSE_TEAMMATE_NAMES.reviewer,
+      HOUSE_TEAMMATE_NAMES.helper,
+      HOUSE_TEAMMATE_NAMES.teammateManager,
+      HOUSE_TEAMMATE_NAMES.graphArchitect,
+      HOUSE_TEAMMATE_NAMES.dreamer,
+      HOUSE_TEAMMATE_NAMES.dispatcher,
     ]);
-    expect(db.calls).toContainEqual({
-      fn: 'public.create_team_member',
-      args: expect.arrayContaining(['GPT 6 Astra Teammate', 'gpt-6-astra', 'codex']),
-    });
+    // args: [space, name, actor, role, persona, model, tool, mode, ...]
+    const created = (name: string) =>
+      db.calls.find(({ fn, args }) => fn === 'public.create_team_member' && args[1] === name)?.args;
+    expect(created('Coordinator')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'coordinator']);
+    expect(created('Graph Architect')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'worker']);
+    expect(created('TM8 Helper')?.slice(5, 8)).toEqual(['claude-sonnet-5', 'claude-code', 'worker']);
+    expect(created('Dispatcher')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'dispatcher']);
+    // A brand-new space has nothing to retire.
+    expect(db.calls.filter(({ fn }) => fn === 'public.delete_entity')).toEqual([]);
     for (const { args } of db.calls.filter(({ fn }) => fn === 'public.create_team_member')) {
       expect(args[0]).toBe(SPACE_ID);
     }

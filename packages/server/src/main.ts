@@ -292,7 +292,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (seeded.spaces > 0) {
       console.log(
         `  launch bootstrap: ${seeded.spaces} space(s), project ${seeded.projectId}, ` +
-          `${seeded.teammatesCreated} teammate(s) created, ${seeded.teammatesUpdated} repaired`,
+          `${seeded.teammatesCreated} teammate(s) created, ${seeded.teammatesUpdated} repaired, ` +
+          `${seeded.teammatesRetired} per-model teammate(s) retired`,
       );
     }
   }
