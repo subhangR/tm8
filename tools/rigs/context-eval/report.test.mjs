@@ -213,3 +213,18 @@ test('D6: a withheld needle that was never opened is a SILENT context failure th
   assert.equal(g2.silentContextFailures, 0);
   assert.match(buildReport([recovered, silent, inlined, noNeedle], null).md, /\| sonnet5 \| lean \| 4 \| 1 \| 25% \|[^\n]*\| 1\/3 \(33%\) \| 3\/4 \(75%\) \|/);
 });
+
+test('success on index-off arms ignores the n/a alias checks (as the rubric does); on index arms they still decide it', () => {
+  const checkResults = [{ expr: 'fee(100)', set: 'base', pass: true }, { expr: 'fee2(100)', set: 'alias', pass: false }];
+  const success = { success: false, deliverableCorrect: false, committed: true, closeout: true, ticked: true, checks: { passed: 1, total: 2, failures: [{ expr: 'fee2(100)' }] } };
+  const mem = (arm) => row({ arm, family: 'memory', taskKey: 'mem-fee', checkResults, success });
+  const r = buildReport([mem('lean'), mem('inherit'), mem('index-derived')], null).json;
+  assert.equal(r.accuracy['sonnet5/lean/memory'].success, 1);
+  assert.equal(r.accuracy['sonnet5/lean/memory'].deliverableCorrect, 1);
+  assert.equal(r.accuracy['sonnet5/inherit/memory'].success, 1);
+  assert.equal(r.accuracy['sonnet5/index-derived/memory'].success, 0, 'index arm: the alias check still counts');
+  assert.equal(r.gate['sonnet5/lean'].success, 1);
+  // a failing BASE check still fails success on lean
+  const baseFail = row({ arm: 'lean', family: 'memory', taskKey: 'mem-fee', success, checkResults: [{ expr: 'fee(100)', set: 'base', pass: false }, { expr: 'fee2(100)', set: 'alias', pass: true }] });
+  assert.equal(buildReport([baseFail], null).json.accuracy['sonnet5/lean/memory'].success, 0);
+});

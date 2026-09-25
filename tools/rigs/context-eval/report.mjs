@@ -95,6 +95,22 @@ export function rubricScore(r) {
   const kept = items.filter((i) => itemApplies(r.arm, i.name));
   return kept.length ? kept.filter((i) => i.pass).length / kept.length : null;
 }
+/**
+ * success / deliverableCorrect over the checks that APPLY on the row's arm.
+ * On an index-off arm the memory family's alias checks are n/a (as their
+ * rubric item is), so they must not decide success there either: recomputed
+ * from checkResults (each pass already requires the commit) exactly as
+ * success.mjs defines both, minus the alias set.
+ */
+export function outcomeOf(r) {
+  const s = r.success;
+  if (!s) return { success: false, deliverableCorrect: false };
+  const alias = (r.checkResults ?? []).some((c) => c.set === 'alias');
+  if (!(alias && indexOff(r.arm))) return { success: !!s.success, deliverableCorrect: !!s.deliverableCorrect };
+  const deliverableCorrect = !!s.committed && r.checkResults.filter((c) => c.set !== 'alias').every((c) => c.pass);
+  return { success: deliverableCorrect && !!s.closeout && !!s.ticked, deliverableCorrect };
+}
+const succeeded = (r) => outcomeOf(r).success;
 /** Per rubric item: `name k/n`, or `name n/a (index off)`. */
 function rubricItems(rs, arm) {
   const names = [...new Set(rs.flatMap((r) => (r.rubric?.items ?? []).map((i) => i.name)))];
@@ -187,7 +203,7 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
       const flag = rs.length && h / rs.length > 0.25 ? '⚑ headers too thin or sub-caps too small' : '';
       const needles = rs.filter(hasNeedle);
       const silent = needles.filter(silentContextFailure).length;
-      const ok = rs.filter((r) => r.success?.success).length;
+      const ok = rs.filter(succeeded).length;
       md.push(`| ${model} | ${a} | ${rs.length} | ${k} | ${Math.round((100 * k) / rs.length)}% | ${(100 * ub).toFixed(1)}% | ${pct(h, rs.length)} | ${needles.length ? pct(silent, needles.length) : 'n/a'} | ${pct(ok, rs.length)} | ${flag} |`);
       json.gate[`${model}/${a}`] = { launches: rs.length, entryMissed: k, rate: k / rs.length, upperBound95: ub, headerReads: h, needleLaunches: needles.length, silentContextFailures: silent, success: ok, flag: !!flag };
     }
@@ -195,14 +211,14 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only).', '');
 
   // 3. accuracy per model × arm × family
-  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
+  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'On index-off arms (lean, inherit) the memory family\'s alias checks are n/a: they count in neither the rubric mean nor success / deliverable correct (the Q1 collapse runs only with the index on).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const family of families) {
       for (const a of arms) {
         const rs = measured.filter((r) => r.model === model && r.family === family && r.arm === a);
         if (!rs.length) continue;
-        const ok = rs.filter((r) => r.success?.success).length;
-        const del = rs.filter((r) => r.success?.deliverableCorrect).length;
+        const ok = rs.filter(succeeded).length;
+        const del = rs.filter((r) => outcomeOf(r).deliverableCorrect).length;
         const rub = mean(rs.map(rubricScore));
         const needle = rs.filter((r) => r.needleOpened !== null);
         md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs, a)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
@@ -279,8 +295,8 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
               pv = mean(prev.map(f));
               cv = mean(cur.map(f));
             } else if (name === 'success %') {
-              pv = (100 * prev.filter((r) => r.success?.success).length) / prev.length;
-              cv = (100 * cur.filter((r) => r.success?.success).length) / cur.length;
+              pv = (100 * prev.filter(succeeded).length) / prev.length;
+              cv = (100 * cur.filter(succeeded).length) / cur.length;
             } else {
               pv = stats(prev.map(f))?.median;
               cv = stats(cur.map(f))?.median;
