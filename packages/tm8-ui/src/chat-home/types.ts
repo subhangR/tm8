@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -111,14 +111,19 @@ export interface ChatThreadSummary {
    * the only reader was an equality filter that never matched, and a lie the
    * moment a panel header draws the relation. It is null now.
    *
-   * IT IS NOT POPULATED BY `listThreads`. A chat's subject is an edge and no
-   * list read carries edges, so Wave 1 paid one `connections` call PER CHAT to
-   * fill this in — a documented N+1 on the one read that scales with the
-   * space. That read is gone: `readThread` fills the field for the ONE chat
-   * being opened, and a host that wants "the conversations about X" asks X
-   * instead (`chatIdsAbout`, one incoming-edge read).
+   * `listThreads` FILLS IT FROM THE SUMMARY (entity chat §3.6). Wave 1 paid
+   * one `connections` call PER CHAT for this — a documented N+1 on the one read
+   * that scales with the space. The server now batches each chat's subject
+   * into its summary state (`state.about`), so the list carries it for free;
+   * `readThread` still reads the edge for the ONE chat being opened.
    */
   aboutId: EntityId | null;
+  /**
+   * The subject's kind and title, for the Chats list's "about ‹title›" chip.
+   * Present only when the list read carried them (`state.about`); a port or a
+   * server that predates §3.6 leaves it absent and the row draws no chip.
+   */
+  about?: { id: EntityId; kind: EntityKind; title: string } | null;
   title: string;
   preview: string;
   updatedAt: string;

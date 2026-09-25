@@ -2464,8 +2464,28 @@ const NO_CHAT_ABOUT: ReadonlySet<string> = new Set(['message', 'chat']);
 function applyChatAbout(row: KindConfig): KindConfig {
   if (NO_CHAT_ABOUT.has(row.kind)) return row;
   const declared = row.list.rowActions ?? [];
-  if (declared.includes('chat-about')) return row;
-  return { ...row, list: { ...row.list, rowActions: [...declared, 'chat-about'] } };
+  const rowActions: ActionRef[] = declared.includes('chat-about') ? [...declared] : [...declared, 'chat-about'];
+  return {
+    ...row,
+    list: { ...row.list, rowActions },
+    panel: { ...row.panel, primaries: withChatBesideRun(row.panel.primaries) },
+  };
+}
+
+/**
+ * THE CHAT BUTTON IN THE DETAIL HEADER — straight after Run (entity chat
+ * design 01a0da4e §3.2). Same two exclusions as the row verb, so it lands on
+ * every kind including `work_session` (Q6 kept it there, labelled plain
+ * "Chat"). Placed BY POSITION rather than appended: the header is Run's
+ * cluster, and the ruling is that Chat sits beside Run, ahead of the kind's
+ * own verbs. A kind with no `run` gets it first. Idempotent.
+ */
+function withChatBesideRun(primaries: readonly ActionRef[] | undefined): ActionRef[] {
+  const list = [...(primaries ?? [])];
+  if (list.includes('chat-about')) return list;
+  const at = list.indexOf('run');
+  list.splice(at + 1, 0, 'chat-about');
+  return list;
 }
 
 const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch).map(applyChatAbout);

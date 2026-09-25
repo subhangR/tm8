@@ -525,7 +525,9 @@ describe.sequential('TM8 Chat storage and door rules', () => {
     expect(summary?.kind).toBe('chat');
     expect(summary?.title).toBe('first prompt verbatim');
     expect(Object.keys(summary?.state ?? {}).sort()).toEqual([
-      'agentTool', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
+      // `about` — the chat's subject (entity chat §3.6), so the Chats list can
+      // draw it without a read per row. This chat was started about the channel.
+      'about', 'agentTool', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
       'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
@@ -543,6 +545,7 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       // are waiting. Neither field can say that alone.
       runtimeState: 'cold',
       turnState: 'queued',
+      about: { id: fixture.channelId, kind: 'channel', title: 'chat-test' },
     });
     // R5, from the read side.
     expect(JSON.stringify(summary)).not.toContain('/tmp/tm8-chat');

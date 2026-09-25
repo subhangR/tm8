@@ -33,7 +33,9 @@ import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
 import type { LaunchPort } from './useLaunchPort';
 import type { MembershipSurface } from './membershipSurface';
-import type { PanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, type PanelPrimaries } from './usePanelPrimaries';
+import type { ChatAbout } from './useChatAbout';
+import { useChatCounts } from '../entity-chat';
 import type { RowLifecycle } from './useRowLifecycle';
 import { mergePrPortFor } from './mergePrPort';
 import { attentionSectionFor } from './attentionSurface';
@@ -63,6 +65,12 @@ export interface AuxPanelHost {
   attachments: AttachmentsPort | undefined;
   serverBaseUrl?: string | undefined;
   viewerMemberId?: string | null | undefined;
+  /**
+   * The header's Chat verb (entity chat design 01a0da4e §3.2) — the SAME
+   * dispatcher the host's rows use. Optional: a host without one keeps the
+   * button's honest not-wired refusal.
+   */
+  chatAbout?: Pick<ChatAbout, 'forEntity' | 'wiredActions'> | undefined;
 }
 
 export interface AuxEntityPanelProps {
@@ -88,6 +96,13 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
   /* Terminal⇄chat request per subject, so the chat surface's "switch to
      terminal" is a real handler at this mount too. */
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
+  const panelActions = composePanelActions([
+    { onAction: host.primaries.forEntity(entityId), wiredActions: host.primaries.wiredActions },
+    ...(host.chatAbout
+      ? [{ onAction: host.chatAbout.forEntity(entityId), wiredActions: host.chatAbout.wiredActions }]
+      : []),
+  ]);
+  const chatCounts = useChatCounts(host.chatAbout ? data.seam : null, entityId);
   return (
     <EntityDetailPanel
       detail={detail}
@@ -97,8 +112,9 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       reasons={host.reasons}
       ctx={{ ...host.ctx, entityId }}
       controls={host.controls}
-      onAction={host.primaries.forEntity(entityId)}
-      wiredActions={host.primaries.wiredActions}
+      onAction={panelActions.onAction}
+      wiredActions={panelActions.wiredActions}
+      primaryCounts={chatCounts}
       membershipAuthoring={host.membership.authoringFor(detail)}
       launch={host.launchPort}
       mergePr={mergePrPortFor(data.seam)}

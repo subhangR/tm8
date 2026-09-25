@@ -92,6 +92,8 @@ export function claimsFor(
     // escape 083:133-138 warns against, moved one layer up where the migration
     // cannot see it.
     ...(ctx.identity?.authKind ? { authKind: ctx.identity.authKind } : {}),
+    // 227. Forwarded exactly like authKind: only the resolver sets it.
+    ...(bearer?.sessionSpaceId ? { sessionSpaceId: bearer.sessionSpaceId } : {}),
   };
 }
 

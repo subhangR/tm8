@@ -1,0 +1,122 @@
+/* The entity chat slot (design 01a0da4e §3.3). Imported by `index.ts` ONLY —
+   a deep-path import of the component renders it unstyled. */
+
+.ecp {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+}
+
+.ecp__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.ecp__subject {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+button.ecp__subject { cursor: pointer; }
+button.ecp__subject:hover { background: var(--pn-hover); }
+.ecp__about { color: var(--pn-ink-3); }
+.ecp__subject-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ecp__switcher { position: relative; flex: 0 0 auto; }
+.ecp__switch,
+.ecp__new,
+.ecp__close {
+  padding: 3px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ecp__close { border-color: transparent; font-size: 16px; line-height: 1; }
+.ecp__switch:disabled,
+.ecp__new:disabled { cursor: default; opacity: 0.55; }
+
+.ecp__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 280px;
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.ecp__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ecp__item:hover,
+.ecp__item--on { background: var(--pn-hover); }
+.ecp__item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.ecp__item-meta { display: flex; gap: 8px; color: var(--pn-ink-3); font-size: 11px; }
+
+.ecp__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.ecp__body > * { flex: 1 1 auto; min-height: 0; }
+
+/* THE INTERIM DOCK — a sheet from the right over the surface (see
+   `EntityChatDock`). Lanes D and E replace it per layout. */
+.ecp-dock {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(420px, 100vw);
+  border-left: 1px solid var(--pn-line);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  background: var(--pn-surface);
+}

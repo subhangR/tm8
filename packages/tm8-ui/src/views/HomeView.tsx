@@ -55,6 +55,7 @@ import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { navStore, selectTrailEntity, useNavStore } from '../stores/navStore';
 import { chatAboutTarget, composeListActions, useChatAbout } from './useChatAbout';
+import { openEntityChat } from '../entity-chat';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
@@ -404,7 +405,13 @@ export function HomeView(props: HomeViewProps) {
    * `navStore` for its own root and thread addresses.
    */
   const chatAbout = useChatAbout({
-    open: (aboutId) => navStore.getState().navigate(chatAboutTarget(aboutId)),
+    /* WITH a subject: the chat slot beside the entity, its latest chat or the
+       composer (entity chat §3.2). WITHOUT one — the Chats list header — it
+       is still bare Home's new conversation. */
+    open: (aboutId) => {
+      if (aboutId) void openEntityChat(data.seam, aboutId);
+      else navStore.getState().navigate(chatAboutTarget(null));
+    },
   });
   /* MEMOISED because `birthFor` below depends on it: `composeListActions`
      builds a fresh object every call, and an always-changing dependency turns
@@ -607,6 +614,7 @@ export function HomeView(props: HomeViewProps) {
     launchPort,
     rowLifecycle,
     attachments,
+    chatAbout,
     serverBaseUrl: props.serverBaseUrl,
     viewerMemberId: props.viewerMemberId,
   };
