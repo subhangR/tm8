@@ -13,6 +13,11 @@
  * (a running/idle transition is when queued rows drain) and, as the backstop,
  * polls the responses every `DELIVERY_POLL_MS` while the page is visible. The
  * poll stops once nothing is pending.
+ *
+ * RESPONSES PAGE (keyset, newest first). "Load more" appends the next page.
+ * A reload re-walks from the top THROUGH the oldest row the reader loaded, so
+ * a live event never collapses their pages back to page 1, a new submission
+ * never pushes a loaded row out of view, and a superseded row drops out.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormsPortError, formContentOf, useFormsPort, type FormResponseView, type FormState, type MyFormSlot } from './seam';
@@ -40,6 +45,13 @@ function newer(a: FormState | null, b: FormState | null): FormState | null {
   return b.version > a.version ? b : a;
 }
 
+/** The server's page order: `submittedAt desc, id desc`. True when `a` sorts at or after `b`. */
+function atOrAfter(a: FormResponseView, b: FormResponseView): boolean {
+  const at = a.submittedAt ?? '';
+  const bt = b.submittedAt ?? '';
+  return at < bt || (at === bt && a.id <= b.id);
+}
+
 /** Work sessions with a pending delivery among these responses. */
 function pendingSessions(rows: readonly (FormResponseView | null | undefined)[]): Set<string> {
   const out = new Set<string>();
@@ -65,16 +77,63 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // The oldest row a "Load more" reached (null: page 1 only), and a sequence
+  // so a stale page never overwrites a newer read.
+  const through = useRef<FormResponseView | null>(null);
+  const fetchSeq = useRef(0);
+
+  /** Page 1, then on through `through`: what the reader had loaded, re-read. */
+  const readLoaded = useCallback(async () => {
+    const items: FormResponseView[] = [];
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const page = await port.responses(detail.id, cursor);
+      for (const r of page.items) if (!seen.has(r.id)) { seen.add(r.id); items.push(r); }
+      cursor = page.nextCursor;
+      const last = items[items.length - 1];
+      if (!through.current || (last && atOrAfter(last, through.current))) break;
+    } while (cursor);
+    return { items, cursor };
+  }, [port, detail.id]);
+
   const reload = useCallback(async () => {
+    const seq = ++fetchSeq.current;
     try {
-      const [slot, page] = await Promise.all([port.mine(detail.id), port.responses(detail.id)]);
+      const [slot, page] = await Promise.all([port.mine(detail.id), readLoaded()]);
       setMine(slot);
+      if (seq !== fetchSeq.current) return;
       setResponses(page.items);
+      setNextCursor(page.cursor);
       setError(null);
     } catch (e) {
-      setError(errorText(e));
+      if (seq === fetchSeq.current) setError(errorText(e));
     }
-  }, [port, detail.id]);
+  }, [port, detail.id, readLoaded]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor) return;
+    const seq = ++fetchSeq.current;
+    setLoadingMore(true);
+    try {
+      const page = await port.responses(detail.id, nextCursor);
+      if (seq !== fetchSeq.current) return;
+      const last = page.items[page.items.length - 1];
+      if (last) through.current = last;
+      setResponses((rows) => {
+        const have = new Set((rows ?? []).map((r) => r.id));
+        return [...(rows ?? []), ...page.items.filter((r) => !have.has(r.id))];
+      });
+      setNextCursor(page.nextCursor);
+      setError(null);
+    } catch (e) {
+      if (seq === fetchSeq.current) setError(errorText(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [port, detail.id, nextCursor]);
 
   const refetchForm = useCallback(async () => {
     try {
@@ -128,6 +187,10 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     setForm: setWritten,
     mine,
     responses,
+    /** More current responses exist past the loaded pages. */
+    hasMore: nextCursor !== null,
+    loadMore,
+    loadingMore,
     /** One freeze rule (§5): the first submitted response. Submitted rows are never deleted. */
     frozen: (responses?.length ?? 0) > 0,
     loading: mine === null || responses === null,

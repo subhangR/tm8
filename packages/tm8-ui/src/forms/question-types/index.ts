@@ -2,7 +2,8 @@
  * THE UI QUESTION-TYPE REGISTRY (FORMS-DESIGN §4, W1 frontend).
  *
  * Each contract type is ONE entry here: one input component and one answer
- * renderer (plus, for choice types, what "accept recommended" picks). Nothing
+ * renderer (plus, for choice types, what "accept recommended" picks, and for
+ * counted types a `Summary` across responses). Nothing
  * else in the UI switches on a question type — `QuestionField` and
  * `AnswerView` only look an entry up, and the config/answer they hand it are
  * parsed by the CONTRACT registry's schemas.
@@ -56,4 +57,4 @@ export function parseAnswer(type: string, answer: unknown): unknown {
   return parsed?.success ? parsed.data : null;
 }
 
-export type { AnswerRendererProps, QuestionInputProps, QuestionTypeUI } from './types';
+export type { AnswerRendererProps, QuestionInputProps, QuestionTypeUI, SummaryAnswer, SummaryProps } from './types';

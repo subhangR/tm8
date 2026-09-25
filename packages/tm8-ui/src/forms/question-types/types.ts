@@ -34,6 +34,19 @@ export interface AnswerRendererProps<C, A> {
   answer: A;
 }
 
+/** One respondent's parsed answer, for a question's summary across responses. */
+export interface SummaryAnswer<A> {
+  responseId: string;
+  respondent: string;
+  answer: A;
+}
+
+export interface SummaryProps<C, A> {
+  config: C;
+  /** The answered responses only (never empty); unanswered ones are counted by the caller. */
+  answers: readonly SummaryAnswer<A>[];
+}
+
 export interface QuestionTypeUI<C, A> {
   /** The respondent's control. */
   Input: ComponentType<QuestionInputProps<C, A>>;
@@ -41,6 +54,11 @@ export interface QuestionTypeUI<C, A> {
   Answer: ComponentType<AnswerRendererProps<C, A>>;
   /** "Accept recommended": the answer the recommended options make, or null. */
   recommended?(config: C): A | null;
+  /**
+   * Every loaded response's answer at once (Responses → Summary). Absent ⇒
+   * the answers are listed, each by `Answer`, under its respondent.
+   */
+  Summary?: ComponentType<SummaryProps<C, A>>;
 }
 
 export function defineQuestionUI<C, A>(entry: QuestionTypeUI<C, A>): QuestionTypeUI<C, A> {
