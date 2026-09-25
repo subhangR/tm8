@@ -27,13 +27,21 @@ describe('jevText — memories carry their scope (T4)', () => {
     expect(jevText(header({ summary: 'claim', whenToUse: '   ' }))).toBe('claim');
   });
 
-  it('cuts each field on its own at the limit, redacting before the cut', () => {
-    const scope = `${'s'.repeat(HEADER_TEXT_LIMIT - 10)} ${KEY}`;
+  it('shows the scope WHOLE, like every whenToUse (#832), and redacts a credential in it', () => {
+    const scope = `${'s'.repeat(HEADER_TEXT_LIMIT + 50)} ${KEY}`;
     const out = jevText(header({ summary: 'claim', whenToUse: scope }));
-    expect(out.startsWith('claim (scope: ')).toBe(true);
+    // Past the 600 a summary is cut at: a whenToUse is never cut.
+    expect(out).toContain('s'.repeat(HEADER_TEXT_LIMIT + 50));
     expect(out).not.toContain('ghp_');
+    expect(out).toContain(REDACTION_MARKER);
+  });
+
+  it('cuts the statement (the summary) at the limit, redacting before the cut', () => {
+    const statement = `${'t'.repeat(HEADER_TEXT_LIMIT - 10)} ${KEY}`;
+    const out = jevText(header({ summary: statement, whenToUse: 'deploys' }));
+    expect(out.endsWith(' (scope: deploys)')).toBe(true);
     // The key straddled the cut: redacted first, so not even its prefix survives.
-    expect(out).toContain(REDACTION_MARKER.slice(0, 3));
+    expect(out).not.toContain('ghp_');
   });
 });
 
