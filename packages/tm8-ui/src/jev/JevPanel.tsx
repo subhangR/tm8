@@ -1,4 +1,4 @@
-import { forwardRef, useState } from 'react';
+import { forwardRef, useId, useState } from 'react';
 import type { RankedEntity, RankedEntityHeader } from '@tm8/contract';
 
 import { Timestamp } from '../kit';
@@ -120,7 +120,8 @@ function Section({ target, title, state, action, children }: {
   action: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const headingId = `jev-panel-${target}-h`;
+  /* Generated, so two panels on one page never share a heading id. */
+  const headingId = `${useId()}-${target}-h`;
   return (
     <section className="jev-panel__section" aria-labelledby={headingId} data-testid={`jev-panel-${target}`}>
       <div className="jev-panel__section-head">
@@ -159,8 +160,10 @@ function EntityRow({ row, view, refusal, onToggle }: {
   refusal: string | null;
   onToggle(): void;
 }) {
-  const whyId = `jev-why-${row.entityId}`;
-  const refusalId = `jev-tick-refusal-${row.entityId}`;
+  /* Generated: the same entity can be a row in two panels on one page. */
+  const rowId = useId();
+  const whyId = `${rowId}-why`;
+  const refusalId = `${rowId}-refusal`;
   const describedBy = [row.ticked ? null : whyId, refusal ? refusalId : null].filter(Boolean).join(' ') || undefined;
   return (
     <li className={`jev-prow ${row.ticked ? 'jev-prow--on' : ''}`} data-testid={`jev-prow-${row.entityId}`}>
@@ -320,6 +323,8 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
   const anyAnswer = (['model', 'teammates', 'memories', 'skills', 'references'] as const)
     .some((group) => jev.groups[group].status === 'ok');
   const lines = ledgerLines(jev, modelLabel);
+  const titleId = useId();
+  const ledgerId = useId();
 
   const applyAll = () => {
     const report = jev.applyAll();
@@ -327,9 +332,9 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
   };
 
   return (
-    <div className="jev-panel" id={id} data-testid="jev-panel" role="region" aria-labelledby="jev-panel-title">
+    <div className="jev-panel" id={id} data-testid="jev-panel" role="region" aria-labelledby={titleId}>
       <div className="jev-panel__head">
-        <h2 className="jev-panel__title" id="jev-panel-title" ref={headingRef} tabIndex={-1}>✦ Jev’s recommendations</h2>
+        <h2 className="jev-panel__title" id={titleId} ref={headingRef} tabIndex={-1}>✦ Jev’s recommendations</h2>
         {jev.run && jev.run.calls > 0 ? <JevCostLine run={jev.run} /> : null}
         <span className="jev-panel__spacer" />
         {lines.length > 0 ? (
@@ -431,8 +436,8 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
 
       {JEV_ENTITY_GROUPS.map((group) => <EntitySection key={group} group={group} jev={jev} say={setNotice} />)}
 
-      <section className="jev-panel__section jev-ledger" aria-labelledby="jev-ledger-h" data-testid="jev-ledger">
-        <h3 className="jev-panel__eyebrow" id="jev-ledger-h">Applied to this launch</h3>
+      <section className="jev-panel__section jev-ledger" aria-labelledby={ledgerId} data-testid="jev-ledger">
+        <h3 className="jev-panel__eyebrow" id={ledgerId}>Applied to this launch</h3>
         {lines.length === 0 ? (
           <p className="jev-status" data-testid="jev-ledger-empty">Nothing yet — this launch goes out as you set it.</p>
         ) : (

@@ -548,28 +548,21 @@ export function useJevSuggestions(args: {
 
   const retry = useCallback((group: LaunchSuggestGroup) => { ask([group]); }, [ask]);
 
-  /* TEAMMATE CHANGE after an answer re-asks the three ticked groups — each is
-     ranked FOR the teammate — in the same run, with a new requestId. It never
-     re-applies: whatever was applied stays as it was, now marked as from an
-     earlier answer, until the person applies again. */
-  const lastTeammate = useRef(teammateId);
+  /* A CHANGE TO WHAT THE THREE GROUPS ARE RANKED FOR — the teammate, the
+     harness (a skill's entry reads differently native) or the profile (its
+     budgets and floors are the ones Jev fills) — re-asks them after an answer,
+     in the same run, with a new requestId. ONE key, so a pick that changes
+     several at once (a teammate brings its own harness) asks once and is
+     charged once. It never re-applies: whatever was applied stays as it was,
+     now marked as from an earlier answer, until the person applies again. */
   const dependentAsked = TEAMMATE_DEPENDENT.some((group) => groups[group].status !== 'idle');
+  const rankedFor = `${teammateId ?? ''}|${agentTool ?? ''}|${interactionProfileId ?? ''}`;
+  const lastRankedFor = useRef(rankedFor);
   useEffect(() => {
-    if (lastTeammate.current === teammateId) return;
-    lastTeammate.current = teammateId;
+    if (lastRankedFor.current === rankedFor) return;
+    lastRankedFor.current = rankedFor;
     if (dependentAsked) ask(TEAMMATE_DEPENDENT);
-  }, [teammateId, dependentAsked, ask]);
-
-  /* THE HARNESS AND THE PROFILE decide the fill too — a skill's entry reads
-     differently native, and the profile's budgets and floors are the ones Jev
-     fills — so a change to either re-asks the same three groups, the same way. */
-  const lastShape = useRef(`${agentTool ?? ''}|${interactionProfileId ?? ''}`);
-  const shape = `${agentTool ?? ''}|${interactionProfileId ?? ''}`;
-  useEffect(() => {
-    if (lastShape.current === shape) return;
-    lastShape.current = shape;
-    if (dependentAsked) ask(TEAMMATE_DEPENDENT);
-  }, [shape, dependentAsked, ask]);
+  }, [rankedFor, dependentAsked, ask]);
 
   const toggle = useCallback((group: JevEntityGroup, id: string): string | null => {
     const current = ticks[group];
