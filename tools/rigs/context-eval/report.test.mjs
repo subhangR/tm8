@@ -48,7 +48,7 @@ test('NEGATIVE control: changing one row from a header-level to an entry-level m
 });
 
 test('a header-level miss on a replica row never enters the gate, and replica accuracy is its own cell', () => {
-  const rows = [row(), row({ family: 'replica', taskKey: 'replica-x', miss: { ids: { x: 'count-cap:entry' } }, success: { success: false, committed: false, closeout: true, ticked: true, checks: { passed: 0, total: 0, failures: [] } }, rubric: { score: 2 / 3 } })];
+  const rows = [row(), row({ family: 'replica', taskKey: 'replica-01a0d742', miss: { ids: { x: 'count-cap:entry' } }, success: { success: false, committed: false, closeout: true, ticked: true, checks: { passed: 0, total: 0, failures: [] } }, rubric: { score: 2 / 3 } })];
   const r = buildReport(rows, null);
   assert.equal(r.json.gate['sonnet5/lean'].launches, 1);
   assert.equal(r.json.accuracy['sonnet5/lean/replica'].n, 1);
@@ -226,4 +226,45 @@ test('D7: success and deliverable correct ignore the alias checks on EVERY arm; 
   assert.equal(buildReport([baseFail], null).json.accuracy['sonnet5/lean/memory'].success, 0);
   // a non-memory row keeps success.mjs's own verdict
   assert.equal(buildReport([row({ success: { success: false, deliverableCorrect: true } })], null).json.accuracy['sonnet5/lean/needle'].success, 0);
+});
+
+test('D8: per-key replica items; "asked the human" is counted, never scored 0; replica leaves success comparisons', () => {
+  const items = (committed, closeout, ticked) => [{ name: 'committed', pass: committed }, { name: 'closeout', pass: closeout }, { name: 'ticked', pass: ticked }];
+  const rep = (key, over) => row({ family: 'replica', taskKey: key, needleOpened: null, ...over });
+  const docDone = rep('replica-01a0d742', { requests: 12, success: { committed: false, closeout: true, ticked: true }, rubric: { items: items(false, true, true), score: 2 / 3 } });
+  const harness = rep('replica-01a0d778', { rep: 3, requests: 9, success: { committed: false, closeout: true, ticked: false }, rubric: { items: items(false, true, false), score: 1 / 3 } });
+  const asked = rep('replica-01a0d742', { rep: 2, requests: 2, success: { committed: false, closeout: false, ticked: false }, rubric: { items: items(false, false, false), score: 0 } });
+  const r = buildReport([docDone, harness, asked], null);
+  const a = r.json.accuracy['sonnet5/lean/replica'];
+  assert.equal(a.rubricMean, 1, 'committed n/a everywhere, ticked n/a on 01a0d778, the asked lane out of the mean');
+  assert.equal(a.success, 2);
+  assert.equal(a.scored, 2);
+  assert.equal(a.askedTheHuman, 1);
+  assert.match(r.md, /not a context measure in fixture v2[^|]*committed n\/a \(D8\) · closeout 2\/2 · ticked 1\/1 \(n\/a on 1: D8\) · asked the human 1\/3/);
+  assert.match(r.md, /replica-01a0d778 \(code\): closeout;/);
+  // negative control: 3 requests is not "asked the human", so the lane is scored and fails
+  const b = buildReport([docDone, harness, { ...asked, requests: 3 }], null).json.accuracy['sonnet5/lean/replica'];
+  assert.equal(b.askedTheHuman, 0);
+  assert.equal(b.success, 2);
+  assert.equal(b.scored, 3);
+  assert.ok(b.rubricMean < 1);
+  // an unmapped replica key is refused, never silently scored
+  assert.throws(() => buildReport([rep('replica-new', { requests: 5, success: {}, rubric: { items: [] } })], null), /REPLICA_ITEMS/);
+  // the delta never compares replica success or rubric
+  const d = buildReport([docDone], [docDone]).json.delta['sonnet5/lean/replica'];
+  assert.equal(d['success %'], undefined);
+  assert.equal(d['mean rubric'], undefined);
+  assert.ok(d['first-request tokens']);
+});
+
+test('D8 map matches its AUTHORITY: ticked applies exactly where fixtures/replicas-v2.json gives the replica criteria', async () => {
+  const { REPLICA_ITEMS } = await import('./report.mjs');
+  const { readFileSync } = await import('node:fs');
+  const raw = JSON.parse(readFileSync(new URL('./fixtures/replicas-v2.json', import.meta.url), 'utf8'));
+  const list = Array.isArray(raw) ? raw : (raw.replicas ?? Object.values(raw));
+  assert.deepEqual(Object.keys(REPLICA_ITEMS).sort(), list.map((x) => x.key).sort());
+  for (const x of list) {
+    assert.equal(REPLICA_ITEMS[x.key].applies.includes('ticked'), (x.content?.acceptanceCriteria ?? []).length > 0, x.key);
+    assert.ok(!REPLICA_ITEMS[x.key].applies.includes('committed'), x.key);
+  }
 });

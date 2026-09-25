@@ -91,11 +91,36 @@ export const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => 
 // is memoryExpands / the header-level read. Fixture v3 removes the conflict.
 export const NOT_IN_MEAN = { aliasCheck: 'alias memory trusted over conflicting skill' };
 export const indexOff = (arm) => !ARM_ENV[arm]?.TM8_CONTEXT_INDEX;
-/** The row's rubric score over the items that count (D7). */
+// DECISION D8 (advisor 01a0d777-7b11, from c2 msg 01a0d97c-ddec): the v2
+// replicas are real tm8 tasks run in the ledger-lite fixture repo, so their
+// rubric is NOT a context measure. Which rubric items apply, per key.
+// AUTHORITY: fixtures/replicas-v2.json (frozen description + criteria), read by
+// the designer (msg 01a0d97e-0233); report.test.mjs re-derives `ticked` from the
+// criteria count. committed is n/a on all three (01a0d742's body forbids code;
+// 01a0d780's PR and 01a0d778's harness code do not exist in ledger-lite);
+// ticked is n/a where the replica has no criteria. A lane that read such a body
+// and stopped to ask is a named outcome, `asked the human`, counted per model x
+// arm and kept OUT of the replica mean and success (never scored 0). The
+// replica family's real measures are sizes, misses and blind-fetch.
+export const REPLICA_ITEMS = {
+  'replica-01a0d742': { kind: 'doc', applies: ['closeout', 'ticked'] },
+  'replica-01a0d780': { kind: 'code', applies: ['closeout', 'ticked'] },
+  'replica-01a0d778': { kind: 'code', applies: ['closeout'] },
+};
+export const REPLICA_LABEL = 'not a context measure in fixture v2: tasks target the tm8 repo, lanes run on ledger-lite';
+const replicaItems = (r) => {
+  const m = REPLICA_ITEMS[r.taskKey];
+  if (!m) throw new Error(`replica ${r.taskKey} has no entry in report.mjs REPLICA_ITEMS (D8): add its applicable rubric items from fixtures/replicas-v2.json`);
+  return m.applies;
+};
+const itemCounts = (r, name) => !(name in NOT_IN_MEAN) && (r.family !== 'replica' || replicaItems(r).includes(name));
+export const askedTheHuman = (r) => r.family === 'replica' && r.ended === 'idle' && typeof r.requests === 'number' && r.requests <= 2 && !r.success?.committed && !r.success?.closeout;
+/** The row's rubric score over the items that count (D7, D8); null for a lane that asked the human. */
 export function rubricScore(r) {
+  if (askedTheHuman(r)) return null;
   const items = r.rubric?.items;
   if (!Array.isArray(items)) return r.rubric?.score ?? null;
-  const kept = items.filter((i) => !(i.name in NOT_IN_MEAN));
+  const kept = items.filter((i) => itemCounts(r, i.name));
   return kept.length ? kept.filter((i) => i.pass).length / kept.length : null;
 }
 /**
@@ -107,18 +132,35 @@ export function rubricScore(r) {
 export function outcomeOf(r) {
   const s = r.success;
   if (!s) return { success: false, deliverableCorrect: false };
+  // D8: a replica succeeds on the items that apply to its key (closeout, and ticked when it has criteria).
+  if (r.family === 'replica') return { success: replicaItems(r).every((name) => !!s[name]), deliverableCorrect: false };
   if (!(r.checkResults ?? []).some((c) => c.set === 'alias')) return { success: !!s.success, deliverableCorrect: !!s.deliverableCorrect };
   const deliverableCorrect = !!s.committed && r.checkResults.filter((c) => c.set !== 'alias').every((c) => c.pass);
   return { success: deliverableCorrect && !!s.closeout && !!s.ticked, deliverableCorrect };
 }
 const succeeded = (r) => outcomeOf(r).success;
-/** Per rubric item: `name k/n`; a D7 item under its reading, marked out of the mean. */
+/** Success over the rows that were scored: a lane that asked the human is not a failure (D8). */
+const successOf = (rs) => {
+  const scored = rs.filter((r) => !askedTheHuman(r));
+  return { k: scored.filter(succeeded).length, n: scored.length, asked: rs.length - scored.length };
+};
+/** Per rubric item: `name k/n` over scored rows; a D7 item under its reading; a D8 n/a item; replica's asked-the-human count. */
 function rubricItems(rs) {
   const names = [...new Set(rs.flatMap((r) => (r.rubric?.items ?? []).map((i) => i.name)))];
-  return names.map((name) => {
-    const k = rs.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length;
-    return name in NOT_IN_MEAN ? `${NOT_IN_MEAN[name]} ${k}/${rs.length} (not in the mean or success: D7)` : `${name} ${k}/${rs.length}`;
-  }).join(' · ');
+  const scored = rs.filter((r) => !askedTheHuman(r));
+  const parts = names.map((name) => {
+    const k = scored.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length;
+    if (name in NOT_IN_MEAN) return `${NOT_IN_MEAN[name]} ${k}/${scored.length} (not in the mean or success: D7)`;
+    const applicable = scored.filter((r) => itemCounts(r, name));
+    const ka = applicable.filter((r) => r.rubric?.items?.some((i) => i.name === name && i.pass)).length;
+    if (!applicable.length) return `${name} n/a (D8)`;
+    return `${name} ${ka}/${applicable.length}${applicable.length < scored.length ? ` (n/a on ${scored.length - applicable.length}: D8)` : ''}`;
+  });
+  if (rs.some((r) => r.family === 'replica')) {
+    parts.unshift(REPLICA_LABEL);
+    parts.push(`asked the human ${rs.length - scored.length}/${rs.length}`);
+  }
+  return parts.join(' · ');
 }
 const mean = (xs) => {
   const v = xs.filter((x) => typeof x === 'number' && Number.isFinite(x));
@@ -209,18 +251,18 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', 'The gate (design 01a0d348 §7.2, decision D2) needs < 5% entry-level missed launches AND success not worse than the lean arm. A 0/n point estimate certifies < 5% only when the upper bound is below it (n ≥ 59 with zero misses).', '', 'Read the gate WITH the two columns beside it (decision D6). An entry-level miss means the lane FETCHED what the launch withheld: on index-off arms the stress needle is absent by construction (count-cap:entry), so a miss there is a recovery. A silent context failure is a needle that was not inlined (absent, collapsed or header-dropped) and was never opened. It scores 0 misses, so the gate cannot see it (needle launches only).', '');
 
   // 3. accuracy per model × arm × family
-  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'Decision D7: the memory family\'s alias item measures whether a lane trusts a memory over a CONFLICTING skill (fixture v2\'s naming-conventions skill contradicts it), not delivery. On every arm it and its two hidden checks are out of the rubric mean and out of success / deliverable correct, printed with k/n as "alias memory trusted over conflicting skill". Read delivery on index arms from memoryExpands (the header-level read).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
+  md.push('## 3. Accuracy (deterministic rubric; replica reported separately, never pooled)', '', 'Decision D7: the memory family\'s alias item measures whether a lane trusts a memory over a CONFLICTING skill (fixture v2\'s naming-conventions skill contradicts it), not delivery. On every arm it and its two hidden checks are out of the rubric mean and out of success / deliverable correct, printed with k/n as "alias memory trusted over conflicting skill". Read delivery on index arms from memoryExpands (the header-level read).', '', 'Decision D8: replica accuracy is ' + REPLICA_LABEL + '. It is printed for completeness and dropped from every success comparison (§2 gate, §6 delta). Applicable items per key (AUTHORITY fixtures/replicas-v2.json): ' + Object.entries(REPLICA_ITEMS).map(([k, v]) => `${k} (${v.kind}): ${v.applies.join(' + ')}`).join('; ') + '; committed is n/a on all three. "asked the human" (ended idle after at most 2 requests, no commit, no closeout) is a named outcome: counted per cell and kept out of the replica mean and success rate. The replica family\'s real measures are its sizes, misses and blind-fetch (§1).', '', '| model | family | arm | n | success (all gates) | deliverable correct | mean rubric | rubric items | needle opened |', '|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     for (const family of families) {
       for (const a of arms) {
         const rs = measured.filter((r) => r.model === model && r.family === family && r.arm === a);
         if (!rs.length) continue;
-        const ok = rs.filter(succeeded).length;
+        const so = successOf(rs);
         const del = rs.filter((r) => outcomeOf(r).deliverableCorrect).length;
         const rub = mean(rs.map(rubricScore));
         const needle = rs.filter((r) => r.needleOpened !== null);
-        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(ok, rs.length)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
-        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: ok, deliverableCorrect: del, rubricMean: rub, notInMean: Object.keys(NOT_IN_MEAN) };
+        md.push(`| ${model} | ${family} | ${a} | ${rs.length} | ${pct(so.k, so.n)} | ${family === 'replica' ? 'n/a' : pct(del, rs.length)} | ${rub == null ? '—' : rub.toFixed(2)} | ${rubricItems(rs)} | ${needle.length ? pct(needle.filter((r) => r.needleOpened).length, needle.length) : 'n/a'} |`);
+        json.accuracy[`${model}/${a}/${family}`] = { n: rs.length, success: so.k, scored: so.n, askedTheHuman: so.asked, deliverableCorrect: del, rubricMean: rub, notInMean: Object.keys(NOT_IN_MEAN) };
       }
     }
   }
@@ -284,6 +326,8 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
           const prev = b.filter((r) => r.model === model && r.arm === a && r.family === family);
           if (!cur.length || !prev.length) continue;
           for (const [name, f, d] of KEY) {
+            // D8: replica accuracy is not a context measure; it enters no success or rubric comparison.
+            if (family === 'replica' && (name === 'success %' || name === 'mean rubric')) continue;
             let pv;
             let cv;
             if (name.startsWith('entry-level')) {
@@ -293,8 +337,10 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
               pv = mean(prev.map(f));
               cv = mean(cur.map(f));
             } else if (name === 'success %') {
-              pv = (100 * prev.filter(succeeded).length) / prev.length;
-              cv = (100 * cur.filter(succeeded).length) / cur.length;
+              const ps = successOf(prev);
+              const cs = successOf(cur);
+              pv = ps.n ? (100 * ps.k) / ps.n : null;
+              cv = cs.n ? (100 * cs.k) / cs.n : null;
             } else {
               pv = stats(prev.map(f))?.median;
               cv = stats(cur.map(f))?.median;

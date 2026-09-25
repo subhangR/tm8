@@ -97,6 +97,19 @@ Why: in fixture v2 the equipped naming-conventions skill CONTRADICTS the alias m
 
 THIS run (fixture v2), decision D7 (report-time, no remeasure, report.mjs): the alias item is printed with k/n as "alias memory trusted over conflicting skill", and it and its two hidden checks are out of the rubric mean AND out of success / deliverable correct on EVERY arm. Delivery on index arms is read from `memoryExpands` / the header-level read.
 
+### 8.3 Fixture v3 replicas — SPEC (designer, msg 01a0d97e-0233; advisor D8)
+
+- Fixture v3 replicas carry `deliverableKind: doc | message | code | none`, frozen with the task. The rubric applies only the items that kind allows:
+  - doc → a doc created or attached on the task by the lane's actor since lane start;
+  - message → closeout;
+  - code → committed + hidden checks;
+  - none → sizes only.
+- Replicas are chosen, or their bodies trimmed, so the deliverable is CHECKABLE INSIDE THE FIXTURE REPO. A code replica names a change to ledger-lite, never to tm8; a doc replica's references resolve to entities the copy carries. The alternative is to run replicas against a tm8 checkout at the source sha.
+- "Asked the human" (ended idle, ≤ 2 requests, no deliverable) is a named outcome, reported, never scored 0.
+- Any replica whose body cannot be made checkable stays a size-and-miss-only row (`deliverableKind: none`).
+
+THIS run (fixture v2), decision D8 (report-time, no remeasure): `committed` is n/a on all three replicas. `ticked` applies to replica-01a0d742 and replica-01a0d780 only (replica-01a0d778 has no criteria). `closeout` applies to all. The map is `REPLICA_ITEMS` in report.mjs, printed in §3. Replica accuracy is labelled "not a context measure in fixture v2" and dropped from every success comparison. "Asked the human" is counted per model × arm and kept out of the replica mean and success.
+
 ### 8.2 Also next run (schema 4)
 
 - `blindFetchBytes` is structurally 0 in fixture v2 (an entry's `bytes` is its index line, ≤ 655 B; no body > 4.5 KB). Redefine it on the read's RESULT bytes, and add a fixture body > 20 KB.
