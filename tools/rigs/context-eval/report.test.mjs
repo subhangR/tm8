@@ -10,6 +10,7 @@ import { buildReport, classify, upperBound95, stats } from './report.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
 import { syntheticStart } from './measure-row.mjs';
 import { componentsOf } from './components.mjs';
+import { skillsBlockBytes } from './measure-row.mjs';
 import { laneCostUsd } from './pricing.mjs';
 
 const FX = { schemaVersion: 2, contentHash: 'abc' };
@@ -21,7 +22,7 @@ function row(over = {}) {
     system: { tm8Bytes: 13_000, harnessChars: 11_000, chromeChars: 4_000 }, firstUserBytes: 3000, attachments: { skill_listing: 20_000 },
     miss: { ids: {}, entry: { count: 0 }, header: { count: 0 } }, expand: { rate: 0.05 }, blindFetchBytes: 0,
     success: { success: true, deliverableCorrect: true, committed: true, closeout: true, ticked: true, checks: { passed: 4, total: 4, failures: [] } },
-    rubric: { score: 1 }, needleOpened: true, components: { schema: 2, bytes: { tm8Kernel: 13_000, contextIndex: 0, contextIndexByGroup: {} }, tokens: {}, harnessTotal: 35_000 },
+    rubric: { score: 1 }, needleOpened: true, components: { schema: 3, bytes: { tm8Kernel: 13_000, contextIndex: 0, contextIndexByGroup: {} }, tokens: {}, harnessTotal: 35_000 },
     ...over,
   };
 }
@@ -116,7 +117,7 @@ test('components: kernel excludes the index, group bytes sum collapsed entries, 
   assert.equal(c.bytes.memoriesExpanded, 1200);
   assert.equal(c.harnessTotal, 11_000 + 20_000 + 2500);
   assert.ok(c.bytes.remainderEstimated > 0);
-  const sum = c.tokens.tm8Kernel + c.tokens.memoriesExpanded + c.tokens.assignmentSnapshot + c.tokens.contextIndex + c.tokens.harness + c.tokens.remainderEstimated;
+  const sum = c.tokens.tm8Kernel + c.tokens.memoriesExpanded + c.tokens.skillsListing + c.tokens.assignmentSnapshot + c.tokens.contextIndex + c.tokens.harness + c.tokens.remainderEstimated;
   assert.ok(Math.abs(sum - 36_000) <= 3, String(sum));
 });
 
@@ -165,7 +166,7 @@ test('components: memoriesExpanded comes from the entries on an index-OFF arm to
   assert.equal(c.bytes.memoriesExpanded, 2321);
   assert.equal(c.bytes.contextIndex, 0);
   assert.equal(c.bytes.tm8Kernel, 30_000 - 2321);
-  assert.equal(c.schema, 2);
+  assert.equal(c.schema, 3);
 });
 
 test('rows measured under components schema 1 are refused (kernel meaning changed): remeasure --all', () => {
@@ -181,4 +182,18 @@ test('rubric: aliasCheck is n/a on index-off arms (lean, inherit) and out of the
   assert.equal(r.json.accuracy['sonnet5/index-derived/memory'].rubricMean, 0.8, 'index arm: aliasCheck counts');
   assert.match(r.md, /\| sonnet5 \| memory \| lean \| 1 \|[^\n]*aliasCheck n\/a \(index off\)/);
   assert.match(r.md, /\| sonnet5 \| memory \| index-derived \| 1 \|[^\n]*aliasCheck 0\/1/);
+});
+
+test('components: the index-off <skills> block leaves the kernel; on an index arm it is ignored (skills live in the index)', () => {
+  const block = '  <skills>\n    <instruction>x</instruction>\n    <skill name="a"/>\n  </skills>';
+  const snap = JSON.stringify({ type: 'attachment', attachment: { type: 'prompt_snapshot', systemPrompt: ['harness', `<tm8_system_prompt>\n  <identity/>\n${block}\n</tm8_system_prompt>`] } });
+  assert.equal(skillsBlockBytes(snap), Buffer.byteLength(block));
+  assert.equal(skillsBlockBytes(JSON.stringify({ type: 'attachment', attachment: { type: 'prompt_snapshot', systemPrompt: ['<tm8_system_prompt></tm8_system_prompt>'] } })), 0);
+  const measured = { system: { tm8Bytes: 20_000, harnessChars: 0, chromeChars: 0, skillsBlockBytes: 4300 }, firstUserBytes: 0, attachments: {}, firstRequestTokens: 10_000 };
+  const off = componentsOf({ measured, manifest: { context: { entries: [] } } });
+  assert.equal(off.bytes.skillsListing, 4300);
+  assert.equal(off.bytes.tm8Kernel, 20_000 - 4300);
+  const on = componentsOf({ measured, manifest: { context: { index: { bytes: 5000 }, entries: [] } } });
+  assert.equal(on.bytes.skillsListing, 0);
+  assert.equal(on.bytes.tm8Kernel, 15_000);
 });

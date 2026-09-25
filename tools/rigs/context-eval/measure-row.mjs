@@ -49,6 +49,32 @@ export function syntheticStart(transcriptText) {
 }
 
 /**
+ * UTF-8 bytes of the index-off `<skills>…</skills>` block inside the tm8
+ * system prompt as sent (the first prompt_snapshot), 0 when there is none.
+ * Only meaningful with the context index OFF: components.mjs reads it there.
+ */
+export function skillsBlockBytes(transcriptText) {
+  for (const line of transcriptText.split('\n')) {
+    if (!line.includes('"prompt_snapshot"')) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (r.type !== 'attachment' || r.attachment?.type !== 'prompt_snapshot') continue;
+    const all = (r.attachment.systemPrompt ?? []).join('\n');
+    const t0 = all.indexOf('<tm8_system_prompt');
+    const t1 = all.indexOf('</tm8_system_prompt>');
+    const tm8 = t0 >= 0 && t1 > t0 ? all.slice(t0, t1) : '';
+    const a = tm8.indexOf('  <skills>');
+    const b = tm8.indexOf('</skills>', a);
+    return a >= 0 && b > a ? Buffer.byteLength(tm8.slice(a, b + '</skills>'.length), 'utf8') : 0;
+  }
+  return 0;
+}
+
+/**
  * @param manifest  <dataDir>/manifests/<sessionId>.json, parsed
  * @param transcriptText  the lane's Claude Code transcript
  * @param tpl  the template record (linkedIds, needleId) from fixtures/node-<port>.json
@@ -70,6 +96,7 @@ export function measureRow({ manifest, transcriptText, tpl, taskKey }) {
   measured.toolCalls = countToolCalls(transcriptText);
   measured.modelId = manifest.launch?.model ?? null;
   delete measured.model; // the row's `model` is the matrix key (sonnet5); the launch's id is `modelId`
+  measured.system.skillsBlockBytes = skillsBlockBytes(transcriptText);
   measured.components = componentsOf({ measured, manifest });
   measured.costUsd = laneCostUsd(measured.modelId, measured.usage);
   return measured;
