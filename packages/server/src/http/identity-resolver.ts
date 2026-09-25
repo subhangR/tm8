@@ -32,8 +32,13 @@ export interface SessionIdentityResolverOptions {
   readonly spaceSessions?: SpaceSessionsMode;
 }
 
-/** The kinds `agents` pins. `enforce` adds humans in W3; until then it is `agents`. */
-const PINNED_KINDS: ReadonlySet<string> = new Set(['agent', 'agent_runtime']);
+/**
+ * The kinds `agents` pins. `enforce` adds humans in W3; until then it is `agents`.
+ * `link` matches 226's check (`auth_sessions_pinned_kinds_have_space`): no link
+ * session can be minted today, so it pins nothing yet, but it is already pinned
+ * on the day W6 makes the kind legal.
+ */
+const PINNED_KINDS: ReadonlySet<string> = new Set(['agent', 'agent_runtime', 'link']);
 
 /**
  * A valid tm8 session is resolved independently of transport; every non-session

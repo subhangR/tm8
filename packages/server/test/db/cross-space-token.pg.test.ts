@@ -396,6 +396,165 @@ describe('T9 agent G (A) reads B — refused (W0a)', () => {
   }
 });
 
+/**
+ * T9, INLINE-MEMBERSHIP SURFACES (review round 1). These policies and
+ * functions answer "is this identity a member?" themselves instead of calling
+ * a pinned helper.
+ *
+ * - file_upload_slots_select / notifications_select: their `members`
+ *   subquery runs under the caller's RLS, so members_select's pin (227's
+ *   member_space_ids) already hides B. REGRESSION PINS, not new conjuncts:
+ *   they go red if either policy ever reads `members` without RLS.
+ * - inspect_owned_teammate_inbox: SECURITY DEFINER, reads `members` without
+ *   RLS, so 227 adds the conjunct itself. The one DISCRIMINATING cell here.
+ * - user_profiles, read_marks, work_session_view_preferences: no route
+ *   reaches B through them (227's header).
+ */
+describe('T9 agent G (A) reads B through inline-membership surfaces — refused (W0a)', () => {
+  const s = {
+    slotA: randomUUID(), slotB: randomUUID(),
+    notifA: randomUUID(), notifB: randomUUID(),
+    personaB: randomUUID(), teammateNotifA: randomUUID(), teammateNotifB: randomUUID(),
+  };
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const hex = (): string => randomUUID().replaceAll('-', '').repeat(2);
+      for (const [slot, space, member] of [
+        [s.slotA, fixture.spaceA, fixture.memberHA],
+        [s.slotB, fixture.spaceB, fixture.memberHB],
+      ] as const) {
+        await client.query(
+          `insert into public.file_upload_slots(
+             id, space_id, created_by, actor_id, name, mime_type, size_bytes, max_size_bytes,
+             checksum_sha256, request_hash, storage_path, expires_at)
+           values ($1, $2, $3, $3, 'cross-space.txt', 'text/plain', 1, 10, $4, $5, $6,
+                   now() + interval '1 hour')`,
+          [slot, space, member, hex(), hex(), `spaces/${space}/${slot}`],
+        );
+      }
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'team_member', $3, 'space')`,
+        [s.personaB, fixture.spaceB, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+         values ($1, $2, 'Cross-space GB', 'worker', 'persona')`,
+        [s.personaB, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.notifications(id, space_id, recipient_member_id, recipient_team_member_id, kind)
+         values ($1, $5, $6, null, 'mention'),
+                ($2, $7, $8, null, 'mention'),
+                ($3, $5, $6, $9, 'mention'),
+                ($4, $7, $8, $10, 'mention')`,
+        [s.notifA, s.notifB, s.teammateNotifA, s.teammateNotifB,
+         fixture.spaceA, fixture.memberHA, fixture.spaceB, fixture.memberHB,
+         fixture.personaA, s.personaB],
+      );
+    });
+  });
+
+  const slotById = (q: Querier, id: string): Promise<unknown[]> =>
+    q.query('select id from public.file_upload_slots where id = $1', [id]);
+
+  // `files.uploadComplete` runs exactly this read under the caller's claims
+  // before any pinned gate (files.ts): a visible B slot would be an existence
+  // probe and drive a blob verify on B's storage path.
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: B's upload slot is invisible by id`, async () => {
+      const token = await mint();
+      expect(await asToken(token, (q) => slotById(q, s.slotB))).toEqual([]);
+    });
+    it(`${kind}: positive — A's upload slot is visible by id`, async () => {
+      const token = await mint();
+      expect(await asToken(token, (q) => slotById(q, s.slotA))).toHaveLength(1);
+    });
+  }
+  it('agent, off: the pin is inert — B\'s upload slot is visible', async () => {
+    const token = await mintAgent();
+    expect(await asToken(token, (q) => slotById(q, s.slotB), 'off')).toHaveLength(1);
+  });
+
+  /**
+   * The persona-less agent session: `acting_as_team_member_id` is ON DELETE
+   * SET NULL, so a hard-deleted persona leaves a live `kind = 'agent'` token
+   * that binds no actor. `inbox.list` then takes the non-acting path: arm 1 of
+   * notifications_select and `inspect_owned_teammate_inbox`. (`agent_runtime`
+   * cannot get here: its shape check requires the persona.)
+   */
+  async function mintPersonalessAgent(): Promise<string> {
+    const token = await mintAgent();
+    await database.transaction(async (client) => {
+      await client.query(
+        'update public.auth_sessions set acting_as_team_member_id = null where id = $1',
+        [parseToken(token)!.sessionId],
+      );
+    });
+    return token;
+  }
+  const notificationById = (q: Querier, id: string): Promise<unknown[]> =>
+    q.query('select id from public.notifications where id = $1', [id]);
+  const ownedTeammateInbox = (q: Querier, teammate: string): Promise<string[]> =>
+    q.query<{ id: string }>(
+      'select id::text from public.inspect_owned_teammate_inbox($1, null, false, null, null, 50)',
+      [teammate],
+    ).then((rows) => rows.map((r) => r.id));
+
+  it('agent, persona-less: binds no actor, still pinned to A', async () => {
+    const claims = await claimsForToken(await mintPersonalessAgent());
+    expect(claims.actorId).toBeUndefined();
+    expect(claims.sessionSpaceId).toBe(fixture.spaceA);
+  });
+  it('agent, persona-less: B\'s inbox row is invisible by id', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => notificationById(q, s.notifB))).toEqual([]);
+  });
+  it('agent, persona-less: positive — A\'s inbox row is visible by id', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => notificationById(q, s.notifA))).toHaveLength(1);
+  });
+  it('agent, persona-less: B teammate\'s inbox is empty through inspect_owned_teammate_inbox', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => ownedTeammateInbox(q, s.personaB))).toEqual([]);
+  });
+  it('agent, persona-less: positive — A teammate\'s inbox is listed', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => ownedTeammateInbox(q, fixture.personaA))).toEqual([s.teammateNotifA]);
+  });
+  it('agent, persona-less, off: the pin is inert — B\'s inbox row and teammate inbox are visible', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => notificationById(q, s.notifB), 'off')).toHaveLength(1);
+    expect(await asToken(token, (q) => ownedTeammateInbox(q, s.personaB), 'off')).toEqual([s.teammateNotifB]);
+  });
+
+  /**
+   * KNOWN GAP (W3, K7). spaces_select's public arm admits any authenticated
+   * identity, so `spaces.list`/`spaces.get` return a PUBLIC B's row (name,
+   * description, repo, share defaults) to an agent pinned to A. This cell
+   * asserts today's behaviour; W3 flips it to `[]`.
+   */
+  it('KNOWN GAP (W3, K7) agent: a PUBLIC B is still readable through spaces_select\'s public arm', async () => {
+    const token = await mintAgent();
+    await database.query(`update public.spaces set visibility = 'public' where id = $1`, [fixture.spaceB]);
+    try {
+      expect(await asToken(token, (q) =>
+        q.query('select id from public.spaces where id = $1', [fixture.spaceB]))).toHaveLength(1);
+    } finally {
+      await database.query(`update public.spaces set visibility = 'private' where id = $1`, [fixture.spaceB]);
+    }
+  });
+  it('agent: positive for the gap — a PRIVATE B is refused (the member arm is pinned)', async () => {
+    const token = await mintAgent();
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.spaces where id = $1', [fixture.spaceB]))).toEqual([]);
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.spaces where id = $1', [fixture.spaceA]))).toHaveLength(1);
+  });
+});
+
 describe('T10 agent G (A) writes B — 42501 (W0a)', () => {
   for (const [kind, mint] of AGENT_KINDS) {
     // Not discriminating on its own: the persona actor fails can_act_as in B
@@ -460,6 +619,80 @@ describe('T10 agent G (A) writes B — 42501 (W0a)', () => {
       expect(await outcome(() => recordEtag(token, fixture.spaceA, 'enforce'))).toBe('ok');
     });
   }
+});
+
+/**
+ * a3 — THE SIX CLAIMS, at the database. test/db/claims.test.ts proves the same
+ * SET LOCAL contract but is gated on TM8_DATABASE_URL, which CI deliberately
+ * does not set (ci.yml, test-server), so these cells carry it in CI: this file
+ * runs on the w1-pg scratch database every shard can reach.
+ *
+ * A one-connection pool forces the second transaction onto the backend the
+ * first used; with a wider pool the "no leak" cell could pass on a fresh one.
+ */
+describe('a3 six claims — bound from the agent token, never leaked across pooled transactions (W0a)', () => {
+  const READ_CLAIMS = `select
+      current_setting('tm8.identity_id', true)      as identity,
+      current_setting('tm8.actor_id', true)         as actor,
+      current_setting('tm8.node_admin', true)       as node_admin,
+      current_setting('tm8.request_id', true)       as request,
+      current_setting('tm8.auth_kind', true)        as auth_kind,
+      current_setting('tm8.session_space_id', true) as pin`;
+  type ClaimRow = Record<'identity' | 'actor' | 'node_admin' | 'request' | 'auth_kind' | 'pin', string | null>;
+  const blank = (v: string | null | undefined): boolean => v === null || v === undefined || v === '';
+
+  it('agent: all six claims are bound inside the transaction (pin = A)', async () => {
+    const claims = await claimsForToken(await mintAgent());
+    const [row] = await db.tx(claims, (q) => q.query<ClaimRow>(READ_CLAIMS));
+    expect(row).toEqual({
+      identity: fixture.identityH,
+      actor: fixture.personaA,
+      node_admin: 'false',
+      request: claims.requestId,
+      auth_kind: 'agent',
+      pin: fixture.spaceA,
+    });
+  });
+
+  it('agent: the pin does not leak to the next transaction on the same backend', async () => {
+    const shared = createDb(database.url, { max: 1 });
+    try {
+      const claims = await claimsForToken(await mintAgent());
+      const [first] = await shared.tx(claims, (q) => q.query<ClaimRow>(READ_CLAIMS));
+      expect(first!.pin).toBe(fixture.spaceA);
+      const [second] = await shared.tx({}, (q) => q.query<ClaimRow>(READ_CLAIMS));
+      for (const name of ['identity', 'actor', 'request', 'auth_kind', 'pin'] as const) {
+        expect(blank(second![name]), name).toBe(true);
+      }
+      expect(second!.node_admin).not.toBe('true');
+    } finally {
+      await shared.end();
+    }
+  });
+
+  it('agent: the pin does not leak after a rolled-back transaction', async () => {
+    const shared = createDb(database.url, { max: 1 });
+    try {
+      const claims = await claimsForToken(await mintAgent());
+      await expect(shared.tx(claims, async (q) => {
+        await q.query('select 1');
+        throw new Error('deliberate failure');
+      })).rejects.toThrow('deliberate failure');
+      const [after] = await shared.tx({}, (q) => q.query<ClaimRow>(READ_CLAIMS));
+      expect(blank(after!.pin)).toBe(true);
+      expect(blank(after!.identity)).toBe(true);
+    } finally {
+      await shared.end();
+    }
+  });
+
+  it('browser (H): positive — five claims bound, the pin blank', async () => {
+    const claims = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    const [row] = await db.tx(claims, (q) => q.query<ClaimRow>(READ_CLAIMS));
+    expect(row!.identity).toBe(fixture.identityH);
+    expect(row!.auth_kind).toBe('browser');
+    expect(blank(row!.pin)).toBe(true);
+  });
 });
 
 describe('T11 agent G manages credentials in A — refused (regression pin)', () => {
