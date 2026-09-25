@@ -278,14 +278,15 @@ function SelectionGroup({
 }
 
 /**
- * One group's meter: lane B's `BudgetMeter` when the bytes are known, else
- * the count alone — a meter never shows bytes it does not have (before
- * `launch.defaults` carries `promptBytes`, a group nobody asked Jev about has
- * none).
+ * One group's meter: lane B's `BudgetMeter`, fed what THIS launch carries.
+ * Unknown bytes reach it as null, and it shows the count only. When nobody
+ * said what the group's budget is (a node before `launch.defaults` carried
+ * it, and no Jev answer), a plain count line — the meter's null budget means
+ * "takes what the prompt has left", which would be a claim nobody made.
  */
 function GroupMeter({ group, facts }: { group: SpawnSelectionGroup; facts: GroupMeterFacts }) {
-  const noun = facts.count === 1 ? LAUNCH_ONE[group] : LAUNCH_GROUP_LABEL[group].toLowerCase();
-  if (facts.usedBytes === null || facts.budget === undefined) {
+  if (facts.budget === undefined) {
+    const noun = facts.count === 1 ? LAUNCH_ONE[group] : LAUNCH_GROUP_LABEL[group].toLowerCase();
     return (
       <p className="lsel__meter lsel__meter--count" data-testid={`lsel-meter-${group}`} data-meter="count">
         {String(facts.count)} {noun} · prompt bytes not known here
@@ -294,7 +295,7 @@ function GroupMeter({ group, facts }: { group: SpawnSelectionGroup; facts: Group
   }
   return (
     <div className="lsel__meter" data-testid={`lsel-meter-${group}`} data-budget-source={facts.budgetSource ?? undefined}>
-      <BudgetMeter group={group} usedBytes={facts.usedBytes} budget={facts.budget} contextIndex={facts.contextIndex} compact />
+      <BudgetMeter group={group} usedBytes={facts.usedBytes} budget={facts.budget} count={facts.count} contextIndex={facts.contextIndex} compact />
     </div>
   );
 }

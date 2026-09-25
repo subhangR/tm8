@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * THE PER-GROUP METER AND THE "OVER BUDGET" REASON (I7 UI, Jev UX lane C).
  *
@@ -97,16 +98,17 @@ describe('a meter per group', () => {
   it('references with the context index off say "not in the prompt", memories still count bytes', async () => {
     const view = await mount(withBytes({ 'ent-doc-spec': 0, 'ent-file-log': 0, 'ent-mem-tokens': 500 }, { references: 8192, memories: 12_288 }, 'off'));
     expect(view.getByTestId('jev-meter-references').dataset.meter).toBe('index-off');
-    expect(view.getByTestId('jev-meter-references').textContent).toContain('not in the prompt while the context index is off');
+    expect(view.getByTestId('jev-meter-references').textContent).toMatch(/not in the prompt while the context index is off/i);
     expect(view.getByTestId('jev-meter-memories').textContent).toContain('500 B');
   });
 
   it('the skills meter says its bytes assume indexed, not native', async () => {
     const view = await mount(withBytes({ 'ent-sk-review': 120 }, { skills: null }));
     expect(view.getByTestId('jev-meter-skills').getAttribute('title')).toMatch(/indexed, not native/);
+    view.unmount();
     // Negative control: the memories meter carries no such tooltip.
     const mem = await mount(withBytes({ 'ent-mem-tokens': 120 }, { memories: 4096 }));
-    expect(mem.getAllByTestId('jev-meter-memories').at(-1)!.getAttribute('title')).toBeNull();
+    expect(mem.getByTestId('jev-meter-memories').getAttribute('title')).toBeNull();
   });
 
   it('Jev’s ranked bytes and budget replace the node’s; the per-launch override replaces both', async () => {
@@ -131,8 +133,9 @@ describe('a meter per group', () => {
   it('an id with unknown bytes turns the meter back into a count', async () => {
     const view = await mount(withBytes({ 'ent-mem-tokens': 700 }, { memories: 12_288 }));
     act(() => { captured!.setEdit('memories', { removed: [], added: ['ent-mem-mystery' as never] }, []); });
-    expect(view.getByTestId('lsel-meter-memories').dataset.meter).toBe('count');
-    expect(view.getByTestId('lsel-meter-memories').textContent).toMatch(/^2 memories/);
+    expect(view.getByTestId('jev-meter-memories').dataset.meter).toBe('count-only');
+    expect(view.getByTestId('jev-meter-memories').textContent).toContain('2 ticked');
+    expect(view.getByTestId('jev-meter-memories').textContent).not.toContain('700 B');
   });
 });
 
