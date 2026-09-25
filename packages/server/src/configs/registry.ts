@@ -33,7 +33,7 @@ import {
 } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
 import { DISPATCHER_ROSTER_READ_MAX, LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
-import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, INDEX_DERIVED_HEADER_CHARS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
+import { ACCEPTANCE_MANIFEST_MAX, ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, INDEX_DERIVED_HEADER_CHARS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
 
 import { LINKED_ROW_CAP } from '../facade/execution-handlers.js';
 import {
@@ -258,6 +258,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'HEADER_WHEN_TO_USE_BACKSTOP_CHARS', group: 'Jev selection', summary: 'The only cut a selection header\'s whenToUse ever gets, of any source, in every reader (the <context_index>, Jev\'s candidate text, entity get/context): a backstop against a pathological header, declared in clipped. Below it a whenToUse is shown whole; past the 400-character guidance the write warns header_long.', definedIn: 'packages/contract/src/selection-header.ts', read: () => HEADER_WHEN_TO_USE_BACKSTOP_CHARS },
   { name: 'LINKED_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Linked entities listed in a launch prompt.', definedIn: 'packages/prompt/src/templates.ts', read: () => LINKED_MANIFEST_MAX },
   { name: 'ATTACHMENT_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Attached files listed in a prompt; the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ATTACHMENT_MANIFEST_MAX },
+  { name: 'ACCEPTANCE_MANIFEST_MAX', group: 'Prompt budgets', summary: 'Acceptance criteria listed in a task turn (each cut at 400 chars); the rest are declared omitted.', definedIn: 'packages/prompt/src/templates.ts', read: () => ACCEPTANCE_MANIFEST_MAX },
   { name: 'LINKED_ROW_CAP', group: 'Prompt budgets', summary: 'Linked rows read for a launch before the prompt picks its subset.', definedIn: EXEC_HANDLERS, read: () => LINKED_ROW_CAP },
   { name: 'DISPATCHER_ROSTER_READ_MAX', group: 'Prompt budgets', summary: 'Teammates a dispatcher\'s <context_index> roster reads (context index on). The rest are declared in the teammates group\'s omitted count; rosterIndex then trims what was read.', definedIn: 'packages/execution/src/spawn/context-index.ts', read: () => DISPATCHER_ROSTER_READ_MAX },
   { name: 'CRITICAL_SCORE', group: 'Jev selection', summary: 'Rows at or above this are considered first in the budget fill, and a critical memory is always ticked (spawn never collapses one).', definedIn: 'packages/server/src/jev/groups.ts', read: () => CRITICAL_SCORE },

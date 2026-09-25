@@ -15,15 +15,14 @@ export interface LaunchBootstrapResult {
   projectId: string | null;
   teammatesCreated: number;
   teammatesUpdated: number;
+  /** Per-model teammates soft-deleted by the one-time sweep (default-teammates.ts). */
+  teammatesRetired: number;
 }
 
 /**
- * Idempotently make existing loopback-owner spaces launchable.
- *
- * The durable catalog for this phase is the existing team_members.model +
- * agent_tool pair. No parallel model table is invented: the UI's supported
- * catalog and these seeded rows share LAUNCH_MODEL_CATALOG, while the execution
- * layer still rejects any tool it cannot build truthfully.
+ * Idempotently make existing loopback-owner spaces launchable: link the launch
+ * project and seed the default roster (default-teammates.ts) into every space
+ * the owner runs.
  */
 export async function ensureLaunchResources(args: {
   db: Db;
@@ -55,7 +54,7 @@ export async function ensureLaunchResources(args: {
     [args.owner.identityId],
   );
   if (spaces.length === 0) {
-    return { spaces: 0, projectId: null, teammatesCreated: 0, teammatesUpdated: 0 };
+    return { spaces: 0, projectId: null, teammatesCreated: 0, teammatesUpdated: 0, teammatesRetired: 0 };
   }
 
   let project = (await args.db.query<ProjectRow>(
@@ -108,11 +107,13 @@ export async function ensureLaunchResources(args: {
 
   let teammatesCreated = 0;
   let teammatesUpdated = 0;
+  let teammatesRetired = 0;
   for (const space of spaces) {
     const seeded = await args.db.tx(claims, (q) => ensureDefaultTeammates(q, space.id));
     teammatesCreated += seeded.created;
     teammatesUpdated += seeded.updated;
+    teammatesRetired += seeded.retired;
   }
 
-  return { spaces: spaces.length, projectId: project.id, teammatesCreated, teammatesUpdated };
+  return { spaces: spaces.length, projectId: project.id, teammatesCreated, teammatesUpdated, teammatesRetired };
 }

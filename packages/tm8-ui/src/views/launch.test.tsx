@@ -259,6 +259,8 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       'MEMORIES',
       // I9: the task's references, the third selection group.
       'REFERENCES',
+      // I7: this launch's per-group budget override, collapsed.
+      'BUDGET FOR THIS LAUNCH',
     ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
     expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
@@ -621,9 +623,9 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
     expect(view.getByText('Loading skill preview…')).toBeTruthy();
   });
 
-  it('reads the defaults for the teammate and the subject', async () => {
+  it('reads the defaults for the teammate and the subject, with the launch’s harness', async () => {
     const { load } = await renderWithDefaults();
-    expect(load).toHaveBeenCalledWith({ teamMemberId: 'ent-tm-forge', subjectId: 'task-1' });
+    expect(load).toHaveBeenCalledWith({ teamMemberId: 'ent-tm-forge', subjectId: 'task-1', agentTool: 'claude-code' });
   });
 
   it('shows every default pre-ticked and labelled default, in all three groups', async () => {
@@ -701,7 +703,7 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
   it('a teammate change re-reads the defaults for the new teammate', async () => {
     const { load, getByText } = await renderWithDefaults();
     fireEvent.click(getByText('scout'));
-    expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'ent-tm-scout', subjectId: 'task-1' });
+    expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'ent-tm-scout', subjectId: 'task-1', agentTool: 'claude-code' });
   });
 
   it('while an EDITED group’s defaults re-read, Launch waits and says why — the removal is never dropped', async () => {
