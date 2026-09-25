@@ -15,6 +15,9 @@ import {
   clipIndexText,
   INDEX_DERIVED_HEADER_CHARS,
   loadPointerFor,
+  serializeMemoryEntry,
+  utf8Bytes,
+  type ContextBudgetSettings,
   type ContextIndexGroupName,
   type ContextIndexVia,
   type PromptContextEntry,
@@ -61,7 +64,12 @@ export function contextIndexForResume(
   return raw && OFF.has(raw) ? null : { source: recorded };
 }
 
-/** The ids whose headers the index renders: the selected references, the tasks' linked rows and attached files, and the equipped skills. */
+/**
+ * The ids whose headers the index renders: the selected references, the
+ * tasks' linked rows and attached files, the equipped skills, and the
+ * injected memories (a memory that collapses is routed by its
+ * `subject_scope`, §10 Q1 rule 3).
+ */
 export function contextHeaderIds(context: SpawnContext): string[] {
   return [...new Set([
     ...(context.references ?? []).map((ref) => ref.entityId),
@@ -70,21 +78,161 @@ export function contextHeaderIds(context: SpawnContext): string[] {
       ...(task.attachments ?? []).map((file) => file.fileEntityId),
     ]),
     ...(context.skillEquips ?? context.skills ?? []).map((row) => row.entityId),
+    ...(context.teamMember.memoryIds ?? []),
   ])];
 }
 
 /**
- * The sub-caps (§2.3, §10 Q3). In a worker prompt teammates share the
- * reference cap; a dispatcher's teammates are its roster and have their own.
- * Skills are uncapped here: they take what remains, as today.
+ * The pinned profile's `contextBudgets` (§10 Q5), read tolerantly from the
+ * resolved snapshot's draft. Only non-negative integers count; anything else
+ * is the node default.
  */
-export function contextIndexCaps(mode: string): { groups: ContextIndexGroupName[]; cap: number }[] {
-  return mode === 'dispatcher'
-    ? [
-        { groups: ['references'], cap: BYTE_BUDGETS.referenceIndex },
-        { groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex },
-      ]
-    : [{ groups: ['references', 'teammates'], cap: BYTE_BUDGETS.referenceIndex }];
+export function contextBudgetsFrom(profileSnapshot: unknown): ContextBudgetSettings {
+  const at = (v: unknown, key: string): unknown =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>)[key] : undefined;
+  const raw = at(at(profileSnapshot, 'draft'), 'contextBudgets');
+  const out: ContextBudgetSettings = {};
+  for (const key of ['memories', 'skills', 'references', 'teammates'] as const) {
+    const value = at(raw, key);
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) out[key] = value;
+  }
+  return out;
+}
+
+/** No sub-cap: the group is trimmed only against what the prompt has left. */
+const UNCAPPED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * The sub-caps (§2.3, §10 Q3), with a profile's `contextBudgets` replacing
+ * each node default (Q5). Collapsed memories come first: each is already the
+ * fallback for a memory that did not fit whole. In a worker prompt teammates
+ * share the reference cap unless the profile gives them their own; a
+ * dispatcher's teammates are its roster. Skills take what remains unless the
+ * profile caps them.
+ */
+export function contextIndexCaps(
+  mode: string,
+  budgets: ContextBudgetSettings = {},
+): { groups: ContextIndexGroupName[]; cap: number }[] {
+  const references = budgets.references ?? BYTE_BUDGETS.referenceIndex;
+  const teammates = budgets.teammates ?? (mode === 'dispatcher' ? BYTE_BUDGETS.rosterIndex : undefined);
+  return [
+    { groups: ['memories'], cap: UNCAPPED },
+    ...(teammates === undefined
+      ? [{ groups: ['references', 'teammates'] as ContextIndexGroupName[], cap: references }]
+      : [
+          { groups: ['references'] as ContextIndexGroupName[], cap: references },
+          { groups: ['teammates'] as ContextIndexGroupName[], cap: teammates },
+        ]),
+    ...(budgets.skills !== undefined ? [{ groups: ['skills'] as ContextIndexGroupName[], cap: budgets.skills }] : []),
+  ];
+}
+
+// -- memory collapse (§2.4, §10 Q1) -------------------------------------------
+
+/** The epistemic marks `renderMemories` appends: `statement [verified, …]`. */
+const MARKS = /\s\[((?:superseded|disputed|verified)(?:, (?:superseded|disputed|verified))*)\]$/;
+
+/** A rendered memory's statement and its tag. */
+export function splitMemoryTag(text: string): { statement: string; tag: string | null } {
+  const match = MARKS.exec(text);
+  return match ? { statement: text.slice(0, match.index), tag: match[1]! } : { statement: text, tag: null };
+}
+
+/** Characters of a collapsed memory's statement shown as its excerpt (§10 Q1 rule 3). */
+export const MEMORY_EXCERPT_CHARS = 200;
+
+export interface MemoryCollapseInput {
+  /** The injected memory texts with ids, in injection order (the prefix of `agent.memory`). */
+  texts: readonly string[];
+  ids: readonly string[];
+  via: readonly ContextVia[];
+  /** The legacy jsonb remainder: no ids, so never collapsible, but it counts. */
+  legacy: readonly string[];
+  scores?: ReadonlyArray<{ entityId: string; score: number; critical: boolean }>;
+  cap: number;
+}
+
+export interface MemoryCollapseResult {
+  /** Indices into `texts` kept whole, in injection order. */
+  kept: number[];
+  /** Indices collapsed, in collapse order (first collapsed first). */
+  collapsed: number[];
+  rank: 'jev' | 'none';
+  cap: number;
+  /** Rendered `<entry>` bytes of what stays whole, legacy included. */
+  used: number;
+  /** How far past `cap` the whole memories run (critical ones never collapse). */
+  borrowed: number;
+}
+
+/** The §10 Q1 rank of an entry path when there is no Jev rank: first to collapse → last. */
+const VIA_ORDER: Record<string, number> = { teammate: 0, inherited: 0, task: 1, requested: 2, selection: 2 };
+
+/**
+ * Whole memories up to the cap; beyond it the lowest-ranked collapse (§10
+ * Q1). With Jev scores: lowest score first, a later pick before an earlier
+ * one on a tie, and a critical memory never. Without: the stated order —
+ * teammate-remembered, then task-remembered, then requested; within each,
+ * unverified before verified; then oldest (earliest rendered) first.
+ */
+export function collapseMemories(input: MemoryCollapseInput): MemoryCollapseResult {
+  const bytes = input.texts.map((text) => utf8Bytes(serializeMemoryEntry(text)));
+  let used = bytes.reduce((a, b) => a + b, 0)
+    + input.legacy.reduce((a, text) => a + utf8Bytes(serializeMemoryEntry(text)), 0);
+  const scores = new Map((input.scores ?? []).map((s) => [s.entityId, s]));
+  const rank: 'jev' | 'none' = scores.size > 0 ? 'jev' : 'none';
+  const order = input.texts.map((_, i) => i).filter((i) => scores.get(input.ids[i]!)?.critical !== true);
+  if (rank === 'jev') {
+    const score = (i: number): number => scores.get(input.ids[i]!)?.score ?? Number.NEGATIVE_INFINITY;
+    order.sort((a, b) => score(a) - score(b) || b - a);
+  } else {
+    const verified = (i: number): number => (splitMemoryTag(input.texts[i]!).tag?.split(', ').includes('verified') ? 1 : 0);
+    order.sort((a, b) =>
+      (VIA_ORDER[input.via[a] ?? 'teammate'] ?? 0) - (VIA_ORDER[input.via[b] ?? 'teammate'] ?? 0)
+      || verified(a) - verified(b)
+      || a - b);
+  }
+  const collapsed: number[] = [];
+  for (const i of order) {
+    if (used <= input.cap) break;
+    collapsed.push(i);
+    used -= bytes[i]!;
+  }
+  const gone = new Set(collapsed);
+  return {
+    kept: input.texts.map((_, i) => i).filter((i) => !gone.has(i)),
+    collapsed,
+    rank,
+    cap: input.cap,
+    used,
+    borrowed: Math.max(0, used - input.cap),
+  };
+}
+
+/** A collapsed memory's index entry: `subject_scope` routes, an excerpt summarizes, the tag stays a control attribute. */
+export function collapsedMemoryEntry(
+  id: string,
+  text: string,
+  via: ContextVia,
+  header: SelectionHeader | undefined,
+): PromptContextEntry {
+  const { statement, tag } = splitMemoryTag(text);
+  const chars = [...statement];
+  const excerpt = chars.length > MEMORY_EXCERPT_CHARS;
+  return {
+    id,
+    kind: 'memory',
+    via: via as ContextIndexVia,
+    load: loadPointerFor('memory', id),
+    ...(header ? { bytes: header.bytes, source: header.source, stale: header.stale } : {}),
+    ...(tag ? { tag } : {}),
+    ...(excerpt ? { excerpt: true } : {}),
+    header: {
+      whenToUse: header?.whenToUse ?? null,
+      summary: excerpt ? `${chars.slice(0, MEMORY_EXCERPT_CHARS).join('')}…` : statement,
+    },
+  };
 }
 
 /** How an equipped skill entered the set, as the audit records it. */
@@ -139,6 +287,8 @@ const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_K
 
 export interface ContextIndexCandidatesInput {
   context: SpawnContext;
+  /** Memories collapsed out of `agent.memory`, in collapse order (§10 Q1). */
+  memories?: PromptContextEntry[];
   /** The skills the index may carry (after the native-shadow pass), in index order. */
   skills: readonly ManifestSkillContext[];
 }
@@ -245,6 +395,9 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   const unread = unreadByTask.reduce((n, t) => n + t.unread, 0);
   const referencesFetch = unreadByTask.find((t) => t.unread > 0)?.id ?? firstTask;
   const groups: PromptContextGroup[] = [
+    // A memory dropped even from the index is still loadable by id from the
+    // teammate's or task's connections.
+    { name: 'memories', entries: input.memories ?? [], omitted: 0, fetch: connections(self) },
     { name: 'references', entries: references, omitted: unread, ...(referencesFetch ? { fetch: connections(referencesFetch) } : {}) },
     { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },

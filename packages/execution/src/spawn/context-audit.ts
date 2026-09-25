@@ -64,6 +64,8 @@ export interface ManifestContextInput {
    * and each of its drops is recorded (`header` or `entry`, `byte-budget`).
    */
   index?: FitContextIndexResult;
+  /** The memory collapse (§10 Q1), when one ran; indices are into `teamMember.memoryIds`. */
+  memoryCollapse?: import('./context-index.js').MemoryCollapseResult;
 }
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
@@ -79,7 +81,7 @@ function selectionGroupsOf(selection: SpawnSelection | undefined): SpawnSelectio
 }
 
 /** `groups`, `entries` and `dropped`; the caller keeps `memoryIds`. */
-export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index'>> {
+export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index' | 'budgets'>> {
   const { context } = input;
   const audit = context.contextAudit;
   const selectedGroups = new Set<SpawnSelectionGroup>(audit?.selectedGroups ?? selectionGroupsOf(input.requestSelection));
@@ -92,14 +94,36 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   };
 
   // Memories: the PREFIX RULE — the first `memoryIds.length` texts are these.
+  // A memory the budget collapsed is a `<context_index>` line instead of a
+  // whole `<entry>`, recorded as a `body`-level drop (§10 Q1 rule 3).
   const member = context.teamMember;
+  const collapsed = new Set(input.memoryCollapse?.collapsed ?? []);
+  const indexedMemories = new Map(
+    (input.index?.index.groups.find((g) => g.name === 'memories')?.entries ?? []).map((e) => [e.id, e]),
+  );
   (member.memoryIds ?? []).forEach((entityId, index) => {
     const text = member.memories[index];
+    const via = audit?.memoryVia[index] ?? (selectedGroups.has('memories') ? 'selection' : 'teammate');
+    if (collapsed.has(index)) {
+      const entry = indexedMemories.get(entityId);
+      dropped.push({ entityId, kind: 'memory', group: 'memories', reason: 'byte-budget', level: 'body' });
+      // Dropped from the index too: its `entry`-level drop is recorded below.
+      if (!entry) return;
+      add({
+        entityId,
+        kind: 'memory',
+        group: 'memories',
+        via,
+        state: entry.headerDropped ? 'header-dropped' : 'collapsed',
+        bytes: contextEntryBytes(entry),
+      });
+      return;
+    }
     add({
       entityId,
       kind: 'memory',
       group: 'memories',
-      via: audit?.memoryVia[index] ?? (selectedGroups.has('memories') ? 'selection' : 'teammate'),
+      via,
       state: 'expanded',
       bytes: typeof text === 'string' ? utf8Bytes(serializeMemoryEntry(text)) : 0,
     });
@@ -274,6 +298,11 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     memories: {
       ...selectable('memories'),
       ...(audit?.legacyMemoriesDropped ? { legacyDropped: audit.legacyMemoriesDropped } : {}),
+      ...(input.memoryCollapse && input.memoryCollapse.collapsed.length > 0
+        ? input.memoryCollapse.rank === 'jev'
+          ? { rank: 'jev' as const }
+          : { rank: 'none' as const, collapseOrder: 'teammate>task>requested' as const }
+        : {}),
     },
     skills: selectable('skills'),
     references: {

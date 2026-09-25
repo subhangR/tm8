@@ -15,7 +15,14 @@
  * it is excerpted with a cursor by its own caller and declares `truncated`.
  */
 
-/** The hard ceilings. A validated Interaction Profile may choose smaller. */
+/**
+ * The hard ceilings — a validated Interaction Profile may choose smaller,
+ * never larger — plus the `<context_index>` sub-caps (`referenceIndex`,
+ * `rosterIndex`, `memoryInjection`). Those are node DEFAULTS: a profile's
+ * `contextBudgets` may reallocate them up or down inside
+ * `combinedInitialInjection`: a save that over-promises is warned (§10 Q5.6),
+ * and the launch trim bounds it.
+ */
 export const BYTE_BUDGETS = {
   /** Agent-facing bootstrap manifest (§5.1). */
   manifest: 4096,
@@ -38,6 +45,14 @@ export const BYTE_BUDGETS = {
    */
   referenceIndex: 8192,
   rosterIndex: 8192,
+  /**
+   * Memories injected WHOLE, before the lowest-ranked collapse into the
+   * index (§10 Q1, Q3). Critical memories never collapse: past this they
+   * borrow from `combinedInitialInjection`, and a prompt that then overflows
+   * is refused naming this budget. A profile's `contextBudgets.memories`
+   * replaces it.
+   */
+  memoryInjection: 12288,
 } as const;
 
 export type BudgetName = keyof typeof BYTE_BUDGETS;
@@ -79,4 +94,54 @@ export function assertWithinBudget(material: BudgetName, text: string): string {
   const cap = BYTE_BUDGETS[material];
   if (bytes > cap) throw new BudgetExceededError(material, bytes, cap);
   return text;
+}
+
+/** The per-kind budgets a profile may set (`contextBudgets`, design 01a0d348 §10 Q5). */
+export interface ContextBudgetSettings {
+  memories?: number | undefined;
+  skills?: number | undefined;
+  references?: number | undefined;
+  teammates?: number | undefined;
+}
+
+/**
+ * The frame a profile's context budgets must fit beside (§10 Q5.6): the
+ * kernel and manifest ceilings the profile allows. The assignment snapshot
+ * ceiling is NOT part of it, because an assignment too large for the prompt is
+ * delivered by reference rather than crowding the budgets. Option (a),
+ * confirmed by decision D1 (doc 01a0d77b); switching baselines is this one line.
+ */
+export function contextBudgetBaseline(policy: { kernelMaxBytes: number; manifestMaxBytes: number }): number {
+  return policy.kernelMaxBytes + policy.manifestMaxBytes;
+}
+
+/**
+ * Bytes a profile's budgets promise, with each absent key at its node
+ * default: memories, references (a worker's teammates share that cap unless
+ * the profile gives them their own) and, when set, skills (otherwise skills
+ * take what remains and promise nothing).
+ */
+export function promisedContextBytes(budgets: ContextBudgetSettings): number {
+  return (budgets.memories ?? BYTE_BUDGETS.memoryInjection)
+    + (budgets.references ?? BYTE_BUDGETS.referenceIndex)
+    + (budgets.teammates ?? 0)
+    + (budgets.skills ?? 0);
+}
+
+/**
+ * Null when a profile's `contextBudgets` fit the prompt, else the overrun:
+ * baseline + promised bytes against the profile's initial-context ceiling
+ * (never above `combinedInitialInjection`). A profile that sets no budgets is
+ * not checked: it promises only the node defaults.
+ */
+export function contextBudgetOverrun(draft: {
+  promptPolicy: { kernelMaxBytes: number; manifestMaxBytes: number; initialContextMaxBytes: number };
+  contextBudgets?: ContextBudgetSettings | undefined;
+}): { baseline: number; promised: number; cap: number; over: number } | null {
+  if (!draft.contextBudgets) return null;
+  const baseline = contextBudgetBaseline(draft.promptPolicy);
+  const promised = promisedContextBytes(draft.contextBudgets);
+  const cap = Math.min(draft.promptPolicy.initialContextMaxBytes, BYTE_BUDGETS.combinedInitialInjection);
+  const over = baseline + promised - cap;
+  return over > 0 ? { baseline, promised, cap, over } : null;
 }

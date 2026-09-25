@@ -2,6 +2,7 @@ import { resolveHeaders } from '../headers/resolve.js';
 import { loadSkillEquipment, loadTaskSkillEquipment } from '../skills/equipment.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
+import { CRITICAL_SCORE } from '../jev/groups.js';
 import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
@@ -945,6 +946,30 @@ export class DbGraphPort implements GraphPort {
     // `<context_index>` headers (design 01a0d348 §2.1): one statement in the
     // caller's transaction, so RLS decides what resolves.
     return this.db.tx(this.claims(auth), async (q) => [...(await resolveHeaders(q, input.spaceId, input.ids)).values()]);
+  }
+
+  async loadMemoryScores(
+    auth: GraphAuth,
+    input: { spaceId: string; jevRunId: string; memoryIds: string[] },
+  ): Promise<{ entityId: string; score: number; critical: boolean }[]> {
+    // The launch's Ask Jev run ranks the memories and marks the critical ones
+    // (≥ CRITICAL_SCORE), which never collapse (design 01a0d348 §10 Q1). Read
+    // under RLS: a run the caller cannot see is no rank, as is a run with no
+    // memories result.
+    const rows = await this.db.query<{ memories: unknown }>(
+      this.claims(auth),
+      `select r.suggestions -> 'memories' as memories from public.jev_runs r where r.id = $1 and r.space_id = $2`,
+      [input.jevRunId, input.spaceId],
+    );
+    const group = rows[0]?.memories as { status?: unknown; items?: unknown } | null | undefined;
+    if (group?.status !== 'ok' || !Array.isArray(group.items)) return [];
+    const injected = new Set(input.memoryIds);
+    return group.items.flatMap((item) => {
+      const { id, score } = (item ?? {}) as { id?: unknown; score?: unknown };
+      return typeof id === 'string' && typeof score === 'number' && injected.has(id)
+        ? [{ entityId: id, score, critical: score >= CRITICAL_SCORE }]
+        : [];
+    });
   }
 
   async createWorkSession(

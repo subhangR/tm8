@@ -1,5 +1,5 @@
 import { buildManifestContext } from './context-audit.js';
-import { contextIndexCandidates, contextIndexCaps } from './context-index.js';
+import { collapseMemories, collapsedMemoryEntry, contextBudgetsFrom, contextIndexCandidates, contextIndexCaps, type MemoryCollapseResult } from './context-index.js';
 import { computeEffectiveSkills } from './effective-skills.js';
 import {
   asHarnessSurface,
@@ -16,7 +16,7 @@ import {
   type HarnessSurface,
   type HarnessSurfaceSource,
 } from './harness-surface.js';
-import { composePrompt, BYTE_BUDGETS, fitContextIndex, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
+import { composePrompt, BudgetExceededError, BYTE_BUDGETS, fitContextIndex, type PromptContextEntry, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -1882,9 +1882,48 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });
+  // Memories past their budget collapse into the index, lowest-ranked first
+  // (design 01a0d348 §10 Q1). Only with `<context_index>`: without it there is
+  // nowhere to declare a collapsed memory, and the launch behaves as it always
+  // did. Measured on the redacted texts, which are the ones that ship.
+  const budgets = input.contextIndex ? contextBudgetsFrom(interactionProfile.snapshot) : {};
+  let memoryCollapse: MemoryCollapseResult | null = null;
+  const collapsedMemories: PromptContextEntry[] = [];
+  if (input.contextIndex) {
+    const ids = manifest.context?.memoryIds ?? [];
+    const texts = (manifest.agent.memory as unknown[]).map(String);
+    const via = context.contextAudit?.memoryVia ?? ids.map(() => 'teammate' as const);
+    memoryCollapse = collapseMemories({
+      texts: texts.slice(0, ids.length),
+      ids,
+      via,
+      legacy: texts.slice(ids.length),
+      scores: context.memoryScores ?? [],
+      cap: budgets.memories ?? BYTE_BUDGETS.memoryInjection,
+    });
+    if (memoryCollapse.collapsed.length > 0) {
+      const headers = new Map((context.headers ?? []).map(h => [h.entityId, h]));
+      // Highest-ranked first in the group, so an index trim drops the lowest.
+      for (const i of [...memoryCollapse.collapsed].reverse()) {
+        collapsedMemories.push(collapsedMemoryEntry(ids[i]!, texts[i]!, via[i] ?? 'teammate', headers.get(ids[i]!)));
+      }
+      manifest.agent.memory = [...memoryCollapse.kept.map(i => texts[i]!), ...texts.slice(ids.length)];
+      manifest.context = { ...manifest.context, memoryIds: memoryCollapse.kept.map(i => ids[i]!) };
+    }
+  }
   // Measure the real non-index prompt once, then account for the exact escaped
   // serializer. This stays linear even when a deep equipment chain has no count cap.
-  const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
+  let baseline: ReturnType<typeof composePrompt>;
+  try {
+    baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
+  } catch (error) {
+    // Critical memories never collapse; when what they borrowed pushes the
+    // prompt over, the refusal names the budget that was overrun (§10 Q1 rule 2).
+    if (error instanceof BudgetExceededError && memoryCollapse && memoryCollapse.borrowed > 0) {
+      throw new BudgetExceededError('memoryInjection', error.bytes, error.cap);
+    }
+    throw error;
+  }
   const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
   const dropped: ManifestSkillContext[] = [];
   let indexFit: FitContextIndexResult | null = null;
@@ -1894,9 +1933,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
     indexFit = fitContextIndex({
-      groups: redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills })),
+      groups: [
+        ...redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories: collapsedMemories })),
+      ],
       available: BYTE_BUDGETS.combinedInitialInjection - baseBytes,
-      caps: contextIndexCaps(launch.mode),
+      caps: contextIndexCaps(launch.mode, budgets),
     });
     const gone = new Set(indexFit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
     dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
@@ -1953,9 +1994,20 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       ...(request.selectionReasons ? { selectionReasons: request.selectionReasons } : {}),
       ...(request.selectionReplayInvalid ? { selectionReplayInvalid: true } : {}),
       ...(indexFit ? { index: indexFit } : {}),
+      ...(memoryCollapse ? { memoryCollapse } : {}),
     }),
     ...(input.contextIndex && indexFit
-      ? { index: { source: input.contextIndex.source, bytes: indexFit.bytes, caps: contextIndexCaps(launch.mode) } }
+      ? {
+          index: {
+            source: input.contextIndex.source,
+            bytes: indexFit.bytes,
+            caps: contextIndexCaps(launch.mode, budgets),
+            ...(Object.keys(budgets).length > 0 ? { profileBudgets: Object.keys(budgets).sort() } : {}),
+          },
+        }
+      : {}),
+    ...(memoryCollapse
+      ? { budgets: { memoryInjection: { cap: memoryCollapse.cap, used: memoryCollapse.used, borrowed: memoryCollapse.borrowed } } }
       : {}),
   };
   composePrompt(manifest, { sessionId, baseUrl });
