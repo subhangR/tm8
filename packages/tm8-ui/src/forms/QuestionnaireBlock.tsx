@@ -25,20 +25,23 @@ const TABS: { id: QuestionnaireTab; word: string }[] = [
 
 export function QuestionnaireBlock({
   detail,
-  initialTab = 'fill',
+  initialTab,
   onOpenEntity,
 }: {
   detail: Pick<EntityDetail, 'id' | 'title' | 'version' | 'content'> & Partial<Pick<EntityDetail, 'capabilities'>>;
+  /** Absent: Build for an editor opening a draft (nothing to fill yet), else Fill. */
   initialTab?: QuestionnaireTab;
   /** Opens another entity (a delivery's spawned session). */
   onOpenEntity?: (id: string) => void;
 }) {
   const q = useQuestionnaire(detail);
-  const [tab, setTab] = useState<QuestionnaireTab>(initialTab);
-  const base = useId();
   // §6: structure and lifecycle are the author's or an admin's. Absent
   // capabilities mean not permitted, the contract's rule.
   const canEdit = detail.capabilities?.canEdit === true;
+  // A list row's content carries `status` too, so this holds before the detail loads.
+  const draft = (detail.content as { status?: unknown } | null | undefined)?.status === 'draft';
+  const [tab, setTab] = useState<QuestionnaireTab>(initialTab ?? (canEdit && draft ? 'build' : 'fill'));
+  const base = useId();
   if (!q.form) {
     return q.detailError ? (
       <p className="fq__issues" role="alert" data-testid="questionnaire-unavailable">
