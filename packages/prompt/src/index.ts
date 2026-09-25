@@ -42,7 +42,7 @@ import {
   type CoordinatorKind,
 } from './templates.js';
 import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
-import { composeWorkerPromptV2, type TaskContextSnapshot } from './worker-v2.js';
+import { composePromptV2, type TaskContextSnapshot } from './prompt-v2.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -54,7 +54,7 @@ export * from './escape.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
-export * from './worker-v2.js';
+export * from './prompt-v2.js';
 
 export type AgentMode =
   | 'worker'
@@ -854,11 +854,11 @@ export function composePrompt(
         : PLAN_AUTHORIZATION_INSTRUCTION
       : null;
 
-  // The v2.0 worker frame (spec ca8d). Selected by the stamp alone, and only
-  // for the modes it covers: a stamp on any other mode renders v1 rather than
-  // a frame nobody specified for it.
+  // The v2.0 layered frame (spec ca8d, docs 01a0d418 + 01a0d456). Selected by
+  // the stamp alone, and only for the modes it covers: a stamp on any other
+  // mode renders v1 rather than a frame nobody specified for it.
   if (promptVersion === PROMPT_VERSION_V2 && PROMPT_V2_MODES.includes(mode)) {
-    return composeWorkerPromptV2(manifest, runtime, {
+    return composePromptV2(manifest, runtime, {
       mode,
       sessionId,
       spaceId,

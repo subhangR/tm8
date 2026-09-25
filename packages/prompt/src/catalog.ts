@@ -26,7 +26,13 @@
 import { BYTE_BUDGETS, utf8Bytes, type BudgetName } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
-import { orientationLineV2, V2_REPO_GRAPH_LINE, workerRulesV2 } from './worker-v2.js';
+import {
+  BASE_PROMPT_V2,
+  coordinationLineV2,
+  orientationLineV2,
+  roleLayerV2,
+  V2_REPO_GRAPH_LINE,
+} from './prompt-v2.js';
 import {
   coordinatorBootstrapControl,
   workerBootstrapControl,
@@ -497,35 +503,67 @@ const DISCOVERY_ENTRIES: readonly PromptEntry[] = [
 ];
 
 const V2_GATE =
-  'On a worker or coordinated-worker launch whose pinned Interaction Profile sets ' +
+  'On a launch whose pinned Interaction Profile sets ' +
   'promptPolicy.kernelTemplate "tm8.core.v2" (manifest promptVersion "2"). v1 stays the default ' +
   'until the spec ca8d §6.2 evaluation passes.';
 
-const numbered = (rules: readonly string[]): string => rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
-
 const FRAME_ENTRIES: readonly PromptEntry[] = [
   {
-    id: 'frame.rules-v2',
+    id: 'frame.base-v2',
     categoryId: 'frame',
-    title: 'Five rules (v2.0 worker)',
+    title: 'Base prompt (v2.0, every mode)',
     summary:
-      'The whole always-on instruction set of the v2 frame, each rule stated once: untrusted data, scope, discovery, visibility, and the exact closeout.',
+      'What tm8 is (entities, versions, anchors, the CLI as the only way in) and three rules for every mode: untrusted data, discovery, visibility.',
     status: 'live',
     rendering: 'verbatim',
-    source: 'packages/prompt/src/worker-v2.ts',
-    injectedWhen: `Inside <rules>. ${V2_GATE}`,
-    text: numbered(workerRulesV2('worker')),
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `The <tm8> block, byte-identical in all five modes. ${V2_GATE}`,
+    text: BASE_PROMPT_V2,
   },
   {
-    id: 'frame.rules-v2-coordinated',
+    id: 'frame.role-v2-worker',
     categoryId: 'frame',
-    title: 'Five rules (v2.0 coordinated worker)',
-    summary: 'Rules 4 and 5 send one closing receipt to both the task and the coordinator, with --conversation.',
+    title: 'Worker role layer (v2.0)',
+    summary: 'Do the task yourself, no delegation; the exact closeout: closing message, criteria tick, then complete.',
     status: 'live',
     rendering: 'verbatim',
-    source: 'packages/prompt/src/worker-v2.ts',
-    injectedWhen: `Inside <rules> for a coordinated worker. ${V2_GATE}`,
-    text: numbered(workerRulesV2('coordinated-worker')),
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `After the base, for worker and coordinated-worker. ${V2_GATE}`,
+    text: roleLayerV2('worker'),
+  },
+  {
+    id: 'frame.role-v2-coordinator',
+    categoryId: 'frame',
+    title: 'Coordinator role layer (v2.0)',
+    summary: 'Split, spawn with the full coordinated-worker command, brief, track, gate, and the same closeout as a worker.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `After the base, for coordinator and coordinated-coordinator. ${V2_GATE}`,
+    text: roleLayerV2('coordinator'),
+  },
+  {
+    id: 'frame.role-v2-dispatcher',
+    categoryId: 'frame',
+    title: 'Dispatcher role layer (v2.0)',
+    summary: 'Route one task to the best existing teammate, attach its memories, spawn it, and say why on the task.',
+    status: 'live',
+    rendering: 'verbatim',
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `After the base, for dispatcher. ${V2_GATE}`,
+    text: roleLayerV2('dispatcher'),
+  },
+  {
+    id: 'frame.coordination-v2',
+    categoryId: 'frame',
+    title: 'Coordinated modifier (v2.0)',
+    summary:
+      'One send to both the task and the waiting coordinator, with the coordinator session id rendered into the command.',
+    status: 'live',
+    rendering: 'composed',
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `Inside <coordination>, after the role layer, for coordinated-worker and coordinated-coordinator. ${V2_GATE}`,
+    text: coordinationLineV2('{coordinatorSessionId}'),
   },
   {
     id: 'frame.orientation-v2',
@@ -535,7 +573,7 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
       'The one prose sentence of the v2 task header: the task context DTO below it IS the orientation read.',
     status: 'live',
     rendering: 'composed',
-    source: 'packages/prompt/src/worker-v2.ts',
+    source: 'packages/prompt/src/prompt-v2.ts',
     injectedWhen: `Inside <assignment>, above the embedded tm8.entity-context.v2 DTO. ${V2_GATE}`,
     text: orientationLineV2('{taskId}'),
   },
@@ -546,7 +584,7 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     summary: 'Points at graphify, without benchmark figures, only when the session cwd holds a graph.',
     status: 'live',
     rendering: 'verbatim',
-    source: 'packages/prompt/src/worker-v2.ts',
+    source: 'packages/prompt/src/prompt-v2.ts',
     injectedWhen: `Inside <repo>, when graphify-out/merged-graph.json exists in the session cwd. ${V2_GATE}`,
     text: V2_REPO_GRAPH_LINE,
   },

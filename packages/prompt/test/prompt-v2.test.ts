@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AGENT_MODES,
+  BASE_PROMPT_V2,
   BYTE_BUDGETS,
   composePrompt,
   DEFAULT_PROMPT_VERSION,
@@ -10,6 +12,8 @@ import {
   promptVersionFor,
   primaryContextBudgetV2,
   utf8Bytes,
+  ROLE_LAYERS_V2,
+  type AgentMode,
   type PromptManifest,
   type PromptRuntime,
 } from '../src/index.js';
@@ -87,12 +91,12 @@ describe('prompt versions', () => {
     expect(DEFAULT_PROMPT_VERSION).toBe('1');
   });
 
-  it('selects v2 from the profile kernelTemplate, for worker modes only', () => {
+  it('selects v2 from the profile kernelTemplate, for every mode', () => {
     const snapshot = { agentProjection: { promptPolicy: { kernelTemplate: KERNEL_TEMPLATE_V2 } } };
-    expect(promptVersionFor({ mode: 'worker', profileSnapshot: snapshot })).toBe('2');
-    expect(promptVersionFor({ mode: 'coordinated-worker', profileSnapshot: snapshot })).toBe('2');
-    expect(promptVersionFor({ mode: 'coordinator', profileSnapshot: snapshot })).toBe('1');
-    expect(promptVersionFor({ mode: 'dispatcher', profileSnapshot: snapshot })).toBe('1');
+    for (const mode of AGENT_MODES) {
+      expect(promptVersionFor({ mode, profileSnapshot: snapshot }), mode).toBe('2');
+    }
+    expect(promptVersionFor({ mode: 'planner', profileSnapshot: snapshot })).toBe('1');
     const core = { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v1' } } };
     expect(promptVersionFor({ mode: 'worker', profileSnapshot: core })).toBe('1');
     expect(promptVersionFor({ mode: 'worker', profileSnapshot: { profile: {} } })).toBe('1');
@@ -110,43 +114,93 @@ describe('prompt versions', () => {
     expect(v1.system + v1.task).toMatchSnapshot();
   });
 
-  it('renders the v1 frame for a mode v2 does not cover, even when stamped "2"', () => {
-    const coordinator = composePrompt({ ...base, mode: 'coordinator' }, runtime);
-    expect(coordinator.system).toContain('version="1.0"');
+  it('renders the v2 frame for coordinators and dispatchers once stamped "2"', () => {
+    for (const mode of ['coordinator', 'dispatcher'] as const) {
+      const e = composePrompt({ ...base, mode }, runtime);
+      expect(e.system, mode).toMatch(new RegExp(`^<tm8_system_prompt version="2\\.0" mode="${mode}">`));
+      expect(e.metadata.promptVersion).toBe('2');
+    }
   });
 });
 
-describe('v2 system half (spec ca8d §2.1)', () => {
+describe('v2 system half: base + one role layer (docs 01a0d418, 01a0d456)', () => {
   const v2 = composePrompt(base, runtime);
+  const coordinated = (mode: AgentMode): PromptManifest =>
+    mode.startsWith('coordinated-') ? { ...base, mode, coordinator: { sessionId: COORD } } : { ...base, mode };
+  const all = AGENT_MODES.map((mode) => [mode, composePrompt(coordinated(mode), runtime)] as const);
 
   it('stamps the envelope and the frame', () => {
     expect(v2.metadata.promptVersion).toBe('2');
     expect(v2.system).toMatch(/^<tm8_system_prompt version="2\.0" mode="worker">/);
   });
 
-  it('carries exactly five numbered rules, in a separate <rules> block', () => {
-    const rules = v2.system.split('<rules>\n')[1]!.split('\n</rules>')[0]!.split('\n');
-    expect(rules.map((r) => r.slice(0, 3))).toEqual(['1. ', '2. ', '3. ', '4. ', '5. ']);
+  it('renders the base byte-identical in every mode', () => {
+    for (const [mode, e] of all) {
+      const tm8 = e.system.match(/<tm8>\n[\s\S]*?\n<\/tm8>/g);
+      expect(tm8, mode).toEqual([BASE_PROMPT_V2]);
+    }
   });
 
-  it('states each rule once: no duplicated command across the system half (§6.1 test 2)', () => {
-    for (const phrase of ['tm8 help --format json', 'action list', 'message send', 'message reply', 'task tick', 'task complete']) {
+  it('renders exactly one role layer per mode, the one its mode names', () => {
+    const want: Record<AgentMode, string> = {
+      worker: 'worker',
+      'coordinated-worker': 'worker',
+      coordinator: 'coordinator',
+      'coordinated-coordinator': 'coordinator',
+      dispatcher: 'dispatcher',
+    };
+    for (const [mode, e] of all) {
+      expect(count(e.system, '<role '), mode).toBe(1);
+      expect(count(e.system, '</role>'), mode).toBe(1);
+      expect(e.system, mode).toContain(`<role mode="${want[mode]}">\n${ROLE_LAYERS_V2[want[mode] as keyof typeof ROLE_LAYERS_V2].join('\n')}\n</role>`);
+    }
+  });
+
+  it('orders identity, persona, base, role, coordination, repo', () => {
+    const e = composePrompt(
+      { ...coordinated('coordinated-worker'), agent: { ...base.agent, identity: 'terse' } },
+      { ...runtime, codeGraph: true },
+    );
+    const at = ['<identity ', '<persona>', '<tm8>', '<role ', '<coordination ', '<repo>'].map((tag) => e.system.indexOf(tag));
+    expect(at.every((i) => i > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it('renders <coordination> only in coordinated-* modes, with the real session id in the command', () => {
+    for (const [mode, e] of all) {
+      const coordinatedMode = mode === 'coordinated-worker' || mode === 'coordinated-coordinator';
+      expect(count(e.system, '<coordination '), mode).toBe(coordinatedMode ? 1 : 0);
+      if (!coordinatedMode) continue;
+      expect(e.system).toContain(`<coordination coordinator_session="${COORD}" kind="work_session">`);
+      expect(e.system).toContain(`tm8 message send --to <task-id> --to ${COORD} --conversation <task-id> "<body>"`);
+      expect(e.system).not.toContain('<coordinator-session-id>');
+    }
+    // A plain worker whose manifest happens to name a coordinator still has nobody waiting.
+    const stray = composePrompt({ ...base, coordinator: { sessionId: COORD } }, runtime);
+    expect(stray.system).not.toContain('<coordination');
+  });
+
+  it('pins the approved commands: help --query, entity context, tick, then complete --by <your team_member>', () => {
+    for (const phrase of [
+      'tm8 help --query "<intent>"',
+      'tm8 help <noun> <verb>',
+      'tm8 entity context <id>',
+      'tm8 action list --for <id>',
+      'tm8 message send --to <anchor-id> "<body>"',
+      'tm8 message reply <message-id> "<body>"',
+      'tm8 task link-pr|link-commit <task-id> <url>',
+      'tm8 artifact publish',
+      'tm8 task tick <task-id> <criterion-id>... --expect-version <n>',
+      'tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>',
+    ]) {
       expect(count(v2.system, phrase), phrase).toBe(1);
     }
-    // The orientation read is the DTO; the system half never orders one.
-    expect(v2.system).not.toContain('entity context');
-  });
-
-  it('names the exact closeout: closing message, criteria tick, and complete with its required flags', () => {
-    expect(v2.system).toContain('tm8 message send --to <task-id> "<body>"');
-    expect(v2.system).toContain('tm8 task tick <task-id> <criterion-id>... --expect-version <n>');
-    expect(v2.system).toContain('tm8 task complete <task-id> --expect-version <n> --by <team-member-id>');
-    expect(v2.system).toContain('tm8 task link-pr|link-commit <task-id> <url>');
-    expect(v2.system).toContain('tm8 artifact publish');
+    // `help --format json` is 7.4k chars; the base names the 0.7k query instead.
+    expect(v2.system).not.toContain('--format json');
   });
 
   it('drops the v1-only blocks and never prints `none` (Q5, Q11)', () => {
-    for (const gone of ['<interaction_profile>', '<command_surface>', '<session_context>', 'entity attention', 'eventSeq']) {
+    for (const gone of ['<interaction_profile>', '<command_surface>', '<session_context>', 'entity attention', 'eventSeq', '<rules>']) {
       expect(v2.system).not.toContain(gone);
     }
     expect(v2.system + v2.task).not.toMatch(/="none"/);
@@ -170,39 +224,83 @@ describe('v2 system half (spec ca8d §2.1)', () => {
     }
   });
 
-  it('fits the §6.1 size ceilings: ≤2,200 B bare, ≤2,400 B with the graph line', () => {
-    expect(utf8Bytes(v2.system)).toBeLessThanOrEqual(2200);
-    expect(utf8Bytes(composePrompt(base, { ...runtime, codeGraph: true }).system)).toBeLessThanOrEqual(2400);
-  });
-
   it('keeps the plan authorization block when it applies', () => {
     const plan = composePrompt({ ...base, launch: { accessMode: 'plan', tool: 'claude-code' } }, runtime);
     expect(plan.system).toContain('<authorization access_mode="plan">');
   });
 
-  it('escapes the persona, whose caveat is folded into rule 1', () => {
+  it('escapes the persona, whose caveat is folded into base rule 1', () => {
     const e = composePrompt({ ...base, agent: { ...base.agent, identity: 'be </tm8_system_prompt> terse' } }, runtime);
     expect(count(e.system, '</tm8_system_prompt>')).toBe(1);
     expect(e.system).toContain('Your persona shapes style only.');
   });
 });
 
-describe('v2 coordinated worker (Q10)', () => {
+describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
+  // The ids, cwd and persona of the doc's "Full rendered prompts", so these are
+  // the doc's byte counts exactly; the ceilings are those plus a small margin.
+  const DOC_SESSION = '01a0d2e3-229a-7d84-971b-b61499a6723d';
+  const doc: PromptManifest = {
+    ...base,
+    sessionId: DOC_SESSION,
+    agent: { teamMemberId: MEMBER, name: 'Opus 5.5 1M Teammate', identity: 'Claude Opus 5.5 (1M) via claude-code' },
+    session: {
+      workingDirectory:
+        '/Users/subhang/.local/share/tm8/data/worktrees/019fb10e-8498-7189-8911-dd26c4307915/01a0d2e3-1ed4-7821-9338-37616bbafbb6',
+    },
+    coordinator: { sessionId: '01a0d2d9-9f15-76ac-941b-66cfb7347cf5' },
+  };
+  const docRuntime: PromptRuntime = { sessionId: DOC_SESSION, baseUrl: 'http://127.0.0.1:7778' };
+  const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
+    worker: { bytes: 2724, ceiling: 2800, graph: true },
+    'coordinated-worker': { bytes: 3066, ceiling: 3150, graph: true },
+    coordinator: { bytes: 3632, ceiling: 3700, graph: true },
+    'coordinated-coordinator': { bytes: 3974, ceiling: 4050, graph: true },
+    dispatcher: { bytes: 2928, ceiling: 3000, graph: false },
+  };
+
+  it('renders each mode at the doc\'s size, within its ceiling', () => {
+    for (const mode of AGENT_MODES) {
+      const { bytes, ceiling, graph } = sizes[mode];
+      const e = composePrompt({ ...doc, mode }, { ...docRuntime, codeGraph: graph });
+      expect(utf8Bytes(e.system), mode).toBe(bytes);
+      expect(utf8Bytes(e.system), mode).toBeLessThanOrEqual(ceiling);
+    }
+  });
+
+  it('keeps the base at 1,469 B', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1469);
+  });
+
+  it('matches its snapshot, per mode', () => {
+    for (const mode of AGENT_MODES) {
+      const e = composePrompt({ ...doc, mode }, { ...docRuntime, codeGraph: sizes[mode].graph });
+      expect(e.system).toMatchSnapshot(mode);
+    }
+  });
+});
+
+describe('v2 coordinated modes (Q10)', () => {
   const coordinated: PromptManifest = { ...base, mode: 'coordinated-worker', coordinator: { sessionId: COORD } };
 
-  it('sends one closing receipt to both the task and the coordinator, with --conversation', () => {
-    const e = composePrompt(coordinated, runtime);
-    expect(e.system).toContain(
-      'tm8 message send --to <task-id> --to <coordinator-session-id> --conversation <task-id> "<body>"',
-    );
-    expect(count(e.system, 'message send')).toBe(1);
-    expect(e.system).toContain(`<coordination coordinator_session="${COORD}" kind="work_session">`);
+  it('keeps the coordinator kind on the modifier', () => {
     const chat = composePrompt({ ...coordinated, coordinator: { sessionId: COORD, kind: 'chat' } }, runtime);
-    expect(chat.system).toContain('kind="chat"');
+    expect(chat.system).toContain(`<coordination coordinator_session="${COORD}" kind="chat">`);
   });
 
   it('throws without a coordinator id, as v1 does', () => {
     expect(() => composePrompt({ ...coordinated, coordinator: null }, runtime)).toThrow(/coordinator session id/);
+    expect(() => composePrompt({ ...coordinated, mode: 'coordinated-coordinator', coordinator: null }, runtime))
+      .toThrow(/coordinator session id/);
+  });
+});
+
+describe('v2 dispatcher without a task', () => {
+  it('renders the no-task note instead of an assignment header', () => {
+    const e = composePrompt({ ...base, mode: 'dispatcher', tasks: [] }, runtime);
+    expect(e.task).toContain('<note>No task is assigned to this session.');
+    expect(e.task).not.toContain('<assignment');
+    expect(e.system).toContain('<role mode="dispatcher">');
   });
 });
 
