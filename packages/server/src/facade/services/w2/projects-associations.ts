@@ -80,7 +80,7 @@ interface LinkMutationResult {
 }
 
 /**
- * One row of `public.resolve_project_ref` (230): entity -> grant -> path.
+ * One row of `public.resolve_project_ref` (231): entity -> grant -> path.
  * `working_dir` is for the SERVER (git, spawn, files) and reaches a client
  * only when the caller is a gate admin.
  */
@@ -477,7 +477,7 @@ export class W2ProjectsAssociationsService {
   };
 
   /**
-   * `projects.list`. W11 (230): the node-wide folder list is the gate's
+   * `projects.list`. W11 (231): the node-wide folder list is the gate's
    * (`gate.folders.list` is its successor); with `?spaceId=` it is the
    * member's view of that space's projects, kept in the legacy
    * `ProjectResource` shape (id = the folder id every client still keys on,
@@ -515,7 +515,7 @@ export class W2ProjectsAssociationsService {
     }));
   };
 
-  /** Folder paths for a gate admin (RLS: `projects_select` is gate-only since 230); empty for anyone else. */
+  /** Folder paths for a gate admin (RLS: `projects_select` is gate-only since 231); empty for anyone else. */
   private async gatePaths(claims: DbClaims, folderIds: readonly string[]): Promise<Map<string, string>> {
     if (!isGateAdmin(claims) || folderIds.length === 0) return new Map();
     const rows = await this.deps.db.query<{ id: string; working_dir: string }>(

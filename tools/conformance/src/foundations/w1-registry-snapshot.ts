@@ -37,7 +37,7 @@ const W1_FACADE_HANDLERS = [
   'projects.create',
   'projects.get',
   'projects.update',
-  // W11 (migration 230) retired projects.link; its successor on the same
+  // W11 (migration 231) retired projects.link; its successor on the same
   // POST /v2/spaces/:spaceId/projects path is spaces.projects.create.
   'spaces.projects.create',
   'entities.get',

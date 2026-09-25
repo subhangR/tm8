@@ -42,7 +42,7 @@ export class ContentionService {
     const projectId = requireUuidParam(ctx, 'projectId');
     const claims = claimsFor(owner, ctx);
 
-    // W11 (230): the project (entity id or folder id) is resolved inside the
+    // W11 (231): the project (entity id or folder id) is resolved inside the
     // caller's spaces; another space's answers not_found (T31).
     const resolved = (await this.deps.db.query<{ folder_id: string; space_id: string | null }>(
       claims,

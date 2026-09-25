@@ -507,7 +507,7 @@ export class DbGraphPort implements GraphPort {
 
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
-        // W11 (230): entity -> grant -> path through `resolve_project_ref`,
+        // W11 (231): entity -> grant -> path through `resolve_project_ref`,
         // which accepts the space's project entity id or the folder id and
         // answers only inside this space (a member never reads projects).
         const rows = await q.query<ProjectRow>(
@@ -928,7 +928,7 @@ export class DbGraphPort implements GraphPort {
     input: { spaceId: string; projectId: string | null },
   ): Promise<ShellSessionContext> {
     if (!input.projectId) return { project: null };
-    // W11 (230): same resolver as loadSpawnContext.
+    // W11 (231): same resolver as loadSpawnContext.
     const rows = await this.db.query<ProjectRow>(
       this.claims(auth),
       `select folder_id id, name, working_dir, trust
@@ -1524,7 +1524,7 @@ export class DbGraphPort implements GraphPort {
   async loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null> {
     const rows = await this.db.query<{ working_dir: string }>(
       this.claims(auth),
-      // W11 (230): members do not read public.projects; the resolver does.
+      // W11 (231): members do not read public.projects; the resolver does.
       'select working_dir from public.resolve_project_ref($1::uuid)',
       [projectId],
     );

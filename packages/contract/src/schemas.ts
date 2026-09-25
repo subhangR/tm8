@@ -3102,7 +3102,7 @@ export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object(
   defaults: ProjectDefaultsSchema.optional(),
 }).strict();
 
-// W11 (migration 230): space-owned projects over gate-owned folders.
+// W11 (migration 231): space-owned projects over gate-owned folders.
 export const SpaceProjectSchema: z.ZodType<SpaceProject> = z.object({
   id: EntityIdSchema,
   spaceId: SpaceIdSchema,

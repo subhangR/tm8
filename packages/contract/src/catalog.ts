@@ -193,7 +193,7 @@ export const OPERATIONS = [
   { name: 'projects.file.history',   method: 'GET',    path: '/v2/projects/:projectId/file-history',        kind: 'read',    status: 'v1' },
   { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
-  // W11 (migration 230): `projects.link` is gone. A folder is the gate's and
+  // W11 (migration 231): `projects.link` is gone. A folder is the gate's and
   // is granted to ONE space by a gate admin (`gate.folders.*`); the space's
   // project is its own entity, listed to members without a path and named by
   // a space admin on a folder granted to that space.

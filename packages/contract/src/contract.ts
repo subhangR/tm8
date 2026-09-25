@@ -4253,7 +4253,7 @@ export interface ProjectResource {
   repoUrl?: string | null;
   /**
    * Absolute path on the owning node; path-traversal/symlink-guarded
-   * (10-SECURITY-MODEL). W11 (migration 230): the folder is the gate's, so the
+   * (10-SECURITY-MODEL). W11 (migration 231): the folder is the gate's, so the
    * path is present ONLY for a gate (node) admin and absent for every member.
    */
   workingDir?: string;
@@ -4627,7 +4627,7 @@ export interface ProjectUpdateInput extends CommandContext {
   defaults?: ProjectDefaults;
 }
 
-// --- W11 (migration 230): space-owned projects over gate-owned folders -------
+// --- W11 (migration 231): space-owned projects over gate-owned folders -------
 //
 // A FOLDER (the `projects` row: path, trust, repo_url) is the gate's; a gate
 // admin grants it to exactly ONE space. The space's PROJECT is an entity of
@@ -4674,7 +4674,7 @@ export interface GateFolder {
   repoUrl?: string | null;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
-  /** One entry normally; two or more only on folders linked twice before 230. */
+  /** One entry normally; two or more only on folders linked twice before 231. */
   grants: GateFolderGrant[];
   createdAt: string;
   updatedAt: string;

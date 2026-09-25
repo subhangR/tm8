@@ -1,5 +1,5 @@
 -- =============================================================================
--- 230 — space-owned projects, the model half (plan 01a0d9eb W11, decision 28).
+-- 231 — space-owned projects, the model half (plan 01a0d9eb W11, decision 28).
 --
 -- THE MODEL. The disk is the gate's; everything else about a project belongs
 -- to one space.
@@ -22,7 +22,7 @@
 --                            branch). unique(project_id, branch) stays: one
 --                            folder is one git branch namespace on disk.
 --
--- Existing rows get the new columns from 231, a separate row-rewriting file.
+-- Existing rows get the new columns from 232, a separate row-rewriting file.
 --
 -- ONE SPACE PER FOLDER, WITHOUT BREAKING A NODE THAT HAS TWO (the checkpoint
 -- in the phases doc). Postgres has no NOT VALID unique index, so the rule is
@@ -68,19 +68,19 @@ set role tm8_graph_owner;
 -- -----------------------------------------------------------------------------
 alter table public.space_projects add column granted_by text;
 comment on column public.space_projects.granted_by is
-  'Identity of the gate admin who granted this folder to the space (230). Null on grants made before 230.';
+  'Identity of the gate admin who granted this folder to the space (231). Null on grants made before 231.';
 
 alter table public.chats
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.chats.project_entity_id is
-  'The space''s project entity this chat is bound to (230). project_id keeps the folder.';
+  'The space''s project entity this chat is bound to (231). project_id keeps the folder.';
 create index chats_project_entity_idx on public.chats(project_entity_id)
   where project_entity_id is not null;
 
 alter table public.work_sessions
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.work_sessions.project_entity_id is
-  'The space''s project entity this session launched from (230). project_id keeps the folder.';
+  'The space''s project entity this session launched from (231). project_id keeps the folder.';
 create index work_sessions_project_entity_idx on public.work_sessions(project_entity_id)
   where project_entity_id is not null;
 
@@ -88,10 +88,10 @@ alter table public.worktrees
   add column space_id uuid references public.spaces(id) on delete cascade,
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.worktrees.space_id is
-  'The worktree entity''s space, denormalized for the per-space branch key (230).';
+  'The worktree entity''s space, denormalized for the per-space branch key (231).';
 comment on column public.worktrees.project_entity_id is
-  'The space''s project entity the worktree was cut from (230).';
--- Rows from before 230 carry nulls until 231 fills them; nulls never conflict.
+  'The space''s project entity the worktree was cut from (231).';
+-- Rows from before 231 carry nulls until 232 fills them; nulls never conflict.
 create unique index worktrees_space_project_entity_branch_key
   on public.worktrees(space_id, project_entity_id, branch);
 
@@ -172,8 +172,8 @@ begin
       raise exception 'Project not found' using errcode = 'P0002';
     end if;
     perform 1 from public.spaces where id = new.space_id for update;
-    -- W11 (230): a folder is granted to at most one space. Rows that already
-    -- break this (double links from before 230) stay until W11-migrate splits
+    -- W11 (231): a folder is granted to at most one space. Rows that already
+    -- break this (double links from before 231) stay until W11-migrate splits
     -- them; no new one can be made.
     if exists (select 1 from public.space_projects other
                 where other.project_id = new.project_id
@@ -459,7 +459,7 @@ revoke all on function public.register_folder(text, text, text, text, jsonb, uui
 grant execute on function public.register_folder(text, text, text, text, jsonb, uuid, text) to tm8_app;
 
 -- Every folder on the node with the space(s) it is granted to. A folder from
--- before 230 may still list two spaces until W11-migrate runs.
+-- before 231 may still list two spaces until W11-migrate runs.
 create or replace function public.gate_folders_list()
 returns table (
   folder_id uuid, name text, working_dir text, repo_url text, trust text, defaults jsonb,

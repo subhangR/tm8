@@ -428,7 +428,7 @@ export class W2ProjectFilesService {
     if (requireNodeAdmin && claims.nodeAdmin !== true) {
       throw new CollabError('forbidden', 'node-admin access is required to attach project files');
     }
-    // W11 (230): members no longer read public.projects; the resolver maps
+    // W11 (231): members no longer read public.projects; the resolver maps
     // the project (entity id or folder id) to its grant inside the caller's
     // spaces, so another space's project is not_found.
     const rows = await this.deps.db.query<WorkingDirRow>(

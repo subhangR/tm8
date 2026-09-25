@@ -1,13 +1,13 @@
 /**
  * THE PICKER SEAM (plan 01a0d9eb W11, K13): which ONE space owns a folder.
  *
- * Since migration 230 a folder is granted to at most one space. Two callers
+ * Since migration 231 a folder is granted to at most one space. Two callers
  * need to choose that space from several candidates:
  *
  *   - launch bootstrap (`ensureLaunchResources`) on a fresh node: every
  *     candidate has no activity yet, so the tie-break alone decides;
  *   - W11-migrate, splitting the folders that were linked into two or more
- *     spaces before 230: the space with the most activity in the last 30 days
+ *     spaces before 231: the space with the most activity in the last 30 days
  *     keeps the folder, the others get their own grant or lose it.
  *
  * Both call this one function, so the rule lives in one place.
