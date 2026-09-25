@@ -134,7 +134,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
-  { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '8', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },

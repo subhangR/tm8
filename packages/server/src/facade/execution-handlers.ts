@@ -1456,7 +1456,7 @@ export class DbGraphPort implements GraphPort {
  * a machine that can comfortably run more agents that is an invented limit.
  *
  * `TM8_SESSION_CAP` makes it the operator's decision:
- *   - unset      → 8, the previous behaviour, so nothing changes by upgrading
+ *   - unset      → `DEFAULT_SESSION_CAP` (64)
  *   - a number   → that many concurrent live sessions
  *   - `0` / `unlimited` / `none` → no practical ceiling
  *
@@ -1483,14 +1483,17 @@ export class DbGraphPort implements GraphPort {
  *  cannot overflow on the way to the guard. */
 const UNLIMITED_SESSION_CAP = 2_147_483_647;
 
+/** Concurrent live sessions a node runs when `TM8_SESSION_CAP` is unset. Was 8. */
+export const DEFAULT_SESSION_CAP = 64;
+
 export function resolveSessionCap(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env['TM8_SESSION_CAP']?.trim();
-  if (raw === undefined || raw === '') return 8;
+  if (raw === undefined || raw === '') return DEFAULT_SESSION_CAP;
   if (/^(unlimited|none|off|0)$/i.test(raw)) return UNLIMITED_SESSION_CAP;
   const parsed = Number.parseInt(raw, 10);
   // A typo must not silently become a SMALLER cap than the default: an
   // unparseable or negative value falls back rather than being coerced to 1.
-  if (!Number.isFinite(parsed) || parsed < 1) return 8;
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_SESSION_CAP;
   return Math.min(parsed, UNLIMITED_SESSION_CAP);
 }
 
