@@ -302,6 +302,8 @@ const IDLE: JevGroups = {
   references: { status: 'idle' },
 };
 
+const NO_EDIT: LaunchGroupEdit = { removed: [], added: [] };
+
 const NO_TICKS: Record<JevEntityGroup, EntityId[]> = { memories: [], skills: [], references: [] };
 
 const ZERO_COST: JevCost = { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 };
@@ -585,7 +587,10 @@ export function useJevSuggestions(args: {
       const override = contextBudgets?.[group];
       const budget = override ?? value?.budget ?? null;
       const { used, frame } = value && index ? usedBytesOf(group, value, ticked, index) : { used: 0, frame: 0 };
-      const proposal = jevGroupDiff(rows.map((row) => ({ id: row.entityId as EntityId, isDefault: row.default })), ticked);
+      // Against the launch's loaded defaults when the host has them — the same rule Apply uses.
+      const proposal = value && host
+        ? jevGroupEdit(host.defaults[group], NO_EDIT, { items: rows, ticked }).diff
+        : jevGroupDiff(rows.map((row) => ({ id: row.entityId as EntityId, isDefault: row.default })), ticked);
       const entry = applied[group] ?? null;
       let applyRefusal: string | null = null;
       if (!value) applyRefusal = JEV_NOT_ANSWERED_REASON;

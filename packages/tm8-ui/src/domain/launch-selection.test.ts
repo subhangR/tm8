@@ -225,6 +225,18 @@ describe('jevGroupEdit — Applying Jev to one group', () => {
     expect(result.edit).toEqual({ removed: ['d9', 'd2'], added: ['own', 'x'] });
   });
 
+  it('defaults come from the LOADED defaults, not Jev’s flag — no silent drop either way (lane D)', () => {
+    // Jev calls d1 and d2 defaults, but the launch now loads only d2 and z.
+    const result = jevGroupEdit(ready('d2', 'z'), NONE, {
+      items: [...items, item('z', 'doc', 1.0, false, ['space'], 'Z', 100)],
+      ticked: ['d1', 'x'],
+    });
+    // d1 is ticked and NOT a loaded default: it is ADDED, not assumed present.
+    // z is a loaded default Jev left unticked: it is REMOVED, visibly, even though Jev's flag said space.
+    expect(result.edit).toEqual({ removed: ['d2', 'z'], added: ['d1', 'x'] });
+    expect(groupIds(ready('d2', 'z'), result.edit)).toEqual(['d1', 'x']);
+  });
+
   it('a locked group refuses: defaults unread, or past the ceiling', () => {
     expect(jevGroupEdit({ status: 'loading' }, NONE, { items, ticked: ['d1'] }).refusal).toMatch(/Reading/);
     const many = Array.from({ length: SPAWN_SELECTION_GROUP_LIMIT + 1 }, (_, i) => item(`p${String(i)}`, 'doc', 2, true));

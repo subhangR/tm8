@@ -430,7 +430,17 @@ export function jevGroupEdit(
   edit: LaunchGroupEdit,
   suggestion: JevGroupSuggestion,
 ): JevGroupEditResult {
-  const decided = suggestion.items.map((item) => ({ id: item.entityId as EntityId, isDefault: item.default }));
+  /* WHICH ROWS ARE DEFAULTS comes from the launch's LOADED defaults — the set
+     spawn will actually load — not from Jev's `default` flag. The two share a
+     server rule but can disagree after a defaults re-read (teammate or subject
+     change): trusting Jev's flag would drop a ticked non-default silently, or
+     keep an unticked default silently. Jev's flag is the fallback only while
+     the defaults are unread, when Apply is refused anyway (`jevApplyRefusal`). */
+  const loaded = defaults.status === 'ready' ? new Set<string>(defaults.rows.map((row) => row.id)) : null;
+  const decided = suggestion.items.map((item) => ({
+    id: item.entityId as EntityId,
+    isDefault: loaded ? loaded.has(item.entityId) : item.default,
+  }));
   const ticked = suggestion.ticked as readonly EntityId[];
   const next = applyJevToEdit(edit, decided, ticked);
   const diff = jevGroupDiff(decided, ticked);
