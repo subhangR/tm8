@@ -94,6 +94,17 @@ describe('create with a header', () => {
     expect('header' in input).toBe(false);
   });
 
+  it('keywords alone still go as `header` — a keywords-only header is one (migration 223)', async () => {
+    const commands = commandsWith(async () => created);
+    mount(commands);
+    fireEvent.click(screen.getByTestId('header-create-open'));
+    fireEvent.change(screen.getByTestId('header-input-keywords'), { target: { value: 'grid, layout' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create doc' }));
+    await waitFor(() => expect(commands.createEntity).toHaveBeenCalledTimes(1));
+    const input = commands.createEntity.mock.calls[0]![0] as CreateEntityInput;
+    expect(input.header).toEqual({ whenToUse: null, summary: null, keywords: ['grid', 'layout'] });
+  });
+
   it('LENIENT: long answers never disable Create; a refusal is shown in the node\'s words', async () => {
     const commands = commandsWith(async () => {
       throw Object.assign(new Error('whenToUse must be at most 400 characters'), {});

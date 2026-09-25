@@ -70,9 +70,24 @@ export function headerInputOf(draft: HeaderDraft): HeaderTextInput {
   };
 }
 
-/** A header needs `whenToUse` or `summary`; keywords alone are not one. */
+/**
+ * Does the draft hold anything to write? Since migration 223 a keywords-only
+ * header IS a header (the node stores it), so a keyword counts as much as
+ * either text field; only a draft with nothing at all is the `header_empty`
+ * no-op.
+ */
 export function headerDraftHasText(draft: HeaderDraft): boolean {
-  return draft.whenToUse.trim() !== '' || draft.summary.trim() !== '';
+  return draft.whenToUse.trim() !== '' || draft.summary.trim() !== '' || parseKeywords(draft.keywords).length > 0;
+}
+
+/**
+ * The header's text EXACTLY as read, for a re-save that must change nothing
+ * but the pin (Mark current). Never routed through a `HeaderDraft`: the
+ * draft's comma-separated keyword line would split a keyword that itself
+ * holds a comma, which the node stores as one.
+ */
+export function headerInputOfView(header: EntityHeaderView): HeaderTextInput {
+  return { whenToUse: header.whenToUse, summary: header.summary, keywords: [...header.keywords] };
 }
 
 export function headerDraftsEqual(a: HeaderDraft, b: HeaderDraft): boolean {

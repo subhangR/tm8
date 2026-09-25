@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import type { CommandResult, EntityDetail, EntityHeaderResult, EntityHeaderView } from '@tm8/contract';
+import type { CommandResult, EntityDetail, EntityHeaderResult, EntityHeaderView, HeaderTextInput } from '@tm8/contract';
 import { Eyebrow } from '../../kit';
 import {
   HEADER_GUIDANCE,
@@ -7,6 +7,7 @@ import {
   headerDraftOf,
   headerDraftsEqual,
   headerInputOf,
+  headerInputOfView,
   headerStaleness,
   parseKeywords,
   staleSentence,
@@ -112,8 +113,8 @@ export function HeaderSection({
     }
   }
 
-  const save = (text: HeaderDraft, kind: 'save' | 'mark') =>
-    set && run(kind, () => set(detail.id, { ...headerInputOf(text), expectedVersion: authored?.version ?? 0 }));
+  const save = (text: HeaderTextInput, kind: 'save' | 'mark') =>
+    set && run(kind, () => set(detail.id, { ...text, expectedVersion: authored?.version ?? 0 }));
 
   const startEdit = () => {
     setDraft(headerDraftOf(authored));
@@ -154,7 +155,7 @@ export function HeaderSection({
         ) : null}
         {hasText || !authored ? null : (
           <p className="pn-launch__note" data-testid="header-blank-note">
-            Both fields are empty, so saving changes nothing. To remove the header, use Clear.
+            Every field is empty, so saving changes nothing. To remove the header, use Clear.
           </p>
         )}
         {error ? <p className="pn-header__error" role="alert" data-testid="header-error">{error}</p> : null}
@@ -165,10 +166,12 @@ export function HeaderSection({
             type="button"
             className="pn-btn pn-btn--primary"
             aria-busy={busy === 'save'}
-            onClick={() => void save(draft, 'save')}
+            onClick={() => void save(headerInputOf(draft), 'save')}
             data-testid="header-save"
           >
-            {busy === 'save' ? 'Saving…' : changed || !authored ? 'Save header' : 'Save (re-pin)'}
+            {/* Unchanged over a CLIPPED read is not a re-pin: it writes the
+                shortened text over the longer stored one, so it says so. */}
+            {busy === 'save' ? 'Saving…' : changed || !authored ? 'Save header' : clipped.length > 0 ? 'Save shortened text' : 'Save (re-pin)'}
           </button>
           <button type="button" className="pn-btn pn-btn--quiet" onClick={() => { setEditing(false); setError(null); }}>
             Cancel
@@ -229,7 +232,7 @@ export function HeaderSection({
                 type="button"
                 className="pn-btn"
                 aria-busy={busy === 'mark'}
-                onClick={() => void save(headerDraftOf(authored), 'mark')}
+                onClick={() => void save(headerInputOfView(authored), 'mark')}
                 data-testid="header-mark-current"
                 title="Re-save the same text; it re-pins the header to the body as it is now"
               >

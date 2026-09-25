@@ -200,6 +200,41 @@ describe('HeaderSection — writing', () => {
     await waitFor(() => expect(screen.queryByTestId('header-stale')).toBeNull());
   });
 
+  it('Mark current sends the keywords EXACTLY as read — one holding a comma is not split in two', async () => {
+    const header = authored({ stale: true, pinnedVersion: 4, version: 2, keywords: ['grid, layout', 'C_min'] });
+    const detail = doc({ version: 7, header });
+    const commands = commandsFor(detail);
+    render(<HeaderSection detail={detail} commands={commands} />);
+    fireEvent.click(screen.getByTestId('header-mark-current'));
+    await waitFor(() => expect(commands.setEntityHeader).toHaveBeenCalledTimes(1));
+    expect(commands.setEntityHeader.mock.calls[0]![1].keywords).toEqual(['grid, layout', 'C_min']);
+  });
+
+  it('a keywords-only header (migration 223) saves — the editor does not call it empty', async () => {
+    const detail = doc();
+    const commands = commandsFor(detail);
+    render(<HeaderSection detail={detail} commands={commands} />);
+    fireEvent.click(screen.getByTestId('header-edit'));
+    fireEvent.change(screen.getByTestId('header-input-keywords'), { target: { value: 'grid, layout' } });
+    expect(screen.queryByTestId('header-blank-note')).toBeNull();
+    fireEvent.click(screen.getByTestId('header-save'));
+    await waitFor(() => expect(commands.setEntityHeader).toHaveBeenCalledWith(detail.id, {
+      whenToUse: null, summary: null, keywords: ['grid', 'layout'], expectedVersion: 0,
+    }));
+  });
+
+  it('an unchanged save over a CLIPPED read is labelled as what it does — never "re-pin"', () => {
+    const clippedDetail = doc({ header: authored({ clipped: ['summary'] }) });
+    const { unmount } = render(<HeaderSection detail={clippedDetail} commands={commandsFor(clippedDetail)} />);
+    fireEvent.click(screen.getByTestId('header-edit'));
+    expect(screen.getByTestId('header-save').textContent).toBe('Save shortened text');
+    unmount();
+    const whole = doc({ header: authored() });
+    render(<HeaderSection detail={whole} commands={commandsFor(whole)} />);
+    fireEvent.click(screen.getByTestId('header-edit'));
+    expect(screen.getByTestId('header-save').textContent).toBe('Save (re-pin)');
+  });
+
   it('shows the node\'s warnings as a note after a no-op save (lenient: nothing is refused for content)', async () => {
     const detail = doc({ header: authored() });
     const commands = commandsFor(detail);
@@ -211,6 +246,9 @@ describe('HeaderSection — writing', () => {
     fireEvent.click(screen.getByTestId('header-edit'));
     fireEvent.change(screen.getByTestId('header-input-when'), { target: { value: '' } });
     fireEvent.change(screen.getByTestId('header-input-summary'), { target: { value: '' } });
+    // Keywords alone are still a header since migration 223 — no blank note yet.
+    expect(screen.queryByTestId('header-blank-note')).toBeNull();
+    fireEvent.change(screen.getByTestId('header-input-keywords'), { target: { value: '' } });
     expect(screen.getByTestId('header-blank-note')).toBeTruthy();
     fireEvent.click(screen.getByTestId('header-save'));
     const note = await screen.findByTestId('header-notice');
