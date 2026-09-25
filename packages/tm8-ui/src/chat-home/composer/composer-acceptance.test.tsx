@@ -109,6 +109,35 @@ describe('composer acceptance', () => {
     expect(controls.roots[0]).toMatchObject({ workdirMode: 'project', projectId: '019f0000-0000-7000-8000-00000000b001' });
   });
 
+  it('ac_4c · switching space clears the project choice — it cannot survive into a space that lacks it', async () => {
+    // A project is linked PER SPACE. A choice carried across a switch names one
+    // the new space very often does not have, and the send is refused by
+    // `chat_configure` with `project is not linked to this space` while the rail
+    // still reads the old project's name. Back to scratch, which every space has.
+    const SPACE_B = '019f0000-0000-7000-8000-000000000091';
+    const { port, controls } = portWith({
+      listProjects: async (spaceId) => (String(spaceId) === SPACE_ID
+        ? [{ id: '019f0000-0000-7000-8000-00000000b001' as EntityId, name: 'tm8-web' }]
+        : []),
+    });
+    const view = await openNewChat(port);
+    await waitFor(() => { fireEvent.click(view.getByLabelText('Project')); expect(view.getByTestId('tch-rail-project-019f0000-0000-7000-8000-00000000b001')).toBeTruthy(); });
+    fireEvent.click(view.getByTestId('tch-rail-project-019f0000-0000-7000-8000-00000000b001'));
+    expect(view.getByLabelText('Project').textContent).toContain('tm8-web');
+
+    view.rerender(<ChatHomeScreen port={port} spaceId={SPACE_B} models={MODELS} newMutationId={(p) => `${p}:t`} />);
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() => expect(view.getByLabelText('Chat teammate')).toBeTruthy());
+    expect(view.getByLabelText('Project').textContent).not.toContain('tm8-web');
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hello' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
+    expect(controls.roots[0]).toMatchObject({ workdirMode: 'scratch' });
+    expect(controls.roots[0]).not.toHaveProperty('projectId');
+  });
+
   it('ac_6 · BUILD under Read-only is surfaced between composer and rail with a one-click raise', async () => {
     const view = await openNewChat(portWith().port);
     fireEvent.click(view.getByLabelText('Permissions'));

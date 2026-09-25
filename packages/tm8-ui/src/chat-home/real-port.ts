@@ -137,6 +137,30 @@ export function createChatHomePortFromSeam(
     });
   };
 
+  /**
+   * THE ID THIS RETURNS IS THE ProjectResource ID, NOT THE ENTITY ID.
+   *
+   * A project has TWO identities and they are never interchangeable: the
+   * ProjectResource row in `public.projects`, and the per-space projection
+   * entity materialized by `projects.link`. The query below lists projections
+   * — `item.id` is the projection — but the id chosen here travels into
+   * `chat.configure` as `projectId`, and `chat_configure` resolves the working
+   * directory with
+   *
+   *   join public.space_projects sp on sp.project_id = p.id
+   *   where p.id = p_project_id and sp.space_id = p_space_id
+   *
+   * keyed on the RESOURCE id. Handing it a projection id can never match, and
+   * the function raises `project is not linked to this space` — the reported
+   * defect, which fired for every project in project mode no matter how well
+   * linked it was, and read as a linking problem it never was.
+   *
+   * The resource id is right there in the projection's own state, so this
+   * needs no second read. A row whose state is not a project projection is
+   * dropped rather than guessed at: there is no other place to recover the
+   * resource id from, and a guessed id would resurface as the same refusal one
+   * layer later.
+   */
   const listProjects: NonNullable<ChatHomePort['listProjects']> = async (spaceId) => {
     const result = await seam.query({
       spaceId,
@@ -144,7 +168,10 @@ export function createChatHomePortFromSeam(
       sort: 'activityAt_desc',
       limit: 100,
     });
-    return result.page.items.map((item) => ({ id: item.id, name: item.title }));
+    return result.page.items.flatMap((item) =>
+      item.state?.kind === 'project'
+        ? [{ id: item.state.projectId, name: item.title }]
+        : []);
   };
 
   /**
