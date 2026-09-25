@@ -518,7 +518,7 @@ describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, 
     expect(linked.text).toBe('Linked runbook: First paragraph of the runbook.');
   });
 
-  it('a references call is recorded like any other group (migration 226 widened jev_calls.grp)', async () => {
+  it('a references call is recorded like any other group (migration 230 widened jev_calls.grp)', async () => {
     const runId = randomUUID();
     await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ runId, subjectId: ids.refTask, groups: ['references'] }));
     expect((await callRows(runId)).map((row) => row.grp)).toEqual(['references']);

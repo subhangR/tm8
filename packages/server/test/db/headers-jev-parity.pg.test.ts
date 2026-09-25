@@ -253,12 +253,21 @@ describe('golden: Jev candidate text is the pre-header loaders\' (memories: plus
   });
 
   it('skills', async () => {
+    // One deliberate break from the pre-header loader (task 01a0da5a, D4): a
+    // skill that routes by `when_to_use` alone shows it WHOLE, where the old
+    // loader cut it at 600. Every other skill is byte-identical.
+    const whole = (set: { items: Array<{ entityId: string; text: string }> }) =>
+      ({ ...set, items: set.items.map((item) => (item.entityId === ids.sWhen ? { ...item, text: '<when-only>' } : item)) });
     for (const teammate of [ids.draco!, ids.noRole!]) {
       // No task: the pool the legacy loader read (I7 adds the task's equips as defaults).
       const [now, before] = await asCaller(async (q) => [await loadSkills(q, ids.space!, teammate, null, MEASURE), await legacyLoadSkills(q, ids.space!, teammate)]);
       expect(now.items.length).toBeGreaterThanOrEqual(8);
-      expect(legacyShape(now)).toEqual(before);
-      for (let i = 0; i < now.items.length; i += 1) expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
+      expect(now.items.some((item) => item.entityId === ids.sWhen)).toBe(true);
+      expect(whole(legacyShape(now))).toEqual(whole(before));
+      for (let i = 0; i < now.items.length; i += 1) {
+        if (now.items[i]!.entityId === ids.sWhen) continue;
+        expect(Buffer.from(now.items[i]!.text)).toEqual(Buffer.from(before.items[i]!.text));
+      }
     }
   });
 
@@ -280,7 +289,8 @@ describe('golden: Jev candidate text is the pre-header loaders\' (memories: plus
     expect(text(memories, ids.mAstral!)).toBe(`${'a'.repeat(599)}😀 (scope: scratch)`);
     expect(text(skills, ids.sEquipped!)).toBe('deploy-runbook: deploy-runbook does a thing');
     expect(text(skills, ids.sInherited!)).toBe('design-review: design-review does a thing');
-    expect(text(skills, ids.sWhen!)).toBe(`when-only: ${`Use when ${'q'.repeat(700)}`.slice(0, 600)}`);
+    // A whenToUse is never cut (D4): the whole `when_to_use`, where the pre-header loader cut at 600.
+    expect(text(skills, ids.sWhen!)).toBe(`when-only: Use when ${'q'.repeat(700)}`);
     expect(text(skills, ids.sBare!)).toBe('bare');
     expect(text(skills, ids.sEmptyWhen!)).toBe('empty-when');
     expect(text(skills, ids.sSpace!)).toBe('spacey:  ');
@@ -310,7 +320,9 @@ describe('resolveHeaders', () => {
       source: 'native', stale: false, bytes: 4, loadPointer: `tm8 entity context ${ids.sInherited}`,
     });
     expect(got.get(ids.sWhen!)).toMatchObject({ summary: null, source: 'native' });
-    expect([...got.get(ids.sWhen!)!.whenToUse!]).toHaveLength(600);
+    // A whenToUse is never cut (task 01a0da5a): all 709 characters, nothing declared.
+    expect(got.get(ids.sWhen!)!.whenToUse).toBe(`Use when ${'q'.repeat(700)}`);
+    expect(got.get(ids.sWhen!)!.clipped).toBeUndefined();
     expect(got.get(ids.sBare!)).toMatchObject({ whenToUse: null, summary: null, source: 'derived' });
     expect(got.get(ids.sLong!)).toMatchObject({ bytes: 5000 });
     expect(got.get(ids.mTask!)).toMatchObject({

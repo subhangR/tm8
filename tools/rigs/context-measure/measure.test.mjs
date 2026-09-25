@@ -109,6 +109,24 @@ test('refuses a manifest whose entries and dropped disagree', () => {
   assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /header-dropped with no header-level drop/);
 });
 
+test('a summary-dropped entry kept its whenToUse, so opening it is an expand; the lists must still agree', () => {
+  const m = manifest();
+  m.context.entries[1] = { entityId: NEEDLE, group: 'references', state: 'summary-dropped', bytes: 400 };
+  m.context.dropped[0] = { entityId: NEEDLE, reason: 'byte-budget', level: 'summary' };
+  const row = measureLane({
+    manifest: m,
+    linked: [DOC, NEEDLE],
+    transcriptLines: transcript([['Bash', { command: `tm8 entity context ${NEEDLE}` }]]),
+  });
+  assert.equal(row.reads.find((r) => r.id === NEEDLE).class, 'expand');
+  assert.deepEqual(row.miss.ids, {});
+  const n = manifest();
+  n.context.entries[1] = { entityId: NEEDLE, group: 'references', state: 'summary-dropped', bytes: 400 };
+  assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /dropped .* vs entry state summary-dropped/);
+  n.context.dropped = n.context.dropped.filter((d) => d.entityId !== NEEDLE);
+  assert.throws(() => measureLane({ manifest: n, transcriptLines: transcript([]) }), /summary-dropped with no summary-level drop/);
+});
+
 test('D2: header- and body-level drops are header reads; every other miss is entry-level', async () => {
   const { missLevel } = await import('./measure.mjs');
   for (const why of ['byte-budget:header', 'byte-budget:body']) assert.equal(missLevel(why), 'header', why);

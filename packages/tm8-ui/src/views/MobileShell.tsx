@@ -31,6 +31,7 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
 import { MobileFrame, MobileSurfaceProvider } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
@@ -56,6 +57,8 @@ import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
+import { EntityChatSlot, useChatSlot } from '../entity-chat';
+import { navStore } from '../stores/navStore';
 import type { GateData } from './useGateData';
 
 export interface MobileShellProps {
@@ -141,6 +144,13 @@ export interface MobileShellProps {
    * gets Run rendered refused-with-reason, which is true.
    */
   onLaunchOpen?(id: EntityId): void;
+  /**
+   * THE CHAT VERB (entity chat §3.2) — the shell's `openChatAbout`, the same
+   * one the desktop screens get. It opens the chat slot, which this shell
+   * draws as a full-screen sheet (§3.1, Phone row). Absent ⇒ the verb renders
+   * refused with its reason rather than inert.
+   */
+  onChatAbout?(aboutId: EntityId | null): void;
   launchSubjectId?: EntityId | null;
   launchRefusal?: { cause: string; detail: string } | null;
   launchInFlight?: boolean;
@@ -664,6 +674,11 @@ export function MobileShell(props: MobileShellProps) {
             controls honest — the exact failure this file's switch docblock
             documents below for `onOpenEntity`. Absent stays absent.
           */}
+          {/* THE CHAT SLOT, as a full-screen sheet (entity chat §3.1). A
+              sibling of the screen for the drawer's reason: it outlives the
+              screen under it, which is what lets Back close it and show the
+              entity again. */}
+          <PhoneChatSheet shell={props} sheetHost={sheetHost} />
           {accountOpen && props.viewerActor ? (
             <MobileAccountSheet
               actor={props.viewerActor}
@@ -699,6 +714,61 @@ export function MobileShell(props: MobileShellProps) {
  * more `MobileShellProps` — these are the shell's own internal state, not
  * something a host wires, and putting them on the public props would invite one.
  */
+/**
+ * THE PHONE'S CHAT SLOT HOST — `EntityChatSlot`, and nothing but it, covering
+ * the whole frame (§3.1, Phone row).
+ *
+ * Portalled into the frame's always-mounted sheet host rather than drawn as a
+ * `MobileSheet`: that sheet brings its own title and ✕, and the slot's panel
+ * already carries both (the subject chip and Close). It inherits the frame's
+ * keyboard shrink the same way `MobileSheet`'s full variant does — `inset: 0`
+ * against a frame that is already measured without the keyboard.
+ *
+ * Back closes it: opening the slot PUSHED an entry, so the phone's own back
+ * gesture pops the slot off the address and the screen underneath is the
+ * entity the chat was opened from.
+ */
+function PhoneChatSheet({ shell, sheetHost }: { shell: MobileShellProps; sheetHost: HTMLDivElement | null }) {
+  const slot = useChatSlot();
+  if (!slot || !sheetHost) return null;
+  const { data } = shell;
+  /* A tap on the subject (or an entity link in the chat) uncovers the screen
+     first — the chat is on top of everything — and only then navigates, when
+     the entity is not already the screen underneath. */
+  const open = (id: EntityId) => {
+    navStore.getState().closeChat();
+    if (id === shell.openEntity) return;
+    const kind = data.detailOf(id)?.kind;
+    if (kind) openEntityOnPhone(shell.navigateTo, id, kind);
+  };
+  return createPortal(
+    <div
+      className="ecp-phone"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Chat"
+      data-testid="entity-chat-phone-sheet"
+    >
+      <EntityChatSlot
+        seam={data.seam}
+        spaceId={shell.spaceId}
+        nodeKey={shell.nodeKey}
+        skillOptions={data.skillOptions}
+        viewerName={shell.viewerActor?.displayName}
+        viewerMemberId={shell.viewerMemberId}
+        onOpenEntity={open}
+        onOpenSubject={open}
+        subjectOf={(id) => {
+          const detail = data.detailOf(id);
+          return detail ? { title: detail.title, kind: detail.kind } : undefined;
+        }}
+        teammateLabel={(id) => data.launch.teammates.find((teammate) => teammate.id === id)?.name ?? null}
+      />
+    </div>,
+    sheetHost,
+  );
+}
+
 interface ChatHosting {
   readonly soloConversation: true;
   readonly routeThreadId: EntityId | null;
@@ -832,6 +902,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
          * refused-with-reason instead of live-looking and inert.
          */
         {...(props.onLaunchOpen ? { onLaunchOpen: props.onLaunchOpen } : {})}
+        {...(props.onChatAbout ? { onChatAbout: props.onChatAbout } : {})}
         {...(props.launchSubjectId !== undefined ? { launchSubjectId: props.launchSubjectId } : {})}
         {...(props.launchRefusal !== undefined ? { launchRefusal: props.launchRefusal } : {})}
         {...(props.launchInFlight !== undefined ? { launchInFlight: props.launchInFlight } : {})}

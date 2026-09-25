@@ -354,6 +354,34 @@ describe('entities.header.set / clear (I4)', () => {
     expect(kw.clipped).toEqual(['keywords']);
   });
 
+  it('a whenToUse past the 400 guidance is stored and shown WHOLE by every reader, and the write warns header_long (task 01a0da5a)', async () => {
+    const whenToUse = `Open when ${'w'.repeat(1490)}`; // 1,500 characters
+    const set = await call<HeaderResult>('entities.header.set', { id: F.T }, { body: { whenToUse } });
+    expect(set.warnings).toEqual([expect.objectContaining({ code: 'header_long' })]);
+    expect(set.warnings![0]!.message).toContain('1500 characters and was written whole');
+    expect(set.header).toMatchObject({ whenToUse, source: 'authored' });
+    expect(set.header?.clipped).toBeUndefined();
+    for (const read of [await get(F.T), await context(F.T)]) {
+      expect(read.header?.whenToUse).toBe(whenToUse);
+      expect(read.header?.clipped).toBeUndefined();
+    }
+    const q = { query: database.query.bind(database) } as unknown as Querier;
+    const resolved = (await resolveHeaders(q, F.space, [F.T])).get(F.T)!;
+    expect(resolved.whenToUse).toBe(whenToUse);
+    expect(jevText(resolved)).toContain(whenToUse);
+    // At the guidance, no warning.
+    const fits = await call<HeaderResult>('entities.header.set', { id: F.T }, { body: { whenToUse: 'w'.repeat(400) } });
+    expect(fits.warnings).toBeUndefined();
+    // Past the backstop: cut, declared, and the warning says so.
+    const huge = await call<HeaderResult>('entities.header.set', { id: F.T }, { body: { whenToUse: 'h'.repeat(9000) } });
+    expect(huge.warnings![0]!.message).toContain('past 2000 it is shown cut');
+    expect(huge.header?.whenToUse).toBe(`${'h'.repeat(1999)}…`);
+    expect(huge.header?.clipped).toEqual(['whenToUse']);
+    const stored = await database.query<{ n: number }>('select char_length(when_to_use)::int n from public.entity_headers where entity_id = $1', [F.T]);
+    expect(stored[0]).toEqual({ n: 9000 });
+    await call('entities.header.clear', { id: F.T }, { body: {} });
+  });
+
   it('a credential straddling a cut is redacted BEFORE the cut: authored and derived text, every reader', async () => {
     // Built like packages/execution/test/secret-redaction.test.ts.
     const token = `ghp_${'C'.repeat(36)}`;
@@ -415,8 +443,8 @@ describe('entities.header.set / clear (I4)', () => {
       'select title, description from public.tasks where entity_id = $1', [F.T],
     );
     for (const token of tokens) {
-      // Authored: straddling the 400/600 clip and the SQL fetch (limit + 64).
-      for (const [field, max] of [['whenToUse', 400], ['summary', 600]] as const) {
+      // Authored: straddling the clip (a whenToUse's 2,000 backstop, a summary's 600) and the SQL fetch (limit + 64).
+      for (const [field, max] of [['whenToUse', 2000], ['summary', 600]] as const) {
         for (const start of [max - 6, max + 64 - 8]) {
           const set = await call<HeaderResult>('entities.header.set', { id: F.T }, { body: { [field]: at(start, token), keywords: [at(35, token)] } });
           for (const [label, h] of [
@@ -440,6 +468,17 @@ describe('entities.header.set / clear (I4)', () => {
         ] as const) expectClean(`derived @${start} ${label}`, token, texts(h));
         expectClean(`derived @${start} jev`, token, jevText(header));
       }
+      // A memory's whenToUse, its subject_scope (at most 1,000 by 056's check, so
+      // below the backstop), straddling the 600 it was once cut at: now whole.
+      for (const start of [600 - 6, 600 + 64 - 8]) {
+        await database.query('update public.memories set subject_scope = $2 where entity_id = $1', [memoryId, at(start, token)]);
+        const header = (await resolveHeaders(q, F.space, [memoryId])).get(memoryId)!;
+        expect(header.clipped, `scope @${start}`).toBeUndefined();
+        expect(header.whenToUse!.endsWith(' and the rest of it'), `scope @${start}`).toBe(true);
+        expectClean(`memory scope @${start}`, token, texts(header));
+        expectClean(`memory scope @${start} jev`, token, jevText(header));
+      }
+      await database.query('update public.memories set subject_scope = $2 where entity_id = $1', [memoryId, 'scratch']);
       // A memory's name, cut at 120 from its statement.
       for (const start of [120 - 6, 120 - 2]) {
         await database.query('update public.memories set statement = $2 where entity_id = $1', [memoryId, at(start, token)]);

@@ -105,8 +105,11 @@ describe('Home hosts the chat slot as a third column (§3.1)', () => {
     const task = await openTask(view);
     navStore.getState().openChat({ about: task, thread: 'new' });
     const column = await waitFor(() => view.getByTestId('hp-chat-column'));
-    /* Mounted through `EntityChatSlot`, whose surface cold-starts on the
-       composer; a bare chat surface would open the latest thread instead. */
+    /* Mounted through `EntityChatSlot`: the new-chat settings card (§3.4,
+       lane C) comes first — the fixture space has no chat default — and
+       Start chat hands over to a surface that cold-starts on the composer; a
+       bare chat surface would open the latest thread instead. */
+    fireEvent.click(await within(column).findByTestId('new-chat-start', {}, { timeout: 5000 }));
     await waitFor(() => within(column).getByPlaceholderText('What are we doing?'), { timeout: 5000 });
     expect(within(column).queryByPlaceholderText('Type a message…')).toBeNull();
     expect(within(column).queryByTestId('chat-about-relation')).toBeNull();
@@ -171,10 +174,12 @@ describe('the slot is PINNED on Home (Q4)', () => {
 });
 
 describe('surfaceHostsChatSlot', () => {
-  it('is true for Home only — the dock still covers every other surface', () => {
+  it('is true for Home and Work (lane E) — the dock still covers every other surface', () => {
     expect(surfaceHostsChatSlot({ view: 'home' })).toBe(true);
     expect(surfaceHostsChatSlot({ view: 'home', root: { type: 'chats', threadId: null } })).toBe(true);
-    expect(surfaceHostsChatSlot({ view: 'workspace' } as never)).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'workspace' })).toBe(true);
+    expect(surfaceHostsChatSlot({ view: 'inbox' })).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'feed' })).toBe(false);
   });
 });
 

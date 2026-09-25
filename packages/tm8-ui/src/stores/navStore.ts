@@ -130,7 +130,13 @@ export interface NavActions {
    * space you have already left.
    */
   setSpace(spaceId: SpaceId): void;
-  /** Dedupes; an already-hosted id is RAISED to the stack top, never doubled. */
+  /**
+   * Dedupes; an already-hosted id is RAISED to the stack top, never doubled.
+   *
+   * ON WORK IT ALSO CLEARS THE CHAT SLOT (§3.1 Pinned, Work arm): the chat
+   * occupies Work's centre, so opening an entity there must show the entity,
+   * in the same history entry. Every other surface keeps the slot pinned.
+   */
   push(id: EntityId): void;
   /** Esc: stack top only, never pins. */
   pop(): void;
@@ -305,14 +311,17 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
 
   push(id) {
     const s = get();
+    /* The chat replaces Work's centre, so opening anything into that centre
+       must uncover it. Scoped to Work: Home's slot survives stack moves (Q4). */
+    const chat = s.view.view === 'workspace' ? null : s.chat;
     // Already pinned: opening it again RAISES/focuses rather than duplicating
     // it onto the stack (single-host law, WLT §5.2c).
     if (s.pinned.includes(id)) {
-      set({ history: 'push', revision: s.revision + 1 });
+      set({ chat, history: 'push', revision: s.revision + 1 });
       return;
     }
     const stack = [...s.stack.filter((x) => x !== id), id];
-    set({ stack, cursor: atTop(stack), history: 'push', revision: s.revision + 1 });
+    set({ stack, cursor: atTop(stack), chat, history: 'push', revision: s.revision + 1 });
   },
 
   pop() {

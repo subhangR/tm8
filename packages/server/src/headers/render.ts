@@ -62,20 +62,24 @@ function renderJevText(header: SelectionHeader, options: JevTextOptions): string
     case 'memory': {
       // The statement, cut, then what it is about (headers T4): a true claim
       // about the wrong subject is how an irrelevant memory ranks high.
+      // The scope is the memory's whenToUse, so it is shown whole (task
+      // 01a0da5a); jevText redacts the whole text before it leaves.
       const statement = clip(header.summary, limit);
-      const scope = header.whenToUse ? clip(header.whenToUse, limit) : '';
+      const scope = header.whenToUse ?? '';
       return scope.trim() ? `${statement} (scope: ${scope})` : statement;
     }
     case 'skill': {
-      // "name: description", else "name: when_to_use", else the bare name.
-      const text = clip(header.summary ?? header.whenToUse, limit);
+      // "name: description", else "name: when_to_use" (whole: a whenToUse is
+      // never cut, task 01a0da5a), else the bare name.
+      const text = header.summary ? clip(header.summary, limit) : redactSecretTokens(header.whenToUse ?? '');
       return text ? `${header.name}: ${text}` : header.name;
     }
     default: {
       // References (doc, artifact, drawing, file, task, collection): name,
-      // then when, then what, then an authored header's keywords. The body is
-      // never sent (headers design 01a0d31e §7.1).
-      const parts = [header.whenToUse, header.summary].filter((part): part is string => !!part).map((part) => clip(part, limit));
+      // then when (whole: a whenToUse is never cut, task 01a0da5a), then what
+      // (cut), then an authored header's keywords. The body is never sent
+      // (headers design 01a0d31e §7.1).
+      const parts = [header.whenToUse, header.summary ? clip(header.summary, limit) : null].filter((part): part is string => !!part);
       const keywords = keywordsPart(header, limit);
       if (keywords) parts.push(keywords);
       return parts.length > 0 ? `${header.name}: ${parts.join(' ')}` : header.name;
