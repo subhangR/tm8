@@ -143,6 +143,13 @@ import {
   type TrackingPrMergeResult,
   type WorkInput,
   type WorkStatus,
+  type ClearEntityHeaderInput,
+  type EntityHeaderResult,
+  type EntityHeaderView,
+  type HeaderTextInput,
+  type SelectionHeaderKind,
+  type SetEntityHeaderInput,
+  type ResultWarning,
 } from '@tm8/contract';
 import type {
   ConnectionState,
@@ -174,7 +181,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
-import { SHIPPED_DEFAULT_MENU } from '../../domain';
+import { SHIPPED_DEFAULT_MENU, headerAuthorable } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -1161,6 +1168,15 @@ export function createFixtureSeam(): FixtureSeam {
   );
 
   /**
+   * AUTHORED HEADERS, keyed by entity — their own table at the node
+   * (`entity_headers`, migration 216) with their OWN version, so a write here
+   * never touches the summary's `version` and emits no `entity.upsert`,
+   * exactly as `set_entity_header` does not. A detail carries `header` only
+   * while one is authored (I4's read rule).
+   */
+  const headers = new Map<EntityId, Omit<EntityHeaderView, 'name' | 'stale'>>();
+
+  /**
    * ATTENTION ROWS ARE STATE HERE, not a projection of the badge.
    *
    * They used to be synthesized per call from `summary.badges.attention`, and
@@ -1791,10 +1807,68 @@ export function createFixtureSeam(): FixtureSeam {
     return path;
   }
 
+  function headerViewOf(s: EntitySummary): EntityHeaderView | undefined {
+    const h = headers.get(s.id);
+    if (!h) return undefined;
+    return { ...clone(h), name: s.title, stale: h.pinnedVersion !== null && h.pinnedVersion !== s.version };
+  }
+
+  /**
+   * `set_entity_header` as migration 223 left it — LENIENT: the header's own
+   * optimistic version is the one refusal (an opted-in concurrency guard).
+   * Content is normalised, never refused: text is trimmed, blanks and
+   * duplicate keywords dropped, and a header with nothing left is a no-op with
+   * a warning, as is a kind that stores no header.
+   */
+  function writeHeader(
+    s: EntitySummary,
+    text: HeaderTextInput,
+    expectedVersion: number | undefined,
+  ): { header: EntityHeaderView | undefined; warnings: ResultWarning[] } {
+    if (!headerAuthorable(s.kind)) {
+      return { header: undefined, warnings: [{ code: 'header_not_stored', message: `A ${s.kind} stores no header; nothing was written.` }] };
+    }
+    const current = headers.get(s.id)?.version ?? 0;
+    if (expectedVersion !== undefined && expectedVersion !== current) {
+      throw new CollabError('version_conflict', `expected header version ${expectedVersion}, have ${current}`);
+    }
+    const whenToUse = text.whenToUse?.trim() || null;
+    const summary = text.summary?.trim() || null;
+    const keywords = [...new Set((text.keywords ?? []).map((k) => k.trim()).filter(Boolean))];
+    if (whenToUse === null && summary === null && keywords.length === 0) {
+      return { header: headerViewOf(s) ?? fallbackHeaderOf(s), warnings: [{ code: 'header_empty', message: 'The header was empty after trimming; nothing was written.' }] };
+    }
+    headers.set(s.id, {
+      entityId: s.id,
+      kind: s.kind as SelectionHeaderKind,
+      whenToUse,
+      summary,
+      keywords,
+      source: 'authored',
+      bytes: null,
+      loadPointer: `tm8 entity get ${s.id}`,
+      version: current + 1,
+      pinnedVersion: s.version,
+    });
+    return { header: headerViewOf(s)!, warnings: [] };
+  }
+
+  /* At the node the fallback is the resolved native/derived header, version 0.
+     The fixture has no resolver, so it answers the derived shape, empty. */
+  function fallbackHeaderOf(s: EntitySummary): EntityHeaderView {
+    return {
+      entityId: s.id, kind: s.kind as SelectionHeaderKind, name: s.title,
+      whenToUse: null, summary: null, keywords: [], source: 'derived', stale: false,
+      bytes: null, loadPointer: `tm8 entity get ${s.id}`, version: 0, pinnedVersion: null,
+    };
+  }
+
   function detailOf(id: EntityId): EntityDetail {
     const s = requireSummary(id);
     const e = extrasOf(id);
+    const header = headerViewOf(s);
     return {
+      ...(header ? { header } : {}),
       ...s,
       content: e.content,
       hierarchy: {
@@ -3407,6 +3481,9 @@ export function createFixtureSeam(): FixtureSeam {
             capabilities: { ...CAPS_FULL },
           });
         }
+        // The header rides the create's transaction at the node; here, the
+        // same call. Written before the echo so the created detail carries it.
+        if (input.header) writeHeader(s, input.header, 0);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
@@ -3439,6 +3516,30 @@ export function createFixtureSeam(): FixtureSeam {
         });
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      async setEntityHeader(id, input: SetEntityHeaderInput): Promise<EntityHeaderResult> {
+        const s = requireSummary(id);
+        const { header, warnings } = writeHeader(s, input, input.expectedVersion);
+        return {
+          ...commandResult(s, { patches: [] }),
+          ...(header ? { header } : {}),
+          ...(warnings.length > 0 ? { warnings } : {}),
+        };
+      },
+      async clearEntityHeader(id, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
+        const s = requireSummary(id);
+        if (!headerAuthorable(s.kind)) {
+          return { ...commandResult(s, { patches: [] }), warnings: [{ code: 'header_not_stored', message: `A ${s.kind} stores no header.` }] };
+        }
+        const current = headers.get(id)?.version ?? 0;
+        if (current === 0) {
+          return { ...commandResult(s, { patches: [] }), header: fallbackHeaderOf(s), warnings: [{ code: 'header_absent', message: 'There was no authored header to clear.' }] };
+        }
+        if (input.expectedVersion !== undefined && input.expectedVersion !== current) {
+          throw new CollabError('version_conflict', `expected header version ${input.expectedVersion}, have ${current}`);
+        }
+        headers.delete(id);
+        return { ...commandResult(s, { patches: [] }), header: fallbackHeaderOf(s) };
       },
       async patchEntity(id, input: PatchEntityInput) {
         const s = requireSummary(id);

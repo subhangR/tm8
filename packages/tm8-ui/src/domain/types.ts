@@ -1405,6 +1405,14 @@ export interface KindConfig {
    * affordance at all.
    */
   createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
+  /**
+   * The create control ALSO offers "with header…" beside the immediate ＋: the
+   * optional "When should an agent open this?" / "What does it hold?" fields,
+   * sent as `header` on the same `entities.create` (I9a). The immediate flow
+   * is untouched. Only a kind that can carry an authored header may set it
+   * (`headerAuthorable`, asserted by the registry test).
+   */
+  createHeader?: boolean;
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

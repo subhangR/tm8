@@ -224,3 +224,20 @@ export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput }
    the open entity's side, plus which edges are messages rather than links. */
 export { CONVERSATION_KIND, EDGE_VERBS, edgeVerb, edgeVerbBoth, isConversationEdge } from './edge-verbs';
 export type { EdgeDirection, EdgeVerb } from './edge-verbs';
+
+/* I9a: the authored selection header — which kinds carry one, and the
+   editor's draft ↔ `HeaderTextInput` crossing. */
+export {
+  EMPTY_HEADER_DRAFT,
+  HEADER_GUIDANCE,
+  headerAuthorable,
+  headerDraftHasText,
+  headerDraftOf,
+  headerDraftsEqual,
+  headerInputOf,
+  headerInputOfView,
+  headerStaleness,
+  parseKeywords,
+  staleSentence,
+} from './header';
+export type { HeaderDraft } from './header';

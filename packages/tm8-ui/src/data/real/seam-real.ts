@@ -416,6 +416,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       createEntity: (input) => ops.createEntity(input),
       createTask: (input) => ops.createTask(input),
       patchEntity: (id, input) => ops.patchEntity(id, input),
+      setEntityHeader: (id, input) => ops.setEntityHeader(id, input),
+      clearEntityHeader: (id, input) => ops.clearEntityHeader(id, input),
       patchTask: (id, input) => ops.patchTask(id, input),
       moveEntity: (id, input) => ops.moveEntity(id, input),
       deleteEntity: (id, ctx) => ops.deleteEntity(id, ctx),

@@ -33,8 +33,11 @@ import type { SkillPort } from '../skills/port';
 import {
   CreatableEntityKindSchema,
   isCollabError,
+  type ClearEntityHeaderInput,
   type CommandResult,
   type CreatableEntityKind,
+  type EntityHeaderResult,
+  type SetEntityHeaderInput,
   type CreateEntityInput,
   type EntityDetail,
   type EntityId,
@@ -62,6 +65,17 @@ export interface AuthoringCommands {
    * the payload.
    */
   patchEntity(id: EntityId, input: PatchEntityInput): Promise<CommandResult>;
+}
+
+/**
+ * THE HEADER PORT — `entities.header.set|clear`, the authored selection
+ * header's own doors. Separate from `AuthoringCommands` because only the
+ * header section and the header-carrying create need it; like that port it is
+ * a structural subset of `Seam['commands']`, assigned with no adapter.
+ */
+export interface HeaderCommands {
+  setEntityHeader(id: EntityId, input: SetEntityHeaderInput): Promise<EntityHeaderResult>;
+  clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult>;
 }
 
 /**

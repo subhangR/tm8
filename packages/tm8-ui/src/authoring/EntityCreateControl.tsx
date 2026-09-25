@@ -3,7 +3,8 @@ import type { CommandResult, EntityId, SpaceId } from '@tm8/contract';
 import type { KindConfig } from '../domain';
 import type { Seam } from '../data/seam';
 import { LoopCreateControl } from '../loops/LoopCreateControl';
-import type { AuthoringCommands } from './commands';
+import { creatableKind, placeholderTitleFor, type AuthoringCommands } from './commands';
+import { HeaderCreateControl } from './HeaderCreateControl';
 import { FileUploadCreateControl } from './FileUploadCreateControl';
 import { NewTaskControl } from './NewTaskControl';
 import type { NewTaskHandle } from './useNewTask';
@@ -59,6 +60,22 @@ export function EntityCreateControl({
         label={label}
         onCreated={onCreated}
       />
+    );
+  }
+  const headerKind = config.createHeader ? creatableKind(config.kind) : null;
+  if (headerKind !== null && commands !== null) {
+    return (
+      <>
+        <NewTaskControl flow={immediate} label={label} />
+        <HeaderCreateControl
+          kind={headerKind}
+          kindLabel={config.label}
+          placeholderTitle={placeholderTitleFor(config.label)}
+          spaceId={spaceId}
+          commands={commands}
+          onCreated={onCreated}
+        />
+      </>
     );
   }
   return <NewTaskControl flow={immediate} label={label} />;

@@ -87,6 +87,12 @@ import type { LaunchSuggestInput } from '@tm8/contract';
  * the tier2-completion lane for dual re-consensus recording alongside the
  * three catalog rows it consumes.
  *
+ * Amendment 13 (2026-09-25, selection headers): commands gain
+ * `setEntityHeader` / `clearEntityHeader` — the contract's
+ * `entities.header.set|clear` (PUT|DELETE /v2/entities/:id/header, catalog
+ * v1), so a person can write the header the CLI already could (I9a).
+ * Contract-shaped and additive, zero caller churn.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -248,6 +254,9 @@ import type {
   WorkInput,
   WorkSessionStatus,
   WorkStatus,
+  SetEntityHeaderInput,
+  ClearEntityHeaderInput,
+  EntityHeaderResult,
 } from '@tm8/contract';
 import type { ChatTurnFrame } from '../chat-home/types';
 
@@ -803,6 +812,17 @@ export interface Seam {
     createEntity(input: CreateEntityInput): Promise<CommandResult>;
     createTask(input: CreateTaskInput): Promise<CommandResult>;
     patchEntity(id: EntityId, input: PatchEntityInput): Promise<CommandResult>;
+    /**
+     * The authored selection header's two doors (`entities.header.set` /
+     * `entities.header.clear`, I4) — new seam verbs over catalog rows that
+     * already existed, zero catalog change. Their own ops rather than a
+     * `patchEntity` content member because the header carries its OWN version:
+     * `expectedVersion` here is `header.version` (0 = none yet), never
+     * `entities.version`, and a write never moves the entity's version — so it
+     * emits no `entity.upsert`, and the caller reconciles from the result.
+     */
+    setEntityHeader(id: EntityId, input: SetEntityHeaderInput): Promise<EntityHeaderResult>;
+    clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult>;
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
     moveEntity(id: EntityId, input: MoveEntityInput): Promise<CommandResult>;
     deleteEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;

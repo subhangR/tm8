@@ -24,6 +24,7 @@ export {
   type AuthoringFailure,
   type ConflictFailure,
   type EntityEdits,
+  type HeaderCommands,
   type RefusedFailure,
   type TaskEdits,
 } from './commands';

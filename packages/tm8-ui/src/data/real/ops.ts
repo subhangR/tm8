@@ -178,6 +178,9 @@ import {
   type WorkInput,
   type FormsPendingForSessionsParams,
   type FormsPendingForSessionsResult,
+  type SetEntityHeaderInput,
+  type ClearEntityHeaderInput,
+  type EntityHeaderResult,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
@@ -960,6 +963,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     patchEntity(id: EntityId, input: PatchEntityInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.patch', { params: { id }, body: input });
+    },
+
+    /** The header's own door: `expectedVersion` is `header.version`, not the entity's. */
+    setEntityHeader(id: EntityId, input: SetEntityHeaderInput): Promise<EntityHeaderResult> {
+      return http.call<EntityHeaderResult>('entities.header.set', { params: { id }, body: input });
+    },
+
+    clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult> {
+      return http.call<EntityHeaderResult>('entities.header.clear', { params: { id }, body: input });
     },
 
     resolveAttention(
