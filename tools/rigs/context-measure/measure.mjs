@@ -58,11 +58,14 @@ export function measureLane({ manifest, transcriptLines, linked = [] }) {
   // The two lists must agree, or the header/entry miss split is meaningless:
   // a header-level drop is a listed entry whose header was trimmed, anything
   // else dropped was never listed.
+  // Three legitimate shapes: a header-level drop against a header-dropped
+  // entry; a BODY-level drop (Q1: a memory past the memoryInjection cap, still
+  // listed, body cut) against a collapsed entry; any other drop against no
+  // entry at all.
   for (const d of ctx.dropped ?? []) {
     const e = entries.get(d.entityId);
-    if (d.level === 'header' ? e?.state !== 'header-dropped' : e) {
-      throw new Error(`manifest ${manifest.sessionId}: dropped ${d.entityId} (${d.reason}:${d.level ?? '-'}) vs entry state ${e?.state ?? 'absent'}`);
-    }
+    const ok = d.level === 'header' ? e?.state === 'header-dropped' : d.level === 'body' ? e?.state === 'collapsed' : !e;
+    if (!ok) throw new Error(`manifest ${manifest.sessionId}: dropped ${d.entityId} (${d.reason}:${d.level ?? '-'}) vs entry state ${e?.state ?? 'absent'}`);
   }
   for (const e of entries.values()) {
     if (e.state === 'header-dropped' && dropped.get(e.entityId)?.level !== 'header') throw new Error(`manifest ${manifest.sessionId}: entry ${e.entityId} header-dropped with no header-level drop`);
