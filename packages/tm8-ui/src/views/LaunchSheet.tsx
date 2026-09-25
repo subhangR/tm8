@@ -60,7 +60,7 @@ import type { SkillPreviewResult } from '@tm8/contract';
  * rather than nesting a second modal dialog inside the first — one surface,
  * one dialog, which is what a screen reader is entitled to.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type {
   CredentialProviderName,
   CredentialsSpaceListView,
@@ -1003,7 +1003,15 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </section>
         ) : props.loadLaunchDefaults ? (
           <>
-            <LaunchSelectionGroups selection={selection} groups={['skills']} candidates={selectionCandidates} />
+            <LaunchSelectionGroups
+              selection={selection}
+              groups={['skills']}
+              candidates={selectionCandidates}
+              collapsed
+              extra={{ skills: <HowSkillsLoad>
+                <SkillPreview bare load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
+              </HowSkillsLoad> }}
+            />
             <JevGroupStatus group="skills" state={jev.groups.skills} onRetry={jev.retry} />
           </>
         ) : (
@@ -1044,7 +1052,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </section>
         ) : (
           <>
-            <LaunchSelectionGroups selection={selection} groups={['memories']} candidates={selectionCandidates} />
+            <LaunchSelectionGroups selection={selection} groups={['memories']} candidates={selectionCandidates} collapsed />
             <JevGroupStatus group="memories" state={jev.groups.memories} onRetry={jev.retry} />
           </>
         )}
@@ -1053,7 +1061,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
             and tasks, pre-ticked, with anything else in the space to add.
             Jev does not rank references, so this group is the sheet's alone
             in every mode. */}
-        <LaunchSelectionGroups selection={selection} groups={['references']} candidates={selectionCandidates} />
+        <LaunchSelectionGroups selection={selection} groups={['references']} candidates={selectionCandidates} collapsed />
 
         {props.refusal && (
           // T5-5: refusal renders IN the sheet — red word, cause, what did NOT
@@ -1194,6 +1202,38 @@ export function LaunchSheet(props: LaunchSheetProps) {
     >
       {sheet}
     </MobileSheet>
+  );
+}
+
+/**
+ * The harness's view of the skills — native / indexed / skipped — under the
+ * Skills group, collapsed (owner's pick, I9b form 2026-09-25): the group says
+ * WHAT the launch carries, this says HOW the harness will load it. It previews
+ * the equipped set, so an edited group is not what it describes; the line says
+ * that rather than hiding the preview.
+ */
+function HowSkillsLoad({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = `ls-how-skills-${useId()}`;
+  return (
+    <div className="ls__section">
+      <button
+        type="button"
+        className="ls__change lsel__how"
+        aria-expanded={open}
+        aria-controls={id}
+        data-testid="launch-skills-how"
+        onClick={() => setOpen((o) => !o)}
+      >
+        How these load {open ? '▴' : '▾'}
+      </button>
+      {open ? (
+        <div id={id}>
+          <span className="ls__rowsub">the equipped set, as the harness loads it — before your edits above</span>
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

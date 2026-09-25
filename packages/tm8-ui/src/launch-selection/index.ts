@@ -8,7 +8,7 @@ import './launch-selection.css';
 
 export { useLaunchSelection, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
 export {
-  LaunchSelectionDisclosure,
+  LaunchSelectionChips,
   LaunchSelectionGroups,
   type LaunchSelectionCandidates,
   type LaunchSelectionSources,

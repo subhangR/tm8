@@ -239,7 +239,10 @@ describe('Jev mode', () => {
   it('a memories edit made before Ask Jev gives way to Jev’s exact set; a references edit stays', async () => {
     const port = answeringPort();
     const view = renderSheet({ jev: port, loadLaunchDefaults: async () => LAUNCH_DEFAULTS });
-    fireEvent.click(await view.findByTestId('lsel-row-memories-ent-mem-tokens'));
+    await waitFor(() => expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default/));
+    fireEvent.click(view.getByTestId('lsel-toggle-memories'));
+    fireEvent.click(view.getByTestId('lsel-toggle-references'));
+    fireEvent.click(view.getByTestId('lsel-row-memories-ent-mem-tokens'));
     fireEvent.click(view.getByTestId('lsel-row-references-ent-file-log'));
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
     const config = view.launch();

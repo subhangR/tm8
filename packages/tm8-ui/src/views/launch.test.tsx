@@ -9,7 +9,7 @@
  * first, which is exactly why they are pinned here.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, renderHook, within } from '@testing-library/react';
+import { fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
 import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -589,12 +589,37 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
   };
   const ALL_NOT_ASKED = { memories: 'not-asked', skills: 'not-asked', references: 'not-asked' };
 
+  /* Groups start COLLAPSED (owner's pick): open all three to reach the rows. */
   const renderWithDefaults = async (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) => {
     const load = vi.fn(async () => LAUNCH_DEFAULTS);
     const view = renderSheet({ loadLaunchDefaults: load, memories: LAUNCH_MEMORIES, referenceCandidates: LAUNCH_REFERENCE_CANDIDATES, ...props });
-    await view.findByTestId('lsel-row-memories-ent-mem-tokens');
+    await waitFor(() => expect(view.getByTestId('lsel-toggle-memories').textContent).not.toMatch(/reading/));
+    for (const group of ['skills', 'memories', 'references']) fireEvent.click(view.getByTestId(`lsel-toggle-${group}`));
     return { ...view, load };
   };
+
+  it('each group starts as ONE collapsed summary line — counts, then the diff', async () => {
+    const view = renderSheet({ loadLaunchDefaults: async () => LAUNCH_DEFAULTS, memories: LAUNCH_MEMORIES });
+    const toggle = await view.findByText('2 defaults');
+    expect(toggle.closest('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.queryByTestId('lsel-row-references-ent-doc-spec')).toBeNull();
+    fireEvent.click(view.getByTestId('lsel-toggle-references'));
+    fireEvent.click(view.getByTestId('lsel-row-references-ent-doc-spec'));
+    expect(view.getByTestId('lsel-toggle-references').textContent).toMatch(/2 defaults · −1 default removed/);
+    // Collapsing keeps the edit, and the line still says it.
+    fireEvent.click(view.getByTestId('lsel-toggle-references'));
+    expect(view.getByTestId('lsel-toggle-references').textContent).toMatch(/−1 default removed/);
+  });
+
+  it('keeps the harness view under Skills as a collapsed "How these load" disclosure', async () => {
+    const loadSkillPreview = vi.fn(() => new Promise<never>(() => {}));
+    const view = await renderWithDefaults({ loadSkillPreview });
+    const how = view.getByTestId('launch-skills-how');
+    expect(how.getAttribute('aria-expanded')).toBe('false');
+    expect(view.queryByText('Loading skill preview…')).toBeNull();
+    fireEvent.click(how);
+    expect(view.getByText('Loading skill preview…')).toBeTruthy();
+  });
 
   it('reads the defaults for the teammate and the subject', async () => {
     const { load } = await renderWithDefaults();
@@ -722,7 +747,7 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
 describe('Dispatch hands off the subject and cannot smuggle a configuration', () => {
   it('sends ONLY the subject, whatever the sheet was configured to', async () => {
     const dispatched: Array<Record<string, unknown>> = [];
-    const { getByTestId, getByText, findByTestId } = renderSheet({
+    const { getByTestId, getByText } = renderSheet({
       memories: LAUNCH_MEMORIES,
       loadLaunchDefaults: async () => LAUNCH_DEFAULTS,
       onDispatch: (r) => dispatched.push(r as unknown as Record<string, unknown>),
@@ -732,7 +757,9 @@ describe('Dispatch hands off the subject and cannot smuggle a configuration', ()
     // other than the default, a model, and a removed default memory.
     fireEvent.click(getByText('scout'));
     fireEvent.change(getByTestId('launch-model'), { target: { value: 'claude-opus-5' } });
-    fireEvent.click(await findByTestId('lsel-row-memories-ent-mem-tokens'));
+    await waitFor(() => expect(getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default/));
+    fireEvent.click(getByTestId('lsel-toggle-memories'));
+    fireEvent.click(getByTestId('lsel-row-memories-ent-mem-tokens'));
 
     fireEvent.click(getByTestId('launch-dispatch'));
 

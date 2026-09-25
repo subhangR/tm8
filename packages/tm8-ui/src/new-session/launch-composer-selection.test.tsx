@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The Run popup's CONTEXT line (I9, design 01a0d348 §5.1–5.2) — the same
- * per-group selection the launch sheet holds, behind one collapsed line.
+ * The Run popup's CONTEXT CHIPS (I9, design 01a0d348 §5.1–5.2) — the same
+ * per-group selection the launch sheet holds, as three count chips that each
+ * open their group in a popover (owner's pick, I9b form 2026-09-25).
  *
  * What must hold here: the defaults are read for the popup's teammate and
  * subject; an untouched launch carries no `selection` (only why each group
@@ -43,24 +44,27 @@ function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Parti
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     return onSpawn.mock.calls.at(-1)![0];
   };
-  const open = async () => {
-    fireEvent.click(within(view.getByTestId('launch-selection-disclosure')).getByRole('button', { name: /CONTEXT/ }));
-    await view.findByTestId('lsel-row-references-ent-doc-spec');
+  const open = async (group = 'references') => {
+    await waitFor(() => expect(view.getByTestId(`lsel-chip-${group}`).textContent).not.toMatch(/…/));
+    fireEvent.click(view.getByTestId(`lsel-chip-${group}`));
+    await view.findByTestId('lsel-popover');
   };
   return { ...view, load, onSpawn, spawn, open };
 }
 
-describe('the Run popup’s Context line', () => {
+describe('the Run popup’s context chips', () => {
   it('reads the defaults for the popup’s teammate and subject', async () => {
     const view = renderPopup();
     await waitFor(() => expect(view.load).toHaveBeenCalledWith({ teamMemberId: 'tm-forge', subjectId: 'task-9' }));
   });
 
-  it('starts collapsed, saying the launch carries its defaults', () => {
+  it('shows three count chips, nothing open, none amber', async () => {
     const view = renderPopup();
-    const line = view.getByTestId('launch-selection-disclosure');
-    expect(line.textContent).toMatch(/the launch’s defaults/);
-    expect(view.queryByTestId('lsel-group-memories')).toBeNull();
+    await waitFor(() => expect(view.getByTestId('lsel-chip-references').textContent).toMatch(/2 refs/));
+    expect(view.getByTestId('lsel-chip-memories').textContent).toMatch(/1 memory/);
+    expect(view.getByTestId('lsel-chip-skills').textContent).toMatch(/1 skill/);
+    expect(view.container.querySelector('.lsel-chip--edited')).toBeNull();
+    expect(view.queryByTestId('lsel-popover')).toBeNull();
   });
 
   it('an untouched launch sends NO selection — only why each group kept its defaults', async () => {
@@ -71,11 +75,13 @@ describe('the Run popup’s Context line', () => {
     expect(input.selectionReasons).toEqual({ memories: 'not-asked', skills: 'not-asked', references: 'not-asked' });
   });
 
-  it('a removed default is named on the line, and its group rides the spawn as the exact set', async () => {
+  it('a removed default turns its chip amber, and its group rides the spawn as the exact set', async () => {
     const view = renderPopup();
     await view.open();
     fireEvent.click(view.getByTestId('lsel-row-references-ent-doc-spec'));
-    expect(view.getByTestId('launch-selection-disclosure').textContent).toMatch(/References −1 default removed/);
+    const chip = view.getByTestId('lsel-chip-references');
+    expect(chip.textContent).toMatch(/1 ref/);
+    expect(chip.className).toMatch(/lsel-chip--edited/);
     const input = await view.spawn();
     expect(input.selection).toEqual({ referenceIds: ['ent-file-log'] });
     expect(input.selectionReasons).toEqual({ memories: 'not-asked', skills: 'not-asked' });
@@ -91,10 +97,24 @@ describe('the Run popup’s Context line', () => {
     expect(input.selection).toEqual({ referenceIds: ['ent-doc-spec', 'ent-file-log', 'ent-doc-other'] });
   });
 
+  it('Escape closes the popover and keeps the edit', async () => {
+    const view = renderPopup();
+    await view.open();
+    fireEvent.click(view.getByTestId('lsel-row-references-ent-doc-spec'));
+    fireEvent.keyDown(view.getByTestId('lsel-popover'), { key: 'Escape' });
+    expect(view.queryByTestId('lsel-popover')).toBeNull();
+    expect(view.getByTestId('lsel-chip-references').className).toMatch(/lsel-chip--edited/);
+  });
+
   it('in Jev mode a failed group keeps its defaults as jev-failed while the answered one goes', async () => {
     const view = renderPopup({}, { skills: failedGroup('timeout') });
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
     await waitFor(() => expect(view.getByTestId('jev-strip')).toBeTruthy());
+    // Jev's groups are Jev's: their chips say so and do not open.
+    const memories = view.getByTestId('lsel-chip-memories');
+    expect(memories.textContent).toMatch(/Jev’s memories/);
+    fireEvent.click(memories);
+    expect(view.queryByTestId('lsel-popover')).toBeNull();
     const input = await view.spawn();
     expect(input.selection).toEqual({ memoryIds: ['mem-a', 'mem-b'] });
     expect(input.selectionReasons).toEqual({ skills: 'jev-failed', references: 'not-asked' });
@@ -102,7 +122,8 @@ describe('the Run popup’s Context line', () => {
 
   it('without a defaults read, the groups cannot be edited and nothing is selected', async () => {
     const view = renderPopup({ selection: undefined });
-    fireEvent.click(within(view.getByTestId('launch-selection-disclosure')).getByRole('button', { name: /CONTEXT/ }));
+    expect(view.getByTestId('lsel-chip-memories').textContent).toMatch(/\? memories/);
+    fireEvent.click(view.getByTestId('lsel-chip-memories'));
     expect(view.getAllByText(/didn’t say what this launch loads by default/).length).toBeGreaterThan(0);
     const input = await view.spawn();
     expect('selection' in input).toBe(false);

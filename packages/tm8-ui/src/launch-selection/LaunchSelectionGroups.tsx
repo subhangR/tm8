@@ -1,9 +1,11 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { SpawnSelectionGroup } from '@tm8/contract';
 
 import {
+  groupIds,
   isTicked,
   LAUNCH_GROUP_LABEL,
+  LAUNCH_SELECTION_GROUPS,
   type LaunchContextRow,
 } from '../domain/launch-selection';
 import type { LaunchSelection, LoadLaunchDefaults } from './useLaunchSelection';
@@ -41,16 +43,33 @@ export function LaunchSelectionGroups({
   selection,
   groups,
   candidates,
+  collapsed = false,
+  extra,
 }: {
   selection: LaunchSelection;
   /** Which groups this surface edits here — in Jev mode the sheet shows Jev's checklists for memories and skills. */
   groups: readonly SpawnSelectionGroup[];
   candidates: LaunchSelectionCandidates;
+  /**
+   * The sheet's form (owner's pick, I9b form 2026-09-25): each group is ONE
+   * summary line — "MEMORIES  3 defaults · −1 removed ▾" — that expands to its
+   * rows. Most launches are untouched, and the line already says so.
+   */
+  collapsed?: boolean;
+  /** Rendered at the foot of a group's expanded body (the Skills group's "How these load"). */
+  extra?: Partial<Record<SpawnSelectionGroup, ReactNode>>;
 }) {
   return (
     <>
       {groups.map((group) => (
-        <SelectionGroup key={group} group={group} selection={selection} candidates={candidates[group]} />
+        <SelectionGroup
+          key={group}
+          group={group}
+          selection={selection}
+          candidates={candidates[group]}
+          collapsed={collapsed}
+          extra={extra?.[group]}
+        />
       ))}
       {selection.warnings.map((warning) => (
         <p key={warning} className="ls__profile-empty" role="status">{warning}</p>
@@ -59,16 +78,35 @@ export function LaunchSelectionGroups({
   );
 }
 
+/** The summary line's words: how many the launch carries, then the diff. */
+export function groupSummary(selection: LaunchSelection, group: SpawnSelectionGroup): string {
+  const defaults = selection.defaults[group];
+  if (defaults.status === 'loading') return 'reading defaults…';
+  if (defaults.status === 'unknown') return 'defaults unknown — can’t be edited';
+  const n = defaults.total;
+  const head = n === 0 ? 'no defaults' : `${String(n)} default${n === 1 ? '' : 's'}`;
+  const lock = selection.lock(group);
+  if (lock) return `${head} · over the ceiling — can’t be edited`;
+  const line = selection.diff(group).line;
+  return line ? `${head} · ${line}` : head;
+}
+
 function SelectionGroup({
   group,
   selection,
   candidates,
+  collapsed,
+  extra,
 }: {
   group: SpawnSelectionGroup;
   selection: LaunchSelection;
   candidates: readonly LaunchContextRow[] | undefined;
+  collapsed: boolean;
+  extra: ReactNode;
 }) {
   const pickerId = `lsel-${group}-${useId()}`;
+  const bodyId = `lsel-body-${group}-${useId()}`;
+  const [expanded, setExpanded] = useState(!collapsed);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const defaults = selection.defaults[group];
@@ -136,10 +174,28 @@ function SelectionGroup({
 
   return (
     <section className="ls__section lsel" data-testid={`lsel-group-${group}`} aria-label={label}>
-      <div className="lsel__head">
-        <span className="ls__eyebrow">{label.toUpperCase()}</span>
-        {diff.line ? <span className="lsel__diff" data-testid={`lsel-diff-${group}`}>{diff.line}</span> : null}
-      </div>
+      {collapsed ? (
+        <button
+          type="button"
+          className={`lsel__head lsel__head--toggle ${diff.line ? 'lsel__head--edited' : ''}`}
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+          data-testid={`lsel-toggle-${group}`}
+          onClick={() => setExpanded((e) => !e)}
+        >
+          <span className="ls__eyebrow">{label.toUpperCase()}</span>
+          <span className="lsel__summary">{groupSummary(selection, group)}</span>
+          <span className="lsel__caret" aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+        </button>
+      ) : (
+        <div className="lsel__head">
+          <span className="ls__eyebrow">{label.toUpperCase()}</span>
+          {diff.line ? <span className="lsel__diff" data-testid={`lsel-diff-${group}`}>{diff.line}</span> : null}
+        </div>
+      )}
+      {expanded ? (
+      <div id={bodyId} className="lsel__body">
+      {collapsed && diff.line ? <span className="lsel__diff" data-testid={`lsel-diff-${group}`}>{diff.line}</span> : null}
       {lock ? <p className="ls__profile-empty" role="status">{lock}</p> : null}
       {defaults.status === 'ready' && defaultRows.length === 0 && addedRows.length === 0 ? (
         <p className="ls__profile-empty" role="status">
@@ -189,6 +245,9 @@ function SelectionGroup({
           )}
         </div>
       ) : null}
+      {extra}
+      </div>
+      ) : null}
     </section>
   );
 }
@@ -199,45 +258,88 @@ export interface LaunchSelectionSources {
   candidates: LaunchSelectionCandidates;
 }
 
+const CHIP_NOUN: Record<SpawnSelectionGroup, [string, string]> = {
+  memories: ['memory', 'memories'],
+  skills: ['skill', 'skills'],
+  references: ['ref', 'refs'],
+};
+
+/** A chip's words: how many the launch will carry for that group. */
+function chipLabel(selection: LaunchSelection, group: SpawnSelectionGroup): string {
+  const defaults = selection.defaults[group];
+  const [one, many] = CHIP_NOUN[group];
+  if (defaults.status === 'loading') return `… ${many}`;
+  if (defaults.status === 'unknown') return `? ${many}`;
+  const n = selection.lock(group) ? defaults.total : groupIds(defaults, selection.edits[group]).length;
+  return `${String(n)} ${n === 1 ? one : many}`;
+}
+
 /**
- * The Run composer's compact form: one line naming what the launch carries
- * ("defaults", or each edited group's diff), opening onto the same groups the
- * launch sheet shows. Collapsed by default — an untouched launch is the
- * common case, and the line already says it loads the defaults.
+ * The Run composer's compact form (owner's pick, I9b form 2026-09-25): three
+ * count chips — ◈ 3 memories · ✧ 4 skills · ▤ 2 refs. A chip turns amber when
+ * its group was edited, and opens that group in a popover beneath the row.
+ *
+ * `governed` names groups another source decides (Ask Jev's ticks in Jev
+ * mode): their chip says so and does not open, since the popup's own edits
+ * would not be sent.
  */
-export function LaunchSelectionDisclosure({
+export function LaunchSelectionChips({
   selection,
-  groups,
   candidates,
+  governed = [],
+  governedNote = 'Jev’s ticks are this set — review them in ✦ Review.',
 }: {
   selection: LaunchSelection;
-  groups: readonly SpawnSelectionGroup[];
   candidates: LaunchSelectionCandidates;
+  governed?: readonly SpawnSelectionGroup[];
+  governedNote?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const bodyId = `lsel-body-${useId()}`;
-  const edited = groups.flatMap((group) => {
-    const line = selection.diff(group).line;
-    return line ? [`${LAUNCH_GROUP_LABEL[group]} ${line}`] : [];
-  });
+  const [open, setOpen] = useState<SpawnSelectionGroup | null>(null);
+  const popoverId = `lsel-pop-${useId()}`;
   return (
-    <div className="lsel-disclosure" data-testid="launch-selection-disclosure">
-      <button
-        type="button"
-        className="lsel-disclosure__toggle"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="ls__eyebrow">CONTEXT</span>
-        <span className="lsel-disclosure__summary">
-          {edited.length ? edited.join(' · ') : 'the launch’s defaults'}
-        </span>
-        <span aria-hidden="true">{open ? '▴' : '▾'}</span>
-      </button>
-      {open ? (
-        <div id={bodyId} className="lsel-disclosure__body">
-          <LaunchSelectionGroups selection={selection} groups={groups} candidates={candidates} />
+    <div className="lsel-chips" data-testid="launch-selection-chips">
+      <div className="lsel-chips__row" role="group" aria-label="Launch context">
+        {LAUNCH_SELECTION_GROUPS.map((group) => {
+          const isGoverned = governed.includes(group);
+          const edited = !isGoverned && selection.diff(group).line !== null;
+          const label = isGoverned ? `✦ Jev’s ${CHIP_NOUN[group][1]}` : chipLabel(selection, group);
+          return (
+            <button
+              key={group}
+              type="button"
+              className={`lsel-chip ${edited ? 'lsel-chip--edited' : ''} ${open === group ? 'lsel-chip--open' : ''}`}
+              data-testid={`lsel-chip-${group}`}
+              aria-expanded={isGoverned ? undefined : open === group}
+              aria-controls={isGoverned ? undefined : popoverId}
+              aria-disabled={isGoverned || undefined}
+              title={isGoverned ? governedNote : edited ? `${LAUNCH_GROUP_LABEL[group]}: ${selection.diff(group).line ?? ''}` : `${LAUNCH_GROUP_LABEL[group]}: the launch’s defaults`}
+              onClick={(event) => {
+                if (isGoverned) return event.preventDefault();
+                setOpen((current) => (current === group ? null : group));
+              }}
+            >
+              <span aria-hidden="true">{GLYPH[group]}</span> {label}
+              {edited ? <span className="lsel-chip__dot" aria-label="edited" /> : null}
+            </button>
+          );
+        })}
+      </div>
+      {open && !governed.includes(open) ? (
+        <div
+          id={popoverId}
+          className="lsel-popover"
+          role="dialog"
+          aria-label={`${LAUNCH_GROUP_LABEL[open]} for this launch`}
+          data-testid="lsel-popover"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              setOpen(null);
+            }
+          }}
+        >
+          <button type="button" className="lsel-popover__close" aria-label="Close" onClick={() => setOpen(null)}>✕</button>
+          <LaunchSelectionGroups selection={selection} groups={[open]} candidates={candidates} />
         </div>
       ) : null}
     </div>

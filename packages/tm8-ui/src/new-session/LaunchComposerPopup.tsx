@@ -26,7 +26,7 @@ import {
   type JevPort,
 } from '../jev';
 import { composeSelection } from '../domain/launch-selection';
-import { LaunchSelectionDisclosure, useLaunchSelection, type LaunchSelectionSources } from '../launch-selection';
+import { LaunchSelectionChips, useLaunchSelection, type LaunchSelectionSources } from '../launch-selection';
 import { NewSessionComposer } from './NewSessionComposer';
 import { useLaunchComposerState } from './useLaunchComposerState';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheet itself —
@@ -229,7 +229,7 @@ export function LaunchComposerPopup({
     draft: jevDraft,
   });
   /* THE LAUNCH'S CONTEXT (I9) — the same per-group selection the launch
-     sheet holds, behind one collapsed line. */
+     sheet holds, as three count chips that each open their group. */
   const selection = useLaunchSelection({
     load: selectionSources?.load,
     teammateId: config.teamMemberId,
@@ -354,12 +354,12 @@ export function LaunchComposerPopup({
           }
           aboveControls={
             <>
-            <LaunchSelectionDisclosure
+            <LaunchSelectionChips
               selection={selection}
+              candidates={selectionSources?.candidates ?? {}}
               /* In Jev mode Jev's ticks ARE memories and skills (the review
                  drawer shows them); references stay the popup's own. */
-              groups={jev.jevMode ? ['references'] : ['memories', 'skills', 'references']}
-              candidates={selectionSources?.candidates ?? {}}
+              governed={jev.jevMode ? ['memories', 'skills'] : []}
             />
             <JevStrip
               jev={jev}
