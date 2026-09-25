@@ -44,20 +44,56 @@ export interface TrustDialogReading {
   selected: 'yes' | 'no' | null;
 }
 
-// An option line holds the cursor glyph and ONE option and nothing else. This
-// is what separates the live dialog from its text quoted elsewhere on screen —
-// a task body describing this very bug renders the words inline, never as a
-// bare `❯ No, exit` row beside the dialog's other fixed strings.
-const OPTION_LINE = /^\s*❯\s*(?:\d+\.\s*)?(Yes, I trust this folder|No, exit)\s*$/m;
+// The live dialog is recognised by its STRUCTURE on screen, not by its words.
+// Measured on 2.1.280 (fixtures/claude-trust-dialog): the dialog is drawn with
+// a ONE-column margin, so the cursor's option row is exactly ` ❯ No, exit`,
+// the other option is the row directly beside it at exactly three spaces, and
+// `Enter to confirm` follows within a few rows. Claude renders everything a WORKING lane shows (tool
+// output under `⎿`, an assistant's code block, a quoted user turn) indented
+// or prefixed (tool output at five columns under `⎿`, an assistant's lines at
+// two), so a copy of the dialog printed by the agent keeps the words and the
+// relative layout but never the one-column margin. (The composer's `❯` sits
+// at column 0, and permission dialogs share the margin but not these option
+// rows, which is why the sibling row and the confirm line are both required.) If a future Claude
+// moves the frame, this stops matching and the watchdog presses nothing —
+// the safe way to be wrong.
+const OPTIONS = ['No, exit', 'Yes, I trust this folder'] as const;
+const CURSOR_ROW = /^ ❯ (?:\d+\. )?(Yes, I trust this folder|No, exit)$/;
+const siblingRow = (option: string): RegExp =>
+  new RegExp(`^ {3}(?:\\d+\\. )?${option.replace(/[.,]/g, '\\$&')}$`);
+const CONFIRM_ROWS_BELOW = 4;
+
+/**
+ * Claude's welcome banner, which renders only AFTER the trust gate. Once it is
+ * on screen this process is past the dialog for good: the trust question is
+ * asked once, at startup. Seen by the watchdog within its first reads of a
+ * normal boot, long before an agent could print anything.
+ */
+const BOOTED_BANNER = /Claude Code v\d/;
 
 /** Read the trust dialog off a rendered viewport (rows joined by newlines). */
 export function readTrustDialog(screen: string): TrustDialogReading {
   const flat = screen.replace(/\s+/g, '');
   const framed =
     flat.includes('Yes,Itrustthisfolder') && flat.includes('No,exit') && flat.includes('Entertoconfirm');
-  const option = framed ? OPTION_LINE.exec(screen) : null;
-  if (!option) return { visible: false, selected: null };
-  return { visible: true, selected: option[1] === 'No, exit' ? 'no' : 'yes' };
+  if (!framed) return { visible: false, selected: null };
+  const rows = screen.split('\n').map((row) => row.replace(/\s+$/, ''));
+  for (let i = 0; i < rows.length; i += 1) {
+    const cursor = CURSOR_ROW.exec(rows[i]!);
+    if (!cursor) continue;
+    const other = OPTIONS.find((option) => option !== cursor[1])!;
+    const sibling = siblingRow(other);
+    if (!sibling.test(rows[i - 1] ?? '') && !sibling.test(rows[i + 1] ?? '')) continue;
+    const below = rows.slice(i + 1, i + 2 + CONFIRM_ROWS_BELOW);
+    if (!below.some((row) => row.includes('Enter to confirm'))) continue;
+    return { visible: true, selected: cursor[1] === 'No, exit' ? 'no' : 'yes' };
+  }
+  return { visible: false, selected: null };
+}
+
+/** Claude has rendered its post-trust UI: the dialog cannot appear in this process any more. */
+export function claudeBootedPastTrust(screen: string): boolean {
+  return BOOTED_BANNER.test(screen);
 }
 
 export interface TrustWatchdogState {
@@ -87,14 +123,20 @@ export type TrustWatchdogAction =
   | { kind: 'confirm' }
   /** The dialog was up, was answered, and is gone. */
   | { kind: 'recovered' }
-  /** Stand down: the window passed with no dialog, or the operator opted out. */
-  | { kind: 'stop'; reason: 'window_elapsed' | 'opted_out' }
+  /** Stand down: the window passed with no dialog, the operator opted out, or claude booted past the gate. */
+  | { kind: 'stop'; reason: 'window_elapsed' | 'opted_out' | 'booted' }
   /** The dialog survived every keystroke — fail the lane loudly. */
   | { kind: 'fail'; reason: typeof TRUST_PROMPT_UNANSWERED };
 
 /** One step of the watchdog. Pure: the same state always yields the same action. */
 export function decideTrustWatchdog(state: TrustWatchdogState): TrustWatchdogAction {
   const dialog = readTrustDialog(state.screen);
+  // Past the gate: an answered dialog is recovered, and an unanswered one
+  // never existed. Checked BEFORE the dialog, so text a working lane prints can
+  // never be answered, whatever it looks like.
+  if (claudeBootedPastTrust(state.screen)) {
+    return state.keystrokes > 0 ? { kind: 'recovered' } : { kind: 'stop', reason: 'booted' };
+  }
   if (!dialog.visible) {
     if (state.keystrokes > 0) {
       return state.absentReads + 1 >= TRUST_RECOVERED_ABSENT_READS ? { kind: 'recovered' } : { kind: 'wait' };
