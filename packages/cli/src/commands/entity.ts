@@ -544,10 +544,14 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   // c904 §2.4: `--offset` pages the v2 body. It is copied from the server's
   // `assignment.expand`, never computed, and means nothing without that section.
   const offset = cmd.options.integer('offset');
+  // The fix a v2-only flag's refusal suggests. `--schema v2` is named only
+  // when this read resolved to v1 (an explicit `--schema v1`, or a v1-only
+  // flag): v2 is otherwise already the shape, and the flag is noise.
+  const v2Fix = (sectionsFix: string): string => (schema === 'v2' ? '' : '--schema v2 ') + `--sections ${sectionsFix}`;
   if (offset !== undefined) {
     if (offset < 0) throw new CliError(`--offset expects a byte offset >= 0, got ${offset}`, EXIT_USAGE);
     if (schema !== 'v2' || (sections !== 'assignment' && sections !== 'summary')) {
-      throw new CliError('--offset pages the v2 body: use it with --schema v2 --sections assignment', EXIT_USAGE, {
+      throw new CliError(`--offset pages the v2 body: use it with ${v2Fix('assignment')}`, EXIT_USAGE, {
         hint: 'copy the command from the body\'s `expand`; the server fills in the offset',
       });
     }
@@ -560,10 +564,10 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
   if (cursor !== undefined
     && !(schema === 'v2' && only !== undefined && ['hierarchy', 'blockers', 'connections', 'messages'].includes(only))) {
-    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
+    throw new CliError(`--cursor continues exactly one v2 section: ${v2Fix('hierarchy|blockers|connections|messages')}`, EXIT_USAGE);
   }
   if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
-    throw new CliError('--edge-type filters the v2 connections section: --schema v2 --sections connections', EXIT_USAGE);
+    throw new CliError(`--edge-type filters the v2 connections section; use: ${v2Fix('connections')}`, EXIT_USAGE);
   }
   // The actions section rolls out to `tm8.actions.v2` rows like `action list`
   // does. Only asked about when the section is in a view that prints it: the

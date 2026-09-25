@@ -620,6 +620,30 @@ function notLoadedEntry(id: string, section: V2Section): EntityContextNotLoaded 
   return { section, ...sectionExpand(id, section) };
 }
 
+/**
+ * c761 §3.4: `in_project` and `authored_from` are never in a default read, so
+ * while `connections` is not loaded each is advertised by its own filtered
+ * expand, no count. Only for a kind the edge catalog lets carry the edge, in
+ * either direction (`edge_types.src_kinds`/`dst_kinds`, as of 194) — the same
+ * closed set the `--edge-type` check reads, spelled here so a notLoaded entry
+ * never costs a statement.
+ */
+const ADVERTISED_EDGE_TYPES: ReadonlyArray<{ type: string; kinds: ReadonlySet<string> }> = [
+  { type: 'in_project', kinds: new Set(['task', 'work_session', 'pull_request', 'commit', 'artifact', 'project']) },
+  { type: 'authored_from', kinds: new Set(['message', 'memory', 'artifact', 'work_session', 'chat']) },
+];
+
+function notLoadedEntries(id: string, kind: string, section: V2Section): EntityContextNotLoaded[] {
+  const entry = notLoadedEntry(id, section);
+  if (section !== 'connections') return [entry];
+  return [
+    entry,
+    ...ADVERTISED_EDGE_TYPES
+      .filter((edge) => edge.kinds.has(kind))
+      .map((edge) => ({ section: edge.type, ...pageExpand(id, 'connections', edge.type, null) })),
+  ];
+}
+
 function errorOf(section: string, error: unknown): EntityContextError {
   if (error instanceof CollabError) return { section, code: error.code, retry: error.retryable };
   return { section, code: 'upstream_unavailable', retry: true };
@@ -808,9 +832,14 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
         [id],
       ));
       if (prs) {
+        // Beyond 10, the `omitted[]` entry carries the expand (c761 §5, "gate
+        // PRs beyond 10"): gate PRs are oldest-first and connections
+        // newest-first, so no cursor continues one from the other — the
+        // expand is the `tracks`-filtered section itself, as for `tasks`.
+        const gatePage = pageExpand(id, 'connections', 'tracks', null);
         loaded.gate = {
           kind: 'pr_merged',
-          prs: prs.slice(0, ROW_LIMIT).map((pr) => (pr.readable
+          prs: keep(prs, ROW_LIMIT, 'gate', loaded, () => gatePage).map((pr) => (pr.readable
             ? { url: pr.url ?? '', state: pr.state ?? 'unknown', ci: pr.ci_status }
             : { id: pr.id, unreadable: true as const })),
           ...(prs.length > ROW_LIMIT ? { more: true as const } : {}),
@@ -957,6 +986,12 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     // every edge per entity row; the in-direction skips a self-loop so it is
     // listed once, as `out`, exactly as the OR join listed it. The limit
     // applies after the join, so a hidden endpoint never shortens a page.
+    // The endpoint's ref row is a LATERAL probe per edge, in page order: a
+    // plain join let the planner build the whole ref join (every entity in
+    // the space, hash-joined to every detail table) before picking 11 rows —
+    // ~30k buffers for a one-row page (EXPLAIN evidence on PR for step C).
+    // `limit 1` (one ref row per id) keeps the planner from pulling the
+    // subquery back up into that same flat join.
     const page = after?.section === 'connections' ? after : null;
     const params: unknown[] = [id];
     const typeFilter = edgeType === null ? `g.type <> 'anchored_to'` : `g.type = $${params.push(edgeType)}`;
@@ -970,8 +1005,8 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
               case when c.edge_type = 'depends_on' and c.outgoing
                    then internal.is_resolved(c.other_id) end edge_resolved,
               c.edge_id, ${MICROS('c.edge_at')} edge_key,
-              ${REF_COLUMNS} ${REF_FROM}
-         join (
+              r.*
+         from (
            (select g.id edge_id, g.type edge_type, g.created_at edge_at, true outgoing, g.dst_id other_id
               from public.edges g
              where g.src_id = $1 and ${typeFilter} ${keyset})
@@ -979,7 +1014,9 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
            (select g.id, g.type, g.created_at, false, g.src_id
               from public.edges g
              where g.dst_id = $1 and g.src_id <> $1 and ${typeFilter} ${keyset})
-         ) c on c.other_id = e.id
+           order by edge_at desc, edge_id desc
+         ) c
+         cross join lateral (select ${REF_COLUMNS} ${REF_FROM} where e.id = c.other_id limit 1) r
         order by c.edge_at desc, c.edge_id desc
         limit ${ROW_LIMIT + 1}`,
       params,
@@ -1099,7 +1136,7 @@ function assemble(id: string, loaded: Loaded, plan: ContextV2LoadPlan, offset: n
     version: Number(root.version),
   };
   const status = statusOf(root);
-  const notLoaded = plan.notLoaded.map((section) => notLoadedEntry(id, section));
+  const notLoaded = plan.notLoaded.flatMap((section) => notLoadedEntries(id, root.kind, section));
   const tail = { omitted: loaded.omitted, notLoaded, errors: loaded.errors, budget: { requested: 0, used: 0 } };
 
   const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};

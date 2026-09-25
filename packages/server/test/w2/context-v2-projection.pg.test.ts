@@ -41,6 +41,10 @@ const MENTION = '01a0c000-0000-7000-8000-000000000a01';
 /** A restricted PR G also tracks: the caller cannot read it (S3b gate fix). */
 const HIDDEN_PR = '01a0c000-0000-7000-8000-000000000a02';
 
+/** A `pr_merged` task tracking eleven PRs: one past the gate's row limit. */
+const WIDE_GATE = '01a0c000-0000-7000-8000-000000000a03';
+const WIDE_GATE_PRS = Array.from({ length: 11 }, (_, i) => `01a0c000-0000-7000-8000-000000000b${String(i).padStart(2, '0')}`);
+
 let database: W1ScratchDatabase;
 let pgDb: Db;
 let registry: HandlerRegistry;
@@ -83,6 +87,34 @@ beforeAll(async () => {
        values ($1,$2,$3,'tracks',$4,'2026-09-23T13:00:00Z')`,
       [F.space, F.G, HIDDEN_PR, F.teammate],
     );
+    await c.query(
+      `insert into public.entities(id,space_id,kind,parent_id,created_by,visibility,created_at,updated_at)
+       values ($1,$2,'task',$3,$4,'space','2026-09-23T13:00:00Z','2026-09-23T13:00:00Z')`,
+      [WIDE_GATE, F.space, F.root, F.member],
+    );
+    await c.query(
+      `insert into public.tasks(entity_id,title,description,acceptance_criteria,work_status,completion_gate)
+       values ($1,'Gated on eleven PRs','','[]'::jsonb,'working','pr_merged')`,
+      [WIDE_GATE],
+    );
+    for (const [i, pr] of WIDE_GATE_PRS.entries()) {
+      const at = `2026-09-23T13:${String(10 + i).padStart(2, '0')}:00Z`;
+      await c.query(
+        `insert into public.entities(id,space_id,kind,created_by,visibility,created_at,updated_at)
+         values ($1,$2,'pull_request',$3,'space',$4,$4)`,
+        [pr, F.space, F.teammate, at],
+      );
+      await c.query(
+        `insert into public.pull_requests(entity_id,space_id,provider,url,repo,number,title,state,ci_status)
+         values ($1,$2,'github',$3,'example/tm8',$4,'Wide PR','open','pending')`,
+        [pr, F.space, `https://github.com/example/tm8/pull/${9100 + i}`, 9100 + i],
+      );
+      await c.query(
+        `insert into public.edges(space_id,src_id,dst_id,type,created_by,created_at)
+         values ($1,$2,$3,'tracks',$4,$5)`,
+        [F.space, WIDE_GATE, pr, F.teammate, at],
+      );
+    }
   });
   pgDb = createDb(database.url);
   counter = countStatements(pgDb);
@@ -159,8 +191,9 @@ describe('v2 projection (S3a)', () => {
       'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq',
       'blockers', 'omitted', 'notLoaded', 'errors', 'budget',
     ]);
-    expect(view.notLoaded.map((n) => n.section)).toEqual(['assignment', 'hierarchy', 'connections', 'messages', 'actions']);
+    expect(view.notLoaded.map((n) => n.section)).toEqual(['assignment', 'hierarchy', 'connections', 'in_project', 'messages', 'actions']);
     for (const entry of view.notLoaded) {
+      if (entry.section === 'in_project') continue; // its own test, below
       if (entry.section === 'actions') {
         // Bounded since #669: the CLI pages by default, the expandOp names v2.
         expect(entry).toEqual({
@@ -313,5 +346,62 @@ describe('v2 section pages (S3b)', () => {
     for (const query of [`sections=hierarchy,messages&cursor=${cursor}`, `sections=assignment&cursor=${cursor}`, `cursor=${cursor}`]) {
       await expect(v2(F.P, query), query).rejects.toMatchObject({ code: 'invalid_input' });
     }
+  });
+});
+
+// ===========================================================================
+// Phase 2 step C — the gate's `more` and the hidden edge types get expands
+// ===========================================================================
+
+describe('v2 follow-up expands (phase 2 step C)', () => {
+  it('a gate past 10 PRs keeps 10, says more, and its omitted[] entry expands to the tracks-filtered connections', async () => {
+    const { view } = await v2(WIDE_GATE);
+    expect(EntityContextV2ViewSchema.safeParse(view).success).toBe(true);
+    const gate = view.gate as { prs: Array<{ url: string }>; more?: true };
+    expect(gate.prs.map((pr) => pr.url)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `https://github.com/example/tm8/pull/${9100 + i}`),
+    );
+    expect(gate.more).toBe(true);
+    const entry = view.omitted.find((o) => o.section === 'gate');
+    expect(entry).toEqual({
+      section: 'gate', kept: 10, more: true, reason: 'rowLimit',
+      expand: `tm8 entity context ${WIDE_GATE} --sections connections --edge-type tracks`,
+      expandOp: { operation: 'entities.context', params: { id: WIDE_GATE, sections: ['connections'], edgeType: 'tracks' } },
+    });
+    // The expand runs and reaches the eleventh PR.
+    const page = await v2(WIDE_GATE, 'sections=connections&edgeType=tracks');
+    expect(page.view.connections?.map((c) => c.other.id)).toContain(WIDE_GATE_PRS[10]);
+    // At or under the limit: no `more`, no omitted entry.
+    const g = await v2(F.G);
+    expect((g.view.gate as { more?: true }).more).toBeUndefined();
+    expect(g.view.omitted.find((o) => o.section === 'gate')).toBeUndefined();
+  });
+
+  it('in_project and authored_from are advertised in notLoaded[] with their filtered expand, only for kinds that carry them', async () => {
+    const expected = (id: string, type: string) => ({
+      section: type,
+      expand: `tm8 entity context ${id} --sections connections --edge-type ${type}`,
+      expandOp: { operation: 'entities.context', params: { id, sections: ['connections'], edgeType: type } },
+    });
+    const advertised = (view: EntityContextV2View) =>
+      view.notLoaded.filter((n) => n.section === 'in_project' || n.section === 'authored_from');
+    // A session carries both (in_project out, authored_from in), right after `connections`.
+    const ws = await v2(F.WS);
+    expect(advertised(ws.view)).toEqual([expected(F.WS, 'in_project'), expected(F.WS, 'authored_from')]);
+    const sections = ws.view.notLoaded.map((n) => n.section);
+    expect(sections.indexOf('in_project')).toBe(sections.indexOf('connections') + 1);
+    // Each expand runs, and the session's in_project edge is on its page.
+    const page = await v2(F.WS, 'sections=connections&edgeType=in_project');
+    expect(page.view.connections?.map((c) => [c.type, c.dir, c.other.id])).toEqual([['in_project', 'out', F.PJ]]);
+    // Per kind, from the edge catalog: task → in_project; chat, message → authored_from;
+    // project → in_project (incoming); a doc carries neither.
+    expect(advertised((await v2(F.T)).view)).toEqual([expected(F.T, 'in_project')]);
+    expect(advertised((await v2(F.C)).view)).toEqual([expected(F.C, 'authored_from')]);
+    expect(advertised((await v2(F.chatMessages[0]!)).view)).toEqual([expected(F.chatMessages[0]!, 'authored_from')]);
+    expect(advertised((await v2(F.PJ)).view)).toEqual([expected(F.PJ, 'in_project')]);
+    expect(advertised((await v2(F.D)).view)).toEqual([]);
+    // Loading connections loads them too: nothing is advertised twice.
+    const loaded = await v2(F.WS, 'sections=connections');
+    expect(advertised(loaded.view)).toEqual([]);
   });
 });

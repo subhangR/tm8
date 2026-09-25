@@ -771,8 +771,30 @@ describe('entity context', () => {
     const r = await drive(['entity', 'context', ENT, '--edge-type', 'tracks']);
     expect(r.code).toBe(2);
     expect(seen).toHaveLength(0);
+    // --edge-type already picks v2, so the fix is the section alone.
+    expect(r.stderr).toContain('use: --sections connections');
+    expect(r.stderr).not.toContain('--schema v2');
+  });
+
+  it('a v2-only flag on a read pinned to v1 still names --schema v2 in the fix', async () => {
+    const r = await drive(['entity', 'context', ENT, '--schema', 'v1', '--edge-type', 'tracks']);
+    expect(r.code).toBe(2);
+    expect(seen).toHaveLength(0);
     expect(r.stderr).toContain('--schema v2 --sections connections');
   });
+
+  for (const [flag, value, fix] of [
+    ['--offset', '100', '--sections assignment'],
+    ['--cursor', 'abc', '--sections hierarchy|blockers|connections|messages'],
+  ] as const) {
+    it(`${flag} without its section names only --sections, not a redundant --schema v2`, async () => {
+      const r = await drive(['entity', 'context', ENT, flag, value]);
+      expect(r.code).toBe(2);
+      expect(seen).toHaveLength(0);
+      expect(r.stderr).toContain(fix);
+      expect(r.stderr).not.toContain('--schema v2');
+    });
+  }
 });
 
 /**
