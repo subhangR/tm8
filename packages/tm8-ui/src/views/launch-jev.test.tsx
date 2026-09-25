@@ -19,7 +19,8 @@ import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import { LAUNCH_CAPACITY, LAUNCH_DEFAULTS, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 import { MobileSurfaceProvider } from '../mobile';
 import type { JevPort } from '../jev/port';
-import { answeringPort, item, pendingPort } from '../jev/test-support';
+import { answeringPort, failedGroup, item, pendingPort } from '../jev/test-support';
+import { navStore } from '../stores/navStore';
 
 type SheetProps = React.ComponentProps<typeof LaunchSheet>;
 
@@ -113,6 +114,28 @@ describe('Jev only suggests: nothing changes until Apply', () => {
     expect(config.model).toBe('claude-sonnet-5');
     expect(config.teamMemberId).toBe('ent-tm-forge');
     expect(config.jevRunId).toBe(view.port.inputs[0]!.runId);
+  });
+
+  it('a group Jev failed launches on its defaults, and the audit says Jev failed it', async () => {
+    const view = await asked({ jev: answeringPort({ ...ANSWER, skills: failedGroup('timeout') }) });
+    const config = view.launch();
+    expect(config.selection).toBeUndefined();
+    expect(config.selectionReasons?.skills).toBe('jev-failed');
+  });
+
+  it('with no key anywhere the entry point links to Settings, and Launch is unaffected', async () => {
+    const port = answeringPort({
+      model: failedGroup('no_key'), teammates: failedGroup('no_key'), memories: failedGroup('no_key'),
+      skills: failedGroup('no_key'), references: failedGroup('no_key'),
+    });
+    const view = renderSheet({ jev: port, loadLaunchDefaults: async () => LAUNCH_DEFAULTS });
+    await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
+    navStore.getState().navigate({ view: 'home' });
+    fireEvent.click(await waitFor(() => view.getByTestId('jev-add-key')));
+    expect(navStore.getState().view).toEqual({ view: 'settings', section: 'credentials' });
+    const config = view.launch();
+    expect(config.selection).toBeUndefined();
+    expect(config.model).toBe('claude-sonnet-5');
   });
 
   it('without pressing the entry point, the payload is identical to a sheet with no Jev at all', () => {
