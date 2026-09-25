@@ -705,6 +705,20 @@ export class PtyHostService {
     });
   }
 
+  /**
+   * The session's visible screen as text, or null when it has no live PTY.
+   * Read off the headless mirror, so it is what an attached xterm would show.
+   */
+  async readScreen(sessionId: string): Promise<string | null> {
+    const entry = this.sessions.get(sessionId);
+    if (!entry || entry.exited) return null;
+    try {
+      return await entry.state.readViewport();
+    } catch {
+      return null;
+    }
+  }
+
   /** Whether a live PTY exists for the session. */
   hasSession(sessionId: string): boolean {
     return this.sessions.has(sessionId);

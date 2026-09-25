@@ -36,8 +36,12 @@
 
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 import { mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+
+const execFileAsync = promisify(execFile);
 
 type ClaudeConfig = Record<string, unknown> & {
   projects?: Record<string, Record<string, unknown>>;
@@ -60,7 +64,54 @@ async function acquireTrustUpdate(): Promise<() => void> {
 }
 
 /**
- * Record "trusted" for `cwd` in Claude's user config, if it is not already.
+ * What {@link trustClaudeWorkspace} concluded. Callers on the launch path
+ * ignore it (seeding is best-effort); tests and the launch log read it.
+ *
+ * - `trusted` — every requested entry was on disk when last re-read.
+ * - `unverified` — tm8 wrote, and a concurrent rewrite dropped an entry again
+ *   on every attempt. The launch proceeds; the PTY trust watchdog is the
+ *   backstop for exactly this case.
+ * - `skipped` — opt-out, malformed config, or an I/O error: nothing written.
+ */
+export type ClaudeTrustOutcome = 'trusted' | 'unverified' | 'skipped';
+
+export interface ClaudeTrustOptions {
+  /**
+   * A long-lived directory whose trust Claude also consults for `cwd` — the
+   * scratch root, or a worktree's main repository root. See
+   * {@link resolveClaudeTrustRoot} for which, and why.
+   */
+  trustRoot?: string | null;
+}
+
+/** Write-then-verify rounds before giving up to the watchdog. */
+const TRUST_ASSERT_ATTEMPTS = 3;
+
+/**
+ * Record "trusted" for `cwd` (and its stable trust root) in Claude's user
+ * config, then RE-READ and re-assert until the entries are really on disk.
+ *
+ * WHY WRITE-THEN-VERIFY, and why the ancestor. `~/.claude.json` is shared by
+ * every claude process on the account, and a claude that is BOOTING writes back
+ * a config snapshot it read seconds earlier. Measured 2026-09-25 on the live
+ * fleet: of 40 fresh trust entries planted exactly as below, 0 were lost to the
+ * 24 steady-state claude processes, and 8 were lost within 0.4–7.7s once other
+ * claude processes were STARTING — the fleet's normal state whenever lanes
+ * spawn together. A lost leaf entry is a lane parked forever at the trust
+ * dialog (task 01a0d79e-1b86). Atomic rename cannot help: it prevents torn
+ * files, not lost updates, and the lost update is the other process's.
+ *
+ * The trust root is the prevention. A lost update only drops entries added
+ * AFTER the stale writer's read, so an entry that has sat in the file for
+ * longer than any claude's boot window is in every snapshot and survives every
+ * rewrite. The root is written once and then covers every later lane under it,
+ * whatever happens to that lane's own leaf entry. The leaf is still written,
+ * so a future claude that stopped honouring the root degrades to today's
+ * behaviour rather than to a hang on every launch.
+ *
+ * The re-read narrows the remaining window (the first lane of a project, or a
+ * project-mode checkout) to the moment between tm8's verify and claude's own
+ * read of the file; the PTY watchdog in SpawnService covers that remainder.
  *
  * DELIBERATELY BEST-EFFORT, and every early return below is a case where doing
  * nothing is better than guessing:
@@ -82,14 +133,15 @@ async function acquireTrustUpdate(): Promise<() => void> {
  * the user's Claude credentials and history.
  *
  * Never throws. Trust seeding is a UX safeguard, not a launch prerequisite — if
- * it fails, Claude falls back to its normal interactive trust flow, which is
- * exactly the behaviour tm8 had before this existed.
+ * it fails, Claude falls back to its normal interactive trust flow, which the
+ * watchdog then answers.
  */
 export async function trustClaudeWorkspace(
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
-  if (env['TM8_AUTO_TRUST_WORKSPACE'] === 'false') return;
+  options: ClaudeTrustOptions = {},
+): Promise<ClaudeTrustOutcome> {
+  if (env['TM8_AUTO_TRUST_WORKSPACE'] === 'false') return 'skipped';
 
   const release = await acquireTrustUpdate();
   try {
@@ -99,40 +151,131 @@ export async function trustClaudeWorkspace(
     // working directories are routinely reached through symlinks (the scratch
     // root, /tmp on macOS). Keying by the unresolved path writes a trust entry
     // Claude will never look up.
-    const workspace = await realpath(resolve(cwd)).catch(() => resolve(cwd));
+    const canonical = (path: string): Promise<string> =>
+      realpath(resolve(path)).catch(() => resolve(path));
+    const workspaces = [await canonical(cwd)];
+    if (options.trustRoot) workspaces.push(await canonical(options.trustRoot));
 
-    let config: ClaudeConfig = {};
-    try {
-      config = JSON.parse(await readFile(configPath, 'utf8')) as ClaudeConfig;
-    } catch {
-      try {
-        await readFile(configPath, 'utf8');
-        return; // present but unparseable — leave it alone
-      } catch {
-        config = {}; // genuinely absent — safe to create
+    for (let attempt = 1; attempt <= TRUST_ASSERT_ATTEMPTS; attempt += 1) {
+      const config = await readClaudeConfig(configPath);
+      if (config === 'malformed') return 'skipped';
+
+      const projects =
+        config.projects && typeof config.projects === 'object' ? config.projects : {};
+      const missing = workspaces.filter(
+        (workspace) => projects[workspace]?.['hasTrustDialogAccepted'] !== true,
+      );
+      // The verify half: on attempt 2+ this is the re-read of our own write.
+      if (missing.length === 0) return 'trusted';
+
+      const nextProjects = { ...projects };
+      for (const workspace of missing) {
+        const current =
+          projects[workspace] && typeof projects[workspace] === 'object' ? projects[workspace] : {};
+        nextProjects[workspace] = { ...current, hasTrustDialogAccepted: true };
       }
+      await mkdir(dirname(configPath), { recursive: true });
+      await writeFileAtomic(
+        configPath,
+        `${JSON.stringify({ ...config, projects: nextProjects }, null, 2)}\n`,
+      );
     }
-
-    const projects =
-      config.projects && typeof config.projects === 'object' ? config.projects : {};
-    const current =
-      projects[workspace] && typeof projects[workspace] === 'object' ? projects[workspace] : {};
-    if (current['hasTrustDialogAccepted'] === true) return;
-
-    const next: ClaudeConfig = {
-      ...config,
-      projects: {
-        ...projects,
-        [workspace]: { ...current, hasTrustDialogAccepted: true },
-      },
-    };
-
-    await mkdir(dirname(configPath), { recursive: true });
-    await writeFileAtomic(configPath, `${JSON.stringify(next, null, 2)}\n`);
+    // The last write has not been re-read yet; one final look decides.
+    const final = await readClaudeConfig(configPath);
+    if (final === 'malformed') return 'unverified';
+    return workspaces.every((w) => final.projects?.[w]?.['hasTrustDialogAccepted'] === true)
+      ? 'trusted'
+      : 'unverified';
   } catch {
     // See the doc comment: a UX safeguard must not become a launch prerequisite.
+    return 'skipped';
   } finally {
     release();
+  }
+}
+
+/** Parsed config, `{}` when ABSENT (safe to create), `'malformed'` when present
+ *  but unparseable (must never be overwritten). */
+async function readClaudeConfig(configPath: string): Promise<ClaudeConfig | 'malformed'> {
+  let text: string;
+  try {
+    text = await readFile(configPath, 'utf8');
+  } catch {
+    return {}; // genuinely absent — safe to create
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as ClaudeConfig)
+      : 'malformed';
+  } catch {
+    return 'malformed'; // present but unparseable — leave it alone
+  }
+}
+
+/**
+ * The stable directory to trust alongside a lane's own, or null.
+ *
+ * Claude Code decides trust differently for the two kinds of lane directory
+ * tm8 creates, and each answer here is the one Claude actually consults —
+ * all MEASURED on 2.1.280 over a real PTY (2026-09-25), each against a
+ * fresh-directory control that did show the dialog:
+ *
+ * - A plain directory is trusted when it or ANY PARENT carries the bit. So a
+ *   SCRATCH lane (`<dataDir>/scratch/<session>`, never a repository) is
+ *   covered by the 0700 scratch root, which holds nothing but tm8 scratch.
+ * - A GIT WORKTREE does NOT inherit from its parent directory: trusting
+ *   `<dataDir>/worktrees/<project>` still showed the dialog. It inherits from
+ *   its MAIN REPOSITORY ROOT instead — trusting that root booted a worktree at
+ *   an unrelated path straight to the composer, and it is also where Claude
+ *   itself records the bit when a person answers "Yes" in a worktree. So a
+ *   WORKTREE lane is covered by the project's registered checkout — but only
+ *   when that checkout IS the repository root (a registered subdirectory is
+ *   not what Claude looks up) and only for a project an operator marked
+ *   `trusted`. A per-spawn `--confirm-untrusted` consent covers that one
+ *   launch; it is not a licence to trust the checkout for good.
+ * - A PROJECT-mode lane runs in the registered checkout itself, which is its
+ *   own long-lived entry after the first launch. No second directory.
+ *
+ * Paths are compared CANONICALLY: the worktree manager realpaths its root
+ * while `dataDir` and a project's `workingDir` may be spelled through a
+ * symlink (`/tmp` on macOS), and containment must not fail open or closed on
+ * spelling.
+ */
+export async function resolveClaudeTrustRoot(
+  cwd: string,
+  workdirMode: 'worktree' | 'scratch' | 'project' | string,
+  dataDir: string,
+  project: { workingDir: string; trust: string } | null,
+): Promise<string | null> {
+  const canonical = (path: string): Promise<string> =>
+    realpath(resolve(path)).catch(() => resolve(path));
+  if (workdirMode === 'scratch') {
+    const [parent, root] = await Promise.all([canonical(dirname(cwd)), canonical(dataDir)]);
+    if (parent === root || !parent.startsWith(`${root}${sep}`)) return null;
+    return parent;
+  }
+  if (workdirMode === 'worktree') {
+    if (!project || project.trust !== 'trusted') return null;
+    const repoRoot = await mainRepositoryRoot(cwd);
+    if (repoRoot === null) return null;
+    const [root, registered] = await Promise.all([canonical(repoRoot), canonical(project.workingDir)]);
+    return root === registered ? root : null;
+  }
+  return null;
+}
+
+/** The main worktree's root for a (linked) worktree, from git's common dir. */
+async function mainRepositoryRoot(cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', '--git-common-dir'], {
+      timeout: 5_000,
+    });
+    const commonDir = resolve(cwd, stdout.trim());
+    // A bare or unusual layout has no main checkout for Claude to key on.
+    return basename(commonDir) === '.git' ? dirname(commonDir) : null;
+  } catch {
+    return null;
   }
 }
 
