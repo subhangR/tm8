@@ -7,8 +7,8 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  background: var(--pn-surface, #fff);
-  color: var(--pn-ink, inherit);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
 }
 
 .ecp__head {
@@ -18,7 +18,7 @@
   flex: 0 0 auto;
   min-width: 0;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--pn-line, rgba(0, 0, 0, 0.1));
+  border-bottom: 1px solid var(--pn-line);
 }
 
 .ecp__subject {
@@ -28,7 +28,7 @@
   flex: 1 1 auto;
   min-width: 0;
   padding: 2px 6px;
-  border: 1px solid var(--pn-line, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--pn-line);
   border-radius: 999px;
   background: transparent;
   color: inherit;
@@ -37,8 +37,8 @@
   text-align: left;
 }
 button.ecp__subject { cursor: pointer; }
-button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
-.ecp__about { color: var(--pn-ink-3, #666); }
+button.ecp__subject:hover { background: var(--pn-hover); }
+.ecp__about { color: var(--pn-ink-3); }
 .ecp__subject-title {
   min-width: 0;
   overflow: hidden;
@@ -51,8 +51,8 @@ button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
 .ecp__new,
 .ecp__close {
   padding: 3px 8px;
-  border: 1px solid var(--pn-line, rgba(0, 0, 0, 0.1));
-  border-radius: var(--pn-r-sm, 6px);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -75,9 +75,9 @@ button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
   padding: 4px;
   overflow-y: auto;
   list-style: none;
-  border: 1px solid var(--pn-line-2, rgba(0, 0, 0, 0.15));
-  border-radius: var(--pn-r-sm, 6px);
-  background: var(--pn-card, #fff);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
 }
 .ecp__item {
@@ -87,7 +87,7 @@ button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
   width: 100%;
   padding: 6px 8px;
   border: 0;
-  border-radius: var(--pn-r-sm, 6px);
+  border-radius: var(--pn-r-sm);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -95,14 +95,14 @@ button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
   cursor: pointer;
 }
 .ecp__item:hover,
-.ecp__item--on { background: var(--pn-hover, rgba(0, 0, 0, 0.05)); }
+.ecp__item--on { background: var(--pn-hover); }
 .ecp__item-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
 }
-.ecp__item-meta { display: flex; gap: 8px; color: var(--pn-ink-3, #666); font-size: 11px; }
+.ecp__item-meta { display: flex; gap: 8px; color: var(--pn-ink-3); font-size: 11px; }
 
 .ecp__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .ecp__body > * { flex: 1 1 auto; min-height: 0; }
@@ -116,7 +116,7 @@ button.ecp__subject:hover { background: var(--pn-hover, rgba(0, 0, 0, 0.04)); }
   bottom: 0;
   z-index: 40;
   width: min(420px, 100vw);
-  border-left: 1px solid var(--pn-line, rgba(0, 0, 0, 0.1));
+  border-left: 1px solid var(--pn-line);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
-  background: var(--pn-surface, #fff);
+  background: var(--pn-surface);
 }
