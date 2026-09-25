@@ -34,6 +34,8 @@ const agent = (extra: Record<string, string> = {}): Record<string, string> => ({
 const FORBIDDEN_KEYS = ['hierarchy', 'connections', 'content', 'capabilities', 'patches', 'entity'];
 const TYPICAL_BUDGET = 500;
 const WORST_BUDGET = 640;
+/** The byte test's raw wire calls get the CLI's own per-request deadline (client.ts DEFAULT_TIMEOUT_MS). */
+const WIRE_DEADLINE_MS = 15_000;
 const LONG_TITLE =
   'Receipt worst case: an eighty-plus character title that the receipt must clamp at eighty chars';
 
@@ -445,11 +447,27 @@ describe('byte measurements (reported, and each receipt budget-asserted)', () =>
     const call = async (method: string, path: string, body: Json, receipt: boolean): Promise<{ chars: number; ms: number }> => {
       const url = new URL(path + (receipt ? '?return=receipt' : ''), server.baseUrl);
       const t0 = performance.now();
-      const res = await fetch(url, {
-        method, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...body, clientMutationId: randomUUID() }),
-      });
-      const text = await res.text();
+      // The CLI's own per-request deadline. Without one, a request the
+      // Server never answers holds this test until vitest's 600s timeout —
+      // one hang cost a whole CI job, twice, before the JIT fix. The signal
+      // covers the body read too; a bare TimeoutError names neither the call
+      // nor the deadline, so it is rethrown in the CLI's own words.
+      const signal = AbortSignal.timeout(WIRE_DEADLINE_MS);
+      let res: Response;
+      let text: string;
+      try {
+        res = await fetch(url, {
+          method, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...body, clientMutationId: randomUUID() }),
+          signal,
+        });
+        text = await res.text();
+      } catch (err) {
+        if (signal.aborted) {
+          throw new Error(`${method} ${url.pathname} timed out after ${WIRE_DEADLINE_MS}ms (per-request deadline)`, { cause: err });
+        }
+        throw err;
+      }
       const ms = performance.now() - t0;
       expect(res.status, text).toBeLessThan(300);
       if (receipt) expect(JSON.parse(text).data.schemaVersion).toBe('tm8.receipt.v1');
