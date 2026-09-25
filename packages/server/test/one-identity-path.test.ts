@@ -46,34 +46,66 @@ function sourceFiles(dir: string): string[] {
 
 describe('one identity path (R2 / claims contract)', () => {
   describe('the guarded auto-owner arm', () => {
-    it('keeps the bare loopback single-machine path', async () => {
+    const cookieOk = () => true;
+    const noCookie = () => false;
+
+    it('keeps the bare loopback single-machine path when the cookie is off (pre-W2 rule)', async () => {
       expect(await autoOwnerResolver({}, {
         remoteAddress: '127.0.0.1',
         disableAutoOwner: false,
+        autoOwnerCookie: 'off',
       })).toEqual({ kind: 'auto-owner' });
     });
 
-    it('treats a loopback proxy hop as anonymous when any forwarding evidence exists', async () => {
-      for (const header of ['x-forwarded-for', 'X-Forwarded-Host', 'x-real-ip', 'Forwarded']) {
-        expect(await autoOwnerResolver({ [header]: '' }, {
-          remoteAddress: '::ffff:127.0.0.1',
-          disableAutoOwner: false,
-        })).toEqual({ kind: 'anonymous' });
-      }
-    });
-
-    it('the kill switch disables auto-owner even for a bare loopback peer', async () => {
+    it('T12 (W2): a bare loopback peer WITHOUT the launch cookie is anonymous', async () => {
       expect(await autoOwnerResolver({}, {
-        remoteAddress: '::1',
-        disableAutoOwner: true,
+        remoteAddress: '127.0.0.1',
+        disableAutoOwner: false,
+        autoOwnerCookie: noCookie,
       })).toEqual({ kind: 'anonymous' });
     });
 
-    it('unknown and non-loopback peers never auto-own', async () => {
+    it('T12 positive (W2): the same peer WITH a valid launch cookie is the auto-owner', async () => {
+      expect(await autoOwnerResolver({}, {
+        remoteAddress: '127.0.0.1',
+        disableAutoOwner: false,
+        autoOwnerCookie: cookieOk,
+      })).toEqual({ kind: 'auto-owner' });
+    });
+
+    it('fails closed: a context with no cookie rule at all is anonymous', async () => {
+      expect(await autoOwnerResolver({}, {
+        remoteAddress: '127.0.0.1',
+        disableAutoOwner: false,
+      } as unknown as Parameters<typeof autoOwnerResolver>[1])).toEqual({ kind: 'anonymous' });
+    });
+
+    it('treats a loopback proxy hop as anonymous when any forwarding evidence exists — cookie or not (T13)', async () => {
+      for (const header of ['x-forwarded-for', 'X-Forwarded-Host', 'x-real-ip', 'Forwarded']) {
+        for (const autoOwnerCookie of ['off', cookieOk] as const) {
+          expect(await autoOwnerResolver({ [header]: '' }, {
+            remoteAddress: '::ffff:127.0.0.1',
+            disableAutoOwner: false,
+            autoOwnerCookie,
+          })).toEqual({ kind: 'anonymous' });
+        }
+      }
+    });
+
+    it('the kill switch disables auto-owner even for a bare loopback peer holding the cookie', async () => {
+      expect(await autoOwnerResolver({}, {
+        remoteAddress: '::1',
+        disableAutoOwner: true,
+        autoOwnerCookie: cookieOk,
+      })).toEqual({ kind: 'anonymous' });
+    });
+
+    it('unknown and non-loopback peers never auto-own, cookie or not', async () => {
       for (const remoteAddress of [undefined, '10.0.0.8']) {
         expect(await autoOwnerResolver({}, {
           remoteAddress,
           disableAutoOwner: false,
+          autoOwnerCookie: cookieOk,
         })).toEqual({ kind: 'anonymous' });
       }
     });

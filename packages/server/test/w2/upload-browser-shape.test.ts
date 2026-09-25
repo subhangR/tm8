@@ -172,6 +172,8 @@ async function listen(options: { disableAutoOwner?: boolean } = {}): Promise<{
         const identity = await resolveIdentity(req.headers, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: options.disableAutoOwner ?? true,
+          // The legacy-shape cell below needs the pre-W2 peer-only arm.
+          autoOwnerCookie: 'off',
         });
         if (await route(req, res, { requestId, identity })) return;
         res.writeHead(404).end();

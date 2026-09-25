@@ -55,7 +55,8 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { sessionIssuedHere } from './identity/pg-auth.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
-import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
+import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { loadLaunchCookieIssuer } from './http/launch-cookie.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
@@ -263,6 +264,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * ONE identity path for every transport — the rule lives in
    * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
+  /**
+   * W2 / K4 — the launch cookie. Built only where it can matter: a node whose
+   * auto-owner arm is live and whose cookie is `required`. Everywhere else the
+   * arm is closed (kill switch, multi) or open on the peer alone (`off`).
+   */
+  const launchCookie = db && config.disableAutoOwner !== true && config.autoOwnerCookie !== 'off'
+    ? await loadLaunchCookieIssuer(dataDir)
+    : undefined;
+
   const identityResolver: IdentityResolver | undefined = db
     ? createSessionIdentityResolver({
         db,
@@ -434,6 +444,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       db,
       config,
       owner,
+      ...(launchCookie ? { launchCookie } : {}),
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
       folderUploads: {
         blobStore: blobStore!,
@@ -571,10 +582,22 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /** Browser sockets authenticate with the Secure HttpOnly session cookie. */
-  const resolveSocketIdentity = createSocketIdentityResolver(
-    identityResolver ?? autoOwnerResolver,
-    config.disableAutoOwner === true,
-  );
+  const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
+    const resolver = identityResolver ?? autoOwnerResolver;
+    const identity = await resolver(req.headers, {
+      remoteAddress: req.socket.remoteAddress,
+      disableAutoOwner: config.disableAutoOwner === true,
+      // Same rule as the HTTP frame (server.ts `identityContext`): only an
+      // explicit `off` skips the cookie; `required` with no issuer admits none.
+      autoOwnerCookie: config.autoOwnerCookie === 'off'
+        ? 'off'
+        : (launchCookie ? launchCookie.verify : () => false),
+    });
+    if (identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    return identity;
+  };
 
   /**
    * PTY grants are bearer capabilities and therefore work for the CLI without
@@ -771,6 +794,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // wave cannot starve spawn/complete of a connection (read-admission.ts).
     ...(db ? { readAdmission: new ReadAdmission({ limit: readLimitForPool(config.dbPoolMax ?? 8) }) } : {}),
     ...(identityResolver ? { identityResolver } : {}),
+    ...(launchCookie ? { launchCookie } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),

@@ -266,21 +266,41 @@ export function hasForwardingEvidence(headers: IncomingHttpHeaders): boolean {
 }
 
 /**
+ * The loopback conditions alone: a loopback TCP peer, no forwarding header,
+ * and no kill switch. Shared by the auto-owner arm and the launch-URL
+ * redemption, which must refuse exactly where the arm itself would.
+ */
+export function loopbackOwnerReachable(
+  headers: IncomingHttpHeaders,
+  context: Pick<IdentityResolutionContext, 'remoteAddress' | 'disableAutoOwner'>,
+): boolean {
+  return !context.disableAutoOwner
+    && isLoopbackPeer(context.remoteAddress)
+    && !hasForwardingEvidence(headers);
+}
+
+/**
  * S5 / T-L7 — auto-owner is the degenerate single-machine path, not a
  * property of the server's bind address. A reverse proxy also connects to the
- * loopback socket, so all three conditions are required: the actual TCP peer
- * is loopback, no forwarding header is present, and the operator has not set
- * the kill switch. Any uncertainty narrows to anonymous.
+ * loopback socket, so all conditions are required: the actual TCP peer is
+ * loopback, no forwarding header is present, the operator has not set the
+ * kill switch, and (W2, K4) the request carries the launch cookie unless
+ * `TM8_AUTO_OWNER_COOKIE=off`. Without the cookie, a local process with no
+ * token — an agent's `curl 127.0.0.1` included — is anonymous (T12). Any
+ * uncertainty narrows to anonymous.
+ *
+ * An `ssh -R` tunnel delivers a remote request from a loopback peer with no
+ * forwarding header; the cookie still gates it, and such nodes must set
+ * `TM8_DISABLE_AUTO_OWNER=1` anyway (doc 11 P10).
  */
 export const autoOwnerResolver: IdentityResolver = (
   headers: IncomingHttpHeaders,
   context: IdentityResolutionContext,
 ): RequestIdentity => {
-  if (
-    context.disableAutoOwner
-    || !isLoopbackPeer(context.remoteAddress)
-    || hasForwardingEvidence(headers)
-  ) {
+  if (!loopbackOwnerReachable(headers, context)) return { kind: 'anonymous' };
+  // Fail closed: anything but an explicit 'off' or a passing check refuses.
+  const cookie = context.autoOwnerCookie;
+  if (cookie !== 'off' && (typeof cookie !== 'function' || !cookie(headers))) {
     return { kind: 'anonymous' };
   }
   return { kind: 'auto-owner' };

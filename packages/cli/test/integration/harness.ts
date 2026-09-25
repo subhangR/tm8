@@ -364,6 +364,11 @@ function deliveryEnv(dbUrl: URL): Record<string, string> {
         TM8_DATA_DIR: dataDir,
         TM8_BIND: '127.0.0.1',
         TM8_PORT: String(port),
+        // The CLI under test talks to this node as its loopback owner with no
+        // credential. Since plan W2 (K4) that arm also needs the launch cookie
+        // by default; the harness opts out. The cookie gate itself is covered
+        // in packages/server/test/db/cross-space-token.pg.test.ts.
+        TM8_AUTO_OWNER_COOKIE: 'off',
         // The artifact-preview second listener defaults to a FIXED 4613; a
         // child process cannot use the in-process port-0 substitution, so
         // every harness boot raced the long-lived local node for 4613 and

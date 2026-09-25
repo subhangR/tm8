@@ -8,6 +8,7 @@
  */
 import type { Db } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
+import type { LaunchCookieIssuer } from '../http/launch-cookie.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 
 export interface FacadeDeps {
@@ -15,4 +16,10 @@ export interface FacadeDeps {
   readonly config: ServerConfig;
   /** The v1 loopback auto-owner, resolved once per process. */
   readonly owner: () => Promise<LoopbackOwner>;
+  /**
+   * The launch cookie issuer (plan W2), present only while the auto-owner arm
+   * can apply and `TM8_AUTO_OWNER_COOKIE` is not `off`. `auth.launch` mints
+   * through it; absent, it refuses.
+   */
+  readonly launchCookie?: LaunchCookieIssuer;
 }

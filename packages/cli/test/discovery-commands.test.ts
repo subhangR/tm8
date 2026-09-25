@@ -78,11 +78,28 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
    * command — the catalog, its frozen counts and its digest stay untouched.
    */
   const LOCAL_ONLY = new Set(['help', 'completion', 'worker', 'doctor']);
+  /**
+   * ROOT SHORTHANDS. One-token paths that ARE Server capabilities, so unlike
+   * LOCAL_ONLY they must still be documented — through the 2-token command
+   * they abbreviate. `tm8 open` is `tm8 auth open` (plan W2, auth.launch).
+   */
+  const ROOT_SHORTHANDS = new Map<string, readonly string[]>([['open', ['auth', 'open']]]);
+
+  it('every root shorthand runs the same handler as the documented command it abbreviates', () => {
+    for (const [root, full] of ROOT_SHORTHANDS) {
+      const shorthand = COMMANDS.find((c) => c.path.length === 1 && c.path[0] === root);
+      const target = COMMANDS.find((c) => c.path.join(' ') === full.join(' '));
+      expect(shorthand, root).toBeDefined();
+      expect(isCommandPath(full), full.join(' ')).toBe(true);
+      expect(shorthand?.run, root).toBe(target?.run);
+    }
+  });
 
   it('every REGISTERED command path is documented in the help projection', () => {
     expect(COMMANDS.length).toBeGreaterThan(0);
     for (const c of COMMANDS) {
       if (LOCAL_ONLY.has(c.path[0] as string)) continue;
+      if (c.path.length === 1 && ROOT_SHORTHANDS.has(c.path[0] as string)) continue;
       expect(
         isCommandPath(c.path),
         `\`${c.path.join(' ')}\` is wired but absent from the help projection`,
