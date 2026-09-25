@@ -718,6 +718,8 @@ describe('the launch’s context groups: defaults pre-ticked, removals as a diff
   it('without `launch.defaults` the groups say the defaults are unknown, and nothing is selected', () => {
     const { launches, onLaunch } = launchesOf();
     const view = renderSheet({ onLaunch });
+    expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/defaults unknown — can’t be edited/);
+    fireEvent.click(view.getByTestId('lsel-toggle-memories'));
     expect(view.getAllByText(/didn’t say what this launch loads by default/).length).toBeGreaterThan(0);
     fireEvent.click(view.getByRole('button', { name: /Launch/ }));
     expect('selection' in launches[0]!).toBe(false);

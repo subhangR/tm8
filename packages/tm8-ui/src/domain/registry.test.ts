@@ -688,6 +688,21 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(input).not.toHaveProperty('memoryIds');
   });
 
+  it('carries the per-group selection and its reasons as given, and neither when absent (I9)', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    const build = (over: Partial<typeof config>) =>
+      buildSpawnInput({ clientMutationId: 'cmid-s', spaceId: 'space-1', config: { ...config, ...over } });
+    expect(build({})).not.toHaveProperty('selection');
+    expect(build({})).not.toHaveProperty('selectionReasons');
+    expect(build({ selectionReasons: {} })).not.toHaveProperty('selectionReasons');
+    const input = build({
+      selection: { referenceIds: ['r1'] },
+      selectionReasons: { memories: 'not-asked', skills: 'jev-failed' },
+    });
+    expect(input.selection).toEqual({ referenceIds: ['r1'] });
+    expect(input.selectionReasons).toEqual({ memories: 'not-asked', skills: 'jev-failed' });
+  });
+
   it('carries the ··· harness pick only when made; an empty plugin pick is sent, none under Full', () => {
     const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
     const build = (over: Partial<typeof config>) =>
