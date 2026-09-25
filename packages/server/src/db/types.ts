@@ -61,6 +61,13 @@ export interface DbClaims {
    * the human. This claim is the only thing that tells the two apart.
    */
   readonly authKind?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.session_space_id`. The sixth claim (227, plan W0a): the
+   * space the auth session is pinned to, from `auth_sessions.space_id`. When
+   * set, every membership helper answers only for that space. Omitted binds as
+   * `''` — unpinned, exactly the pre-227 behaviour.
+   */
+  readonly sessionSpaceId?: string | undefined;
 }
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */

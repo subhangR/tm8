@@ -22,6 +22,12 @@ function byName(bindings: ClaimBinding[]): Record<string, string> {
 
 describe('claim set (R2/T-L11)', () => {
   /**
+   * SIX since 227 (plan W0a). `tm8.session_space_id` passes the same test as
+   * `auth_kind`: `auth_sessions.space_id` is written once by the issuing RPC
+   * and no verb updates it, so there is no window in which the claim and the
+   * row disagree. It also only NARROWS membership (every helper intersects
+   * with it), so a stale value could refuse but never admit.
+   *
    * FIVE since 082 (architect ruling R11), not four.
    *
    * The pin moved ON PURPOSE and the reason is recorded rather than assumed:
@@ -34,7 +40,7 @@ describe('claim set (R2/T-L11)', () => {
    * job of this pin is to make widening the trusted surface cost a decision. A
    * sixth name must move this line again, and must answer "is it immutable?".
    */
-  it('emits exactly the five settings the RLS helpers and 082 read', async () => {
+  it('emits exactly the six settings the RLS helpers, 082 and 227 read', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
@@ -47,6 +53,7 @@ describe('claim set (R2/T-L11)', () => {
         CLAIM_NAMES.nodeAdmin,
         CLAIM_NAMES.requestId,
         CLAIM_NAMES.authKind,
+        CLAIM_NAMES.sessionSpaceId,
       ].sort(),
     );
   });
@@ -72,6 +79,18 @@ describe('claim set (R2/T-L11)', () => {
     ).toBe('agent_runtime');
   });
 
+  /** The pin is forwarded, never invented: omitted means unpinned (''). */
+  it('binds an empty session_space_id unless the caller supplies the pinned space', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+
+    expect(byName(toClaimBindings(claims, 'req_1', 'agent'))[CLAIM_NAMES.sessionSpaceId]).toBe('');
+    expect(
+      byName(toClaimBindings(claims, 'req_1', 'agent', SPACE_A))[CLAIM_NAMES.sessionSpaceId],
+    ).toBe(SPACE_A);
+  });
+
   it('never binds membership or can_act_as into Postgres', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
@@ -94,7 +113,8 @@ describe('claim set (R2/T-L11)', () => {
     // assertions are the load-bearing half of this test and are untouched: what
     // must never appear here is a value that can GO STALE, and `auth_kind`
     // cannot.
-    expect(names).toHaveLength(5);
+    // Six since 227: `session_space_id` is fixed at issue, like `auth_kind`.
+    expect(names).toHaveLength(6);
 
     // The server-side facts survive — the facade gates capabilities with them.
     expect(claims.memberIds).toEqual([member.id]);
@@ -182,7 +202,9 @@ describe('claim set (R2/T-L11)', () => {
     // same reason the other three are bound: an unbound claim could in
     // principle be inherited from an earlier statement on the connection.
     expect(values[CLAIM_NAMES.authKind]).toBe('');
-    expect(Object.keys(values)).toHaveLength(5);
+    // Unpinned, bound explicitly for the same reason.
+    expect(values[CLAIM_NAMES.sessionSpaceId]).toBe('');
+    expect(Object.keys(values)).toHaveLength(6);
     // No bypass claim exists to find.
     expect(Object.keys(values).some((n) => /bypass|service_role|superuser/.test(n))).toBe(false);
   });

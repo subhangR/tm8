@@ -22,13 +22,18 @@ import { TOKEN_PREFIX } from '../identity/crypto.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
-import type { IdentityResolver } from './types.js';
+import type { IdentityResolver, SpaceSessionsMode } from './types.js';
 
 export interface SessionIdentityResolverOptions {
   readonly db: Db;
   /** The memoised node-owner resolver — the auto-owner arm's source. */
   readonly owner: () => Promise<LoopbackOwner>;
+  /** `TM8_SPACE_SESSIONS`, read once at boot. Absent means `agents`. */
+  readonly spaceSessions?: SpaceSessionsMode;
 }
+
+/** The kinds `agents` pins. `enforce` adds humans in W3; until then it is `agents`. */
+const PINNED_KINDS: ReadonlySet<string> = new Set(['agent', 'agent_runtime']);
 
 /**
  * A valid tm8 session is resolved independently of transport; every non-session
@@ -39,6 +44,7 @@ export function createSessionIdentityResolver(
   options: SessionIdentityResolverOptions,
 ): IdentityResolver {
   const { db, owner } = options;
+  const spaceSessions = options.spaceSessions ?? 'agents';
   return async (headers, context) => {
     const header = headers.authorization;
     const authorization = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
@@ -78,6 +84,11 @@ export function createSessionIdentityResolver(
         // distinguishes a human from an agent carrying that human's full
         // identity (sub-doc 14, channel C7).
         authKind: session.kind,
+        // 226/227. The space the session was minted for, off the same
+        // verified row. Every membership helper intersects with it.
+        ...(spaceSessions !== 'off' && PINNED_KINDS.has(session.kind) && session.spaceId
+          ? { sessionSpaceId: session.spaceId }
+          : {}),
       };
     }
 
