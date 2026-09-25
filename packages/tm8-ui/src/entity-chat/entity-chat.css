@@ -155,3 +155,54 @@ button.ecp__subject:hover { background: var(--pn-hover); }
 .ecp-phone .ecp__new,
 .ecp-phone .ecp__close { min-height: 44px; }
 .ecp-phone .ecp__menu { width: min(280px, calc(100vw - 16px)); }
+
+/* THE NEW-CHAT SETTINGS CARD (§3.4) — in the panel body, never a modal. */
+.ecp-card,
+.ecp-card__load {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+.ecp-card__load { color: var(--pn-ink-3); }
+.ecp-card > * { flex: 0 0 auto; }
+.ecp-card__lead { margin: 0; color: var(--pn-ink-2); }
+.ecp-card__problems {
+  margin: 0;
+  padding: 6px 8px 6px 24px;
+  border: 1px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-wait-soft);
+  font-size: 12px;
+}
+.ecp-card__row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.ecp-card__row > span { color: var(--pn-ink-3); font-size: 12px; }
+.ecp-card__row select {
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+}
+.ecp-card__check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ecp-card__error { margin: 0; color: var(--pn-wait); font-size: 12px; }
+.ecp-card__start {
+  align-self: flex-end;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  font: inherit;
+  cursor: pointer;
+}
+.ecp-card__start:disabled { opacity: 0.55; cursor: default; }

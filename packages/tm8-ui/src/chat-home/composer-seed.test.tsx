@@ -59,3 +59,39 @@ describe('composer seed (host hook)', () => {
     expect(view.queryByTestId('tch-mode')).toBeNull();
   });
 });
+
+describe('new-chat settings seed (entity chat §3.4)', () => {
+  const RESEARCHER = '019f0000-0000-7000-8000-000000000003';
+  const TWO_MODELS: ChatModelOption[] = [
+    ...MODELS,
+    { model: 'claude-opus-5-5', label: 'Opus 5.5', provider: 'Anthropic', agentTool: 'claude-code' },
+  ];
+
+  it('starts the composer chips on the seeded teammate, model, mode and project, and focuses the box', async () => {
+    const { port } = createChatHomeFixturePort();
+    const withProjects = { ...port, listProjects: async () => [{ id: 'p-repo' as never, name: 'Repo' }] };
+    const view = render(
+      <ChatHomeScreen
+        port={withProjects}
+        spaceId={SPACE_ID}
+        models={TWO_MODELS}
+        coldStart="composer"
+        newChatSeed={{ teammateId: RESEARCHER as never, model: 'claude-opus-5-5', mode: 'plan', projectId: 'p-repo' as never, focus: true }}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId('tch-teammate').getAttribute('title')).toBe('Researcher'));
+    expect(view.getByTestId('tch-model').textContent).toContain('Opus 5.5');
+    expect(view.getByTestId('tch-mode').getAttribute('title')).toBe('plan');
+    await waitFor(() => expect(view.getByTestId('tch-rail-project').getAttribute('title')).toBe('Repo'));
+    await waitFor(() => expect(document.activeElement).toBe(view.getByLabelText('Message the chat agent')));
+  });
+
+  it('a seeded teammate or model this node does not list falls back to the composer default', async () => {
+    const { port } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} coldStart="composer" newChatSeed={{ teammateId: 'gone' as never, model: 'retired' }} />,
+    );
+    await waitFor(() => expect(view.getByTestId('tch-teammate').getAttribute('title')).toBe('Forge'));
+    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+  });
+});
