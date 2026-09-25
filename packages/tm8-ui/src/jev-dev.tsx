@@ -19,6 +19,8 @@ import { LAUNCH_CAPACITY, LAUNCH_DEFAULTS, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAU
 import { memoryCandidateRow } from './domain/launch-selection';
 import { LaunchComposerPopup } from './new-session/LaunchComposerPopup';
 import type { LaunchMemory, LaunchTeammate } from './domain/launch';
+import { readyDefaults, type LaunchGroupEdit, type LaunchSelectionEdits } from './domain/launch-selection';
+import { JevEntryPoint, useJevSuggestions, type JevApplyHost, type JevModelChoice } from './jev';
 
 /**
  * ASK JEV SCRATCH HARNESS — the `credsetup-dev` pattern, for what jsdom
@@ -26,7 +28,11 @@ import type { LaunchMemory, LaunchTeammate } from './domain/launch';
  * desktop width and at a 390px phone, over the fixture seam's scripted
  * `launch.suggest` (every group ok, one group failed, or no key).
  *
- * Usage: /jev-dev.html?surface=sheet|popup&phone=1&scenario=ok|group_failed|no_key&ask=1&review=1
+ * Usage: /jev-dev.html?surface=sheet|popup|entry&phone=1&scenario=ok|group_failed|no_key|tight_budget|index_off&ask=1
+ *
+ * `surface=entry` mounts lane B's ✦ entry point on its own, over the real
+ * hook and a host holding its own edits, model and teammate — so Apply,
+ * Undo and the "Applied to this launch" record can be driven by hand.
  */
 const params = new URLSearchParams(location.search);
 const seam = createFixtureSeam();
@@ -51,6 +57,41 @@ const subject = fixtureSummaries.find((row) => row.state.kind === 'task')!;
 /* I9's `launch.defaults`, answered after a beat so the "reading…" line shows. */
 const loadLaunchDefaults = () => new Promise<typeof LAUNCH_DEFAULTS>((resolve) => setTimeout(() => resolve(LAUNCH_DEFAULTS), 300));
 
+const NO_EDIT: LaunchGroupEdit = { removed: [], added: [] };
+
+/** Lane B's entry point alone: the real hook, a host that keeps its own state. */
+function EntryHarness({ onChange }: { onChange(text: string): void }) {
+  const [edits, setEdits] = useState<LaunchSelectionEdits>({ memories: NO_EDIT, skills: NO_EDIT, references: NO_EDIT });
+  const [model, setModel] = useState<JevModelChoice>({ model: 'claude-opus-5', agentToolId: 'claude-code', reasoningEffort: 'medium' });
+  const [teammate, setTeammate] = useState(teammates[0]?.id ?? null);
+  const host: JevApplyHost = {
+    defaults: {
+      memories: readyDefaults(LAUNCH_DEFAULTS.memories),
+      skills: readyDefaults(LAUNCH_DEFAULTS.skills),
+      references: readyDefaults(LAUNCH_DEFAULTS.references),
+    },
+    edits,
+    setEdit: (group, edit) => setEdits((current) => ({ ...current, [group]: edit })),
+    setTeammate,
+    model,
+    setModel,
+    modelRefusal: () => null,
+  };
+  const jev = useJevSuggestions({ port: seam.commands.jev, spaceId: FIXTURE_SPACE_ID, subjectId: subject.id, teammateId: teammate, host });
+  useEffect(() => onChange(JSON.stringify({ teammate, model, edits }, null, 2)), [teammate, model, edits, onChange]);
+  const suggestion = jev.groups.model;
+  return (
+    <div style={{ padding: 16, maxWidth: 560, boxSizing: 'border-box' }}>
+      <div className="t-cap" style={{ marginBottom: 8 }}>Launch config · {teammates.find((t) => t.id === teammate)?.name ?? 'no teammate'} · {model.model}</div>
+      <JevEntryPoint
+        jev={jev}
+        modelLabel={suggestion.status === 'ok' ? suggestion.value.model : ''}
+        defaultOpen={params.get('open') === '1'}
+      />
+    </div>
+  );
+}
+
 function Harness() {
   const [theme, setTheme] = useState<'light' | 'dark'>((params.get('theme') as 'light' | 'dark') ?? 'light');
   const surface = params.get('surface') ?? 'sheet';
@@ -63,15 +104,12 @@ function Harness() {
   useEffect(() => {
     if (params.get('ask') !== '1') return;
     const timer = setTimeout(() => {
-      (document.querySelector('[data-testid="jev-ask"]') as HTMLButtonElement | null)?.click();
-      if (params.get('review') === '1') {
-        setTimeout(() => (document.querySelector('[data-testid="jev-review"]') as HTMLButtonElement | null)?.click(), 700);
-      }
+      (document.querySelector('[data-testid="jev-entry-button"]') as HTMLButtonElement | null)?.click();
     }, 400);
     return () => clearTimeout(timer);
   }, [host]);
 
-  const body = useMemo(() => surface === 'popup' ? (
+  const body = useMemo(() => surface === 'entry' ? <EntryHarness onChange={setLast} /> : surface === 'popup' ? (
     <LaunchComposerPopup
       subject={{ id: subject.id, title: subject.title }}
       spaceId={FIXTURE_SPACE_ID}

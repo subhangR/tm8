@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ExecutionSpawnInput } from '@tm8/contract';
+import type { ContextBudgets, ExecutionSpawnInput } from '@tm8/contract';
 
 import {
   buildSpawnInput,
@@ -17,16 +17,24 @@ import {
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
 import {
-  AskJevButton,
-  JevReviewDrawer,
-  JevStrip,
+  JEV_ENTITY_GROUPS,
+  JevEntryPoint,
   modelApplyRefusal,
   modelLabel,
   useJevSuggestions,
+  type JevApplyHost,
   type JevPort,
 } from '../jev';
-import { composeSelection } from '../domain/launch-selection';
-import { LaunchSelectionChips, useLaunchSelection, type LaunchSelectionSources } from '../launch-selection';
+import { composeLaunchSelection } from '../domain/launch-selection';
+import {
+  appliedReasons,
+  BudgetOverride,
+  LaunchSelectionChips,
+  type LaunchRanked,
+  type LaunchSelectionBudgetProps,
+  useLaunchSelection,
+  type LaunchSelectionSources,
+} from '../launch-selection';
 import { NewSessionComposer } from './NewSessionComposer';
 import { useLaunchComposerState } from './useLaunchComposerState';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheet itself —
@@ -221,23 +229,63 @@ export function LaunchComposerPopup({
     () => ({ title: title.trim() || defaultTitle, description }),
     [title, defaultTitle, description],
   );
-  const jev = useJevSuggestions({
-    port: jevPort,
-    spaceId,
-    subjectId: subject.id,
-    teammateId: config.teamMemberId,
-    draft: jevDraft,
-  });
   /* THE LAUNCH'S CONTEXT (I9) — the same per-group selection the launch
      sheet holds, as three count chips that each open their group. */
   const selection = useLaunchSelection({
     load: selectionSources?.load,
     teammateId: config.teamMemberId,
     subjectId: subject.id,
+    /* The harness this popup launches decides what a skill's entry costs, so
+       the meter measures it. The popup picks no Interaction Profile, so none
+       is sent and the teammate's own pins. */
+    agentTool: config.agentToolId,
   });
-  const [reviewOpen, setReviewOpen] = useState(false);
+  /* THIS LAUNCH'S BUDGET OVERRIDE — the same `config.contextBudgets` the
+     sheet sends. Empty means the profile's budgets hold. */
+  const [contextBudgets, setContextBudgets] = useState<ContextBudgets>({});
+  const jevCatalog = useMemo(() => modelCatalog(currentNodeKey()), []);
+
+  /* WHERE JEV'S APPLY WRITES: the popup's own selection edits and the card's
+     own setters. Nothing reaches the launch except through these, and only on
+     a person's Apply click; each Apply has an Undo. The TOOL follows the
+     model here (the catalog entry knows it), and `modelRefusal` guarantees
+     it is the tool Jev named. */
+  const host: JevApplyHost = {
+    defaults: selection.defaults,
+    edits: selection.edits,
+    setEdit: (group, edit, rows) => { selection.setEdit(group, edit, rows); },
+    setTeammate: (id) => bind.onPickTeammate(id),
+    model: config.model && config.agentToolId
+      ? { model: config.model, agentToolId: config.agentToolId, reasoningEffort: config.reasoningEffort }
+      : null,
+    setModel: (choice) => {
+      bind.onPickModel(choice.model);
+      bind.onEffortChange(choice.reasoningEffort);
+    },
+    modelRefusal: (suggestion) => modelApplyRefusal(suggestion, { catalog: jevCatalog }),
+  };
+  const jev = useJevSuggestions({
+    port: jevPort,
+    spaceId,
+    subjectId: subject.id,
+    teammateId: config.teamMemberId,
+    draft: jevDraft,
+    ...(config.agentToolId === 'claude-code' || config.agentToolId === 'codex' ? { agentTool: config.agentToolId } : {}),
+    host,
+    contextBudgets,
+  });
   const jevModel = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
-  const jevCatalog = jevModel ? modelCatalog(currentNodeKey()) : [];
+  /* What the context groups' meters and rows read from Jev — the same
+     facts the sheet passes: its ok answers (prompt bytes, budget) and, for
+     the defaults an Apply removed, why ("over budget", "below Jev's floor"). */
+  const jevRanked: LaunchRanked = {};
+  const jevReasons: NonNullable<LaunchSelectionBudgetProps['reasons']> = {};
+  for (const group of JEV_ENTITY_GROUPS) {
+    const state = jev.entity[group].state;
+    if (state.status !== 'ok') continue;
+    jevRanked[group] = state.value;
+    jevReasons[group] = appliedReasons(state.value, jev.applied[group]?.removed, selection, group);
+  }
 
   const [pending, setPending] = useState(false);
   /** The node's own words when it refuses. Null until it does. */
@@ -290,12 +338,15 @@ export function LaunchComposerPopup({
       : Promise.resolve();
     /* PER-GROUP SEND (I9), read at commit time: the ticks are whatever is on
        screen. An untouched group is omitted (its defaults load) with a
-       reason; an edited group is its exact set; Jev's answered groups replace
-       the popup's own. No group edited ⇒ no `selection`. */
+       reason; an edited group is its exact set — an applied Jev group is an
+       ordinary edit by now. A group Jev was asked about but nobody applied
+       launches on its defaults and says why. No group edited ⇒ no
+       `selection`. The budget override rides the same config the sheet's does. */
     const jevFields = jev.toSpawnFields();
     const launchFields = {
-      ...composeSelection(selection.outcomes(), jevFields.groups, jevFields.defaultReasons),
+      ...composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons),
       ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
+      ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
     };
     saved
       .then(() => onSpawn(
@@ -352,47 +403,26 @@ export function LaunchComposerPopup({
             : 'Task description — the agent reads this as its briefing…'}
           onDismissRequest={onDismiss}
           autoFocus
-          beforeLaunch={
-            <AskJevButton state={jev.state} askRefusal={jev.askRefusal} onAsk={() => jev.ask()} />
-          }
           aboveControls={
             <>
             <LaunchSelectionChips
               selection={selection}
               candidates={selectionSources?.candidates ?? {}}
-              /* In Jev mode Jev's ticks ARE memories and skills (the review
-                 drawer shows them); references stay the popup's own. */
-              governed={jev.jevMode ? ['memories', 'skills'] : []}
+              ranked={jevRanked}
+              contextIndex={jev.contextIndex ?? selection.contextIndex}
+              budgets={contextBudgets}
+              reasons={jevReasons}
             />
-            <JevStrip
+            <BudgetOverride value={contextBudgets} onChange={setContextBudgets} />
+            {/* THE ONE JEV ENTRY POINT (Subhang's I9b note) — the same
+                collapsed ✦ button and panel the launch sheet mounts. */}
+            <JevEntryPoint
               jev={jev}
-              roster={teammateRows}
-              selectedTeammateId={config.teamMemberId}
-              onSelectTeammate={(id) => bind.onPickTeammate(id)}
-              reviewOpen={reviewOpen}
-              onReview={() => setReviewOpen((open) => !open)}
-              model={{
-                label: jevModel ? modelLabel(jevModel, jevCatalog) : '',
-                refusal: jevModel ? modelApplyRefusal(jevModel, { catalog: jevCatalog }) : null,
-                applied: Boolean(jevModel)
-                  && jevModel?.model === config.model
-                  && jevModel?.agentTool === config.agentToolId
-                  && jevModel?.effort === config.reasoningEffort,
-                /* Model and effort through the card's own setters; the TOOL
-                   follows the model here (the catalog entry knows it), and
-                   the refusal above guarantees it is the tool Jev named. */
-                onApply: (suggestion) => {
-                  bind.onPickModel(suggestion.model);
-                  bind.onEffortChange(suggestion.effort);
-                },
-              }}
+              modelLabel={jevModel ? modelLabel(jevModel, jevCatalog) : ''}
             />
             </>
           }
         />
-        {reviewOpen && jev.state !== 'idle' ? (
-          <JevReviewDrawer jev={jev} onClose={() => setReviewOpen(false)} />
-        ) : null}
       </div>
     </div>
   );

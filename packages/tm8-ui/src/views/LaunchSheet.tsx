@@ -1,6 +1,6 @@
 import { SkillPreview } from '../skills/SkillPreview';
 import type { SkillPort } from '../skills/port';
-import type { SkillPreviewResult } from '@tm8/contract';
+import type { ContextBudgets, SkillPreviewResult } from '@tm8/contract';
 /**
  * LaunchSheet — the full launch configuration (D44/D51, T5-5 anatomy).
  *
@@ -99,16 +99,18 @@ import {
   type LaunchSourceChoice,
   type LaunchSourceOption,
 } from '../domain/launch-sources';
-import { composeSelection, memoryCandidateRow, type LaunchContextRow } from '../domain/launch-selection';
-import { LaunchSelectionGroups, useLaunchSelection, type LoadLaunchDefaults } from '../launch-selection';
+import { composeLaunchSelection, memoryCandidateRow, type LaunchContextRow } from '../domain/launch-selection';
+import {
+  appliedReasons,
+  BudgetOverride,
+  LaunchSelectionGroups,
+  useLaunchSelection,
+  type LaunchRanked,
+  type LoadLaunchDefaults,
+} from '../launch-selection';
 import { modelCatalog } from '../domain/model-catalog';
 import {
-  AskJevButton,
-  JevChecklist,
-  JevGroupStatus,
-  JevModelHint,
-  JevRunBar,
-  JevTeammateRanks,
+  JevEntryPoint,
   modelApplyRefusal,
   modelLabel,
   useJevSuggestions,
@@ -289,6 +291,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
     load: props.loadLaunchDefaults,
     teammateId: teammateId || null,
     subjectId: props.subjectId,
+    /* The picks that change what the defaults cost (lane E): a skill's entry
+       depends on the harness, the budgets on the profile. */
+    agentTool: agentToolId || null,
+    interactionProfileId: profileId || null,
   });
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),
@@ -299,15 +305,61 @@ export function LaunchSheet(props: LaunchSheetProps) {
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
 
+  /* THIS LAUNCH'S BUDGETS (I7, §10 Q5.4): a person's per-group override,
+     sent as `contextBudgets` only for the keys they fill. */
+  const [contextBudgets, setContextBudgets] = useState<ContextBudgets>({});
+
   /* ✦ ASK JEV. Reads the SAVED subject (no draft: this sheet does not edit the
-     task's text) and ranks memories and skills for the teammate picked above —
-     changing it re-asks those two groups, in the same run. */
+     task's text) and ranks for the teammate picked above. It only SUGGESTS:
+     each Apply is a person's click, and it writes through this `host` — the
+     sheet's own selection edits, teammate and model setters — so an applied
+     pick is an ordinary edit, shown as the groups' diff, and Launch sends it
+     like any other. */
+  const credentialRefusal = (tool: string): string | null => {
+    const provider = AGENT_CREDENTIAL_PROVIDER[tool];
+    if (!provider || credentialChoices[provider] !== 'member' || !credentialStatus) return null;
+    const connected = credentialStatus.providers.find((p) => p.provider === provider)?.connected;
+    return connected
+      ? null
+      : `This sheet is set to use your ${CREDENTIAL_PROVIDER_LABEL[provider]} credential, and it isn’t connected.`;
+  };
   const jev = useJevSuggestions({
     port: props.jev,
     spaceId: props.spaceId ?? '',
     subjectId: props.subjectId,
     teammateId: teammateId || null,
+    ...(agentToolId === 'claude-code' || agentToolId === 'codex' ? { agentTool: agentToolId } : {}),
+    host: {
+      defaults: selection.defaults,
+      edits: selection.edits,
+      setEdit: selection.setEdit,
+      setTeammate: (id) => {
+        const picked = teammates.find((t) => t.id === id);
+        if (picked) selectTeammate(picked);
+      },
+      model: { model, agentToolId, reasoningEffort },
+      setModel: (choice) => {
+        /* TOGETHER, through the sheet's own setters: a model without its tool
+           is a pair `canLaunch` refuses. */
+        setAgentToolId(choice.agentToolId);
+        setModel(choice.model);
+        if (choice.reasoningEffort) setReasoningEffort(choice.reasoningEffort);
+      },
+      modelRefusal: (suggestion) => modelApplyRefusal(suggestion, { catalog: modelCatalog(currentNodeKey()), credentialRefusal }),
+    },
+    contextBudgets,
   });
+  /* What the groups' meters and rows read from Jev: its ok answers (bytes,
+     budget) and, for the defaults an Apply removed, why. */
+  const jevRanked: LaunchRanked = {};
+  const jevReasons: Parameters<typeof LaunchSelectionGroups>[0]['reasons'] = {};
+  for (const group of ['memories', 'skills', 'references'] as const) {
+    const state = jev.entity[group].state;
+    if (state.status !== 'ok') continue;
+    jevRanked[group] = state.value;
+    jevReasons[group] = appliedReasons(state.value, jev.applied[group]?.removed, selection, group);
+  }
+  const groupBudgetProps = { ranked: jevRanked, contextIndex: jev.contextIndex ?? selection.contextIndex, budgets: contextBudgets, reasons: jevReasons };
   const selectTeammate = (t: LaunchTeammate) => {
     setTeammateId(t.id);
     setAgentToolId(t.agentTool);
@@ -484,29 +536,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
 
   const atCapacity = props.capacity !== undefined && props.capacity.slotsFree <= 0;
 
-  /* The model hint's words and its Apply verdict. The credential half refuses
-     only what this sheet KNOWS will fail: the viewer chose their own
-     credential for that provider, and it is not connected. */
+  /* The catalog's words for Jev's model, for the entry point's panel. */
   const jevModel = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
-  const jevCatalog = jevModel ? modelCatalog(currentNodeKey()) : [];
-  const jevModelLabel = jevModel ? modelLabel(jevModel, jevCatalog) : '';
-  const jevModelRefusal = jevModel
-    ? modelApplyRefusal(jevModel, {
-        catalog: jevCatalog,
-        credentialRefusal: (tool) => {
-          const provider = AGENT_CREDENTIAL_PROVIDER[tool];
-          if (!provider || credentialChoices[provider] !== 'member' || !credentialStatus) return null;
-          const connected = credentialStatus.providers.find((p) => p.provider === provider)?.connected;
-          return connected
-            ? null
-            : `This sheet is set to use your ${CREDENTIAL_PROVIDER_LABEL[provider]} credential, and it isn’t connected.`;
-        },
-      })
-    : null;
-  const jevModelApplied = Boolean(jevModel)
-    && jevModel?.agentTool === agentToolId
-    && jevModel?.model === model
-    && jevModel?.effort === reasoningEffort;
+  const jevModelLabel = jevModel ? modelLabel(jevModel, modelCatalog(currentNodeKey())) : '';
 
   const sheet = (
     <div
@@ -618,19 +650,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </p>
             )}
           </div>
-          {jev.groups.teammates.status !== 'idle' ? (
-            <JevTeammateRanks
-              state={jev.groups.teammates}
-              selectedId={teammateId || null}
-              roster={teammates}
-              onSelect={(id) => {
-                const picked = teammates.find((t) => t.id === id);
-                if (picked) selectTeammate(picked);
-              }}
-              onRetry={jev.retry}
-            />
-          ) : null}
         </section>
+
+        {/* ✦ THE ONE JEV ENTRY POINT (Jev UX, Subhang's I9b note): collapsed,
+            it opens Jev's recommendations in place. Nothing it shows is
+            applied until a person presses Apply there; an applied pick lands
+            in the groups below as an ordinary edit. */}
+        <JevEntryPoint jev={jev} modelLabel={jevModelLabel} />
 
         <section className="ls__section">
           <div className="ls__eyebrow">CONFIGURATION</div>
@@ -666,28 +692,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </select>
             </span>
           </label>
-          {jev.groups.model.status !== 'idle'
-            && !(jev.groups.model.status === 'failed' && jev.groups.model.reason === 'no_key') ? (
-            <div className="ls__row ls__row--inert">
-              <span className="ls__rowtext">
-                <JevModelHint
-                  state={jev.groups.model}
-                  label={jevModelLabel}
-                  refusal={jevModelRefusal}
-                  applied={jevModelApplied}
-                  onApply={(suggestion) => {
-                    /* TOGETHER, through the sheet's own setters: a model
-                       without its tool is a pair `canLaunch` refuses, and a
-                       tool without its effort is half a suggestion. */
-                    setAgentToolId(suggestion.agentTool);
-                    setModel(suggestion.model);
-                    setReasoningEffort(suggestion.effort);
-                  }}
-                  onRetry={jev.retry}
-                />
-              </span>
-            </div>
-          ) : null}
           <label className="ls__row ls__row--inert">
             <span className="ls__rowtext">
               <span className="ls__rowname">Permission mode</span>
@@ -986,41 +990,22 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </span>
         </section>
 
-        {/* IN JEV MODE the read-only preview gives way to Jev's checklist: the
-            ticks become the exact skill set, so the preview of the teammate's
-            equipped set would describe a launch that is not going to happen. */}
-        {jev.jevMode ? (
-          <section className="ls__section">
-            <div className="ls__eyebrow">SKILLS</div>
-            <JevChecklist
-              kind="skill"
-              state={jev.groups.skills}
-              ticked={jev.ticked.skill}
-              refusal={jev.tickRefusal?.kind === 'skill' ? jev.tickRefusal : null}
-              onToggle={(id) => jev.toggle('skill', id)}
-              onRetry={jev.retry}
-            />
-          </section>
-        ) : props.loadLaunchDefaults ? (
-          <>
-            <LaunchSelectionGroups
-              selection={selection}
-              groups={['skills']}
-              candidates={selectionCandidates}
-              collapsed
-              extra={{ skills: <HowSkillsLoad>
-                <SkillPreview bare load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
-              </HowSkillsLoad> }}
-            />
-            <JevGroupStatus group="skills" state={jev.groups.skills} onRetry={jev.retry} />
-          </>
+        {props.loadLaunchDefaults ? (
+          <LaunchSelectionGroups
+            selection={selection}
+            groups={['skills']}
+            candidates={selectionCandidates}
+            collapsed
+            {...groupBudgetProps}
+            extra={{ skills: <HowSkillsLoad>
+              <SkillPreview bare load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
+            </HowSkillsLoad> }}
+          />
         ) : (
           /* No `launch.defaults` on this node: the read-only preview of the
              equipped set, as before I9 — the skills group cannot be edited
              without knowing its defaults. */
-          <SkillPreview load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined}>
-            <JevGroupStatus group="skills" state={jev.groups.skills} onRetry={jev.retry} />
-          </SkillPreview>
+          <SkillPreview load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
         )}
 
         {/*
@@ -1036,32 +1021,16 @@ export function LaunchSheet(props: LaunchSheetProps) {
           * already the exact set (defaults kept ∪ added), and the node refuses
           * `memoryIds` beside `selection`.
           */}
-        {jev.jevMode ? (
-          <section className="ls__section">
-            <div className="ls__eyebrow">MEMORIES</div>
-            {/* JEV MODE REPLACES THE GROUP: Jev's ticks ARE the memories set
-                (per group — a failed Jev group falls back to its defaults). */}
-            <JevChecklist
-              kind="memory"
-              state={jev.groups.memories}
-              ticked={jev.ticked.memory}
-              refusal={jev.tickRefusal?.kind === 'memory' ? jev.tickRefusal : null}
-              onToggle={(id) => jev.toggle('memory', id)}
-              onRetry={jev.retry}
-            />
-          </section>
-        ) : (
-          <>
-            <LaunchSelectionGroups selection={selection} groups={['memories']} candidates={selectionCandidates} collapsed />
-            <JevGroupStatus group="memories" state={jev.groups.memories} onRetry={jev.retry} />
-          </>
-        )}
+        <LaunchSelectionGroups selection={selection} groups={['memories']} candidates={selectionCandidates} collapsed {...groupBudgetProps} />
 
         {/* REFERENCES (I9): the task's linked docs, artifacts, drawings, files
-            and tasks, pre-ticked, with anything else in the space to add.
-            Jev does not rank references, so this group is the sheet's alone
-            in every mode. */}
-        <LaunchSelectionGroups selection={selection} groups={['references']} candidates={selectionCandidates} collapsed />
+            and tasks, pre-ticked, with anything else in the space to add —
+            and, since I7, Jev's picks once a person applies them. */}
+        <LaunchSelectionGroups selection={selection} groups={['references']} candidates={selectionCandidates} collapsed {...groupBudgetProps} />
+
+        {/* "Budget for this launch" (I7): collapsed; warns past the prompt's
+            room and never blocks Launch. */}
+        <BudgetOverride value={contextBudgets} onChange={setContextBudgets} />
 
         {props.refusal && (
           // T5-5: refusal renders IN the sheet — red word, cause, what did NOT
@@ -1075,8 +1044,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </div>
         )}
       </div>
-
-      <JevRunBar jev={jev} />
 
       {/* An edited group's defaults are re-reading (a teammate change): Launch
           waits rather than launch that group on its defaults and drop the
@@ -1098,7 +1065,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <button type="button" className="ls__cancel" disabled={launching} onClick={props.onCancel}>
           Cancel
         </button>
-        <AskJevButton state={jev.state} askRefusal={jev.askRefusal} onAsk={() => jev.ask()} />
         {/*
           * DISPATCH — D5, beside the manual flow rather than inside it.
           *
@@ -1157,12 +1123,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
             if (agentCredentialProvider) pick(agentCredentialProvider, agentCredentialSource);
             pick('github', githubCredentialSource);
             /* PER-GROUP SEND (I9). An untouched group is omitted — its
-               defaults load — and `selectionReasons` says why; an edited group
-               is its exact set. In Jev mode Jev's outcome replaces the sheet's
-               for memories and skills. No group edited ⇒ no `selection`, so
-               the launch loads exactly what it always has. */
+               defaults load — and `selectionReasons` says why (a Jev group
+               asked but never applied says `jev-failed` / `jev-pending`); an
+               edited group, by hand or by an applied Jev pick, is its exact
+               set. No group edited ⇒ no `selection`, so the launch loads
+               exactly what it always has. */
             const jevFields = jev.toSpawnFields();
-            const selectionFields = composeSelection(selection.outcomes(), jevFields.groups, jevFields.defaultReasons);
+            const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
             props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
@@ -1177,6 +1144,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               ...(profileId ? { interactionProfileId: profileId } : {}),
               ...selectionFields,
               ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
+              ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
             });
           }}
         >

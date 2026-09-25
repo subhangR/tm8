@@ -17,6 +17,7 @@
  * the mechanism named, and never renders an enabled control over a refusal.
  */
 import type {
+  ContextBudgets,
   CredentialProviderName,
   EntityId,
   ExecutionSpawnInput,
@@ -30,6 +31,7 @@ import type {
   SpawnSelectionGroup,
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT } from '@tm8/contract';
+import { BYTE_BUDGETS, contextBudgetOverrun } from '@tm8/prompt';
 import { catalogModelsFor } from './model-catalog';
 import { MEMORY_IDS_MAX } from './memory';
 
@@ -613,6 +615,36 @@ export interface LaunchConfig {
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /** The Ask Jev run that informed this launch, linked for cost. Never interpreted. */
   jevRunId?: EntityId;
+  /**
+   * This launch's override of the pinned profile's `contextBudgets` (design
+   * 01a0d348 §10 Q5.4): a key replaces the profile's budget for that group,
+   * for this session only. Absent, or with no key set, it is not sent and the
+   * profile's budgets hold. Lenient at the node: an over-promise is recorded
+   * with a warning, never refused (`contextBudgetsOverrun` says so first).
+   */
+  contextBudgets?: ContextBudgets;
+}
+
+/**
+ * The per-launch budget override's ceiling check — the node's own
+ * (`@tm8/prompt` `contextBudgetOverrun`, decision D1 01a0d77b), called with the
+ * node's default prompt policy: the budgets must fit `combinedInitialInjection`
+ * beside the frame baseline (kernel + manifest ceilings), and a key the
+ * override leaves out counts at its node default. The pinned profile may set
+ * its own budgets and ceilings, which this sheet does not read, so the node's
+ * manifest warning is the record; this is the warning at the point of typing.
+ */
+export const NODE_PROMPT_POLICY = {
+  kernelMaxBytes: BYTE_BUDGETS.kernel,
+  manifestMaxBytes: BYTE_BUDGETS.manifest,
+  initialContextMaxBytes: BYTE_BUDGETS.combinedInitialInjection,
+} as const;
+
+/** Null when this launch's budgets fit the prompt (or none is set); else how far over they are. */
+export function contextBudgetsOverrun(budgets: ContextBudgets | undefined): { promised: number; room: number; over: number } | null {
+  if (!budgets || Object.values(budgets).every((bytes) => bytes === undefined)) return null;
+  const overrun = contextBudgetOverrun({ promptPolicy: NODE_PROMPT_POLICY, contextBudgets: budgets });
+  return overrun ? { promised: overrun.promised, room: overrun.cap - overrun.baseline, over: overrun.over } : null;
 }
 
 /** `skills.preview`'s plugin → skill facts for one teammate and task set. */
@@ -1037,6 +1069,10 @@ export function buildSpawnInput(args: {
     !(input.selection && SELECTION_FIELD[group as SpawnSelectionGroup] in input.selection));
   if (reasons.length > 0) input.selectionReasons = Object.fromEntries(reasons);
   if (config.jevRunId) input.jevRunId = config.jevRunId;
+  /* Only the keys a person set: an empty override is no override, and a key
+     sent as `undefined` would read as a statement to a reader of the input. */
+  const budgets = Object.entries(config.contextBudgets ?? {}).filter(([, bytes]) => typeof bytes === 'number');
+  if (budgets.length > 0) input.contextBudgets = Object.fromEntries(budgets) as ContextBudgets;
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;
