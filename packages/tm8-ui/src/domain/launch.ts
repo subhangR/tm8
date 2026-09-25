@@ -913,6 +913,13 @@ export function canLaunch(
 // The submit — contract-shaped, verbatim
 // ---------------------------------------------------------------------------
 
+/** The `SpawnSelection` field each group rides on. */
+const SELECTION_FIELD = {
+  memories: 'memoryIds',
+  skills: 'skillIds',
+  references: 'referenceIds',
+} as const satisfies Record<SpawnSelectionGroup, keyof NonNullable<ExecutionSpawnInput['selection']>>;
+
 /**
  * Build the `ExecutionSpawnInput` the seam takes. BOTH the inline quick config
  * and the full T5-5 sheet call this, so the two surfaces cannot drift into
@@ -1021,9 +1028,14 @@ export function buildSpawnInput(args: {
   } else if (config.memoryIds?.length) {
     input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);
   }
-  if (config.selectionReasons && Object.keys(config.selectionReasons).length > 0) {
-    input.selectionReasons = { ...config.selectionReasons };
-  }
+  /* A reason explains a DEFAULTED group, and the node refuses one for a group
+     `selection` names. `composeSelection` never pairs them, but a routed
+     plugin pick (above) turns an untouched skills group into a selected one
+     after the reasons were built — so the reasons are filtered against the
+     selection actually sent. */
+  const reasons = Object.entries(config.selectionReasons ?? {}).filter(([group]) =>
+    !(input.selection && SELECTION_FIELD[group as SpawnSelectionGroup] in input.selection));
+  if (reasons.length > 0) input.selectionReasons = Object.fromEntries(reasons);
   if (config.jevRunId) input.jevRunId = config.jevRunId;
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
