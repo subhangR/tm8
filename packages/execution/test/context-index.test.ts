@@ -514,7 +514,8 @@ describe('I8: a dispatcher\'s roster is its teammates group (design 01a0d348 §8
 
   it('off: the dispatcher prompt and manifest are byte-identical with or without a roster in the context', () => {
     const bare = composeDispatcher(dctx());
-    const withRoster = composeDispatcher(dctx({ roster: roster(26), headers: Array.from({ length: 26 }, (_, i) => mateHeader(i)) }));
+    // Rows past the read too, so the manifest's `unread` count is off-gated as well.
+    const withRoster = composeDispatcher(dctx({ roster: roster(26, 26 + 7), headers: Array.from({ length: 26 }, (_, i) => mateHeader(i)) }));
     expect(withRoster.prompt.system).toBe(bare.prompt.system);
     expect(withRoster.prompt.task).toBe(bare.prompt.task);
     expect(JSON.stringify(withRoster.manifest)).toBe(JSON.stringify(bare.manifest));
