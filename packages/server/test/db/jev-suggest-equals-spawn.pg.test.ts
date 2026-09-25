@@ -121,12 +121,6 @@ beforeAll(async () => {
     ids.mTop = await memory(c, s, `top: ${'a'.repeat(1200)} 🚀`, 2.4);
     ids.mSmall = await memory(c, s, 'small but useful', 1.6);
     ids.mLow = await memory(c, s, 'below the floor', 1.2);
-    // Verified at its version: the mark is part of what spawn renders.
-    const pinned = (await c.query<{ version: number }>('select version from public.entities where id = $1', [ids.mSmall])).rows[0]!.version;
-    await c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, props, created_by) values ($1, $2, $3, 'verifies', $4::jsonb, $2)`,
-      [s, member, ids.mSmall, JSON.stringify({ pinnedVersion: pinned })],
-    );
 
     // Skills: equipped defaults and space skills.
     ids.sEquipped = await skill(c, s, 'deploy-runbook', `Deploy the node. ${'d'.repeat(300)}`, 2.0);
