@@ -610,10 +610,11 @@ export interface ContextEntryRecord {
   rank: number;
   /**
    * Memories are injected whole; everything else is an index line.
-   * `header-dropped`: a `<context_index>` entry that kept its bare line but
-   * lost its header text to the byte budget (level 1).
+   * `summary-dropped`: a `<context_index>` entry that kept its line, name and
+   * whenToUse but lost its summary to the byte budget. `header-dropped` is the
+   * whole-header drop a launch recorded before the floor rule (task 01a0da5a).
    */
-  state: 'expanded' | 'collapsed' | 'header-dropped';
+  state: 'expanded' | 'collapsed' | 'summary-dropped' | 'header-dropped';
   /** UTF-8 bytes of the entry as the prompt renders it. */
   bytes: number;
   /** Edge type, for references and teammates. */
@@ -649,7 +650,8 @@ export interface ContextDrop {
   kind: string;
   group: ContextGroupName;
   reason: ContextDropReason;
-  level?: 'body' | 'header' | 'entry';
+  /** `summary`: the entry kept its whenToUse; `header` is a pre-floor-rule record. */
+  level?: 'body' | 'summary' | 'header' | 'entry';
 }
 
 /**

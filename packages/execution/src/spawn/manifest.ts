@@ -1781,8 +1781,9 @@ export interface ComposeManifestInput {
 /**
  * The skills whose description the composed prompt actually renders: the
  * `<skills>` index carries every kept skill's description; the
- * `<context_index>` carries an entry's header text unless the budget dropped
- * it (`headerDropped`). Empty text is no description.
+ * `<context_index>` carries an entry's whenToUse always, and its summary
+ * unless the budget dropped it (`summaryDropped`; `headerDropped` on a
+ * pre-floor-rule manifest). Empty text is no description.
  */
 function describedSkillIds(manifest: Tm8Manifest): Set<string> {
   const out = new Set<string>();
@@ -1790,13 +1791,19 @@ function describedSkillIds(manifest: Tm8Manifest): Set<string> {
     for (const group of manifest.contextIndex.groups) {
       if (group.name !== 'skills') continue;
       for (const entry of group.entries) {
-        if (!entry.headerDropped && (entry.header?.whenToUse?.trim() || entry.header?.summary?.trim())) out.add(entry.id);
+        if (!entry.headerDropped && (entry.header?.whenToUse?.trim() || (!entry.summaryDropped && entry.header?.summary?.trim()))) out.add(entry.id);
       }
     }
   } else {
     for (const skill of manifest.skills) if (skill.entityId && skill.description?.trim()) out.add(skill.entityId);
   }
   return out;
+}
+
+/** Whether the composer moved the task bodies out of the task turn (`delivery="reference"` on its opening tag). */
+function referencesTaskBodies(task: string): boolean {
+  const open = task.split('\n', 1)[0] ?? '';
+  return open.startsWith('<tm8_task_prompt ') && open.includes(' delivery="reference"');
 }
 
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
@@ -1972,13 +1979,46 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // to their sub-caps, skills to what remains, header text before entries.
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
-    indexFit = fitContextIndex({
-      groups: [
-        ...redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories: collapsedMemories })),
-      ],
-      available: BYTE_BUDGETS.combinedInitialInjection - baseBytes,
-      caps: contextIndexCaps(launch.mode, budgets),
-    });
+    const candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories: collapsedMemories }));
+    const caps = contextIndexCaps(launch.mode, budgets);
+    const ceiling = BYTE_BUDGETS.combinedInitialInjection;
+    const fitAt = (available: number): FitContextIndexResult => fitContextIndex({ groups: [...candidates], available, caps });
+    // A task turn too big to inline is switched WHOLE to references by the
+    // composer, which keeps the prompt under the ceiling by moving the task
+    // bodies out of it. The index must never buy its room that way.
+    const inline = !referencesTaskBodies(baseline.task);
+    /** The real prompt with this index, measured: every title the index names leaves the task turn. */
+    const composedBytes = (fit: FitContextIndexResult): number => {
+      const gone = new Set(fit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
+      try {
+        const p = composePrompt({ ...manifest, skills: manifest.skills.filter(skill => !gone.has(skill.entityId)), contextIndex: fit.index }, { sessionId, baseUrl });
+        if (inline && referencesTaskBodies(p.task)) return Number.POSITIVE_INFINITY;
+        return utf8Bytes(`${p.system}\n\n${p.task}`);
+      } catch (error) {
+        if (error instanceof BudgetExceededError) return Number.POSITIVE_INFINITY;
+        throw error;
+      }
+    };
+    let available = ceiling - baseBytes;
+    indexFit = fitAt(available);
+    // The baseline lists every linked title in the task turn, and the titles
+    // the index names leave it, so the first fit leaves that room unused. Hand
+    // it back to the index while something was dropped, re-measuring the real
+    // prompt each time; a retry that would overrun the ceiling is discarded,
+    // so the first (conservative) fit is the floor. The room handed back is
+    // the real prompt's slack LESS what the fit was offered and did not use:
+    // that part is already in `available`, and spending it twice overshoots
+    // by up to an entry (review #832), which the composer would then settle by
+    // moving the task bodies out.
+    for (let tries = 0; tries < 3 && indexFit.drops.length > 0; tries += 1) {
+      const room = ceiling - composedBytes(indexFit) - (available - indexFit.bytes);
+      if (!(room > 0)) break;
+      const retry = fitAt(available + room);
+      if (composedBytes(retry) > ceiling) break;
+      if (retry.drops.length >= indexFit.drops.length && retry.bytes <= indexFit.bytes) break;
+      available += room;
+      indexFit = retry;
+    }
     const gone = new Set(indexFit.drops.filter(d => d.group === 'skills' && d.level === 'entry').map(d => d.id));
     dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
     manifest.skills = manifest.skills.filter(skill => !gone.has(skill.entityId));

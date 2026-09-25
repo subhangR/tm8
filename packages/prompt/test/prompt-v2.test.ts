@@ -254,12 +254,13 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
   };
   const docRuntime: PromptRuntime = { sessionId: DOC_SESSION, baseUrl: 'http://127.0.0.1:7778' };
   const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
-    // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B).
-    worker: { bytes: 2967, ceiling: 3000, graph: true },
-    'coordinated-worker': { bytes: 3309, ceiling: 3350, graph: true },
-    coordinator: { bytes: 3875, ceiling: 4000, graph: true },
-    'coordinated-coordinator': { bytes: 4217, ceiling: 4250, graph: true },
-    dispatcher: { bytes: 3171, ceiling: 3200, graph: false },
+    // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
+    // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6).
+    worker: { bytes: 2991, ceiling: 3000, graph: true },
+    'coordinated-worker': { bytes: 3333, ceiling: 3350, graph: true },
+    coordinator: { bytes: 3899, ceiling: 4000, graph: true },
+    'coordinated-coordinator': { bytes: 4241, ceiling: 4250, graph: true },
+    dispatcher: { bytes: 3195, ceiling: 3200, graph: false },
   };
 
   it('renders each mode at the doc\'s size, within its ceiling', () => {
@@ -271,8 +272,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     }
   });
 
-  it('keeps the base at 1,712 B (1,469 approved + rule 4)', () => {
-    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1712);
+  it('keeps the base at 1,736 B (1,469 approved + rule 4 with its example)', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1736);
   });
 
   it('matches its snapshot, per mode', () => {
@@ -307,7 +308,9 @@ describe('header authoring rule (doc 01a0d708)', () => {
       expect(instructionFor(mode).endsWith(` ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
       expect(count(instructionFor(mode), '--when-to-use'), mode).toBe(1);
     }
-    expect(utf8Bytes(HEADER_AUTHORING_RULE)).toBe(239);
+    expect(utf8Bytes(HEADER_AUTHORING_RULE)).toBe(263);
+    // One good and one bad example, single-quoted so the v1 frame does not escape them.
+    expect(HEADER_AUTHORING_RULE).toContain("'Open when changing balance rounding', not 'Rounding doc'");
   });
 });
 

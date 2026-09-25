@@ -52,14 +52,15 @@ function renderJevText(header: SelectionHeader, options: JevTextOptions): string
       // The statement, cut. (`subject_scope` joins it in headers T4, not here.)
       return clip(header.summary, limit);
     case 'skill': {
-      // "name: description", else "name: when_to_use", else the bare name.
-      const text = clip(header.summary ?? header.whenToUse, limit);
+      // "name: description", else "name: when_to_use" (whole: a whenToUse is
+      // never cut, task 01a0da5a), else the bare name.
+      const text = header.summary ? clip(header.summary, limit) : redactSecretTokens(header.whenToUse ?? '');
       return text ? `${header.name}: ${text}` : header.name;
     }
     default: {
       // References (doc, artifact, drawing, file, task, collection): name,
-      // then when, then what. Not yet shown to Jev (headers T7).
-      const parts = [header.whenToUse, header.summary].filter((part): part is string => !!part).map((part) => clip(part, limit));
+      // then when (whole), then what (cut). Not yet shown to Jev (headers T7).
+      const parts = [header.whenToUse, header.summary ? clip(header.summary, limit) : null].filter((part): part is string => !!part);
       return parts.length > 0 ? `${header.name}: ${parts.join(' ')}` : header.name;
     }
   }
