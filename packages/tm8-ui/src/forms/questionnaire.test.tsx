@@ -144,6 +144,49 @@ describe('Fill', () => {
     expect(within(screen.getByTestId('revision-1')).getByText('First answer')).toBeTruthy();
   });
 
+  it('after Resume now the block keeps re-reading while the row drains, so "Delivered" appears with no reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { port } = await mount(FORM_FIXTURE_IDS.release);
+    expect(screen.getByTestId('delivery-note').getAttribute('data-state')).toBe('queued');
+    fireEvent.click(screen.getByRole('button', { name: 'Resume now' }));
+    expect(await screen.findByText(/Resume requested/)).toBeTruthy();
+    expect(port.redelivered).toHaveLength(1);
+
+    // The first re-read still finds it pending (the server is resuming the session, attempt 2).
+    const row = port.rows.find((r) => r.id === 'resp-ada-3')!;
+    row.deliveries[0] = { ...row.deliveries[0]!, attempts: 2, lastError: 'resuming' };
+    const reads = vi.spyOn(port, 'responses');
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    await waitFor(() => expect(reads).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('delivery-chip').textContent).toBe('Retrying'));
+
+    // Then it lands: the next re-read of the backoff shows it, long before the 15 s backstop.
+    row.deliveries[0] = { ...row.deliveries[0]!, status: 'delivered', lastError: null };
+    await act(async () => { vi.advanceTimersByTime(2_000); });
+    await waitFor(() => expect(screen.getByTestId('delivery-chip').textContent).toBe('Delivered'));
+    // The settled row speaks for itself: no stale "Resume requested" beside it.
+    expect(screen.queryByText(/Resume requested/)).toBeNull();
+  });
+
+  it('after "Send to a new session" the block follows the row from pending to spawned', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { port } = await mount(FORM_FIXTURE_IDS.release, 'responses');
+    const row = port.rows.find((r) => r.isCurrent && r.respondentName === 'Omar')!;
+    const realRedeliver = port.redeliver!.bind(port);
+    port.redeliver = async (...args) => {
+      await realRedeliver(...args);
+      row.deliveries[0] = { ...row.deliveries[0]!, status: 'pending', lastError: 'redelivered_from: session_deleted' };
+    };
+    fireEvent.click(screen.getByRole('button', { name: 'Omar' }));
+    const detail = await screen.findByTestId('response-detail');
+    fireEvent.click(within(detail).getByRole('button', { name: 'Send to a new session' }));
+    await waitFor(() => expect(within(detail).getByTestId('delivery-chip').textContent).toBe('Sending to new session'));
+
+    row.deliveries[0] = { ...row.deliveries[0]!, status: 'spawned', spawnedSessionId: 'ws-new', lastError: 'redelivered_from: session_deleted' };
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    await waitFor(() => expect(within(screen.getByTestId('response-detail')).getByTestId('delivery-chip').textContent).toBe('New session'));
+  });
+
   it('Edit & resubmit makes the next revision', async () => {
     const { port } = await mount(FORM_FIXTURE_IDS.release);
     fireEvent.click(screen.getByRole('button', { name: 'Edit & resubmit' }));

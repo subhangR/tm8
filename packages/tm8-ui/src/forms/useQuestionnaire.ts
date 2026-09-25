@@ -19,14 +19,18 @@
  * a live event never collapses their pages back to page 1, a new submission
  * never pushes a loaded row out of view, and a superseded row drops out.
  *
- * A FRESH delivery (pending, never attempted, inside `DELIVERING_GRACE_MS` of
- * its submit: delivery.ts) usually settles through the server's fast path in
- * a second or two, so while one is shown the block re-reads sooner, at the
- * `DELIVERY_FAST_POLL_MS` backoff (visible only), and the backstop stands
- * aside until that burst ends. A new fresh row (this viewer's submit, or one
- * a `responses` change brought in) starts a new burst. This viewer's own
- * submit time (`markSubmitted`) also dates their row, so a server clock
- * behind the browser's cannot age it out early.
+ * A delivery that is MOVING usually settles within seconds, so the block
+ * re-reads sooner, in a burst at the `DELIVERY_FAST_POLL_MS` backoff (visible
+ * only), and the backstop stands aside until the burst ends. A burst starts on
+ *   - a FRESH row (pending, never attempted, inside `DELIVERING_GRACE_MS` of
+ *     its submit: delivery.ts), this viewer's or one a `responses` change
+ *     brought in;
+ *   - this viewer's submit (`markSubmitted`) or redeliver click
+ *     (`followDeliveries`: Resume now / Send to a new session), which would
+ *     otherwise re-read once and freeze on "Retrying" while the row drains;
+ * and stops once nothing is pending (queued/retrying/redelivering are all
+ * `pending`). This viewer's own submit time also dates their row, so a server
+ * clock behind the browser's cannot age it out early.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DELIVERING_GRACE_MS, deliveryStart } from './delivery';
@@ -194,7 +198,16 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     (r: FormResponseView) => deliveryStart(r.submittedAt, r.id === currentId ? localSubmitAt : null),
     [currentId, localSubmitAt],
   );
-  const markSubmitted = useCallback(() => setLocalSubmitAt(Date.now()), []);
+  /** Bumped by this viewer's submit or redeliver: each starts a burst. */
+  const [kick, setKick] = useState(0);
+  const markSubmitted = useCallback(() => {
+    setLocalSubmitAt(Date.now());
+    setKick((k) => k + 1);
+  }, []);
+  const followDeliveries = useCallback(() => {
+    setKick((k) => k + 1);
+    void reload();
+  }, [reload]);
   const fresh = useMemo(
     () => freshDeliveries([mine?.current, ...(responses ?? [])], deliverySince, Date.now()),
     [mine, responses, deliverySince],
@@ -214,15 +227,16 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     });
   }, [port, detail.id, reload, refetchForm]);
 
-  // The fast burst while a fresh delivery is shown: visible only, and over
-  // once the rows settle (the key empties) or the backoff runs out.
+  // The fast burst after a fresh row, a submit or a redeliver: visible only,
+  // and over once nothing is pending or the backoff runs out.
+  const hasPending = pending.size > 0;
   const bursting = useRef(false);
   useEffect(() => {
-    if (!fresh) return;
+    if (!fresh && !(kick > 0 && hasPending)) return;
     let step = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const next = () => {
-      bursting.current = step < DELIVERY_FAST_POLL_MS.length;
+      bursting.current = step < DELIVERY_FAST_POLL_MS.length && pendingRef.current.size > 0;
       if (!bursting.current) return;
       timer = setTimeout(() => {
         step += 1;
@@ -235,10 +249,9 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
       clearTimeout(timer);
       bursting.current = false;
     };
-  }, [fresh, reload]);
+  }, [fresh, kick, hasPending, reload]);
 
   // The backstop poll: responses only, visible only, pending only.
-  const hasPending = pending.size > 0;
   useEffect(() => {
     if (!hasPending) return;
     const timer = setInterval(() => {
@@ -269,6 +282,8 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     deliverySince,
     /** This viewer just submitted: date their row by their own clock (call before `reload`). */
     markSubmitted,
+    /** A redeliver settled (done or refused): re-read now, then burst until nothing is pending. */
+    followDeliveries,
   };
 }
 

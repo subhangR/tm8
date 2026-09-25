@@ -102,7 +102,7 @@ export function FillTab({ q }: { q: Questionnaire }) {
           history={mine.history}
           since={q.deliverySince(mine.current)}
           port={port}
-          onSettled={() => void q.reload()}
+          onSettled={q.followDeliveries}
           canAmend={!readOnly && settings.allowAmend}
           amendOff={!readOnly && !settings.allowAmend}
           canSubmitAnother={!readOnly && settings.responses === 'unlimited'}

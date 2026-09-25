@@ -93,7 +93,7 @@ function Individual({
         since={q.deliverySince(open)}
         port={q.port}
         onBack={() => setOpenId(null)}
-        onSettled={() => void q.reload()}
+        onSettled={q.followDeliveries}
         nav={{
           at: at + 1,
           of: responses.length,

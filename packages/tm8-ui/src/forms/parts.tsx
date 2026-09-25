@@ -123,6 +123,11 @@ export function DeliveryNote({
   const openEntity = useContext(FormsNavContext);
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle');
   const [notice, setNotice] = useState<string | null>(null);
+  /** The row's status when an action went through: once it has moved on and
+      left `pending`, the row speaks for itself again ("Resume requested"
+      beside "Delivered" would be stale, and a new door may be owed). */
+  const [actedFrom, setActedFrom] = useState<FormDeliveryView['status'] | null>(null);
+  const done = phase === 'done' && (delivery.status === actedFrom || delivery.status === 'pending');
 
   const act = async (to: 'resume' | 'new_session') => {
     if (!redeliver) return;
@@ -130,6 +135,7 @@ export function DeliveryNote({
     setNotice(null);
     try {
       await redeliver(delivery.workSessionId, to);
+      setActedFrom(delivery.status);
       setPhase('done');
       setNotice(to === 'resume' ? `Resume requested. ${RESUME_LATENCY}` : 'Sent to a new session.');
     } catch (e) {
@@ -190,7 +196,7 @@ export function DeliveryNote({
         {text}
         {reading.redeliveredFrom ? <span className="qn-muted"> Re-sent from an earlier delivery.</span> : null}
       </span>
-      {action && phase !== 'done' ? (
+      {action && !done ? (
         <button
           type="button"
           className="pn-btn"
@@ -202,7 +208,7 @@ export function DeliveryNote({
           {action.word}
         </button>
       ) : null}
-      {notice ? <span className="qn-muted" role="status">{notice}</span> : null}
+      {notice && (phase !== 'done' || done) ? <span className="qn-muted" role="status">{notice}</span> : null}
       {action && !redeliver ? <span className="qn-muted">{NO_REDELIVER}</span> : null}
     </div>
   );
