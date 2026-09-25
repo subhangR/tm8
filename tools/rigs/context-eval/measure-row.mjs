@@ -3,6 +3,8 @@
 // the needle / memory / tool-call / component / cost fields of a row.
 // Throws on anything it cannot measure; the caller records `measureError`.
 
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { measureLane } from '../context-measure/measure.mjs';
 import { componentsOf } from './components.mjs';
 import { laneCostUsd } from './pricing.mjs';
@@ -75,12 +77,52 @@ export function skillsBlockBytes(transcriptText) {
 }
 
 /**
+ * A lane's SUBAGENT transcripts: `<dir>/<native-id>/subagents/agent-*.jsonl`,
+ * a sibling of the lane's `<dir>/<native-id>.jsonl`. measure.mjs reads only the
+ * main file, so a lane that delegates would under-count its requests, tokens
+ * and $ (C4 msg 01a0d98e-3268: two rows wrong by more than 2x). Per file: the
+ * API requests (distinct message ids), usage, tool calls, and cost priced by
+ * the SUBAGENT's own model (it may differ from the lane's).
+ */
+export function subagentUsage(transcriptPath) {
+  const out = { files: 0, requests: 0, toolCalls: 0, usage: { input: 0, cacheCreation: 0, cacheRead: 0, output: 0 }, costUsd: 0, unpriced: 0 };
+  const dir = join(transcriptPath.replace(/\.jsonl$/, ''), 'subagents');
+  if (!existsSync(dir)) return out;
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.jsonl')).sort()) {
+    out.files++;
+    const seen = new Map();
+    for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
+      if (!line.includes('"assistant"')) continue;
+      let r;
+      try {
+        r = JSON.parse(line);
+      } catch {
+        continue; // a torn last line
+      }
+      if (r.type !== 'assistant' || !r.message?.usage) continue;
+      out.toolCalls += (r.message.content ?? []).filter((b) => b.type === 'tool_use').length;
+      seen.set(r.message.id ?? r.uuid, { usage: r.message.usage, model: r.message.model });
+    }
+    for (const { usage: u, model } of seen.values()) {
+      out.requests++;
+      const add = { input: u.input_tokens ?? 0, cacheCreation: u.cache_creation_input_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, output: u.output_tokens ?? 0 };
+      for (const k of Object.keys(add)) out.usage[k] += add[k];
+      const usd = laneCostUsd(model, add);
+      if (usd == null) out.unpriced++;
+      else out.costUsd += usd;
+    }
+  }
+  return out;
+}
+
+/**
  * @param manifest  <dataDir>/manifests/<sessionId>.json, parsed
  * @param transcriptText  the lane's Claude Code transcript
  * @param tpl  the template record (linkedIds, needleId) from fixtures/node-<port>.json
  * @param taskKey  for messages only
  */
-export function measureRow({ manifest, transcriptText, tpl, taskKey }) {
+export function measureRow({ manifest, transcriptText, transcriptPath, tpl, taskKey }) {
+  if (!transcriptPath) throw new Error('measureRow needs transcriptPath: subagent transcripts live beside it');
   const noLinks = tpl.linkedIds.length === 0 && !(manifest.context?.entries ?? []).some((e) => e.group === 'references') && !manifest.context?.groups?.references?.unread;
   if (!tpl.linkedIds.length && !noLinks) throw new Error(`task ${taskKey} has no linked ids, so no absent-from-index miss could be counted`);
   // Set aside, never measured as a 0-token lane: the error carries `startFailure`.
@@ -99,5 +141,19 @@ export function measureRow({ manifest, transcriptText, tpl, taskKey }) {
   measured.system.skillsBlockBytes = skillsBlockBytes(transcriptText);
   measured.components = componentsOf({ measured, manifest });
   measured.costUsd = laneCostUsd(measured.modelId, measured.usage);
+  // Lane TOTALS include the lane's subagents (requests, usage, $); the main
+  // thread's own numbers are kept as main*. Everything else (firstRequestTokens,
+  // components, misses, expand, toolCalls, resident*) stays the main thread's.
+  const sub = subagentUsage(transcriptPath);
+  measured.mainRequests = measured.requests;
+  measured.mainUsage = { ...measured.usage };
+  measured.mainCostUsd = measured.costUsd;
+  measured.subagents = sub;
+  if (sub.files) {
+    measured.requests += sub.requests;
+    for (const k of Object.keys(measured.usage)) measured.usage[k] += sub.usage[k];
+    measured.costUsd = measured.costUsd == null ? null : measured.costUsd + sub.costUsd;
+  }
+  measured.subagentsMeasured = true;
   return measured;
 }

@@ -240,7 +240,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
     row.transcript = transcript;
     const noLinks = tpl.linkedIds.length === 0 && !(manifest.context?.entries ?? []).some((e) => e.group === 'references') && !manifest.context?.groups?.references?.unread;
     if (!tpl.linkedIds.length && !noLinks) throw new Error(`task ${cell.taskKey} has no linked ids, so no absent-from-index miss could be counted`);
-    measured = measureRow({ manifest, transcriptText: readFileSync(transcript, 'utf8'), tpl, taskKey: cell.taskKey });
+    measured = measureRow({ manifest, transcriptText: readFileSync(transcript, 'utf8'), transcriptPath: transcript, tpl, taskKey: cell.taskKey });
   } catch (e) {
     measureError = String(e.message ?? e);
     startFailure = e.startFailure ?? null;

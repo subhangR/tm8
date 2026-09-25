@@ -191,12 +191,14 @@ const SIZE_COLS = [
   ['resident harness chars (× requests)', (r) => r.residentHarnessChars],
 ];
 const EFF_COLS = [
-  ['API requests', (r) => r.requests],
+  ['API requests (lane total, subagents included)', (r) => r.requests],
+  ['  of which subagent requests', (r) => r.subagents?.requests],
   ['tool calls', (r) => r.toolCalls],
   ['input-side tokens (all requests)', inputTokens],
   ['output tokens', (r) => r.usage?.output],
   ['wall seconds', (r) => r.wallSeconds],
-  ['est. $ per lane', (r) => r.costUsd, 3],
+  ['est. $ per lane (subagents included)', (r) => r.costUsd, 3],
+  ['  of which subagent $', (r) => r.subagents?.costUsd, 3],
   ['expand rate % (opened / entries)', (r) => (r.expand?.rate == null ? null : r.expand.rate * 100)],
   ['blind-fetch bytes', (r) => r.blindFetchBytes],
   ['memories collapsed (Q1)', (r) => r.memoriesCollapsed],
@@ -208,12 +210,18 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   const models = [...new Set(rows.map((r) => r.model))].sort();
   const families = [...new Set(rows.map((r) => r.family))].sort();
   const versions = [...new Set(rows.map((r) => r.fixtureVersion?.contentHash ?? 'none'))];
+  // The floor: a row measured before subagent transcripts were read under-counts a delegating lane.
+  const noSub = measured.filter((r) => r.subagentsMeasured !== true);
+  if (noSub.length) throw new Error(`${noSub.length} measured row(s) were measured without their subagent transcripts (requests / usage / $ under-count a delegating lane): node remeasure.mjs <file>.jsonl --all`);
   const stale = measured.filter((r) => r.components?.schema !== COMPONENTS_SCHEMA);
   if (stale.length) throw new Error(`${stale.length} measured row(s) carry components schema ${[...new Set(stale.map((r) => r.components?.schema ?? 1))].join(', ')}, not ${COMPONENTS_SCHEMA} (the kernel figure changed meaning): node remeasure.mjs <file>.jsonl --all`);
   if (versions.length !== 1) throw new Error(`rows span fixture versions ${versions.join(', ')}: arms and families are not comparable across fixtures; report each version separately`);
   const md = [];
   const json = { title, generatedAt: new Date().toISOString(), rows: rows.length, measured: measured.length, excluded: excluded.length, fixtureVersions: versions, builds: [...new Set(rows.map((r) => r.buildSha))], cells: {}, gate: {}, accuracy: {}, costDelta: {}, failures: {}, load: {}, delta: null };
   md.push(`# ${title}`, '', `rows ${rows.length} · measured ${measured.length} · set aside ${excluded.length} · builds ${json.builds.join(', ')} · fixture ${versions.join(', ')} · generated ${json.generatedAt}`, '');
+  const delegated = measured.filter((r) => (r.subagents?.files ?? 0) > 0);
+  json.delegated = delegated.map((r) => ({ arm: r.arm, model: r.model, taskKey: r.taskKey, rep: r.rep, sessionId: r.sessionId, subagentRequests: r.subagents.requests, subagentUsd: r.subagents.costUsd }));
+  md.push(`Lanes that delegated to subagents: ${delegated.length}${delegated.length ? ` (${delegated.map((r) => `${r.arm}/${r.model}/${r.taskKey}#${r.rep}: ${r.subagents.requests} req, $${r.subagents.costUsd.toFixed(3)}`).join('; ')})` : ''}. Requests, input-side tokens and $ are lane totals, subagents included; first-request tokens, components and misses are the main thread's.`, '');
   md.push('Medians are shown as median [min–max] n. $ is an estimate from pricing.mjs (VERIFY its table). Token components are shares of the measured first request (components.mjs).', '');
 
   // 1. size + efficiency per model × arm × family

@@ -5,6 +5,8 @@
 // refusals, the rubric and the Clopper–Pearson bound.
 
 import { test } from 'node:test';
+import { createRequire } from 'node:module';
+const require_ = createRequire(import.meta.url);
 import assert from 'node:assert/strict';
 import { buildReport, classify, upperBound95, stats } from './report.mjs';
 import { planSlice, allowedConcurrency, rubricFor, foreignMainCommits } from './lanes.mjs';
@@ -22,6 +24,7 @@ function row(over = {}) {
     system: { tm8Bytes: 13_000, harnessChars: 11_000, chromeChars: 4_000 }, firstUserBytes: 3000, attachments: { skill_listing: 20_000 },
     miss: { ids: {}, entry: { count: 0 }, header: { count: 0 } }, expand: { rate: 0.05 }, blindFetchBytes: 0,
     success: { success: true, deliverableCorrect: true, committed: true, closeout: true, ticked: true, checks: { passed: 4, total: 4, failures: [] } },
+    subagentsMeasured: true, subagents: { files: 0, requests: 0, costUsd: 0 },
     rubric: { score: 1 }, needleOpened: true, components: { schema: 3, bytes: { tm8Kernel: 13_000, contextIndex: 0, contextIndexByGroup: {} }, tokens: {}, harnessTotal: 35_000 },
     ...over,
   };
@@ -267,4 +270,53 @@ test('D8 map matches its AUTHORITY: ticked applies exactly where fixtures/replic
     assert.equal(REPLICA_ITEMS[x.key].applies.includes('ticked'), (x.content?.acceptanceCriteria ?? []).length > 0, x.key);
     assert.ok(!REPLICA_ITEMS[x.key].applies.includes('committed'), x.key);
   }
+});
+
+test('subagents: the subagent transcripts of a lane fold into requests / usage / $; first request, components and misses stay with the main thread', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { measureRow } = await import('./measure-row.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ctxeval-sub-'));
+  const main = join(dir, 'native-1.jsonl');
+  const asst = (id, model, u, tools = 0) => JSON.stringify({ type: 'assistant', message: { id, model, usage: u, content: Array.from({ length: tools }, (_, i) => ({ type: 'tool_use', id: `${id}-t${i}`, name: 'Read', input: {} })) } });
+  writeFileSync(main, [
+    JSON.stringify({ type: 'attachment', attachment: { type: 'prompt_snapshot', systemPrompt: ['harness', '<tm8_system_prompt>kernel</tm8_system_prompt>'] } }),
+    JSON.stringify({ type: 'user', message: { content: 'do the task' } }),
+    asst('m1', 'claude-sonnet-5', { input_tokens: 100, cache_creation_input_tokens: 20000, cache_read_input_tokens: 0, output_tokens: 50 }),
+    asst('m2', 'claude-sonnet-5', { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 20000, output_tokens: 40 }),
+  ].join('\n'));
+  const args = { manifest: { sessionId: 's', launch: { model: 'claude-sonnet-5' }, context: { entries: [], dropped: [] } }, transcriptText: readText(main), transcriptPath: main, tpl: { linkedIds: [], needleId: null }, taskKey: 'fee' };
+  function readText(f) { return require_('node:fs').readFileSync(f, 'utf8'); }
+  const A = measureRow(args);
+  assert.equal(A.subagentsMeasured, true);
+  assert.equal(A.subagents.files, 0);
+  assert.equal(A.requests, A.mainRequests);
+  assert.deepEqual(A.usage, A.mainUsage);
+  assert.equal(A.costUsd, A.mainCostUsd);
+  // positive control: one subagent file (priced by ITS model) adds to the lane totals
+  mkdirSync(join(dir, 'native-1', 'subagents'), { recursive: true });
+  writeFileSync(join(dir, 'native-1', 'subagents', 'agent-x.jsonl'), [
+    asst('s1', 'claude-haiku-4-5-20251001', { input_tokens: 5, cache_creation_input_tokens: 30000, cache_read_input_tokens: 0, output_tokens: 70 }, 2),
+    asst('s1', 'claude-haiku-4-5-20251001', { input_tokens: 5, cache_creation_input_tokens: 30000, cache_read_input_tokens: 0, output_tokens: 70 }, 1),
+    asst('s2', 'claude-haiku-4-5-20251001', { input_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 30000, output_tokens: 30 }),
+  ].join('\n'));
+  const B = measureRow(args);
+  assert.equal(B.subagents.files, 1);
+  assert.equal(B.subagents.requests, 2, 'one request per distinct message id');
+  assert.equal(B.subagents.toolCalls, 3);
+  assert.equal(B.requests, A.requests + 2);
+  assert.equal(B.usage.cacheCreation, A.usage.cacheCreation + 30000);
+  assert.ok(B.costUsd > A.costUsd && Math.abs(B.costUsd - A.costUsd - B.subagents.costUsd) < 1e-12);
+  assert.deepEqual(B.mainUsage, A.usage);
+  for (const k of ['firstRequestTokens', 'components', 'miss', 'expand', 'toolCalls', 'system', 'residentTm8Bytes', 'residentHarnessChars']) assert.deepEqual(B[k], A[k], k);
+  // negative control: removing the file takes the lane back to exactly A
+  rmSync(join(dir, 'native-1'), { recursive: true });
+  assert.deepEqual(measureRow(args), A);
+  assert.throws(() => measureRow({ ...args, transcriptPath: undefined }), /transcriptPath/);
+  rmSync(dir, { recursive: true });
+});
+
+test('floor: a row measured without its subagent transcripts is refused (remeasure --all)', () => {
+  assert.throws(() => buildReport([row(), row({ rep: 2, subagentsMeasured: undefined })], null), /without their subagent transcripts.*remeasure/);
 });

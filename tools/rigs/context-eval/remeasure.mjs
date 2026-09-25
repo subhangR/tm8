@@ -35,7 +35,7 @@ try {
   /* not a checkout */
 }
 
-const MEASURE_KEYS = ['session', 'surface', 'contextIndex', 'manifestContextIndexBytes', 'entries', 'dropped', 'system', 'firstUserBytes', 'attachments', 'firstRequestTokens', 'requests', 'usage', 'residentHarnessChars', 'residentTm8Bytes', 'expand', 'miss', 'blindFetchBytes', 'omittedFetches', 'needleOpened', 'needleMissed', 'needleState', 'memoriesCollapsed', 'memoryExpands', 'toolCalls', 'modelId', 'components', 'costUsd', 'measureError'];
+const MEASURE_KEYS = ['session', 'surface', 'contextIndex', 'manifestContextIndexBytes', 'entries', 'dropped', 'system', 'firstUserBytes', 'attachments', 'firstRequestTokens', 'requests', 'usage', 'residentHarnessChars', 'residentTm8Bytes', 'expand', 'miss', 'blindFetchBytes', 'omittedFetches', 'needleOpened', 'needleMissed', 'needleState', 'memoriesCollapsed', 'memoryExpands', 'toolCalls', 'modelId', 'components', 'costUsd', 'measureError', 'mainRequests', 'mainUsage', 'mainCostUsd', 'subagents', 'subagentsMeasured'];
 
 const rows = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const fixtures = new Map();
@@ -61,7 +61,7 @@ for (const row of rows) {
   const before = row.measureError ?? null;
   for (const k of MEASURE_KEYS) delete row[k];
   try {
-    Object.assign(row, measureRow({ manifest: JSON.parse(readFileSync(manifestPath, 'utf8')), transcriptText: readFileSync(row.transcript, 'utf8'), tpl: tplFor(row), taskKey: row.taskKey }));
+    Object.assign(row, measureRow({ manifest: JSON.parse(readFileSync(manifestPath, 'utf8')), transcriptText: readFileSync(row.transcript, 'utf8'), transcriptPath: row.transcript, tpl: tplFor(row), taskKey: row.taskKey }));
     done++;
     console.error(`${tag}: measured (first=${row.firstRequestTokens} entryMiss=${row.miss.entry.count} headerMiss=${row.miss.header.count} memCollapsed=${row.memoriesCollapsed})${before ? ` — was: ${before}` : ''}`);
   } catch (e) {
