@@ -26,7 +26,12 @@ import {
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
-import { resolveClaudeTrustRoot, trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import {
+  completeClaudeOnboarding,
+  resolveClaudeTrustRoot,
+  trustClaudeWorkspace,
+  trustCodexWorkspace,
+} from './workspace-trust.js';
 import {
   decideTrustWatchdog,
   readTrustDialog,
@@ -2438,8 +2443,8 @@ export class SpawnService {
   }
 
   /**
-   * Seed Claude's trust for `cwd` and its stable trust root, immediately before
-   * exec. An `unverified` outcome means a concurrent rewrite kept dropping the
+   * Seed Claude's trust for `cwd` and its stable trust root, and its onboarding
+   * flag for a logged-in home, immediately before exec. An `unverified` outcome means a concurrent rewrite kept dropping the
    * entry; the launch goes ahead and the watchdog is the backstop.
    */
   private async seedClaudeTrust(
@@ -2454,6 +2459,13 @@ export class SpawnService {
     if (outcome === 'unverified') {
       this.logger?.warn?.('SpawnService: workspace trust entry did not survive re-assertion', {
         sessionId, cwd, trustRoot,
+      });
+    }
+    // A home that already holds a login must not boot into Claude's first-run
+    // login screen; see completeClaudeOnboarding.
+    if ((await completeClaudeOnboarding(env)) === 'completed') {
+      this.logger?.info('SpawnService: marked Claude onboarding complete for a logged-in config home', {
+        sessionId,
       });
     }
   }

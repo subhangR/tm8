@@ -87,6 +87,7 @@ export interface SubjectKnob {
 
 const CONFIG = 'packages/server/src/http/config.ts';
 const SIDECAR = 'packages/server/src/sidecar/config.ts';
+const DESKTOP = 'packages/server/src/desktop.ts';
 const MANIFEST = 'packages/execution/src/spawn/manifest.ts';
 const SPAWN = 'packages/execution/src/spawn/SpawnService.ts';
 const EXEC_HANDLERS = 'packages/server/src/facade/execution-handlers.ts';
@@ -129,6 +130,9 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_PG_SUPERUSER', group: 'Storage & database', summary: 'Sidecar superuser (migrations).', default: 'tm8', definedIn: SIDECAR },
   { name: 'TM8_REPO_ROOT', group: 'Storage & database', summary: 'Checkout the sidecar reads migrations from.', default: 'the running checkout', definedIn: SIDECAR },
   { name: 'TM8_PG_BIN_DIR', group: 'Storage & database', summary: 'Postgres binaries the sidecar runs.', default: 'discovered on PATH', definedIn: SIDECAR },
+  { name: 'TM8_PG_SOCKET_DIR', group: 'Storage & database', summary: 'Directory the sidecar Postgres binds its unix socket in. Falls back under $TMPDIR when the path would exceed sun_path.', default: '<dataDir>/run', definedIn: SIDECAR },
+  { name: 'TM8_PG_LISTEN_ADDRESSES', group: 'Storage & database', summary: 'TCP addresses the sidecar Postgres listens on; empty for a socket-only node (the desktop app).', default: '127.0.0.1', definedIn: SIDECAR },
+  { name: 'TM8_DESKTOP', group: 'Storage & database', summary: 'Set to 1 by the desktop app (apps/desktop): the server starts its own bundled Postgres and reports readiness to the Electron shell.', default: null, definedIn: DESKTOP },
   { name: 'TM8_PG_LOCALE_PROVIDER', group: 'Storage & database', summary: 'initdb locale provider.', default: 'builtin', definedIn: 'packages/server/src/sidecar/cluster.ts' },
   { name: 'TM8_PG_LOCALE', group: 'Storage & database', summary: 'initdb locale.', default: 'C.UTF-8', definedIn: 'packages/server/src/sidecar/cluster.ts' },
   { name: 'TM8_PG_ENCODING', group: 'Storage & database', summary: 'initdb encoding.', default: 'UTF8', definedIn: 'packages/server/src/sidecar/cluster.ts' },

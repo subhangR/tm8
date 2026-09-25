@@ -192,7 +192,7 @@ bad dup-module 's/^modules=.*/modules=["typecheck","ui","ui"]/'
 # ---- end to end with the real affected.sh -----------------------------------------------
 E="$TMP/e2e"; mkdir -p "$E"
 cp "$REPO/package.json" "$E/"
-for f in "$REPO"/packages/*/package.json "$REPO"/tools/*/package.json; do
+for f in "$REPO"/packages/*/package.json "$REPO"/tools/*/package.json "$REPO"/apps/*/package.json; do
   [[ -f $f ]] || continue
   mkdir -p "$E/$(dirname "${f#"$REPO"/}")"; cp "$f" "$E/${f#"$REPO"/}"
 done
