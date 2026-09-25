@@ -47,7 +47,7 @@ exports[`prompt versions > keeps v1 byte-identical for a manifest stamped "1" 1`
   <linked count="0" />
   <thread parent_message_id="none" root_message_id="none" />
   <task id="01a0d305-6ec8-721f-8516-081e06cbb7b8" version="1" />
-  <acceptance count="1" open="1" tick_with="tm8 task tick 01a0d305-6ec8-721f-8516-081e06cbb7b8 &lt;criterion-id&gt;... --expect-version 1" />
+  <acceptance count="1" open="1" tick_with="tm8 task tick 01a0d305-6ec8-721f-8516-081e06cbb7b8 &lt;criterion-id&gt;... --expect-version &lt;current&gt;" />
   <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="01a0d305-6ec8-721f-8516-081e06cbb7b8" parent_message_id="none" />
   <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />
 </trusted_control>
@@ -61,7 +61,7 @@ Ship the v2 plumbing.
 
 Keep v1 selectable.
 
-Acceptance criteria (tick each by its id once it is met):
+Acceptance criteria (tick each by its id once it is met; the current version for --expect-version is in tm8 entity context on the task, or in a version_conflict's currentVersion):
 - [ ] c1: PROMPT_VERSIONS includes 2
 </untrusted_data>
 </tm8_task_prompt>"

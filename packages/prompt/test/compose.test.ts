@@ -209,10 +209,10 @@ describe('composePrompt', () => {
     // dropped by the CLI reader, so an agent could not tell when it was done.
     const { task } = composePrompt(manifest);
     expect(task).toContain('kind="task_assignment"');
-    expect(task).toContain('Acceptance criteria (tick each by its id once it is met):');
+    expect(task).toContain("Acceptance criteria (tick each by its id once it is met; the current version for --expect-version is in tm8 entity context on the task, or in a version_conflict's currentVersion):");
     expect(task).toContain('- [ ] xterm: xterm renders live output');
     expect(task).toContain('- [x] no-poll: no poll requests');
-    expect(task).toContain('<acceptance count="2" open="1" tick_with="tm8 task tick task-1 &lt;criterion-id&gt;... --expect-version &lt;n&gt;" />');
+    expect(task).toContain('<acceptance count="2" open="1" tick_with="tm8 task tick task-1 &lt;criterion-id&gt;... --expect-version &lt;current&gt;" />');
     expect(task).toContain('attribution="recorded_only"');
   });
 
@@ -234,21 +234,31 @@ describe('composePrompt', () => {
         { id: 'scope', text: 'index scoped', done: true, doneBy: 'tm-1', doneAt: '2026-09-26T00:00:00.000Z' },
       ]);
       expect(body(task)).toContain(
-        'Acceptance criteria (tick each by its id once it is met):\n- [ ] criteria: ids render in the task turn\n- [x] scope: index scoped\n</untrusted_data>',
+        "Acceptance criteria (tick each by its id once it is met; the current version for --expect-version is in tm8 entity context on the task, or in a version_conflict's currentVersion):\n- [ ] criteria: ids render in the task turn\n- [x] scope: index scoped\n</untrusted_data>",
       );
     });
 
-    it('counts them on a trusted <acceptance> line that names the tick command with the version', () => {
+    it('counts them on a trusted <acceptance> line that names the tick command', () => {
       const task = stored([{ id: 'crit-a', text: 'first-marker', done: false }, { id: 'crit-b', text: 'second-marker', done: true }]);
       expect(control(task)).toContain(
-        '  <task id="task-9" version="4" />\n  <acceptance count="2" open="1" tick_with="tm8 task tick task-9 &lt;criterion-id&gt;... --expect-version 4" />',
+        '  <task id="task-9" version="4" />\n  <acceptance count="2" open="1" tick_with="tm8 task tick task-9 &lt;criterion-id&gt;... --expect-version &lt;current&gt;" />',
       );
       // Ids and text are author-controlled: never inside the trusted control.
       expect(control(task)).not.toMatch(/marker|crit-/);
     });
 
-    it('names a version placeholder when the manifest has no verified version', () => {
-      expect(stored([{ id: 'a', text: 'one' }], null)).toContain('--expect-version &lt;n&gt;"');
+    it('never bakes a version into the tick command: the compose-time one is stale once the spawn moves the task', () => {
+      // A spawned lane's task moves right after its prompt is composed, so a
+      // number here fails the first tick of every lane that ticks straight
+      // from the turn (D13: 6/32). No number costs at most one read.
+      for (const version of [4, 1, 23, null]) {
+        const task = stored([{ id: 'a', text: 'one' }], version);
+        const hint = /tick_with="([^"]*)"/.exec(task)?.[1];
+        expect(hint, String(version)).toBe('tm8 task tick task-9 &lt;criterion-id&gt;... --expect-version &lt;current&gt;');
+        expect(hint).not.toMatch(/--expect-version\s*\d/);
+        // The body says where the current version is.
+        expect(task).toContain("tm8 entity context on the task, or in a version_conflict's currentVersion");
+      }
     });
 
     it('keeps an authored criterion inert: it cannot close the body or forge control', () => {
@@ -261,7 +271,7 @@ describe('composePrompt', () => {
       const long = Array.from({ length: 26 }, (_, i) => ({ id: `c${i}`, text: `${i}:${'y'.repeat(600)}`, done: false }));
       const task = stored(long);
       expect(control(task)).toContain(
-        '<acceptance count="26" open="26" omitted="2" clipped="24" tick_with="tm8 task tick task-9 &lt;criterion-id&gt;... --expect-version 4" fetch_with="tm8 entity context task-9" />',
+        '<acceptance count="26" open="26" omitted="2" clipped="24" tick_with="tm8 task tick task-9 &lt;criterion-id&gt;... --expect-version &lt;current&gt;" fetch_with="tm8 entity context task-9" />',
       );
       expect(body(task)).toContain('- [ ] c23: 23:');
       expect(body(task)).not.toContain('c24:');

@@ -140,7 +140,7 @@ export function loadPointerFor(
  * orientation, and index-on lanes skipped opening their own task.
  */
 export const CONTEXT_INDEX_INSTRUCTION =
-  'Your assignment is not in this index, and the index does not replace orienting on it: read it with ' +
+  'If you have an assignment, it is not in this index, and the index does not replace orienting on it: read it with ' +
   'tm8 entity context on its task id as your orientation rule says, whatever this index holds. The entries ' +
   'below are what your launch selected besides it. None of them is loaded yet. Open a listed entry only when its whenToUse (or, without ' +
   'one, its summary) matches the step you are on, with tm8 entity context <its id>, or the command in its load ' +

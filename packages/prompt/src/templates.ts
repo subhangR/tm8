@@ -444,12 +444,17 @@ const ACCEPTANCE_TEXT_MAX_CHARS = 400;
  * The criteria as the task body lists them, `- [ ] <id>: <text>`, and the
  * trusted `<acceptance>` line that counts them and names the tick command.
  * Ids and text are author-controlled, so they stay in the untrusted body; the
- * control line carries only counts, the task id and its version.
+ * control line carries only counts and the task id.
+ *
+ * The tick command names NO version (`--expect-version <current>`): the
+ * version composed into a spawned lane's prompt is already stale when the
+ * lane reads it (the spawn moves the task after composing), so a number here
+ * fails the first tick of every lane that ticks straight from the turn, while
+ * no number costs at most one read. The body says where the current one is.
  */
 export function acceptanceManifest(
   criteria: readonly TaskAcceptanceCriterion[],
   taskId: string,
-  taskVersion: number | string,
 ): { control: string[]; lines: string } {
   if (criteria.length === 0) return { control: [], lines: '' };
   const shown = criteria.slice(0, ACCEPTANCE_MANIFEST_MAX);
@@ -463,17 +468,17 @@ export function acceptanceManifest(
     return `- [${c.done ? 'x' : ' '}] ${c.id === null ? '' : `${c.id}: `}${text}`;
   });
   const open = criteria.filter((c) => !c.done).length;
-  const version = typeof taskVersion === 'number' || /^\d+$/.test(taskVersion) ? String(taskVersion) : '&lt;n&gt;';
   return {
     control: [
       `  <acceptance count="${criteria.length}" open="${open}"` +
         (omitted > 0 ? ` omitted="${omitted}"` : '') +
         (clipped > 0 ? ` clipped="${clipped}"` : '') +
-        ` tick_with="tm8 task tick ${attr(taskId)} &lt;criterion-id&gt;... --expect-version ${version}"` +
+        ` tick_with="tm8 task tick ${attr(taskId)} &lt;criterion-id&gt;... --expect-version &lt;current&gt;"` +
         (omitted > 0 || clipped > 0 ? ` fetch_with="tm8 entity context ${attr(taskId)}"` : '') +
         ' />',
     ],
-    lines: `Acceptance criteria (tick each by its id once it is met):\n${rows.join('\n')}`,
+    lines: 'Acceptance criteria (tick each by its id once it is met; the current version for --expect-version is in ' +
+      `tm8 entity context on the task, or in a version_conflict's currentVersion):\n${rows.join('\n')}`,
   };
 }
 
@@ -481,7 +486,7 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
   const attachments = attachmentManifest(f.attachments ?? []);
   const linked = linkedManifest(f.linked ?? [], f.linkedTotal ?? 0, f.namedInIndex);
-  const acceptance = acceptanceManifest(f.acceptance ?? [], f.taskId, f.taskVersion);
+  const acceptance = acceptanceManifest(f.acceptance ?? [], f.taskId);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,

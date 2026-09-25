@@ -295,7 +295,7 @@ describe('both prompt frames', () => {
       const on = composePrompt({ ...base, promptVersion, contextIndex: index });
       const instruction = on.system.match(/<context_index[^>]*>\n\s*<instruction>([^<]*)<\/instruction>/)![1]!;
       // The assignment is named first, as outside the index, before any restraint.
-      expect(instruction.startsWith('Your assignment is not in this index, and the index does not replace orienting on it')).toBe(true);
+      expect(instruction.startsWith('If you have an assignment, it is not in this index, and the index does not replace orienting on it')).toBe(true);
       expect(instruction).toContain('read it with tm8 entity context on its task id as your orientation rule says, whatever this index holds');
       // The restraint names listed entries; the old unscoped wording is gone.
       expect(instruction).toContain('The entries below are what your launch selected besides it. None of them is loaded yet. Open a listed entry only when');
