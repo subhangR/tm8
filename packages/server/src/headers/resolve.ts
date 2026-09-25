@@ -16,7 +16,10 @@
  * stored: the entity's version moved past the pinned one, or, for artifacts
  * and files, the body ref did.
  */
-import { SELECTION_HEADER_KINDS, type EntityHeaderView, type SelectionHeader } from '@tm8/contract';
+import {
+  AUTHORED_HEADER_LIMITS, SELECTION_HEADER_KINDS,
+  type EntityHeaderView, type HeaderClippedField, type SelectionHeader,
+} from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
 import { titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -229,11 +232,49 @@ export async function resolveHeaderViews(
   }]));
 }
 
+/** `text` cut to `max` code points, the last one an ellipsis; null when it already fits. */
+function clipText(text: string | null, max: number): string | null {
+  if (text === null) return null;
+  const points = Array.from(text);
+  return points.length <= max ? null : `${points.slice(0, max - 1).join('')}…`;
+}
+
+/**
+ * An entity read's header, cut to the `AUTHORED_HEADER_LIMITS` guidance and
+ * DECLARED in `clipped`. Nothing refuses a longer header (migration 223), but
+ * `entity context` keeps `header` as a never-dropped core section, so one huge
+ * header must not trip its budget. Never silent: a cut field is named.
+ */
+export function clipHeaderView(header: EntityHeaderView): EntityHeaderView {
+  const clipped: HeaderClippedField[] = [];
+  const whenToUse = clipText(header.whenToUse, AUTHORED_HEADER_LIMITS.whenToUse);
+  if (whenToUse !== null) clipped.push('whenToUse');
+  const summary = clipText(header.summary, AUTHORED_HEADER_LIMITS.summary);
+  if (summary !== null) clipped.push('summary');
+  const cutKeywords = header.keywords.length > AUTHORED_HEADER_LIMITS.keywords
+    || header.keywords.some((k) => Array.from(k).length > AUTHORED_HEADER_LIMITS.keyword);
+  if (cutKeywords) clipped.push('keywords');
+  if (clipped.length === 0) return header;
+  return {
+    ...header,
+    ...(whenToUse === null ? {} : { whenToUse }),
+    ...(summary === null ? {} : { summary }),
+    ...(cutKeywords
+      ? {
+        keywords: header.keywords.slice(0, AUTHORED_HEADER_LIMITS.keywords)
+          .map((k) => clipText(k, AUTHORED_HEADER_LIMITS.keyword) ?? k),
+      }
+      : {}),
+    clipped,
+  };
+}
+
 /**
  * The AUTHORED header of one entity, or undefined — what an entity read
- * (`entities.get`, `entities.context`) shows. Almost no entity has an
- * `entity_headers` row, so a one-row probe (under the same RLS) runs first
- * and the full resolve only when it finds one.
+ * (`entities.get`, `entities.context`) shows, clipped and declared by
+ * `clipHeaderView`. Almost no entity has an `entity_headers` row, so a
+ * one-row probe (under the same RLS) runs first and the full resolve only
+ * when it finds one.
  */
 export async function resolveAuthoredHeaderView(
   q: Querier,
@@ -246,5 +287,5 @@ export async function resolveAuthoredHeaderView(
   );
   if (probe.length === 0) return undefined;
   const header = (await resolveHeaderViews(q, spaceId, [id])).get(id);
-  return header && header.version > 0 ? header : undefined;
+  return header && header.version > 0 ? clipHeaderView(header) : undefined;
 }

@@ -255,6 +255,45 @@ describe('W2 artifacts service (pg)', () => {
     }]);
   });
 
+  it('a revision publish with a header applies it and pins the NEW revision (lenient headers, 223)', async () => {
+    const v1 = await registerBytes('<!doctype html><title>rev one</title>');
+    const v2 = await registerBytes('<!doctype html><title>rev two</title>');
+    const manifestOf = (blob: { sha256: string; size: number }): ArtifactManifest => ({
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{ path: 'index.html', mediaType: 'text/html', size: blob.size, sha256: blob.sha256 }],
+    });
+    const created = (await service.create(ctx('artifacts.create', {}, {
+      clientMutationId: `create-${randomUUID()}`,
+      spaceId: fixture.spaceId,
+      name: 'Revision Header Target',
+      manifest: manifestOf(v1),
+    } satisfies ArtifactsCreateInput))) as CommandResult;
+    const artifactId = created.entity!.id;
+    const published = (await service.publish(ctx('artifacts.publish', { artifactId }, {
+      clientMutationId: `publish-${randomUUID()}`,
+      expectedVersion: created.entity!.version,
+      manifest: manifestOf(v2),
+      header: { whenToUse: '  Open when reviewing revision two  ', summary: 'The second revision' },
+    } satisfies ArtifactsPublishInput))) as CommandResult;
+    expect(published.entity?.state).toMatchObject({ revisionNumber: 2 });
+    expect(published.warnings).toBeUndefined();
+    const rows = await database.query<{ when_to_use: string; summary: string; pinned_ref: string; current: string; pinned_version: number; version: number }>(
+      `select h.when_to_use, h.summary, h.pinned_ref, a.current_revision_id::text current, h.pinned_version, e.version
+         from public.entity_headers h
+         join public.artifacts a on a.entity_id = h.entity_id
+         join public.entities e on e.id = h.entity_id
+        where h.entity_id = $1`,
+      [artifactId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ when_to_use: 'Open when reviewing revision two', summary: 'The second revision' });
+    // Applied AFTER the revision became current: it pins revision two, so it is not stale.
+    expect(rows[0]!.pinned_ref).toBe(rows[0]!.current);
+    expect(rows[0]!.pinned_version).toBe(rows[0]!.version);
+  });
+
   it('preview.start mints a token and returns no previewUrl', async () => {
     const html = await registerBytes('<!doctype html><title>preview</title>');
     const manifest: ArtifactManifest = {

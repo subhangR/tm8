@@ -126,8 +126,11 @@ const ACT_GUIDES = [
      Hierarchy is homogeneous — a parent and its direct children share one kind
      and one Space — so the summary says so rather than letting a model discover
      it by rejection. */
-  guide('entities.create', 'Create a graph entity (including a task). Pass parentId to nest it under an existing entity of the SAME kind — a parent and its direct children share one kind and one Space.', {
-    body: { spaceId: '<space-id>', kind: 'task', title: '<title>', parentId: '<optional-parent-id>', content: {} },
+  guide('entities.create', 'Create a graph entity (including a task). Pass parentId to nest it under an existing entity of the SAME kind — a parent and its direct children share one kind and one Space. Add header {whenToUse: when a later session should open it, not its title; summary: what it holds} to a doc, artifact, drawing, task or collection someone may need later.', {
+    body: {
+      spaceId: '<space-id>', kind: 'task', title: '<title>', parentId: '<optional-parent-id>', content: {},
+      header: { whenToUse: '<when a later session should open it>', summary: '<what it holds>' },
+    },
   }),
   guide('entities.patch', 'Patch an entity under an expected-version guard.', {
     params: { id: '<entity-id>' }, body: { expectedVersion: 1, title: '<title>' },
@@ -153,11 +156,11 @@ const ACT_GUIDES = [
   guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },
   }),
-  guide('entities.header.set', 'Write an entity\'s selection header (whenToUse ≤ 400, summary ≤ 600, keywords ≤ 12); the whole header is replaced. expectedVersion is the HEADER\'s version (0 = none yet), never the entity\'s.', {
-    params: { id: '<entity-id>' }, body: { expectedVersion: 0, whenToUse: '<when to pick it>', summary: '<what it is>' },
+  guide('entities.header.set', 'Write an entity\'s selection header; the whole header is replaced. whenToUse: when a later session should open it, not its title (aim ≤ 400 chars); summary: what it holds (≤ 600); keywords optional (≤ 12 × ≤ 40). Every field optional, nothing refused for length. expectedVersion, if given, is the HEADER\'s version (0 = none yet), never the entity\'s.', {
+    params: { id: '<entity-id>' }, body: { whenToUse: '<when to pick it>', summary: '<what it is>' },
   }),
-  guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one.', {
-    params: { id: '<entity-id>' }, body: { expectedVersion: 1 },
+  guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one. expectedVersion is optional.', {
+    params: { id: '<entity-id>' }, body: {},
   }),
   guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id; the Server merges them into the stored list.', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, criterionIds: ['<criterion-id>'] },

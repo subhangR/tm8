@@ -3,9 +3,12 @@
  * staleness, against a REAL PostgreSQL as `tm8_app` under the caller's claims.
  *
  *   · `set_entity_header` / `clear_entity_header`: the kind allowlist (the
- *     SQL one and `resolveHeaders`' one agree), text and keyword bounds, the
- *     header's own optimistic version, and that a header write never moves
- *     `entities.version` nor emits an `entity.upsert` (it records an activity);
+ *     SQL one and `resolveHeaders`' one agree), LENIENT content (223: text is
+ *     normalised, never refused; a wrong kind or an empty set is a no-op with
+ *     a warning), the header's own optimistic version, and that a header write
+ *     never moves `entities.version` nor emits an `entity.upsert`;
+ *   · 223 applies ON TOP of 216 with rows already in `entity_headers`: the
+ *     chain is applied in two halves around seeding;
  *   · RLS: another space, a restricted entity, a deleted one and a non-member
  *     read no header and cannot write one; `tm8_app` has no direct write;
  *   · stale: a body edit after the header was pinned flags it (the text is
@@ -121,9 +124,14 @@ const entityVersion = async (id: string): Promise<number> =>
 const resolve = (wanted: string[], identity = OWNER, spaceId = ids.space!) =>
   asCaller((q) => resolveHeaders(q, spaceId, wanted), identity);
 
+/** 223 (lenient headers) and everything after it are applied over seeded 216 rows. */
+const LENIENT = '223_entity_headers_lenient.sql';
+
 beforeAll(async () => {
   database = await createW1ScratchDatabase('entity_headers');
-  database.apply(migrationFiles());
+  const files = migrationFiles();
+  expect(files).toContain(LENIENT);
+  database.apply(files.filter((file) => file < LENIENT));
   db = createDb(database.url);
   await asOwner(async (c) => {
     await c.query(
@@ -201,12 +209,36 @@ beforeAll(async () => {
        select id, space_id, 'OTHER summary', version, $2 from public.entities where id = $1`,
       [ids.otherDoc, ids[`member:${other}`]],
     );
+    // A full 216-shaped header, written before 223 runs, must survive it.
+    ids.legacyDoc = await doc(c, s, 'Legacy');
+    await c.query(
+      `insert into public.entity_headers(entity_id, space_id, when_to_use, summary, keywords, pinned_version, author_id)
+       select id, space_id, 'Legacy when', 'Legacy summary', '{a,b}', version, $2 from public.entities where id = $1`,
+      [ids.legacyDoc, ids.member],
+    );
   });
+  database.apply(files.filter((file) => file >= LENIENT));
 }, 300_000);
 
 afterAll(async () => {
   await db?.end();
   await database?.destroy();
+});
+
+describe('migration 223 over 216', () => {
+  it('drops every content CHECK, keeps the version checks, and keeps existing rows', async () => {
+    const checks = (await ownerSql(
+      `select pg_get_constraintdef(oid) def from pg_constraint
+        where conrelid = 'public.entity_headers'::regclass and contype = 'c' order by 1`,
+    )).map((row) => row.def as string);
+    expect(checks.filter((def) => /when_to_use|summary|keywords/.test(def))).toEqual([]);
+    expect(checks.some((def) => def.includes('pinned_version > 0'))).toBe(true);
+    expect(checks.some((def) => /\(version > 0\)/.test(def))).toBe(true);
+    expect(await ownerSql(`select to_regprocedure('internal.valid_header_keywords(text[])') fn`)).toEqual([{ fn: null }]);
+    expect((await resolve([ids.legacyDoc!])).get(ids.legacyDoc!)).toMatchObject({
+      whenToUse: 'Legacy when', summary: 'Legacy summary', keywords: ['a', 'b'], source: 'authored',
+    });
+  });
 });
 
 describe('set_entity_header / clear_entity_header', () => {
@@ -247,34 +279,63 @@ describe('set_entity_header / clear_entity_header', () => {
     expect((await setHeader(ids.task!, { summary: 'Authored task summary' })).header.version).toBe(1);
   });
 
-  it('bounds text and keywords, and refuses an empty header', async () => {
-    await refused(setHeader(ids.task!, { whenToUse: 'w'.repeat(401) }), '22023');
-    await refused(setHeader(ids.task!, { summary: 's'.repeat(601) }), '22023');
-    await refused(setHeader(ids.task!, { summary: '   ' }), '22023');
-    await refused(setHeader(ids.task!, {}), '22023');
-    await refused(setHeader(ids.task!, { summary: 'ok', keywords: Array.from({ length: 13 }, (_, i) => `k${i}`) }), '22023');
-    await refused(setHeader(ids.task!, { summary: 'ok', keywords: ['k'.repeat(41)] }), '22023');
-    await refused(setHeader(ids.task!, { summary: 'ok', keywords: [' '] }), '22023');
-    // Exactly at the bounds is fine; astral characters count once.
-    const edge = await setHeader(ids.task!, {
-      whenToUse: '😀'.repeat(400), summary: 's'.repeat(600), keywords: Array.from({ length: 12 }, (_, i) => `${'k'.repeat(38)}${i}`),
+  it('normalises instead of refusing: no length caps, blanks become null, keywords deduped', async () => {
+    const huge = 's'.repeat(5000);
+    const stored = await setHeader(ids.task!, {
+      whenToUse: '\t  ', summary: `  ${huge}\n`,
+      keywords: [' ', 'k'.repeat(41), ...Array.from({ length: 13 }, (_, i) => `k${i}`), 'k0', ''],
     });
-    expect(edge.header.keywords).toHaveLength(12);
+    expect(stored.header).toMatchObject({ whenToUse: null, summary: huge });
+    expect(stored.header.keywords).toEqual(['k'.repeat(41), ...Array.from({ length: 13 }, (_, i) => `k${i}`)]);
+    expect(stored.warnings).toBeUndefined();
+    // A keywords-only header is a header.
+    const keywordsOnly = await setHeader(ids.task!, { keywords: ['only'] });
+    expect(keywordsOnly.header).toMatchObject({ whenToUse: null, summary: null, keywords: ['only'] });
   });
 
-  it('allows exactly the kinds resolveHeaders lets an authored row override', async () => {
+  it('an empty set is a no-op that keeps the header and warns header_empty', async () => {
+    const before = (await ownerSql(`select version, keywords from public.entity_headers where entity_id = $1`, [ids.task]))[0]!;
+    for (const args of [{}, { whenToUse: ' ', summary: '', keywords: ['  '] }] as SetArgs[]) {
+      const result = await setHeader(ids.task!, args);
+      expect(result.entity.id).toBe(ids.task);
+      expect(result.activity).toBeUndefined();
+      expect(result.warnings).toEqual([expect.objectContaining({ code: 'header_empty' })]);
+    }
+    expect((await ownerSql(`select version, keywords from public.entity_headers where entity_id = $1`, [ids.task]))[0]).toEqual(before);
+    // An explicit stale version is still a conflict, even when the write would be a no-op.
+    await refused(setHeader(ids.task!, { expected: 99 }), '40001');
+  });
+
+  it('stores exactly the kinds resolveHeaders lets an authored row override; any other is a no-op with a warning', async () => {
     const allowed = await ownerSql(
       `select k, internal.header_kind_allowed(k) ok from unnest($1::text[]) k`, [[...SELECTION_HEADER_KINDS]],
     );
     for (const { k, ok } of allowed) expect(ok, k).toBe(k !== 'skill' && k !== 'memory');
-    for (const refusedKind of [ids.skill!, ids.memory!, ids.session!, ids.message!, ids.member!]) {
-      await refused(setHeader(refusedKind, { summary: 'nope' }), '22023');
+    const rowsBefore = await ownerSql(`select entity_id, version from public.entity_headers order by 1`);
+    const why: Record<string, RegExp> = {
+      [ids.skill!]: /skill .*description and when_to_use/,
+      [ids.memory!]: /memory .*subject_scope/,
+      [ids.session!]: /work_session is referenced by id alone/,
+      [ids.message!]: /message is referenced by id alone/,
+      [ids.member!]: /member cannot carry a selection header/,
+    };
+    for (const [target, message] of Object.entries(why)) {
+      for (const result of [await setHeader(target, { summary: 'nope' }), await clearHeader(target, null)]) {
+        expect(result.entity.id).toBe(target);
+        expect(result.activity).toBeUndefined();
+        expect(result.warnings).toEqual([{ code: 'header_not_stored', message: expect.stringMatching(message) }]);
+      }
     }
+    expect(await ownerSql(`select entity_id, version from public.entity_headers order by 1`)).toEqual(rowsBefore);
   });
 
-  it('clears with the expected version, and only then', async () => {
-    await refused(clearHeader(ids.clearDoc!, null), '22023');
-    await refused(clearHeader(ids.clearDoc!, 1), 'P0002');
+  it('clears unguarded or at an explicit version; nothing to clear is a no-op', async () => {
+    const absent = await clearHeader(ids.clearDoc!, null);
+    expect(absent.activity).toBeUndefined();
+    expect(absent.warnings).toEqual([expect.objectContaining({ code: 'header_absent' })]);
+    expect((await clearHeader(ids.clearDoc!, 0)).warnings).toEqual([expect.objectContaining({ code: 'header_absent' })]);
+    // An explicit version is still a guard: none exists, so 1 conflicts.
+    await refused(clearHeader(ids.clearDoc!, 1), '40001');
     await setHeader(ids.clearDoc!, { summary: 'Soon gone' });
     await refused(clearHeader(ids.clearDoc!, 2), '40001');
     const result = await clearHeader(ids.clearDoc!, 1);
@@ -283,6 +344,9 @@ describe('set_entity_header / clear_entity_header', () => {
     expect((await resolve([ids.clearDoc!])).get(ids.clearDoc!)).toMatchObject({ source: 'derived', summary: 'First paragraph. Sections: Clearable' });
     // A fresh header after a clear starts again at version 1.
     expect((await setHeader(ids.clearDoc!, { expected: 0, summary: 'Back' })).header.version).toBe(1);
+    // Unguarded: no expected version at all.
+    expect((await clearHeader(ids.clearDoc!, null)).activity).toEqual(expect.any(String));
+    expect((await ownerSql(`select 1 from public.entity_headers where entity_id = $1`, [ids.clearDoc])).length).toBe(0);
   });
 
   it('replays an idempotent write from the ledger', async () => {

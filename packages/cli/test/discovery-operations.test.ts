@@ -782,11 +782,12 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       const flags = syntax === null ? [] : guardFlagsIn(syntax);
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
-    // Every mapped guard DTO is required, but one: entities.header.set's
-    // expectedVersion is optional (an unguarded header write), so it is not swept.
+    // Every mapped guard DTO is required, but two: entities.header.set's and
+    // entities.header.clear's expectedVersion are optional (unguarded header
+    // writes, lenient headers / migration 223), so they are not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(39); /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
+    expect(swept).toBe(38); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 

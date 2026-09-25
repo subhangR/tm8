@@ -1672,12 +1672,20 @@ export function isCollabError(e: unknown): e is CollabError {
  */
 export interface UndoToken { token: string; label: string; expiresAt?: string }
 
+/**
+ * An advisory the server attached to a SUCCESSFUL command: something the
+ * caller asked for was normalised or not stored, and why. Never a refusal.
+ */
+export interface ResultWarning { code: string; message: string }
+
 export interface CommandResult {
   entity?: EntityDetail;
   edge?: EdgeView;
   activity?: ActivityItem;
   patches: EntitySummary[];
   undo?: UndoToken;
+  /** Present only when the server has something to say (e.g. `header_not_stored`). */
+  warnings?: ResultWarning[];
 }
 
 /** Common envelope on every command (§4 preamble). */

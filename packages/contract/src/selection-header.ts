@@ -82,9 +82,11 @@ export interface SelectionHeader {
 }
 
 /**
- * Authored-header bounds, enforced by `set_entity_header` (migration 216) and
- * mirrored in the input schema so a caller learns them before the round trip.
- * Text is trimmed first; a field that trims to nothing is refused, not dropped.
+ * Authored-header GUIDANCE, not bounds (lenient ruling, migration 223): the
+ * help, the MCP guides and the prompt state these numbers, and nothing refuses
+ * a header over them. Readers clip to them for display and declare it
+ * (`EntityHeaderView.clipped`). Text is trimmed; a field that trims to nothing
+ * is dropped, never refused.
  */
 export const AUTHORED_HEADER_LIMITS = {
   whenToUse: 400,
@@ -107,12 +109,22 @@ export interface EntityHeaderView extends SelectionHeader {
   version: number;
   /** The entity version the authored header was written against; null when not authored. */
   pinnedVersion: number | null;
+  /**
+   * The fields an entity READ cut to `AUTHORED_HEADER_LIMITS` for display
+   * (`entities.get`, `entities.context`). Absent when nothing was cut; never
+   * silent. The header set/clear result carries the full text.
+   */
+  clipped?: HeaderClippedField[];
 }
+
+export type HeaderClippedField = 'whenToUse' | 'summary' | 'keywords';
 
 /**
  * The text of an authored header. The WHOLE header is written: an absent or
  * null field is removed, so a set with only `summary` leaves no `whenToUse`.
- * At least one of `whenToUse` and `summary` is required.
+ * Every field is optional and nothing is refused for content (migration 223):
+ * text is trimmed, blank text and blank keywords are dropped, duplicate
+ * keywords removed. A set with nothing left is a no-op (warning `header_empty`).
  */
 export interface HeaderTextInput {
   whenToUse?: string | null;
@@ -133,13 +145,19 @@ export interface SetEntityHeaderInput extends CommandContext, HeaderTextInput {
 /**
  * DELETE /v2/entities/:id/header — remove the authored header; the entity falls
  * back to its native/derived header. `expectedVersion` (the header's) is
- * required: a clear is never blind.
+ * optional: omitted, the clear is unguarded; given, it must match. Clearing an
+ * entity with no authored header is a no-op (warning `header_absent`).
  */
 export interface ClearEntityHeaderInput extends CommandContext {
-  expectedVersion: number;
+  expectedVersion?: number;
 }
 
-/** The result of `entities.header.set/clear`: the command result, and the header now in effect. */
+/**
+ * The result of `entities.header.set/clear`: the command result, and the
+ * header now in effect. `header` is absent for a kind that has none
+ * (work_session, chat, message, c:*), where the command was a no-op with
+ * warning `header_not_stored`.
+ */
 export interface EntityHeaderResult extends CommandResult {
-  header: EntityHeaderView;
+  header?: EntityHeaderView;
 }

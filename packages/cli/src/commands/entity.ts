@@ -271,8 +271,23 @@ export function renderCommandResult(dto: unknown): string {
   }
   if (r?.edge && r.edge.id !== undefined) lines.push(`edge  ${String(r.edge.id)}`);
   if (r?.undo && typeof r.undo.token === 'string') lines.push(`undo-token: ${r.undo.token}`);
+  lines.push(...warningLines(dto));
   const rendered = lines.filter((l) => l !== '');
   return rendered.length > 0 ? rendered.join('\n') : 'ok';
+}
+
+/**
+ * A result's server `warnings` (`[{code, message}]`), one `WARNING` line each,
+ * as the receipt renders them. A warning is how a lenient write says what it
+ * normalised or did not store, so text output never drops one.
+ */
+export function warningLines(dto: unknown): string[] {
+  const warnings = (dto as { warnings?: unknown } | undefined)?.warnings;
+  if (!Array.isArray(warnings)) return [];
+  return warnings.map((w) => {
+    const { code, message } = (w ?? {}) as { code?: unknown; message?: unknown };
+    return `WARNING ${String(code ?? 'warning')}: ${String(message ?? '')}`;
+  });
 }
 
 function renderAttentionMutation(dto: unknown): string {
@@ -921,18 +936,15 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
 function renderHeaderResult(dto: unknown): string {
   const header = (dto as { header?: Record<string, unknown> } | undefined)?.header;
   if (!header) return renderCommandResult(dto);
-  return renderHeaderLines(header).join('\n');
+  return [...renderHeaderLines(header), ...warningLines(dto)].join('\n');
 }
 
 async function entityHeaderSet(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [...HEADER_TEXT_OPTIONS, 'expect-version', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
+  // Nothing is refused here (lenient headers, migration 223): a set with no
+  // text is a server no-op that keeps the header and warns `header_empty`.
   const header = headerTextOptions(cmd);
-  if (header?.['whenToUse'] === undefined && header?.['summary'] === undefined) {
-    throw new CliError('`tm8 entity header set` needs --when-to-use <text> or --summary <text>', EXIT_USAGE, {
-      hint: 'the whole header is written, so pass every field to keep; `tm8 entity header clear` removes it',
-    });
-  }
   const expectedVersion = cmd.options.integer('expect-version');
   const body: Record<string, unknown> = {
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
@@ -950,17 +962,13 @@ async function entityHeaderSet(cmd: CommandContext): Promise<ExitCode> {
 async function entityHeaderClear(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['expect-version', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
+  // Optional: omitted, the clear is unguarded; given, it must match.
   const expectedVersion = cmd.options.integer('expect-version');
-  if (expectedVersion === undefined) {
-    throw new CliError('`tm8 entity header clear` requires --expect-version <n>', EXIT_USAGE, {
-      hint: 'the header\'s own version is `header.version` in `tm8 entity context <entity-id>`',
-    });
-  }
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.header.clear', {
     params: { id },
     body: withActor(cmd, {
       clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-      expectedVersion,
+      ...(expectedVersion === undefined ? {} : { expectedVersion }),
     }),
   });
   cmd.out.data(data, renderHeaderResult);

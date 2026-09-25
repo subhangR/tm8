@@ -24,7 +24,6 @@ import {
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import {
-  AUTHORED_HEADER_LIMITS,
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
   type ClearEntityHeaderInput,
@@ -134,7 +133,7 @@ import type {
   ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
   Workflow, WorkflowInput, WorkflowState, WorkflowStateInput, WorkflowTransition, WorkflowTransitionInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
-  UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
+  ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
   WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
@@ -1078,6 +1077,7 @@ export const EntityHeaderViewSchema: z.ZodType<EntityHeaderView> = z.object({
   loadPointer: z.string().nullable(),
   version: z.number().int().nonnegative(),
   pinnedVersion: z.number().int().positive().nullable(),
+  clipped: z.array(z.enum(['whenToUse', 'summary', 'keywords'])).optional(),
 }).strict();
 
 export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object({
@@ -1666,14 +1666,15 @@ export const CommandContextSchema: z.ZodType<CommandContext> =
   z.object(commandContextShape).strict();
 
 /**
- * Authored header text. The bounds are migration 216's, checked on the
- * untrimmed text here only as an early refusal; the RPC trims and re-checks,
- * and refuses a header with neither `whenToUse` nor `summary`.
+ * Authored header text. LENIENT (migration 223): no length, count or blank
+ * refusals here or in the RPC, which trims, drops blanks and dedupes keywords.
+ * `AUTHORED_HEADER_LIMITS` is guidance only; the request-size limit is the
+ * only ceiling.
  */
 const headerTextShape = {
-  whenToUse: z.string().min(1).max(AUTHORED_HEADER_LIMITS.whenToUse).nullable().optional(),
-  summary: z.string().min(1).max(AUTHORED_HEADER_LIMITS.summary).nullable().optional(),
-  keywords: z.array(z.string().min(1).max(AUTHORED_HEADER_LIMITS.keyword)).max(AUTHORED_HEADER_LIMITS.keywords).optional(),
+  whenToUse: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  keywords: z.array(z.string()).optional(),
 };
 export const HeaderTextInputSchema: z.ZodType<HeaderTextInput> = z.object(headerTextShape).strict();
 
@@ -2240,12 +2241,18 @@ export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
   expiresAt: z.string().optional(),
 }).strict();
 
+export const ResultWarningSchema: z.ZodType<ResultWarning> = z.object({
+  code: z.string(),
+  message: z.string(),
+}).strict();
+
 export const CommandResultSchema: z.ZodType<CommandResult> = z.lazy(() => z.object({
   entity: EntityDetailSchema.optional(),
   edge: EdgeViewSchema.optional(),
   activity: ActivityItemSchema.optional(),
   patches: z.array(EntitySummarySchema),
   undo: UndoTokenSchema.optional(),
+  warnings: z.array(ResultWarningSchema).optional(),
 }).strict());
 
 // ---------------------------------------------------------------------------
@@ -2358,6 +2365,7 @@ export const ArtifactsPublishInputSchema: z.ZodType<ArtifactsPublishInput> = z.o
   manifest: ArtifactManifestSchema,
   files: ArtifactInlineFilesSchema.optional(),
   sourceWorkSessionId: EntityIdSchema.nullable().optional(),
+  header: HeaderTextInputSchema.optional(),
 }).strict();
 
 export const ArtifactsPreviewStartInputSchema: z.ZodType<ArtifactsPreviewStartInput> = z.object({
@@ -2611,7 +2619,7 @@ export const SetEntityHeaderInputSchema: z.ZodType<SetEntityHeaderInput> = z.obj
 
 export const ClearEntityHeaderInputSchema: z.ZodType<ClearEntityHeaderInput> = z.object({
   ...commandContextShape,
-  expectedVersion: z.number().int().positive(),
+  expectedVersion: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const EntityHeaderResultSchema: z.ZodType<EntityHeaderResult> = z.lazy(() => z.object({
@@ -2620,7 +2628,8 @@ export const EntityHeaderResultSchema: z.ZodType<EntityHeaderResult> = z.lazy(()
   activity: ActivityItemSchema.optional(),
   patches: z.array(EntitySummarySchema),
   undo: UndoTokenSchema.optional(),
-  header: EntityHeaderViewSchema,
+  warnings: z.array(ResultWarningSchema).optional(),
+  header: EntityHeaderViewSchema.optional(),
 }).strict());
 
 export const TickCriteriaInputSchema: z.ZodType<TickCriteriaInput> = z.object({

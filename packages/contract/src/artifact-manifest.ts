@@ -404,6 +404,11 @@ export interface ArtifactsPublishInput extends CommandContext {
   /** Bytes for manifest entries not already registered in the space's blob store. */
   files?: ArtifactInlineFile[];
   sourceWorkSessionId?: EntityId | null;
+  /**
+   * An authored selection header, applied as a header set in the same
+   * transaction AFTER the new revision is current, so it pins that revision.
+   */
+  header?: HeaderTextInput;
 }
 
 /** POST /v2/artifacts/:artifactId/preview-sessions — mint a viewer-bound preview. */

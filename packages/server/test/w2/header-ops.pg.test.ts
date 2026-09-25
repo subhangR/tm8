@@ -5,14 +5,20 @@
  * Through the production registry over a real PostgreSQL scratch database:
  *   - `entities.get` and the v2 `entities.context` carry the header once it
  *     is authored, with its own `version`, and nothing before that;
- *   - set writes an authored header, never moving `entities.version`; a stale
- *     header version is refused; clear falls back to the derived header;
- *   - `entities.create` writes a header in the create's transaction, and a
- *     kind that cannot carry one refuses the whole create;
+ *   - set writes an authored header, never moving `entities.version`; an
+ *     EXPLICIT stale header version is refused; clear falls back to the
+ *     derived header, with or without a version;
+ *   - LENIENT (migration 223): nothing is refused for content or kind. A long
+ *     header is stored whole and the READ views clip it, declared in
+ *     `clipped`; an empty set, a clear with nothing to clear and a kind that
+ *     stores no header are no-ops that say so in `warnings`;
+ *   - `entities.create` writes a header in the create's transaction, and on a
+ *     kind that cannot carry one the create still succeeds, with a warning;
  *   - a kind with no header (work_session) reads none.
  *
- * The RPC-level rules (RLS, kind allowlist, bounds, the teammate edit right)
- * are pinned in test/db/entity-headers.pg.test.ts; this is the operation seam.
+ * The RPC-level rules (RLS, kind allowlist, normalisation, the teammate edit
+ * right) are pinned in test/db/entity-headers.pg.test.ts; this is the
+ * operation seam.
  */
 import type { EntityHeaderView, OperationName } from '@tm8/contract';
 import { getOperation } from '@tm8/contract';
@@ -37,7 +43,8 @@ const OWNER = {
 };
 
 interface Detail { id: string; kind: string; version: number; header?: EntityHeaderView }
-interface HeaderResult { entity: Detail; header: EntityHeaderView; activity?: { id: string } }
+interface Warning { code: string; message: string }
+interface HeaderResult { entity: Detail; header?: EntityHeaderView; activity?: { id: string }; warnings?: Warning[] }
 
 let database: W1ScratchDatabase;
 let pgDb: Db;
@@ -138,13 +145,13 @@ describe('entities.header.set / clear (I4)', () => {
     const result = await call<HeaderResult>('entities.header.set', { id: F.D }, {
       body: { expectedVersion: 1, whenToUse: 'Load when tuning context budgets' },
     });
-    expect(result.header.version).toBe(2);
-    expect(result.header.keywords).toEqual([]);
+    expect(result.header?.version).toBe(2);
+    expect(result.header?.keywords).toEqual([]);
     // The summary falls back to the derived one, field by field.
-    expect(result.header.summary).not.toBe('Notes on the context read');
+    expect(result.header?.summary).not.toBe('Notes on the context read');
   });
 
-  it('clear needs the header version and falls back to the derived header', async () => {
+  it('an explicit stale version on clear still conflicts; the right one clears to the derived header', async () => {
     const err = await refusal(() => call('entities.header.clear', { id: F.D }, { body: { expectedVersion: 1 } }));
     expect(err.code).toBe('version_conflict');
     const cleared = await call<HeaderResult>('entities.header.clear', { id: F.D }, { body: { expectedVersion: 2 } });
@@ -158,9 +165,74 @@ describe('entities.header.set / clear (I4)', () => {
     expect((await context(F.D)).header).toBeUndefined();
   });
 
-  it('refuses a kind that cannot carry a header', async () => {
-    const err = await refusal(() => call('entities.header.set', { id: F.WS }, { body: { summary: 'nope' } }));
-    expect(err.code).toBe('invalid_input');
+  it('clear without a version is unguarded; clear with no header is a no-op that says so', async () => {
+    await call<HeaderResult>('entities.header.set', { id: F.D }, { body: { summary: 'Short-lived' } });
+    const cleared = await call<HeaderResult>('entities.header.clear', { id: F.D }, { body: {} });
+    expect(cleared.header).toMatchObject({ source: 'derived', version: 0 });
+    expect(cleared.activity).toBeDefined();
+    expect(cleared.warnings).toBeUndefined();
+    const again = await call<HeaderResult>('entities.header.clear', { id: F.D }, { body: {} });
+    expect(again.activity).toBeUndefined();
+    expect(again.warnings).toEqual([expect.objectContaining({ code: 'header_absent' })]);
+  });
+
+  it('a set with nothing left after trimming is a no-op that keeps the header and warns', async () => {
+    await call<HeaderResult>('entities.header.set', { id: F.D }, { body: { whenToUse: 'Keep me' } });
+    const empty = await call<HeaderResult>('entities.header.set', { id: F.D }, {
+      body: { whenToUse: '   ', summary: '', keywords: [' '] },
+    });
+    expect(empty.warnings).toEqual([expect.objectContaining({ code: 'header_empty' })]);
+    expect(empty.activity).toBeUndefined();
+    expect(empty.header).toMatchObject({ whenToUse: 'Keep me', version: 1 });
+    await call('entities.header.clear', { id: F.D }, { body: {} });
+  });
+
+  it('stores a 5,000-char summary whole; get and context clip it and declare the cut', async () => {
+    const summary = 'x'.repeat(5000);
+    const set = await call<HeaderResult>('entities.header.set', { id: F.T }, {
+      body: { whenToUse: '  Open when checking the clip  ', summary, keywords: ['', 'clip', 'clip'] },
+    });
+    // The write's own result carries the full text, normalised.
+    expect(set.header).toMatchObject({ whenToUse: 'Open when checking the clip', summary, keywords: ['clip'] });
+    expect(set.header?.clipped).toBeUndefined();
+    const stored = await database.query<{ n: number }>(
+      'select char_length(summary)::int n from public.entity_headers where entity_id = $1', [F.T],
+    );
+    expect(stored[0]?.n).toBe(5000);
+    for (const read of [await get(F.T), await context(F.T)]) {
+      expect(read.header?.summary).toBe(`${'x'.repeat(599)}…`);
+      expect(read.header?.whenToUse).toBe('Open when checking the clip');
+      expect(read.header?.clipped).toEqual(['summary']);
+    }
+  });
+
+  it('a kind that stores no header is a no-op success with a warning, not a refusal', async () => {
+    const ws = await call<HeaderResult>('entities.header.set', { id: F.WS }, { body: { summary: 'nope' } });
+    expect(ws.entity.id).toBe(F.WS);
+    expect(ws.header).toBeUndefined();
+    expect(ws.warnings).toEqual([{ code: 'header_not_stored', message: expect.stringContaining('referenced by id alone') }]);
+    expect((await call<HeaderResult>('entities.header.clear', { id: F.WS }, { body: {} })).warnings)
+      .toEqual([expect.objectContaining({ code: 'header_not_stored' })]);
+
+    const skill = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const id = (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+      await client.query(
+        `insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'skill', 0, $3)`,
+        [id, F.space, F.member],
+      );
+      await client.query(
+        `insert into public.skills(entity_id, space_id, name, description, content) values ($1, $2, 'hdr-skill', 'Deploys things', 'BODY')`,
+        [id, F.space],
+      );
+      return id;
+    });
+    const onSkill = await call<HeaderResult>('entities.header.set', { id: skill }, { body: { summary: 'ignored' } });
+    // The skill's own header is the one in effect; nothing was stored.
+    expect(onSkill.header).toMatchObject({ source: 'native', summary: 'Deploys things', version: 0 });
+    expect(onSkill.warnings).toEqual([{ code: 'header_not_stored', message: expect.stringContaining('description and when_to_use') }]);
+    const rows = await database.query<{ n: number }>('select count(*)::int n from public.entity_headers where entity_id = $1', [skill]);
+    expect(rows[0]?.n).toBe(0);
   });
 });
 
@@ -181,21 +253,32 @@ describe('entities.create with a header (I4)', () => {
     });
   });
 
-  it('a kind that cannot carry a header refuses the whole create', async () => {
+  it('a kind that cannot carry a header is still created, and the result says the header was skipped', async () => {
     const title = `Memory with a header ${Date.now()}`;
-    const err = await refusal(() => call('entities.create', {}, {
+    const created = await call<{ data: { entity: Detail; warnings?: Warning[] } }>('entities.create', {}, {
       body: {
         spaceId: F.space, kind: 'memory', title,
         content: { statement: title, mechanism: 'm', subjectScope: 's', doesNotEstablish: 'd' },
-        header: { summary: 'not allowed' },
+        header: { summary: 'not stored' },
       },
-    }));
-    expect(err.code).toBe('invalid_input');
-    expect(err.message).toContain('cannot carry a selection header');
-    const rows = await database.query<{ n: number }>(
-      'select count(*)::int n from public.memories where statement = $1',
-      [title],
+    });
+    expect(created.data.entity.kind).toBe('memory');
+    expect(created.data.warnings).toEqual([
+      { code: 'header_not_stored', message: expect.stringContaining('subject_scope') },
+    ]);
+    const rows = await database.query<{ h: number }>(
+      'select count(*)::int h from public.entity_headers where entity_id = $1',
+      [created.data.entity.id],
     );
-    expect(rows[0]?.n).toBe(0);
+    expect(rows[0]?.h).toBe(0);
+  });
+
+  it('a receipt create carries the header warning in the receipt (a blank header on a task)', async () => {
+    const created = await call<{ data: { ok: true; kind: string; warnings: Warning[] } }>('entities.create', {}, {
+      query: new URLSearchParams({ return: 'receipt' }),
+      body: { spaceId: F.space, kind: 'task', title: `Blank header ${Date.now()}`, header: { summary: '   ' } },
+    });
+    expect(created.data).toMatchObject({ ok: true, kind: 'task' });
+    expect(created.data.warnings).toContainEqual(expect.objectContaining({ code: 'header_empty' }));
   });
 });
