@@ -30,7 +30,7 @@ import {
   SPAWN_SELECTION_GROUP_LIMIT,
 } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
-import { LANE_BUNDLED_SKILLS_OFF, MINIMAL_MCP_CONFIG } from '@tm8/execution';
+import { LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, MINIMAL_MCP_CONFIG } from '@tm8/execution';
 import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, INDEX_DERIVED_HEADER_CHARS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
 
 import { LINKED_ROW_CAP } from '../facade/execution-handlers.js';
@@ -238,6 +238,7 @@ export const POLICY_FILES: readonly string[] = [
 /** Exported constants in `POLICY_FILES` that are vocabulary or plumbing, not a knob. */
 export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   HARNESS_SURFACES: 'the closed vocabulary of harnessSurface values, not a setting',
+  CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
@@ -259,6 +260,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'TEXT_LIMIT', group: 'Jev selection', summary: 'Characters of a memory, persona or skill description that may leave the server.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => TEXT_LIMIT },
   { name: 'AUTHORED_HEADER_LIMITS', group: 'Jev selection', summary: 'Authored selection-header GUIDANCE (characters): whenToUse, summary, keyword count and length. Nothing refuses a longer header (migration 223); entity reads clip to these numbers and declare it in `clipped`.', definedIn: 'packages/contract/src/selection-header.ts', read: () => AUTHORED_HEADER_LIMITS },
   { name: 'LANE_BUNDLED_SKILLS_OFF', group: 'Lane launch', summary: 'Bundled Claude Code skills a minimal lane turns off (skillOverrides). Kept: code-review, simplify, security-review, workflow-authoring. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_BUNDLED_SKILLS_OFF },
+  { name: 'LANE_SKILLS_ALWAYS_ON', group: 'Lane launch', summary: 'Skills a minimal lane always keeps fully listed. Every other operator skill (~/.claude/skills, claude.ai-synced) the launch did not equip is turned off with skillOverrides; an equipped native one goes name-only. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_SKILLS_ALWAYS_ON },
   { name: 'MINIMAL_MCP_CONFIG', group: 'Lane launch', summary: 'MCP config a minimal lane runs under --strict-mcp-config.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => MINIMAL_MCP_CONFIG },
   { name: 'DEFAULT_AUTH_RATE_LIMITS', group: 'Network & access', summary: 'Auth rate limits used when the TM8_AUTH_* variables are unset.', definedIn: 'packages/server/src/http/auth-rate-limit.ts', read: () => DEFAULT_AUTH_RATE_LIMITS },
   { name: 'RATE_LIMITED_AUTH_OPS', group: 'Network & access', summary: 'Operations the auth rate limits apply to.', definedIn: 'packages/server/src/http/auth-rate-limit.ts', read: () => [...RATE_LIMITED_AUTH_OPS] },

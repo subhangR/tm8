@@ -686,8 +686,15 @@ export interface LaunchHarnessRecord {
   plugins?: import('./harness-surface.js').HarnessPluginDecisions;
   /** MCP servers the lane runs with (names only; configs are not recorded). */
   mcpServers?: { name: string; source: 'persona' }[];
-  /** Skills the lane's flag-level `skillOverrides` turns off. */
-  skillOverrides?: { off: { name: string; source: 'builtin-trim' | 'plugin-unselected' }[] };
+  /**
+   * Every skill the lane's flag-level `skillOverrides` names, with its reason
+   * (`laneSkillPlan`). `off` also carries `--no-chrome` as `claude-in-chrome`
+   * / `chrome`. `nameOnly` is absent on manifests written before it existed.
+   */
+  skillOverrides?: {
+    off: { name: string; source: import('./harness-surface.js').SkillOverrideSource }[];
+    nameOnly?: { name: string; source: 'native-name-only' }[];
+  };
 }
 
 export interface CreateWorkSessionInput {

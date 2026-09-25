@@ -1373,11 +1373,15 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
       mono: true,
     });
     const overrides = readObject(harness, 'skillOverrides');
-    // A minimal lane switches off the bundled skills lanes never use.
+    // A minimal lane switches off the skills its launch did not choose
+    // (bundled, the operator's own, and the Chrome block), and lists the
+    // equipped native ones by name only.
+    const nameOnly = overrides !== null ? readArray(overrides, 'nameOnly').length : 0;
     facts.push({
-      label: 'Bundled skills',
+      label: 'Harness skills',
       value: inheritRecorded ? 'all'
-        : overrides !== null ? `trimmed (${readArray(overrides, 'off').length} off)`
+        : overrides !== null
+          ? `trimmed (${readArray(overrides, 'off').length} off${nameOnly > 0 ? `, ${nameOnly} name-only` : ''})`
           : `${surface === 'inherit' ? 'all' : 'trimmed'} (declared)`,
       mono: false,
     });

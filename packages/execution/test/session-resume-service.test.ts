@@ -298,6 +298,59 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(graph.statusesFor(SESSION_ID)).toEqual(['failed']);
   });
 
+  it('a resumed minimal claude lane keeps the operator-skill trim and --no-chrome, argv and record', async () => {
+    // SpawnService composes the manifest at TWO sites (spawn and resume); a
+    // harness input wired on one only would resume a lane with every operator
+    // skill listed again. A stub `claude` on PATH gets past the binary
+    // preflight; the PTY is mocked, so it never runs.
+    const configDir = join(dataDir, 'claude-home');
+    await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
+    await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
+    const binDir = join(dataDir, 'bin');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    let command = '';
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(((input: { command: string }) => {
+      command = input.command;
+      return { reused: false };
+    }) as never);
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+
+    const result = await serviceWith({
+      PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: dataDir, CLAUDE_CONFIG_DIR: configDir,
+    }).resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(command).toContain('--no-chrome');
+    expect(command).toContain('"astro":"off"');
+    expect(command).toContain("--resume 'pre-minted-claude-uuid'");
+    expect(result.manifest.launch.harness?.skillOverrides?.off).toContainEqual({ name: 'astro', source: 'user-unselected' });
+  });
+
+  it('TM8_HARNESS_SURFACE=inherit resumes on the bare command: no trim, no --no-chrome, no record', async () => {
+    const configDir = join(dataDir, 'claude-home');
+    await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
+    await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
+    const binDir = join(dataDir, 'bin');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    let command = '';
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(((input: { command: string }) => {
+      command = input.command;
+      return { reused: false };
+    }) as never);
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+
+    const result = await serviceWith({
+      PATH: `${binDir}:${process.env.PATH ?? ''}`, HOME: dataDir, CLAUDE_CONFIG_DIR: configDir, TM8_HARNESS_SURFACE: 'inherit',
+    }).resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(command).toContain("--resume 'pre-minted-claude-uuid'");
+    expect(command).not.toMatch(/--no-chrome|skillOverrides|--strict-mcp-config|enabledPlugins/);
+    expect(result.manifest.launch.harness).toEqual({ surface: 'inherit', surfaceSource: 'env' });
+  });
+
   // --- defect D: a write-once collision is fatal, not silent ----------------
 
   describe('codex native-id capture', () => {

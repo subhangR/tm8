@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { serializeLinkedEntity, serializeSkillIndexEntry } from '@tm8/prompt';
 import { computeEffectiveSkills } from '../src/spawn/effective-skills.js';
-import { LANE_BUNDLED_SKILLS_OFF } from '../src/spawn/harness-surface.js';
+import { LANE_BUNDLED_SKILLS_OFF, LANE_SKILLS_ALWAYS_ON, type ConfigHomeSkill } from '../src/spawn/harness-surface.js';
 import { childLaunchPosture, composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
@@ -27,18 +27,20 @@ const pluginSkill = (id: string, plugin: string, extra: Partial<ResolvedSkillRow
 
 function compose(
   context: SpawnContext,
-  opts: { req?: SpawnRequest; env?: NodeJS.ProcessEnv; installed?: string[] | null } = {},
+  opts: { req?: SpawnRequest; env?: NodeJS.ProcessEnv; installed?: string[] | null; homeSkills?: ConfigHomeSkill[]; contextIndex?: boolean } = {},
 ) {
   const req = opts.req ?? request;
   let built: readonly string[] | null = null;
+  let overrides: Readonly<Record<string, 'off' | 'name-only'>> | undefined;
   const manifest = composeManifest({
     sessionId: 'session', request: req, context, launch: resolveLaunchConfig(req, context, opts.env ?? {}),
     workdir: { mode: 'project', path: '/repo' }, baseUrl: 'http://localhost', homeDir: HOME,
     agentConfigDir: `${HOME}/.claude`, now: new Date('2026-09-24T00:00:00Z'),
-    command: (plugins) => { built = plugins; return `claude plugins=${plugins.join(',')}`; },
-    ...(opts.installed === null ? {} : { harness: { installedPlugins: opts.installed ?? [] } }),
+    command: (plugins, skillOverrides) => { built = plugins; overrides = skillOverrides; return `claude plugins=${plugins.join(',')}`; },
+    ...(opts.installed === null ? {} : { harness: { installedPlugins: opts.installed ?? [], skills: opts.homeSkills ?? [] } }),
+    ...(opts.contextIndex ? { contextIndex: { source: 'env' as const } } : {}),
   });
-  return { manifest, plugins: built as readonly string[] | null };
+  return { manifest, plugins: built as readonly string[] | null, overrides };
 }
 
 describe('F2: computeEffectiveSkills honours launch-enabled plugins', () => {
@@ -65,7 +67,7 @@ describe('F2: the plugin allow set follows the post-budget effective skills', ()
     expect(manifest.launch.command).toBe('claude plugins=sales');
     expect(manifest.effectiveSkills?.native.map((s) => s.entityId)).toEqual(['a']);
     expect(manifest.launch.harness?.plugins).toEqual({
-      allowed: [{ id: 'sales@synced', source: 'effective-skill' }],
+      allowed: [{ id: 'sales@synced', source: 'effective-skill', granularity: 'plugin' }],
       denied: [{ id: 'marketing@synced', because: 'not-chosen' }],
     });
   });
@@ -102,7 +104,13 @@ describe('F1: launch.harness records surface, source, MCP servers and skill over
       surface: 'minimal',
       surfaceSource: 'default',
       mcpServers: [],
-      skillOverrides: { off: LANE_BUNDLED_SKILLS_OFF.map((name) => ({ name, source: 'builtin-trim' })) },
+      skillOverrides: {
+        off: [
+          ...LANE_BUNDLED_SKILLS_OFF.map((name) => ({ name, source: 'builtin-trim' })),
+          { name: 'claude-in-chrome', source: 'chrome' },
+        ],
+        nameOnly: [],
+      },
     });
   });
 
@@ -124,6 +132,107 @@ describe('F1: launch.harness records surface, source, MCP servers and skill over
       .toEqual({ surface: 'inherit', surfaceSource: 'env' });
     const persona = ctx({ teamMember: member({ capabilities: { launch: { harnessSurface: 'minimal' } } }) });
     expect(compose(persona).manifest.launch.harness).toMatchObject({ surface: 'minimal', surfaceSource: 'persona' });
+  });
+});
+
+const userSkill = (id: string, extra: Partial<ResolvedSkillRow> = {}): ResolvedSkillRow => ({
+  entityId: id, name: id, dirName: id, description: `${id} skill`, depth: 0,
+  provider: 'claude', level: 'user', sourcePath: `${HOME}/.claude/skills/${id}/SKILL.md`, ...extra,
+});
+const HOME_SKILLS: ConfigHomeSkill[] = [
+  { key: 'docx', level: 'synced' },
+  { key: 'astro', level: 'user' },
+  { key: 'code-review', level: 'user' },
+  { key: 'graphify', level: 'user' },
+];
+
+describe('the harness loads only what the launch chose: operator skills, name-only, Chrome', () => {
+  it('turns off unequipped operator skills, name-only for an equipped native one, argv == record', () => {
+    const { manifest, overrides } = compose(ctx({ skills: [userSkill('graphify')] }), { homeSkills: HOME_SKILLS });
+    expect(manifest.effectiveSkills?.native.map((s) => s.loadPointer)).toEqual(['/graphify']);
+    expect(overrides).toMatchObject({ docx: 'off', astro: 'off', graphify: 'name-only' });
+    // The always-on list is never named, even by an operator skill sharing a name.
+    for (const name of LANE_SKILLS_ALWAYS_ON) expect(overrides).not.toHaveProperty(name);
+    const record = manifest.launch.harness?.skillOverrides;
+    expect(record?.nameOnly).toEqual([{ name: 'graphify', source: 'native-name-only' }]);
+    expect(record?.off).toEqual(expect.arrayContaining([
+      { name: 'docx', source: 'synced-unselected' },
+      { name: 'astro', source: 'user-unselected' },
+      { name: 'claude-in-chrome', source: 'chrome' },
+    ]));
+    // No trim is silent, and the record invents nothing the argv lacks.
+    const recorded = [...record!.off.filter((o) => o.source !== 'chrome'), ...record!.nameOnly!].map((o) => o.name).sort();
+    expect(recorded).toEqual(Object.keys(overrides!).sort());
+  });
+
+  it('an equipped skill that did not survive into the effective set is turned off, not kept', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify', { missing: true })] }), { homeSkills: HOME_SKILLS });
+    expect(overrides?.graphify).toBe('off');
+    expect(manifest.launch.harness?.skillOverrides?.nameOnly).toEqual([]);
+  });
+
+  it('an equipped native skill that shares a bundled-trim name wins: name-only, not off', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('loop')] }), { homeSkills: [] });
+    expect(overrides?.loop).toBe('name-only');
+    expect(manifest.launch.harness?.skillOverrides?.off.map((o) => o.name)).not.toContain('loop');
+  });
+
+  it('inherit names no skill and records no trim', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify')] }), {
+      homeSkills: HOME_SKILLS, env: { TM8_HARNESS_SURFACE: 'inherit' },
+    });
+    expect(overrides).toBeUndefined();
+    expect(manifest.launch.harness).toEqual({ surface: 'inherit', surfaceSource: 'env' });
+  });
+
+  it('an unmanaged harness (no harness input) leaves the builder on the bundled default', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify')] }), { installed: null });
+    expect(overrides).toBeUndefined();
+    expect('harness' in manifest.launch).toBe(false);
+  });
+});
+
+describe('name-only never leaves a native skill described nowhere (#803 review)', () => {
+  // Enough space skills that the context index's byte budget drops header
+  // text bottom-up; the native skill ranks LAST, so its header goes first.
+  const filler = Array.from({ length: 24 }, (_, i): ResolvedSkillRow => ({
+    entityId: `fill-${i}`, name: `fill-${i}`, depth: 0, description: 'x'.repeat(1500),
+  }));
+
+  it('context index OFF: <skills> carries the description, so an equipped native skill goes name-only', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify')] }), { homeSkills: HOME_SKILLS });
+    expect(manifest.contextIndex).toBeUndefined();
+    expect(manifest.skills.find((s) => s.entityId === 'graphify')?.description).toBe('graphify skill');
+    expect(overrides?.graphify).toBe('name-only');
+  });
+
+  it('context index OFF: an empty description stays fully listed in the harness, neither off nor name-only', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify', { description: '' })] }), { homeSkills: HOME_SKILLS });
+    expect(manifest.effectiveSkills?.native.map((s) => s.entityId)).toEqual(['graphify']);
+    expect(overrides).not.toHaveProperty('graphify');
+    expect(manifest.launch.harness?.skillOverrides?.nameOnly).toEqual([]);
+  });
+
+  it('context index ON with the header kept: name-only', () => {
+    const { overrides, manifest } = compose(ctx({ skills: [userSkill('graphify')] }), { homeSkills: HOME_SKILLS, contextIndex: true });
+    const entry = manifest.contextIndex?.groups.find((g) => g.name === 'skills')?.entries.find((e) => e.id === 'graphify');
+    expect(entry?.headerDropped).toBeFalsy();
+    expect(entry?.header?.whenToUse).toBe('graphify skill');
+    expect(overrides?.graphify).toBe('name-only');
+  });
+
+  it('context index ON with the header budget-dropped: the harness keeps the description', () => {
+    const { overrides, manifest } = compose(
+      ctx({ skills: [...filler, userSkill('graphify')] }),
+      { homeSkills: HOME_SKILLS, contextIndex: true },
+    );
+    const entry = manifest.contextIndex?.groups.find((g) => g.name === 'skills')?.entries.find((e) => e.id === 'graphify');
+    // The precondition: the entry survived as a bare line, its header gone.
+    expect(entry?.headerDropped).toBe(true);
+    expect(manifest.effectiveSkills?.native.map((s) => s.entityId)).toEqual(['graphify']);
+    expect(overrides).not.toHaveProperty('graphify');
+    expect(manifest.launch.harness?.skillOverrides?.nameOnly).toEqual([]);
+    expect(manifest.launch.harness?.skillOverrides?.off.map((o) => o.name)).not.toContain('graphify');
   });
 });
 

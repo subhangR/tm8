@@ -220,7 +220,7 @@ describe('carry-overs from #741', () => {
   it('(a) a resume replays the launch\'s effective-skill plugins instead of re-deriving them', () => {
     const { manifest } = compose(ctx(), { replay: ['sales'], installed: ['marketing@synced', 'sales@synced'] });
     expect(manifest.launch.command).toBe('claude plugins=sales');
-    expect(manifest.launch.harness?.plugins?.allowed).toEqual([{ id: 'sales@synced', source: 'effective-skill' }]);
+    expect(manifest.launch.harness?.plugins?.allowed).toEqual([{ id: 'sales@synced', source: 'effective-skill', granularity: 'plugin' }]);
   });
 });
 
