@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-smoke-6d1f4c77.jsonl",
-  "generatedAt": "2026-09-25T16:34:26.955Z",
+  "generatedAt": "2026-09-25T17:19:22.093Z",
   "rows": 2,
   "measured": 2,
   "excluded": 0,
@@ -132,11 +132,17 @@
         "min": 503175,
         "max": 503175
       },
-      "API requests": {
+      "API requests (lane total, subagents included)": {
         "n": 1,
         "median": 15,
         "min": 15,
         "max": 15
+      },
+      "  of which subagent requests": {
+        "n": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
       },
       "tool calls": {
         "n": 1,
@@ -162,11 +168,17 @@
         "min": 131,
         "max": 131
       },
-      "est. $ per lane": {
+      "est. $ per lane (subagents included)": {
         "n": 1,
         "median": 0.1295353,
         "min": 0.1295353,
         "max": 0.1295353
+      },
+      "  of which subagent $": {
+        "n": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
       },
       "expand rate % (opened / entries)": {
         "n": 1,
@@ -308,11 +320,17 @@
         "min": 437476,
         "max": 437476
       },
-      "API requests": {
+      "API requests (lane total, subagents included)": {
         "n": 1,
         "median": 13,
         "min": 13,
         "max": 13
+      },
+      "  of which subagent requests": {
+        "n": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
       },
       "tool calls": {
         "n": 1,
@@ -338,11 +356,17 @@
         "min": 113,
         "max": 113
       },
-      "est. $ per lane": {
+      "est. $ per lane (subagents included)": {
         "n": 1,
         "median": 0.39743294999999995,
         "min": 0.39743294999999995,
         "max": 0.39743294999999995
+      },
+      "  of which subagent $": {
+        "n": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
       },
       "expand rate % (opened / entries)": {
         "n": 1,
@@ -371,6 +395,9 @@
       "rate": 0,
       "upperBound95": 0.9500000000000001,
       "headerReads": 0,
+      "needleLaunches": 1,
+      "silentContextFailures": 0,
+      "success": 1,
       "flag": false
     },
     "sonnet5/lean": {
@@ -379,6 +406,9 @@
       "rate": 0,
       "upperBound95": 0.9500000000000001,
       "headerReads": 0,
+      "needleLaunches": 1,
+      "silentContextFailures": 0,
+      "success": 1,
       "flag": false
     }
   },
@@ -386,18 +416,22 @@
     "haiku45/lean/needle": {
       "n": 1,
       "success": 1,
+      "scored": 1,
+      "askedTheHuman": 0,
       "deliverableCorrect": 1,
       "rubricMean": 1,
-      "rubricNa": [
+      "notInMean": [
         "aliasCheck"
       ]
     },
     "sonnet5/lean/needle": {
       "n": 1,
       "success": 1,
+      "scored": 1,
+      "askedTheHuman": 0,
       "deliverableCorrect": 1,
       "rubricMean": 1,
-      "rubricNa": [
+      "notInMean": [
         "aliasCheck"
       ]
     }
@@ -432,5 +466,6 @@
       ]
     }
   },
-  "delta": null
+  "delta": null,
+  "delegated": []
 }
