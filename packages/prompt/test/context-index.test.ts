@@ -291,6 +291,19 @@ describe('both prompt frames', () => {
       expect(on.system).not.toContain('<skills>');
     });
 
+    it(`v${promptVersion}: the instruction scopes its restraint to LISTED entries and sends the agent to its assignment (D13)`, () => {
+      const on = composePrompt({ ...base, promptVersion, contextIndex: index });
+      const instruction = on.system.match(/<context_index[^>]*>\n\s*<instruction>([^<]*)<\/instruction>/)![1]!;
+      // The assignment is named first, as outside the index, before any restraint.
+      expect(instruction.startsWith('Your assignment is not in this index, and the index does not replace orienting on it')).toBe(true);
+      expect(instruction).toContain('read it with tm8 entity context on its task id as your orientation rule says, whatever this index holds');
+      // The restraint names listed entries; the old unscoped wording is gone.
+      expect(instruction).toContain('The entries below are what your launch selected besides it. None of them is loaded yet. Open a listed entry only when');
+      expect(instruction).not.toMatch(/None is loaded yet|Open one only when/);
+      // The orientation rule it points to is in the same prompt.
+      expect(`${on.system}\n${on.task}`).toContain(promptVersion === '1' ? 'Orient with one `tm8 entity context &lt;anchor-id&gt;`' : '`tm8 entity context task-1`');
+    });
+
     it(`v${promptVersion}: without contextIndex the frame is byte-identical to the <skills> rendering`, () => {
       const off = composePrompt({ ...base, promptVersion });
       expect(off.system).toContain(serializeSkillIndex(base.skills!));
