@@ -67,3 +67,12 @@
   background: transparent; border: 0; color: var(--pn-ink-3);
   cursor: pointer; font-size: 11px;
 }
+/* I7: the per-group meter sits under the group head, open or collapsed. */
+.cv2-root .lsel__meter { padding: 2px 0 4px; }
+.cv2-root .lsel__meter--count { margin: 0; font-size: 11px; color: var(--pn-ink-3); }
+/* "Budget for this launch": one byte input per group, collapsed by default. */
+.cv2-root .lsel-budget__body { display: flex; flex-direction: column; gap: 6px; }
+.cv2-root .lsel-budget__row { display: flex; align-items: center; gap: 8px; }
+.cv2-root .lsel-budget__row .ls__rowname { min-width: 88px; }
+.cv2-root .lsel-budget__input { width: 110px; }
+.cv2-root .lsel-budget__warn { margin: 4px 0 0; color: var(--pn-wait); }

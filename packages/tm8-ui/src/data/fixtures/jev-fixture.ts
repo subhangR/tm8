@@ -16,6 +16,16 @@
  *   · `group_failed`    — skills fails with `timeout`; the other three answer.
  *   · `no_key`          — every group fails with `no_key` (no TYPESAFE_API_KEY).
  *   · `not_implemented` — the node predates the handler and answers 501.
+ *   · `tight_budget`    — every answer, with budgets small enough to BIND: rows
+ *                         above the floor are left unticked `over-budget`,
+ *                         defaults among them.
+ *   · `index_off`       — every answer, with the context index OFF: references
+ *                         carry 0 prompt bytes and no budget, and a skill's
+ *                         bytes are its `<skills>` line.
+ *
+ * THE FILL mirrors the server's (design 01a0d348 §10 Q5): rank order, skip rows
+ * under the floor, tick while the group's bytes fit its budget — an index group
+ * (skills, references) paying its `<group>` frame too.
  */
 import {
   CollabError,
@@ -31,10 +41,12 @@ import {
   type RankedEntitySource,
   type RelevanceLevel,
   type TeammateSuggestion,
+  SPAWN_SELECTION_REFERENCE_KINDS,
 } from '@tm8/contract';
+import { contextGroupFrameBytes } from '@tm8/prompt';
 import type { JevPort } from '../../jev/port';
 
-export type FixtureJevScenario = 'ok' | 'group_failed' | 'no_key' | 'not_implemented';
+export type FixtureJevScenario = 'ok' | 'group_failed' | 'no_key' | 'not_implemented' | 'tight_budget' | 'index_off';
 
 export interface FixtureJev {
   port: JevPort;
@@ -49,7 +61,13 @@ export interface FixtureJev {
 const USD_PER_INPUT_TOKEN = 42 / 1e9;
 const CHUNK = 60;
 const CANDIDATE_LIMIT = 240;
-const MEMORY_TICK_LIMIT = 32;
+const FLOOR = 1.5;
+/** Node defaults (packages/prompt budgets): skills take what the prompt has left. */
+const BUDGETS: Record<EntityGroup, number | null> = { memories: 12288, skills: null, references: 8192 };
+/** `tight_budget`: small enough that the fixture space's rows overflow them. */
+const TIGHT: Record<EntityGroup, number | null> = { memories: 1500, skills: 1400, references: 1200 };
+
+type EntityGroup = 'memories' | 'skills' | 'references';
 
 const ZERO: JevCost = { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 };
 
@@ -106,13 +124,46 @@ function ranked(
     sources,
     score,
     level: levelOf(score),
-    suggested: score >= 1.5,
+    suggested: score >= FLOOR,
     default: sources.some((source) => source !== 'space'),
     // A plausible entry size, stable per id: a meter has something to count.
     promptBytes: 200 + (hash(`bytes:${row.id}`) % 1200),
     header: { whenToUse: null, summary: row.excerpt || null, keywords: [], source: 'derived', version: 0 },
-    ...(score >= 1.5 ? {} : { reason: 'below-floor' as const }),
+    ...(score >= FLOOR ? {} : { reason: 'below-floor' as const }),
   };
+}
+
+/**
+ * The budget fill: in rank order, a row at or above the floor is ticked while
+ * the group still fits its budget; one that doesn't fit is `over-budget` and
+ * the fill moves on (a smaller row later may still fit). Mutates `items`.
+ */
+export function fillByBudget(
+  group: EntityGroup,
+  items: RankedEntity[],
+  budget: number | null,
+  floor: number,
+  contextIndex: 'on' | 'off',
+): void {
+  let entries = 0;
+  let count = 0;
+  const frame = (n: number) => (group !== 'memories' && contextIndex === 'on' && n > 0 ? contextGroupFrameBytes(group, n) : 0);
+  for (const item of items) {
+    delete item.reason;
+    if (item.score < floor) {
+      item.suggested = false;
+      item.reason = 'below-floor';
+      continue;
+    }
+    if (budget !== null && entries + item.promptBytes + frame(count + 1) > budget) {
+      item.suggested = false;
+      item.reason = 'over-budget';
+      continue;
+    }
+    item.suggested = true;
+    entries += item.promptBytes;
+    count += 1;
+  }
 }
 
 /** Where a fixture candidate "came from" — spread over all four so a checklist shows them. */
@@ -131,27 +182,34 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
 
   const live = (kind: string) => read().filter((row) => row.state.kind === kind && !row.deletedAt);
 
-  function entityGroup(kind: 'memory' | 'skill', input: LaunchSuggestInput): JevGroupResult<EntitySuggestion> {
+  const contextIndex = (): 'on' | 'off' => (scenario === 'index_off' ? 'off' : 'on');
+
+  function entityGroup(group: EntityGroup, input: LaunchSuggestInput): JevGroupResult<EntitySuggestion> {
     if (!input.teamMemberId) return { status: 'skipped', reason: 'no_teammate', cost: ZERO };
-    const rows = live(kind);
+    const kinds: readonly string[] = group === 'memories' ? ['memory'] : group === 'skills' ? ['skill'] : SPAWN_SELECTION_REFERENCE_KINDS;
+    // The subject itself is not its own reference.
+    const rows = read().filter((row) => kinds.includes(row.state.kind) && !row.deletedAt && row.id !== input.subjectId);
     if (rows.length === 0) return { status: 'skipped', reason: 'no_candidates', cost: ZERO };
     const considered = rows.slice(0, CANDIDATE_LIMIT);
+    const index = contextIndex();
     const items = considered
-      .map((row) => ranked(row, kind, sourcesFor(row.id)))
+      .map((row) => ranked(row, row.state.kind as RankedEntity['kind'], sourcesFor(row.id)))
       .sort((a, b) => b.score - a.score);
-    if (kind === 'memory') {
-      // The 32 limit: the lowest-scored rows beyond it are unticked (design §4.2).
-      let ticked = 0;
+    if (index === 'off') {
+      // `promptBytes` never counts bytes that do not reach the prompt.
       for (const item of items) {
-        if (!item.suggested) continue;
-        ticked += 1;
-        if (ticked > MEMORY_TICK_LIMIT) item.suggested = false;
+        if (group === 'references') item.promptBytes = 0;
+        if (group === 'skills') item.promptBytes = 40 + (hash(`line:${item.entityId}`) % 80);
       }
     }
+    const budget = index === 'off' && group === 'references'
+      ? null
+      : (scenario === 'tight_budget' ? TIGHT : BUDGETS)[group];
+    fillByBudget(group, items, budget, FLOOR, index);
     const calls = Math.ceil(considered.length / CHUNK);
     return {
       status: 'ok',
-      value: { items, considered: considered.length, total: rows.length, budget: kind === 'memory' ? 12288 : null, floor: 1.5 },
+      value: { items, considered: considered.length, total: rows.length, budget, floor: FLOOR },
       cost: costFor(calls, considered.length),
     };
   }
@@ -198,10 +256,9 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
     switch (group) {
       case 'model': return modelGroup();
       case 'teammates': return teammatesGroup();
-      case 'memories': return entityGroup('memory', input);
-      case 'skills': return entityGroup('skill', input);
-      // No references in this fixture yet: nothing to rank.
-      case 'references': return { status: 'skipped', reason: 'no_candidates', cost: ZERO };
+      case 'memories':
+      case 'skills':
+      case 'references': return entityGroup(group, input);
     }
   }
 
@@ -223,7 +280,7 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
       }
       const run = add(runTotals.get(input.runId) ?? ZERO, spent);
       runTotals.set(input.runId, run);
-      const result: LaunchSuggestResult = { runId: input.runId, groups, contextIndex: 'on', run };
+      const result: LaunchSuggestResult = { runId: input.runId, groups, contextIndex: contextIndex(), run };
       answered.set(input.requestId, result);
       return structuredClone(result);
     },

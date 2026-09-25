@@ -2,8 +2,9 @@
  * Models the node deliberately offers for a new session.
  *
  * These are concrete provider/tool identifiers, not marketing aliases. The UI
- * renders `label`; the team-member bootstrap stores `model` + `agentTool`; and
- * the execution layer passes the same model to that tool's CLI builder.
+ * renders `label`, and the execution layer passes the same model to that tool's
+ * CLI builder. A model is a choice made on a teammate or per launch; it no
+ * longer mints a teammate of its own (see `HOUSE_TEAMMATE_NAMES`).
  */
 /**
  * Reasoning-effort stops a model accepts, in ascending order.
@@ -44,7 +45,6 @@ export interface LaunchModelCatalogEntry {
   readonly provider: 'anthropic' | 'openai' | 'moonshot' | 'groq';
   readonly agentTool: 'claude-code' | 'codex';
   readonly note: string;
-  readonly seedName: string;
   /** Effort stops this model accepts, ascending. Empty = effort not tunable. */
   readonly efforts: readonly LaunchModelEffort[];
 }
@@ -56,7 +56,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code',
-    seedName: 'Opus 5 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -65,7 +64,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: '1M-context variant via Claude Code',
-    seedName: 'Opus 5 1M Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -74,7 +72,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code',
-    seedName: 'Opus 5.5 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -83,7 +80,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: '1M-context variant via Claude Code',
-    seedName: 'Opus 5.5 1M Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -92,7 +88,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code',
-    seedName: 'Fable 5 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -101,7 +96,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: '1M-context variant via Claude Code',
-    seedName: 'Fable 5 1M Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -110,7 +104,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code — needs Claude Code 2.1.251 or newer',
-    seedName: 'Fable 5.1 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -119,7 +112,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: '1M-context variant via Claude Code — needs Claude Code 2.1.251 or newer',
-    seedName: 'Fable 5.1 1M Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -128,7 +120,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'openai',
     agentTool: 'codex',
     note: 'GPT-6 Astra via Codex CLI — low, medium, high, xhigh, max and ultra effort',
-    seedName: 'GPT 6 Astra Teammate',
     efforts: CODEX_ULTRA_EFFORTS,
   },
   {
@@ -137,7 +128,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'openai',
     agentTool: 'codex',
     note: 'Sol coding variant via Codex CLI',
-    seedName: 'GPT 5.6 Teammate',
     efforts: CODEX_EFFORTS,
   },
   {
@@ -146,7 +136,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'openai',
     agentTool: 'codex',
     note: 'Balanced coding variant via Codex CLI',
-    seedName: 'GPT 5.6 Terra Teammate',
     efforts: CODEX_EFFORTS,
   },
   {
@@ -155,7 +144,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'openai',
     agentTool: 'codex',
     note: 'Lowest-cost coding variant via Codex CLI',
-    seedName: 'GPT 5.6 Luna Teammate',
     efforts: CODEX_EFFORTS,
   },
   {
@@ -164,7 +152,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code',
-    seedName: 'Sonnet 5 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
@@ -173,7 +160,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Version-pinned fast Anthropic model via Claude Code',
-    seedName: 'Haiku 4.5 Teammate',
     efforts: CLAUDE_CODE_EFFORTS,
   },
 
@@ -205,7 +191,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'moonshot',
     agentTool: 'claude-code',
     note: 'Moonshot reasoning model on Claude Code — runs on your own Kimi key (Settings → Connections)',
-    seedName: 'Kimi K2 Thinking Teammate',
     efforts: [],
   },
   {
@@ -214,7 +199,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'moonshot',
     agentTool: 'claude-code',
     note: 'Faster-serving variant of K2 Thinking — runs on your own Kimi key (Settings → Connections)',
-    seedName: 'Kimi K2 Thinking Turbo Teammate',
     efforts: [],
   },
   {
@@ -223,7 +207,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'moonshot',
     agentTool: 'claude-code',
     note: 'Non-reasoning K2 at turbo throughput — runs on your own Kimi key (Settings → Connections)',
-    seedName: 'Kimi K2 Turbo Teammate',
     efforts: [],
   },
   {
@@ -232,7 +215,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'moonshot',
     agentTool: 'claude-code',
     note: 'Date-pinned K2 — runs on your own Kimi key (Settings → Connections)',
-    seedName: 'Kimi K2 0905 Teammate',
     efforts: [],
   },
 
@@ -254,7 +236,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'OpenAI open-weight 120B on Groq — runs on your own Groq key (Settings → Connections)',
-    seedName: 'GPT-OSS 120B Teammate',
     efforts: GROQ_GPT_OSS_EFFORTS,
   },
   {
@@ -263,7 +244,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Smallest open-weight rung, for cheap mechanical work — runs on your own Groq key (Settings → Connections)',
-    seedName: 'GPT-OSS 20B Teammate',
     efforts: GROQ_GPT_OSS_EFFORTS,
   },
   {
@@ -272,7 +252,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Kimi K2 served by Groq on the Codex side — a DIFFERENT route to Moonshot than the Kimi rows above, which use Claude Code',
-    seedName: 'Kimi K2 Instruct Groq Teammate',
     efforts: [],
   },
   {
@@ -281,7 +260,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Meta Llama 3.3 70B on Groq — runs on your own Groq key (Settings → Connections)',
-    seedName: 'Llama 3.3 70B Teammate',
     efforts: [],
   },
   {
@@ -290,7 +268,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Qwen3 32B on Groq — runs on your own Groq key (Settings → Connections)',
-    seedName: 'Qwen3 32B Teammate',
     efforts: [],
   },
   {
@@ -299,7 +276,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Reasoning distill on Groq — runs on your own Groq key (Settings → Connections)',
-    seedName: 'DeepSeek R1 Distill 70B Teammate',
     efforts: [],
   },
 ] as const satisfies readonly LaunchModelCatalogEntry[];
