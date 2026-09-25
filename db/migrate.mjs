@@ -229,6 +229,7 @@ function cmdUp(url, { dryRun }) {
   const pending = files.filter(({ file }) => !applied.has(file));
   if (pending.length === 0) {
     console.log(`nothing to do — ${files.length} migration(s) already applied to ${redact(url)}`);
+    if (!dryRun) analyzeNeverAnalyzed(url);
     return;
   }
   console.log(`${dryRun ? 'would apply' : 'applying'} ${pending.length} migration(s) to ${redact(url)}`);
@@ -263,7 +264,33 @@ function cmdUp(url, { dryRun }) {
     psql(url, ['-q', '-c', `update public.applied_migrations set duration_ms = ${ms} where filename = '${file}'`]);
     process.stdout.write(`ok (${ms}ms)\n`);
   }
+  if (!dryRun) analyzeNeverAnalyzed(url);
   console.log('migrations applied');
+}
+
+// A table the planner has never seen analyzed (reltuples = -1) is estimated at
+// 10 pages of rows however empty it is, and the wide entity reads left-join ~25
+// such tables: CI measured a 3-row read estimated at 7.8e13 rows. Only DDL puts
+// a table in that state (CREATE, TRUNCATE) and only migrations run DDL, so this
+// is the one place that keeps it from coming back. 225 carries the evidence.
+//
+// After EVERY up, including one with nothing pending: it touches only tables
+// at -1, so the usual cost is one catalog query. A failure is a warning, not a
+// failed deploy — the schema is already correct, only the estimates are not.
+function analyzeNeverAnalyzed(url) {
+  const hasFn = query(url, "select to_regprocedure('internal.analyze_never_analyzed_tables()') is not null");
+  if (hasFn[0]?.[0] !== 't') return;
+  const res = psql(url, ['-A', '-t', '-q', '-c', 'select internal.analyze_never_analyzed_tables()'], { quiet: true });
+  if (!res.ok) {
+    console.warn(`warning: could not analyze never-analyzed tables: ${res.stderr.trim()}`);
+    return;
+  }
+  // A table the login may not ANALYZE comes back as a WARNING on stderr, and
+  // psql exits 0 for it; print it, or the skip is silent.
+  const warnings = res.stderr.split('\n').filter((line) => line.startsWith('WARNING:'));
+  for (const line of warnings) console.warn(`warning: ${line.replace(/^WARNING:\s*/, '')}`);
+  const analyzed = res.stdout.split('\n').filter((line) => line.length > 0);
+  if (analyzed.length) console.log(`analyzed ${analyzed.length} never-analyzed table(s)`);
 }
 
 function cmdCreateDb(url) {

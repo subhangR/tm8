@@ -366,7 +366,7 @@ interface SummaryRow {
  * branching to a different query per kind — would be N round trips for a mixed
  * page and would put the kind→table mapping in two places.
  */
-const SUMMARY_SQL = `
+export const SUMMARY_SQL = `
 select
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,

@@ -80,6 +80,14 @@ transitions to. It becomes reachable the day phase 6 lets a kind point at a
 space workflow — at which point 156's guard needs to ask the trigger's whole
 rule, not half of it.
 
+**`migrate.mjs up` ← 225's `internal.analyze_never_analyzed_tables()`.** After
+every `up` the runner ANALYZEs each table still at `reltuples = -1`, which is
+where a new table (or a TRUNCATE) leaves it. So a migration that creates a table
+does NOT need its own ANALYZE, and the planner never sees the 10-page guess that
+blew the wide entity reads up to ~1e13 rows on CI. Only the runner calls it: a
+database built by applying files directly (the w1 test harness) gets 225's own
+one-time call and nothing after it.
+
 ## Tests
 
 ```bash
