@@ -235,6 +235,7 @@ export {
   headerDraftOf,
   headerDraftsEqual,
   headerInputOf,
+  headerInputOfView,
   headerStaleness,
   parseKeywords,
   staleSentence,

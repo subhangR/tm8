@@ -41,11 +41,12 @@ import { DisabledAction, type UnavailableReason } from '../honesty/DisabledWithR
  * The node normalises rather than refuses and says so in `warnings`, which
  * are shown as notes; anything it does refuse is shown in its own words.
  *
- * CLIPPED READS. An entity read cuts header text to the guidance for display
- * and names the fields it cut (`header.clipped`); only a write's result
- * carries the full text. Re-saving what a clipped read showed would SHORTEN
- * the stored header, so Mark current refuses on a clipped header and the
- * editor says plainly that it holds the shortened text.
+ * CLIPPED READS. Every reader — `entities.get/context` AND the header
+ * commands' own result (#796) — cuts authored text to the guidance and names
+ * the fields it cut (`header.clipped`); the full text lives only in
+ * `entity_headers`. Re-saving what a clipped read showed would SHORTEN the
+ * stored header, so Mark current refuses on a clipped header and the editor
+ * says plainly that it holds the shortened text.
  *
  * UNTRUSTED TEXT. Header text is graph content anyone with edit rights wrote:
  * it renders as React text nodes only, never as HTML or markdown.
