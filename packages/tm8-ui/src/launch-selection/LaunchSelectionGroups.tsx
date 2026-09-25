@@ -6,7 +6,7 @@ import {
   LAUNCH_GROUP_LABEL,
   type LaunchContextRow,
 } from '../domain/launch-selection';
-import type { LaunchSelection } from './useLaunchSelection';
+import type { LaunchSelection, LoadLaunchDefaults } from './useLaunchSelection';
 
 /** The pool a person may ADD from, per group. Undefined: never read into this client (unknown, not empty). */
 export type LaunchSelectionCandidates = Partial<Record<SpawnSelectionGroup, readonly LaunchContextRow[] | undefined>>;
@@ -190,5 +190,56 @@ function SelectionGroup({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** What a launch surface needs to offer the groups: the defaults read and the add pools. */
+export interface LaunchSelectionSources {
+  load?: LoadLaunchDefaults;
+  candidates: LaunchSelectionCandidates;
+}
+
+/**
+ * The Run composer's compact form: one line naming what the launch carries
+ * ("defaults", or each edited group's diff), opening onto the same groups the
+ * launch sheet shows. Collapsed by default — an untouched launch is the
+ * common case, and the line already says it loads the defaults.
+ */
+export function LaunchSelectionDisclosure({
+  selection,
+  groups,
+  candidates,
+}: {
+  selection: LaunchSelection;
+  groups: readonly SpawnSelectionGroup[];
+  candidates: LaunchSelectionCandidates;
+}) {
+  const [open, setOpen] = useState(false);
+  const bodyId = `lsel-body-${useId()}`;
+  const edited = groups.flatMap((group) => {
+    const line = selection.diff(group).line;
+    return line ? [`${LAUNCH_GROUP_LABEL[group]} ${line}`] : [];
+  });
+  return (
+    <div className="lsel-disclosure" data-testid="launch-selection-disclosure">
+      <button
+        type="button"
+        className="lsel-disclosure__toggle"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="ls__eyebrow">CONTEXT</span>
+        <span className="lsel-disclosure__summary">
+          {edited.length ? edited.join(' · ') : 'the launch’s defaults'}
+        </span>
+        <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <div id={bodyId} className="lsel-disclosure__body">
+          <LaunchSelectionGroups selection={selection} groups={groups} candidates={candidates} />
+        </div>
+      ) : null}
+    </div>
   );
 }

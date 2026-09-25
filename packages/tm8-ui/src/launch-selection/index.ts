@@ -7,5 +7,10 @@
 import './launch-selection.css';
 
 export { useLaunchSelection, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
-export { LaunchSelectionGroups, type LaunchSelectionCandidates } from './LaunchSelectionGroups';
+export {
+  LaunchSelectionDisclosure,
+  LaunchSelectionGroups,
+  type LaunchSelectionCandidates,
+  type LaunchSelectionSources,
+} from './LaunchSelectionGroups';
 export type { LaunchDefaultsPort } from './port';

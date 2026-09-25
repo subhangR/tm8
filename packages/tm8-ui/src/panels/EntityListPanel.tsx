@@ -102,6 +102,7 @@ import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
    design import 2026-09-07. `LaunchQuickConfig` remains the inline fallback
    for surfaces not yet migrated (merge flow). */
 import { LaunchComposerPopup } from '../new-session';
+import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
@@ -517,6 +518,8 @@ export interface LaunchSources {
    * menu's Plugins row. Resolves null when the node cannot say.
    */
   loadInstalledPlugins?: LoadInstalledPlugins;
+  /** The launch's per-group context (I9): `launch.defaults` and the add pools. */
+  selection?: LaunchSelectionSources;
 }
 
 /**
@@ -3590,6 +3593,7 @@ export function Tile({
               capacity={props.launch?.capacity}
               jev={props.launch?.jev}
               loadInstalledPlugins={props.launch?.loadInstalledPlugins}
+              selection={props.launch?.selection}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
@@ -3846,6 +3850,7 @@ export function Tile({
             capacity={props.launch?.capacity}
             jev={props.launch?.jev}
               loadInstalledPlugins={props.launch?.loadInstalledPlugins}
+              selection={props.launch?.selection}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf
