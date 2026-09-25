@@ -133,8 +133,16 @@ export function loadPointerFor(
   return `tm8 entity context ${id}`;
 }
 
+/**
+ * The index's one instruction. Its restraint ("open one only when") is scoped
+ * to the LISTED entries, and it says the assignment is not among them (D13):
+ * worded as a general restraint beside a collapsed map, it read as the whole
+ * orientation, and index-on lanes skipped opening their own task.
+ */
 export const CONTEXT_INDEX_INSTRUCTION =
-  'Your launch selected the entries below. None is loaded yet. Open one only when its whenToUse (or, without ' +
+  'If you have an assignment, it is not in this index, and the index does not replace orienting on it: read it with ' +
+  'tm8 entity context on its task id as your orientation rule says, whatever this index holds. The entries ' +
+  'below are what your launch selected besides it. None of them is loaded yet. Open a listed entry only when its whenToUse (or, without ' +
   'one, its summary) matches the step you are on, with tm8 entity context <its id>, or the command in its load ' +
   'attribute when it has one; bytes is what the ' +
   'load brings in, and tm8 entity context pages with --offset, so read the outline first. source="derived" ' +
@@ -239,6 +247,16 @@ function groupOpen(group: PromptContextGroup): string {
  */
 function groupFrameBytes(group: PromptContextGroup): number {
   return utf8Bytes(groupOpen(group)) + 1 + utf8Bytes('  </group>') + 1;
+}
+
+/**
+ * The frame bytes of a group holding `count` entries with nothing omitted:
+ * what the trim charges a group beside its entries' `contextEntryBytes`. Ask
+ * Jev's budget fill counts it, so a ticked set that fits its budget is a set
+ * the launch trim keeps whole.
+ */
+export function contextGroupFrameBytes(name: ContextIndexGroupName, count: number): number {
+  return groupFrameBytes({ name, entries: new Array<PromptContextEntry>(count), omitted: 0 });
 }
 
 export function serializeContextGroup(group: PromptContextGroup): string {

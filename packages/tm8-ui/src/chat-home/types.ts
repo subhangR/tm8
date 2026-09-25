@@ -48,7 +48,7 @@ export type ChatTurnFrame =
 
 /**
  * The chat's latest context reading, published after the server stored it
- * (230). Its own frame, not a turn frame: it describes the conversation, not
+ * (231). Its own frame, not a turn frame: it describes the conversation, not
  * a part of any one turn, so it never enters the turn merge.
  */
 export interface ChatContextFrame {
@@ -171,7 +171,7 @@ export interface ChatThreadSummary {
   state: 'idle' | 'streaming' | 'stopped-continuable' | 'error';
   /** The runtime's own axis — only a live one is still updating `context`. */
   runtimeState?: 'cold' | 'live' | 'stopped';
-  /** The latest stored context reading (230); null until measured. */
+  /** The latest stored context reading (231); null until measured. */
   context?: SessionTranscriptContext | null;
 }
 

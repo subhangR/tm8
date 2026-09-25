@@ -62,13 +62,13 @@ describe('states', () => {
     expect(result.current.toSpawnFields()).toEqual({});
   });
 
-  it('ask() sends all four groups in ONE request, and every group shows asking', () => {
+  it('ask() sends all five groups (I7 added references) in ONE request, and every group shows asking', () => {
     const port = pendingPort();
     const { result } = mount({ port });
     act(() => result.current.ask());
     expect(port.calls).toHaveLength(1);
     const input = port.calls[0]!.input;
-    expect(input.groups).toEqual(['model', 'teammates', 'memories', 'skills']);
+    expect(input.groups).toEqual(['model', 'teammates', 'memories', 'skills', 'references']);
     expect(input.runId).toBe(result.current.runId);
     expect(input.requestId).toMatch(UUID);
     expect(input.subjectId).toBe('task-1');
@@ -76,7 +76,7 @@ describe('states', () => {
     // The sheet reads the saved subject: no draft is sent.
     expect('draft' in input).toBe(false);
     expect(result.current.state).toBe('asking');
-    for (const g of ['model', 'teammates', 'memories', 'skills'] as const) {
+    for (const g of ['model', 'teammates', 'memories', 'skills', 'references'] as const) {
       expect(result.current.groups[g].status).toBe('asking');
     }
   });
@@ -111,7 +111,7 @@ describe('states', () => {
 });
 
 describe('groups are independent', () => {
-  it('all four go out together through the fixture and settle on their own: skills fails, the rest stand', async () => {
+  it('all five go out together through the fixture and settle on their own: skills fails, the rest stand', async () => {
     const seam = createFixtureSeam();
     seam.fixtureControls.setJevScenario('group_failed');
     const { result } = mount({ port: seam.commands.jev });
@@ -119,7 +119,7 @@ describe('groups are independent', () => {
     await waitFor(() => expect(result.current.state).toBe('ready'));
     const requests = seam.fixtureControls.jevRequests();
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.groups).toEqual(['model', 'teammates', 'memories', 'skills']);
+    expect(requests[0]!.groups).toEqual(['model', 'teammates', 'memories', 'skills', 'references']);
     expect(result.current.groups.skills).toMatchObject({ status: 'failed', reason: 'timeout' });
     // The failed call was still costed.
     expect(result.current.groups.skills.status === 'failed' && result.current.groups.skills.cost.calls).toBe(1);

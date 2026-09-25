@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
+import { HOUSE_TEAMMATE_NAMES } from '@tm8/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { observeG15DatabaseOutcome } from '../agentic-observer.js';
@@ -285,11 +285,11 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // the next boot pass. Counted exactly rather than loosened to "more than
     // before", because the point of this cell is that the oracle sees precisely
     // what the operation wrote.
-    // + 2: the Dreamer and Dispatcher teammates seed alongside the model
-    // catalog (D7); + 1: the Dreamer's daily loop seeds ENABLED (D8). Each is
-    // its own ledgered command, counted exactly for the same reason as above.
+    // One per role in the house roster (Dreamer and Dispatcher included);
+    // + 1: the Dreamer's daily loop seeds ENABLED (D8). Each is its own
+    // ledgered command, counted exactly for the same reason as above.
     expect(after.totalCommandLedgerRows).toBe(
-      before.totalCommandLedgerRows + 1 + LAUNCH_MODEL_CATALOG.length + 3,
+      before.totalCommandLedgerRows + 1 + Object.keys(HOUSE_TEAMMATE_NAMES).length + 1,
     );
     expect(after.totalEntityRows).toBeGreaterThan(before.totalEntityRows);
   }, 120_000);

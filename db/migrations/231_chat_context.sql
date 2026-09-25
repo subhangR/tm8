@@ -1,5 +1,5 @@
 -- =============================================================================
--- 230 — chat_context: the latest context-window reading of a chat's runtime
+-- 231 — chat_context: the latest context-window reading of a chat's runtime
 -- (Chat Context, task 01a0d9c2 §4).
 --
 -- WHAT IS HERE
@@ -63,13 +63,13 @@ begin
      where table_schema = 'public' and table_name = 'chats' and column_name = 'context'
        and data_type = 'jsonb' and is_nullable = 'YES'
   ) then
-    raise exception 'VERIFY 230: public.chats.context was not created';
+    raise exception 'VERIFY 231: public.chats.context was not created';
   end if;
   if to_regprocedure('public.set_chat_context(uuid,jsonb)') is null then
-    raise exception 'VERIFY 230: public.set_chat_context was not created';
+    raise exception 'VERIFY 231: public.set_chat_context was not created';
   end if;
   if not has_function_privilege('tm8_app', 'public.set_chat_context(uuid,jsonb)', 'execute') then
-    raise exception 'VERIFY 230: tm8_app cannot execute set_chat_context';
+    raise exception 'VERIFY 231: tm8_app cannot execute set_chat_context';
   end if;
 end
 $verify$;

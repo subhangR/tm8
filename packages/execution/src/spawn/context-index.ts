@@ -28,7 +28,7 @@ import {
   type PromptContextEntry,
   type PromptContextGroup,
 } from '@tm8/prompt';
-import { SPAWN_SELECTION_REFERENCE_KINDS, type SelectionHeader } from '@tm8/contract';
+import { SPAWN_SELECTION_REFERENCE_KINDS, type ContextFloors, type SelectionHeader } from '@tm8/contract';
 import { redactSecretTokens } from './secret-redaction.js';
 import type { ContextVia, DispatcherRoster, ManifestSkillContext, SpawnContext } from './types.js';
 
@@ -111,6 +111,24 @@ export function contextBudgetsFrom(profileSnapshot: unknown): ContextBudgetSetti
   for (const key of ['memories', 'skills', 'references', 'teammates'] as const) {
     const value = at(raw, key);
     if (typeof value === 'number' && Number.isInteger(value) && value >= 0) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * The pinned profile's `contextFloors` (§10 Q5), read like
+ * `contextBudgetsFrom`: only scores in 0..3 count; anything else is the node
+ * default. Ask Jev's budget fill applies them; spawn has no scores to apply
+ * them to (Q5.5).
+ */
+export function contextFloorsFrom(profileSnapshot: unknown): ContextFloors {
+  const at = (v: unknown, key: string): unknown =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>)[key] : undefined;
+  const raw = at(at(profileSnapshot, 'draft'), 'contextFloors');
+  const out: ContextFloors = {};
+  for (const key of ['memories', 'skills', 'references', 'teammates'] as const) {
+    const value = at(raw, key);
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 3) out[key] = value;
   }
   return out;
 }
@@ -302,6 +320,52 @@ const HEADERLESS = new Set(['work_session', 'chat', 'message']);
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
 
 /**
+ * ONE ENTRY BUILDER PER KIND OF ROW. The launch's index and Ask Jev's
+ * `promptBytes` (design 01a0d348 §10 Q5.8) both build entries here, so the
+ * bytes the launch sheet meters are the bytes the launch renders.
+ */
+
+/** A reference or linked teammate: a selected reference, a task's linked row, or its attached file. */
+export function referenceIndexEntry(
+  ref: { entityId: string; kind: string; via: ContextIndexVia; link?: string | null; title: string | null },
+  header: SelectionHeader | undefined,
+): PromptContextEntry {
+  return {
+    id: ref.entityId,
+    kind: ref.kind,
+    via: ref.via,
+    ...(ref.link ? { link: ref.link } : {}),
+    load: loadPointerFor(ref.kind, ref.entityId),
+    ...(HEADERLESS.has(ref.kind) ? {} : withHeader(header, ref.title)),
+  };
+}
+
+/** A kept skill, as `computeEffectiveSkills` described it. */
+export function skillIndexEntry(skill: ManifestSkillContext, via: ContextVia, header: SelectionHeader | undefined): PromptContextEntry {
+  return {
+    id: skill.entityId,
+    kind: 'skill',
+    via: via as ContextIndexVia,
+    // A native skill opens through the harness's own loader (its pointer was
+    // built by `loadPointerFor` in `computeEffectiveSkills`); every other
+    // skill is a tm8 entity and opens with `tm8 entity context`.
+    load: skill.native ? skill.loadPointer : loadPointerFor('skill', skill.entityId),
+    skill: {
+      name: skill.name,
+      provider: skill.provider ?? 'tm8',
+      level: skill.level ?? 'space',
+      native: skill.native === true,
+      implicit: skill.allowImplicitInvocation !== false,
+    },
+    ...(header
+      ? withHeader(header, null)
+      : skill.description
+        ? { header: { whenToUse: skill.description } }
+        : {}),
+  };
+}
+
+/**
  * One roster teammate's index entry: its `mode` and `model` columns are
  * control attributes, its name and header untrusted text. The one builder,
  * so anything that measures a roster entry measures what the prompt renders.
@@ -348,14 +412,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   for (const ref of context.references ?? []) {
     if (seen.has(ref.entityId)) continue;
     seen.add(ref.entityId);
-    references.push({
-      id: ref.entityId,
-      kind: ref.kind,
-      via: ref.via,
-      ...(ref.link ? { link: ref.link } : {}),
-      load: loadPointerFor(ref.kind, ref.entityId),
-      ...(HEADERLESS.has(ref.kind) ? {} : withHeader(headers.get(ref.entityId), ref.title)),
-    });
+    references.push(referenceIndexEntry(ref, headers.get(ref.entityId)));
   }
   for (const task of context.tasks) {
     for (const item of task.linked ?? []) {
@@ -364,27 +421,16 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
       if (selected && REFERENCE_KINDS.has(item.kind)) continue;
       if (seen.has(item.entityId)) continue;
       seen.add(item.entityId);
-      const entry: PromptContextEntry = {
-        id: item.entityId,
-        kind: item.kind,
-        via: 'linked',
-        link: item.link,
-        load: loadPointerFor(item.kind, item.entityId),
-        ...(HEADERLESS.has(item.kind) ? {} : withHeader(headers.get(item.entityId), item.title)),
-      };
+      const entry = referenceIndexEntry({ ...item, via: 'linked' }, headers.get(item.entityId));
       (teammate ? teammates : references).push(entry);
     }
     for (const file of selected ? [] : task.attachments ?? []) {
       if (seen.has(file.fileEntityId)) continue;
       seen.add(file.fileEntityId);
-      references.push({
-        id: file.fileEntityId,
-        kind: 'file',
-        via: 'attached',
-        link: 'attached_to',
-        load: loadPointerFor('file', file.fileEntityId),
-        ...withHeader(headers.get(file.fileEntityId), file.name),
-      });
+      references.push(referenceIndexEntry(
+        { entityId: file.fileEntityId, kind: 'file', via: 'attached', link: 'attached_to', title: file.name },
+        headers.get(file.fileEntityId),
+      ));
     }
   }
 
@@ -402,30 +448,8 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
     rosterUnread = Math.max(0, roster.total - roster.members.length);
   }
 
-  const skills: PromptContextEntry[] = input.skills.map((skill) => {
-    const header = headers.get(skill.entityId);
-    return {
-      id: skill.entityId,
-      kind: 'skill',
-      via: skillVia(context, skill.entityId) as ContextIndexVia,
-      // A native skill opens through the harness's own loader (its pointer was
-      // built by `loadPointerFor` in `computeEffectiveSkills`); every other
-      // skill is a tm8 entity and opens with `tm8 entity context`.
-      load: skill.native ? skill.loadPointer : loadPointerFor('skill', skill.entityId),
-      skill: {
-        name: skill.name,
-        provider: skill.provider ?? 'tm8',
-        level: skill.level ?? 'space',
-        native: skill.native === true,
-        implicit: skill.allowImplicitInvocation !== false,
-      },
-      ...(header
-        ? withHeader(header, null)
-        : skill.description
-          ? { header: { whenToUse: skill.description } }
-          : {}),
-    };
-  });
+  const skills: PromptContextEntry[] = input.skills.map((skill) =>
+    skillIndexEntry(skill, skillVia(context, skill.entityId), headers.get(skill.entityId)));
 
   const firstTask = context.tasks[0]?.id;
   const connections = (id: string): string => `tm8 entity context ${id} --sections connections`;

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>tm8</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #101014;
+        color: #e6e6ea;
+        font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        -webkit-user-select: none;
+        padding: 32px;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      .mark { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; color: #f4f4f7; }
+      .status { min-height: 1.5em; color: #a4a4b0; }
+      .bar { width: 220px; height: 2px; border-radius: 2px; background: #26262e; overflow: hidden; }
+      .bar::after {
+        content: ""; display: block; width: 40%; height: 100%; border-radius: 2px;
+        background: #6f6fe0; animation: slide 1.15s ease-in-out infinite;
+      }
+      @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(360%); } }
+      /* Detail is the failure surface, and it is the only thing here that
+         scrolls or selects: when it is populated the user needs to copy it. */
+      .detail {
+        display: none; max-width: 720px; max-height: 40vh; overflow: auto;
+        white-space: pre-wrap; text-align: left; -webkit-user-select: text;
+        font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #d2a0a0; background: #17171d; border: 1px solid #2b2b34;
+        border-radius: 8px; padding: 12px 14px;
+      }
+      body.failed .bar { display: none; }
+      body.failed .status { color: #f0a6a6; }
+      body.failed .detail:not(:empty) { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="mark">tm8</div>
+    <div class="status" id="status">Starting…</div>
+    <div class="bar" id="bar"></div>
+    <pre class="detail" id="detail"></pre>
+    <script>
+      // Called by the main process via `executeJavaScript`. Two arguments and
+      // no state: a non-empty detail IS the failure signal, so there is no way
+      // to be shown an error without being shown what it was.
+      window.tm8Status = function (message, detail) {
+        document.getElementById('status').textContent = message;
+        document.getElementById('detail').textContent = detail || '';
+        document.body.classList.toggle('failed', Boolean(detail));
+      };
+    </script>
+  </body>
+</html>

@@ -44,7 +44,7 @@ import {
   stopPostmaster,
   type ClusterTarget,
 } from './cluster.js';
-import type { ResolvedSidecarConfig } from './config.js';
+import { resolveSidecarConfig, type ResolvedSidecarConfig } from './config.js';
 import { SidecarError, asSidecarError } from './errors.js';
 import { isTcpPortOpen, waitForReady, type ProbeTarget, type WaitForReadyOptions } from './health.js';
 import { chooseClusterDir, readMajorAt } from './layout.js';
@@ -363,7 +363,13 @@ export class PostgresSidecarManager implements SidecarManager {
       return;
     }
 
-    if (await isTcpPortOpen(this.config.pgPort)) {
+    // Only meaningful when we are actually going to bind TCP. Under the
+    // socket-only profile (`listen_addresses = ''`) the port number names a
+    // socket FILE inside our own 0700 data dir, so someone else holding that
+    // TCP port is not a conflict — and treating it as one would refuse to boot
+    // the desktop app on any machine already running a Postgres on 5442, which
+    // is every developer's.
+    if (this.config.listenAddresses !== '' && (await isTcpPortOpen(this.config.pgPort))) {
       throw new SidecarError(
         'PortInUse',
         `tm8: TCP port ${this.config.pgPort} is already in use by a process that is not this data dir's ` +
@@ -384,6 +390,7 @@ export class PostgresSidecarManager implements SidecarManager {
       pgPort: this.config.pgPort,
       superuser: this.config.superuser,
       logDir: this.config.logDir,
+      listenAddresses: this.config.listenAddresses,
     };
   }
 
@@ -435,4 +442,26 @@ export class PostgresSidecarManager implements SidecarManager {
 
 function defaultRunMigrations(logger: SidecarLogger) {
   return (cfg: ResolvedSidecarConfig) => runSchemaMigrations(cfg, { logger });
+}
+
+export interface EnsureSidecarOptions extends SidecarManagerDeps {
+  readonly env?: NodeJS.ProcessEnv;
+  /** Test-only override of the pinned major. */
+  readonly pgMajor?: number;
+  readonly repoRoot?: string;
+}
+
+/**
+ * One-call boot: resolve config, then run the state machine to RUNNING. The
+ * desktop profile (`desktop.ts`) is the caller — it owns its Postgres, so
+ * nobody hand-starts one.
+ */
+export async function ensureSidecar(opts: EnsureSidecarOptions = {}): Promise<SidecarManager> {
+  const config = await resolveSidecarConfig(opts.env ?? process.env, {
+    ...(opts.pgMajor === undefined ? {} : { pgMajor: opts.pgMajor }),
+    ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
+  });
+  const manager = new PostgresSidecarManager(config, opts);
+  await manager.ensureStarted();
+  return manager;
 }

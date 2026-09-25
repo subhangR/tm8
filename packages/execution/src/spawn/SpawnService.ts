@@ -26,7 +26,12 @@ import {
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
-import { resolveClaudeTrustRoot, trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import {
+  completeClaudeOnboarding,
+  resolveClaudeTrustRoot,
+  trustClaudeWorkspace,
+  trustCodexWorkspace,
+} from './workspace-trust.js';
 import {
   decideTrustWatchdog,
   readTrustDialog,
@@ -119,7 +124,7 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
-import { SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
+import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
@@ -2044,6 +2049,7 @@ export class SpawnService {
       ...(launchSelection.selection ? { selection: launchSelection.selection } : {}),
       ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
       ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
+      ...(launchSelection.contextBudgets ? { contextBudgets: launchSelection.contextBudgets } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -2437,8 +2443,8 @@ export class SpawnService {
   }
 
   /**
-   * Seed Claude's trust for `cwd` and its stable trust root, immediately before
-   * exec. An `unverified` outcome means a concurrent rewrite kept dropping the
+   * Seed Claude's trust for `cwd` and its stable trust root, and its onboarding
+   * flag for a logged-in home, immediately before exec. An `unverified` outcome means a concurrent rewrite kept dropping the
    * entry; the launch goes ahead and the watchdog is the backstop.
    */
   private async seedClaudeTrust(
@@ -2453,6 +2459,13 @@ export class SpawnService {
     if (outcome === 'unverified') {
       this.logger?.warn?.('SpawnService: workspace trust entry did not survive re-assertion', {
         sessionId, cwd, trustRoot,
+      });
+    }
+    // A home that already holds a login must not boot into Claude's first-run
+    // login screen; see completeClaudeOnboarding.
+    if ((await completeClaudeOnboarding(env)) === 'completed') {
+      this.logger?.info('SpawnService: marked Claude onboarding complete for a logged-in config home', {
+        sessionId,
       });
     }
   }
@@ -3576,14 +3589,19 @@ export class SpawnService {
 export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
   selection?: SpawnSelection;
   selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
+  /** The launch's budget override. A malformed record is dropped alone: it changes a trim, never what loads. */
+  contextBudgets?: NonNullable<SpawnRequest['contextBudgets']>;
   invalid?: true;
 } {
+  const budgets = ContextBudgetsSchema.safeParse(posture?.contextBudgets);
+  const contextBudgets = posture?.contextBudgets !== undefined && budgets.success ? { contextBudgets: budgets.data } : {};
   const hasSelection = posture?.selection !== undefined;
   const hasReasons = posture?.selectionReasons !== undefined;
   const selection = SpawnSelectionSchema.safeParse(posture?.selection);
   const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
-  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true };
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true, ...contextBudgets };
   return {
+    ...contextBudgets,
     ...(hasSelection && selection.success ? { selection: selection.data } : {}),
     ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };

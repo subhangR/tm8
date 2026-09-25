@@ -527,7 +527,7 @@ describe.sequential('TM8 Chat storage and door rules', () => {
     expect(Object.keys(summary?.state ?? {}).sort()).toEqual([
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
-      // `context` — the latest context reading (230), null until measured.
+      // `context` — the latest context reading (231), null until measured.
       'about', 'agentTool', 'context', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
       'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);

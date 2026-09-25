@@ -2,7 +2,7 @@
  * THE CONTEXT NUMBER for a chat — the session strip's chip, on the
  * conversation header.
  *
- * The reading is the chat's own (230): the runtime measures every main-thread
+ * The reading is the chat's own (231): the runtime measures every main-thread
  * request, the server stores the latest on the chat and publishes it as a
  * `chat.context` frame. So there is no tail to poll — the header draws what
  * the entity read carried, replaced by each live frame.

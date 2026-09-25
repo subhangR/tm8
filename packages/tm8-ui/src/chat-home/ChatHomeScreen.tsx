@@ -18,6 +18,7 @@ import {
 import type { ConnectionsReader } from '../session-graph/load';
 import type { CockpitStage } from '../routes/types';
 import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
+import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
@@ -820,12 +821,10 @@ export function ChatHomeScreen({
         if (selectionSpaceRef.current !== spaceId) {
           chooseRoot(coldStart === 'composer' ? null : (nextThreads[0]?.rootId ?? null));
         }
-        const seeded = newChatSeedRef.current?.teammateId;
-        setTeammateId(
-          seeded && nextTeammates.some((teammate) => teammate.id === seeded)
-            ? seeded
-            : (nextTeammates[0]?.id ?? ''),
-        );
+        setTeammateId(defaultChatTeammateId(nextTeammates, {
+          seeded: newChatSeedRef.current?.teammateId,
+          pinnedMode,
+        }));
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -836,7 +835,7 @@ export function ChatHomeScreen({
     return () => {
       alive = false;
     };
-  }, [chooseRoot, coldStart, port, spaceId]);
+  }, [chooseRoot, coldStart, pinnedMode, port, spaceId]);
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;

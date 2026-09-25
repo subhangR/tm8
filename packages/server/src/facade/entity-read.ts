@@ -2880,7 +2880,7 @@ export async function hydrateDetail(
 }
 
 /**
- * The stored context reading (230), or null. A row written by an older or
+ * The stored context reading (231), or null. A row written by an older or
  * newer shape reads as "no reading" rather than failing the entity read.
  * Shared with the projector so the boot read and the event agree.
  */

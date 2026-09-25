@@ -76,7 +76,7 @@ class FakeDb implements Db {
   readonly completed: unknown[][] = [];
   readonly states: string[] = [];
   readonly contexts: unknown[][] = [];
-  /** Make `set_chat_context` fail, as a missing 230 or a refused identity would. */
+  /** Make `set_chat_context` fail, as a missing 231 or a refused identity would. */
   failContext = false;
   /** Which identity each claim ran as — 112 requires the CONFIGURING human. */
   readonly claimIdentities: (string | undefined)[] = [];

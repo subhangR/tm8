@@ -72,6 +72,9 @@ declare -A MODULE_OF=(
   [packages/mcp]=small
   [packages/prompt]=small
   [packages/pty-protocol]=small
+  # The Electron shell (bun run desktop): no suite of its own and no @tm8/* edges — it
+  # forks packages/server/dist, which the server module already tests.
+  [apps/desktop]=
   [deploy]=
   [db]=
   [db/migrations]=migrations

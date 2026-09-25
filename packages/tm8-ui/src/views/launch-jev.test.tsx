@@ -135,11 +135,13 @@ describe('each group lands inside its own section', () => {
     const port = answeringPort({
       model: failedGroup('no_key'), teammates: failedGroup('no_key'),
       memories: failedGroup('no_key'), skills: failedGroup('no_key'),
+      // I7: references is a fifth group, asked with the rest; the server answers it no_key too.
+      references: failedGroup('no_key'),
     });
     const view = renderSheet({ jev: port });
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
     expect(view.getByTestId('jev-unavailable').textContent).toBe(`${JEV_UNAVAILABLE_COPY} ${JEV_ADD_KEY_COPY}`);
-    // Said ONCE, inline — a missing key, not four section failures.
+    // Said ONCE, inline — a missing key, not five section failures.
     expect(view.getAllByText(new RegExp(JEV_UNAVAILABLE_COPY))).toHaveLength(1);
     // Actionable (Lane K): the link lands on Settings → Agent credentials.
     navStore.getState().navigate({ view: 'home' });
