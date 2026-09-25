@@ -79,6 +79,7 @@ import type {
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
   EntityContextQuery, EntityContextResult, EntityContextV2View, EntityContextView, EntityCounters, EntityDetail,
+  EntityHeaderReadMode, GetEntityQuery,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
@@ -3886,6 +3887,13 @@ const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'blockers', 'co
  * knobs are legal. v1's rules are unchanged: absent `schema` is v1 until the
  * rollout step (M2/S5) flips the default.
  */
+export const ENTITY_HEADER_READ_MODES = ['authored', 'resolved'] as const satisfies readonly EntityHeaderReadMode[];
+
+/** GET /v2/entities/:id — only `header` is read; other keys are ignored, as they always were. */
+export const GetEntityQuerySchema: z.ZodType<GetEntityQuery> = z.object({
+  header: z.enum(ENTITY_HEADER_READ_MODES).optional(),
+});
+
 export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object({
   schema: z.enum(['v1', 'v2']).optional(),
   sections: uniqueArray(z.enum([
@@ -3897,6 +3905,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   actionsSchema: z.enum(['v1', 'v2']).optional(),
   cursor: CursorSchema.optional(),
   edgeType: z.string().regex(/^[a-z][a-z_]{0,63}$/).optional(),
+  header: z.enum(ENTITY_HEADER_READ_MODES).optional(),
 }).strict().superRefine((query, issues) => {
   const v2 = query.schema === 'v2';
   // c761 §5: a context cursor continues exactly ONE paged v2 section, and

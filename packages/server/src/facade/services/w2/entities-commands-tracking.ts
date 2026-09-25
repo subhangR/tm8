@@ -9,6 +9,7 @@ import {
   decodeCursor,
   encodeCursor,
   isCollabError,
+  GetEntityQuerySchema,
   SELECTION_HEADER_KINDS,
   type ActivityItem,
   type ActorSummary,
@@ -33,6 +34,7 @@ import {
   type TickCriteriaInput,
   type ClearEntityHeaderInput,
   type EntityHeaderResult,
+  type EntityHeaderReadMode,
   type EntityHeaderView,
   type SetEntityHeaderInput,
   type PullInput,
@@ -933,12 +935,34 @@ async function headerOf(q: Querier, detail: EntityDetail): Promise<EntityHeaderV
 const authored = (header: EntityHeaderView | undefined): EntityHeaderView | undefined =>
   header && header.version > 0 ? header : undefined;
 
-/** `entities.get`'s detail, with `header` when one is authored. */
-async function withHeader(q: Querier, detail: EntityDetail): Promise<EntityDetail> {
-  const header = HEADER_KINDS.has(detail.kind)
-    ? await resolveAuthoredHeaderView(q, detail.spaceId, detail.id)
-    : undefined;
+/**
+ * `entities.get`'s detail, with `header` when one is authored — or, under the
+ * opt-in `header=resolved` (I9a), the header launches actually read: authored,
+ * else native, else derived at version 0. The default path is unchanged, so a
+ * read that does not ask stays byte-identical.
+ */
+async function withHeader(q: Querier, detail: EntityDetail, mode: EntityHeaderReadMode = 'authored'): Promise<EntityDetail> {
+  if (!HEADER_KINDS.has(detail.kind)) return detail;
+  const header = mode === 'resolved'
+    ? await headerOf(q, detail)
+    : await resolveAuthoredHeaderView(q, detail.spaceId, detail.id);
   return header ? { ...detail, header } : detail;
+}
+
+/**
+ * The `header` query key of `entities.get`. Only this key is read: the route
+ * took no query before, and it still ignores every other key rather than
+ * start refusing them. An unknown MODE is refused by name — it is a switch,
+ * and a silently ignored typo would read as "no header".
+ */
+function headerReadModeOf(query: URLSearchParams): EntityHeaderReadMode {
+  const raw = query.get('header');
+  if (raw === null) return 'authored';
+  const parsed = GetEntityQuerySchema.safeParse({ header: raw });
+  if (!parsed.success) {
+    throw new CollabError('invalid_input', `header must be 'authored' or 'resolved', got '${raw}'`);
+  }
+  return parsed.data.header ?? 'authored';
 }
 
 /**
@@ -1309,7 +1333,8 @@ export class W2EntitiesCommandsTrackingService {
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
     const id = requireUuidParam(ctx, 'id');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId)));
+    const mode = headerReadModeOf(ctx.query);
+    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
   };
 
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {

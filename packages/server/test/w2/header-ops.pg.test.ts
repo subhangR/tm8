@@ -15,7 +15,10 @@
  *     stores no header are no-ops that say so in `warnings`;
  *   - `entities.create` writes a header in the create's transaction, and on a
  *     kind that cannot carry one the create still succeeds, with a warning;
- *   - a kind with no header (work_session) reads none.
+ *   - a kind with no header (work_session) reads none;
+ *   - `header=resolved` (I9a) is opt-in: it adds the native/derived fallback
+ *     at version 0 and changes nothing else, and a read that does not ask is
+ *     byte-identical to `header=authored`.
  *
  * The RPC-level rules (RLS, kind allowlist, normalisation, the teammate edit
  * right) are pinned in test/db/entity-headers.pg.test.ts; this is the
@@ -117,6 +120,77 @@ describe('header on entity reads (I4)', () => {
   it('a kind with no header reads none', async () => {
     expect((await get(F.WS)).header).toBeUndefined();
     expect((await context(F.WS)).header).toBeUndefined();
+  });
+});
+
+/**
+ * I9a: `header=resolved` is OPT-IN. Pinned before any header is written on
+ * F.D (the describe above and this one run first), so the default read has
+ * nothing authored to carry.
+ */
+describe('header=resolved on entity reads (I9a)', () => {
+  const getWith = (id: string, header?: string): Promise<Detail & Record<string, unknown>> =>
+    call('entities.get', { id }, { query: new URLSearchParams(header ? { header } : {}) });
+  const contextWith = (id: string, extra: Record<string, string> = {}): Promise<Detail & Record<string, unknown>> =>
+    call('entities.context', { id }, { query: new URLSearchParams({ schema: 'v2', ...extra }) });
+  /** The context envelope's clock fields differ per call and are not content. */
+  const steady = (view: Record<string, unknown>): Record<string, unknown> => {
+    const { provenance: _provenance, ...rest } = view;
+    return rest;
+  };
+  const withoutHeader = (view: Record<string, unknown>): Record<string, unknown> => {
+    const { header: _header, ...rest } = view;
+    return rest;
+  };
+
+  it('a read that does not ask is BYTE-IDENTICAL to header=authored, and carries no header', async () => {
+    const plain = await getWith(F.D);
+    expect('header' in plain).toBe(false);
+    expect(JSON.stringify(plain)).toBe(JSON.stringify(await getWith(F.D, 'authored')));
+
+    const plainContext = await contextWith(F.D);
+    expect('header' in plainContext).toBe(false);
+    expect(JSON.stringify(steady(plainContext))).toBe(JSON.stringify(steady(await contextWith(F.D, { header: 'authored' }))));
+  });
+
+  it('get: resolved adds ONLY the fallback header, at version 0; every other byte is the default read', async () => {
+    const plain = await getWith(F.D);
+    const resolved = await getWith(F.D, 'resolved');
+    expect(resolved.header).toMatchObject({ entityId: F.D, version: 0, pinnedVersion: null, stale: false });
+    expect(['native', 'derived']).toContain(resolved.header!.source);
+    expect(JSON.stringify(withoutHeader(resolved))).toBe(JSON.stringify(plain));
+  });
+
+  it('context: resolved carries the same fallback header, and loads it on an explicit-sections read too', async () => {
+    const fromGet = (await getWith(F.D, 'resolved')).header;
+    const resolved = await contextWith(F.D, { header: 'resolved' });
+    expect(resolved.header).toEqual(fromGet);
+    // The header is a CORE section, so it spends budget: the body page is the
+    // one thing that may shrink to make room (and `budget.used` says so).
+    // Everything else is the default read.
+    const plain = await contextWith(F.D);
+    const rest = (view: Record<string, unknown>) => {
+      const { assignment: _assignment, budget: _budget, ...others } = steady(withoutHeader(view));
+      return others;
+    };
+    expect(JSON.stringify(rest(resolved))).toBe(JSON.stringify(rest(plain)));
+    const body = (view: Record<string, unknown>) => (view['assignment'] as { text: string }).text;
+    expect(body(plain).startsWith(body(resolved).replace(/…$/, '').slice(0, 200))).toBe(true);
+
+    expect('header' in (await contextWith(F.D, { sections: 'hierarchy' }))).toBe(false);
+    expect((await contextWith(F.D, { sections: 'hierarchy', header: 'resolved' })).header).toEqual(fromGet);
+  });
+
+  it('a kind with no header reads none, resolved or not', async () => {
+    expect((await getWith(F.WS, 'resolved')).header).toBeUndefined();
+    expect((await contextWith(F.WS, { header: 'resolved' })).header).toBeUndefined();
+  });
+
+  it('an unknown mode is refused by name (a switch, not content)', async () => {
+    const refused = await refusal(() => getWith(F.D, 'derived'));
+    expect(refused.code).toBe('invalid_input');
+    expect(refused.message).toContain("'authored' or 'resolved'");
+    expect((await refusal(() => contextWith(F.D, { header: 'derived' }))).code).toBe('invalid_input');
   });
 });
 

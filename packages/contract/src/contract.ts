@@ -6325,6 +6325,27 @@ export interface EntityContextQuery {
   cursor?: string;
   /** v2 only, with `sections=connections` alone: one edge type, `anchored_to` included. */
   edgeType?: string;
+  /**
+   * v2 only. `resolved` (I9a): carry the RESOLVED selection header — the
+   * native or derived one (version 0) when none is authored — and load it on
+   * an explicit-sections read too. Absent or `authored`: the default, the
+   * header only when one is authored, so a default read stays byte-identical.
+   */
+  header?: EntityHeaderReadMode;
+}
+
+/**
+ * Which selection header an entity read carries (I9a). `authored` (the
+ * default): only an authored one, so reads of the entities nobody has written
+ * a header for stay byte-identical (headers design §9.5). `resolved`: the
+ * header launches actually read — authored, else native, else derived (at
+ * version 0) — so a person can see what an unwritten header falls back to.
+ */
+export type EntityHeaderReadMode = 'authored' | 'resolved';
+
+/** GET /v2/entities/:id query. */
+export interface GetEntityQuery {
+  header?: EntityHeaderReadMode;
 }
 
 export interface EntityContextView {

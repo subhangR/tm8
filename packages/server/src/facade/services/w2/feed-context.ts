@@ -1129,6 +1129,7 @@ export class W2FeedContextService {
         ...(input.offset === undefined ? {} : { offset: input.offset }),
         edgeType: input.edgeType,
         after,
+        header: input.header,
       }));
     }
     // The schema admits only v1 section names when `schema` is not v2.
