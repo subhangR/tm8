@@ -1,0 +1,14 @@
+slice c3 arm index-authored node 4623 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 4 lanes (sonnet5,haiku45 × 2 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c3-rep2.jsonl
+c3/sonnet5/fee#1 session 01a0d9a6-bf24-7719-a534-46ca0aac3289 load 31.02 32.82 32.72
+c3/haiku45/fee#1 session 01a0d9a6-e507-7e93-8f06-dbd9af9c5807 load 28.99 32.33 32.55
+c3/sonnet5/fee#1 idle 140s first=40936 entryMiss=0 score=1.00 $0.473
+c3/haiku45/fee#1 idle 140s first=30884 entryMiss=0 score=1.00 $0.127
+c3/haiku45/category#1 session 01a0d9a9-4256-772f-8ac4-30a738b70826 load 22.56 28.04 30.74
+c3/sonnet5/category#1 session 01a0d9a9-72a7-7d2c-9fb1-96a9e4a19cd7 load 24.96 28.32 30.80
+c3/haiku45/category#1 idle 105s first=30872 entryMiss=0 score=1.00 $0.096
+c3/sonnet5/category#1 idle 145s first=40905 entryMiss=0 score=0.75 $0.399
+slice done
+slice c3 arm index-authored node 4623 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 1 lanes (haiku45 × 1 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c3-rep2.jsonl
+c3/haiku45/turn-date#1 session 01a0d9ac-0adc-7232-b53d-1d2432f9c5f5 load 15.81 22.78 28.08
+c3/haiku45/turn-date#1 idle 327s first=30868 entryMiss=0 score=1.00 $0.253
+slice done

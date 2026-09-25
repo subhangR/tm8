@@ -1,0 +1,6 @@
+- [Harness trim task](harness-trim-task.md) — Trimming unselected skills from Claude Code harness lanes
+- [Probe results](PROBE_RESULTS.md) — Verified skillOverrides format and --no-chrome flag from manifest analysis
+- [Code analysis](code-analysis.md) — Architecture of harness-surface.ts, manifest.ts, and effective-skills
+- [Implementation plan](implementation-plan.md) — Phase-by-phase implementation strategy
+- [Session handoff](SESSION_HANDOFF.md) — Ready-to-implement with exact line numbers and code snippets
+- [Implementation checklist](implementation-checklist.md) — Detailed task checklist for all phases

@@ -1,0 +1,10 @@
+slice c3 arm index-authored node 4623 build 6d1f4c7728ceb08bbb54e97101ea53ef1812f33a: 4 lanes (sonnet5,haiku45 × 2 tasks × 1 reps), max 2 concurrent, out results/2026-09-25-6d1f4c77-c3-pilot.jsonl
+c3/sonnet5/mem-fee#1 session 01a0d95f-8a77-7cdb-85cb-96b18e64abee load 17.78 13.24 9.55
+c3/haiku45/mem-fee#1 session 01a0d95f-e220-7aae-9607-d536535b4a69 load 27.33 15.85 10.61
+c3/sonnet5/mem-fee#1 idle 160s first=- entryMiss=- score=0.60 $- NOT MEASURED: manifest 01a0d95f-8a77-7cdb-85cb-96b18e64abee: dropped 01a0d95d-5caf-7a25-8d52-2eafe45863b2 (byte-budget:body) vs entry state collapsed
+c3/haiku45/turn-date#1 session 01a0d962-49da-7a0a-8c61-0b8359b3456d load 29.84 21.87 13.96
+c3/haiku45/mem-fee#1 idle 162s first=- entryMiss=- score=1.00 $- NOT MEASURED: manifest 01a0d95f-e220-7aae-9607-d536535b4a69: dropped 01a0d95d-5caf-7a25-8d52-2eafe45863b2 (byte-budget:body) vs entry state collapsed
+c3/sonnet5/turn-date#1 session 01a0d963-4f15-72d1-9345-458e13bf95df load 46.48 27.97 16.76
+c3/haiku45/turn-date#1 idle 365s first=30939 entryMiss=0 score=1.00 $0.221
+c3/sonnet5/turn-date#1 idle 423s first=41017 entryMiss=0 score=1.00 $0.964
+slice done
