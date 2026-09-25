@@ -177,6 +177,7 @@ describe('Fill', () => {
       await realRedeliver(...args);
       row.deliveries[0] = { ...row.deliveries[0]!, status: 'pending', lastError: 'redelivered_from: session_deleted' };
     };
+    individual();
     fireEvent.click(screen.getByRole('button', { name: 'Omar' }));
     const detail = await screen.findByTestId('response-detail');
     fireEvent.click(within(detail).getByRole('button', { name: 'Send to a new session' }));
