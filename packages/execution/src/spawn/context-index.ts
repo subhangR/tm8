@@ -12,6 +12,8 @@
 
 import {
   BYTE_BUDGETS,
+  clipIndexText,
+  INDEX_DERIVED_HEADER_CHARS,
   loadPointerFor,
   type ContextIndexGroupName,
   type ContextIndexVia,
@@ -95,13 +97,29 @@ export function skillVia(context: SpawnContext, entityId: string): ContextVia {
   return (row?.depth ?? 0) > 0 ? 'inherited' : 'teammate';
 }
 
-function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header'> {
+/**
+ * An entry's header fields. DERIVED text (nobody wrote it for routing) is cut
+ * to `INDEX_DERIVED_HEADER_CHARS` per field here, and only here: Jev keeps its
+ * 600 (`jevText`), and authored and native text is never cut. Every cut field
+ * is named in `clipped`, together with any authored clip `resolveHeaders`
+ * already declared, so a cut is never silent.
+ */
+function withHeader(header: SelectionHeader | undefined, fallbackName: string | null): Pick<PromptContextEntry, 'bytes' | 'source' | 'stale' | 'header' | 'clipped'> {
   if (!header) return fallbackName ? { header: { name: fallbackName } } : {};
+  const clipped = new Set<string>(header.clipped ?? []);
+  let { whenToUse, summary } = header;
+  if (header.source === 'derived') {
+    const cutWhen = clipIndexText(whenToUse, INDEX_DERIVED_HEADER_CHARS);
+    if (cutWhen !== null) { whenToUse = cutWhen; clipped.add('whenToUse'); }
+    const cutSummary = clipIndexText(summary, INDEX_DERIVED_HEADER_CHARS);
+    if (cutSummary !== null) { summary = cutSummary; clipped.add('summary'); }
+  }
   return {
     bytes: header.bytes,
     source: header.source,
     stale: header.stale,
-    header: { name: header.name, whenToUse: header.whenToUse, summary: header.summary },
+    header: { name: header.name, whenToUse, summary },
+    ...(clipped.size > 0 ? { clipped: [...clipped].sort() } : {}),
   };
 }
 
@@ -203,8 +221,21 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
 
   const firstTask = context.tasks[0]?.id;
   const connections = (id: string): string => `tm8 entity context ${id} --sections connections`;
+  // Links past the spawn's row read have no ids, so they cannot be entries;
+  // they are DECLARED in the references group's omitted count, with the
+  // command that lists them (the first task that has some). A selected
+  // reference set replaces the default links, so there is nothing unread to
+  // declare. The audit records the same count as `groups.references.unread`.
+  const unreadByTask = selected
+    ? []
+    : context.tasks.map((task) => ({
+      id: task.id,
+      unread: Math.max(0, (task.linkedTotal ?? (task.linked ?? []).length) - (task.linked ?? []).length),
+    }));
+  const unread = unreadByTask.reduce((n, t) => n + t.unread, 0);
+  const referencesFetch = unreadByTask.find((t) => t.unread > 0)?.id ?? firstTask;
   const groups: PromptContextGroup[] = [
-    { name: 'references', entries: references, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
+    { name: 'references', entries: references, omitted: unread, ...(referencesFetch ? { fetch: connections(referencesFetch) } : {}) },
     { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },
   ];

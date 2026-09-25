@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  clipIndexText,
   composePrompt,
+  CONTEXT_INDEX_INSTRUCTION,
   contextEntryBytes,
+  contextIndexNames,
+  INDEX_DERIVED_HEADER_CHARS,
   fitContextIndex,
   loadPointerFor,
   parseContextIndex,
@@ -182,5 +186,39 @@ describe('both prompt frames', () => {
   it('survives a JSON round trip through the stored manifest', () => {
     const parsed = parseContextIndex(JSON.parse(JSON.stringify(index)));
     expect(serializeContextIndex(parsed!)).toBe(serializeContextIndex(index));
+  });
+});
+
+describe('I5a follow-ups: declared clip, names the index carries', () => {
+  it('renders clipped="…" as a server attribute, never for a header-dropped entry, and reads it back', () => {
+    const cut: PromptContextEntry = { ...ref(1, 'short'), clipped: ['summary', 'whenToUse'] };
+    expect(serializeContextEntry(cut)).toContain(' clipped="summary,whenToUse" load=');
+    expect(serializeContextEntry({ ...cut, headerDropped: true })).not.toContain('clipped=');
+    expect(serializeContextEntry(ref(2, 'short'))).not.toContain('clipped=');
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify({ groups: [group('references', [cut])] })));
+    expect(parsed!.groups[0]!.entries[0]!.clipped).toEqual(['summary', 'whenToUse']);
+  });
+
+  it('clipIndexText cuts by code point with an ellipsis, and leaves text that fits', () => {
+    expect(clipIndexText('abc', 5)).toBeNull();
+    expect(clipIndexText(null, 5)).toBeNull();
+    expect(clipIndexText('🛠'.repeat(10), 4)).toBe('🛠🛠🛠…');
+    expect(INDEX_DERIVED_HEADER_CHARS).toBe(200);
+  });
+
+  it('contextIndexNames: entries with a rendered name, not header-dropped ones, not skills, nothing when off', () => {
+    const index = {
+      groups: [
+        group('references', [ref(1, 'a'), { ...ref(2, 'b'), headerDropped: true }]),
+        group('skills', [skill(1)]),
+      ],
+    };
+    expect([...contextIndexNames(index)]).toEqual(['doc-1']);
+    expect(contextIndexNames(undefined).size).toBe(0);
+    expect(contextIndexNames({ groups: [] }).size).toBe(0);
+  });
+
+  it('the instruction names the clipped attribute', () => {
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('clipped names header fields cut short');
   });
 });

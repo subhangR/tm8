@@ -1,5 +1,5 @@
 import { serializeMemoryEntry, type PromptSkill } from './skill-index.js';
-import { serializeLaunchIndex, type PromptContextIndex } from './context-index.js';
+import { contextIndexNames, serializeLaunchIndex, type PromptContextIndex } from './context-index.js';
 export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, type PromptSkill } from './skill-index.js';
 /**
  * `@tm8/prompt` — the ONE agent-prompt composer, shared by the spawn path and
@@ -1009,6 +1009,7 @@ export function composePrompt(
   // ---- task --------------------------------------------------------------
   const t: string[] = [];
   t.push(`<tm8_task_prompt count="${tasks.length}">`);
+  const namedInIndex = contextIndexNames(manifest.contextIndex);
   for (const task of tasks) {
     const criteria = strings(task.acceptanceCriteria);
     const body = [
@@ -1034,6 +1035,7 @@ export function composePrompt(
       threadChannelId: task.threadChannelId ?? null,
       linked: task.linked ?? [],
       linkedTotal: task.linkedTotal ?? 0,
+      ...(namedInIndex.size > 0 ? { namedInIndex } : {}),
     }));
   }
   if (tasks.length === 0) {
