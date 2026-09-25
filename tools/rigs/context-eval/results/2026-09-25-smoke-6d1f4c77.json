@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-smoke-6d1f4c77.jsonl",
-  "generatedAt": "2026-09-25T16:32:03.899Z",
+  "generatedAt": "2026-09-25T16:34:26.955Z",
   "rows": 2,
   "measured": 2,
   "excluded": 0,
@@ -20,9 +20,9 @@
       },
       "tm8 kernel bytes": {
         "n": 1,
-        "median": 12379,
-        "min": 12379,
-        "max": 12379
+        "median": 8077,
+        "min": 8077,
+        "max": 8077
       },
       "assignment snapshot bytes": {
         "n": 1,
@@ -60,6 +60,12 @@
         "min": 704,
         "max": 704
       },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 1,
+        "median": 4302,
+        "min": 4302,
+        "max": 4302
+      },
       "harness chars (system + attachments)": {
         "n": 1,
         "median": 33545,
@@ -86,15 +92,21 @@
       },
       "tokens: tm8 kernel (est.)": {
         "n": 1,
-        "median": 3439,
-        "min": 3439,
-        "max": 3439
+        "median": 2244,
+        "min": 2244,
+        "max": 2244
       },
       "tokens: memories expanded (est.)": {
         "n": 1,
         "median": 196,
         "min": 196,
         "max": 196
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 1,
+        "median": 1195,
+        "min": 1195,
+        "max": 1195
       },
       "tokens: context index (est.)": {
         "n": 1,
@@ -184,9 +196,9 @@
       },
       "tm8 kernel bytes": {
         "n": 1,
-        "median": 12377,
-        "min": 12377,
-        "max": 12377
+        "median": 8075,
+        "min": 8075,
+        "max": 8075
       },
       "assignment snapshot bytes": {
         "n": 1,
@@ -224,6 +236,12 @@
         "min": 704,
         "max": 704
       },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 1,
+        "median": 4302,
+        "min": 4302,
+        "max": 4302
+      },
       "harness chars (system + attachments)": {
         "n": 1,
         "median": 33652,
@@ -250,15 +268,21 @@
       },
       "tokens: tm8 kernel (est.)": {
         "n": 1,
-        "median": 3438,
-        "min": 3438,
-        "max": 3438
+        "median": 2243,
+        "min": 2243,
+        "max": 2243
       },
       "tokens: memories expanded (est.)": {
         "n": 1,
         "median": 196,
         "min": 196,
         "max": 196
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 1,
+        "median": 1195,
+        "min": 1195,
+        "max": 1195
       },
       "tokens: context index (est.)": {
         "n": 1,
