@@ -37,7 +37,7 @@ import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../st
 import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { chatAboutTarget } from './useChatAbout';
-import { EntityChatDock, openEntityChat } from '../entity-chat';
+import { EntityChatDock, EntityChatSlot, openEntityChat } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -2432,6 +2432,23 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onLaunchSubmit={submitLaunch}
               onLaunchDispatch={submitDispatch}
+              /* THE CHAT SLOT, placed by Home itself (entity chat §3.1): its
+                 third column, or an overlay under ~1200px. The shell's dock
+                 stands aside on Home — see `surfaceHostsChatSlot`. */
+              chatSlot={
+                <EntityChatSlot
+                  seam={data.seam}
+                  spaceId={data.spaceId}
+                  nodeKey={nodeKey}
+                  skillOptions={data.skillOptions}
+                  viewerName={data.viewerActor?.displayName}
+                  viewerMemberId={viewerMemberId}
+                  onOpenEntity={openChatSubject}
+                  onOpenSubject={openChatSubject}
+                  subjectOf={chatSubjectOf}
+                  teammateLabel={chatTeammateLabel}
+                />
+              }
               chat={(openEntity, regions) => (
                 <ChatHomeSurface
                   seam={data.seam}

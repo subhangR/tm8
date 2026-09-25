@@ -27,12 +27,13 @@ export async function openEntityChat(seam: ChatsAboutSeam, aboutId: EntityId): P
  * WHICH SURFACES DRAW THE SLOT IN THEIR OWN LAYOUT — the seam lanes D and E
  * flip (§3.1: Home's third column / overlay, Work's centre, the phone sheet).
  *
- * `false` for every surface today: until a layout hosts the slot itself, the
+ * `false` for every other surface: until a layout hosts the slot itself, the
  * shell's `EntityChatDock` draws it as a sheet from the right over whatever
  * is on screen, so the verb is usable end to end everywhere. A lane that
  * hosts the slot returns `true` for its view here and mounts `EntityChatSlot`
  * in its own layout; the dock then stands aside on that view by itself.
  */
-export function surfaceHostsChatSlot(_view: NavView): boolean {
-  return false;
+export function surfaceHostsChatSlot(view: NavView): boolean {
+  /* Home: the third column / <1200px overlay (lane D, `HomeView`). */
+  return view.view === 'home';
 }
