@@ -10,9 +10,14 @@
 -- pointing at a folder the space no longer has — `chat_start` would refuse the
 -- same binding ("project is not linked to this space"), but a chat that already
 -- holds it kept resuming there. The guard now also refuses while a
--- non-deleted chat in the space is bound to the project. A chat is a durable,
--- resumable conversation, so "live" is its existence, not its runtime state:
--- delete (or never create) the chat, then unlink.
+-- non-deleted chat in the space is bound to the project, and says how many. A
+-- chat is a durable, resumable conversation, so "live" is its existence, not
+-- its runtime state: delete the chats, then unlink.
+--
+-- COMPAT: `internal.project_visible_to_caller` calls 218's
+-- `internal.member_space_ids()` (so a later space pin on that function narrows
+-- it for free); w2-profiles.pg.test.ts therefore names this file in
+-- DEPENDS_ON_019, as it does 220 and 221.
 --
 -- B4. `public.link_project_w2` (021, last replaced by 166) checked only
 -- `require_space_admin(p_space_id)`. Any space admin could therefore link ANY
@@ -40,7 +45,7 @@ set role tm8_graph_owner;
 
 create or replace function internal.guard_space_project_link() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
-declare active_count integer; frozen boolean; projection_id uuid;
+declare active_count integer; frozen boolean; projection_id uuid; bound_chats integer;
 begin
   if tg_op = 'INSERT' then
     select p.active_link_count, p.link_frozen into active_count, frozen
@@ -75,17 +80,20 @@ begin
       using errcode = '23514', detail = 'project_not_linked';
   end if;
   -- B3 (226): a chat bound to this project in this space is a launch root
-  -- that outlives any one runtime. Same code and detail as the session case,
-  -- so every caller's existing mapping of this refusal still applies.
-  if exists (
-    select 1 from public.chats chat
+  -- that outlives any one runtime — idle, cold, or never turned, it still
+  -- resumes into the project folder. Same code and detail as the session case,
+  -- so every caller's existing mapping of this refusal still applies; the
+  -- message and hint carry the count and the way out.
+  select count(*)::integer into bound_chats
+    from public.chats chat
     join public.entities chat_entity on chat_entity.id = chat.entity_id
-    where chat.space_id = old.space_id
-      and chat.project_id = old.project_id
-      and chat_entity.deleted_at is null
-  ) then
-    raise exception 'Project is bound to a chat in this Space'
-      using errcode = '23514', detail = 'project_not_linked';
+   where chat.space_id = old.space_id
+     and chat.project_id = old.project_id
+     and chat_entity.deleted_at is null;
+  if bound_chats > 0 then
+    raise exception 'Project is bound to % chat(s) in this Space; delete them to unlink it', bound_chats
+      using errcode = '23514', detail = 'project_not_linked',
+            hint = format('Delete the %s chat(s) bound to this project in this Space, then unlink it.', bound_chats);
   end if;
   return old;
 end

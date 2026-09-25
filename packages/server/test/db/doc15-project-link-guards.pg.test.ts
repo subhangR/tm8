@@ -46,9 +46,10 @@ interface Fixture {
   projectA: string;
   /** Linked into B only. */
   projectB: string;
-  /** Linked into A AND B; a chat in A is bound to it. */
+  /** Linked into A AND B; two chats in A are bound to it. */
   projectChat: string;
   chatA: string;
+  chatA2: string;
 }
 
 let database: W1ScratchDatabase;
@@ -103,6 +104,7 @@ async function seed(): Promise<Fixture> {
       projectB: randomUUID(),
       projectChat: randomUUID(),
       chatA: randomUUID(),
+      chatA2: randomUUID(),
     };
     await client.query(
       `insert into public.user_profiles(identity_id, display_name) values ($1, 'H'), ($2, 'H2')`,
@@ -156,19 +158,23 @@ async function seed(): Promise<Fixture> {
     );
     await client.query(
       `insert into public.entities(id, space_id, kind, created_by, visibility)
-       values ($1, $2, 'chat', $3, 'space')`,
-      [ids.chatA, ids.spaceA, ids.memberHA],
+       values ($1, $3, 'chat', $4, 'space'), ($2, $3, 'chat', $4, 'space')`,
+      [ids.chatA, ids.chatA2, ids.spaceA, ids.memberHA],
     );
-    await client.query(
-      `insert into public.chats(
-         entity_id, space_id, title, teammate_id, model, provider, agent_tool,
-         chat_mode, workdir_mode, project_id, cwd, native_session_id,
-         configured_by_identity_id, configured_by_member_id, client_mutation_id
-       ) values ($1,$2,'Doc15 bound chat',$3,'claude-opus-5','anthropic','claude-code',
-                 'ask','project',$4,'/tmp/doc15-chat', gen_random_uuid(), $5, $6, $7)`,
-      [ids.chatA, ids.spaceA, ids.personaA, ids.projectChat, ids.identityH, ids.memberHA,
-        `doc15-chat-${randomUUID()}`],
-    );
+    // Two chats bound to the project, both left at the column defaults: cold
+    // runtime, no turns — idle chats, never started.
+    for (const chatId of [ids.chatA, ids.chatA2]) {
+      await client.query(
+        `insert into public.chats(
+           entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+           chat_mode, workdir_mode, project_id, cwd, native_session_id,
+           configured_by_identity_id, configured_by_member_id, client_mutation_id
+         ) values ($1,$2,'Doc15 bound chat',$3,'claude-opus-5','anthropic','claude-code',
+                   'ask','project',$4,'/tmp/doc15-chat', gen_random_uuid(), $5, $6, $7)`,
+        [chatId, ids.spaceA, ids.personaA, ids.projectChat, ids.identityH, ids.memberHA,
+          `doc15-chat-${randomUUID()}`],
+      );
+    }
     return ids;
   });
 }
@@ -194,38 +200,74 @@ async function linked(spaceId: string, projectId: string): Promise<boolean> {
   });
 }
 
+interface Refusal { code: string; detail?: string; message: string; hint?: string }
+
+/** Unlink `projectChat` from `spaceId` as H; the refusal's fields, or 'ok'. */
+async function unlinkAsH(spaceId: string): Promise<Refusal | 'ok'> {
+  try {
+    await asApp(fixture.identityH, (client) => client.query(
+      'select public.unlink_project_w2($1, $2, $3)',
+      [spaceId, fixture.projectChat, `doc15-b3-${randomUUID()}`],
+    ));
+    return 'ok';
+  } catch (error) {
+    const e = error as { code?: string; detail?: string; message: string; hint?: string };
+    if (typeof e.code !== 'string') throw error;
+    return { code: e.code, detail: e.detail, message: e.message, hint: e.hint };
+  }
+}
+
+async function deleteChat(chatId: string): Promise<void> {
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query('update public.entities set deleted_at = now() where id = $1', [chatId]);
+  });
+}
+
 describe.sequential('doc 15 B3 — unlink is refused while a chat in the space is bound to the project', () => {
-  it('refuses H unlinking the chat-bound project from A (23514 project_not_linked)', async () => {
-    let detail: unknown;
-    const code = await outcome(() => asApp(fixture.identityH, (client) => client.query(
-      `select public.unlink_project_w2($1, $2, 'doc15-b3-refused')`,
-      [fixture.spaceA, fixture.projectChat],
-    )).catch((error: unknown) => {
-      detail = (error as { detail?: unknown }).detail;
-      throw error;
-    }));
-    expect(code).toBe('23514');
-    expect(detail).toBe('project_not_linked');
+  it('precondition — both bound chats are idle: cold runtime, zero turns, not deleted', async () => {
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ runtime_state: string; turns: number; deleted: boolean }>(
+        `select chat.runtime_state,
+                (select count(*)::integer from public.chat_turns t where t.chat_id = chat.entity_id) turns,
+                e.deleted_at is not null deleted
+           from public.chats chat join public.entities e on e.id = chat.entity_id
+          where chat.entity_id = any($1::uuid[])`,
+        [[fixture.chatA, fixture.chatA2]],
+      )).rows;
+    });
+    expect(rows).toEqual([
+      { runtime_state: 'cold', turns: 0, deleted: false },
+      { runtime_state: 'cold', turns: 0, deleted: false },
+    ]);
+  });
+
+  it('refuses H unlinking from A while two idle chats are bound — 23514 project_not_linked, count and remedy stated', async () => {
+    const result = await unlinkAsH(fixture.spaceA);
+    expect(result).toMatchObject({ code: '23514', detail: 'project_not_linked' });
+    const refusal = result as Refusal;
+    expect(refusal.message).toBe('Project is bound to 2 chat(s) in this Space; delete them to unlink it');
+    expect(refusal.hint).toMatch(/^Delete the 2 chat\(s\) bound to this project/);
     expect(await linked(fixture.spaceA, fixture.projectChat)).toBe(true);
   });
 
   it('positive — the same caller unlinks the same project from B, where no chat is bound to it', async () => {
-    expect(await outcome(() => asApp(fixture.identityH, (client) => client.query(
-      `select public.unlink_project_w2($1, $2, 'doc15-b3-other-space')`,
-      [fixture.spaceB, fixture.projectChat],
-    )))).toBe('ok');
+    expect(await unlinkAsH(fixture.spaceB)).toBe('ok');
     expect(await linked(fixture.spaceB, fixture.projectChat)).toBe(false);
   });
 
-  it('positive — once the chat is deleted, the same caller unlinks it from A', async () => {
-    await database.transaction(async (client) => {
-      await client.query('set local role tm8_graph_owner');
-      await client.query('update public.entities set deleted_at = now() where id = $1', [fixture.chatA]);
-    });
-    expect(await outcome(() => asApp(fixture.identityH, (client) => client.query(
-      `select public.unlink_project_w2($1, $2, 'doc15-b3-after-delete')`,
-      [fixture.spaceA, fixture.projectChat],
-    )))).toBe('ok');
+  it('a deleted chat is not counted: one deleted, one idle left -> still refused, "1 chat(s)"', async () => {
+    await deleteChat(fixture.chatA2);
+    const result = await unlinkAsH(fixture.spaceA);
+    expect(result).toMatchObject({ code: '23514', detail: 'project_not_linked' });
+    expect((result as Refusal).message).toBe('Project is bound to 1 chat(s) in this Space; delete them to unlink it');
+    expect(await linked(fixture.spaceA, fixture.projectChat)).toBe(true);
+  });
+
+  it('positive — a deleted chat does not block: with only deleted chats bound, the same caller unlinks from A', async () => {
+    await deleteChat(fixture.chatA);
+    expect(await unlinkAsH(fixture.spaceA)).toBe('ok');
     expect(await linked(fixture.spaceA, fixture.projectChat)).toBe(false);
   });
 });
