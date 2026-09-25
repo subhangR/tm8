@@ -1,0 +1,1060 @@
+{
+  "title": "context-eval report — 2026-09-26-8d53e1de-c3.jsonl",
+  "generatedAt": "2026-09-25T22:14:29.284Z",
+  "rows": 16,
+  "measured": 16,
+  "excluded": 0,
+  "fixtureVersions": [
+    "8ef7c99a61dc4589"
+  ],
+  "builds": [
+    "8d53e1de913946f0b172392e66cd33ed2af12342"
+  ],
+  "cells": {
+    "haiku45/index-authored/memory": {
+      "first-request tokens": {
+        "n": 2,
+        "median": 33023.5,
+        "min": 33020,
+        "max": 33027
+      },
+      "tm8 kernel bytes": {
+        "n": 2,
+        "median": 8092,
+        "min": 8092,
+        "max": 8092
+      },
+      "assignment snapshot bytes": {
+        "n": 2,
+        "median": 2710,
+        "min": 2710,
+        "max": 2710
+      },
+      "context index bytes": {
+        "n": 2,
+        "median": 9301,
+        "min": 9301,
+        "max": 9301
+      },
+      "  references": {
+        "n": 2,
+        "median": 3454,
+        "min": 3454,
+        "max": 3454
+      },
+      "  skills": {
+        "n": 2,
+        "median": 2869,
+        "min": 2869,
+        "max": 2869
+      },
+      "  memories (collapsed)": {
+        "n": 2,
+        "median": 1255,
+        "min": 1255,
+        "max": 1255
+      },
+      "memories expanded bytes (outside the kernel)": {
+        "n": 2,
+        "median": 11626,
+        "min": 11626,
+        "max": 11626
+      },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "harness chars (system + attachments)": {
+        "n": 2,
+        "median": 33551,
+        "min": 33551,
+        "max": 33551
+      },
+      "  skill_listing": {
+        "n": 2,
+        "median": 2310,
+        "min": 2310,
+        "max": 2310
+      },
+      "  Claude in Chrome block": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "remainder chars (estimated: tool schemas)": {
+        "n": 2,
+        "median": 53604.5,
+        "min": 53592,
+        "max": 53617
+      },
+      "tokens: tm8 kernel (est.)": {
+        "n": 2,
+        "median": 2248,
+        "min": 2248,
+        "max": 2248
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 2,
+        "median": 3229,
+        "min": 3229,
+        "max": 3229
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tokens: context index (est.)": {
+        "n": 2,
+        "median": 2584,
+        "min": 2584,
+        "max": 2584
+      },
+      "tokens: harness (est.)": {
+        "n": 2,
+        "median": 9320,
+        "min": 9320,
+        "max": 9320
+      },
+      "resident tm8 bytes (× requests)": {
+        "n": 2,
+        "median": 667437,
+        "min": 522342,
+        "max": 812532
+      },
+      "resident harness chars (× requests)": {
+        "n": 2,
+        "median": 771673,
+        "min": 603918,
+        "max": 939428
+      },
+      "API requests (lane total, subagents included)": {
+        "n": 2,
+        "median": 23,
+        "min": 18,
+        "max": 28
+      },
+      "  of which subagent requests": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tool calls": {
+        "n": 2,
+        "median": 23.5,
+        "min": 19,
+        "max": 28
+      },
+      "input-side tokens (all requests)": {
+        "n": 2,
+        "median": 942119,
+        "min": 721209,
+        "max": 1163029
+      },
+      "output tokens": {
+        "n": 2,
+        "median": 6931,
+        "min": 6150,
+        "max": 7712
+      },
+      "wall seconds": {
+        "n": 2,
+        "median": 152.5,
+        "min": 135,
+        "max": 170
+      },
+      "est. $ per lane (subagents included)": {
+        "n": 2,
+        "median": 0.163936225,
+        "min": 0.13573935,
+        "max": 0.1921331
+      },
+      "  of which subagent $": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "expand rate % (opened / entries)": {
+        "n": 2,
+        "median": 7.142857142857142,
+        "min": 3.571428571428571,
+        "max": 10.714285714285714
+      },
+      "blind-fetch bytes": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories collapsed (Q1)": {
+        "n": 2,
+        "median": 2,
+        "min": 2,
+        "max": 2
+      }
+    },
+    "haiku45/index-authored/needle": {
+      "first-request tokens": {
+        "n": 6,
+        "median": 31047,
+        "min": 31026,
+        "max": 31057
+      },
+      "tm8 kernel bytes": {
+        "n": 6,
+        "median": 8082,
+        "min": 8082,
+        "max": 8082
+      },
+      "assignment snapshot bytes": {
+        "n": 6,
+        "median": 2717,
+        "min": 2710,
+        "max": 2732
+      },
+      "context index bytes": {
+        "n": 6,
+        "median": 11236,
+        "min": 11228,
+        "max": 11266
+      },
+      "  references": {
+        "n": 6,
+        "median": 3424,
+        "min": 3416,
+        "max": 3454
+      },
+      "  skills": {
+        "n": 6,
+        "median": 6149,
+        "min": 6149,
+        "max": 6149
+      },
+      "  memories (collapsed)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories expanded bytes (outside the kernel)": {
+        "n": 6,
+        "median": 704,
+        "min": 704,
+        "max": 704
+      },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "harness chars (system + attachments)": {
+        "n": 6,
+        "median": 33551,
+        "min": 33551,
+        "max": 33551
+      },
+      "  skill_listing": {
+        "n": 6,
+        "median": 2310,
+        "min": 2310,
+        "max": 2310
+      },
+      "  Claude in Chrome block": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "remainder chars (estimated: tool schemas)": {
+        "n": 6,
+        "median": 55464.5,
+        "min": 55404,
+        "max": 55492
+      },
+      "tokens: tm8 kernel (est.)": {
+        "n": 6,
+        "median": 2245,
+        "min": 2245,
+        "max": 2245
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 6,
+        "median": 196,
+        "min": 196,
+        "max": 196
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tokens: context index (est.)": {
+        "n": 6,
+        "median": 3121,
+        "min": 3119,
+        "max": 3129
+      },
+      "tokens: harness (est.)": {
+        "n": 6,
+        "median": 9320,
+        "min": 9320,
+        "max": 9320
+      },
+      "resident tm8 bytes (× requests)": {
+        "n": 6,
+        "median": 280443,
+        "min": 220572,
+        "max": 380266
+      },
+      "resident harness chars (× requests)": {
+        "n": 6,
+        "median": 469714,
+        "min": 369061,
+        "max": 637469
+      },
+      "API requests (lane total, subagents included)": {
+        "n": 6,
+        "median": 14,
+        "min": 11,
+        "max": 19
+      },
+      "  of which subagent requests": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tool calls": {
+        "n": 6,
+        "median": 15,
+        "min": 12,
+        "max": 18
+      },
+      "input-side tokens (all requests)": {
+        "n": 6,
+        "median": 518138.5,
+        "min": 397756,
+        "max": 722336
+      },
+      "output tokens": {
+        "n": 6,
+        "median": 4984,
+        "min": 3936,
+        "max": 7200
+      },
+      "wall seconds": {
+        "n": 6,
+        "median": 123.5,
+        "min": 116,
+        "max": 143
+      },
+      "est. $ per lane (subagents included)": {
+        "n": 6,
+        "median": 0.10435595,
+        "min": 0.08531385000000001,
+        "max": 0.13610055
+      },
+      "  of which subagent $": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "expand rate % (opened / entries)": {
+        "n": 6,
+        "median": 4.166666666666666,
+        "min": 4.166666666666666,
+        "max": 8.333333333333332
+      },
+      "blind-fetch bytes": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories collapsed (Q1)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "sonnet5/index-authored/memory": {
+      "first-request tokens": {
+        "n": 2,
+        "median": 43885,
+        "min": 43879,
+        "max": 43891
+      },
+      "tm8 kernel bytes": {
+        "n": 2,
+        "median": 8090,
+        "min": 8090,
+        "max": 8090
+      },
+      "assignment snapshot bytes": {
+        "n": 2,
+        "median": 2710,
+        "min": 2710,
+        "max": 2710
+      },
+      "context index bytes": {
+        "n": 2,
+        "median": 9301,
+        "min": 9301,
+        "max": 9301
+      },
+      "  references": {
+        "n": 2,
+        "median": 3454,
+        "min": 3454,
+        "max": 3454
+      },
+      "  skills": {
+        "n": 2,
+        "median": 2869,
+        "min": 2869,
+        "max": 2869
+      },
+      "  memories (collapsed)": {
+        "n": 2,
+        "median": 1255,
+        "min": 1255,
+        "max": 1255
+      },
+      "memories expanded bytes (outside the kernel)": {
+        "n": 2,
+        "median": 11626,
+        "min": 11626,
+        "max": 11626
+      },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "harness chars (system + attachments)": {
+        "n": 2,
+        "median": 33658,
+        "min": 33658,
+        "max": 33658
+      },
+      "  skill_listing": {
+        "n": 2,
+        "median": 2310,
+        "min": 2310,
+        "max": 2310
+      },
+      "  Claude in Chrome block": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "remainder chars (estimated: tool schemas)": {
+        "n": 2,
+        "median": 92601,
+        "min": 92579,
+        "max": 92623
+      },
+      "tokens: tm8 kernel (est.)": {
+        "n": 2,
+        "median": 2247,
+        "min": 2247,
+        "max": 2247
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 2,
+        "median": 3229,
+        "min": 3229,
+        "max": 3229
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tokens: context index (est.)": {
+        "n": 2,
+        "median": 2584,
+        "min": 2584,
+        "max": 2584
+      },
+      "tokens: harness (est.)": {
+        "n": 2,
+        "median": 9349,
+        "min": 9349,
+        "max": 9349
+      },
+      "resident tm8 bytes (× requests)": {
+        "n": 2,
+        "median": 319187,
+        "min": 290170,
+        "max": 348204
+      },
+      "resident harness chars (× requests)": {
+        "n": 2,
+        "median": 370238,
+        "min": 336580,
+        "max": 403896
+      },
+      "API requests (lane total, subagents included)": {
+        "n": 2,
+        "median": 11,
+        "min": 10,
+        "max": 12
+      },
+      "  of which subagent requests": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tool calls": {
+        "n": 2,
+        "median": 11.5,
+        "min": 11,
+        "max": 12
+      },
+      "input-side tokens (all requests)": {
+        "n": 2,
+        "median": 537764,
+        "min": 488310,
+        "max": 587218
+      },
+      "output tokens": {
+        "n": 2,
+        "median": 3511.5,
+        "min": 3414,
+        "max": 3609
+      },
+      "wall seconds": {
+        "n": 2,
+        "median": 114.5,
+        "min": 100,
+        "max": 129
+      },
+      "est. $ per lane (subagents included)": {
+        "n": 2,
+        "median": 0.31339867499999996,
+        "min": 0.29682375,
+        "max": 0.3299736
+      },
+      "  of which subagent $": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "expand rate % (opened / entries)": {
+        "n": 2,
+        "median": 5.357142857142857,
+        "min": 3.571428571428571,
+        "max": 7.142857142857142
+      },
+      "blind-fetch bytes": {
+        "n": 2,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories collapsed (Q1)": {
+        "n": 2,
+        "median": 2,
+        "min": 2,
+        "max": 2
+      }
+    },
+    "sonnet5/index-authored/needle": {
+      "first-request tokens": {
+        "n": 6,
+        "median": 41151.5,
+        "min": 41117,
+        "max": 41182
+      },
+      "tm8 kernel bytes": {
+        "n": 6,
+        "median": 8080,
+        "min": 8080,
+        "max": 8080
+      },
+      "assignment snapshot bytes": {
+        "n": 6,
+        "median": 2717,
+        "min": 2710,
+        "max": 2732
+      },
+      "context index bytes": {
+        "n": 6,
+        "median": 11236,
+        "min": 11228,
+        "max": 11266
+      },
+      "  references": {
+        "n": 6,
+        "median": 3424,
+        "min": 3416,
+        "max": 3454
+      },
+      "  skills": {
+        "n": 6,
+        "median": 6149,
+        "min": 6149,
+        "max": 6149
+      },
+      "  memories (collapsed)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories expanded bytes (outside the kernel)": {
+        "n": 6,
+        "median": 704,
+        "min": 704,
+        "max": 704
+      },
+      "skills listing bytes (index off: the <skills> block)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "harness chars (system + attachments)": {
+        "n": 6,
+        "median": 33658,
+        "min": 33658,
+        "max": 33658
+      },
+      "  skill_listing": {
+        "n": 6,
+        "median": 2310,
+        "min": 2310,
+        "max": 2310
+      },
+      "  Claude in Chrome block": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "remainder chars (estimated: tool schemas)": {
+        "n": 6,
+        "median": 91747,
+        "min": 91626,
+        "max": 91837
+      },
+      "tokens: tm8 kernel (est.)": {
+        "n": 6,
+        "median": 2244,
+        "min": 2244,
+        "max": 2244
+      },
+      "tokens: memories expanded (est.)": {
+        "n": 6,
+        "median": 196,
+        "min": 196,
+        "max": 196
+      },
+      "tokens: skills listing, index off (est.)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tokens: context index (est.)": {
+        "n": 6,
+        "median": 3121,
+        "min": 3119,
+        "max": 3129
+      },
+      "tokens: harness (est.)": {
+        "n": 6,
+        "median": 9349,
+        "min": 9349,
+        "max": 9349
+      },
+      "resident tm8 bytes (× requests)": {
+        "n": 6,
+        "median": 250445,
+        "min": 220132,
+        "max": 340850
+      },
+      "resident harness chars (× requests)": {
+        "n": 6,
+        "median": 420725,
+        "min": 370238,
+        "max": 572186
+      },
+      "API requests (lane total, subagents included)": {
+        "n": 6,
+        "median": 12.5,
+        "min": 11,
+        "max": 17
+      },
+      "  of which subagent requests": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tool calls": {
+        "n": 6,
+        "median": 13.5,
+        "min": 11,
+        "max": 21
+      },
+      "input-side tokens (all requests)": {
+        "n": 6,
+        "median": 589349.5,
+        "min": 508432,
+        "max": 839529
+      },
+      "output tokens": {
+        "n": 6,
+        "median": 4369.5,
+        "min": 2881,
+        "max": 5565
+      },
+      "wall seconds": {
+        "n": 6,
+        "median": 118.5,
+        "min": 109,
+        "max": 144
+      },
+      "est. $ per lane (subagents included)": {
+        "n": 6,
+        "median": 0.33267705000000003,
+        "min": 0.285021,
+        "max": 0.44308275
+      },
+      "  of which subagent $": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "expand rate % (opened / entries)": {
+        "n": 6,
+        "median": 8.333333333333332,
+        "min": 4.166666666666666,
+        "max": 16.666666666666664
+      },
+      "blind-fetch bytes": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memories collapsed (Q1)": {
+        "n": 6,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "gate": {
+    "haiku45/index-authored": {
+      "launches": 8,
+      "entryMissed": 0,
+      "rate": 0,
+      "upperBound95": 0.3123439780663679,
+      "headerReads": 1,
+      "needleLaunches": 8,
+      "silentContextFailures": 0,
+      "silentPassed": 0,
+      "success": 8,
+      "flag": false
+    },
+    "sonnet5/index-authored": {
+      "launches": 8,
+      "entryMissed": 0,
+      "rate": 0,
+      "upperBound95": 0.3123439780663679,
+      "headerReads": 1,
+      "needleLaunches": 8,
+      "silentContextFailures": 0,
+      "silentPassed": 0,
+      "success": 8,
+      "flag": false
+    }
+  },
+  "accuracy": {
+    "haiku45/index-authored/memory": {
+      "n": 2,
+      "success": 2,
+      "scored": 2,
+      "askedTheHuman": 0,
+      "deliverableCorrect": 2,
+      "rubricMean": 1,
+      "notInMean": [
+        "aliasCheck"
+      ]
+    },
+    "haiku45/index-authored/needle": {
+      "n": 6,
+      "success": 6,
+      "scored": 6,
+      "askedTheHuman": 0,
+      "deliverableCorrect": 6,
+      "rubricMean": 1,
+      "notInMean": [
+        "aliasCheck"
+      ]
+    },
+    "sonnet5/index-authored/memory": {
+      "n": 2,
+      "success": 2,
+      "scored": 2,
+      "askedTheHuman": 0,
+      "deliverableCorrect": 2,
+      "rubricMean": 1,
+      "notInMean": [
+        "aliasCheck"
+      ]
+    },
+    "sonnet5/index-authored/needle": {
+      "n": 6,
+      "success": 6,
+      "scored": 6,
+      "askedTheHuman": 0,
+      "deliverableCorrect": 6,
+      "rubricMean": 1,
+      "notInMean": [
+        "aliasCheck"
+      ]
+    }
+  },
+  "costDelta": {},
+  "failures": {
+    "haiku45/index-authored": {
+      "launches": 8,
+      "excluded": 0,
+      "reasons": [],
+      "timeouts": 0
+    },
+    "sonnet5/index-authored": {
+      "launches": 8,
+      "excluded": 0,
+      "reasons": [],
+      "timeouts": 0
+    }
+  },
+  "load": {
+    "c3 / 4631": {
+      "lanes": 16,
+      "loadAtStart": {
+        "n": 16,
+        "median": 16.06,
+        "min": 6.22,
+        "max": 47.81
+      },
+      "waited": 1,
+      "fixtureMainShas": [
+        "35659910fb611bccd0fcc3ea79d909f85b07cb60"
+      ]
+    }
+  },
+  "delta": {
+    "haiku45/index-authored/memory": {
+      "first-request tokens": {
+        "baseline": 33101.5,
+        "current": 33023.5,
+        "delta": -78,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "est. $ per lane": {
+        "baseline": 0.14126785,
+        "current": 0.163936225,
+        "delta": 0.02266837499999999,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "entry-level missed launches %": {
+        "baseline": 0,
+        "current": 0,
+        "delta": 0,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "success %": {
+        "baseline": 50,
+        "current": 100,
+        "delta": 50,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "mean rubric": {
+        "baseline": 0.875,
+        "current": 1,
+        "delta": 0.125,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "wall seconds": {
+        "baseline": 148.5,
+        "current": 152.5,
+        "delta": 4,
+        "nBaseline": 2,
+        "nCurrent": 2
+      }
+    },
+    "haiku45/index-authored/needle": {
+      "first-request tokens": {
+        "baseline": 30865.5,
+        "current": 31047,
+        "delta": 181.5,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "est. $ per lane": {
+        "baseline": 0.11116915,
+        "current": 0.10435595,
+        "delta": -0.0068131999999999915,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "entry-level missed launches %": {
+        "baseline": 0,
+        "current": 0,
+        "delta": 0,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "success %": {
+        "baseline": 75,
+        "current": 100,
+        "delta": 25,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "mean rubric": {
+        "baseline": 0.9375,
+        "current": 1,
+        "delta": 0.0625,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "wall seconds": {
+        "baseline": 156,
+        "current": 123.5,
+        "delta": -32.5,
+        "nBaseline": 4,
+        "nCurrent": 6
+      }
+    },
+    "sonnet5/index-authored/memory": {
+      "first-request tokens": {
+        "baseline": 43922,
+        "current": 43885,
+        "delta": -37,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "est. $ per lane": {
+        "baseline": 0.4150293,
+        "current": 0.31339867499999996,
+        "delta": -0.10163062500000003,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "entry-level missed launches %": {
+        "baseline": 0,
+        "current": 0,
+        "delta": 0,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "success %": {
+        "baseline": 0,
+        "current": 100,
+        "delta": 100,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "mean rubric": {
+        "baseline": 0.75,
+        "current": 1,
+        "delta": 0.25,
+        "nBaseline": 2,
+        "nCurrent": 2
+      },
+      "wall seconds": {
+        "baseline": 149.5,
+        "current": 114.5,
+        "delta": -35,
+        "nBaseline": 2,
+        "nCurrent": 2
+      }
+    },
+    "sonnet5/index-authored/needle": {
+      "first-request tokens": {
+        "baseline": 40914,
+        "current": 41151.5,
+        "delta": 237.5,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "est. $ per lane": {
+        "baseline": 0.37399784999999997,
+        "current": 0.33267705000000003,
+        "delta": -0.041320799999999935,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "entry-level missed launches %": {
+        "baseline": 0,
+        "current": 0,
+        "delta": 0,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "success %": {
+        "baseline": 25,
+        "current": 100,
+        "delta": 75,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "mean rubric": {
+        "baseline": 0.8125,
+        "current": 1,
+        "delta": 0.1875,
+        "nBaseline": 4,
+        "nCurrent": 6
+      },
+      "wall seconds": {
+        "baseline": 148,
+        "current": 118.5,
+        "delta": -29.5,
+        "nBaseline": 4,
+        "nCurrent": 6
+      }
+    }
+  },
+  "delegated": [],
+  "contamination": {
+    "wroteAutoMemory": [],
+    "contaminated": [],
+    "memoryDirMoved": []
+  },
+  "crossLane": {
+    "readSiblingCommit": [],
+    "readSiblingCommitUnverified": [],
+    "listedAllRefs": [],
+    "readSiblingWorktree": [],
+    "openedSiblingCopy": []
+  }
+}

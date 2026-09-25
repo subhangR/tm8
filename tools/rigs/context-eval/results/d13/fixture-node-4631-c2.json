@@ -1,0 +1,2066 @@
+{
+  "schemaVersion": 2,
+  "contentHash": "8ef7c99a61dc4589",
+  "port": 4631,
+  "arm": "index-derived",
+  "authoredHeaders": false,
+  "builtAt": "2026-09-25T21:14:30.453Z",
+  "skills": {
+    "csv-hygiene": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb",
+    "test-first": "01a0da6b-8113-78b6-b647-304852583ecf",
+    "commit-style": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba",
+    "error-codes": "01a0da6b-8bc2-73a2-938b-e7214e617777",
+    "changelog-entry": "01a0da6b-910d-7a6b-b723-3b7941851ab1",
+    "date-handling": "01a0da6b-96e7-780d-9be5-36c12d215fa1",
+    "review-checklist": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2",
+    "perf-notes": "01a0da6b-ac65-7676-821d-fab9d2a688ce",
+    "naming-conventions": "01a0da6b-ba42-77d7-95f4-23a343b705b8",
+    "release-notes": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+  },
+  "memories": {
+    "base": [
+      "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+      "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+      "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+      "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+      "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+      "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+      "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+      "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+    ],
+    "heavy": [
+      "01a0da6b-d3e8-7d53-b944-cbb75c57ea5f",
+      "01a0da6b-d559-7547-b4b0-5c5b241fa96a",
+      "01a0da6b-d785-7fc9-8c74-19a251c27c7e",
+      "01a0da6b-d91e-7f05-9f95-5f07c16fabc8",
+      "01a0da6b-da41-79c0-b62d-f65c50ff308a",
+      "01a0da6b-dc2c-73f1-b3a8-58fd8515f6f7",
+      "01a0da6b-dd5f-7bf1-8a42-7085066b8c14",
+      "01a0da6b-de82-7b0c-b51e-af92e9a6d6c9",
+      "01a0da6b-e020-7725-a3c2-a0d4a2cee0f1",
+      "01a0da6b-e179-7522-846f-f5af1ea54188",
+      "01a0da6b-e2e7-7025-ae48-799cc2f683fc",
+      "01a0da6b-e4b8-7dc2-b9b8-4e7b75b7a239"
+    ]
+  },
+  "docsByTitle": {
+    "Onboarding notes for the ledger team": "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+    "Release checklist": "01a0da6b-e999-701d-a102-32431208a60a",
+    "Incident review: duplicated March import": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+    "Glossary of ledger terms": "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+    "needle:Transaction fees: spec v2": "01a0da6b-ec96-74d8-84b1-63889051e4bb",
+    "needle:Category mapping v3": "01a0da6c-0b0f-7d79-acc6-a843b9f6d3d9",
+    "needle:Balance rounding policy": "01a0da6c-26c4-711b-82e2-0d1b469643a7",
+    "Code review guidelines": "01a0da6c-5732-7a67-b52f-bcee4666254a",
+    "Test data policy": "01a0da6c-598d-7837-994a-bbd04cbf0d7e",
+    "Branch naming": "01a0da6c-5ae6-793a-8ca0-a142ca2f9327",
+    "On-call handbook": "01a0da6c-5c0a-773d-b8f2-cda2b8df1846",
+    "Quarterly roadmap Q3": "01a0da6c-5d07-7f31-9900-77e88879b396",
+    "Quarterly roadmap Q4": "01a0da6c-5e4f-7567-9e74-ed2f55ef1195",
+    "Security review notes": "01a0da6c-5f2c-7518-951d-d41e006fd595",
+    "Dependency policy": "01a0da6c-600b-7774-873a-b2bb6e06d235",
+    "Logging conventions": "01a0da6c-60d8-7129-8c1b-cca9b1b172ec",
+    "Performance budget": "01a0da6c-6196-7900-8279-6b869839bf25",
+    "Accessibility of reports": "01a0da6c-626e-7641-82e8-fb51b1c2c669",
+    "Data retention": "01a0da6c-6350-7e2f-bc87-8adbbdebda93",
+    "Vendor list": "01a0da6c-6439-766b-a495-c28fae908f89",
+    "Meeting notes: kickoff": "01a0da6c-6501-7dda-89d9-7d7f3edf42ba",
+    "Meeting notes: March review": "01a0da6c-65b9-7a5c-aaab-359644391ec4",
+    "needle:Transaction limits": "01a0da6c-668c-74cf-b97c-5973c88979e5",
+    "Meeting notes: planning week": "01a0da6c-6791-7d34-8ef5-ac6d23103d20",
+    "Architecture overview": "01a0da6c-6837-735c-8e59-1da72e39edce",
+    "Deployment runbook": "01a0da6c-690a-77dd-bc2c-ce0dcce41b80",
+    "Backup and restore": "01a0da6c-69e5-7674-9710-25cf62b8ff99",
+    "Support escalation path": "01a0da6c-6aa4-7253-b3e5-bcab06837020",
+    "Customer FAQ draft": "01a0da6c-6b95-77aa-9d02-55ae140c5ac0",
+    "Import troubleshooting": "01a0da6c-6c48-7f67-987a-93a4096ffd32",
+    "Error message style guide": "01a0da6c-6d1f-78ae-ac7e-4fd5ab0f6767",
+    "Changelog conventions": "01a0da6c-6e16-7ff8-a8d0-38d0e25d6866",
+    "Versioning policy": "01a0da6c-6f09-79a3-9dbb-37d954e51f84",
+    "Localisation plan": "01a0da6c-b2e8-7a08-93fa-54e65b4b667a",
+    "Reporting UI wireframes": "01a0da6c-b3e7-7bc1-9496-d14e014c2a78",
+    "Finance lead contacts": "01a0da6c-b53a-715c-a7c6-4cd387387a8a",
+    "Audit trail requirements": "01a0da6c-b68a-7661-9024-e7f4ff571731",
+    "Feature flag policy": "01a0da6c-b87d-75e8-8905-60e664e6ff54",
+    "Sandbox environment setup": "01a0da6c-ba96-7a50-9dc9-89e4c15773c1",
+    "Postmortem template": "01a0da6c-bc10-79c9-8d0b-2a1d898f3293",
+    "Decision log": "01a0da6c-bd9e-7151-adbd-86089a3e8ce5",
+    "Team rituals": "01a0da6c-bebd-7bcc-affb-7da3ac021c4f",
+    "Hiring rubric": "01a0da6c-bfa5-7d71-90b7-fe68cf2c0a87",
+    "Offboarding checklist": "01a0da6c-c0cc-7e13-a2ce-71966c4bbe88",
+    "Budget tracking": "01a0da6c-c1b7-72b4-98c9-4514437c7c4d",
+    "Tax season prep": "01a0da6c-c30b-78d3-af85-c45649e98ad2",
+    "Reconciliation notes": "01a0da6c-c425-70a2-bf39-a8ba9044ac7b",
+    "Bank API evaluation": "01a0da6c-c5ee-77dc-96f0-497a4f2acae1",
+    "Old parser design (retired)": "01a0da6c-c788-7cc2-bf93-60db93858ced",
+    "Spreadsheet macros (retired)": "01a0da6c-c9f0-72eb-a4ee-035bb8dc36eb",
+    "Metrics we track": "01a0da6c-cb6e-791f-95cf-c1e33d4ae365",
+    "User interviews summary": "01a0da6c-cddf-7706-a30e-3faae71b618d",
+    "Competitor notes": "01a0da6c-cfde-7cad-85aa-fa9f0aea800e",
+    "Pricing experiments": "01a0da6c-d179-7031-baaa-a93d859905b8",
+    "Training plan": "01a0da6c-d2d9-7bd1-8835-4850f0d7ad33",
+    "Documentation map": "01a0da6c-d44a-7fca-8a2f-48346f7721fb",
+    "Style guide for docs": "01a0da6c-d5ec-709e-aace-575924ffc943",
+    "Keyboard shortcuts in the report UI": "01a0da6c-d797-7026-b0b6-037838889f38",
+    "Accessibility audit": "01a0da6c-d92a-7453-a77e-f4c5c8613363",
+    "Data model sketch": "01a0da6c-da5e-773b-b4ee-329caaa84743",
+    "Integration test plan": "01a0da6c-db38-7425-9282-a2544658221d",
+    "Load test results": "01a0da6c-dc99-7803-81f9-e27b29102652",
+    "Cost review": "01a0da6c-ddbf-7a6d-a05f-853e57a413e6",
+    "needle:Bank export date format": "01a0da6d-7d7d-7204-ba3d-ea0f9d3e20ee"
+  },
+  "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+  "tasks": {
+    "fee": {
+      "templateId": "01a0da6b-e776-7077-a583-3bb96a32ea80",
+      "family": "needle",
+      "title": "Add a transaction fee helper to ledger-lite",
+      "content": {
+        "description": "Add `fee` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`fee` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "fee",
+      "needleId": "01a0da6b-ec96-74d8-84b1-63889051e4bb",
+      "needleAt": 5,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6b-ec96-74d8-84b1-63889051e4bb",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-ec96-74d8-84b1-63889051e4bb"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "fee(100)",
+          0.4
+        ],
+        [
+          "fee(1000)",
+          3.5
+        ],
+        [
+          "fee(-2000)",
+          7
+        ],
+        [
+          "fee(200)",
+          0.7
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "category": {
+      "templateId": "01a0da6c-09e9-7b3b-9cbf-656691b55f57",
+      "family": "needle",
+      "title": "Add a category helper to ledger-lite",
+      "content": {
+        "description": "Add `categoryOf` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`categoryOf` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "categoryOf",
+      "needleId": "01a0da6c-0b0f-7d79-acc6-a843b9f6d3d9",
+      "needleAt": 5,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6c-0b0f-7d79-acc6-a843b9f6d3d9",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-0b0f-7d79-acc6-a843b9f6d3d9"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "categoryOf({ category: 'food' })",
+          "food"
+        ],
+        [
+          "categoryOf({ category: 'Pets' })",
+          "misc-7"
+        ],
+        [
+          "categoryOf({ category: '' })",
+          "misc-7"
+        ],
+        [
+          "categoryOf({})",
+          "misc-7"
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "rounding": {
+      "templateId": "01a0da6c-256c-7222-94f3-7cd2170d25b1",
+      "family": "needle",
+      "title": "Add a rounded balance helper to ledger-lite",
+      "content": {
+        "description": "Add `roundedBalance` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`roundedBalance` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "roundedBalance",
+      "needleId": "01a0da6c-26c4-711b-82e2-0d1b469643a7",
+      "needleAt": 5,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6c-26c4-711b-82e2-0d1b469643a7",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-26c4-711b-82e2-0d1b469643a7"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "roundedBalance([{ amount: 0.125 }])",
+          0.12
+        ],
+        [
+          "roundedBalance([{ amount: 0.375 }])",
+          0.38
+        ],
+        [
+          "roundedBalance([{ amount: 0.5 }, { amount: 0.125 }])",
+          0.62
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "stress30": {
+      "templateId": "01a0da6c-54be-7b11-8c83-cff313868bbf",
+      "family": "stress",
+      "title": "Enforce the single-transaction limit in ledger-lite (30 linked docs)",
+      "content": {
+        "description": "Add `checkLimit` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`checkLimit` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "checkLimit",
+      "needleId": "01a0da6c-668c-74cf-b97c-5973c88979e5",
+      "needleAt": 20,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6c-5732-7a67-b52f-bcee4666254a",
+        "01a0da6c-598d-7837-994a-bbd04cbf0d7e",
+        "01a0da6c-5ae6-793a-8ca0-a142ca2f9327",
+        "01a0da6c-5c0a-773d-b8f2-cda2b8df1846",
+        "01a0da6c-5d07-7f31-9900-77e88879b396",
+        "01a0da6c-5e4f-7567-9e74-ed2f55ef1195",
+        "01a0da6c-5f2c-7518-951d-d41e006fd595",
+        "01a0da6c-600b-7774-873a-b2bb6e06d235",
+        "01a0da6c-60d8-7129-8c1b-cca9b1b172ec",
+        "01a0da6c-6196-7900-8279-6b869839bf25",
+        "01a0da6c-626e-7641-82e8-fb51b1c2c669",
+        "01a0da6c-6350-7e2f-bc87-8adbbdebda93",
+        "01a0da6c-6439-766b-a495-c28fae908f89",
+        "01a0da6c-6501-7dda-89d9-7d7f3edf42ba",
+        "01a0da6c-65b9-7a5c-aaab-359644391ec4",
+        "01a0da6c-668c-74cf-b97c-5973c88979e5",
+        "01a0da6c-6791-7d34-8ef5-ac6d23103d20",
+        "01a0da6c-6837-735c-8e59-1da72e39edce",
+        "01a0da6c-690a-77dd-bc2c-ce0dcce41b80",
+        "01a0da6c-69e5-7674-9710-25cf62b8ff99",
+        "01a0da6c-6aa4-7253-b3e5-bcab06837020",
+        "01a0da6c-6b95-77aa-9d02-55ae140c5ac0",
+        "01a0da6c-6c48-7f67-987a-93a4096ffd32",
+        "01a0da6c-6d1f-78ae-ac7e-4fd5ab0f6767",
+        "01a0da6c-6e16-7ff8-a8d0-38d0e25d6866",
+        "01a0da6c-6f09-79a3-9dbb-37d954e51f84",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5732-7a67-b52f-bcee4666254a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-598d-7837-994a-bbd04cbf0d7e"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5ae6-793a-8ca0-a142ca2f9327"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5c0a-773d-b8f2-cda2b8df1846"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5d07-7f31-9900-77e88879b396"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5e4f-7567-9e74-ed2f55ef1195"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5f2c-7518-951d-d41e006fd595"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-600b-7774-873a-b2bb6e06d235"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-60d8-7129-8c1b-cca9b1b172ec"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6196-7900-8279-6b869839bf25"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-626e-7641-82e8-fb51b1c2c669"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6350-7e2f-bc87-8adbbdebda93"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6439-766b-a495-c28fae908f89"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6501-7dda-89d9-7d7f3edf42ba"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-65b9-7a5c-aaab-359644391ec4"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-668c-74cf-b97c-5973c88979e5"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6791-7d34-8ef5-ac6d23103d20"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6837-735c-8e59-1da72e39edce"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-690a-77dd-bc2c-ce0dcce41b80"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-69e5-7674-9710-25cf62b8ff99"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6aa4-7253-b3e5-bcab06837020"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6b95-77aa-9d02-55ae140c5ac0"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6c48-7f67-987a-93a4096ffd32"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6d1f-78ae-ac7e-4fd5ab0f6767"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6e16-7ff8-a8d0-38d0e25d6866"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6f09-79a3-9dbb-37d954e51f84"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "(() => { checkLimit({ amount: 9750 }); return \"ok\"; })()",
+          "ok"
+        ],
+        [
+          "(() => { try { checkLimit({ amount: -9750.01 }); return \"no-throw\"; } catch (e) { return e.code; } })()",
+          "E_LIMIT_77"
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "stress60": {
+      "templateId": "01a0da6c-b154-7b5c-af02-27e3229cf3d1",
+      "family": "stress",
+      "title": "Add a rounded balance helper to ledger-lite (60 linked docs)",
+      "content": {
+        "description": "Add `roundedBalance` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`roundedBalance` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "roundedBalance",
+      "needleId": "01a0da6c-26c4-711b-82e2-0d1b469643a7",
+      "needleAt": 30,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6c-5732-7a67-b52f-bcee4666254a",
+        "01a0da6c-598d-7837-994a-bbd04cbf0d7e",
+        "01a0da6c-5ae6-793a-8ca0-a142ca2f9327",
+        "01a0da6c-5c0a-773d-b8f2-cda2b8df1846",
+        "01a0da6c-5d07-7f31-9900-77e88879b396",
+        "01a0da6c-5e4f-7567-9e74-ed2f55ef1195",
+        "01a0da6c-5f2c-7518-951d-d41e006fd595",
+        "01a0da6c-600b-7774-873a-b2bb6e06d235",
+        "01a0da6c-60d8-7129-8c1b-cca9b1b172ec",
+        "01a0da6c-6196-7900-8279-6b869839bf25",
+        "01a0da6c-626e-7641-82e8-fb51b1c2c669",
+        "01a0da6c-6350-7e2f-bc87-8adbbdebda93",
+        "01a0da6c-6439-766b-a495-c28fae908f89",
+        "01a0da6c-6501-7dda-89d9-7d7f3edf42ba",
+        "01a0da6c-65b9-7a5c-aaab-359644391ec4",
+        "01a0da6c-6791-7d34-8ef5-ac6d23103d20",
+        "01a0da6c-6837-735c-8e59-1da72e39edce",
+        "01a0da6c-690a-77dd-bc2c-ce0dcce41b80",
+        "01a0da6c-69e5-7674-9710-25cf62b8ff99",
+        "01a0da6c-6aa4-7253-b3e5-bcab06837020",
+        "01a0da6c-6b95-77aa-9d02-55ae140c5ac0",
+        "01a0da6c-6c48-7f67-987a-93a4096ffd32",
+        "01a0da6c-6d1f-78ae-ac7e-4fd5ab0f6767",
+        "01a0da6c-6e16-7ff8-a8d0-38d0e25d6866",
+        "01a0da6c-6f09-79a3-9dbb-37d954e51f84",
+        "01a0da6c-26c4-711b-82e2-0d1b469643a7",
+        "01a0da6c-b2e8-7a08-93fa-54e65b4b667a",
+        "01a0da6c-b3e7-7bc1-9496-d14e014c2a78",
+        "01a0da6c-b53a-715c-a7c6-4cd387387a8a",
+        "01a0da6c-b68a-7661-9024-e7f4ff571731",
+        "01a0da6c-b87d-75e8-8905-60e664e6ff54",
+        "01a0da6c-ba96-7a50-9dc9-89e4c15773c1",
+        "01a0da6c-bc10-79c9-8d0b-2a1d898f3293",
+        "01a0da6c-bd9e-7151-adbd-86089a3e8ce5",
+        "01a0da6c-bebd-7bcc-affb-7da3ac021c4f",
+        "01a0da6c-bfa5-7d71-90b7-fe68cf2c0a87",
+        "01a0da6c-c0cc-7e13-a2ce-71966c4bbe88",
+        "01a0da6c-c1b7-72b4-98c9-4514437c7c4d",
+        "01a0da6c-c30b-78d3-af85-c45649e98ad2",
+        "01a0da6c-c425-70a2-bf39-a8ba9044ac7b",
+        "01a0da6c-c5ee-77dc-96f0-497a4f2acae1",
+        "01a0da6c-c788-7cc2-bf93-60db93858ced",
+        "01a0da6c-c9f0-72eb-a4ee-035bb8dc36eb",
+        "01a0da6c-cb6e-791f-95cf-c1e33d4ae365",
+        "01a0da6c-cddf-7706-a30e-3faae71b618d",
+        "01a0da6c-cfde-7cad-85aa-fa9f0aea800e",
+        "01a0da6c-d179-7031-baaa-a93d859905b8",
+        "01a0da6c-d2d9-7bd1-8835-4850f0d7ad33",
+        "01a0da6c-d44a-7fca-8a2f-48346f7721fb",
+        "01a0da6c-d5ec-709e-aace-575924ffc943",
+        "01a0da6c-d797-7026-b0b6-037838889f38",
+        "01a0da6c-d92a-7453-a77e-f4c5c8613363",
+        "01a0da6c-da5e-773b-b4ee-329caaa84743",
+        "01a0da6c-db38-7425-9282-a2544658221d",
+        "01a0da6c-dc99-7803-81f9-e27b29102652",
+        "01a0da6c-ddbf-7a6d-a05f-853e57a413e6",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5732-7a67-b52f-bcee4666254a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-598d-7837-994a-bbd04cbf0d7e"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5ae6-793a-8ca0-a142ca2f9327"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5c0a-773d-b8f2-cda2b8df1846"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5d07-7f31-9900-77e88879b396"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5e4f-7567-9e74-ed2f55ef1195"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-5f2c-7518-951d-d41e006fd595"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-600b-7774-873a-b2bb6e06d235"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-60d8-7129-8c1b-cca9b1b172ec"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6196-7900-8279-6b869839bf25"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-626e-7641-82e8-fb51b1c2c669"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6350-7e2f-bc87-8adbbdebda93"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6439-766b-a495-c28fae908f89"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6501-7dda-89d9-7d7f3edf42ba"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-65b9-7a5c-aaab-359644391ec4"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6791-7d34-8ef5-ac6d23103d20"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6837-735c-8e59-1da72e39edce"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-690a-77dd-bc2c-ce0dcce41b80"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-69e5-7674-9710-25cf62b8ff99"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6aa4-7253-b3e5-bcab06837020"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6b95-77aa-9d02-55ae140c5ac0"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6c48-7f67-987a-93a4096ffd32"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6d1f-78ae-ac7e-4fd5ab0f6767"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6e16-7ff8-a8d0-38d0e25d6866"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-6f09-79a3-9dbb-37d954e51f84"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-26c4-711b-82e2-0d1b469643a7"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-b2e8-7a08-93fa-54e65b4b667a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-b3e7-7bc1-9496-d14e014c2a78"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-b53a-715c-a7c6-4cd387387a8a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-b68a-7661-9024-e7f4ff571731"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-b87d-75e8-8905-60e664e6ff54"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-ba96-7a50-9dc9-89e4c15773c1"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-bc10-79c9-8d0b-2a1d898f3293"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-bd9e-7151-adbd-86089a3e8ce5"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-bebd-7bcc-affb-7da3ac021c4f"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-bfa5-7d71-90b7-fe68cf2c0a87"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c0cc-7e13-a2ce-71966c4bbe88"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c1b7-72b4-98c9-4514437c7c4d"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c30b-78d3-af85-c45649e98ad2"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c425-70a2-bf39-a8ba9044ac7b"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c5ee-77dc-96f0-497a4f2acae1"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c788-7cc2-bf93-60db93858ced"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-c9f0-72eb-a4ee-035bb8dc36eb"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-cb6e-791f-95cf-c1e33d4ae365"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-cddf-7706-a30e-3faae71b618d"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-cfde-7cad-85aa-fa9f0aea800e"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d179-7031-baaa-a93d859905b8"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d2d9-7bd1-8835-4850f0d7ad33"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d44a-7fca-8a2f-48346f7721fb"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d5ec-709e-aace-575924ffc943"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d797-7026-b0b6-037838889f38"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-d92a-7453-a77e-f4c5c8613363"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-da5e-773b-b4ee-329caaa84743"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-db38-7425-9282-a2544658221d"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-dc99-7803-81f9-e27b29102652"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6c-ddbf-7a6d-a05f-853e57a413e6"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "roundedBalance([{ amount: 0.125 }])",
+          0.12
+        ],
+        [
+          "roundedBalance([{ amount: 0.375 }])",
+          0.38
+        ],
+        [
+          "roundedBalance([{ amount: 0.5 }, { amount: 0.125 }])",
+          0.62
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "mem-fee": {
+      "templateId": "01a0da6d-4650-7969-8675-8a3783bb307f",
+      "family": "memory",
+      "title": "Add a transaction fee helper to ledger-lite",
+      "content": {
+        "description": "Add `fee` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`fee` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "fee",
+      "needleId": "01a0da6b-ec96-74d8-84b1-63889051e4bb",
+      "needleAt": 5,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6b-ec96-74d8-84b1-63889051e4bb",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-ec96-74d8-84b1-63889051e4bb"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d3e8-7d53-b944-cbb75c57ea5f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d559-7547-b4b0-5c5b241fa96a"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d785-7fc9-8c74-19a251c27c7e"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d91e-7f05-9f95-5f07c16fabc8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-da41-79c0-b62d-f65c50ff308a"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-dc2c-73f1-b3a8-58fd8515f6f7"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-dd5f-7bf1-8a42-7085066b8c14"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-de82-7b0c-b51e-af92e9a6d6c9"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-e020-7725-a3c2-a0d4a2cee0f1"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-e179-7522-846f-f5af1ea54188"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-e2e7-7025-ae48-799cc2f683fc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-e4b8-7dc2-b9b8-4e7b75b7a239"
+        }
+      ],
+      "checks": [
+        [
+          "fee(100)",
+          0.4
+        ],
+        [
+          "fee(1000)",
+          3.5
+        ],
+        [
+          "fee(-2000)",
+          7
+        ],
+        [
+          "fee(200)",
+          0.7
+        ],
+        [
+          "fee2(1000)",
+          3.5
+        ],
+        [
+          "fee2(100)",
+          0.4
+        ]
+      ],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-d3e8-7d53-b944-cbb75c57ea5f",
+        "01a0da6b-d559-7547-b4b0-5c5b241fa96a",
+        "01a0da6b-d785-7fc9-8c74-19a251c27c7e",
+        "01a0da6b-d91e-7f05-9f95-5f07c16fabc8",
+        "01a0da6b-da41-79c0-b62d-f65c50ff308a",
+        "01a0da6b-dc2c-73f1-b3a8-58fd8515f6f7",
+        "01a0da6b-dd5f-7bf1-8a42-7085066b8c14",
+        "01a0da6b-de82-7b0c-b51e-af92e9a6d6c9",
+        "01a0da6b-e020-7725-a3c2-a0d4a2cee0f1",
+        "01a0da6b-e179-7522-846f-f5af1ea54188",
+        "01a0da6b-e2e7-7025-ae48-799cc2f683fc",
+        "01a0da6b-e4b8-7dc2-b9b8-4e7b75b7a239"
+      ]
+    },
+    "turn-date": {
+      "templateId": "01a0da6d-7bcc-7404-9fb5-f4e5cc550c35",
+      "family": "multiturn",
+      "title": "Parse export dates in ledger-lite",
+      "content": {
+        "description": "Add `parseDate` to src/ledger.js as a named export, implementing the rule in the linked spec doc exactly. Add a node --test case for it in test/. Commit on your branch (there is no remote, so do not push or open a PR). Then post a closeout message on this task and tick the acceptance criteria.",
+        "acceptanceCriteria": [
+          {
+            "id": "ac_1",
+            "done": false,
+            "text": "`parseDate` is exported from src/ledger.js and implements the linked spec"
+          },
+          {
+            "id": "ac_2",
+            "done": false,
+            "text": "a test for it passes under npm test"
+          },
+          {
+            "id": "ac_3",
+            "done": false,
+            "text": "the change is committed on the lane branch"
+          }
+        ]
+      },
+      "fn": "parseDate",
+      "needleId": "01a0da6d-7d7d-7204-ba3d-ea0f9d3e20ee",
+      "needleAt": 5,
+      "fileId": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+      "linkedIds": [
+        "01a0da6b-e8cd-704e-9871-3f21508dcf55",
+        "01a0da6b-e999-701d-a102-32431208a60a",
+        "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd",
+        "01a0da6b-eb86-7cfc-b89f-5879373109ab",
+        "01a0da6d-7d7d-7204-ba3d-ea0f9d3e20ee",
+        "01a0da6b-edb9-7981-80e3-654c2f55966d"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e8cd-704e-9871-3f21508dcf55"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-e999-701d-a102-32431208a60a"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eaa2-7e5d-8b1f-41e83e48aabd"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6b-eb86-7cfc-b89f-5879373109ab"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-7d7d-7204-ba3d-ea0f9d3e20ee"
+        },
+        {
+          "src": "01a0da6b-edb9-7981-80e3-654c2f55966d",
+          "type": "attached_to",
+          "dst": "TASK"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-7a7f-7342-ba7b-4e84a244b6eb"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8113-78b6-b647-304852583ecf"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-86e0-7bd6-81f2-36761a0d00ba"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-8bc2-73a2-938b-e7214e617777"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-910d-7a6b-b723-3b7941851ab1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-96e7-780d-9be5-36c12d215fa1"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-9fd8-7f2d-8a83-2b6f501b5bd2"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ac65-7676-821d-fab9d2a688ce"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-ba42-77d7-95f4-23a343b705b8"
+        },
+        {
+          "src": "TASK",
+          "type": "equips",
+          "dst": "01a0da6b-c64b-7820-a933-fa4c6c85622f"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c7c5-71eb-a483-63ba35499ffc"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-c8e7-7543-b944-8a20bad18f4b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ca30-78e2-b357-c00a0ae47b1b"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cb8f-7639-9dd2-6821b2a454f8"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-cd84-7edd-82b9-8b07b4bb4835"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-ced6-78ee-9e01-5ce406a92d47"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10"
+        },
+        {
+          "src": "TASK",
+          "type": "remembers",
+          "dst": "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+        }
+      ],
+      "checks": [
+        [
+          "parseDate('03.02.2026')",
+          "2026-02-03"
+        ],
+        [
+          "parseDate('31.12.2025')",
+          "2025-12-31"
+        ]
+      ],
+      "turn": {
+        "message": "Change request from the finance lead: also export `parseDateStrict` from src/ledger.js. It behaves exactly like `parseDate` but throws an Error with code `E_INPUT_12` when its first argument is undefined or null. Add a test, commit, and post a short closeout on this task when done.",
+        "checks": [
+          [
+            "(() => { try { parseDateStrict(undefined); return 'no-throw'; } catch (e) { return e.code; } })()",
+            "E_INPUT_12"
+          ],
+          [
+            "parseDateStrict('03.02.2026')",
+            "2026-02-03"
+          ]
+        ]
+      },
+      "headerCarriesFact": false,
+      "memoryIds": [
+        "01a0da6b-c7c5-71eb-a483-63ba35499ffc",
+        "01a0da6b-c8e7-7543-b944-8a20bad18f4b",
+        "01a0da6b-ca30-78e2-b357-c00a0ae47b1b",
+        "01a0da6b-cb8f-7639-9dd2-6821b2a454f8",
+        "01a0da6b-cd84-7edd-82b9-8b07b4bb4835",
+        "01a0da6b-ced6-78ee-9e01-5ce406a92d47",
+        "01a0da6b-d0d7-7a99-a6fe-e1db1469bc10",
+        "01a0da6b-d22b-7851-86d7-9b5385c8aee4"
+      ]
+    },
+    "replica-01a0d742": {
+      "templateId": "01a0da6d-9fa5-72cf-980e-21345dd5314e",
+      "family": "replica",
+      "title": "Explain the Selection stage (I6): what a launch gets and who controls it",
+      "content": {
+        "description": "Subhang wants to understand the SELECTION stage of the launch pipeline: what context a launched session gets (memories, skills, references, teammates), WHO controls it at each point, and how. This is an explanation task. Change NO code. Answer his follow-up questions in this task's thread and stay available; do not exit after the first answer.\n\nExplain, starting from the beginning and in plain language, with concrete examples:\n1. What \"selection\" is: the groups (memories, skills, references, teammates), and what \"absent group = edge defaults, present group = exact set\" means.\n2. WHO CONTROLS IT, at every control point:\n   - the edges that define the defaults: who writes remembers / equips / attached_to / relates_to, and through which UI and CLI verbs;\n   - the person on the Launch sheet / Run composer (ticks; the ··· Harness/Plugins menu);\n   - Jev (only suggests; it never applies anything);\n   - the CLI `tm8 session spawn` (--memory, and selectionReasons=cli);\n   - the dispatcher and coordinators, which spawn through the CLI;\n   - the teammate persona (capabilities.launch.plugins / mcpServers);\n   - the interaction profile (contextIndex, contextBudgets once I5b lands);\n   - server-side checks (assertSelectionIds: live, same space, readable under the caller's RLS, allowed kind; the 240 ceiling);\n   - the byte budgets that cut after selection;\n   - resume, which replays the recorded selection.\n   Say who can override whom, and what is recorded when they do.\n3. What is recorded, and where to see it: manifest.launch.selection / selectionReasons, and manifest.context.groups / entries / dropped with each reason (not-selected, unavailable, replay-invalid, not-rendered, count-cap, byte-budget, ...). Also the session's Launch context section in the UI (#728).\n4. What exists on main TODAY versus what I6 PR #746 changes (it is approved, not merged). Also how F3 #765 (a plugin tick becomes skill ids) and I5a #759 (rendering references in <context_index>) build on it.\n5. The deploy constraint: from I6 on, deploy the server first, or server and CLI together.\n\nWrite it as a tm8 doc attached to this task, then post a short message on this task naming the doc id, and raise `tm8 entity attention <this-task-id> --reason \"selection explainer ready\" --points 50`.\n\nRead first:\n- Explainer doc 01a0d6d7-428a-7aff-97a1-894c6be0e838 (§6, §7).\n- Integrated design doc 01a0d348-feaa-7b70-9a56-b61e249c0a70 (§1, §5, §6, §10 Q5).\n- `gh pr view 746` and `gh pr diff 746`, plus #765 for F3.\n- The code on main: packages/server/src/facade/execution-handlers.ts (assertSelectionIds, loadSpawnContext), packages/contract/src/contract.ts (SpawnSelection), packages/cli/src/commands/session.ts (spawn), packages/tm8-ui/src/jev/useJevSuggestions.ts and views/LaunchSheet.tsx, and packages/execution/src/spawn/context-audit.ts.\nUse graphify (graphify-out/merged-graph.json) for structural questions before grepping.\n\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main` must be 0. If it isn't, `git merge --ff-only origin/main`.\n",
+        "acceptanceCriteria": [
+          {
+            "id": "doc",
+            "done": false,
+            "text": "Explainer doc on selection: control points, who overrides whom, what is recorded, main vs #746",
+            "doneAt": "2026-09-25T06:40:26.227Z",
+            "doneBy": "01a0cb4c-c0d8-79e7-b63f-edb646e8013c"
+          },
+          {
+            "id": "qa",
+            "done": false,
+            "text": "Follow-up questions from Subhang answered in this task thread"
+          }
+        ]
+      },
+      "fn": null,
+      "needleId": null,
+      "needleAt": null,
+      "fileId": null,
+      "linkedIds": [
+        "01a0da6d-a0a8-777e-a172-5201d1bc1229"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a0a8-777e-a172-5201d1bc1229"
+        }
+      ],
+      "checks": [],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": []
+    },
+    "replica-01a0d780": {
+      "templateId": "01a0da6d-a26d-708f-9bef-75c6750ba1a8",
+      "family": "replica",
+      "title": "Review, fix and merge PR #800 (derived header preview, header=resolved)",
+      "content": {
+        "description": "You are the REVIEWER-MERGER for PR #800 (the I9a derived-header preview, `header=resolved`, on entities.get and entities.context, plus the UI \"No header\" state; author session 01a0d74a-4d7a, still live, so ask it directly; lane task 01a0d749-a518; base main at e109cce8). Subhang's standing rule: every PR gets its own reviewer, who reviews it, MAKES the fixes and merges it.\n\n1. REVIEW for correctness first. The author's load-bearing claims, each of which you must independently verify:\n   - A read that does NOT ask is BYTE-IDENTICAL to `header=authored`, for both get and context. It's pinned in header-ops.pg.test.ts. Confirm the pin compares bytes of the whole response, not one field.\n   - On context, `resolved` spends the context budget (the header is a core section), so the body page can shrink. Confirm it's declared (budget/omitted), never a silent truncation, and that `truncated`/cursors stay correct.\n   - `resolved` loads on explicit-sections reads, but never on a cursor page.\n   - Header text stays inside untrusted_data in the CLI text render. The derived header is labelled derived and version 0 in the UI.\n   - The resolved read runs in the caller's RLS tx (resolveHeaders), with no extra per-row query (no N+1 on a list).\n   Also check it against Subhang's ruling (1), \"instruct, don't refuse\" (msg 01a0d6f1-5cc4 on task 01a0d3b0): the PR REFUSES an unknown `header=` mode. The preferred behaviour for an agent-facing read is to fall back to the default (authored) plus a warning naming the valid values. Change it unless you find a concrete reason not to. If unsure, ask advisor session 01a0d777-8b84-7734-b41c-35def00bdf53.\n2. FIX what you find, as commits ON the PR branch (`gh pr checkout 800`), each with a test and a negative control. Never force-push over the author's commits, except a rebase onto main with --force-with-lease.\n3. VERIFY: rebase onto the current origin/main, then run typecheck, the focused suites (server header-ops.pg / entity-headers.pg / feed-context-v2 size gates, contract, cli entity, the tm8-ui panels/data suites) and the build. `uptime` first; if the load is above ~80, wait. CI must be green on the head you merge. The only acceptable red is one byte-identical to a red on main's latest concluded run (a known intermittent is receipt.test.ts link-pr 15s; a fix lane is on it). Prove it on the task.\n4. MERGE: `gh pr view 800 --json baseRefName` must be main. Post \"MERGING #800\" on task 01a0d747-c69a-7483-a79a-aec76e3a6479. If another MERGING is open there, wait for its MERGED, then rebase. `gh pr merge 800 --squash --admin` (the ruleset lets only subhangR update main; NOT a licence to merge red). Then post \"MERGED #800 <sha>\".\n5. AFTER: re-run typecheck and the focused suites on the merged tree. Post the findings, fixes and merge sha on THIS task and on 01a0d749-a518, then close this task.\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, `bun install`, then `bun run build`.\n",
+        "acceptanceCriteria": [
+          {
+            "id": "review",
+            "done": false,
+            "text": "Reviewed #800; byte-identity + budget claims independently verified"
+          },
+          {
+            "id": "fix",
+            "done": false,
+            "text": "Defects fixed on the branch (incl. unknown-mode lenient fallback unless justified)"
+          },
+          {
+            "id": "merge",
+            "done": false,
+            "text": "Merged to main with green CI; merged tree re-verified"
+          }
+        ]
+      },
+      "fn": null,
+      "needleId": null,
+      "needleAt": null,
+      "fileId": null,
+      "linkedIds": [
+        "01a0da6d-a31c-7df3-ba8f-6f6c1d281437",
+        "01a0da6d-a3e1-7603-b69e-ba7e2368199f"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a31c-7df3-ba8f-6f6c1d281437"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a3e1-7603-b69e-ba7e2368199f"
+        }
+      ],
+      "checks": [],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": []
+    },
+    "replica-01a0d778": {
+      "templateId": "01a0da6d-a688-73d7-ac5a-301d63042f67",
+      "family": "replica",
+      "title": "Harness lane: trim unselected user/plugin skills, native double-listing, Chrome block (H2+H3+I10a findings)",
+      "content": {
+        "description": "HARNESS LANE: cut what every lean Claude Code lane still loads that its launch did not choose. This covers H2 (task 01a0d3b2-5292), H3 (task 01a0d3b2-5886) and two new items I10a measured (msg 01a0d767-7003 on task 01a0d3b2-4106). Subhang has delegated the go-ahead. The \"probe permission\" H2/H3 waited on is GRANTED, on a separate dev node only.\n\nMeasured on +lean today (I10a, first request, median): 33.4k tokens. Remaining items:\n1. skill_listing = ~20k chars (~5k tokens), mostly the operator's USER skills in ~/.claude/skills. Minimal mode doesn't trim them, so every lane lists all of them.\n2. The Claude in Chrome block is ~4.1k chars in every lane's harness system prompt. It is not MCP config, so --strict-mcp-config doesn't remove it.\n3. H2: an allowed plugin enables ALL its skills (e.g. sales ≈ 36). Set skillOverrides 'off' for the unselected ones.\n4. H3: an equipped native skill is listed twice (the harness skill_listing and tm8's index). Consider skillOverrides 'name-only' so tm8's header is the only description.\n\nRule (integrated design doc 01a0d348 §3): the harness loads only what the launch chose. The source is the post-budget EFFECTIVE skill set plus the fixed built-in keep-four (code-review, simplify, security-review, workflow-authoring). Every trim is RECORDED in manifest.launch.harness (skillOverrides.off[{name, source}]); never silent. harnessSurface=inherit / TM8_HARNESS_SURFACE stays the escape hatch that restores everything.\n\nSteps:\nA. PROBE FIRST, on a separate dev node (never 7778; copy I10a's pattern: dev node :46xx, fresh DB, built from the commit under test, rig in tools/rigs/context-measure/ once #799 merges, or on its branch).\n   Verify on a REAL claude-code lane:\n   - the exact skillOverrides key format that turns off (a) a user skill, (b) one skill of an enabled plugin, (c) name-only for a native skill;\n   - which setting or flag drops the Claude in Chrome block for a lane without breaking the operator's own Chrome use. Read the Claude Code docs/settings; probe, never guess. The memory notes: model ids and features must be PROBED, never grepped from the binary.\n   Record each probe's result (the command, the setting, the before/after skill_listing chars) on this task.\nB. Implement in packages/execution/src/spawn/harness-surface.ts + manifest.ts buildAgentCommand, minimal surface only:\n   - user skills not in the effective set → off;\n   - plugin skills not selected → off;\n   - equipped native skills → name-only, ONLY if the probe shows /name still works;\n   - the Chrome block → off.\n   Record every one in launch.harness.skillOverrides with its source ('user-unselected', 'plugin-unselected', 'native-name-only', 'chrome'). Also mirror it on resume: SpawnService has TWO loadSpawnContext call sites (spawn AND resume), and a new manifest field must be set on both.\nC. Measure before/after with the I10a rig: first-request tokens and skill_listing chars, main vs +lean vs +lean+this. Target: remove most of the remaining ~6k tokens.\nD. PR against main, linked to H2 and H3 with `tm8 task link-pr`. Any new constant goes in the configs registry in the same PR. Tests: harness-surface/manifest unit tests plus a negative control. When the PR is open, message the orchestrator session 01a0d6d3-9f64-70ff-8651-b243fabb9e11 with \"PR READY #N\"; it spawns your reviewer-merger. Do NOT merge.\nQuestions or decisions → the advisor session 01a0d777-8b84-7734-b41c-35def00bdf53 (task 01a0d777-7b11).\nLoad: `uptime` before tests or lanes; wait if it's above ~80. Run probe lanes one at a time.\nFIRST COMMAND: `git fetch origin && git rev-list --count HEAD..origin/main`. If it's not 0, `git merge --ff-only origin/main`. If node_modules is missing, `bun install`, then `bun run build`.\n",
+        "acceptanceCriteria": []
+      },
+      "fn": null,
+      "needleId": null,
+      "needleAt": null,
+      "fileId": null,
+      "linkedIds": [
+        "01a0da6d-a752-720a-b2a6-505e0212b9d4",
+        "01a0da6d-a819-7e18-8313-7aacf34ccbb8",
+        "01a0da6d-a8e0-751a-b2e7-449ed6411699"
+      ],
+      "edges": [
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a752-720a-b2a6-505e0212b9d4"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a819-7e18-8313-7aacf34ccbb8"
+        },
+        {
+          "src": "TASK",
+          "type": "relates_to",
+          "dst": "01a0da6d-a8e0-751a-b2e7-449ed6411699"
+        }
+      ],
+      "checks": [],
+      "turn": null,
+      "headerCarriesFact": false,
+      "memoryIds": []
+    }
+  }
+}
