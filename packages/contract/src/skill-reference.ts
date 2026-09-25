@@ -85,4 +85,21 @@ export interface SkillPreviewResult extends EffectiveSkills {
    * no credential root to read.
    */
   installedPlugins?: string[];
+  /**
+   * Per `installedPlugins` id, the live skill entities of that plugin
+   * (`level:'plugin'` Claude skill rows whose `pluginName` the id matches, by
+   * the same `isPluginAllowed` rule spawn's allow set uses). A plugin with no
+   * entry has no skill entity (MCP-only). Design 01a0d348 §3.5, F3: the launch
+   * composer ticks these into `selection.skillIds` instead of `plugins`.
+   * Absent whenever `installedPlugins` is.
+   */
+  pluginSkillIds?: Record<string, string[]>;
+  /**
+   * The launch's edge-driven skill DEFAULTS, in spawn's order: the spawn
+   * tasks' `equips` (when `taskIds` was asked), then the teammate's and its
+   * ancestors'. A present `selection.skillIds` is an exact set, so a composer
+   * that adds plugin skills sends these ∪ the plugin's skills, never the
+   * plugin's skills alone (F3).
+   */
+  defaultSkillIds?: string[];
 }

@@ -275,7 +275,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
  */
 export const TEAMMATE_KNOBS: readonly (SubjectKnob & { envName?: string })[] = [
   { name: 'capabilities.launch.harnessSurface', summary: 'Harness surface a Claude lane boots with.', default: 'minimal', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_HARNESS_SURFACE' },
-  { name: 'capabilities.launch.plugins', summary: 'Plugins a minimal lane keeps.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona' },
+  { name: 'capabilities.launch.plugins', summary: 'Plugins a minimal lane keeps. Plugins with skill entities belong in equips instead (scripts/migrate-launch-plugins-to-equips.mjs, human-run).', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona' },
   { name: 'capabilities.launch.mcpServers', summary: 'MCP servers a minimal lane loads (--mcp-config under --strict-mcp-config). Server names only; their configs can hold credentials.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', display: (v) => (v && typeof v === 'object' ? Object.keys(v as object) : v) },
   { name: 'capabilities.launch.readHints', summary: 'Large-read hint hook on a Claude lane.', default: 'false', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_READ_HINTS' },
   { name: 'agent_tool', summary: 'Agent harness the teammate launches.', default: null, definedIn: EXEC_HANDLERS, anchor: 'tm.agent_tool', change: 'persona' },

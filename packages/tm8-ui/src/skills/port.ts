@@ -6,5 +6,6 @@ export interface SkillPort {
   equip(id: string, teamMemberId: string, equipped: boolean): Promise<unknown>;
   create(spaceId: string, input: SkillAuthoringInput): Promise<unknown>;
   edit(id: string, input: { expectedVersion: number; contentHash?: string; name: string; description: string; body: string }): Promise<unknown>;
-  preview(spaceId: string, input: { teamMemberId: string; projectId?: string; agentTool?: string }): Promise<SkillPreviewResult>;
+  /** `taskIds` is comma-separated: their equips join `defaultSkillIds`. */
+  preview(spaceId: string, input: { teamMemberId: string; projectId?: string; agentTool?: string; taskIds?: string }): Promise<SkillPreviewResult>;
 }

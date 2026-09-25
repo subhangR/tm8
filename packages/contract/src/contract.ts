@@ -4839,7 +4839,10 @@ export interface ExecutionSpawnInput extends CommandContext {
    * The plugins a lean launch keeps, `<name>@<marketplace>` or a bare name —
    * REPLACES the teammate's `capabilities.launch.plugins` for this launch
    * (plugins of equipped plugin skills stay on regardless). Absent means the
-   * teammate's list.
+   * teammate's list. Since F3 (design 01a0d348 §3.5) the launch composer sends
+   * a picked plugin that has skill entities as those skills in
+   * `selection.skillIds` instead, so this carries MCP-only plugins, or the whole
+   * pick when the composer cannot name the plugin's skills.
    */
   plugins?: string[];
   /**

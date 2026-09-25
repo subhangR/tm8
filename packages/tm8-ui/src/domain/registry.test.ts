@@ -699,6 +699,75 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(build({ harnessSurface: 'inherit', plugins: ['sales@synced'] })).not.toHaveProperty('plugins');
   });
 
+  describe('F3: a plugin pick with skill entities is sent as its skills (design 01a0d348 §3.5)', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    // `defaults` is what spawn would load with no selection: the task's equip,
+    // then the teammate's (one of them a plugin skill of `ops`).
+    const pluginSkills = {
+      defaults: ['task-skill', 'persona-review', 'ops-deploy'],
+      byPlugin: {
+        'sales@synced': ['sales-pipeline', 'sales-forecast'],
+        'ops@synced': ['ops-deploy', 'ops-oncall'],
+      },
+    };
+    const build = (over: Partial<typeof config>) =>
+      buildSpawnInput({ clientMutationId: 'cmid-f3', spaceId: 'space-1', config: { ...config, pluginSkills, ...over } });
+
+    it('ticking a plugin never drops an unrelated equipped skill', () => {
+      /* A present `skillIds` is an EXACT set: spawn keeps only what it names
+         and records every other default as `not-selected`. Every pick, alone
+         or combined, must therefore carry every default. */
+      const picks: string[][] = [['sales@synced'], ['ops@synced'], ['sales@synced', 'ops@synced'], ['sales@synced', 'mcp-only@x']];
+      for (const pick of picks) {
+        const input = build({ plugins: pick });
+        for (const id of pluginSkills.defaults) expect(input.selection?.skillIds).toContain(id);
+      }
+    });
+
+    it('sends defaults ∪ the plugin’s skills as the whole skills set, and leaves the other groups to their defaults', () => {
+      const input = build({ plugins: ['sales@synced'] });
+      expect(input.selection).toEqual({
+        skillIds: ['task-skill', 'persona-review', 'ops-deploy', 'sales-pipeline', 'sales-forecast'],
+      });
+      // The pick still replaces the teammate's list: nothing MCP-only was picked.
+      expect(input.plugins).toEqual([]);
+    });
+
+    it('keeps only plugins with no skill entity on `plugins`', () => {
+      const input = build({ plugins: ['mcp-only@x', 'ops@synced'] });
+      expect(input.plugins).toEqual(['mcp-only@x']);
+      expect(input.selection?.skillIds).toEqual(['task-skill', 'persona-review', 'ops-deploy', 'ops-oncall']);
+      // A pick of only MCP plugins changes no skill.
+      expect(build({ plugins: ['mcp-only@x'] })).not.toHaveProperty('selection');
+    });
+
+    it('seeds from the sheet’s own skills set when ✦ Jev sent one, else from the defaults', () => {
+      const jev = build({ plugins: ['sales@synced'], selection: { memoryIds: ['mem-a'], skillIds: ['jev-pick'] } });
+      expect(jev.selection).toEqual({ memoryIds: ['mem-a'], skillIds: ['jev-pick', 'sales-pipeline', 'sales-forecast'] });
+      const memoriesOnly = build({ plugins: ['sales@synced'], selection: { memoryIds: ['mem-a'] } });
+      expect(memoriesOnly.selection?.skillIds).toEqual(['task-skill', 'persona-review', 'ops-deploy', 'sales-pipeline', 'sales-forecast']);
+    });
+
+    it('falls back to the whole pick on `plugins` rather than send a set that could drop something', () => {
+      // Facts unknown: the #731 interim path, unchanged.
+      expect(build({ plugins: ['sales@synced'], pluginSkills: null })).toMatchObject({ plugins: ['sales@synced'] });
+      expect(build({ plugins: ['sales@synced'], pluginSkills: null })).not.toHaveProperty('selection');
+      // `memoryIds` cannot ride beside `selection`.
+      const handOff = build({ plugins: ['sales@synced'], memoryIds: ['mem-x'] });
+      expect(handOff).toMatchObject({ plugins: ['sales@synced'], memoryIds: ['mem-x'] });
+      expect(handOff).not.toHaveProperty('selection');
+      // Past the group ceiling.
+      const huge = { defaults: Array.from({ length: 240 }, (_, i) => `d-${String(i)}`), byPlugin: { 'sales@synced': ['sales-pipeline'] } };
+      const over = build({ plugins: ['sales@synced'], pluginSkills: huge });
+      expect(over).toMatchObject({ plugins: ['sales@synced'] });
+      expect(over).not.toHaveProperty('selection');
+      // Under Full nothing plugin-shaped is sent at all.
+      const full = build({ harnessSurface: 'inherit', plugins: ['sales@synced'] });
+      expect(full).not.toHaveProperty('plugins');
+      expect(full).not.toHaveProperty('selection');
+    });
+  });
+
   it('carries picked memoryIds and truncates at the CONTRACT ceiling, not a UI one', () => {
     /*
      * `memoryIds` is `z.array(SpawnUuidSchema).max(32)` (schemas.ts:1662). The

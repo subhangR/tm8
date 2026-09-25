@@ -4,6 +4,7 @@ import { getKind } from '../domain';
 import {
   buildSpawnInput,
   canLaunch,
+  pluginFactsOf,
   type LaunchCapacity,
   type LaunchProject,
   type LaunchTeammate,
@@ -97,7 +98,7 @@ export interface NewSessionScreenProps {
     projects: readonly LaunchProject[];
     capacity?: LaunchCapacity;
     /** The skill preview; its `installedPlugins` feeds the ··· Plugins row. */
-    loadSkillPreview?: (input: { teamMemberId: string }) => Promise<{ installedPlugins?: string[] }>;
+    loadSkillPreview?: (input: { teamMemberId: string }) => Promise<Parameters<typeof pluginFactsOf>[0]>;
   };
   /** Where the session opens once it is live. */
   onSessionReady: (sessionId: EntityId) => void;
@@ -137,7 +138,7 @@ export function NewSessionScreen({
   const { loadSkillPreview } = launch;
   const loadInstalledPlugins = useMemo(
     () => loadSkillPreview
-      ? async (teamMemberId: string) => (await loadSkillPreview({ teamMemberId })).installedPlugins ?? null
+      ? async (teamMemberId: string) => pluginFactsOf(await loadSkillPreview({ teamMemberId }))
       : undefined,
     [loadSkillPreview],
   );

@@ -160,6 +160,33 @@ export function equippedClaudePlugins(
   return [...names].sort();
 }
 
+/**
+ * Per installed plugin id, the skill entities that belong to it: a
+ * `level:'plugin'` Claude skill row whose `pluginName` the id matches by
+ * `isPluginAllowed` — the same test `pluginDecisions` applies to
+ * `equippedClaudePlugins`' names, so a skill listed here is exactly one that
+ * would turn its plugin on at spawn. Plugins with none are left out (they are
+ * MCP-only, and stay on the `plugins` / persona allowlist path). Design
+ * 01a0d348 §3.5, F3.
+ */
+export function pluginSkillIds(
+  installed: readonly string[],
+  rows: readonly { entityId: string; provider?: string | null; level?: string | null; missing?: boolean; loaderMetadata?: Record<string, unknown> | null }[],
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const id of installed) {
+    const ids = rows.flatMap((row) => {
+      const name = row.loaderMetadata?.pluginName;
+      return row.level === 'plugin' && row.provider === 'claude' && row.missing !== true
+        && typeof name === 'string' && name !== '' && isPluginAllowed(id, [name])
+        ? [row.entityId]
+        : [];
+    });
+    if (ids.length > 0) out[id] = ids;
+  }
+  return out;
+}
+
 /** Which link of the precedence chain chose a lane's surface. */
 export type HarnessSurfaceSource = 'launch' | 'env' | 'inherited' | 'persona' | 'default';
 

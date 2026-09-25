@@ -39,6 +39,7 @@ export {
   asReadHints,
   claudePluginConfigDir,
   harnessSurfaceEnv,
+  pluginSkillIds,
   readInstalledClaudePlugins,
   readHintHookPath,
   type HarnessSurface,

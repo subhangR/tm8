@@ -102,7 +102,7 @@ import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
    design import 2026-09-07. `LaunchQuickConfig` remains the inline fallback
    for surfaces not yet migrated (merge flow). */
 import { LaunchComposerPopup } from '../new-session';
-import { newLaunchMutationId } from '../domain/launch';
+import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -516,7 +516,7 @@ export interface LaunchSources {
    * The Claude plugins a launch by this viewer could load — the launch ···
    * menu's Plugins row. Resolves null when the node cannot say.
    */
-  loadInstalledPlugins?: (teamMemberId: string) => Promise<readonly string[] | null>;
+  loadInstalledPlugins?: LoadInstalledPlugins;
 }
 
 /**
