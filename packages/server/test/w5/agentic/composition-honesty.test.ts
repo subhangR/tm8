@@ -199,8 +199,8 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 191 -> 200 (2026-09-23): the nine skills.* rows are unconditional v1 HTTP. MEASURED.
     // 200 -> 201 (Jev lane F): launch.suggest is unconditional v1 HTTP. MEASURED.
-    expect(REGISTERABLE).toHaveLength(222); /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
-    expect(new Set(REGISTERABLE).size, /* +1 launch.defaults (I9b). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ 'no duplicate names in the denominator').toBe(222) /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */; /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(REGISTERABLE).toHaveLength(224); /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(new Set(REGISTERABLE).size, /* +1 launch.defaults (I9b). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ 'no duplicate names in the denominator').toBe(224) /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */; /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
@@ -211,7 +211,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 190 -> 191 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(withPresence.size).toBe(222); /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(withPresence.size).toBe(224); /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -225,7 +225,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 189 -> 190 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): main's execution.sessions.share and this
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
-    expect(withoutPresence.size).toBe(221); /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(withoutPresence.size).toBe(223); /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -253,8 +253,8 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // value, it is the subtrahend: leaving it at 190 turned the residual into
     // -1 rather than failing on the count. Both readings shift by one and the
     // 0/1 residual split — the actual claim — is unchanged. MEASURED on the merged tree from this assertion's own failing run.
-    expect([withPresence.size, /* +13 forms.* (Forms W1). MEASURED. */ 222 - withPresence.size]).toEqual([222, 0]); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
-    expect([withoutPresence.size, /* +13 forms.* (Forms W1). MEASURED. */ 222 - withoutPresence.size]).toEqual([221, 1]); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+    expect([withPresence.size, /* +13 forms.* (Forms W1). MEASURED. */ 224 - withPresence.size]).toEqual([224, 0]); /* +2 entity chat G. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect([withoutPresence.size, /* +13 forms.* (Forms W1). MEASURED. */ 224 - withoutPresence.size]).toEqual([223, 1]); /* +2 entity chat G. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {

@@ -48,17 +48,17 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // +1 launch.suggest (Jev lane F, 2026-09-23): one mounted v1 POST, so all four move. MEASURED.
         // Jev lane K: +3 credentials.serviceKeys.* rows. MEASURED.
         // SC-3: +10 credentials.space.* / node.credentials.* rows, all mounted v1 HTTP. MEASURED.
-        total: 243, /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
-        v1: 241, /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        total: 245, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        v1: 243, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         reserved: 2,
-        http: 241, /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        http: 243, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
         ws: 1,
-        registerableV1Http: 239, /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+        registerableV1Http: 241, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ // +1 spaces.configs (task 01a0d350). /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 31 }, // +1 spaces.configs (task 01a0d350). +3 (148): spaces.workflows.*
+        { noun: 'space', operationCount: 33 }, // +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. +1 spaces.configs (task 01a0d350). +3 (148): spaces.workflows.*
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

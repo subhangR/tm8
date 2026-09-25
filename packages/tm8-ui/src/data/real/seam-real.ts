@@ -72,6 +72,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type ChatDefault,
+  type ChatDefaultsView,
   type Workflow,
   type SpaceSummary,
 } from '@tm8/contract';
@@ -324,6 +326,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
+    chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
+    setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
+      ops.setChatDefaults(spaceId, defaults),
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),

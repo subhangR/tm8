@@ -138,6 +138,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type ChatDefault,
+  type ChatDefaultsView,
   type SpaceSummary,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
@@ -1650,6 +1652,7 @@ export function createFixtureSeam(): FixtureSeam {
    * CRUD verbs below curate it and `spaceSettings()` clones it per read.
    */
   const taskWorkflows: TaskWorkflow[] = [];
+  let chatDefaults: ChatDefaultsView = { spaceId: FIXTURE_SPACE_ID, defaults: {}, revision: 0 };
   let workflowSeq = 0;
 
   /**
@@ -2353,6 +2356,28 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async spaces() {
       return clone([spaceSummary]);
+    },
+    /** Per-kind chat defaults (migration 226): a PATCH over kinds, `null` / `{}` clears. */
+    async chatDefaults(spaceId): Promise<ChatDefaultsView> {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      return clone(chatDefaults);
+    },
+    async setChatDefaults(spaceId, patch): Promise<ChatDefaultsView> {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      const next: Record<string, ChatDefault> = { ...chatDefaults.defaults };
+      for (const [kind, entry] of Object.entries(patch)) {
+        if (kind === 'message' || kind === 'chat') throw new CollabError('invalid_input', `a chat cannot be about a ${kind}`);
+        const kept: ChatDefault = {
+          ...(entry?.teammateId ? { teammateId: entry.teammateId } : {}),
+          ...(entry?.model?.trim() ? { model: entry.model.trim() } : {}),
+        };
+        if (Object.keys(kept).length === 0) delete next[kind];
+        else next[kind] = kept;
+      }
+      if (JSON.stringify(next) !== JSON.stringify(chatDefaults.defaults)) {
+        chatDefaults = { ...chatDefaults, defaults: next, revision: chatDefaults.revision + 1 };
+      }
+      return clone(chatDefaults);
     },
     /** A small, honest sample: the fixture has no server environment to report. */
     async spaceConfigs(spaceId): Promise<SpaceConfigsView> {

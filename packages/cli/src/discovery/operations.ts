@@ -3037,7 +3037,8 @@ export const CATALOG_DIGEST =
   // Re-measured (headers I4): + entities.header.set/clear; matched to the regenerated manifest.
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
-  'sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2';
+  // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  'sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35';
 
 export const GRAMMAR_VERSION = '2';
 

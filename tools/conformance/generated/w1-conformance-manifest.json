@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2",
+  "catalogDigest": "sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35",
   "catalog": {
-    "total": 243,
-    "v1": 241,
+    "total": 245,
+    "v1": 243,
     "reserved": 2,
-    "http": 241,
+    "http": 243,
     "ws": 1,
-    "registerableV1Http": 239,
+    "registerableV1Http": 241,
     "methods": {
-      "GET": 80,
+      "GET": 81,
       "POST": 114,
       "PATCH": 16,
       "DELETE": 17,
-      "PUT": 14,
+      "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 84,
-      "command": 157,
+      "read": 85,
+      "command": 158,
       "stream": 2
     },
-    "uniqueNames": 243,
-    "uniqueBindings": 242
+    "uniqueNames": 245,
+    "uniqueBindings": 244
   },
   "reservedOperations": [
     "search.query",
@@ -274,6 +274,20 @@
         "operation": "launch.defaults",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/launch/defaults",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.chatDefaults.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/chat-defaults",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.chatDefaults.set",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/chat-defaults",
         "status": "registered",
         "source": "server-router"
       },
@@ -2105,7 +2119,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 211
+    "unimplementedV1Http": 213
   },
   "schemas": {
     "additive": {
@@ -2439,6 +2453,42 @@
         "intentTags": [
           "launch",
           "defaults"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.chatDefaults.get",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.chatDefaults.get",
+        "intentTags": [
+          "spaces",
+          "chat",
+          "defaults",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.chatDefaults.set",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.chatDefaults.set",
+        "intentTags": [
+          "spaces",
+          "chat",
+          "defaults",
+          "set"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
