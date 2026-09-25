@@ -62,7 +62,9 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ledger } from '../discovery/availability.js';
-import { assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg, summaryLine, withActor } from './entity.js';
+import {
+  assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg, summaryLine, warningLines, withActor,
+} from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /**
@@ -341,13 +343,12 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
     if (expectedVersion === undefined || expectedVersion <= 0) {
       throw new CliError('--expect-version expects a positive version', EXIT_USAGE);
     }
-    if (header !== undefined) {
-      // A revision publish has no header door of its own; the header outlives revisions.
-      throw new CliError('--when-to-use / --summary / --keyword apply to a NEW artifact only', EXIT_USAGE, {
-        hint: `change an existing artifact's header with \`tm8 entity header set ${artifactId}\``,
-      });
-    }
-    const body = withActor(cmd, { clientMutationId, expectedVersion, manifest, files: inlineFiles });
+    // Header flags on a revision are applied as a header set in the same
+    // transaction, pinned to the new revision (lenient headers, migration 223).
+    const body = withActor(cmd, {
+      clientMutationId, expectedVersion, manifest, files: inlineFiles,
+      ...(header === undefined ? {} : { header }),
+    });
     const data = await observedInvoke<unknown>(client, 'artifacts.publish', {
       params: { artifactId },
       body,
@@ -583,6 +584,7 @@ function renderArtifactMutation(dto: unknown): string {
   if (entity && entity.id !== undefined) lines.push(summaryLine(entity));
   const revisionNumber = r.revision?.revisionNumber ?? r.revisionNumber;
   if (revisionNumber !== undefined) lines.push(`revision: r${String(revisionNumber)}`);
+  lines.push(...warningLines(dto));
   return lines.length > 0 ? lines.join('\n') : JSON.stringify(dto);
 }
 

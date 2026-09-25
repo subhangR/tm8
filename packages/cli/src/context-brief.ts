@@ -82,7 +82,10 @@ export function renderHeaderLines(header: Record<string, unknown>): string[] {
     `header: ${String(header['source'] ?? '-')}`
       + (version > 0 ? ` v${version}` : ' (none authored: --expect-version 0)')
       + (header['stale'] === true ? ` · stale (written for v${String(header['pinnedVersion'])})` : '')
-      + (header['bytes'] == null ? '' : ` · body ${String(header['bytes'])} B`),
+      + (header['bytes'] == null ? '' : ` · body ${String(header['bytes'])} B`)
+      + (Array.isArray(header['clipped']) && header['clipped'].length > 0
+        ? ` · clipped: ${header['clipped'].map(String).join(', ')}`
+        : ''),
     // Escaped as the prompt escapes it (@tm8/prompt escape.ts), or authored
     // text reading `</untrusted_data>` would end the block it is in.
     '<untrusted_data type="entry-header" encoding="escaped-utf8">',

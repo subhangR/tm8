@@ -44,7 +44,10 @@ import {
 
 import type { Querier } from '../../../db/types.js';
 import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
-import { clearEntityHeader, createHeaderMutationId, setEntityHeader } from '../../../headers/write.js';
+import {
+  clearEntityHeader, createHeaderMutationId, headerWarnings, setEntityHeader, withHeaderWarnings,
+  type HeaderRpcResult,
+} from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -939,14 +942,27 @@ async function withHeader(q: Querier, detail: EntityDetail): Promise<EntityDetai
 }
 
 /**
- * A header command's result: the command result, and the header now in
- * effect — after a clear, the native/derived one, at version 0.
+ * A header command's result: the command result, the header now in effect —
+ * after a clear, the native/derived one, at version 0 — and the RPC's
+ * warnings. A kind with no header at all (work_session, chat, message, c:*)
+ * has no `header`; its command was a no-op with `header_not_stored`.
  */
-async function headerResult(q: Querier, id: string, result: CommandResult): Promise<EntityHeaderResult> {
-  const header = result.entity ? await headerOf(q, result.entity) : undefined;
-  if (!result.entity || !header) throw new CollabError('not_found', `no readable entity with a header: ${id}`);
+async function headerResult(
+  q: Querier,
+  id: string,
+  raw: HeaderRpcResult,
+  result: CommandResult,
+): Promise<EntityHeaderResult> {
+  if (!result.entity) throw new CollabError('not_found', `no readable entity: ${id}`);
+  const warnings = headerWarnings(raw);
+  const header = await headerOf(q, result.entity);
   const own = authored(header);
-  return { ...result, entity: own ? { ...result.entity, header: own } : result.entity, header };
+  return {
+    ...result,
+    entity: own ? { ...result.entity, header: own } : result.entity,
+    ...(header ? { header } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 async function commandResult(
@@ -1431,13 +1447,14 @@ export class W2EntitiesCommandsTrackingService {
       }
       await attachInitialConnections(q, raw, input);
       // An authored header rides the create's transaction: the entity and its
-      // header land together or not at all (headers design §3.1).
-      if (input.header && raw.entity?.id) {
-        await setEntityHeader(q, raw.entity.id, input.header, 0, envelope.actorId ?? null,
-          createHeaderMutationId(envelope.clientMutationId));
-      }
+      // header land together or not at all (headers design §3.1). On a kind
+      // that stores none the create still succeeds, and says why (223).
+      const warnings = input.header && raw.entity?.id
+        ? headerWarnings(await setEntityHeader(q, raw.entity.id, input.header, 0, envelope.actorId ?? null,
+          createHeaderMutationId(envelope.clientMutationId)))
+        : [];
       const receipt = wantsReceipt(ctx) ? await buildReceipt(q, 'entity.create', raw) : undefined;
-      return receipt ?? commandResult(q, raw, owner.identityId);
+      return withHeaderWarnings(receipt ?? await commandResult(q, raw, owner.identityId), warnings);
     });
   };
 
@@ -1646,13 +1663,14 @@ export class W2EntitiesCommandsTrackingService {
     return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
       const raw = await setEntityHeader(q, id, input, input.expectedVersion, envelope.actorId ?? null,
         envelope.clientMutationId ?? null);
-      return headerResult(q, id, await commandResult(q, raw, owner.identityId));
+      return headerResult(q, id, raw, await commandResult(q, raw, owner.identityId));
     });
   };
 
   /**
    * `entities.header.clear` — remove the authored header, so the entity falls
-   * back to its native/derived one. The header's expected version is required.
+   * back to its native/derived one. The header's expected version is optional;
+   * an entity with no authored header is a no-op with a warning.
    */
   readonly clearHeader = async (ctx: RequestContext): Promise<EntityHeaderResult> => {
     const owner = await this.deps.owner();
@@ -1662,7 +1680,7 @@ export class W2EntitiesCommandsTrackingService {
     return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
       const raw = await clearEntityHeader(q, id, input.expectedVersion, envelope.actorId ?? null,
         envelope.clientMutationId ?? null);
-      return headerResult(q, id, await commandResult(q, raw, owner.identityId));
+      return headerResult(q, id, raw, await commandResult(q, raw, owner.identityId));
     });
   };
 

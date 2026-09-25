@@ -144,9 +144,10 @@ describe('W5.C generator proof', () => {
       // clientMutationId; the credential id rides the path.
       'credentials.space.delete',
       'credentials.space.setDefault',
-      // headers I4: every text field is optional in the schema; a bare {} is
-      // refused by `set_entity_header` ("needs when_to_use or summary"), so
-      // the schema stays a plain object the CLI guard sweep can read.
+      // headers I4 / lenient headers (223): the entity rides the path and every
+      // field is optional. A bare {} set is a server no-op with warning
+      // `header_empty`; a bare {} clear is an unguarded clear.
+      'entities.header.clear',
       'entities.header.set',
       'entityKinds.update',
       // 2026-08-12 (Git UI landing): the two git verbs whose bodies are

@@ -28,7 +28,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bindPath, type OperationName } from '@tm8/contract';
@@ -947,17 +947,86 @@ describe('entity header set / clear, and header flags on create', () => {
     });
   });
 
-  it('set with no text is a usage error and sends nothing', async () => {
-    const r = await drive(['entity', 'header', 'set', ENT, '--keyword', 'x']);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain('--when-to-use');
-    expect(seen).toHaveLength(0);
+  it('set is never refused locally: keywords only, or no flags at all, reach the server (lenient headers)', async () => {
+    const keywords = await drive(['entity', 'header', 'set', ENT, '--keyword', 'x']);
+    expect(keywords.code).toBe(0);
+    expect(seen[0]!.body).toMatchObject({ keywords: ['x'] });
+    expect(seen[0]!.body).not.toHaveProperty('whenToUse');
+    const bare = await drive(['entity', 'header', 'set', ENT]);
+    expect(bare.code).toBe(0);
+    expect(seen[1]!.body).not.toHaveProperty('summary');
+    expect(seen[1]!.body).not.toHaveProperty('expectedVersion');
   });
 
-  it('clear requires --expect-version and sends nothing without it', async () => {
+  it('clear without --expect-version is unguarded: it sends no expectedVersion', async () => {
     const r = await drive(['entity', 'header', 'clear', ENT]);
-    expect(r.code).toBe(2);
-    expect(seen).toHaveLength(0);
+    expect(r.code).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.method).toBe('DELETE');
+    expect(seen[0]!.body).not.toHaveProperty('expectedVersion');
+    const guarded = await drive(['entity', 'header', 'clear', ENT, '--expect-version', '2']);
+    expect(guarded.code).toBe(0);
+    expect(seen[1]!.body).toMatchObject({ expectedVersion: 2 });
+  });
+
+  it('a server warning is printed, never dropped, and a clipped header says which field was cut', async () => {
+    reply = {
+      status: 200,
+      body: {
+        data: {
+          patches: [],
+          warnings: [{ code: 'header_empty', message: 'every header field was empty after trimming, so nothing was written' }],
+          header: {
+            entityId: ENT, kind: 'doc', name: 'Notes', whenToUse: 'W', summary: 'S…',
+            keywords: [], source: 'authored', stale: false, bytes: 10, loadPointer: `tm8 entity context ${ENT}`,
+            version: 3, pinnedVersion: 2, clipped: ['summary'],
+          },
+        },
+        requestId: 'req_t',
+      },
+    };
+    const r = await drive(['entity', 'header', 'set', ENT, '--format', 'human']);
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split('\n');
+    expect(lines[0]).toBe('header: authored v3 · body 10 B · clipped: summary');
+    expect(lines.at(-1)).toBe('WARNING header_empty: every header field was empty after trimming, so nothing was written');
+  });
+
+  it('a no-op on a kind with no header prints the warning with the entity', async () => {
+    reply = {
+      status: 200,
+      body: {
+        data: {
+          patches: [],
+          entity: { id: ENT, kind: 'work_session', title: 'A session', version: 1 },
+          warnings: [{ code: 'header_not_stored', message: 'a work_session is referenced by id alone and carries no header; nothing was stored' }],
+        },
+        requestId: 'req_t',
+      },
+    };
+    const r = await drive(['entity', 'header', 'set', ENT, '--summary', 'S', '--format', 'human']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('WARNING header_not_stored: a work_session is referenced by id alone');
+  });
+
+  it('artifact publish --artifact carries the header flags on the revision (no longer refused)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-artifact-header-'));
+    try {
+      writeFileSync(join(dir, 'index.html'), '<!doctype html><title>r2</title>');
+      const { ARTIFACT_COMMANDS } = await import('../src/commands/artifact.js');
+      const r = await driveWith(ARTIFACT_COMMANDS, [
+        'artifact', 'publish', dir, '--artifact', ENT, '--expect-version', '3',
+        '--when-to-use', 'Open when reviewing r2', '--summary', 'Revision two',
+      ]);
+      expect(r.code, r.stderr).toBe(0);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.pathname).toContain(`/artifacts/${ENT}/revisions`);
+      expect(seen[0]!.body).toMatchObject({
+        expectedVersion: 3, header: { whenToUse: 'Open when reviewing r2', summary: 'Revision two' },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('create carries the header flags as `header` in the one create call', async () => {

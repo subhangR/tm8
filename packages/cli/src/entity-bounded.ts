@@ -103,7 +103,8 @@ export function boundEntityDetail(detail: Rec): Rec {
     state: detail['state'],
     ...(detail['capabilities'] === undefined ? {} : { capabilities: detail['capabilities'] }),
     content: capContent(detail['content'], cuts),
-    // The selection header is itself the bounded summary (≤ 600 + 400 chars).
+    // The selection header is itself the bounded summary: the server clips its
+    // text to 400 + 600 chars and 12 × 40 keywords, and names a cut in `clipped`.
     ...(detail['header'] === undefined ? {} : { header: detail['header'] }),
     hierarchy: {
       parent: ref(hierarchy['parent']),

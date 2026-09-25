@@ -34,7 +34,7 @@ import { raw } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, requireParam, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
-import { createHeaderMutationId, setEntityHeader } from '../../../headers/write.js';
+import { createHeaderMutationId, headerWarnings, setEntityHeader, withHeaderWarnings } from '../../../headers/write.js';
 
 /**
  * Preview capability TTL (design §9.5: 10 minutes). The RPC also enforces a
@@ -257,11 +257,11 @@ export class W2ArtifactsService {
         input.clientMutationId,
       ]);
       // An authored header rides the create's transaction (headers design §3.1).
-      if (input.header && rpc.entity?.id) {
-        await setEntityHeader(q, rpc.entity.id, input.header, 0, envelope.actorId ?? null,
-          createHeaderMutationId(input.clientMutationId));
-      }
-      return toCommandResult(q, rpc, viewerIdentityId);
+      const warnings = input.header && rpc.entity?.id
+        ? headerWarnings(await setEntityHeader(q, rpc.entity.id, input.header, 0, envelope.actorId ?? null,
+          createHeaderMutationId(input.clientMutationId)))
+        : [];
+      return withHeaderWarnings(await toCommandResult(q, rpc, viewerIdentityId), warnings);
     });
   };
 
@@ -292,7 +292,14 @@ export class W2ArtifactsService {
         envelope.actorId ?? null,
         input.clientMutationId,
       ]);
-      return toCommandResult(q, rpc, viewerIdentityId);
+      // Header flags on a revision are a header set in the same transaction,
+      // AFTER the revision is current, so the header pins THIS revision.
+      // Unguarded: the revision's own expectedVersion already guarded the call.
+      const warnings = input.header
+        ? headerWarnings(await setEntityHeader(q, artifactId, input.header, undefined, envelope.actorId ?? null,
+          createHeaderMutationId(input.clientMutationId)))
+        : [];
+      return withHeaderWarnings(await toCommandResult(q, rpc, viewerIdentityId), warnings);
     });
   };
 
