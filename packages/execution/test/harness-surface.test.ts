@@ -216,6 +216,9 @@ describe('buildAgentCommand harness surface', () => {
       buildAgentCommand({ ...LAUNCH, harnessSurface: 'inherit' }, {}, {
         claudeSessionId: 'uuid-1',
         installedClaudePlugins: INSTALLED,
+        equippedClaudePlugins: ['sales'],
+        // Even a skill plan handed in is ignored: inherit restores everything.
+        skillOverrides: { astro: 'off', graphify: 'name-only' },
       }),
     ).toBe(BARE);
   });
