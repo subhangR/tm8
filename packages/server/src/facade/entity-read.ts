@@ -1576,6 +1576,12 @@ export interface AssemblyContext {
   pullRequests?: Map<string, LinkedPullRequestBadges>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
+  /**
+   * Each chat's `about` subject, per chat id (`loadChatSubjects`). Absent means
+   * the pass did not compute subjects, and the chat state then OMITS `about`
+   * rather than claiming "no subject" — the contract's absent-vs-null rule.
+   */
+  chatSubjects?: Map<string, ChatSubject>;
 }
 
 /** The profile status enum, defaulted rather than trusted (projector's oneOf). */
@@ -1857,6 +1863,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         turnState: row.chat_turn_state ?? 'idle',
         turnCount: Number(row.chat_turn_count ?? 0),
         lastTurnAt: isoOrNull(row.chat_last_turn_at),
+        ...(ctx.chatSubjects ? { about: ctx.chatSubjects.get(row.id) ?? null } : {}),
       };
     case 'container': {
       // Hot and small — this rides EVERY list row, so it carries the surface
@@ -2599,6 +2606,61 @@ export function contentOf(row: EntityRow): EntityContent {
   }
 }
 
+/** A chat's `about` subject, as the chat list tile draws it. */
+export interface ChatSubject {
+  id: string;
+  kind: EntityKind;
+  title: string;
+}
+
+/**
+ * Each chat's `about` subject (entity chat §3.6) — for the WHOLE page, in at
+ * most two queries however many chats it holds: the edges, then the target
+ * rows. Never a read per chat; the Chats list is the one list whose length
+ * scales with the space.
+ *
+ * ONE loader for BOTH assemblers (this file's and the events projector's), for
+ * the reason `loadLinkedPullRequestBadges` is shared: a subject that rode the
+ * boot read and vanished on the next `entity.upsert` would read as the link
+ * being removed.
+ *
+ * Runs under the CALLER's claims, so a subject the reader cannot see simply
+ * does not come back and the chat reads as having none — the id is not leaked.
+ * A soft-deleted subject is dropped the same way: a chip that opens a tombstone
+ * is not a subject. Skipped entirely when no chat is in the batch.
+ */
+export async function loadChatSubjects(
+  q: Querier,
+  rows: readonly { id: string; kind: string }[],
+): Promise<Map<string, ChatSubject>> {
+  const out = new Map<string, ChatSubject>();
+  const chatIds = rows.filter((r) => r.kind === 'chat').map((r) => r.id);
+  if (chatIds.length === 0) return out;
+
+  // `chat.start` writes one `about` edge; latest wins should there ever be two.
+  const edges = await q.query<{ src_id: string; dst_id: string }>(
+    `select distinct on (src_id) src_id, dst_id
+       from public.edges
+      where type = 'about' and src_id = any($1::uuid[])
+      order by src_id, created_at desc, id desc`,
+    [chatIds],
+  );
+  if (edges.length === 0) return out;
+
+  const targetIds = [...new Set(edges.map((edge) => edge.dst_id))];
+  const targets = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = any($1::uuid[]) and e.deleted_at is null`,
+    [targetIds],
+  );
+  const byId = new Map(targets.map((row) => [row.id, row]));
+  for (const edge of edges) {
+    const target = byId.get(edge.dst_id);
+    if (!target) continue;
+    out.set(edge.src_id, { id: target.id, kind: target.kind as EntityKind, title: titleOf(target) });
+  }
+  return out;
+}
+
 /**
  * Assemble summaries for a set of rows: batch the relations, batch the actors,
  * then map. Two passes over the rows, because `badges.blocked.waitingOn` and
@@ -2633,6 +2695,7 @@ export async function assembleSummaries(
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
   const humanMessageAuthors = await loadHumanMessageAuthorIds(q, ids);
+  const chatSubjects = await loadChatSubjects(q, rows);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -2685,6 +2748,7 @@ export async function assembleSummaries(
   // Pass 2: the real thing, with relations and the summaries the badges need.
   const ctx: AssemblyContext = {
     actors, relations, viewerReactions, unreadCounts, related, pullRequests, humanMessageAuthors,
+    chatSubjects,
   };
   return rows.map((r) => toEntitySummary(r, ctx));
 }
