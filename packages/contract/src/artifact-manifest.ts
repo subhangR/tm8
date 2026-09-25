@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 import type { CommandContext, EntityId, SpaceId } from './contract.js';
+import type { HeaderTextInput } from './selection-header.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants (§4, §4.3)
@@ -391,6 +392,8 @@ export interface ArtifactsCreateInput extends CommandContext {
   sourceWorkSessionId?: EntityId | null;
   parentId?: EntityId | null;
   position?: number;
+  /** An authored selection header, written in the same transaction as the artifact. */
+  header?: HeaderTextInput;
 }
 
 /** POST /v2/artifacts/:artifactId/revisions — publish a further revision. */

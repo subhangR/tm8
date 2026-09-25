@@ -227,6 +227,34 @@ describe('W2 artifacts service (pg)', () => {
     expect(sha256(second.body)).toBe(sha256(first.body));
   });
 
+  it('create writes an authored selection header in the same transaction (headers I4)', async () => {
+    const html = await registerBytes('<!doctype html><title>header</title>');
+    const manifest: ArtifactManifest = {
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{ path: 'index.html', mediaType: 'text/html', size: html.size, sha256: html.sha256 }],
+    };
+    const created = (await service.create(
+      ctx('artifacts.create', {}, {
+        clientMutationId: `create-${randomUUID()}`,
+        spaceId: fixture.spaceId,
+        name: 'Header Target',
+        manifest,
+        header: { whenToUse: 'Open when reviewing the dashboard', keywords: ['dashboard'] },
+      } satisfies ArtifactsCreateInput),
+    )) as CommandResult;
+    const rows = await database.query<{ when_to_use: string; keywords: string[]; version: number; pinned_ref: string | null }>(
+      'select when_to_use, keywords, version, pinned_ref from public.entity_headers where entity_id = $1',
+      [created.entity!.id],
+    );
+    expect(rows).toEqual([{
+      when_to_use: 'Open when reviewing the dashboard', keywords: ['dashboard'], version: 1,
+      // An artifact's header pins its current revision (216).
+      pinned_ref: expect.any(String),
+    }]);
+  });
+
   it('preview.start mints a token and returns no previewUrl', async () => {
     const html = await registerBytes('<!doctype html><title>preview</title>');
     const manifest: ArtifactManifest = {

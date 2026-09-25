@@ -62,7 +62,7 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ledger } from '../discovery/availability.js';
-import { assertKnownOptions, requireArg, summaryLine, withActor } from './entity.js';
+import { assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg, summaryLine, withActor } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /**
@@ -310,8 +310,10 @@ function buildManifest(
 async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'space', 'name', 'description', 'entrypoint', 'artifact', 'expect-version', 'mutation-id',
+    ...HEADER_TEXT_OPTIONS,
   ]);
   const dir = requireArg(cmd, 0, '<dir>');
+  const header = headerTextOptions(cmd);
 
   const artifactId = cmd.options.value('artifact');
   const expectedVersion = cmd.options.integer('expect-version');
@@ -339,6 +341,12 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
     if (expectedVersion === undefined || expectedVersion <= 0) {
       throw new CliError('--expect-version expects a positive version', EXIT_USAGE);
     }
+    if (header !== undefined) {
+      // A revision publish has no header door of its own; the header outlives revisions.
+      throw new CliError('--when-to-use / --summary / --keyword apply to a NEW artifact only', EXIT_USAGE, {
+        hint: `change an existing artifact's header with \`tm8 entity header set ${artifactId}\``,
+      });
+    }
     const body = withActor(cmd, { clientMutationId, expectedVersion, manifest, files: inlineFiles });
     const data = await observedInvoke<unknown>(client, 'artifacts.publish', {
       params: { artifactId },
@@ -358,6 +366,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
   const body: Record<string, unknown> = { clientMutationId, spaceId, name, manifest, files: inlineFiles };
   const description = cmd.options.value('description');
   if (description !== undefined) body.description = description;
+  if (header !== undefined) body.header = header;
 
   const data = await observedInvoke<unknown>(client, 'artifacts.create', {
     body: withActor(cmd, body),

@@ -20,6 +20,8 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.get': service.getEntity,
     'entities.create': async (ctx) => json(await service.createEntity(ctx), { status: 201 }),
     'entities.patch': service.patchEntity,
+    'entities.header.set': service.setHeader,
+    'entities.header.clear': service.clearHeader,
     'attentionRequests.list': service.listAttentionRequests,
     'attentionRequests.create': async (ctx) => json(await service.createAttentionRequest(ctx), { status: 201 }),
     'attentionRequests.update': service.updateAttentionRequest,

@@ -72,7 +72,7 @@ import {
   type ReceiptWarning,
 } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
-import { renderContextBrief } from '../context-brief.js';
+import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 
@@ -817,10 +817,30 @@ async function readContent(raw: string): Promise<Record<string, unknown>> {
   return parsed as Record<string, unknown>;
 }
 
+/**
+ * The selection-header flags (`--when-to-use`, `--summary`, `--keyword...`) as
+ * a `HeaderTextInput`, or undefined when none was passed. Shared by
+ * `entity create`, `entity header set` and `artifact publish`.
+ */
+export function headerTextOptions(cmd: CommandContext): Record<string, unknown> | undefined {
+  const whenToUse = cmd.options.value('when-to-use');
+  const summary = cmd.options.value('summary');
+  const keywords = cmd.options.values('keyword');
+  if (whenToUse === undefined && summary === undefined && keywords.length === 0) return undefined;
+  return {
+    ...(whenToUse === undefined ? {} : { whenToUse }),
+    ...(summary === undefined ? {} : { summary }),
+    ...(keywords.length === 0 ? {} : { keywords }),
+  };
+}
+
+/** The header flag names, for option allowlists. */
+export const HEADER_TEXT_OPTIONS = ['when-to-use', 'summary', 'keyword'] as const;
+
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
-    'no-session-link',
+    'no-session-link', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
   const title = requireArg(cmd, 1, '<title>');
@@ -840,6 +860,8 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (content !== undefined) body.content = await readContent(content);
   const connections = initialConnections(cmd);
   if (connections.length > 0) body.connections = connections;
+  const header = headerTextOptions(cmd);
+  if (header !== undefined) body.header = header;
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'entity.create', { mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
@@ -892,6 +914,56 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
   );
   cmd.out.mutation('entity.update', data, renderCommandResult, () =>
     successReceipt('entity.update', data, { expectedVersion, ...callerMutationId(cmd.options) }));
+  return EXIT_OK;
+}
+
+/** A header command's result: the header now in effect, one field a line. */
+function renderHeaderResult(dto: unknown): string {
+  const header = (dto as { header?: Record<string, unknown> } | undefined)?.header;
+  if (!header) return renderCommandResult(dto);
+  return renderHeaderLines(header).join('\n');
+}
+
+async function entityHeaderSet(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, [...HEADER_TEXT_OPTIONS, 'expect-version', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<entity-id>');
+  const header = headerTextOptions(cmd);
+  if (header?.['whenToUse'] === undefined && header?.['summary'] === undefined) {
+    throw new CliError('`tm8 entity header set` needs --when-to-use <text> or --summary <text>', EXIT_USAGE, {
+      hint: 'the whole header is written, so pass every field to keep; `tm8 entity header clear` removes it',
+    });
+  }
+  const expectedVersion = cmd.options.integer('expect-version');
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    ...header,
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
+  };
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.header.set', {
+    params: { id },
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderHeaderResult);
+  return EXIT_OK;
+}
+
+async function entityHeaderClear(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['expect-version', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<entity-id>');
+  const expectedVersion = cmd.options.integer('expect-version');
+  if (expectedVersion === undefined) {
+    throw new CliError('`tm8 entity header clear` requires --expect-version <n>', EXIT_USAGE, {
+      hint: 'the header\'s own version is `header.version` in `tm8 entity context <entity-id>`',
+    });
+  }
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.header.clear', {
+    params: { id },
+    body: withActor(cmd, {
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      expectedVersion,
+    }),
+  });
+  cmd.out.data(data, renderHeaderResult);
   return EXIT_OK;
 }
 
@@ -1044,6 +1116,8 @@ export const ENTITY_COMMANDS: CommandModule[] = [
   { path: ['entity', 'get'], run: entityGet },
   { path: ['entity', 'create'], run: entityCreate },
   { path: ['entity', 'update'], run: entityUpdate },
+  { path: ['entity', 'header', 'set'], run: entityHeaderSet },
+  { path: ['entity', 'header', 'clear'], run: entityHeaderClear },
   { path: ['entity', 'attention'], run: entityAttention },
   { path: ['entity', 'move'], run: entityMove },
   { path: ['entity', 'delete'], run: entityDelete },

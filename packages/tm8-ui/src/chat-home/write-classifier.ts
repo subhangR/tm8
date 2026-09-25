@@ -64,6 +64,8 @@ const WRITE_VERB =
 export const WRITE_OPS: ReadonlySet<string> = new Set([
   'entities.create',
   'entities.patch',
+  'entities.header.set',
+  'entities.header.clear',
   'entities.move',
   'entities.delete',
   'entities.restore',

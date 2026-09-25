@@ -24,7 +24,7 @@
  * `env.TM8_*` read appears in a package source without an entry here or on
  * `NOT_CONFIG_ENV` below.
  */
-import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import { AUTHORED_HEADER_LIMITS, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import type { ConfigChangeRoute } from '@tm8/contract';
 import { LANE_BUNDLED_SKILLS_OFF, MINIMAL_MCP_CONFIG } from '@tm8/execution';
 import { ATTACHMENT_MANIFEST_MAX, BYTE_BUDGETS, LINKED_MANIFEST_MAX } from '@tm8/prompt';
@@ -250,6 +250,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
   { name: 'MEMORY_TICK_LIMIT', group: 'Jev selection', summary: 'Most memories a launch can carry.', definedIn: 'packages/server/src/jev/groups.ts', read: () => MEMORY_TICK_LIMIT },
   { name: 'CANDIDATE_LIMIT', group: 'Jev selection', summary: 'Candidates Jev ranks per launch.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => CANDIDATE_LIMIT },
   { name: 'TEXT_LIMIT', group: 'Jev selection', summary: 'Characters of a memory, persona or skill description that may leave the server.', definedIn: 'packages/server/src/jev/candidates.ts', read: () => TEXT_LIMIT },
+  { name: 'AUTHORED_HEADER_LIMITS', group: 'Jev selection', summary: 'Authored selection-header caps (characters): whenToUse, summary, keyword count and length. Migration 216 enforces the same numbers.', definedIn: 'packages/contract/src/selection-header.ts', read: () => AUTHORED_HEADER_LIMITS },
   { name: 'LANE_BUNDLED_SKILLS_OFF', group: 'Lane launch', summary: 'Bundled Claude Code skills a minimal lane turns off (skillOverrides). Kept: code-review, simplify, security-review, workflow-authoring. Escape: persona harnessSurface inherit, or TM8_HARNESS_SURFACE=inherit.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => LANE_BUNDLED_SKILLS_OFF },
   { name: 'MINIMAL_MCP_CONFIG', group: 'Lane launch', summary: 'MCP config a minimal lane runs under --strict-mcp-config.', definedIn: 'packages/execution/src/spawn/harness-surface.ts', read: () => MINIMAL_MCP_CONFIG },
   { name: 'DEFAULT_AUTH_RATE_LIMITS', group: 'Network & access', summary: 'Auth rate limits used when the TM8_AUTH_* variables are unset.', definedIn: 'packages/server/src/http/auth-rate-limit.ts', read: () => DEFAULT_AUTH_RATE_LIMITS },
