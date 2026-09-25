@@ -1,6 +1,8 @@
 import { forwardRef, useState } from 'react';
 import type { RankedEntity, RankedEntityHeader } from '@tm8/contract';
 
+import { Timestamp } from '../kit';
+
 import { BudgetMeter, formatBytes } from './BudgetMeter';
 import { SOURCE_WORDS } from './format';
 import { JevCostLine } from './JevCostLine';
@@ -410,9 +412,7 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
               <li key={line.target} className="jev-ledger__line" data-testid={`jev-ledger-${line.target}`}>
                 <span className="jev-ledger__group">{TARGET_WORD[line.target]}</span>
                 <span className="jev-ledger__what">{line.what}</span>
-                <time className="jev-cost" dateTime={new Date(line.at).toISOString()}>
-                  {new Date(line.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </time>
+                <Timestamp className="jev-cost" at={line.at} />
                 <button
                   type="button"
                   className="jev-link"
