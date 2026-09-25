@@ -121,6 +121,72 @@ describe('HeaderSection — reading', () => {
   });
 });
 
+describe('HeaderSection — the derived preview (header=resolved)', () => {
+  const derivedHeader = (over: Partial<EntityHeaderView> = {}): EntityHeaderView =>
+    authored({ source: 'derived', version: 0, pinnedVersion: null, whenToUse: null, summary: 'C_min formula, floors, route grammar.', keywords: [], bytes: 900, ...over });
+
+  it('with no authored header, shows what launches fall back to, labelled derived', async () => {
+    const detail = doc();
+    const resolvedHeader = vi.fn(async () => derivedHeader());
+    render(<HeaderSection detail={detail} commands={{ ...commandsFor(detail), resolvedHeader }} />);
+    expect(await screen.findByTestId('header-derived-summary')).toBeTruthy();
+    expect(resolvedHeader).toHaveBeenCalledWith(detail.id);
+    expect(screen.getByTestId('header-derived-summary').textContent).toBe('C_min formula, floors, route grammar.');
+    expect(screen.queryByTestId('header-derived-when')).toBeNull();
+    expect(screen.getByTestId('header-source').textContent).toBe('derived');
+    expect(screen.getByTestId('header-none').textContent).toBe('No authored header: launches read this derived one.');
+    // Still an invitation to write one, never an edit of the fallback.
+    expect(screen.getByTestId('header-edit').textContent).toBe('Write header');
+    expect(screen.queryByTestId('header-clear')).toBeNull();
+  });
+
+  it('an authored header is never previewed over: the read is not even made', () => {
+    const detail = doc({ header: authored() });
+    const resolvedHeader = vi.fn(async () => derivedHeader());
+    render(<HeaderSection detail={detail} commands={{ ...commandsFor(detail), resolvedHeader }} />);
+    expect(resolvedHeader).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('header-derived')).toBeNull();
+  });
+
+  it('a failed read, an authored answer (a stale detail) or an empty fallback keep the plain sentence', async () => {
+    for (const read of [
+      async () => { throw new Error('offline'); },
+      async () => authored({ version: 2 }),
+      async () => derivedHeader({ summary: null, whenToUse: null }),
+      async () => undefined,
+    ]) {
+      const detail = doc();
+      const resolvedHeader = vi.fn(read);
+      const { unmount } = render(<HeaderSection detail={detail} commands={{ ...commandsFor(detail), resolvedHeader }} />);
+      await waitFor(() => expect(resolvedHeader).toHaveBeenCalledTimes(1));
+      await Promise.resolve();
+      expect(screen.queryByTestId('header-derived')).toBeNull();
+      expect(screen.getByTestId('header-none').textContent).toBe('No header: later launches see its derived summary.');
+      expect(screen.getByTestId('header-source').textContent).toBe('not authored');
+      unmount();
+    }
+  });
+
+  it('derived text is untrusted too: rendered as text', async () => {
+    const detail = doc();
+    const hostile = '<img src=x onerror="alert(1)">';
+    const { container } = render(
+      <HeaderSection detail={detail} commands={{ ...commandsFor(detail), resolvedHeader: async () => derivedHeader({ summary: hostile }) }} />,
+    );
+    expect((await screen.findByTestId('header-derived-summary')).textContent).toBe(hostile);
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('after a clear, the preview is fetched for the fallback now in effect', async () => {
+    const detail = doc({ header: authored({ version: 4 }) });
+    const resolvedHeader = vi.fn(async () => derivedHeader());
+    render(<HeaderSection detail={detail} commands={{ ...commandsFor(detail), resolvedHeader }} />);
+    fireEvent.click(screen.getByTestId('header-clear'));
+    expect(await screen.findByTestId('header-derived-summary')).toBeTruthy();
+    expect(resolvedHeader).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('HeaderSection — writing', () => {
   it('saves with the HEADER version as expectedVersion, blank fields as null, keywords split', async () => {
     const detail = doc({ header: authored({ version: 3 }) });

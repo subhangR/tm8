@@ -508,6 +508,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `entities.header.set|clear` — their own ops because the header carries
       // its own version and never moves the entity's.
       'setEntityHeader', 'clearEntityHeader',
+      // Amendment 14: the opt-in `header=resolved` read (a read in commands,
+      // on Amendment 12's precedent).
+      'resolvedHeader',
       // 176: `chat.start` — the write half of the chat-home bridge, and now the
       // ONLY door a chat is born from. It replaces `startChatThread`, which
       // configured an already-posted root message; this one creates the chat

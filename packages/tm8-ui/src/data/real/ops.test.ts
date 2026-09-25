@@ -317,6 +317,14 @@ describe('ops: divergence 1 — no task route; fields travel inside content', ()
     expect(f.last().body).toEqual({ expectedVersion: 3 });
   });
 
+  it('resolvedHeader is the OPT-IN entities.get?header=resolved read, answering its header', async () => {
+    const header = { entityId: 'e-1', version: 0, source: 'derived' };
+    const { ops, f } = harness({ id: 'e-1', header });
+    await expect(ops.resolvedHeader('e-1')).resolves.toEqual(header);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/entities/e-1?header=resolved');
+  });
+
   it('preserves an explicit null (clears the field) while dropping undefined', async () => {
     const { ops, f } = harness({ patches: [] });
     await ops.patchTask('e-1', { expectedVersion: 1, dueDate: null });

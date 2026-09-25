@@ -37,6 +37,7 @@ import {
   type CommandResult,
   type CreatableEntityKind,
   type EntityHeaderResult,
+  type EntityHeaderView,
   type SetEntityHeaderInput,
   type CreateEntityInput,
   type EntityDetail,
@@ -76,6 +77,8 @@ export interface AuthoringCommands {
 export interface HeaderCommands {
   setEntityHeader(id: EntityId, input: SetEntityHeaderInput): Promise<EntityHeaderResult>;
   clearEntityHeader(id: EntityId, input: ClearEntityHeaderInput): Promise<EntityHeaderResult>;
+  /** The header launches read when none is authored — `entities.get?header=resolved`. */
+  resolvedHeader?(id: EntityId): Promise<EntityHeaderView | undefined>;
 }
 
 /**
