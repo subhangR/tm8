@@ -507,6 +507,14 @@ export type CoreEntityState =
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
       /**
+       * The thread's LAST KNOWN context reading (Chat Context): the newest
+       * main-thread request's occupancy, persisted in `chats.context` as the
+       * runtime reports it, so a reload or a cold chat still has a number.
+       * The live value rides the `chat.context` frame. Null when never read;
+       * absent from an older server.
+       */
+      context?: SessionTranscriptContext | null;
+      /**
        * What the chat is ABOUT — its `about` edge's target, with the kind and
        * title a list tile needs to draw it (entity chat §3.6). Batched per
        * page by the server (`loadChatSubjects`), so the Chats list shows each
@@ -1321,6 +1329,20 @@ export interface ChatTurnDoneFrame {
 }
 
 export type ChatTurnFrame = ChatTurnDeltaFrame | ChatTurnDoneFrame;
+
+/**
+ * `chat.context` — the chat's context reading after one request (Chat Context).
+ *
+ * NOT a turn frame and NOT a message part: it is a fact about the THREAD, of
+ * which only the latest matters, so it is published beside the turn stream
+ * rather than appended to it (a part per request would fill the history). The
+ * same reading is persisted on the chat row; see the chat state's `context`.
+ */
+export interface ChatContextFrame {
+  type: 'chat.context';
+  chatId: EntityId;
+  context: SessionTranscriptContext;
+}
 
 export interface ActivityItem { id: string; entityId?: EntityId | null; actor?: ActorSummary | null;
   verb: string; summary: Record<string, unknown>; createdAt: string; refId?: string | null;

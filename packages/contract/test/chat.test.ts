@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OperationName } from '../src/index.js';
 import {
+  ChatContextFrameSchema,
   ChatTurnFrameSchema,
   EntityStateSchema,
   MessagePartSchema,
@@ -137,8 +138,10 @@ describe('TM8 Chat v1 contract', () => {
       turnState: 'idle',
       turnCount: 0,
       lastTurnAt: null,
+      context: null,
     });
     expect(state.kind === 'chat' && state.mode).toBe('explain');
+    expect(state.kind === 'chat' && state.context).toBeNull();
   });
 
   it('carries the runtime and the queue as INDEPENDENT axes', () => {
@@ -200,5 +203,28 @@ describe('TM8 Chat v1 contract', () => {
       messageId: '10000000-0000-4000-8000-000000000003',
       usage: { input_tokens: 3 },
     })).toThrow();
+  });
+
+  it('carries a context reading as its own frame, in the transcript reading shape', () => {
+    const context = {
+      usedTokens: 18_501,
+      capacityTokens: 1_000_000,
+      cacheReadTokens: 17_600,
+      requestInputTokens: 18_501,
+      model: 'claude-opus-5-5',
+      observedAt: '2026-09-25T10:00:00.000Z',
+      source: 'claude_request_usage',
+      capacitySource: 'provider',
+      unavailableReason: null,
+    };
+    expect(ChatContextFrameSchema.parse({ type: 'chat.context', chatId: ID, context })).toEqual({
+      type: 'chat.context',
+      chatId: ID,
+      context,
+    });
+    // Not a turn frame: the turn merge never sees it.
+    expect(() => ChatTurnFrameSchema.parse({ type: 'chat.context', chatId: ID, context })).toThrow();
+    expect(() => ChatContextFrameSchema.parse({ type: 'chat.context', chatId: ID, context: { ...context, source: 'guess' } }))
+      .toThrow();
   });
 });

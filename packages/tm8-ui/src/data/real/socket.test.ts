@@ -183,6 +183,13 @@ describe('socket: parseFrame in isolation', () => {
       messageId: 'm',
       usage: {},
     }).kind).toBe('chat-turn');
+    // No spaceId or seq, like a turn frame: transient, not a durable event.
+    expect(parseFrame({
+      type: 'chat.context',
+      chatId: 'r',
+      context: { usedTokens: 10, capacityTokens: null },
+    }).kind).toBe('chat-context');
+    expect(parseFrame({ type: 'chat.context', chatId: 'r', context: null }).kind).toBe('malformed');
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 1 }).kind).toBe('event');
   });
 

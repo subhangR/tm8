@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatTurnFrame } from '@tm8/contract';
+import type { ChatContextFrame, ChatTurnFrame } from '@tm8/contract';
 import { ChatOrchestrator } from '../../src/chat/orchestrator.js';
 import { ChatTurnPublisher } from '../../src/chat/publisher.js';
 import type {
@@ -50,16 +50,22 @@ class FakeSink implements EventSink {
   readonly id: string;
   readonly identity: { kind: 'bearer'; identityId: string };
   readonly isOpen = true;
-  readonly frames: ChatTurnFrame[] = [];
+  readonly frames: (ChatTurnFrame | ChatContextFrame)[] = [];
 
   constructor(private readonly events: string[], identityId: string = IDENTITY) {
     this.id = `sink:${identityId}`;
     this.identity = { kind: 'bearer', identityId };
   }
   send(text: string): void {
-    const frame = JSON.parse(text) as ChatTurnFrame;
+    const frame = JSON.parse(text) as ChatTurnFrame | ChatContextFrame;
     this.frames.push(frame);
-    this.events.push(frame.type === 'chat.turn.delta' ? `delta:${frame.seq}` : 'done-frame');
+    this.events.push(
+      frame.type === 'chat.turn.delta'
+        ? `delta:${frame.seq}`
+        : frame.type === 'chat.context'
+          ? 'context-frame'
+          : 'done-frame',
+    );
   }
   close(): void {}
   onMessage(): void {}
@@ -69,6 +75,9 @@ class FakeSink implements EventSink {
 class FakeDb implements Db {
   readonly completed: unknown[][] = [];
   readonly states: string[] = [];
+  readonly contexts: unknown[][] = [];
+  /** Make `set_chat_context` fail, as a missing 230 or a refused identity would. */
+  failContext = false;
   /** Which identity each claim ran as — 112 requires the CONFIGURING human. */
   readonly claimIdentities: (string | undefined)[] = [];
   claimCalls = 0;
@@ -145,6 +154,12 @@ class FakeDb implements Db {
       this.completed.push([...args]);
       return undefined as T;
     }
+    if (name === 'set_chat_context') {
+      if (this.failContext) throw new Error('set_chat_context refused');
+      this.contexts.push([rpcClaims.identityId, ...args]);
+      this.events.push('context');
+      return undefined as T;
+    }
     if (name === 'mark_chat_runtime_state') {
       this.states.push(String(args[1]));
       this.events.push(`state:${String(args[1])}`);
@@ -177,7 +192,11 @@ class FakeRuntime implements AgentRuntime {
   async close(threadId: string): Promise<void> { this.closes.push(threadId); }
 }
 
-function rig(runtimeState: RuntimeState, items: readonly TurnItem[]) {
+function rig(
+  runtimeState: RuntimeState,
+  items: readonly TurnItem[],
+  onError?: (error: unknown) => void,
+) {
   const events: string[] = [];
   const db = new FakeDb(claim(runtimeState), events);
   const runtime = new FakeRuntime(items);
@@ -195,6 +214,7 @@ function rig(runtimeState: RuntimeState, items: readonly TurnItem[]) {
       availableTools: [],
       allowedTools: ['messages.post'],
     }),
+    ...(onError ? { onError } : {}),
   });
   return { db, events, orchestrator, runtime, sink };
 }
@@ -218,6 +238,66 @@ describe('TM8 Chat durable orchestration', () => {
     // Absent provider cost is NULL, never a counterfeit zero.
     expect(db.completed[0]?.[4]).toBeNull();
     expect(sink.frames.at(-1)).toMatchObject({ type: 'chat.turn.done', usage: { input_tokens: 4 } });
+  });
+
+  it('stores a context reading on the chat, never as a part, then publishes it', async () => {
+    const reading = {
+      usedTokens: 18_501,
+      capacityTokens: 1_000_000,
+      cacheReadTokens: 17_600,
+      requestInputTokens: 18_501,
+      model: 'claude-opus-5-5',
+      observedAt: '2026-09-25T10:00:00.000Z',
+      source: 'claude_request_usage' as const,
+      capacitySource: 'provider' as const,
+      unavailableReason: null,
+    };
+    const { db, events, orchestrator, sink } = rig('cold', [
+      { kind: 'context', context: reading },
+      { kind: 'text', text: 'answer' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    await orchestrator.wake(CHAT, IDENTITY);
+
+    // The write commits before the frame, and takes no part seq: the text is
+    // still part 0.
+    expect(events).toEqual([
+      'agent-message', 'bind-agent-message', 'state:live',
+      'context', 'context-frame',
+      'persist:0', 'delta:0', 'persist:1', 'delta:1',
+      'complete', 'done-frame',
+    ]);
+    expect(db.contexts).toEqual([[IDENTITY, CHAT, reading]]);
+    expect(sink.frames).toContainEqual({ type: 'chat.context', chatId: CHAT, context: reading });
+  });
+
+  it('lets a failed context write report and the turn carry on unpublished', async () => {
+    const errors: unknown[] = [];
+    const { db, events, orchestrator } = rig('cold', [
+      {
+        kind: 'context',
+        context: {
+          usedTokens: null,
+          capacityTokens: null,
+          cacheReadTokens: null,
+          requestInputTokens: null,
+          model: null,
+          observedAt: '2026-09-25T10:00:00.000Z',
+          source: 'claude_request_usage',
+          capacitySource: null,
+          unavailableReason: 'awaiting_new_sample',
+        },
+      },
+      { kind: 'text', text: 'answer' },
+      { kind: 'done', reason: 'success' },
+    ], (error) => errors.push(error));
+    db.failContext = true;
+    await orchestrator.wake(CHAT, IDENTITY);
+
+    expect(events).not.toContain('context-frame');
+    expect(events.slice(-2)).toEqual(['complete', 'done-frame']);
+    expect(db.completed[0]?.[1]).toBe('completed');
+    expect(errors).toHaveLength(1);
   });
 
   it('lazily resumes only a stopped thread and records interrupted modelUsage cost', async () => {

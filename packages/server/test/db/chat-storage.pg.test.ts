@@ -527,7 +527,8 @@ describe.sequential('TM8 Chat storage and door rules', () => {
     expect(Object.keys(summary?.state ?? {}).sort()).toEqual([
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
-      'about', 'agentTool', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
+      // `context` — the latest context reading (230), null until measured.
+      'about', 'agentTool', 'context', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
       'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
@@ -649,5 +650,51 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       `select runtime_state, node_id from public.chats where entity_id=$1`, [chatId],
     ))[0]!;
     expect(row).toEqual({ runtime_state: 'live', node_id: 'node-alpha' });
+  });
+
+  it('keeps one latest context reading, written only by the configuring identity', async () => {
+    const reading = (used: number | null) => ({
+      usedTokens: used,
+      capacityTokens: 1_000_000,
+      cacheReadTokens: used === null ? null : used - 1,
+      requestInputTokens: used,
+      model: 'claude-opus-5-5',
+      observedAt: '2026-09-25T10:00:00.000Z',
+      source: 'claude_request_usage',
+      capacitySource: 'provider',
+      unavailableReason: used === null ? 'awaiting_new_sample' : null,
+    });
+    const setContext = (identityId: string, context: unknown) =>
+      asIdentity(identityId, 'browser', async (client) => {
+        await client.query(`select public.set_chat_context($1,$2::jsonb)`, [chatId, JSON.stringify(context)]);
+        return { ok: true };
+      });
+
+    await setContext(fixture.identityA, reading(18_501));
+    await setContext(fixture.identityA, reading(20_000));
+    let summary = await facadeDb.tx(
+      { identityId: fixture.identityA },
+      (q) => loadEntitySummariesByIds(q, [chatId], fixture.identityA),
+    );
+    // The latest reading replaces the earlier one; there is no history.
+    expect(summary[0]?.state).toMatchObject({ context: reading(20_000) });
+
+    // A compaction clears the count; the reading stays a reading, not null.
+    await setContext(fixture.identityA, reading(null));
+    summary = await facadeDb.tx(
+      { identityId: fixture.identityA },
+      (q) => loadEntitySummariesByIds(q, [chatId], fixture.identityA),
+    );
+    expect(summary[0]?.state).toMatchObject({ context: reading(null) });
+
+    // Another member reads the chat but does not run its runtime.
+    await expect(setContext(fixture.identityB, reading(1))).rejects.toMatchObject({ code: 'P0002' });
+    await expect(setContext(fixture.identityA, { ...reading(1), source: 'guess' }))
+      .rejects.toMatchObject({ code: '22023' });
+    await expect(setContext(fixture.identityA, [reading(1)])).rejects.toMatchObject({ code: '22023' });
+    const stored = (await database.query<{ context: unknown }>(
+      `select context from public.chats where entity_id=$1`, [chatId],
+    ))[0]!;
+    expect(stored.context).toEqual(reading(null));
   });
 });

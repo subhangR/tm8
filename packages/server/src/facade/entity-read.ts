@@ -60,6 +60,7 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
+import { SessionTranscriptContextSchema, type SessionTranscriptContext } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -155,7 +156,7 @@ export const ENTITY_COLUMNS = `
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
   chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
-  chq.last_turn_at as chat_last_turn_at,
+  chq.last_turn_at as chat_last_turn_at, cht.context as chat_context,
   gr.title as graph_title, gr.graph_type as graph_type,
   gr.nodes as graph_nodes, gr.edges as graph_edges,
   gr.layout as graph_layout, gr.source as graph_source,
@@ -539,6 +540,7 @@ export interface EntityRow {
   chat_turn_state: 'idle' | 'queued' | 'running' | null;
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
+  chat_context: unknown;
   graph_title: string | null;
   graph_type: string | null;
   graph_nodes: unknown[] | null;
@@ -1863,6 +1865,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         turnState: row.chat_turn_state ?? 'idle',
         turnCount: Number(row.chat_turn_count ?? 0),
         lastTurnAt: isoOrNull(row.chat_last_turn_at),
+        context: chatContextOf(row.chat_context),
         ...(ctx.chatSubjects ? { about: ctx.chatSubjects.get(row.id) ?? null } : {}),
       };
     case 'container': {
@@ -2874,4 +2877,15 @@ export async function hydrateDetail(
     return { state, content: { ...content, equipped } };
   }
   return readSkillDetail(state, content);
+}
+
+/**
+ * The stored context reading (230), or null. A row written by an older or
+ * newer shape reads as "no reading" rather than failing the entity read.
+ * Shared with the projector so the boot read and the event agree.
+ */
+export function chatContextOf(raw: unknown): SessionTranscriptContext | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = SessionTranscriptContextSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
