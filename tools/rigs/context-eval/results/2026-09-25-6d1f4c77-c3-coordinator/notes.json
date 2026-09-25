@@ -19,6 +19,7 @@
   "ISOLATION (D9): tool calls reached outside the worktree (1 path(s), 0 command(s)): `/tmp/sample-import.csv`."
  ],
  "01a0d963-4f15-72d1-9345-458e13bf95df": [
+  "SET ASIDE (D12 twin, found by the reviewer at 3e8a4295; verified by me): at 16:27 it ran git log --all and then git show 50a54c7 -- src/ledger.js. 50a54c7 is on tm8/01a0d962-4908, the branch of haiku45 turn-date#1 pilot (01a0d962-49da), which was running CONCURRENTLY on the same task. It also read 66ff6a6 of 01a0d95f-8a77. Then it committed its own parseDate. Worktree locks do not stop this: every lane worktree shares the fixture repo object store.",
   "Multiturn path verified end to end for Sonnet 5 as well (inject, ran, terminate, resume, idle); rubric 1.00, 2 commits.",
   "37 requests, $0.96: about 4.4x the Haiku cost on the same task with the same outcome.",
   "ISOLATION (D9): tool calls reached outside the worktree (2 path(s), 0 command(s)): `/private/tmp/ctxeval/node3/fixture-repo/.claude/skills/error-codes/SKILL.md`, `/private/tmp/ctxeval/node3/fixture-repo/.claude/skills`."

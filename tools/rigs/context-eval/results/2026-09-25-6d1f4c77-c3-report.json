@@ -1,9 +1,9 @@
 {
   "title": "context-eval report — 2026-09-25-6d1f4c77-c3-pilot.jsonl, 2026-09-25-6d1f4c77-c3.jsonl, 2026-09-25-6d1f4c77-c3-rep2.jsonl",
-  "generatedAt": "2026-09-25T17:51:52.357Z",
+  "generatedAt": "2026-09-25T18:02:28.826Z",
   "rows": 42,
-  "measured": 38,
-  "excluded": 4,
+  "measured": 37,
+  "excluded": 5,
   "fixtureVersions": [
     "8ef7c99a61dc4589"
   ],
@@ -1141,187 +1141,187 @@
     },
     "sonnet5/index-authored/multiturn": {
       "first-request tokens": {
-        "n": 3,
-        "median": 40906,
+        "n": 2,
+        "median": 40895,
         "min": 40884,
-        "max": 41017
+        "max": 40906
       },
       "tm8 kernel bytes": {
-        "n": 3,
+        "n": 2,
         "median": 8074,
         "min": 8074,
         "max": 8074
       },
       "assignment snapshot bytes": {
-        "n": 3,
+        "n": 2,
         "median": 2322,
         "min": 2322,
         "max": 2322
       },
       "context index bytes": {
-        "n": 3,
+        "n": 2,
         "median": 11033,
         "min": 11033,
         "max": 11033
       },
       "  references": {
-        "n": 3,
+        "n": 2,
         "median": 3451,
         "min": 3451,
         "max": 3451
       },
       "  skills": {
-        "n": 3,
+        "n": 2,
         "median": 6149,
         "min": 6149,
         "max": 6149
       },
       "  memories (collapsed)": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "memories expanded bytes (outside the kernel)": {
-        "n": 3,
+        "n": 2,
         "median": 704,
         "min": 704,
         "max": 704
       },
       "skills listing bytes (index off: the <skills> block)": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "harness chars (system + attachments)": {
-        "n": 3,
+        "n": 2,
         "median": 33652,
         "min": 33652,
         "max": 33652
       },
       "  skill_listing": {
-        "n": 3,
+        "n": 2,
         "median": 2310,
         "min": 2310,
         "max": 2310
       },
       "  Claude in Chrome block": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "remainder chars (estimated: tool schemas)": {
-        "n": 3,
-        "median": 91477,
+        "n": 2,
+        "median": 91437,
         "min": 91397,
-        "max": 91876
+        "max": 91477
       },
       "tokens: tm8 kernel (est.)": {
-        "n": 3,
+        "n": 2,
         "median": 2243,
         "min": 2243,
         "max": 2243
       },
       "tokens: memories expanded (est.)": {
-        "n": 3,
+        "n": 2,
         "median": 196,
         "min": 196,
         "max": 196
       },
       "tokens: skills listing, index off (est.)": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "tokens: context index (est.)": {
-        "n": 3,
+        "n": 2,
         "median": 3065,
         "min": 3065,
         "max": 3065
       },
       "tokens: harness (est.)": {
-        "n": 3,
+        "n": 2,
         "median": 9348,
         "min": 9348,
         "max": 9348
       },
       "resident tm8 bytes (× requests)": {
-        "n": 3,
-        "median": 475464,
+        "n": 2,
+        "median": 425936.5,
         "min": 376409,
-        "max": 733007
+        "max": 475464
       },
       "resident harness chars (× requests)": {
-        "n": 3,
-        "median": 807648,
+        "n": 2,
+        "median": 723518,
         "min": 639388,
-        "max": 1245124
+        "max": 807648
       },
       "API requests (lane total, subagents included)": {
-        "n": 3,
-        "median": 24,
+        "n": 2,
+        "median": 21.5,
         "min": 19,
-        "max": 37
+        "max": 24
       },
       "  of which subagent requests": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "tool calls": {
-        "n": 3,
-        "median": 30,
+        "n": 2,
+        "median": 26,
         "min": 22,
-        "max": 38
+        "max": 30
       },
       "input-side tokens (all requests)": {
-        "n": 3,
-        "median": 1411489,
+        "n": 2,
+        "median": 1231122.5,
         "min": 1050756,
-        "max": 2170940
+        "max": 1411489
       },
       "output tokens": {
-        "n": 3,
-        "median": 6445,
+        "n": 2,
+        "median": 6179.5,
         "min": 5914,
-        "max": 10032
+        "max": 6445
       },
       "wall seconds": {
-        "n": 3,
-        "median": 332,
+        "n": 2,
+        "median": 320.5,
         "min": 309,
-        "max": 423
+        "max": 332
       },
       "est. $ per lane (subagents included)": {
-        "n": 3,
-        "median": 0.67521495,
+        "n": 2,
+        "median": 0.6068004,
         "min": 0.5383858499999999,
-        "max": 0.96389445
+        "max": 0.67521495
       },
       "  of which subagent $": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "expand rate % (opened / entries)": {
-        "n": 3,
+        "n": 2,
         "median": 33.33333333333333,
-        "min": 25,
+        "min": 33.33333333333333,
         "max": 33.33333333333333
       },
       "blind-fetch bytes": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
       },
       "memories collapsed (Q1)": {
-        "n": 3,
+        "n": 2,
         "median": 0,
         "min": 0,
         "max": 0
@@ -1906,15 +1906,15 @@
       "flag": true
     },
     "sonnet5/index-authored": {
-      "launches": 16,
+      "launches": 15,
       "entryMissed": 0,
       "rate": 0,
-      "upperBound95": 0.17074972298248098,
+      "upperBound95": 0.18103627252208473,
       "headerReads": 7,
-      "needleLaunches": 16,
+      "needleLaunches": 15,
       "silentContextFailures": 0,
       "silentPassed": 0,
-      "success": 8,
+      "success": 7,
       "flag": true
     }
   },
@@ -1986,12 +1986,12 @@
       ]
     },
     "sonnet5/index-authored/multiturn": {
-      "n": 3,
-      "success": 2,
-      "scored": 3,
+      "n": 2,
+      "success": 1,
+      "scored": 2,
       "askedTheHuman": 0,
-      "deliverableCorrect": 3,
-      "rubricMean": 0.9444444444444445,
+      "deliverableCorrect": 2,
+      "rubricMean": 0.9166666666666667,
       "notInMean": [
         "aliasCheck"
       ]
@@ -2043,8 +2043,9 @@
     },
     "sonnet5/index-authored": {
       "launches": 21,
-      "excluded": 2,
+      "excluded": 3,
       "reasons": [
+        "copied from sibling commit 50a54c7 (session 01a0d962-49da, haiku45 turn-date#1 pilot, running concurrently on the same task): git log --all, then git show 50a54c7 -- src/ledger.js at 16:27:29Z; also read 66ff6a6 of 01a0d95f-8a77 (D12 twin, reviewer 3e8a4295)",
         "loaded lane-written auto-memory from 01a0d98a-9fad-7f5f-8018-a8ae3be79f79 (haiku45 replica-01a0d778#1, written 22:40-22:46 into the fixture-repo memory dir; moved aside 22:49:11); cell re-run clean into -c3-rep2.jsonl",
         "loaded lane-written auto-memory from 01a0d98a-9fad-7f5f-8018-a8ae3be79f79 (haiku45 replica-01a0d778#1, written 22:40-22:46 into the fixture-repo memory dir; moved aside 22:49:11); cell re-run clean into -c3-rep2.jsonl"
       ],
@@ -2134,6 +2135,34 @@
     "memoryDirMoved": []
   },
   "crossLane": {
+    "readSiblingCommit": [
+      {
+        "slice": "c3",
+        "model": "sonnet5",
+        "taskKey": "turn-date",
+        "rep": 1,
+        "sessionId": "01a0d963-4f15-72d1-9345-458e13bf95df",
+        "excluded": true,
+        "from": [
+          {
+            "sha": "66ff6a6e1246",
+            "sessionId": "01a0d95f-8a77-7cdb-85cb-96b18e64abee"
+          },
+          {
+            "sha": "50a54c744db1",
+            "sessionId": "01a0d962-49da-7a0a-8c61-0b8359b3456d"
+          }
+        ]
+      }
+    ],
+    "readSiblingCommitUnverified": [],
+    "listedAllRefs": [
+      "01a0d963-4f15-72d1-9345-458e13bf95df",
+      "01a0d987-1a69-74ff-9f8e-d8d9753381b3",
+      "01a0d982-d7f2-76de-8e9f-e44ba8814c74",
+      "01a0d98a-ff20-7e72-b0a8-dedf8c3a10b2",
+      "01a0d98a-9fad-7f5f-8018-a8ae3be79f79"
+    ],
     "readSiblingWorktree": [],
     "openedSiblingCopy": []
   }
