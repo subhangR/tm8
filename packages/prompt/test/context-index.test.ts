@@ -59,7 +59,8 @@ describe('serializeContextEntry', () => {
     // The name is header text, so it is only in the JSON body, never an attribute.
     const open = text.split('\n')[0]!;
     expect(open).not.toContain('rm -rf');
-    expect(open).toContain('load="tm8 entity context doc-1"');
+    // The default pointer is not repeated on the line (D5 ii); the instruction says it once.
+    expect(open).not.toContain('load=');
   });
 
   it('renders a skill name as an attribute, not header text', () => {
@@ -71,7 +72,7 @@ describe('serializeContextEntry', () => {
   it('renders an id-only line for a kind with no header, and dropped="summary" with the whenToUse kept', () => {
     expect(serializeContextEntry({ id: 'ws-1', kind: 'work_session', via: 'linked', load: loadPointerFor('work_session', 'ws-1') })).toMatch(/\/>$/);
     const dropped = serializeContextEntry({ ...ref(2), summaryDropped: true });
-    expect(dropped.split('\n')[0]).toContain(' load="tm8 entity context doc-2" dropped="summary">');
+    expect(dropped.split('\n')[0]).toContain(' stale="false" dropped="summary">');
     expect(dropped).toContain('&quot;whenToUse&quot;:&quot;when 2&quot;');
     expect(dropped).toContain('&quot;name&quot;:&quot;Doc 2&quot;');
     expect(dropped).not.toContain('summary&quot;');
@@ -85,6 +86,21 @@ describe('serializeContextEntry', () => {
     const parsed = parseContextIndex(JSON.parse(JSON.stringify(index)))!;
     expect(parsed.groups[0]!.entries.map((e) => [e.summaryDropped === true, e.headerDropped === true])).toEqual([[true, false], [false, true]]);
     expect(serializeContextIndex(parsed)).toContain('summaries_dropped="1" headers_dropped="1"');
+  });
+
+  it('renders load only when it is not the default pointer, and keeps it in the data (D5 ii)', () => {
+    const plain = ref(1);
+    expect(serializeContextEntry(plain)).not.toContain('load=');
+    expect(contextEntryBytes(plain)).toBe(utf8Bytes(serializeContextEntry(plain)) + 1);
+    const native = { ...skill(1), load: '/skill1' };
+    expect(serializeContextEntry(native).split('\n')[0]).toContain(' load="/skill1"');
+    const odd = { ...ref(2), load: 'tm8 entity context doc-2 --sections assignment' };
+    expect(serializeContextEntry(odd)).toContain('load="tm8 entity context doc-2 --sections assignment"');
+    // A pointer naming ANOTHER id is not the default, so it is rendered.
+    expect(serializeContextEntry({ ...ref(3), load: 'tm8 entity context doc-9' })).toContain('load="tm8 entity context doc-9"');
+    const parsed = parseContextIndex(JSON.parse(JSON.stringify({ groups: [group('references', [plain])] })))!;
+    expect(parsed.groups[0]!.entries[0]!.load).toBe('tm8 entity context doc-1');
+    expect(CONTEXT_INDEX_INSTRUCTION).toContain('with tm8 entity context <its id>, or the command in its load attribute when it has one');
   });
 
   it('renders a summary that repeats its whenToUse once (a native skill routes by its description)', () => {
@@ -292,9 +308,9 @@ describe('both prompt frames', () => {
 describe('I5a follow-ups: declared clip, names the index carries', () => {
   it('renders clipped="…" as a server attribute, never for a field it no longer shows, and reads it back', () => {
     const cut: PromptContextEntry = { ...ref(1, 'short'), clipped: ['summary', 'whenToUse'] };
-    expect(serializeContextEntry(cut)).toContain(' clipped="summary,whenToUse" load=');
+    expect(serializeContextEntry(cut)).toContain(' clipped="summary,whenToUse">');
     expect(serializeContextEntry({ ...cut, headerDropped: true })).not.toContain('clipped=');
-    expect(serializeContextEntry({ ...cut, summaryDropped: true })).toContain(' clipped="whenToUse" load="tm8 entity context doc-1" dropped="summary">');
+    expect(serializeContextEntry({ ...cut, summaryDropped: true })).toContain(' clipped="whenToUse" dropped="summary">');
     expect(serializeContextEntry(ref(2, 'short'))).not.toContain('clipped=');
     const parsed = parseContextIndex(JSON.parse(JSON.stringify({ groups: [group('references', [cut])] })));
     expect(parsed!.groups[0]!.entries[0]!.clipped).toEqual(['summary', 'whenToUse']);
@@ -353,7 +369,7 @@ describe('I8: a roster teammate entry (design 01a0d348 §8 I8)', () => {
   it('renders mode and model as control attributes and the name only inside the entry-header block', () => {
     const text = serializeContextEntry(mate);
     const open = text.split('\n')[0]!;
-    expect(open).toBe('    <entry id="tm-1" kind="team_member" mode="worker" model="claude-opus-5" via="roster" source="authored" stale="false" load="tm8 entity context tm-1">');
+    expect(open).toBe('    <entry id="tm-1" kind="team_member" mode="worker" model="claude-opus-5" via="roster" source="authored" stale="false">');
     expect(open).not.toContain('Reviewer');
     expect(text).toContain('<untrusted_data type="entry-header"');
   });

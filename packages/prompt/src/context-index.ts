@@ -135,7 +135,8 @@ export function loadPointerFor(
 
 export const CONTEXT_INDEX_INSTRUCTION =
   'Your launch selected the entries below. None is loaded yet. Open one only when its whenToUse (or, without ' +
-  'one, its summary) matches the step you are on, using the command in its load attribute; bytes is what the ' +
+  'one, its summary) matches the step you are on, with tm8 entity context <its id>, or the command in its load ' +
+  'attribute when it has one; bytes is what the ' +
   'load brings in, and tm8 entity context pages with --offset, so read the outline first. source="derived" ' +
   'means nobody wrote the text for routing; stale="true" means the body changed since the header was written, ' +
   'so trust whenToUse over summary. Native skills load through your tool by that command; built-in harness ' +
@@ -178,6 +179,16 @@ function headerJson(entry: PromptContextEntry): string | null {
   return Object.keys(out).length > 0 ? JSON.stringify(out) : null;
 }
 
+/**
+ * Whether an entry opens with the default pointer, `tm8 entity context <id>`.
+ * Its `load` attribute is then left out of the entry line: it repeated the id
+ * (≈ 57 B an entry; on the eval's stress launch, the room that kept 4 of 33
+ * references and the needle out of the index). The manifest keeps `load`.
+ */
+export function isDefaultLoad(entry: Pick<PromptContextEntry, 'id' | 'kind' | 'load'>): boolean {
+  return entry.load === loadPointerFor(entry.kind, entry.id);
+}
+
 /** Exact entry text, shared by prompt composition and byte accounting. */
 export function serializeContextEntry(entry: PromptContextEntry): string {
   const attrs: Array<[string, string | number]> = [['id', entry.id], ['kind', entry.kind]];
@@ -200,7 +211,9 @@ export function serializeContextEntry(entry: PromptContextEntry): string {
   if (clipped.length > 0) attrs.push(['clipped', clipped.join(',')]);
   if (entry.tag) attrs.push(['tag', entry.tag]);
   if (entry.excerpt) attrs.push(['excerpt', 'true']);
-  attrs.push(['load', entry.load]);
+  // The default pointer is said once, in the instruction; only a different
+  // one (a native skill's harness command) is rendered (task 01a0da5a, D5 ii).
+  if (!isDefaultLoad(entry)) attrs.push(['load', entry.load]);
   if (entry.summaryDropped && !entry.headerDropped) attrs.push(['dropped', 'summary']);
   if (entry.headerDropped) attrs.push(['header', 'dropped']);
   const open = `    <entry ${attrs.map(([key, value]) => `${key}="${escapeAttr(value)}"`).join(' ')}`;
