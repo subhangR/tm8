@@ -9,8 +9,10 @@
  *   · `no_key` everywhere (or a node that predates the handler) is `unavailable`;
  *   · a teammate change re-asks memories and skills ONLY, in the same run;
  *   · a draft edit after an answer is `stale`, and the ticks survive it;
- *   · `toSpawnFields` sends exactly the ticked ids, never with `memoryIds`, and
- *     sends NO selection while either set is unknown (coordinator ruling).
+ *   · `toSpawnFields` decides memories and skills PER GROUP (I9, replacing the
+ *     "both sets or nothing" ruling): an answered group is its exact ticked
+ *     set, a failed or pending one is omitted with `jev-failed`/`jev-pending`,
+ *     and never is a group sent as `[]` while its set is unknown.
  */
 import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -97,11 +99,14 @@ describe('states', () => {
     expect(result.current.run).toEqual(cost(7, 0.00021, 1100));
   });
 
-  it('launching while still asking sends today’s defaults — jevRunId only, no selection', () => {
+  it('launching while still asking sends today’s defaults — no groups, pending named as the reason', () => {
     const port = pendingPort();
     const { result } = mount({ port });
     act(() => result.current.ask());
-    expect(result.current.toSpawnFields()).toEqual({ jevRunId: result.current.runId });
+    expect(result.current.toSpawnFields()).toEqual({
+      defaultReasons: { memories: 'jev-pending', skills: 'jev-pending' },
+      jevRunId: result.current.runId,
+    });
   });
 });
 
@@ -281,7 +286,7 @@ describe('selection and toSpawnFields', () => {
     act(() => { result.current.toggle('skill', 'sk-b'); });
     const fields = result.current.toSpawnFields();
     expect(fields).toEqual({
-      selection: { memoryIds: ['mem-a'], skillIds: ['sk-a', 'sk-b'] },
+      groups: { memories: { send: ['mem-a'] }, skills: { send: ['sk-a', 'sk-b'] } },
       jevRunId: result.current.runId,
     });
     expect('memoryIds' in fields).toBe(false);
@@ -303,24 +308,31 @@ describe('selection and toSpawnFields', () => {
     expect(result.current.jevMode).toBe(false);
   });
 
-  it('a failed skills group sends no selection, and says why', async () => {
+  it('a failed skills group is omitted as jev-failed while the memories still go, and says why', async () => {
     const { result } = await answered({ skills: failedGroup('timeout') });
     expect(result.current.jevMode).toBe(true);
-    expect(result.current.toSpawnFields()).toEqual({ jevRunId: result.current.runId });
+    expect(result.current.toSpawnFields()).toEqual({
+      groups: { memories: { send: ['mem-a', 'mem-b'] }, skills: { omit: 'jev-failed' } },
+      jevRunId: result.current.runId,
+    });
     expect(result.current.launchNote).toMatch(/Skills failed \(timeout\)/);
+    expect(result.current.launchNote).toMatch(/other ticks still go/);
     expect(result.current.launchNote).toMatch(/Retry/);
   });
 
   it('a skipped group truthfully has no candidates, so it sends []', async () => {
     const { result } = await answered({ skills: { status: 'skipped', reason: 'no_candidates', cost: cost(0, 0, 0) } });
-    expect(result.current.toSpawnFields().selection).toEqual({ memoryIds: ['mem-a', 'mem-b'], skillIds: [] });
+    expect(result.current.toSpawnFields().groups).toEqual({ memories: { send: ['mem-a', 'mem-b'] }, skills: { send: [] } });
     expect(result.current.launchNote).toBeNull();
   });
 
-  it('while a teammate re-ask is in flight, the selection is withheld', async () => {
+  it('while a teammate re-ask is in flight, both groups are withheld as jev-pending', async () => {
     const { result, rerender, port } = await answered();
     rerender({ port, teammateId: 'tm-2' });
-    expect(result.current.toSpawnFields()).toEqual({ jevRunId: result.current.runId });
+    expect(result.current.toSpawnFields()).toEqual({
+      groups: { memories: { omit: 'jev-pending' }, skills: { omit: 'jev-pending' } },
+      jevRunId: result.current.runId,
+    });
     expect(result.current.launchNote).toMatch(/still answering/);
   });
 });

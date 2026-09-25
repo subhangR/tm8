@@ -14,7 +14,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import type { CredentialsStatusView, EntityId, LaunchSuggestResult, ModelSuggestion } from '@tm8/contract';
 
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
-import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES, LAUNCH_DEFAULTS } from './launch-fixtures';
 import { MobileSurfaceProvider } from '../mobile';
 import { JEV_ADD_KEY_COPY, JEV_UNAVAILABLE_COPY } from '../jev';
 import { navStore } from '../stores/navStore';
@@ -124,7 +124,11 @@ describe('each group lands inside its own section', () => {
     expect(view.queryByTestId('jev-memories-status')).toBeNull();
     // Launch says it will send the defaults, naming the failed group.
     expect(view.getByTestId('jev-launch-note').textContent).toMatch(/Skills failed \(timeout\)/);
-    expect(view.launch().selection).toBeUndefined();
+    // PER GROUP (I9): the answered memories still go; the failed skills group
+    // keeps its defaults, and the audit says Jev failed it.
+    const config = view.launch();
+    expect(config.selection).toEqual({ memoryIds: ['mem-a', 'mem-b'] });
+    expect(config.selectionReasons).toEqual({ skills: 'jev-failed', references: 'not-asked' });
   });
 
   it('with no key anywhere it says the TypeSafe key is missing, links to Settings, and Launch is unaffected', async () => {
@@ -195,18 +199,20 @@ describe('Apply', () => {
 });
 
 describe('Jev mode', () => {
-  it('the memory checklist replaces the additive picker, and the skill checklist the preview', async () => {
+  it('the memory checklist replaces the memories group, and the skill checklist the preview', async () => {
     const loadSkillPreview = vi.fn(() => new Promise<never>(() => {}));
     const port = pendingPort();
     const view = renderSheet({ jev: port, loadSkillPreview });
-    expect(view.getByLabelText('Change picked memories')).toBeTruthy();
+    expect(view.getByTestId('lsel-group-memories')).toBeTruthy();
     expect(view.getByText('Loading skill preview…')).toBeTruthy();
 
     fireEvent.click(view.getByTestId('jev-ask'));
     await act(async () => port.calls[0]!.resolve(answer(port.calls[0]!.input)));
 
-    expect(view.queryByLabelText('Change picked memories')).toBeNull();
+    expect(view.queryByTestId('lsel-group-memories')).toBeNull();
     expect(view.queryByText('Loading skill preview…')).toBeNull();
+    // Jev does not rank references: that group stays the sheet's own.
+    expect(view.getByTestId('lsel-group-references')).toBeTruthy();
     const memories = view.getByTestId('jev-checklist-memory');
     const skills = view.getByTestId('jev-checklist-skill');
     expect(within(sectionOf(memories)).getByText('MEMORIES')).toBeTruthy();
@@ -230,14 +236,15 @@ describe('Jev mode', () => {
     expect('memoryIds' in config).toBe(false);
   });
 
-  it('additive picks made before Ask Jev are dropped in favour of the exact set', async () => {
+  it('a memories edit made before Ask Jev gives way to Jev’s exact set; a references edit stays', async () => {
     const port = answeringPort();
-    const view = renderSheet({ jev: port });
-    fireEvent.click(view.getByLabelText('Change picked memories'));
-    fireEvent.click(view.getByText('tokens.css is verbatim — a byte-equality test guards it'));
+    const view = renderSheet({ jev: port, loadLaunchDefaults: async () => LAUNCH_DEFAULTS });
+    fireEvent.click(await view.findByTestId('lsel-row-memories-ent-mem-tokens'));
+    fireEvent.click(view.getByTestId('lsel-row-references-ent-file-log'));
     await act(async () => { fireEvent.click(view.getByTestId('jev-ask')); });
     const config = view.launch();
-    expect(config.selection?.memoryIds).toEqual(['mem-a', 'mem-b']);
+    expect(config.selection).toEqual({ memoryIds: ['mem-a', 'mem-b'], skillIds: ['sk-a'], referenceIds: ['ent-doc-spec'] });
+    expect('selectionReasons' in config).toBe(false);
     expect('memoryIds' in config).toBe(false);
   });
 
@@ -252,10 +259,10 @@ describe('Jev mode', () => {
     expect(second!.requestId).not.toBe(first!.requestId);
   });
 
-  it('Reset to defaults returns the picker and the preview, and Launch sends no selection', async () => {
+  it('Reset to defaults returns the groups and the preview, and Launch sends no selection', async () => {
     const view = await asked();
     fireEvent.click(view.getByTestId('jev-reset'));
-    expect(view.getByLabelText('Change picked memories')).toBeTruthy();
+    expect(view.getByTestId('lsel-group-memories')).toBeTruthy();
     expect(view.queryByTestId('jev-checklist-memory')).toBeNull();
     const config = view.launch();
     expect(config.selection).toBeUndefined();

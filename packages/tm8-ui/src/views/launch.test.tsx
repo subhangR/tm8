@@ -17,7 +17,7 @@ import { PanelStack } from '../shell/PanelStack';
 import type { NavPort } from '../shell/nav-port';
 import { teamMemberForge } from '../fixtures';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
-import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { LAUNCH_CAPACITY, LAUNCH_DEFAULTS, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_REFERENCE_CANDIDATES, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) =>
   render(
@@ -257,6 +257,8 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       // thing the teammate wakes up knowing.
       'SKILLS',
       'MEMORIES',
+      // I9: the task's references, the third selection group.
+      'REFERENCES',
     ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
     expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
@@ -572,80 +574,133 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * THE MEMORY PICKER (D3a, `memoryIds`).
+ * THE LAUNCH'S CONTEXT, PER GROUP (I9, design 01a0d348 §5.1–5.2).
  *
- * Two things here are easy to get wrong and expensive to notice later:
- *
- * 1. ABSENT IS NOT EMPTY. `memories === undefined` means nobody has read the
- *    kind into this client; `memories === []` means the space has none. Only
- *    the second is a measurement, and a picker that renders them the same way
- *    reports a fact nobody established.
- * 2. THE CAP IS THE CONTRACT'S. `memoryIds` is `max(32)` (schemas.ts:1662).
- *    Enforced at the pick, not at the launch, so the 33rd is refused with a
- *    reason instead of the node rejecting a launch already committed to.
+ * The defaults are PRE-TICKED and labelled "default"; unticking one is a
+ * removal, stated as a diff; an addition comes from the space. PER-GROUP SEND:
+ * an untouched group is omitted (its defaults load) with `selectionReasons`
+ * saying why, an edited group is its exact set, and an untouched launch
+ * carries NO `selection` at all.
  */
-describe('the memory picker hands ids to spawn without becoming a manager', () => {
-  const openPicker = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) => {
-    const view = renderSheet({ memories: LAUNCH_MEMORIES, ...props });
-    fireEvent.click(view.getByLabelText('Change picked memories'));
-    return view;
+describe('the launch’s context groups: defaults pre-ticked, removals as a diff, per-group send', () => {
+  const launchesOf = () => {
+    const launches: Array<Record<string, unknown>> = [];
+    return { launches, onLaunch: (config: unknown) => { launches.push(config as Record<string, unknown>); } };
+  };
+  const ALL_NOT_ASKED = { memories: 'not-asked', skills: 'not-asked', references: 'not-asked' };
+
+  const renderWithDefaults = async (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) => {
+    const load = vi.fn(async () => LAUNCH_DEFAULTS);
+    const view = renderSheet({ loadLaunchDefaults: load, memories: LAUNCH_MEMORIES, referenceCandidates: LAUNCH_REFERENCE_CANDIDATES, ...props });
+    await view.findByTestId('lsel-row-memories-ent-mem-tokens');
+    return { ...view, load };
   };
 
-  it('says the list is UNKNOWN when memories were never read, not empty', () => {
-    // The prop is omitted entirely — the boot-time state before `ensureKind`.
-    const { getByText, queryByLabelText } = renderSheet();
-    expect(getByText(/have not been read into this client/i)).toBeTruthy();
-    expect(getByText(/unknown, not empty/i)).toBeTruthy();
-    // …and there is nothing to open, because there is nothing to choose from.
-    expect(queryByLabelText('Change picked memories')).toBeNull();
+  it('reads the defaults for the teammate and the subject', async () => {
+    const { load } = await renderWithDefaults();
+    expect(load).toHaveBeenCalledWith({ teamMemberId: 'ent-tm-forge', subjectId: 'task-1' });
   });
 
-  it('says the SPACE is empty when the read happened and found none', () => {
-    const { getByText } = openPicker({ memories: [] });
-    expect(getByText(/This space has no memories yet/i)).toBeTruthy();
+  it('shows every default pre-ticked and labelled default, in all three groups', async () => {
+    const { getByTestId } = await renderWithDefaults();
+    for (const testId of ['lsel-row-memories-ent-mem-tokens', 'lsel-row-skills-ent-sk-review', 'lsel-row-references-ent-doc-spec', 'lsel-row-references-ent-file-log']) {
+      const row = getByTestId(testId);
+      expect(row.getAttribute('aria-checked')).toBe('true');
+      expect(within(row).getByText('default')).toBeTruthy();
+    }
   });
 
-  it('carries picked ids into onLaunch, and omits the field when none picked', () => {
-    const launches: Array<Record<string, unknown>> = [];
-    const { getByText, getByRole } = openPicker({
-      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
-    });
+  it('an untouched launch sends NO selection — only why each group kept its defaults', async () => {
+    const { launches, onLaunch } = launchesOf();
+    const { getByRole } = await renderWithDefaults({ onLaunch });
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect('selection' in launches[0]!).toBe(false);
+    expect('memoryIds' in launches[0]!).toBe(false);
+    expect(launches[0]!.selectionReasons).toEqual(ALL_NOT_ASKED);
+  });
+
+  it('unticking a default is a visible removal, and ONLY that group goes as its exact set', async () => {
+    const { launches, onLaunch } = launchesOf();
+    const { getByRole, getByTestId } = await renderWithDefaults({ onLaunch });
+    fireEvent.click(getByTestId('lsel-row-references-ent-file-log'));
+    expect(getByTestId('lsel-diff-references').textContent).toBe('−1 default removed');
+    const row = getByTestId('lsel-row-references-ent-file-log');
+    expect(row.getAttribute('aria-checked')).toBe('false');
+    expect(within(row).getByText('default · removed')).toBeTruthy();
 
     fireEvent.click(getByRole('button', { name: /Launch/ }));
-    // An absent field and an empty array are not the same statement.
-    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
-
-    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
-    fireEvent.click(getByText('The fixture seam drops fields it does not know'));
-    fireEvent.click(getByRole('button', { name: /Launch/ }));
-    expect(launches[1]?.memoryIds).toEqual(['ent-mem-tokens', 'ent-mem-disputed']);
+    expect(launches[0]!.selection).toEqual({ referenceIds: ['ent-doc-spec'] });
+    expect(launches[0]!.selectionReasons).toEqual({ memories: 'not-asked', skills: 'not-asked' });
   });
 
-  it('toggles a pick off again — it is a set, not a one-way door', () => {
-    const launches: Array<Record<string, unknown>> = [];
-    const { getByText, getByRole } = openPicker({
-      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
-    });
-    const row = getByText('tokens.css is verbatim — a byte-equality test guards it');
-    fireEvent.click(row);
-    fireEvent.click(row);
-    fireEvent.click(getByRole('button', { name: /Launch/ }));
-    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
+  it('adds from the space: defaults ∪ the addition, and the diff says +1', async () => {
+    const { launches, onLaunch } = launchesOf();
+    const view = await renderWithDefaults({ onLaunch });
+    const group = view.getByTestId('lsel-group-memories');
+    fireEvent.click(within(group).getByRole('button', { name: /add memories/ }));
+    fireEvent.click(within(group).getByText('The fixture seam drops fields it does not know'));
+    expect(view.getByTestId('lsel-diff-memories').textContent).toBe('+1 added');
+    fireEvent.click(view.getByRole('button', { name: /Launch/ }));
+    expect(launches[0]!.selection).toEqual({ memoryIds: ['ent-mem-tokens', 'ent-mem-disputed'] });
+    // The additive field is gone: the node refuses it beside `selection`.
+    expect('memoryIds' in launches[0]!).toBe(false);
   });
 
-  it('announces a SET, not a single choice, and shows each mark before the pick', () => {
-    const { getAllByRole, getByText } = openPicker();
-    // checkbox, never radio: a radiogroup would announce single-choice.
-    expect(getAllByRole('checkbox')).toHaveLength(3);
-    // A disputed claim cannot be picked without its mark being visible.
-    expect(getByText(/disputed · data\/fixtures/)).toBeTruthy();
-    // The SCOPE rides along — a true statement about the wrong subject is the
-    // failure the scope line exists to prevent.
-    expect(getByText(/unflagged · packages\/tm8-ui\/src\/styles\/tokens\.css/)).toBeTruthy();
+  it('a References row shows kind, title and header text — "derived" unless authored — as plain text', async () => {
+    const view = await renderWithDefaults();
+    const spec = view.getByTestId('lsel-row-references-ent-doc-spec');
+    expect(within(spec).getByText('Launch spec')).toBeTruthy();
+    expect(spec.textContent).toMatch(/doc · linked to the task/);
+    expect(within(spec).getByText('Read before touching the launch sheet')).toBeTruthy();
+    expect(within(spec).queryByText('derived')).toBeNull();
+    const log = view.getByTestId('lsel-row-references-ent-file-log');
+    expect(log.textContent).toMatch(/file · attached to the task/);
+    expect(within(log).getByText('derived')).toBeTruthy();
   });
 
-  it('is a picker and not a manager — no authoring controls anywhere in it', () => {
-    const { queryByTestId, queryByText } = openPicker();
+  it('renders header text as TEXT, never markup (it is graph content)', async () => {
+    const hostile = { ...LAUNCH_DEFAULTS, references: { items: [{ ...LAUNCH_DEFAULTS.references.items[0]!, headerText: '<img src=x onerror=alert(1)>' }], total: 1 } };
+    const view = await renderWithDefaults({ loadLaunchDefaults: async () => hostile });
+    const row = view.getByTestId('lsel-row-references-ent-doc-spec');
+    expect(row.querySelector('img')).toBeNull();
+    expect(row.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+
+  it('says an add pool is UNKNOWN when it was never read, not empty', async () => {
+    const view = await renderWithDefaults({ referenceCandidates: undefined });
+    const group = view.getByTestId('lsel-group-references');
+    fireEvent.click(within(group).getByRole('button', { name: /add references/ }));
+    expect(within(group).getByText(/unknown, not empty/)).toBeTruthy();
+  });
+
+  it('a teammate change re-reads the defaults for the new teammate', async () => {
+    const { load, getByText } = await renderWithDefaults();
+    fireEvent.click(getByText('scout'));
+    expect(load).toHaveBeenLastCalledWith({ teamMemberId: 'ent-tm-scout', subjectId: 'task-1' });
+  });
+
+  it('a group over the 240 ceiling cannot be edited, says so, and is never sent', async () => {
+    const { launches, onLaunch } = launchesOf();
+    const over = { ...LAUNCH_DEFAULTS, skills: { items: LAUNCH_DEFAULTS.skills.items, total: 300 } };
+    const view = await renderWithDefaults({ onLaunch, loadLaunchDefaults: async () => over });
+    const group = view.getByTestId('lsel-group-skills');
+    expect(within(group).getByText(/300 defaults.*at most 240/)).toBeTruthy();
+    fireEvent.click(view.getByTestId('lsel-row-skills-ent-sk-review'));
+    fireEvent.click(view.getByRole('button', { name: /Launch/ }));
+    expect('selection' in launches[0]!).toBe(false);
+  });
+
+  it('without `launch.defaults` the groups say the defaults are unknown, and nothing is selected', () => {
+    const { launches, onLaunch } = launchesOf();
+    const view = renderSheet({ onLaunch });
+    expect(view.getAllByText(/didn’t say what this launch loads by default/).length).toBeGreaterThan(0);
+    fireEvent.click(view.getByRole('button', { name: /Launch/ }));
+    expect('selection' in launches[0]!).toBe(false);
+    expect(launches[0]!.selectionReasons).toEqual(ALL_NOT_ASKED);
+  });
+
+  it('is a picker and not a manager — no authoring controls anywhere in it', async () => {
+    const { queryByTestId, queryByText } = await renderWithDefaults();
     expect(queryByTestId('memory-add')).toBeNull();
     expect(queryByTestId('memory-forget')).toBeNull();
     expect(queryByText(/remember something/i)).toBeNull();
@@ -665,19 +720,19 @@ describe('the memory picker hands ids to spawn without becoming a manager', () =
  * both sides: the payload is one field, and the sheet says so.
  */
 describe('Dispatch hands off the subject and cannot smuggle a configuration', () => {
-  it('sends ONLY the subject, whatever the sheet was configured to', () => {
+  it('sends ONLY the subject, whatever the sheet was configured to', async () => {
     const dispatched: Array<Record<string, unknown>> = [];
-    const { getByTestId, getByText, getByLabelText } = renderSheet({
+    const { getByTestId, getByText, findByTestId } = renderSheet({
       memories: LAUNCH_MEMORIES,
+      loadLaunchDefaults: async () => LAUNCH_DEFAULTS,
       onDispatch: (r) => dispatched.push(r as unknown as Record<string, unknown>),
     });
 
     // Configure the sheet as fully as the surface allows first — a teammate
-    // other than the default, a model, and a picked memory.
+    // other than the default, a model, and a removed default memory.
     fireEvent.click(getByText('scout'));
     fireEvent.change(getByTestId('launch-model'), { target: { value: 'claude-opus-5' } });
-    fireEvent.click(getByLabelText('Change picked memories'));
-    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
+    fireEvent.click(await findByTestId('lsel-row-memories-ent-mem-tokens'));
 
     fireEvent.click(getByTestId('launch-dispatch'));
 
