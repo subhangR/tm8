@@ -163,6 +163,36 @@ describe('the settings card (§3.4 rule 2)', () => {
     expect(seedShown()).toMatchObject({ mode: 'plan', focus: true });
   });
 
+  it('a second new chat with no default pre-fills the teammate and model used last', async () => {
+    mount(fakeSeam());
+    await waitFor(() => screen.getByTestId('new-chat-card'));
+    fireEvent.change(screen.getByTestId('new-chat-teammate'), { target: { value: BOB } });
+    fireEvent.change(screen.getByTestId('new-chat-model'), { target: { value: MODEL_B } });
+    fireEvent.click(screen.getByTestId('new-chat-start'));
+    await waitFor(() => screen.getByTestId('composer'));
+    cleanup();
+    mount(fakeSeam());
+    await waitFor(() => screen.getByTestId('new-chat-card'));
+    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(BOB);
+    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_B);
+  });
+
+  it('the kind default outranks last used; a stale last used falls through to the first listed', async () => {
+    localStorage.setItem('tm8.chat.lastTeammate', BOB);
+    localStorage.setItem('tm8.chat.lastModel', MODEL_B);
+    mount(fakeSeam({ defaults: { task: { teammateId: ADA as EntityId } } }));
+    await waitFor(() => screen.getByTestId('new-chat-card'));
+    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(ADA);
+    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_B);
+    cleanup();
+    localStorage.setItem('tm8.chat.lastTeammate', '01a0-left-the-space');
+    localStorage.setItem('tm8.chat.lastModel', 'claude-retired-1');
+    mount(fakeSeam());
+    await waitFor(() => screen.getByTestId('new-chat-card'));
+    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(ADA);
+    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_A);
+  });
+
   it('a refused write is shown on the card, and the card stays', async () => {
     mount(fakeSeam({ setRefuses: 'only a space admin can set chat defaults' }));
     await waitFor(() => screen.getByTestId('new-chat-card'));

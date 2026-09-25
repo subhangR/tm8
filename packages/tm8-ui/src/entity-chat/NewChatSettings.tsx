@@ -29,7 +29,8 @@ import { modelCatalog } from '../domain/model-catalog';
 import {
   customKindLabel,
   lastChatMode,
-  rememberChatMode,
+  lastChatPicks,
+  rememberChatStart,
   resolveChatDefault,
   useChatDefaults,
 } from '../chat-defaults';
@@ -151,6 +152,11 @@ export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }
     ? { teammateId: resolution.teammateId as EntityId, model: resolution.model, mode, projectId: facts.projectId }
     : 'card';
   if (decided.current !== 'card') return <>{composerFor(decided.current)}</>;
+  /* Pre-fill: the resolved default → last used, while it still resolves →
+     the first listed. Project keeps its own rule (no last-used). */
+  const last = lastChatPicks();
+  const lastTeammate = last.teammateId && facts.teammates?.some((teammate) => teammate.id === last.teammateId) ? last.teammateId : null;
+  const lastModel = last.model && models.some((option) => option.id === last.model) ? last.model : null;
   return (
     <SettingsCard
       kind={kind}
@@ -160,14 +166,14 @@ export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }
       models={models}
       projects={facts.projects}
       initial={{
-        teammateId: resolution.teammateId ?? facts.teammates?.[0]?.id ?? '',
-        model: resolution.model ?? models[0]?.id ?? '',
+        teammateId: resolution.teammateId ?? lastTeammate ?? facts.teammates?.[0]?.id ?? '',
+        model: resolution.model ?? lastModel ?? models[0]?.id ?? '',
         mode,
         projectId: facts.projectId ?? SCRATCH,
       }}
       saveDefault={(entry) => defaults.set(kind, entry)}
       onStart={(seed) => {
-        rememberChatMode(seed.mode ?? 'ask');
+        rememberChatStart(seed);
         setStarted({ ...seed, focus: true });
       }}
     />

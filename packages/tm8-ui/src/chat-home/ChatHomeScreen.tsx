@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
-import { rememberChatMode } from '../chat-defaults/lastUsed';
+import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
@@ -1514,9 +1514,9 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
-      /* The next new chat's mode (§3.4 "mode = last used"). A host that
-         pins its mode (Craft) is not the viewer choosing one. */
-      if (!pinnedMode) rememberChatMode(chatMode);
+      /* The next new chat's last-used mode, teammate and model (§3.4, §5).
+         A host that pins its mode (Craft) is not the viewer choosing. */
+      if (!pinnedMode) rememberChatStart({ mode: chatMode, teammateId, model: selectedModel.model });
       setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
       // The select effect owns loading the new chat — a second concurrent read
