@@ -688,6 +688,21 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(input).not.toHaveProperty('memoryIds');
   });
 
+  it('carries the per-group selection and its reasons as given, and neither when absent (I9)', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    const build = (over: Partial<typeof config>) =>
+      buildSpawnInput({ clientMutationId: 'cmid-s', spaceId: 'space-1', config: { ...config, ...over } });
+    expect(build({})).not.toHaveProperty('selection');
+    expect(build({})).not.toHaveProperty('selectionReasons');
+    expect(build({ selectionReasons: {} })).not.toHaveProperty('selectionReasons');
+    const input = build({
+      selection: { referenceIds: ['r1'] },
+      selectionReasons: { memories: 'not-asked', skills: 'jev-failed' },
+    });
+    expect(input.selection).toEqual({ referenceIds: ['r1'] });
+    expect(input.selectionReasons).toEqual({ memories: 'not-asked', skills: 'jev-failed' });
+  });
+
   it('carries the ··· harness pick only when made; an empty plugin pick is sent, none under Full', () => {
     const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
     const build = (over: Partial<typeof config>) =>
@@ -746,6 +761,27 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
       expect(jev.selection).toEqual({ memoryIds: ['mem-a'], skillIds: ['jev-pick', 'sales-pipeline', 'sales-forecast'] });
       const memoriesOnly = build({ plugins: ['sales@synced'], selection: { memoryIds: ['mem-a'] } });
       expect(memoriesOnly.selection?.skillIds).toEqual(['task-skill', 'persona-review', 'ops-deploy', 'sales-pipeline', 'sales-forecast']);
+    });
+
+    it('a routed pick names skills, so the skills group’s default reason is dropped (the node refuses both)', () => {
+      /* The sheet and the Run popup send `selectionReasons` for every group
+         they leave on its defaults — so an untouched skills group arrives here
+         as `skills: 'not-asked'`. Routing a plugin through `skillIds` makes
+         skills a SELECTED group, and the contract refuses a group named in
+         both. The other groups' reasons stand. */
+      const input = build({
+        plugins: ['sales@synced'],
+        selectionReasons: { memories: 'not-asked', skills: 'not-asked', references: 'jev-pending' },
+      });
+      expect(input.selection?.skillIds).toContain('sales-pipeline');
+      expect(input.selectionReasons).toEqual({ memories: 'not-asked', references: 'jev-pending' });
+      // Every group selected: no reason is left to send.
+      const all = build({
+        plugins: ['sales@synced'],
+        selection: { memoryIds: ['mem-a'], referenceIds: ['ref-a'] },
+        selectionReasons: { skills: 'not-asked' },
+      });
+      expect(all).not.toHaveProperty('selectionReasons');
     });
 
     it('falls back to the whole pick on `plugins` rather than send a set that could drop something', () => {

@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3b5b61f29de562cdcd00e4331a074e430db8838ed4c7137c24e923c6b7645053",
+  "catalogDigest": "sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2",
   "catalog": {
-    "total": 242,
-    "v1": 240,
+    "total": 243,
+    "v1": 241,
     "reserved": 2,
-    "http": 240,
+    "http": 241,
     "ws": 1,
-    "registerableV1Http": 238,
+    "registerableV1Http": 239,
     "methods": {
-      "GET": 79,
+      "GET": 80,
       "POST": 114,
       "PATCH": 16,
       "DELETE": 17,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 83,
+      "read": 84,
       "command": 157,
       "stream": 2
     },
-    "uniqueNames": 242,
-    "uniqueBindings": 241
+    "uniqueNames": 243,
+    "uniqueBindings": 242
   },
   "reservedOperations": [
     "search.query",
@@ -267,6 +267,13 @@
         "operation": "launch.suggest",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/launch/suggest",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "launch.defaults",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/launch/defaults",
         "status": "registered",
         "source": "server-router"
       },
@@ -2098,7 +2105,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 210
+    "unimplementedV1Http": 211
   },
   "schemas": {
     "additive": {
@@ -2416,6 +2423,22 @@
         "intentTags": [
           "launch",
           "suggest"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "launch.defaults",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/launch.defaults",
+        "intentTags": [
+          "launch",
+          "defaults"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

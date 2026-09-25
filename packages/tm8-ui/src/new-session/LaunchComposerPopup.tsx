@@ -25,6 +25,8 @@ import {
   useJevSuggestions,
   type JevPort,
 } from '../jev';
+import { composeSelection } from '../domain/launch-selection';
+import { LaunchSelectionChips, useLaunchSelection, type LaunchSelectionSources } from '../launch-selection';
 import { NewSessionComposer } from './NewSessionComposer';
 import { useLaunchComposerState } from './useLaunchComposerState';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheet itself —
@@ -108,6 +110,12 @@ export interface LaunchComposerPopupProps {
   jev?: JevPort;
   /** The ··· menu's Plugins list. Absent ⇒ the row says the node cannot list them. */
   loadInstalledPlugins?: LoadInstalledPlugins;
+  /**
+   * The launch's per-group context (I9): defaults pre-ticked, removals and
+   * additions. Absent ⇒ the Context line says the defaults are unknown, and
+   * the launch sends no selection.
+   */
+  selection?: LaunchSelectionSources;
 }
 
 export function LaunchComposerPopup({
@@ -126,6 +134,7 @@ export function LaunchComposerPopup({
   clientMutationId,
   jev: jevPort,
   loadInstalledPlugins,
+  selection: selectionSources,
 }: LaunchComposerPopupProps) {
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path — and the
@@ -219,6 +228,13 @@ export function LaunchComposerPopup({
     teammateId: config.teamMemberId,
     draft: jevDraft,
   });
+  /* THE LAUNCH'S CONTEXT (I9) — the same per-group selection the launch
+     sheet holds, as three count chips that each open their group. */
+  const selection = useLaunchSelection({
+    load: selectionSources?.load,
+    teammateId: config.teamMemberId,
+    subjectId: subject.id,
+  });
   const [reviewOpen, setReviewOpen] = useState(false);
   const jevModel = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
   const jevCatalog = jevModel ? modelCatalog(currentNodeKey()) : [];
@@ -232,7 +248,10 @@ export function LaunchComposerPopup({
   const verdict = canLaunch(config, { projects: projectOptions, capacity });
   const refusal = !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
-    : verdict.ok ? null : verdict.reason;
+    : !verdict.ok ? verdict.reason
+      /* An edited group's defaults are re-reading: wait, or that group would
+         launch on its defaults and drop the person's removals. */
+      : selection.launchBlock;
 
   /*
    * DISMISS ONLY ON SUCCESS — the owner's final ruling (2026-09-07, reversing
@@ -255,7 +274,7 @@ export function LaunchComposerPopup({
   };
 
   const commit = () => {
-    if (!onSpawn || pending) return;
+    if (!onSpawn || pending || refusal) return;
     setNodeRefusal(null);
     setPending(true);
     const sessionTitle = title.trim() || defaultTitle;
@@ -269,17 +288,23 @@ export function LaunchComposerPopup({
     const saved = onSaveSubject && Object.keys(edits).length > 0
       ? Promise.resolve(onSaveSubject(edits))
       : Promise.resolve();
-    /* `{}` until Ask Jev is pressed — a launch without Jev is today's, byte
-       for byte. Read at commit time: the ticks are whatever is on screen. */
+    /* PER-GROUP SEND (I9), read at commit time: the ticks are whatever is on
+       screen. An untouched group is omitted (its defaults load) with a
+       reason; an edited group is its exact set; Jev's answered groups replace
+       the popup's own. No group edited ⇒ no `selection`. */
     const jevFields = jev.toSpawnFields();
+    const launchFields = {
+      ...composeSelection(selection.outcomes(), jevFields.groups, jevFields.defaultReasons),
+      ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
+    };
     saved
       .then(() => onSpawn(
         buildSpawnInput({
           clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
           spaceId,
           config: continuing && description.trim()
-            ? { ...config, promptExtra: description.trim(), ...jevFields }
-            : { ...config, ...jevFields },
+            ? { ...config, promptExtra: description.trim(), ...launchFields }
+            : { ...config, ...launchFields },
           // Still named `taskIds` on the wire; the server maps a non-task
           // subject through `derive_task_for_entity` (064).
           taskIds: subjectTaskIds,
@@ -331,6 +356,14 @@ export function LaunchComposerPopup({
             <AskJevButton state={jev.state} askRefusal={jev.askRefusal} onAsk={() => jev.ask()} />
           }
           aboveControls={
+            <>
+            <LaunchSelectionChips
+              selection={selection}
+              candidates={selectionSources?.candidates ?? {}}
+              /* In Jev mode Jev's ticks ARE memories and skills (the review
+                 drawer shows them); references stay the popup's own. */
+              governed={jev.jevMode ? ['memories', 'skills'] : []}
+            />
             <JevStrip
               jev={jev}
               roster={teammateRows}
@@ -354,6 +387,7 @@ export function LaunchComposerPopup({
                 },
               }}
             />
+            </>
           }
         />
         {reviewOpen && jev.state !== 'idle' ? (

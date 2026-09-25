@@ -1,6 +1,7 @@
 import type { FormsPendingForSessionsResult } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
+import type { LaunchDefaultsPort } from '../launch-selection/port';
 import type { FormsOps } from '../forms/ops-port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
 import type { LaunchSuggestInput } from '@tm8/contract';
@@ -884,6 +885,13 @@ export interface Seam {
      * button refused-with-reason, never hidden.
      */
     jev?: JevPort;
+    /**
+     * `launch.defaults` — what a launch loads per selection group when nothing
+     * is selected (design 01a0d348 §5.1, I9). Optional like `jev`: without it
+     * the launch sheet's groups say their defaults are unknown and cannot be
+     * edited, and the launch sends no selection.
+     */
+    launchDefaults?: LaunchDefaultsPort;
     /**
      * `forms.*` — the questionnaire block's real port is built on it
      * (`forms/real-port.ts`). Optional like `skills`: a seam without it gets

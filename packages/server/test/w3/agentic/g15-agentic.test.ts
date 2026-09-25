@@ -46,7 +46,7 @@ import {
 // line and this is that string, copied.
 // Re-measured 2026-09-23: the catalog with the nine skills.* rows (#647 + #649).
 // Re-measured 2026-09-23 (Jev lane F): + launch.suggest; the live Received value, copied.
-/* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), merged with headers I4. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ const CATALOG_DIGEST = 'sha256:3b5b61f29de562cdcd00e4331a074e430db8838ed4c7137c24e923c6b7645053' /* headers I4: + entities.header.set/clear; matched to the regenerated manifest. */; /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // SC-3: +10 space/node credential rows; /* +1 events.changes (change feed step 3). MEASURED. */ Jev lane K: +3 service-key rows
+/* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), merged with headers I4. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ const CATALOG_DIGEST = 'sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2' /* I9b: + launch.defaults */ /* headers I4: + entities.header.set/clear; matched to the regenerated manifest. */; /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // SC-3: +10 space/node credential rows; /* +1 events.changes (change feed step 3). MEASURED. */ Jev lane K: +3 service-key rows
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -122,7 +122,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // 197 -> 198 (187): execution.sessions.share. MEASURED.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1): execution.gitStage.
     // MEASURED on the merged tree.
-    expect(root.catalog.total).toBe(242); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F) // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23) /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(root.catalog.total).toBe(243); /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3: +10 credentials.space.* / node.credentials.* rows. MEASURED.  +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F) // +3 141, +3 148, +25 177 containers, +1 187, +1 gitStage, +9 skills (2026-09-23) /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

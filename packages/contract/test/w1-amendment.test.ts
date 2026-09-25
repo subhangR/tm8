@@ -111,8 +111,8 @@ describe('W1 adopted catalog target', () => {
     // MEASURED on the merged tree from this assertion's own failing run.
     // 203 -> 208 (2026-09-23): skills.roots/create/edit/equip/unequip (F4, #648), all v1. MEASURED on the merged tree.
     // 208 -> 209 (2026-09-23, Jev lane F): launch.suggest, a v1 POST command. MEASURED from this assertion's own failing run.
-    expect(OPERATIONS).toHaveLength(242); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* and node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
-    expect(V1_OPERATIONS).toHaveLength(240); /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // launch.suggest is v1: 206 -> 207. MEASURED.
+    expect(OPERATIONS).toHaveLength(243); /* +1 launch.defaults (I9b). MEASURED. */ /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* and node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED.
+    expect(V1_OPERATIONS).toHaveLength(241); /* +1 launch.defaults (I9b). MEASURED. */ /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // launch.suggest is v1: 206 -> 207. MEASURED.
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -156,7 +156,7 @@ describe('W1 adopted catalog target', () => {
     // skills.show, skills.preview), POST 100->101 (skills.scan). MEASURED on the merged tree.
     // 2026-09-23 F4: GET 68->69 (roots), POST 101->104 (create/equip/unequip), PATCH 12->13 (edit). MEASURED.
     // 2026-09-23 Jev lane F: POST 104->105 (launch.suggest). MEASURED.
-    }).toEqual({ GET: 79, /* +13 forms.* (Forms W1). MEASURED. */ /* GET +1 pendingForSessions, POST +1 responses.redeliver (Forms W3). MEASURED. */ POST: 114, PATCH: 16, DELETE: 17, PUT: 14, WS: 2 }); /* +1 PUT entities.header.set, +1 DELETE entities.header.clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3. MEASURED.
+    }).toEqual({ GET: 80, /* +1 launch.defaults (I9b). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* GET +1 pendingForSessions, POST +1 responses.redeliver (Forms W3). MEASURED. */ POST: 114, PATCH: 16, DELETE: 17, PUT: 14, WS: 2 }); /* +1 PUT entities.header.set, +1 DELETE entities.header.clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3. MEASURED.
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -174,7 +174,7 @@ describe('W1 adopted catalog target', () => {
     // MEASURED on the merged tree.
     // 2026-09-23 F4: read 72->73, command 129->133. MEASURED.
     // 2026-09-23 Jev lane F: command 133->134 (launch.suggest). MEASURED.
-    }).toEqual({ read: 83, /* +13 forms.* (Forms W1). MEASURED. */ /* read +1, command +1 (Forms W3). MEASURED. */ command: 157, stream: 2 }); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3. MEASURED.
+    }).toEqual({ read: 84, /* +1 launch.defaults (I9b). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* read +1, command +1 (Forms W3). MEASURED. */ command: 157, stream: 2 }); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // SC-3. MEASURED.
   });
 });
 

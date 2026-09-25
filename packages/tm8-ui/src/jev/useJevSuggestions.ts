@@ -12,11 +12,13 @@ import {
   type LaunchSuggestGroup,
   type LaunchSuggestInput,
   type ModelSuggestion,
-  type SpawnSelection,
+  type SpawnSelectionDefaultReason,
+  type SpawnSelectionGroup,
   type TeammateSuggestion,
 } from '@tm8/contract';
 
 import { MEMORY_IDS_MAX } from '../domain/memory';
+import type { GroupOutcome } from '../domain/launch-selection';
 import type { JevPort } from './port';
 
 /**
@@ -58,8 +60,19 @@ export type JevOverallState = 'idle' | 'asking' | 'ready' | 'stale' | 'unavailab
 /** Memories and skills are the two ticked kinds. */
 export type JevTickKind = 'memory' | 'skill';
 
+/** The two groups Jev ticks, as `SpawnSelection` names them. */
+export type JevTickedGroup = Extract<SpawnSelectionGroup, 'memories' | 'skills'>;
+const JEV_TICKED_GROUPS: readonly JevTickedGroup[] = ['memories', 'skills'];
+
 export interface JevSpawnFields {
-  selection?: SpawnSelection;
+  /**
+   * In Jev mode, Jev's outcome for each ticked group: its exact set, or its
+   * defaults and why. These REPLACE the sheet's own outcome for those groups
+   * (`composeSelection`'s override).
+   */
+  groups?: Partial<Record<JevTickedGroup, GroupOutcome>>;
+  /** Out of Jev mode: why a group that ends up on its defaults got there, when Jev failed or is pending. */
+  defaultReasons?: Partial<Record<JevTickedGroup, SpawnSelectionDefaultReason>>;
   jevRunId?: EntityId;
 }
 
@@ -324,43 +337,57 @@ export function useJevSuggestions(args: {
     return 'ready';
   }, [groups, draft, askedDraft]);
 
-  /* SELECTION IS SENT ONLY WHEN BOTH SETS ARE KNOWN (coordinator ruling,
-     2026-09-23). `selection` needs both arrays, and it is the EXACT set: a
-     failed or still-asking group has no ticked set, and sending `[]` for it
-     would strip every memory or skill the teammate carries without anyone
-     choosing that — design §8, "nothing is silently dropped". A group that was
-     SKIPPED (no candidates) truthfully has none, so it sends `[]`. */
-  const selectionReady = entered
-    && usable(groups.memories)
-    && usable(groups.skills)
-    && (groups.memories.status === 'ok' || groups.skills.status === 'ok');
+  /* PER-GROUP SEND (design 01a0d348 §5.2, I9 — replaces the 2026-09-23
+     "both sets or nothing" ruling). In Jev mode each of memories and skills is
+     decided ON ITS OWN: an answered group is its exact set, a group that was
+     SKIPPED (no candidates) truthfully has none and sends `[]`, and a group
+     that failed or is still answering is OMITTED — the node loads that
+     group's defaults and records why (`jev-failed` / `jev-pending`). Nothing
+     is ever sent as `[]` for a group whose set is unknown: that would strip
+     every default it carries without anyone choosing it. */
+  const outcomeOf = useCallback((group: JevTickedGroup): GroupOutcome => {
+    const state = groups[group];
+    if (state.status === 'ok') return { send: [...(group === 'memories' ? memoryTicks : skillTicks)] };
+    if (state.status === 'skipped') return { send: [] };
+    if (state.status === 'asking') return { omit: 'jev-pending' };
+    if (state.status === 'failed') return { omit: 'jev-failed' };
+    return { omit: 'not-asked' };
+  }, [groups, memoryTicks, skillTicks]);
 
   const launchNote = useMemo<string | null>(() => {
-    if (!entered || selectionReady) return null;
-    const blocking = (['memories', 'skills'] as const).filter((group) => !usable(groups[group]));
+    if (!entered) return null;
+    const blocking = JEV_TICKED_GROUPS.filter((group) => !usable(groups[group]));
+    if (blocking.length === 0) return null;
     const words = blocking.map((group) => GROUP_WORD[group]).join(' and ');
     if (blocking.some((group) => groups[group].status === 'asking')) {
-      return `Jev is still answering ${words.toLowerCase()} — Launch now sends the teammate’s defaults.`;
+      return `Jev is still answering ${words.toLowerCase()} — Launch now sends the defaults for ${blocking.length === 1 ? 'that group' : 'those groups'}.`;
     }
     const failed = blocking.map((group) => {
       const g = groups[group];
       return g.status === 'failed' ? `${GROUP_WORD[group]} failed (${g.reason})` : `${GROUP_WORD[group]} not asked`;
     }).join(' · ');
-    return `${failed} — Launch sends the teammate’s defaults, not your ticks. Retry to launch with them.`;
-  }, [entered, selectionReady, groups]);
+    const rest = blocking.length < JEV_TICKED_GROUPS.length ? '; your other ticks still go' : '';
+    return `${failed} — Launch sends the defaults for ${blocking.length === 1 ? 'that group' : 'those groups'}${rest}. Retry to launch with Jev’s ticks.`;
+  }, [entered, groups]);
 
   const toSpawnFields = useCallback((): JevSpawnFields => {
     const fields: JevSpawnFields = {};
-    if (selectionReady) {
-      fields.selection = {
-        memoryIds: groups.memories.status === 'ok' ? [...memoryTicks] : [],
-        skillIds: groups.skills.status === 'ok' ? [...skillTicks] : [],
-      };
+    if (entered) {
+      fields.groups = { memories: outcomeOf('memories'), skills: outcomeOf('skills') };
+    } else {
+      /* Out of Jev mode the sheet's own ticks decide, but a group Jev failed
+         or is still answering says so if it ends up on its defaults. */
+      const reasons: JevSpawnFields['defaultReasons'] = {};
+      for (const group of JEV_TICKED_GROUPS) {
+        const outcome = outcomeOf(group);
+        if ('omit' in outcome && outcome.omit !== 'not-asked') reasons[group] = outcome.omit;
+      }
+      if (Object.keys(reasons).length > 0) fields.defaultReasons = reasons;
     }
     // The run is linked for cost even without a selection (design §3.1 step 7).
-    if (asked) fields.jevRunId = runId;
+    if (asked) fields.jevRunId = runId as EntityId;
     return fields;
-  }, [selectionReady, groups.memories.status, groups.skills.status, memoryTicks, skillTicks, asked, runId]);
+  }, [entered, outcomeOf, asked, runId]);
 
   return {
     runId,

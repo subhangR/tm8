@@ -15,7 +15,8 @@ import type { FixtureJevScenario } from './data/fixtures/jev-fixture';
 import { fixtureSummaries } from './fixtures/entities';
 import { MobileSurfaceProvider } from './mobile';
 import { LaunchSheet } from './views/LaunchSheet';
-import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS } from './views/launch-fixtures';
+import { LAUNCH_CAPACITY, LAUNCH_DEFAULTS, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_REFERENCE_CANDIDATES } from './views/launch-fixtures';
+import { memoryCandidateRow } from './domain/launch-selection';
 import { LaunchComposerPopup } from './new-session/LaunchComposerPopup';
 import type { LaunchMemory, LaunchTeammate } from './domain/launch';
 
@@ -47,6 +48,8 @@ const memories: LaunchMemory[] = fixtureSummaries
     injectedWhenPicked: true, detail: '',
   }));
 const subject = fixtureSummaries.find((row) => row.state.kind === 'task')!;
+/* I9's `launch.defaults`, answered after a beat so the "reading…" line shows. */
+const loadLaunchDefaults = () => new Promise<typeof LAUNCH_DEFAULTS>((resolve) => setTimeout(() => resolve(LAUNCH_DEFAULTS), 300));
 
 function Harness() {
   const [theme, setTheme] = useState<'light' | 'dark'>((params.get('theme') as 'light' | 'dark') ?? 'light');
@@ -76,6 +79,7 @@ function Harness() {
       projects={LAUNCH_PROJECTS.map((p) => ({ projectId: p.id as never, name: p.name, trusted: p.trusted }))}
       capacity={LAUNCH_CAPACITY}
       jev={seam.commands.jev}
+      selection={{ load: loadLaunchDefaults, candidates: { memories: memories.map(memoryCandidateRow), references: LAUNCH_REFERENCE_CANDIDATES } }}
       loadDescription={() => Promise.resolve('Invite links should be single-use, and the join screen must say so when one has already been used.')}
       onSpawn={(input) => { setLast(JSON.stringify(input, null, 2)); }}
       onDismiss={() => {}}
@@ -91,6 +95,8 @@ function Harness() {
       profiles={LAUNCH_PROFILES}
       capacity={LAUNCH_CAPACITY}
       memories={memories}
+      loadLaunchDefaults={loadLaunchDefaults}
+      referenceCandidates={LAUNCH_REFERENCE_CANDIDATES}
       jev={seam.commands.jev}
       onLaunch={(config) => setLast(JSON.stringify(config, null, 2))}
       onDispatch={() => setLast('dispatch')}

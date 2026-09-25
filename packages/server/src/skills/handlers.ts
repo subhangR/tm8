@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs';
 import { credentialConfigDir } from '../credentials/agent-credential-home.js';
 import { serializeSkillIndexEntry } from '@tm8/prompt';
 import type { SkillPreviewResult } from '@tm8/contract';
-import { loadPluginSkills, loadSkillEquipment, loadTaskSkillEquipment } from './equipment.js';
+import { loadPluginSkills, loadSkillEquipment } from './equipment.js';
+import { loadSkillDefaults } from '../facade/spawn-defaults.js';
 import { z } from 'zod';
 import { CollabError, decodeCursor, encodeCursor } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
@@ -107,14 +108,10 @@ export function registerSkillHandlers(
       });
       const identityId = claimsFor(owner, ctx).identityId;
       // F3 (design 01a0d348 §3.5): what a composer plugin tick adds, and the
-      // defaults it must keep. Spawn's order: task equips the persona lacks,
-      // then the persona's own, so an exact set built from these narrows to
-      // exactly the launch's defaults plus the ticked plugin's skills.
-      const personaIds = new Set(equips.map(row => row.entityId));
-      const defaultSkillIds = [
-        ...(await loadTaskSkillEquipment(q, spaceId, input.taskIds)).map(row => row.entityId).filter(id => !personaIds.has(id)),
-        ...equips.map(row => row.entityId),
-      ];
+      // defaults it must keep — spawn's own loader (`loadSkillDefaults`), so
+      // an exact set built from these narrows to exactly the launch's
+      // defaults plus the ticked plugin's skills.
+      const defaultSkillIds = (await loadSkillDefaults(q, spaceId, input.teamMemberId, input.taskIds)).map(row => row.entityId);
       const installedPlugins = options.installedPluginsFor && identityId ? options.installedPluginsFor(identityId) : null;
       return {
         ...effective,

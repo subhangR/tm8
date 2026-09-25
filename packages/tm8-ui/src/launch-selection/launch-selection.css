@@ -1,0 +1,69 @@
+/* The launch's per-group context (I9). Rows reuse the sheet's `ls__row`
+   anatomy; these rules add only what a selection needs on top of it: the
+   diff at the group head, the "default" tag, the removed state and the
+   header text. */
+.cv2-root .lsel__head { display: flex; align-items: baseline; gap: 8px; }
+.cv2-root .lsel__diff {
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-brand-2);
+}
+.cv2-root .lsel__item { display: flex; flex-direction: column; gap: 2px; }
+.cv2-root .lsel__tag { color: var(--pn-ink-2); font-weight: 600; }
+.cv2-root .lsel__tag--removed { color: var(--pn-block); }
+/* A removed default stays in the list, struck, so the removal is visible
+   and can be undone with one click. */
+.cv2-root .lsel__row--removed .lsel__name {
+  text-decoration: line-through; color: var(--pn-ink-3);
+}
+.cv2-root .lsel__text {
+  font-size: 11px; color: var(--pn-ink-2); line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cv2-root .lsel__derived {
+  font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line); border-radius: var(--pn-r-pill);
+  padding: 0 5px; margin-right: 5px;
+}
+.cv2-root .lsel__add { align-self: flex-start; padding: 2px 0; }
+.cv2-root .lsel__pool { max-height: 240px; overflow-y: auto; padding: 2px; }
+/* The sheet's collapsed form: the group head IS the toggle. */
+.cv2-root .lsel__head--toggle {
+  width: 100%; padding: 4px 2px; background: transparent; border: 0;
+  cursor: pointer; text-align: left; font-family: var(--pn-ui);
+}
+.cv2-root .lsel__summary { flex: 1; min-width: 0; font-size: 11.5px; color: var(--pn-ink-2); }
+.cv2-root .lsel__head--edited .lsel__summary { color: var(--pn-brand-2); }
+.cv2-root .lsel__caret { color: var(--pn-ink-3); font-size: 10px; }
+.cv2-root .lsel__body { display: flex; flex-direction: column; gap: 5px; }
+.cv2-root .lsel__how { align-self: flex-start; text-align: left; padding: 2px 0; }
+
+/* The Run composer's compact form: three count chips, one popover. */
+.cv2-root .lsel-chips { display: flex; flex-direction: column; gap: 6px; margin: 0 20px 2px; }
+.cv2-root .lsel-chips__row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv2-root .lsel-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--pn-r-pill);
+  border: 1px solid var(--pn-line); background: var(--pn-card);
+  font-family: var(--pn-ui); font-size: 11.5px; color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .lsel-chip:hover { border-color: var(--pn-line-2); }
+.cv2-root .lsel-chip--open { border-color: var(--pn-brand); }
+/* Amber = edited: this launch will NOT carry that group's plain defaults. */
+.cv2-root .lsel-chip--edited {
+  border-color: var(--pn-wait); background: var(--pn-wait-soft); color: var(--pn-ink);
+}
+.cv2-root .lsel-chip__dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--pn-wait);
+}
+.cv2-root .lsel-chip[aria-disabled='true'] { opacity: 0.7; cursor: default; }
+.cv2-root .lsel-popover {
+  position: relative; display: flex; flex-direction: column; gap: 8px;
+  max-height: 320px; overflow-y: auto; padding: 10px 12px;
+  background: var(--pn-card); border: 1px solid var(--pn-line-2);
+  border-radius: 10px; box-shadow: 0 0 0 3px var(--pn-brand-soft);
+}
+.cv2-root .lsel-popover__close {
+  position: absolute; top: 6px; right: 8px;
+  background: transparent; border: 0; color: var(--pn-ink-3);
+  cursor: pointer; font-size: 11px;
+}

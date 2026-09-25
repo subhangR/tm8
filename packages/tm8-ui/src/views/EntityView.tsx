@@ -968,6 +968,9 @@ export function EntityView(props: EntityViewProps) {
           projects={data.launch.projects}
           profiles={data.launch.profiles}
           memories={data.launch.memories}
+          loadLaunchDefaults={data.launch.loadLaunchDefaults}
+          skillCandidates={data.launch.skillCandidates}
+          referenceCandidates={data.launch.referenceCandidates}
           loadSkillPreview={data.launch.loadSkillPreview}
           jev={data.launch.jev}
           spaceId={data.spaceId}

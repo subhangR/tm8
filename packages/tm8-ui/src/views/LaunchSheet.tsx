@@ -60,7 +60,7 @@ import type { SkillPreviewResult } from '@tm8/contract';
  * rather than nesting a second modal dialog inside the first — one surface,
  * one dialog, which is what a screen reader is entitled to.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type {
   CredentialProviderName,
   CredentialsSpaceListView,
@@ -99,7 +99,8 @@ import {
   type LaunchSourceChoice,
   type LaunchSourceOption,
 } from '../domain/launch-sources';
-import { MEMORY_IDS_MAX } from '../domain/memory';
+import { composeSelection, memoryCandidateRow, type LaunchContextRow } from '../domain/launch-selection';
+import { LaunchSelectionGroups, useLaunchSelection, type LoadLaunchDefaults } from '../launch-selection';
 import { modelCatalog } from '../domain/model-catalog';
 import {
   AskJevButton,
@@ -136,6 +137,17 @@ export interface LaunchSheetProps {
    * has read memories into this client, an empty one means the space has none.
    */
   memories?: readonly LaunchMemory[];
+  /**
+   * `launch.defaults` (design 01a0d348 §5.1, I9): what this launch loads per
+   * group when nothing is selected. The sheet pre-ticks it, and an untick is a
+   * visible removal. Absent: the groups say the defaults are unknown and
+   * cannot be edited, and the launch sends no selection.
+   */
+  loadLaunchDefaults?: LoadLaunchDefaults;
+  /** The space's skills, offered for adding. Absent: not read (unknown, not empty). */
+  skillCandidates?: readonly LaunchContextRow[];
+  /** The space's docs, artifacts, drawings, files and tasks, offered for adding. Absent: not read. */
+  referenceCandidates?: readonly LaunchContextRow[];
   /** Node capacity, stated BEFORE commitment (T5-5 footer). Domain's shape. */
   capacity?: LaunchCapacity;
   /** A refusal renders IN the sheet, never as a toast (T5-5 annotation 6). */
@@ -271,11 +283,18 @@ export function LaunchSheet(props: LaunchSheetProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [rosterQuery, setRosterQuery] = useState('');
-  /* NOTHING PRE-SELECTED. Memories are epistemic claims injected into a
-     persona's context; the sheet opening on a default set would change what a
-     session believes without anyone choosing it. */
-  const [memoryIds, setMemoryIds] = useState<readonly EntityId[]>([]);
-  const [memoryOpen, setMemoryOpen] = useState(false);
+  /* THE LAUNCH'S CONTEXT, per group (I9): the defaults for this teammate and
+     subject, pre-ticked, and the person's removals and additions as a diff. */
+  const selection = useLaunchSelection({
+    load: props.loadLaunchDefaults,
+    teammateId: teammateId || null,
+    subjectId: props.subjectId,
+  });
+  const selectionCandidates = useMemo(() => ({
+    memories: memories?.map(memoryCandidateRow),
+    skills: props.skillCandidates,
+    references: props.referenceCandidates,
+  }), [memories, props.skillCandidates, props.referenceCandidates]);
 
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
@@ -452,7 +471,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
     return defaultResolution;
   }, [defaultResolution, profileId, profiles]);
   const profilePickerId = `launch-interaction-profile-${useId()}`;
-  const memoryPickerId = `launch-memories-${useId()}`;
   const selectedProfile = resolution.profile;
   const selectedProfileDescription = selectedProfile
     ? `${profileSurfaceDescription(selectedProfile)} · resolved from ${resolution.from}`
@@ -983,34 +1001,46 @@ export function LaunchSheet(props: LaunchSheetProps) {
               onRetry={jev.retry}
             />
           </section>
+        ) : props.loadLaunchDefaults ? (
+          <>
+            <LaunchSelectionGroups
+              selection={selection}
+              groups={['skills']}
+              candidates={selectionCandidates}
+              collapsed
+              extra={{ skills: <HowSkillsLoad>
+                <SkillPreview bare load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined} />
+              </HowSkillsLoad> }}
+            />
+            <JevGroupStatus group="skills" state={jev.groups.skills} onRetry={jev.retry} />
+          </>
         ) : (
+          /* No `launch.defaults` on this node: the read-only preview of the
+             equipped set, as before I9 — the skills group cannot be edited
+             without knowing its defaults. */
           <SkillPreview load={props.loadSkillPreview} teamMemberId={teammateId} projectId={target.kind === 'project' ? target.projectId : undefined} agentTool={agentToolId || undefined}>
             <JevGroupStatus group="skills" state={jev.groups.skills} onRetry={jev.retry} />
           </SkillPreview>
         )}
 
         {/*
-          * MEMORIES — the spawn-time hand-off (D3a, `memoryIds`).
+          * MEMORIES — the teammate's and task's working sets, pre-ticked
+          * (I9, design 01a0d348 §5.1), plus anything picked from the space.
           *
           * A PICKER, NOT A MANAGER. Nothing here creates, edits, supersedes or
           * forgets: those live on the teammate's working set and the memory's
-          * own panel. This screen answers exactly one question — "what extra
-          * context should THIS session start with" — and every control that
-          * answered a different one would be a second place to author memories.
+          * own panel. An untick or an addition rides THIS session only
+          * (`selection.memoryIds`) and never joins the teammate's working set.
           *
-          * WHY IT SAYS "this session only": these ids are injected for the
-          * spawn and do NOT join the teammate's working set. The two are easy
-          * to confuse precisely because they land in the same manifest field,
-          * and a picker that quietly taught a persona something permanent
-          * would be a very quiet surprise.
+          * THE ADDITIVE `memoryIds` PICKER IS GONE: an edited memories group is
+          * already the exact set (defaults kept ∪ added), and the node refuses
+          * `memoryIds` beside `selection`.
           */}
         {jev.jevMode ? (
           <section className="ls__section">
             <div className="ls__eyebrow">MEMORIES</div>
-            {/* JEV MODE REPLACES THE ADDITIVE PICKER. The picker ADDS to the
-                teammate's working set (`memoryIds`); Jev's ticks ARE the set
-                (`selection`). The contract refuses both at once, so the sheet
-                offers one meaning at a time. */}
+            {/* JEV MODE REPLACES THE GROUP: Jev's ticks ARE the memories set
+                (per group — a failed Jev group falls back to its defaults). */}
             <JevChecklist
               kind="memory"
               state={jev.groups.memories}
@@ -1021,107 +1051,17 @@ export function LaunchSheet(props: LaunchSheetProps) {
             />
           </section>
         ) : (
-        <section className="ls__section">
-          <div className="ls__eyebrow">MEMORIES</div>
-          <JevGroupStatus group="memories" state={jev.groups.memories} onRetry={jev.retry} />
-          <div className="ls__row ls__row--inert">
-            <span className="ls__glyph" aria-hidden="true">◈</span>
-            <span className="ls__rowtext">
-              <span className="ls__rowname">
-                {memoryIds.length === 0
-                  ? 'None — the teammate’s own working set still applies'
-                  : `${String(memoryIds.length)} picked for this session`}
-              </span>
-              <span className="ls__rowsub">
-                injected at spawn for this session only · not added to the persona
-              </span>
-            </span>
-            {memories ? (
-              <button
-                type="button"
-                className="ls__change"
-                aria-label="Change picked memories"
-                aria-expanded={memoryOpen}
-                aria-controls={memoryPickerId}
-                onClick={() => setMemoryOpen((o) => !o)}
-              >
-                change ▾
-              </button>
-            ) : null}
-          </div>
-
-          {/* ABSENT AND EMPTY ARE DIFFERENT FACTS, and this is the whole reason
-              the prop is optional rather than defaulted to []. "No memories in
-              this space" is a measurement; "nobody read them" is not, and
-              rendering the second as the first is the hollow-value law. */}
-          {!memories ? (
-            <p className="ls__profile-empty" role="status">
-              Memories have not been read into this client, so none can be
-              offered. This is unknown, not empty.
-            </p>
-          ) : null}
-
-          {memoryOpen && memories ? (
-            <div
-              id={memoryPickerId}
-              className="ls__picker"
-              role="group"
-              aria-label="Memory options"
-            >
-              {memories.length === 0 ? (
-                <p className="ls__profile-empty" role="status">
-                  This space has no memories yet.
-                </p>
-              ) : null}
-              {memories.map((memory) => {
-                const on = memoryIds.includes(memory.id);
-                // The cap is the CONTRACT's (`memoryIds: max(32)`), enforced
-                // here so the 33rd pick is refused with a reason instead of the
-                // node rejecting a launch the viewer already committed to.
-                const capped = !on && memoryIds.length >= MEMORY_IDS_MAX;
-                return (
-                  <button
-                    key={memory.id}
-                    type="button"
-                    // CHECKBOX, not radio: this is a set, and a radiogroup here
-                    // would announce single-choice to a screen reader.
-                    role="checkbox"
-                    aria-checked={on}
-                    aria-disabled={capped || undefined}
-                    className={`ls__row ${on ? 'ls__row--on' : ''} ${capped ? 'ls__row--refused' : ''}`}
-                    title={capped
-                      ? `The contract caps a spawn at ${String(MEMORY_IDS_MAX)} memories.`
-                      : memory.detail}
-                    onClick={(event) => {
-                      if (capped) return event.preventDefault();
-                      setMemoryIds((current) => (
-                        current.includes(memory.id)
-                          ? current.filter((id) => id !== memory.id)
-                          : [...current, memory.id]
-                      ));
-                    }}
-                  >
-                    <span className="ls__glyph" aria-hidden="true">◈</span>
-                    <span className="ls__rowtext">
-                      <span className="ls__rowname">{memory.statement}</span>
-                      {/* The SCOPE, not just the claim: picking a memory blind
-                          is how a true statement about the wrong subject gets
-                          injected. `mark` rides along so a disputed claim
-                          cannot be picked without seeing that it is disputed. */}
-                      <span className="ls__rowsub">
-                        {memory.mark} · {memory.subjectScope}
-                      </span>
-                    </span>
-                    <span className={`ls__check ${on ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
-                      {on ? '✓' : ''}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </section>
+          <>
+            <LaunchSelectionGroups selection={selection} groups={['memories']} candidates={selectionCandidates} collapsed />
+            <JevGroupStatus group="memories" state={jev.groups.memories} onRetry={jev.retry} />
+          </>
         )}
+
+        {/* REFERENCES (I9): the task's linked docs, artifacts, drawings, files
+            and tasks, pre-ticked, with anything else in the space to add.
+            Jev does not rank references, so this group is the sheet's alone
+            in every mode. */}
+        <LaunchSelectionGroups selection={selection} groups={['references']} candidates={selectionCandidates} collapsed />
 
         {props.refusal && (
           // T5-5: refusal renders IN the sheet — red word, cause, what did NOT
@@ -1137,6 +1077,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
       </div>
 
       <JevRunBar jev={jev} />
+
+      {/* An edited group's defaults are re-reading (a teammate change): Launch
+          waits rather than launch that group on its defaults and drop the
+          person's removals. Said here, not only in a tooltip. */}
+      {selection.launchBlock ? (
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">{selection.launchBlock}</div>
+      ) : null}
 
       <footer className="ls__foot">
         <span className="ls__capacity">
@@ -1191,10 +1138,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <button
           type="button"
           className="ls__launch"
-          disabled={!teammate || atCapacity || launching}
+          disabled={!teammate || atCapacity || launching || selection.launchBlock !== null}
+          title={selection.launchBlock ?? undefined}
           aria-busy={launching || undefined}
           onClick={() => {
-            if (!teammate || atCapacity || launching) return;
+            if (!teammate || atCapacity || launching || selection.launchBlock) return;
             const credentialSources: NonNullable<LaunchConfig['credentialSources']> = {};
             const spaceCredentialIds: NonNullable<LaunchConfig['spaceCredentialIds']> = {};
             const pick = (provider: CredentialProviderName, choice: CredentialChoice) => {
@@ -1208,10 +1156,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
             };
             if (agentCredentialProvider) pick(agentCredentialProvider, agentCredentialSource);
             pick('github', githubCredentialSource);
-            /* `{}` until Ask Jev is pressed, so a launch without Jev is exactly
-               today's. With a selection, the additive `memoryIds` is NOT sent:
-               the contract refuses the pair, and the picker is hidden anyway. */
+            /* PER-GROUP SEND (I9). An untouched group is omitted — its
+               defaults load — and `selectionReasons` says why; an edited group
+               is its exact set. In Jev mode Jev's outcome replaces the sheet's
+               for memories and skills. No group edited ⇒ no `selection`, so
+               the launch loads exactly what it always has. */
             const jevFields = jev.toSpawnFields();
+            const selectionFields = composeSelection(selection.outcomes(), jevFields.groups, jevFields.defaultReasons);
             props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
@@ -1224,10 +1175,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),
-              /* Omitted when nothing was picked: an absent field and an empty
-                 array are not the same statement to the node. */
-              ...(!jevFields.selection && memoryIds.length > 0 ? { memoryIds } : {}),
-              ...jevFields,
+              ...selectionFields,
+              ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
             });
           }}
         >
@@ -1261,6 +1210,38 @@ export function LaunchSheet(props: LaunchSheetProps) {
     >
       {sheet}
     </MobileSheet>
+  );
+}
+
+/**
+ * The harness's view of the skills — native / indexed / skipped — under the
+ * Skills group, collapsed (owner's pick, I9b form 2026-09-25): the group says
+ * WHAT the launch carries, this says HOW the harness will load it. It previews
+ * the equipped set, so an edited group is not what it describes; the line says
+ * that rather than hiding the preview.
+ */
+function HowSkillsLoad({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = `ls-how-skills-${useId()}`;
+  return (
+    <div className="ls__section">
+      <button
+        type="button"
+        className="ls__change lsel__how"
+        aria-expanded={open}
+        aria-controls={id}
+        data-testid="launch-skills-how"
+        onClick={() => setOpen((o) => !o)}
+      >
+        How these load {open ? '▴' : '▾'}
+      </button>
+      {open ? (
+        <div id={id}>
+          <span className="ls__rowsub">the equipped set, as the harness loads it — before your edits above</span>
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

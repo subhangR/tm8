@@ -1,3 +1,5 @@
+import type { EntityId, LaunchDefaultsResult } from '@tm8/contract';
+import type { LaunchContextRow } from '../domain/launch-selection';
 import type { LaunchCapacity, LaunchMemory, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
 export type { LaunchMemory, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
 
@@ -108,4 +110,32 @@ export const LAUNCH_MEMORIES: readonly LaunchMemory[] = [
     injectedWhenPicked: true,
     detail: 'A newer memory supersedes this one.',
   },
+];
+
+/**
+ * `launch.defaults` for the sheet (I9): one default per group, and a derived
+ * header beside an authored one so a row's "derived" label has both sides.
+ */
+export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
+  memories: {
+    items: [{ entityId: 'ent-mem-tokens', kind: 'memory', title: 'tokens.css is verbatim — a byte-equality test guards it', via: 'teammate', headerText: 'packages/tm8-ui/src/styles/tokens.css', headerSource: 'native' }],
+    total: 1,
+  },
+  skills: {
+    items: [{ entityId: 'ent-sk-review', kind: 'skill', title: 'code-review', via: 'teammate', headerText: 'Review a diff for defects', headerSource: 'native' }],
+    total: 1,
+  },
+  references: {
+    items: [
+      { entityId: 'ent-doc-spec', kind: 'doc', title: 'Launch spec', via: 'linked', headerText: 'Read before touching the launch sheet', headerSource: 'authored' },
+      { entityId: 'ent-file-log', kind: 'file', title: 'boot.log', via: 'attached', headerText: 'A boot log from the node', headerSource: 'derived' },
+    ],
+    total: 2,
+  },
+  taskId: 'task-1',
+  warnings: [],
+};
+
+export const LAUNCH_REFERENCE_CANDIDATES: readonly LaunchContextRow[] = [
+  { id: 'ent-doc-other' as EntityId, kind: 'doc', title: 'Another doc', text: null, derived: false, via: null },
 ];

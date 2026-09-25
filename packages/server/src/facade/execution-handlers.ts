@@ -1,5 +1,5 @@
 import { resolveHeaders } from '../headers/resolve.js';
-import { loadSkillEquipment, loadTaskSkillEquipment } from '../skills/equipment.js';
+import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
 import { SKILL_REFERENCE_SQL, skillReferenceOf } from '../skills/reference.js';
 import { linkSession } from '../jev/store.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
@@ -354,44 +354,6 @@ async function pruneReplayedSelection(
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
 
 /**
- * The spawn tasks' reference DEFAULTS, uncapped: live same-space peers of a
- * selectable reference kind that a task links by outgoing `relates_to` or
- * incoming `attached_to` (a file attached to a task is its attachment). The
- * same edges the assignment snapshot's `linked` / `attachments` read, minus
- * its row cap, because a default left out of an exact set must be recorded
- * even when the snapshot never read it. Edge order, first link wins.
- */
-async function loadReferenceDefaults(
-  q: Querier,
-  spaceId: string,
-  taskIds: readonly string[],
-): Promise<Array<{ entityId: string; kind: string; link: string }>> {
-  if (taskIds.length === 0) return [];
-  const rows = await q.query<{ entity_id: string; kind: string; link: string }>(
-    `select d.entity_id, d.kind, d.link
-       from (
-         select distinct on (l.peer_id) l.peer_id as entity_id, pe.kind, l.link, l.created_at, l.edge_id
-           from (
-             select r.dst_id as peer_id, 'relates_to'::text as link, r.created_at, r.id as edge_id
-               from public.edges r
-              where r.src_id = any($1::uuid[]) and r.type = 'relates_to'
-             union all
-             select a.src_id, 'attached_to', a.created_at, a.id
-               from public.edges a
-              where a.dst_id = any($1::uuid[]) and a.type = 'attached_to'
-           ) l
-           join public.entities pe
-             on pe.id = l.peer_id and pe.space_id = $2 and pe.deleted_at is null
-            and pe.kind = any($3::text[])
-          order by l.peer_id, l.created_at, l.edge_id
-       ) d
-      order by d.created_at, d.edge_id`,
-    [taskIds, spaceId, [...SPAWN_SELECTION_REFERENCE_KINDS]],
-  );
-  return rows.map((row) => ({ entityId: row.entity_id, kind: row.kind, link: row.link }));
-}
-
-/**
  * Selected skills the teammate is NOT equipped with, read by id with the same
  * metadata projection as `loadSkillEquipment` (never the body). Read only: no
  * equip edge is written — the skill rides this one session (#646's rule).
@@ -565,23 +527,11 @@ export class DbGraphPort implements GraphPort {
       // superseded. Read under the same RLS, in this transaction.
       const memoryDrops: ContextDrop[] = [];
       if (memoriesSelected) {
-        const defaults = await q.query<{ entity_id: string }>(
-          `select m.entity_id
-             from public.memories m
-             join public.entities e on e.id = m.entity_id and e.deleted_at is null
-            where e.space_id = $2
-              and exists (select 1 from public.edges r
-                           where r.type = 'remembers' and r.dst_id = m.entity_id
-                             and (r.src_id = $1 or r.src_id = any($3::uuid[])))
-              and not exists (select 1 from public.edges s
-                               where s.type = 'supersedes' and s.dst_id = m.entity_id)
-            order by m.created_at, m.entity_id`,
-          [input.teamMemberId, input.spaceId, spawnTaskIds],
-        );
+        const defaults = await loadMemoryDefaults(q, input.spaceId, input.teamMemberId, spawnTaskIds);
         const kept = new Set(injectedMemories.ids);
         for (const row of defaults) {
-          if (!kept.has(row.entity_id)) {
-            memoryDrops.push({ entityId: row.entity_id, kind: 'memory', group: 'memories', reason: 'not-selected' });
+          if (!kept.has(row.entityId)) {
+            memoryDrops.push({ entityId: row.entityId, kind: 'memory', group: 'memories', reason: 'not-selected' });
           }
         }
       }
@@ -651,13 +601,7 @@ export class DbGraphPort implements GraphPort {
       // keep theirs. The union rides everything below unchanged: `selection`
       // narrows it, `not-selected` audits it, and the manifest's byte budget
       // drops and declares it, so a task skill is equipped, not merely listed.
-      const personaEquipped = await loadSkillEquipment(q, input.spaceId, input.teamMemberId);
-      const personaIds = new Set(personaEquipped.map((row) => row.entityId));
-      const equipped = [
-        ...(await loadTaskSkillEquipment(q, input.spaceId, input.taskIds ?? []))
-          .filter((row) => !personaIds.has(row.entityId)),
-        ...personaEquipped,
-      ];
+      const equipped = await loadSkillDefaults(q, input.spaceId, input.teamMemberId, input.taskIds ?? []);
       // `selection`: exactly the selected skills, in the selected order. An
       // equipped skill keeps its equipment row (and depth); an unequipped one
       // is read by id for this session only. Equipped skills left out are

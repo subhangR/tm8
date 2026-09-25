@@ -1307,6 +1307,7 @@ const ROWS: Record<OperationName, Row> = {
   'skills.roots': { cmd: null, sum: 'List authorized skill authoring roots', authz: 'space', input: 'none', tags: ['skills'] },
   'launch.suggest': { cmd: null, sum: 'Ask Jev for model, teammate, memory and skill suggestions for a launch', authz: 'space', input: 'bound', tags: ['jev', 'launch', 'skills', 'memory', 'model'], notes: ['Launch-sheet API; no CLI — Jev is UI-only (design 01a0cb80).'] },
   'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
+  'launch.defaults': { cmd: null, sum: 'What a launch loads per selection group (memories, skills, references) when nothing is selected', authz: 'space', input: 'none', tags: ['launch', 'skills', 'memory', 'references'], notes: ['Launch-sheet API (design 01a0d348 §5.1, I9): spawn’s own default loaders, read in the caller’s RLS tx. Lenient — an unknown teammate or subject gives empty groups and a warning. `tm8 session spawn` needs no read: it sends no selection.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
   'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },
   'skills.show': { cmd: ['skill', 'show'], syn: 'tm8 skill show <skill-id>', sum: 'Read a skill and its current filesystem body', authz: 'entity', input: 'none' },
@@ -3014,7 +3015,8 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W1): + the thirteen forms.* rows. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (headers I4): + entities.header.set/clear; matched to the regenerated manifest.
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
-  'sha256:3b5b61f29de562cdcd00e4331a074e430db8838ed4c7137c24e923c6b7645053';
+  // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
+  'sha256:33ec73b4bc073acde01b6a40e76272fa507b470ef93fc077473dcc405c852cd2';
 
 export const GRAMMAR_VERSION = '2';
 

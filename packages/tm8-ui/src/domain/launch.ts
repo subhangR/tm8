@@ -26,6 +26,8 @@ import type {
   LaunchModelEffort,
   ProjectId,
   SpawnWorkdir,
+  SpawnSelectionDefaultReason,
+  SpawnSelectionGroup,
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT } from '@tm8/contract';
 import { catalogModelsFor } from './model-catalog';
@@ -590,8 +592,9 @@ export interface LaunchConfig {
    */
   memoryIds?: readonly EntityId[];
   /**
-   * ✦ Ask Jev's EXACT sets (design 01a0d348 §5.1) — what was ticked, each
-   * group replacing that group's defaults; a group left out keeps them.
+   * The launch's EXACT sets (design 01a0d348 §5.1, I9) — the sheet's
+   * per-group edits, or Ask Jev's ticks — each group replacing that group's
+   * defaults; a group left out keeps them (`composeSelection`).
    * `buildSpawnInput` then drops `memoryIds`, since the contract refuses the
    * pair.
    */
@@ -600,6 +603,14 @@ export interface LaunchConfig {
     readonly skillIds?: readonly EntityId[];
     readonly referenceIds?: readonly EntityId[];
   };
+  /**
+   * Why each group this launch does NOT select was left to its defaults
+   * (design 01a0d348 §5.2, I9): `not-asked`, or `jev-failed` / `jev-pending`.
+   * Audit-only — the node records it in `manifest.context.groups` and it never
+   * changes what loads. Never names a group `selection` names (the node
+   * refuses that); `composeSelection` builds both.
+   */
+  selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /** The Ask Jev run that informed this launch, linked for cost. Never interpreted. */
   jevRunId?: EntityId;
 }
@@ -902,6 +913,13 @@ export function canLaunch(
 // The submit — contract-shaped, verbatim
 // ---------------------------------------------------------------------------
 
+/** The `SpawnSelection` field each group rides on. */
+const SELECTION_FIELD = {
+  memories: 'memoryIds',
+  skills: 'skillIds',
+  references: 'referenceIds',
+} as const satisfies Record<SpawnSelectionGroup, keyof NonNullable<ExecutionSpawnInput['selection']>>;
+
 /**
  * Build the `ExecutionSpawnInput` the seam takes. BOTH the inline quick config
  * and the full T5-5 sheet call this, so the two surfaces cannot drift into
@@ -1010,6 +1028,14 @@ export function buildSpawnInput(args: {
   } else if (config.memoryIds?.length) {
     input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);
   }
+  /* A reason explains a DEFAULTED group, and the node refuses one for a group
+     `selection` names. `composeSelection` never pairs them, but a routed
+     plugin pick (above) turns an untouched skills group into a selected one
+     after the reasons were built — so the reasons are filtered against the
+     selection actually sent. */
+  const reasons = Object.entries(config.selectionReasons ?? {}).filter(([group]) =>
+    !(input.selection && SELECTION_FIELD[group as SpawnSelectionGroup] in input.selection));
+  if (reasons.length > 0) input.selectionReasons = Object.fromEntries(reasons);
   if (config.jevRunId) input.jevRunId = config.jevRunId;
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.

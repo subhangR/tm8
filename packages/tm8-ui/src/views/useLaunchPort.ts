@@ -31,6 +31,7 @@ import { useCallback, useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../domain';
 import { entityPatchInput } from '../authoring';
+import { memoryCandidateRow } from '../domain/launch-selection';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -52,6 +53,7 @@ export type LaunchPort = LaunchSources & {
 
 export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): LaunchPort {
   const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev, loadSkillPreview } = data.launch;
+  const { loadLaunchDefaults, memories, skillCandidates, referenceCandidates } = data.launch;
   const { onSpawn, onFullOptions } = options;
 
   /**
@@ -172,9 +174,20 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [loadSkillPreview],
   );
 
+  /* The Run composer's per-group context (I9): the same defaults read and add
+     pools the launch sheet takes, so the two surfaces send the same thing. */
+  const selection = useMemo(
+    () => ({
+      ...(loadLaunchDefaults ? { load: loadLaunchDefaults } : {}),
+      candidates: { memories: memories?.map(memoryCandidateRow), skills: skillCandidates, references: referenceCandidates },
+    }),
+    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
+      selection,
       teammates,
       projects,
       profileFor,
@@ -187,6 +200,6 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
     }),
-    [data.spaceId, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions],
   );
 }
