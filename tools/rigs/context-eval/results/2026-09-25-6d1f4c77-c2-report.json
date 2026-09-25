@@ -1,6 +1,6 @@
 {
   "title": "context-eval report — 2026-09-25-6d1f4c77-c2.jsonl, 2026-09-25-6d1f4c77-c2-rep2.jsonl",
-  "generatedAt": "2026-09-25T17:51:53.379Z",
+  "generatedAt": "2026-09-25T18:01:54.745Z",
   "rows": 34,
   "measured": 34,
   "excluded": 0,
@@ -2078,6 +2078,12 @@
     "memoryDirMoved": []
   },
   "crossLane": {
+    "readSiblingCommit": [],
+    "readSiblingCommitUnverified": [],
+    "listedAllRefs": [
+      "01a0d97b-dba2-7f94-b437-ac4b7930f9c7",
+      "01a0d97c-8fbb-7803-9ada-3fbf5353d743"
+    ],
     "readSiblingWorktree": [],
     "openedSiblingCopy": []
   }
