@@ -9,8 +9,12 @@
  *
  * Asserted against a real server, not the options object: a startup
  * parameter Postgres rejects or ignores would pass a config-shape check. The
- * control is a plain connection to the same database, which must NOT carry
- * the setting — otherwise the assertion is only reading the server default.
+ * assertion reads `pg_settings.source` as well as the value: `client` is what
+ * Postgres records for a startup-packet `-c`, so the pooled `off` is proven to
+ * come from PgDb and not from a cluster that already runs `jit = off` (which
+ * is a sane thing for an operator to set, and must not red this file). The
+ * control is a plain connection to the same database, which must NOT carry a
+ * client-sourced setting — otherwise the probe cannot tell the two apart.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
@@ -35,25 +39,28 @@ afterAll(async () => {
 const poolOf = (d: PgDb): pg.Pool => (d as unknown as { pool: pg.Pool }).pool;
 
 describe('PgDb connections', () => {
-  it('report jit = off on every pooled client', async () => {
+  const JIT = `select setting as jit, source from pg_settings where name = 'jit'`;
+
+  it('report jit = off, set by the client, on every pooled client', async () => {
     const pool = poolOf(db);
     const clients = await Promise.all([pool.connect(), pool.connect()]);
     try {
       for (const client of clients) {
-        const { rows } = await client.query<{ jit: string }>('show jit');
-        expect(rows).toEqual([{ jit: 'off' }]);
+        const { rows } = await client.query<{ jit: string; source: string }>(JIT);
+        expect(rows).toEqual([{ jit: 'off', source: 'client' }]);
       }
     } finally {
       for (const client of clients) client.release();
     }
   });
 
-  it('control: a plain connection to the same database reports the server default, on', async () => {
+  it('control: a plain connection to the same database carries no client-set jit', async () => {
     const plain = new pg.Client({ connectionString: database.url });
     await plain.connect();
     try {
-      const { rows } = await plain.query<{ jit: string }>('show jit');
-      expect(rows).toEqual([{ jit: 'on' }]);
+      const { rows } = await plain.query<{ jit: string; source: string }>(JIT);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.source).not.toBe('client');
     } finally {
       await plain.end();
     }
