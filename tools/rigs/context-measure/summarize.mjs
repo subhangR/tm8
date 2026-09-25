@@ -85,8 +85,8 @@ if (arms.some((a) => full(a).length)) {
   // Decision D2: the < 5% gate counts launches with an ENTRY-level miss.
   const entryMiss = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'entry');
   const headerRead = (r) => Object.values(r.miss?.ids ?? {}).some((why) => missLevel(why) === 'header');
-  out.push(`| **GATE: launches with an ENTRY-level miss (< 5%)** | ${arms.map((a) => count(a, entryMiss)).join(' | ')} |`);
-  out.push(`| entry-level miss reads / tm8 reads (per read) | ${arms.map((a) => pct(full(a).reduce((s, r) => s + (r.miss?.entryMissReads ?? 0), 0), full(a).reduce((s, r) => s + (r.miss?.reads ?? 0), 0))).join(' | ')} |`);
+  out.push(`| **GATE (per LAUNCH): launches with an ENTRY-level miss / launches, must be < 5%** | ${arms.map((a) => count(a, entryMiss)).join(' | ')} |`);
+  out.push(`| per READ (not the gate): entry-level miss reads / tm8 reads | ${arms.map((a) => pct(full(a).reduce((s, r) => s + (r.miss?.entryMissReads ?? 0), 0), full(a).reduce((s, r) => s + (r.miss?.reads ?? 0), 0))).join(' | ')} |`);
   out.push(`| launches with a HEADER-level read (flag > 25%) | ${arms.map((a) => {
     const n = full(a).length;
     const k = full(a).filter(headerRead).length;
