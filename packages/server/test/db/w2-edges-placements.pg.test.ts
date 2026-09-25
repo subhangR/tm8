@@ -199,6 +199,20 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
   });
 }
 
+/** Resolves once backend `pid` is blocked on a heavyweight lock; fails after 10s. */
+async function waitForLockWait(database: W1ScratchDatabase, pid: number): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const rows = await database.query<{ waiting: boolean }>(
+      `select wait_event_type = 'Lock' as waiting from pg_stat_activity where pid = $1`,
+      [pid],
+    );
+    if (rows[0]?.waiting === true) return;
+    if (Date.now() >= deadline) throw new Error(`backend ${pid} never blocked on a lock`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 async function asApp<T>(
   database: W1ScratchDatabase,
   identityId: string,
@@ -551,6 +565,7 @@ describe.sequential('W2.G03 edges and placements PostgreSQL semantics', () => {
       await locker.query('set local role tm8_graph_owner');
       await locker.query(`select 1 from public.projects where id = $1 for update`, [race.projectId]);
 
+      const creatorPid = (await creator.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
       await creator.query('begin');
       await creator.query('set local role tm8_app');
       await creator.query(
@@ -559,16 +574,27 @@ describe.sequential('W2.G03 edges and placements PostgreSQL semantics', () => {
                 set_config('tm8.node_admin', 'false', true)`,
         [fixture.identityId],
       );
-      const pendingCreate = creator.query(
+      // The expectation is attached IN THE SAME TICK the query is issued. The
+      // create rejects the moment the locker commits, and that rejection can be
+      // delivered before `await locker.query('commit')` resumes; a bare promise
+      // awaited only after the commit is, for that window, a rejection with no
+      // handler — an unhandled rejection that reds the whole shard even though
+      // every assertion passes.
+      const createRejects = expect(creator.query(
         `select public.write_edge($1, $2, 'in_project', '{}'::jsonb, $3, 'g03-unlink-race')`,
         [fixture.workSessionId, race.projectEntityId, fixture.memberId],
-      );
+      )).rejects.toMatchObject({ code: '23514', detail: 'project_not_linked' });
+      // The race only exists if the create is PARKED on the locker's row lock
+      // when the link is removed. Without this wait the delete can commit first
+      // and the create is refused by the ordinary not-linked check — the same
+      // error, so the test would pass without ever exercising revalidation.
+      await waitForLockWait(database, creatorPid);
       await locker.query(
         `delete from public.space_projects where space_id = $1 and project_id = $2`,
         [fixture.spaceId, race.projectId],
       );
       await locker.query('commit');
-      await expect(pendingCreate).rejects.toMatchObject({ code: '23514', detail: 'project_not_linked' });
+      await createRejects;
       await creator.query('rollback');
     } finally {
       if (!locker.release) throw new Error('missing locker release');
