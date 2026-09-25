@@ -88,6 +88,41 @@ async function entityRow(q: Querier, spaceId: string, id: string): Promise<Entit
 }
 
 /**
+ * The task a launch from `subjectId` works on, read-only: the subject itself
+ * when it is a task, else its one open derived task — the SAME derivation
+ * spawn uses (`derive_task_for_entity`, 064/099/200: a message means its
+ * thread root) but WITHOUT the write, so reading never mints a task. Null
+ * `taskId` when no single open derived task exists yet. Undefined when the
+ * subject is not a live entity the caller can read in this space.
+ *
+ * Shared by Ask Jev's subject and `launch.defaults`.
+ */
+export async function resolveSubjectTask(
+  q: Querier,
+  spaceId: string,
+  subjectId: string,
+): Promise<{ taskId: string | null; anchor: EntityRow } | undefined> {
+  const root = await entityRow(q, spaceId, subjectId);
+  if (!root) return undefined;
+  if (root.kind === 'task') return { taskId: root.id, anchor: root };
+  let anchor = root;
+  if (root.kind === 'message' && root.root_message_id && root.root_message_id !== root.id) {
+    anchor = (await entityRow(q, spaceId, root.root_message_id)) ?? root;
+  }
+  const derived = await q.query<{ id: string }>(
+    `select t.entity_id as id
+       from public.edges d
+       join public.tasks t on t.entity_id = d.src_id
+       join public.entities e on e.id = t.entity_id
+      where d.type = 'derived_from' and d.dst_id = $1
+        and e.space_id = $2 and e.deleted_at is null
+        and t.work_status not in ('done', 'cancelled')`,
+    [anchor.id, spaceId],
+  );
+  return { taskId: derived.length === 1 ? derived[0]!.id : null, anchor };
+}
+
+/**
  * The subject's facts, read-only.
  *
  * A non-task subject goes through the SAME derivation spawn uses
@@ -103,29 +138,9 @@ export async function loadSubject(
   subjectId: string,
   draft: { title: string; description: string } | undefined,
 ): Promise<LoadedSubject> {
-  const root = await entityRow(q, spaceId, subjectId);
-  if (!root) throw fail('not_found', `subject ${subjectId} is not a live entity in this space`);
-
-  let taskId: string | null = null;
-  let anchor = root;
-  if (root.kind === 'task') {
-    taskId = root.id;
-  } else {
-    if (root.kind === 'message' && root.root_message_id && root.root_message_id !== root.id) {
-      anchor = (await entityRow(q, spaceId, root.root_message_id)) ?? root;
-    }
-    const derived = await q.query<{ id: string }>(
-      `select t.entity_id as id
-         from public.edges d
-         join public.tasks t on t.entity_id = d.src_id
-         join public.entities e on e.id = t.entity_id
-        where d.type = 'derived_from' and d.dst_id = $1
-          and e.space_id = $2 and e.deleted_at is null
-          and t.work_status not in ('done', 'cancelled')`,
-      [anchor.id, spaceId],
-    );
-    if (derived.length === 1) taskId = derived[0]!.id;
-  }
+  const resolved = await resolveSubjectTask(q, spaceId, subjectId);
+  if (!resolved) throw fail('not_found', `subject ${subjectId} is not a live entity in this space`);
+  const { taskId, anchor } = resolved;
 
   let subject: JevSubject;
   if (taskId) {
