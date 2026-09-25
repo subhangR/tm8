@@ -353,6 +353,34 @@ describe('entities.header.set / clear (I4)', () => {
     expect(kw.clipped).toEqual(['keywords']);
   });
 
+  it('a credential straddling a cut is redacted BEFORE the cut: authored and derived text, every reader', async () => {
+    // Built like packages/execution/test/secret-redaction.test.ts.
+    const token = `ghp_${'C'.repeat(36)}`;
+    const leaked = (text: string | null | undefined): boolean => (text ?? '').includes('ghp_');
+    const q = { query: database.query.bind(database) } as unknown as Querier;
+    const spaceId = (await database.query<{ space_id: string }>(
+      'select space_id from public.entities where id = $1', [F.T],
+    ))[0]!.space_id;
+
+    // Authored: the token starts 8 characters before the 600-char summary clip.
+    await call('entities.header.set', { id: F.T }, { body: { summary: `${'s'.repeat(591)} ${token} tail` } });
+    for (const read of [await get(F.T), await context(F.T)]) {
+      expect(read.header?.clipped).toEqual(['summary']);
+      expect(leaked(read.header?.summary), 'authored read').toBe(false);
+    }
+    const authored = (await resolveHeaders(q, spaceId, [F.T])).get(F.T)!;
+    expect(leaked(authored.summary)).toBe(false);
+    expect(leaked(jevText(authored))).toBe(false);
+
+    // Derived: no authored header; the task description is cut at 600 in SQL + TS.
+    await call('entities.header.clear', { id: F.T }, { body: {} });
+    await database.query('update public.tasks set description = $2 where entity_id = $1', [F.T, `${'d'.repeat(595)} ${token} more`]);
+    const derived = (await resolveHeaders(q, spaceId, [F.T])).get(F.T)!;
+    expect(derived.source).toBe('derived');
+    expect(leaked(derived.summary), 'derived summary').toBe(false);
+    expect(leaked(jevText(derived)), 'jev text').toBe(false);
+  });
+
   it('a kind that stores no header is a no-op success with a warning, not a refusal', async () => {
     const ws = await call<HeaderResult>('entities.header.set', { id: F.WS }, { body: { summary: 'nope' } });
     expect(ws.entity.id).toBe(F.WS);

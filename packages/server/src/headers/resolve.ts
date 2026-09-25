@@ -21,6 +21,8 @@ import {
   type EntityHeaderView, type HeaderClippedField, type SelectionHeader,
 } from '@tm8/contract';
 
+import { redactSecretTokens } from '@tm8/execution';
+
 import type { Querier } from '../db/types.js';
 import { titleOf, type EntityRow } from '../facade/entity-read.js';
 import { deriveHeader, HEADER_TEXT_LIMIT, type AuthoredHeader, type HeaderFacts } from './derive.js';
@@ -71,16 +73,51 @@ interface HeaderRow {
   header_pinned_version: number | null;
 }
 
-const L = HEADER_TEXT_LIMIT;
+/**
+ * Every text this module cuts is REDACTED FIRST (the manifest's grammar,
+ * `redactSecretTokens`), because a cut through a credential leaves a prefix
+ * too short for the pattern, and nothing downstream can recognise it again:
+ * the manifest-wide redaction runs on already-cut text, and Jev's candidate
+ * text leaves the server.
+ *
+ * SQL cuts first, `REDACTION_MARGIN` characters past each limit. A token can
+ * only start where a run of token characters (`[A-Za-z0-9_-]`) starts: the
+ * pattern's left boundary forbids one mid-run. So the run the SQL cut ends on
+ * is either at least `REDACTION_MARGIN` long, which is more than any pattern's
+ * minimum match (the longest, `github_pat_` + 20, is 31), so a credential there
+ * is matched and redacted; or it is shorter, and `safeText` drops it. A run
+ * shorter than the margin starts past the limit, so dropping it never changes
+ * ordinary text: the later cut would have removed it anyway.
+ */
+export const REDACTION_MARGIN = 64;
+
+/**
+ * A text read from SQL, safe to cut. When SQL cut it (`fetched` reached) and
+ * the run of token characters it ends on is shorter than `REDACTION_MARGIN`,
+ * that run is dropped: it may be a credential's prefix no pattern matches, and
+ * redaction elsewhere in the text can shorten the text enough to pull it back
+ * under the limit. Then every credential-shaped token is redacted.
+ */
+export function safeText(text: string | null, fetched?: number): string | null {
+  if (text === null) return null;
+  let cut = text;
+  if (fetched !== undefined && Array.from(text).length >= fetched) {
+    const tail = /[A-Za-z0-9_-]+$/.exec(text)?.[0] ?? '';
+    if (tail.length < REDACTION_MARGIN) cut = text.slice(0, text.length - tail.length);
+  }
+  return redactSecretTokens(cut);
+}
+
+const L = HEADER_TEXT_LIMIT + REDACTION_MARGIN;
 /**
  * Authored text is cut IN SQL one character past its guidance limit, so an
  * unbounded header never leaves Postgres whole while `clipAuthored` can still
  * tell a cut from a fit. Keywords: one past the count, each one past the length.
  */
-const AW = AUTHORED_HEADER_LIMITS.whenToUse + 1;
-const AS = AUTHORED_HEADER_LIMITS.summary + 1;
+const AW = AUTHORED_HEADER_LIMITS.whenToUse + REDACTION_MARGIN;
+const AS = AUTHORED_HEADER_LIMITS.summary + REDACTION_MARGIN;
 const AK = AUTHORED_HEADER_LIMITS.keywords + 1;
-const AKL = AUTHORED_HEADER_LIMITS.keyword + 1;
+const AKL = AUTHORED_HEADER_LIMITS.keyword + REDACTION_MARGIN;
 
 const HEADER_SQL = `
   select e.id, e.kind,
@@ -157,29 +194,35 @@ const HEADER_SQL = `
 
 const num = (value: string | number | null): number | null => (value == null ? null : Number(value));
 
+/** Every text field goes through `safeText`: fields SQL cut with their fetch length, whole ones without. */
 function factsOf(row: HeaderRow): HeaderFacts | null {
   switch (row.kind) {
     case 'skill':
-      return { kind: 'skill', description: row.skill_description, whenToUse: row.skill_when_to_use, bytes: num(row.skill_bytes) };
+      return { kind: 'skill', description: safeText(row.skill_description, L), whenToUse: safeText(row.skill_when_to_use, L), bytes: num(row.skill_bytes) };
     case 'memory':
       if (row.memory_statement == null) return null;
-      return { kind: 'memory', statement: row.memory_statement, subjectScope: row.memory_subject_scope, bytes: num(row.memory_bytes) };
+      return { kind: 'memory', statement: safeText(row.memory_statement, L)!, subjectScope: safeText(row.memory_subject_scope, L), bytes: num(row.memory_bytes) };
     case 'team_member':
-      return { kind: 'team_member', role: row.team_member_role, persona: row.team_member_persona, bytes: num(row.team_member_bytes) };
+      return { kind: 'team_member', role: safeText(row.team_member_role), persona: safeText(row.team_member_persona, L), bytes: num(row.team_member_bytes) };
     case 'doc':
-      return { kind: 'doc', head: row.doc_head, headings: row.doc_headings ?? [], bytes: num(row.doc_bytes) };
+      return {
+        kind: 'doc',
+        head: safeText(row.doc_head, DOC_HEAD_CHARS),
+        headings: (row.doc_headings ?? []).map((h) => safeText(h)!),
+        bytes: num(row.doc_bytes),
+      };
     case 'artifact':
-      return { kind: 'artifact', description: row.artifact_description, bytes: num(row.artifact_bytes) };
+      return { kind: 'artifact', description: safeText(row.artifact_description, L), bytes: num(row.artifact_bytes) };
     case 'drawing':
-      return { kind: 'drawing', text: row.drawing_text, bytes: num(row.drawing_bytes) };
+      return { kind: 'drawing', text: safeText(row.drawing_text, L), bytes: num(row.drawing_bytes) };
     case 'file':
-      return { kind: 'file', name: row.file_name ?? 'File', mime: row.file_mime, bytes: num(row.file_size) };
+      return { kind: 'file', name: safeText(row.file_name) ?? 'File', mime: safeText(row.file_mime), bytes: num(row.file_size) };
     case 'task':
-      return { kind: 'task', description: row.task_description, bytes: num(row.task_bytes) };
+      return { kind: 'task', description: safeText(row.task_description, L), bytes: num(row.task_bytes) };
     case 'collection':
       return {
         kind: 'collection',
-        description: row.collection_description,
+        description: safeText(row.collection_description, L),
         members: Object.fromEntries(Object.entries(row.collection_members ?? {}).map(([k, n]) => [k, Number(n)])),
       };
     default:
@@ -205,17 +248,20 @@ function clipText(text: string | null, max: number): string | null {
 function authoredOf(row: HeaderRow): AuthoredHeader | null {
   if (row.header_stale == null) return null;
   const clipped: HeaderClippedField[] = [];
-  const whenToUse = clipText(row.header_when_to_use, AUTHORED_HEADER_LIMITS.whenToUse);
+  // Redacted before the cut (see REDACTION_MARGIN), so a clip never leaves a credential's prefix.
+  const fullWhen = safeText(row.header_when_to_use, AW);
+  const fullSummary = safeText(row.header_summary, AS);
+  const whenToUse = clipText(fullWhen, AUTHORED_HEADER_LIMITS.whenToUse);
   if (whenToUse !== null) clipped.push('whenToUse');
-  const summary = clipText(row.header_summary, AUTHORED_HEADER_LIMITS.summary);
+  const summary = clipText(fullSummary, AUTHORED_HEADER_LIMITS.summary);
   if (summary !== null) clipped.push('summary');
-  const raw = row.header_keywords ?? [];
+  const raw = (row.header_keywords ?? []).map((k) => safeText(k, AKL)!);
   const keywords = raw.slice(0, AUTHORED_HEADER_LIMITS.keywords)
     .map((k) => clipText(k, AUTHORED_HEADER_LIMITS.keyword) ?? k);
   if (raw.length > AUTHORED_HEADER_LIMITS.keywords || keywords.some((k, i) => k !== raw[i])) clipped.push('keywords');
   return {
-    whenToUse: whenToUse ?? row.header_when_to_use,
-    summary: summary ?? row.header_summary,
+    whenToUse: whenToUse ?? fullWhen,
+    summary: summary ?? fullSummary,
     keywords,
     stale: row.header_stale,
     ...(clipped.length > 0 ? { clipped } : {}),

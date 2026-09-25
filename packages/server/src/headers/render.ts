@@ -9,8 +9,19 @@
  * Only headers are rendered; a body never is.
  */
 import type { SelectionHeader } from '@tm8/contract';
+import { redactSecretTokens } from '@tm8/execution';
 
-import { clip, HEADER_TEXT_LIMIT } from './derive.js';
+import { clip as cut, HEADER_TEXT_LIMIT } from './derive.js';
+
+/**
+ * Jev's per-field cut, REDACTED FIRST: this text leaves the server for the
+ * Jev model, and a cut through a credential would leave a prefix no pattern
+ * matches. (`resolveHeaders` already redacts what it reads; this makes the
+ * rule local to the one function that ships text off the server, whatever
+ * header it is handed.)
+ */
+const clip = (text: string | null | undefined, limit?: number): string =>
+  cut(text == null ? text : redactSecretTokens(text), limit);
 
 export interface JevTextOptions {
   /** Per-field character cut (Jev §9). */
@@ -21,6 +32,12 @@ export interface JevTextOptions {
 
 /** What Jev is shown for one candidate. */
 export function jevText(header: SelectionHeader, options: JevTextOptions = {}): string {
+  // Names, a teammate's uncut role and equipped-skill names are not cut, but
+  // they still leave the server: the whole candidate text is redacted.
+  return redactSecretTokens(renderJevText(header, options));
+}
+
+function renderJevText(header: SelectionHeader, options: JevTextOptions): string {
   const limit = options.limit ?? HEADER_TEXT_LIMIT;
   switch (header.kind) {
     case 'team_member': {

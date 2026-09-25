@@ -1,4 +1,12 @@
 // @tm8/execution — the spawn block's public surface.
+// Credential redaction is exported so the server's header readers (resolveHeaders,
+// jevText) redact with the SAME grammar as the manifest and the DB guard (086).
+export {
+  containsSecretToken,
+  redactSecretTokens,
+  REDACTION_MARKER,
+  SECRET_TOKEN_SOURCE,
+} from './secret-redaction.js';
 export {
   SpawnService,
   type CredentialContainmentCause,
