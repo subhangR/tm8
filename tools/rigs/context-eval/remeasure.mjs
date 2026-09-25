@@ -21,7 +21,9 @@ const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : undefined;
 };
-const file = process.argv[2];
+// The file may sit anywhere on the line: `remeasure.mjs --all <file>` used to die with ENOENT '--all' (C3).
+const argv = process.argv.slice(2);
+const file = argv.find((a, i) => a.endsWith('.jsonl') && !(i > 0 && argv[i - 1] === '--session'));
 if (!file) throw new Error('usage: node remeasure.mjs <results.jsonl> [--all] [--session <id>] [--dry-run]');
 const all = process.argv.includes('--all');
 const dry = process.argv.includes('--dry-run');
