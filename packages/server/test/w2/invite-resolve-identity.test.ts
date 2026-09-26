@@ -65,6 +65,17 @@ class ClaimRecordingDb implements Db {
   async end(): Promise<void> {}
 }
 
+/**
+ * A LIVE code makes one more call (W5, 995): whether the invite's space asks
+ * for a space password. It is claim-free on purpose — no identity rides on it —
+ * so it cannot widen what the preview read can see.
+ */
+function expectValidCodeCalls(db: ClaimRecordingDb): void {
+  expect(db.calls.map((c) => c.fn)).toEqual(['preview_invite', 'invite_requires_space_password']);
+  expect(db.calls[1]!.args).toEqual([CODE]);
+  expect(db.calls[1]!.claims).toEqual({});
+}
+
 function deps(db: Db): FacadeDeps {
   return {
     db,
@@ -123,7 +134,7 @@ describe('auth.invite.resolve forwards the caller it has (195)', () => {
     const db = new ClaimRecordingDb({ status: 'valid' });
     await resolveAs(db, { kind: 'anonymous' } as RequestContext['identity']);
 
-    expect(db.calls).toHaveLength(1);
+    expectValidCodeCalls(db);
     // Not a refusal — `claimsFor()` would have thrown here, which is exactly
     // why this handler does not use it. A join link opened signed out is the
     // COMMON case, not an edge one.
@@ -159,7 +170,7 @@ describe('auth.invite.resolve forwards the caller it has (195)', () => {
     const db = new ClaimRecordingDb({ status: 'valid' });
     await resolveAs(db, { kind: 'auto-owner' } as unknown as RequestContext['identity']);
 
-    expect(db.calls).toHaveLength(1);
+    expectValidCodeCalls(db);
     expect(db.calls[0]!.claims.identityId).toBeUndefined();
   });
 
@@ -169,7 +180,7 @@ describe('auth.invite.resolve forwards the caller it has (195)', () => {
     const db = new ClaimRecordingDb({ status: 'valid' });
     await resolveAs(db, { kind: 'bearer' } as unknown as RequestContext['identity']);
 
-    expect(db.calls).toHaveLength(1);
+    expectValidCodeCalls(db);
     expect(db.calls[0]!.claims.identityId).toBeUndefined();
   });
 });
