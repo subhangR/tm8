@@ -45,16 +45,33 @@ export function isNeedsMeFilter(filter: unknown): boolean {
  * data object changes identity whenever its detail cache does, so keying on it
  * would re-ask on every landing. Ids are uuids, unique across spaces; `pull`
  * has its own in-flight guard, this only stops the render loop from re-asking
- * and records WHEN it asked, which is what `pending` reads.
+ * and records WHEN it asked (and how often), which `needsMeLoading` reads. An
+ * entry is dropped when its root lands.
  */
-const PULLED = new Map<string, number>();
+const PULLED = new Map<string, { at: number; attempts: number }>();
 
 function requestPull(data: NeedsMeData, id: string, now: number): void {
-  if (!data.pull || PULLED.has(id)) return;
-  PULLED.set(id, now);
+  if (!data.pull) return;
+  const prior = PULLED.get(id);
+  // Asked recently: wait. Asked long ago and still missing (a failed read, or
+  // a resync cleared the host's own guard): ask again, but it no longer counts
+  // as "loading" — see `needsMeLoading`.
+  if (prior && now - prior.at < PULL_PATIENCE_MS) return;
+  PULLED.set(id, { at: now, attempts: (prior?.attempts ?? 0) + 1 });
   // A pull is a fetch and this runs in render: defer it past the render (the
   // same `queueMicrotask` discipline `useGateData.rowsFor` uses).
   queueMicrotask(() => data.pull?.(id));
+}
+
+/** When the list must look again: the moment the oldest first ask runs out of patience. */
+export function needsMeRecheckAt(): number | null {
+  let soonest: number | null = null;
+  for (const { at, attempts } of PULLED.values()) {
+    if (attempts !== 1) continue;
+    const due = at + PULL_PATIENCE_MS;
+    if (soonest === null || due < soonest) soonest = due;
+  }
+  return soonest;
 }
 
 /** Test seam: forget which roots were pulled. */
@@ -77,6 +94,7 @@ export function needsMeRows(
   for (const row of mineOfKind(api, kind)) {
     const summary = data.detailOf(row.rootId);
     if (summary) {
+      PULLED.delete(row.rootId);
       if (summary.kind === kind) out.push(summary);
     } else {
       requestPull(data, row.rootId, now);
@@ -96,8 +114,11 @@ export function needsMeLoading(api: AttentionApi, kind: string, data: NeedsMeDat
   if (api.status === 'loading') return true;
   return mineOfKind(api, kind).some((row) => {
     if (data.detailOf(row.rootId)) return false;
+    // A host that cannot pull will never fill it: not loading, just missing.
+    if (!data.pull) return false;
     const asked = PULLED.get(row.rootId);
-    return asked === undefined || now - asked < PULL_PATIENCE_MS;
+    // Only the FIRST ask is "loading"; a re-ask after a failure is not.
+    return asked === undefined || (asked.attempts === 1 && now - asked.at < PULL_PATIENCE_MS);
   });
 }
 

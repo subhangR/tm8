@@ -107,7 +107,12 @@ export function AttentionBlock(props: AttentionBlockProps) {
 
   if (!api || requests.length === 0) return null;
 
-  const chip = api.chipFor({ id: root, badges: props.badges ?? null }) ?? chipOf(requests);
+  // Filtered (a session's own detail): the chip must count what the block
+  // shows, so it is derived from those rows rather than the root's badge.
+  const hidden = all.length - requests.length;
+  const chip = hidden > 0
+    ? chipOf(requests)
+    : api.chipFor({ id: root, badges: props.badges ?? null }) ?? chipOf(requests);
   const oldest = requests.reduce((min, r) => (r.createdAt < min ? r.createdAt : min), requests[0]!.createdAt);
   const count = requests.length;
 
@@ -165,6 +170,13 @@ export function AttentionBlock(props: AttentionBlockProps) {
               />
             ))}
           </ul>
+          {hidden > 0 ? (
+            /* Resolve is root-scoped: it also settles what this session raised
+               here, which the banner shows rather than the block. Say so. */
+            <p className="att-block__scope" data-testid="attention-block-scope">
+              Resolve all also settles {hidden} raised by this {props.noun ?? 'session'} (shown in its banner).
+            </p>
+          ) : null}
           <div className="att-block__foot">
             <label className="att-block__note">
               <span className="att-block__note-label">Note — {noteTarget(requests, props.noun ?? 'entity')}</span>

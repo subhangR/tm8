@@ -109,7 +109,7 @@ import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
-import { isNeedsMeFilter, needsMeCount } from '../attention/needs-me';
+import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -2677,6 +2677,17 @@ function Band({
   const bandAttention = useAttentionOptional();
   const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
+  /* "Needs me" reads LOADING for a bounded time per pulled root; nothing else
+     re-renders a quiet list when that time runs out, so wake once then. */
+  const [, wake] = useState(0);
+  const needsMeLoadingNow = isNeedsMeFilter(filter) && page?.loading === true;
+  useEffect(() => {
+    if (!needsMeLoadingNow) return;
+    const due = needsMeRecheckAt();
+    if (due === null) return;
+    const timer = setTimeout(() => wake((n) => n + 1), Math.max(0, due - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [needsMeLoadingNow, rows]);
   const visible = matching(rows, query ?? '');
   const attentionIds = attentionIdsOf(visible, props, config);
 

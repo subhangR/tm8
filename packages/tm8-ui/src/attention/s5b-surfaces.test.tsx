@@ -13,7 +13,7 @@ import { AttentionBlock } from './AttentionBlock';
 import { SessionWaitingBanner } from './SessionWaitingBanner';
 import { AttentionHeaderButton } from './AttentionSheet';
 import { LegacyAttentionDock } from './LegacyAttentionDock';
-import { needsMeListSource, needsMeLoading, needsMeRows, PULL_PATIENCE_MS, resetNeedsMePulls } from './needs-me';
+import { needsMeListSource, needsMeLoading, needsMeRecheckAt, needsMeRows, PULL_PATIENCE_MS, resetNeedsMePulls } from './needs-me';
 import { EntityListPanel } from '../panels';
 import { getKind, type ActionContext, type QueryFilter } from '../domain';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
@@ -215,6 +215,23 @@ describe('AttentionBlock (tab 3, variant A)', () => {
     expect(api.markSeen).toHaveBeenCalledWith(SESSION);
   });
 
+  it('on a session, Resolve all says it also settles what the session raised, and the chip counts what is shown', () => {
+    const api = fakeApi([
+      request({ id: 'raised', entityId: SESSION, rootId: SESSION }),
+      request({ id: 'pinned', entityId: SESSION, rootId: SESSION, sourceWorkSessionId: null, origin: 'human', points: 10 }),
+    ]);
+    render(
+      <AttentionApiProvider api={api}>
+        <AttentionBlock entityId={SESSION} excludeRaisedBy={SESSION} noun="session" />
+      </AttentionApiProvider>,
+    );
+    expect(screen.getByTestId('attention-block-scope').textContent).toBe(
+      'Resolve all also settles 1 raised by this session (shown in its banner).',
+    );
+    expect(screen.getByTestId('attention-block-toggle').textContent).toContain('10');
+    expect(screen.getByTestId('attention-block-toggle').textContent).not.toContain('120');
+  });
+
   it('with only raised requests on a session, the block hides but opening still marks seen', () => {
     const api = fakeApi([request({ id: 'raised', entityId: SESSION, rootId: SESSION })]);
     const { container } = render(
@@ -330,13 +347,36 @@ describe('SessionWaitingBanner (tab 4)', () => {
     expect(screen.getByTestId('session-waiting-banner').textContent).toContain('+1 more elsewhere');
     fireEvent.click(screen.getByTestId('session-waiting-resolve'));
     expect(screen.getByTestId('session-waiting-scope').textContent).toBe(
-      'Resolves every open request on task Wire refund webhook, including 1 from other sessions.',
+      'Resolves every open request on task Wire refund webhook, including 1 other.',
     );
     await act(async () => {
       fireEvent.submit(screen.getByTestId('session-waiting-input').closest('form')!);
     });
     expect(api.resolve).toHaveBeenCalledTimes(1);
     expect(api.resolve).toHaveBeenCalledWith(TASK, undefined);
+  });
+
+  it('a failed Reply comes back as a REPLY, never as a Resolve note', async () => {
+    let api = fakeApi([request({ id: 'r1' })]);
+    const view = render(
+      <AttentionApiProvider api={api}>
+        <SessionWaitingBanner sessionId={SESSION} />
+      </AttentionApiProvider>,
+    );
+    fireEvent.click(screen.getByTestId('session-waiting-reply'));
+    fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'use exponential' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('session-waiting-input').closest('form')!);
+    });
+    api = { ...api, error: "Couldn't send the reply: offline" };
+    view.rerender(
+      <AttentionApiProvider api={api}>
+        <SessionWaitingBanner sessionId={SESSION} />
+      </AttentionApiProvider>,
+    );
+    expect((screen.getByTestId('session-waiting-input') as HTMLInputElement).value).toBe('use exponential');
+    expect(screen.getByTestId('session-waiting-reply').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('session-waiting-scope')).toBeNull();
   });
 
   it('PTY silence alone draws nothing once a module is mounted (G1); legacy stands without one', () => {
@@ -466,6 +506,25 @@ describe('"Needs me" = the queue (tab 8)', () => {
     needsMeRows(api, 'task', data, t0);
     expect(needsMeLoading(api, 'task', data, t0 + 1)).toBe(true);
     expect(needsMeLoading(api, 'task', data, t0 + PULL_PATIENCE_MS + 1)).toBe(false);
+  });
+
+  it('a root that failed is asked for again after the patience window (not "loading" again); a host without pull never reads loading', async () => {
+    const api = fakeApi([request({ id: 'r1' })]);
+    const pull = vi.fn();
+    const data = { detailOf: () => undefined, pull };
+    const t0 = 2_000_000;
+    needsMeRows(api, 'task', data, t0);
+    needsMeRows(api, 'task', data, t0 + PULL_PATIENCE_MS + 1);
+    await Promise.resolve();
+    expect(pull).toHaveBeenCalledTimes(2);
+    expect(needsMeLoading(api, 'task', data, t0 + PULL_PATIENCE_MS + 2)).toBe(false);
+    expect(needsMeLoading(api, 'task', { detailOf: () => undefined }, t0)).toBe(false);
+  });
+
+  it('the list schedules its own recheck when the first ask runs out of patience', () => {
+    const api = fakeApi([request({ id: 'r1' })]);
+    needsMeRows(api, 'task', { detailOf: () => undefined, pull: vi.fn() }, 5_000);
+    expect(needsMeRecheckAt()).toBe(5_000 + PULL_PATIENCE_MS);
   });
 
   it('mine = 0 is an empty list, never a fallback to all; no module passes through', () => {

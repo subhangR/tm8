@@ -14,7 +14,7 @@
  * `useAttentionOptional` returning null means no module is mounted: the banner
  * renders `legacy` instead, so a host that has not adopted v2 keeps today's.
  */
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
 import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
 import { attentionAge } from './attention-subtitles';
@@ -49,9 +49,12 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
   const [mode, setMode] = useState<'idle' | 'resolve' | 'reply'>('idle');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  // The MODE rides with the text: a failed Reply must come back as a Reply,
+  // never as a Resolve note one Enter away from settling the task.
+  const submittedMode = useRef<'resolve' | 'reply'>('resolve');
   const stash = useKeepTypedOnFailure(api, (typed) => {
     setText(typed);
-    setMode((m) => (m === 'idle' ? 'resolve' : m));
+    setMode(submittedMode.current);
   });
   if (!api) return <>{legacy}</>;
 
@@ -72,6 +75,7 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
 
   const submit = async () => {
     const typed = text;
+    submittedMode.current = mode === 'reply' ? 'reply' : 'resolve';
     stash(typed);
     setText('');
     setMode('idle');
@@ -131,7 +135,7 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
       {mode === 'resolve' ? (
         <p className="att-banner__scope" data-testid="session-waiting-scope">
           Resolves every open request on {where}
-          {siblings > 0 ? `, including ${siblings} from other sessions` : ''}.
+          {siblings > 0 ? `, including ${siblings} ${siblings === 1 ? 'other' : 'others'}` : ''}.
         </p>
       ) : null}
       {mode === 'idle' ? null : (
