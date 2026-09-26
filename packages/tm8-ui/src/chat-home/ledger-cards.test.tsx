@@ -262,6 +262,37 @@ describe('the fixture thread — every create, spawn and transition highlighted 
     expect(view.container.textContent).not.toContain(PROGRAM.slice(0, 8));
   });
 
+  it('a doc_create and an artifact_create each draw ONE created card (D17) — no durable-output card', () => {
+    const DOC = id(10);
+    const ART = id(11);
+    const view = render(
+      <Transcript
+        onOpenEntity={vi.fn()}
+        turns={[
+          turn(
+            callParts(
+              'mcp__tm8__doc_create',
+              { spaceId: 'sp', title: 'Design — docker provider', body: '# Design', attachTo: P1 },
+              mcp('doc_create', { data: { entity: { id: DOC, kind: 'doc', title: 'Design — docker provider', parentId: null } } }),
+            ),
+            callParts(
+              'mcp__tm8__artifact_create',
+              { spaceId: 'sp', name: 'Mockup' },
+              mcp('artifact_create', { data: { entity: { id: ART, kind: 'artifact', title: 'Mockup', parentId: null } } }),
+            ),
+          ),
+        ]}
+      />,
+    );
+    const cards = view.getAllByTestId('chat-ledger-create');
+    expect(cards.map((card) => card.dataset.kind)).toEqual(['doc', 'artifact']);
+    expect(cards[0]!.textContent).toContain('Design — docker provider');
+    expect(cards[0]!.textContent).toContain('New doc · on');
+    expect(cards[1]!.textContent).toContain('New artifact · at the root');
+    // ONE highlight per created thing: the retired durable card is gone.
+    expect(view.queryByTestId('durable-explanation-output')).toBeNull();
+  });
+
   it('draws NO L4 edit line for a settled doc_update — lane 3’s DocEditLine is its one line (D17)', () => {
     const DOC = id(10);
     const view = render(
