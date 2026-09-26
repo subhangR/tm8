@@ -1211,7 +1211,7 @@ export function LaunchCard(props: LaunchCardProps) {
             className="lcd-btn lcd-btn--dispatch"
             data-testid="launch-dispatch"
             aria-label="Dispatch"
-            title="Dispatch hands the task to the space’s dispatcher, which picks its own teammate, model and place — nothing on this card applies"
+            title="Dispatch hands the task to the space’s dispatcher, which picks its own teammate, model and place — only your instructions go with it, as a note"
             onClick={stop(onDispatch)}
           >
             <span className="lcd-btn__label">Dispatch</span>⇥

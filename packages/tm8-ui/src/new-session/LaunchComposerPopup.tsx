@@ -86,6 +86,9 @@ import './new-session.css';
  */
 
 /** The persona rows as the panels supply them — `LaunchTeammateOption`'s shape. */
+/** `ExecutionDispatchInput.note`'s cap in the contract schema. */
+const DISPATCH_NOTE_MAX = 4000;
+
 export interface PopupTeammate {
   id: string;
   label: string;
@@ -146,12 +149,13 @@ export interface LaunchComposerPopupProps {
    */
   upload?: (file: File) => FileUploadTask;
   /**
-   * Hands the SUBJECT to the space's dispatcher instead of launching it.
-   * Absent ⇒ no Dispatch button at all: whether the card offers dispatch is
-   * the owner's open question (01a0dd38 Q2), so only a host that opts in
-   * draws one.
+   * Hands the SUBJECT to the space's dispatcher instead of launching it
+   * (`execution.dispatch`). The dispatcher picks the teammate, model and
+   * memories, so nothing on the card applies except the subject edits (saved
+   * first, as for Launch) and the instructions, which ride as the
+   * dispatcher's `note`. Absent ⇒ no Dispatch button at all.
    */
-  onDispatch?: () => void | Promise<unknown>;
+  onDispatch?: (note?: string) => void | Promise<unknown>;
 }
 
 /** An upload in flight or failed — a finished one is a reference by then. */
@@ -489,11 +493,8 @@ export function LaunchComposerPopup({
     setShaking(true);
   };
 
-  const commit = () => {
-    if (!onSpawn || pending || refusal) return;
-    setNodeRefusal(null);
-    setPending(true);
-    const sessionTitle = title.trim() || defaultTitle;
+  /* The subject edits both verbs save before they hand anything off. */
+  const saveSubject = (sessionTitle: string): Promise<unknown> => {
     const edits: { title?: string; description?: string } = continuing ? {} : {
       ...(sessionTitle !== subject.title ? { title: sessionTitle } : {}),
       /* Only a REAL edit is saved: an untouched autofill (or a load that never
@@ -501,9 +502,17 @@ export function LaunchComposerPopup({
          empties the task's description deliberately. */
       ...(onSaveSubject && draft !== null && description !== seed.current ? { description } : {}),
     };
-    const saved = onSaveSubject && Object.keys(edits).length > 0
+    return onSaveSubject && Object.keys(edits).length > 0
       ? Promise.resolve(onSaveSubject(edits))
       : Promise.resolve();
+  };
+
+  const commit = () => {
+    if (!onSpawn || pending || refusal) return;
+    setNodeRefusal(null);
+    setPending(true);
+    const sessionTitle = title.trim() || defaultTitle;
+    const saved = saveSubject(sessionTitle);
     /* PER-GROUP SEND (I9), read at commit time: the ticks are whatever is on
        screen — attachments included, as added references. An untouched group
        is omitted (its defaults load) with a reason; an edited group is its
@@ -548,7 +557,17 @@ export function LaunchComposerPopup({
       if (pending) return;
       setNodeRefusal(null);
       setPending(true);
-      Promise.resolve(onDispatch()).then(() => onDismiss?.()).catch(fail);
+      const note = instructions.trim();
+      /* The contract caps a dispatcher note at 4000 characters; say so here
+         rather than let the node answer with a schema error. */
+      if (note.length > DISPATCH_NOTE_MAX) {
+        fail(new Error(`Dispatch carries at most ${String(DISPATCH_NOTE_MAX)} characters of instructions (these are ${String(note.length)}).`));
+        return;
+      }
+      saveSubject(title.trim() || defaultTitle)
+        .then(() => onDispatch(note ? note : undefined))
+        .then(() => onDismiss?.())
+        .catch(fail);
     }
     : undefined;
 

@@ -94,6 +94,9 @@ function Harness() {
            harness without one photographs a refusal the viewer never sees. */
         upload={() => ({ result: new Promise<never>(() => {}), cancel: () => {} })}
         onSpawn={() => {}}
+        /* Every real launch surface wires Dispatch through the launch port, so
+           the harness draws it too — the footer is measured as it ships. */
+        onDispatch={() => Promise.resolve()}
         onDismiss={() => {}}
       />
       {/* The defaults land asynchronously; the driver runs on the frame after

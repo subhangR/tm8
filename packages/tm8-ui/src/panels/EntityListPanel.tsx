@@ -6,7 +6,9 @@ import type {
   CollectionGroup,
   Connections,
   EntityCapabilities,
+  EntityId,
   EntitySummary,
+  ExecutionDispatchResult,
   ExecutionSpawnInput,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
@@ -527,6 +529,12 @@ export interface LaunchSources {
    * Files row says this surface cannot upload.
    */
   upload?: (file: File) => FileUploadTask;
+  /**
+   * `execution.dispatch`: hands `subjectId` to the space's dispatcher, which
+   * chooses the teammate itself; `note` is the card's instructions. Absent ⇒
+   * the launch card draws no Dispatch button.
+   */
+  dispatch?: (subjectId: EntityId, note?: string) => Promise<ExecutionDispatchResult>;
 }
 
 /**
@@ -3603,6 +3611,7 @@ export function Tile({
               selection={props.launch?.selection}
               profileFor={props.launch?.profileFor}
               upload={props.launch?.upload}
+              onDispatch={props.launch?.dispatch ? (note) => props.launch!.dispatch!(row.id, note) : undefined}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
@@ -3862,6 +3871,7 @@ export function Tile({
               selection={props.launch?.selection}
               profileFor={props.launch?.profileFor}
               upload={props.launch?.upload}
+              onDispatch={props.launch?.dispatch ? (note) => props.launch!.dispatch!(row.id, note) : undefined}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf
