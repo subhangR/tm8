@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  ATTENTION_LEVEL_POINTS,
   CollabError,
   GraphContentInputSchema,
   applyGraphLinks,
@@ -1865,7 +1866,8 @@ export class W2EntitiesCommandsTrackingService {
       const raw = await q.rpc<AttentionMutationRpcResult>('create_attention_request', [
         entityId,
         input.reason,
-        input.points,
+        // Attention v2: points is an optional override; omitted, it derives from the level.
+        input.points ?? ATTENTION_LEVEL_POINTS[input.level ?? 'normal'],
         envelope.actorId ?? null,
         envelope.clientMutationId ?? null,
       ]);
