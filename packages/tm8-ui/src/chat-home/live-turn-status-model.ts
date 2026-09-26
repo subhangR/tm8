@@ -26,6 +26,7 @@
  * TOOL NAMES NEVER REACH THE SURFACE (R8). Nothing here reads a tool name;
  * that is the classifier's job, and it returns human words.
  */
+import { ageAgo } from '../kit/time';
 import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
 import {
   describeToolStep,
@@ -267,7 +268,8 @@ function metaLine(
   } else if (silence >= QUIET_LONG_MS) {
     segments.push(`still working · ${formatClock(silence)} since last step`);
   } else if (silence >= QUIET_SHOW_MS) {
-    segments.push(`last step ${formatClock(silence)} ago`);
+    // `ageAgo`: kit/time.ts is the one place a relative label gains `ago`.
+    segments.push(`last step ${ageAgo(formatClock(silence))}`);
   }
   return segments.join(' · ');
 }
