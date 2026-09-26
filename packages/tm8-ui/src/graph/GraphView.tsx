@@ -20,6 +20,7 @@
  *  - Scale honesty: the model's RENDER_CAP truncation renders as a banner,
  *    never a silent cut; filtered-to-nothing teaches, never blanks.
  */
+import { EntityAttentionChip } from '../attention';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind, type StatusSource } from '../domain';
@@ -1406,6 +1407,7 @@ export function GraphView(props: GraphViewProps) {
                     </span>
                     <span className="gv-node__kind">{row.label}</span>
                     <span className="gv-node__pills">
+                      <EntityAttentionChip entity={p.entity} compact />
                       {pill && <Pill tone={pill.tone}>{pill.word}</Pill>}
                       {liveness === 'live' && (
                         <Pill tone="run" dot="pulse">

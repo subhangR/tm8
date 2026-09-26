@@ -18,6 +18,10 @@ export interface MaestroTaskTileProps {
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
+  /** Attention v2: the chip that replaces the words, when the store has one. */
+  attentionChip?: ReactNode;
+  /** The chip's tone, so the tint follows the level (urgent red, FYI grey edge). */
+  attentionTone?: 'fyi' | 'wait' | 'block';
   /* NO `completed` PROP. The tile took one, turned it into `pn-tt--completed`
      and struck the title through — and `category === 'done'` is the server's
      RESOLUTION predicate, which `152_universal_status.sql` seeds the fact kinds
@@ -84,6 +88,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     selected,
     attention,
     attentionReason,
+    attentionChip,
+    attentionTone,
     archived,
     childCount,
     childrenExpanded,
@@ -114,6 +120,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       ]
         .filter(Boolean)
         .join(' ')}
+      data-attention-tone={attention ? attentionTone : undefined}
       data-testid="list-tile"
       /* The flight layer's anchor, on all three anatomies (PR #591 review).
          No control-card kind opts into `tree.messagePulse` today, so this is
@@ -225,7 +232,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </div>
         ) : null}
 
-        {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
+        {attentionChip ?? (attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null)}
 
         <div className="pn-tt__actions lp__cluster">
           {!oneSurface || detailsExpanded ? actions : null}
