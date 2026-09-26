@@ -76,7 +76,11 @@ import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
+  ExecutionDispatchKind,
+  ExecutionDispatchers,
   ExecutionDispatchResult,
+  ExecutionSpawnResult,
+  CommandResult,
   ExecutionLiveness,
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
@@ -103,7 +107,7 @@ import { DbGitHubCredentialStore } from '../credentials/github-credential-store.
 import { spaceCredentialPort } from '../credentials/space-credential-port.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
-import { json } from '../http/types.js';
+import { json, type RequestContext } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
@@ -921,17 +925,23 @@ export class DbGraphPort implements GraphPort {
         null, // p_actor_id — resolve_actor derives it from the claims
         input.clientMutationId,
         input.parentSessionId,
+        input.newTaskTitle ?? null,
       ],
     );
 
     const replayed = result?.__tm8_replayed === true;
-    const { __tm8_replayed: _replayMarker, ...commandResult } = result ?? {};
+    const { __tm8_replayed: _replayMarker, createdTaskId, ...commandResult } = result ?? {};
     const entity = commandResult.entity as { id?: string } | undefined;
     const sessionId = entity?.id;
     if (typeof sessionId !== 'string') {
       throw fail('upstream_unavailable', 'execution_spawn returned no work_session id');
     }
-    return { sessionId, commandResult, replayed };
+    return {
+      sessionId,
+      commandResult,
+      replayed,
+      ...(typeof createdTaskId === 'string' ? { createdTaskId } : {}),
+    };
   }
 
   /**
@@ -2363,6 +2373,48 @@ async function readSessionJournal(
  * Timing out here costs the caller a `delivery: 'undelivered'`, not the work.
  */
 const DISPATCHER_SETTLE_TIMEOUT_MS = 15_000;
+
+/**
+ * IN-FLIGHT RETRIES SHARE THE ATTEMPT THEY RETRY (launch v3, STATUS-1).
+ *
+ * The command ledger answers a retry of a COMPLETED spawn — `execution_spawn`
+ * records it in the same transaction as the session. It cannot answer a retry
+ * that lands while the first attempt is still running: before the RPC commits
+ * there is no ledger row to find, and a client that timed out (180 s) while the
+ * first attempt was still provisioning or booting re-sent the same
+ * clientMutationId and got a SECOND session, three times over. The ledger is
+ * the durable half; this is the in-flight half. While an attempt with the same
+ * principal + clientMutationId is running on this node, a retry awaits it and
+ * answers its exact result (or its error). Once it settles, the entry is gone
+ * and the ledger takes over. Keyed by principal so one caller can never be
+ * handed another's result — the rule `ledger_replay` enforces in SQL (W2.SEC-1).
+ * Sessions are node-local PTYs, so a per-process map covers the node that owns them.
+ */
+const inFlightCommands = new Map<string, Promise<unknown>>();
+
+function inFlightKey(op: string, ctx: RequestContext, clientMutationId: string | undefined): string | null {
+  if (!clientMutationId) return null;
+  const principal = ctx.identity.kind === 'auto-owner'
+    ? 'auto-owner'
+    : `${ctx.identity.kind}:${ctx.identity.identityId ?? ''}`;
+  return JSON.stringify([op, principal, clientMutationId]);
+}
+
+async function singleFlight<T>(key: string | null, run: () => Promise<T>): Promise<T> {
+  if (key === null) return run();
+  const running = inFlightCommands.get(key);
+  if (running) return running as Promise<T>;
+  const attempt = run();
+  inFlightCommands.set(key, attempt);
+  try {
+    return await attempt;
+  } finally {
+    inFlightCommands.delete(key);
+  }
+}
+
+/** `execution.dispatchers` bound: a drop-up, not a history. */
+const DISPATCHERS_LIST_MAX = 50;
 const DISPATCHER_SETTLE_POLL_MS = 250;
 
 /**
@@ -2370,12 +2422,18 @@ const DISPATCHER_SETTLE_POLL_MS = 250;
  * what the dispatcher re-reads if it wakes without having received the push.
  * Plain prose on purpose: the trusted envelope is the machine-addressed copy.
  */
-function dispatchRequestBody(subjectId: string, taskId: string, note: string | null): string {
+function dispatchRequestBody(
+  subjectId: string,
+  taskId: string,
+  note: string | null,
+  kind: ExecutionDispatchKind | null = null,
+): string {
   const lines = [
     `Dispatch requested for this task (subject \`${subjectId}\`, anchor \`${taskId}\`).`,
     '',
     'Pick the teammate, attach the memories they need to this task, spawn them on it, and reply here with who and why.',
   ];
+  if (kind) lines.push('', `Start them as a ${kind} session (\`execution.spawn\` mode \`${kind}\`).`);
   if (note) lines.push('', `Requester note: ${note}`);
   return lines.join('\n');
 }
@@ -2388,6 +2446,11 @@ export interface DispatchRequestSend {
   subjectId: string;
   dispatcherSessionId: string;
   note: string | null;
+  /**
+   * The session kind the dispatcher should start (`execution.dispatch.kind`,
+   * launch v3 gap 5). Null carries none — the loop executor's requests.
+   */
+  kind?: ExecutionDispatchKind | null;
   requesterActorId: string | null;
   requesterActorKind: string;
   requestId: string;
@@ -2416,7 +2479,7 @@ async function sendDispatchRequest(
   const posted = await db.tx(claims, async (q) =>
     q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
       [taskId],
-      dispatchRequestBody(subjectId, taskId, note),
+      dispatchRequestBody(subjectId, taskId, note, args.kind ?? null),
       null,
       [],
       [],
@@ -2436,6 +2499,7 @@ async function sendDispatchRequest(
     requesterActorKind: args.requesterActorKind,
     destinationSessionId: dispatcherSessionId,
     note,
+    ...(args.kind ? { kind: args.kind } : {}),
   });
   try {
     const reservation = await seam.reserve({
@@ -2526,6 +2590,34 @@ export interface RegisterHandlersOptions {
 }
 
 /**
+ * `execution.dispatch.dispatcherSessionId` must name a dispatcher session of
+ * THIS space. Read under the caller's claims, so a session the caller cannot
+ * read is refused exactly like one in another space — nothing about it leaks.
+ * Liveness is NOT checked here: a dead target falls back, it is not refused.
+ */
+async function assertDispatcherTarget(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  sessionId: string,
+): Promise<void> {
+  const rows = await db.query<{ mode: string | null; space_id: string }>(
+    claims,
+    `select ws.mode, e.space_id::text space_id
+       from public.work_sessions ws
+       join public.entities e on e.id = ws.entity_id
+      where ws.entity_id = $1 and e.deleted_at is null`,
+    [sessionId],
+  );
+  const row = rows[0];
+  if (!row || row.mode !== 'dispatcher' || row.space_id !== spaceId) {
+    throw fail('invalid_input', `${sessionId} is not a dispatcher session in this space`, {
+      reason: 'not_a_dispatcher',
+    });
+  }
+}
+
+/**
  * Find the space's live dispatcher session, or spawn one and wait for it.
  *
  * Shared by `execution.dispatch` and the loop executor rather than written
@@ -2540,7 +2632,14 @@ async function resolveDispatcherSession(
   spawnService: SpawnService,
   spaceId: string,
   clientMutationId: string,
+  preferredSessionId: string | null = null,
 ): Promise<{ sessionId: string; spawned: boolean }> {
+  // Launch v3 gap 5: a named dispatcher (already checked by
+  // `assertDispatcherTarget`) wins while it is live. One that died after the
+  // caller's preview falls through to the rule below, and the result says so.
+  if (preferredSessionId && pty.liveSessionIds().includes(preferredSessionId)) {
+    return { sessionId: preferredSessionId, spawned: false };
+  }
   const live = await findLiveDispatcherSession(db, claims, spaceId, pty);
   if (live) return { sessionId: live, spawned: false };
 
@@ -2821,6 +2920,76 @@ function registerHandlers(
     return json(result);
   });
   /**
+   * execution.dispatchers (launch v3 gap 5) — the space's dispatcher sessions
+   * for the launch card's dispatch-target drop-up, newest first. Stopped ones
+   * are listed with `live: false`.
+   *
+   * Membership-gated exactly as `execution.liveness` is: the space is read
+   * under the caller's claims and an unreadable one is `not_found`. Liveness is
+   * the PTY map, never `work_sessions.status` (see `findLiveDispatcherSession`).
+   * `queuedCount` is null: what a dispatcher has not yet routed is not a column
+   * anywhere, and a pending-delivery count would answer a different question.
+   * `title` and `purpose` (the teammate's role) are untrusted display text.
+   */
+  registry.register('execution.dispatchers', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const spaces = await db.query<{ id: string }>(
+      claims,
+      'select s.id from public.spaces s where s.id = $1',
+      [spaceId],
+    );
+    if (!spaces[0]) throw new CollabError('not_found', `no such space: ${spaceId}`);
+    const rows = await db.query<{
+      session_id: string;
+      team_member_id: string | null;
+      teammate_name: string | null;
+      title: string | null;
+      purpose: string | null;
+    }>(
+      claims,
+      `select ws.entity_id::text session_id,
+              tm.entity_id::text team_member_id,
+              tm.name teammate_name,
+              ws.title,
+              nullif(btrim(tm.role), '') purpose
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+         left join lateral (
+           select m.entity_id, m.name, m.role
+             from public.edges r
+             join public.team_members m on m.entity_id = r.dst_id
+             join public.entities me on me.id = m.entity_id and me.deleted_at is null
+            where r.src_id = ws.entity_id and r.type = 'relates_to'
+            order by r.created_at
+            limit 1
+         ) tm on true
+        where e.space_id = $1 and e.deleted_at is null and ws.mode = 'dispatcher'
+        order by ws.created_at desc, ws.entity_id desc
+        limit ${DISPATCHERS_LIST_MAX}`,
+      [spaceId],
+    );
+    const live = new Set(pty.liveSessionIds());
+    const result: ExecutionDispatchers = {
+      // A session whose teammate is gone (or unreadable) has no one to name.
+      dispatchers: rows.flatMap((row) =>
+        row.team_member_id === null
+          ? []
+          : [{
+              sessionId: row.session_id,
+              teamMemberId: row.team_member_id,
+              teammateName: row.teammate_name ?? '',
+              title: row.title ?? '',
+              purpose: row.purpose,
+              live: live.has(row.session_id),
+              queuedCount: null,
+            }],
+      ),
+    };
+    return json(result);
+  });
+  /**
    * execution.journal — the ONLY path from a teammate's on-disk CLI journal
    * (`<dataDir>/journals/<sessionId>.jsonl`) to a browser. The session id is
    * validated as a uuid and resolved as a `work_session` entity under the
@@ -3069,7 +3238,10 @@ function registerHandlers(
       }),
     );
   });
-  registry.register('execution.spawn', async (ctx) => {
+  registry.register('execution.spawn', (ctx) =>
+    singleFlight(inFlightKey('execution.spawn', ctx, commandEnvelope(ctx).clientMutationId), () =>
+      executionSpawn(ctx)));
+  const executionSpawn = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionSpawnInput;
 
     const owner = await resolveOwner();
@@ -3078,6 +3250,14 @@ function registerHandlers(
     // 256 (W7p, ruling A'): a link session launches nothing, before anything
     // is read or written. See identity/link-bearer.ts.
     refuseLinkBearer(claims);
+
+    // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
+    // asking for one to be derived) beside it is refused by name, first.
+    if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
+      throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
+        reason: 'new_task_conflict',
+      });
+    }
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3126,6 +3306,7 @@ function registerHandlers(
       teamMemberId: input.teamMemberId,
       parentSessionId,
       ...(taskIds ? { taskIds } : {}),
+      ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
@@ -3217,12 +3398,36 @@ function registerHandlers(
       }
     }
 
+    // A dispatcher launched on tasks was told to route them in its first
+    // turn; the durable request is stored on each task now that the session
+    // exists (store only — the turn already delivered it). Best-effort, like
+    // provenance above: the session is live, and its turn carries the request.
+    for (const routedTaskId of result.routedTaskIds ?? []) {
+      try {
+        await sendDispatchRequest({
+          db,
+          claims,
+          taskId: routedTaskId,
+          subjectId: routedTaskId,
+          dispatcherSessionId: result.sessionId,
+          note: null,
+          requesterActorId: envelope.actorId ?? null,
+          requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+          requestId: ctx.requestId,
+          clientMutationId: `${envelope.clientMutationId ?? result.sessionId}:route:${routedTaskId}`,
+        });
+      } catch (error) {
+        console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     // 201: a spawn creates a work_session.
-    return json(
-      await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
-      { status: 201 },
-    );
-  });
+    const spawnResult: ExecutionSpawnResult = {
+      ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
+      ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
+    };
+    return json(spawnResult, { status: 201 });
+  };
 
   /**
    * execution.terminal.start (101) — a VANILLA TERMINAL.
@@ -3277,7 +3482,10 @@ function registerHandlers(
    * reads its anchor when it next wakes) while a delivered request with no
    * durable row is not. `delivery` is reported, never thrown on.
    */
-  registry.register('execution.dispatch', async (ctx) => {
+  registry.register('execution.dispatch', (ctx) =>
+    singleFlight(inFlightKey('execution.dispatch', ctx, commandEnvelope(ctx).clientMutationId), () =>
+      executionDispatch(ctx)));
+  const executionDispatch = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionDispatchInput;
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
@@ -3288,20 +3496,56 @@ function registerHandlers(
     // identity/link-bearer.ts.
     refuseLinkBearer(claims);
 
-    // Any launchable entity, exactly as execution.spawn treats taskIds — a task
-    // passes through untouched.
-    const [taskId] = await rethrowing(() =>
-      resolveAssignmentAnchors(
-        db, claims, input.spaceId, [input.subjectId], input.forceNewTask ?? false,
-      ),
-    );
+    // Launch v3 gap 4: exactly one of subjectId / newTask. `forceNewTask`
+    // re-derives a subject, so it has no meaning beside a task being created.
+    if ((input.subjectId === undefined) === (input.newTask === undefined)
+        || (input.newTask !== undefined && input.forceNewTask === true)) {
+      throw fail(
+        'invalid_input',
+        'send exactly one of subjectId or newTask (and forceNewTask only with subjectId)',
+        { reason: 'new_task_conflict' },
+      );
+    }
+    const cmid = envelope.clientMutationId ?? input.clientMutationId;
+    // Refused BEFORE anything is written: a wrong target must not leave a task.
+    if (input.dispatcherSessionId) {
+      await assertDispatcherTarget(db, claims, input.spaceId, input.dispatcherSessionId);
+    }
+
+    let taskId: string | undefined;
+    let subjectId: string;
+    if (input.newTask) {
+      // Its own ledger row (`<cmid>:new-task`), so a retried dispatch replays
+      // the same task, and the steps below replay on theirs.
+      const created = await rethrowing(() =>
+        db.rpc<{ taskId?: string } | null>(claims, 'public.execution_dispatch_new_task', [
+          input.spaceId,
+          input.newTask?.title,
+          input.newTask?.projectId ?? null,
+          envelope.actorId ?? null,
+          `${cmid}:new-task`,
+        ]),
+      );
+      taskId = created?.taskId;
+      subjectId = taskId ?? '';
+    } else {
+      // Any launchable entity, exactly as execution.spawn treats taskIds — a
+      // task passes through untouched.
+      subjectId = input.subjectId ?? '';
+      [taskId] = await rethrowing(() =>
+        resolveAssignmentAnchors(
+          db, claims, input.spaceId, [subjectId], input.forceNewTask ?? false,
+        ),
+      );
+    }
     if (!taskId) {
-      throw fail('upstream_unavailable', `could not derive a task for ${input.subjectId}`);
+      throw fail('upstream_unavailable', `could not derive a task for ${subjectId || 'newTask'}`);
     }
 
     const resolved = await resolveDispatcherSession(
       db, claims, pty, spawnService, input.spaceId,
-      `${envelope.clientMutationId ?? input.clientMutationId}:dispatcher-spawn`,
+      `${cmid}:dispatcher-spawn`,
+      input.dispatcherSessionId ?? null,
     );
     const dispatcherSessionId = resolved.sessionId;
     const dispatcherSpawned = resolved.spawned;
@@ -3311,9 +3555,10 @@ function registerHandlers(
       claims,
       ...(options.dispatchDelivery ? { seam: options.dispatchDelivery } : {}),
       taskId,
-      subjectId: input.subjectId,
+      subjectId,
       dispatcherSessionId,
       note: input.note ?? null,
+      kind: input.kind ?? 'worker',
       // NULL, never the owner's `identityId`. This reaches SQL as
       // `w2_post_message_batch(p_actor_id uuid)`, and an identity id is
       // deliberately NOT a uuid (`identity/ids.ts`: `id_` + random) — the
@@ -3326,18 +3571,19 @@ function registerHandlers(
       requesterActorId: envelope.actorId ?? null,
       requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
       requestId: ctx.requestId,
-      clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
+      clientMutationId: `${cmid}:dispatch-request`,
     });
 
     const result: ExecutionDispatchResult = {
       taskId,
+      taskCreated: input.newTask !== undefined,
       dispatcherSessionId,
       dispatcherSpawned,
       ...(sent.requestMessageId ? { requestMessageId: sent.requestMessageId } : {}),
       delivery: sent.delivered ? 'delivered' : 'undelivered',
     };
     return json(result, { status: 202 });
-  });
+  };
 
   /**
    * B1 — `execution.prompt` is Server-internal-only, so the PUBLIC route is a

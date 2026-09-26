@@ -2000,6 +2000,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.dispatchers",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/execution/dispatchers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "containers.create",
         "method": "POST",
         "path": "/v2/containers",
@@ -6869,6 +6876,22 @@
         ],
         "inputSchemaRef": "ExecutionDispatchInputSchema",
         "resultSchemaRef": "ExecutionDispatchResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.dispatchers",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.dispatchers",
+        "intentTags": [
+          "execution",
+          "dispatchers"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,

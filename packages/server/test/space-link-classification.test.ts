@@ -18,6 +18,7 @@ const PASSES: Record<string, string> = {
   'execution.sessions.share': 'changes sharing on B\'s own entity; mints no bearer',
   'execution.launch': 'reads the launch posture; no body, no token',
   'execution.liveness': 'reads liveness flags',
+  'execution.dispatchers': 'reads the dispatcher list (ids, titles, liveness); starts nothing, no body, no token',
   'containers.stop': 'stops',
   'containers.pause': 'stops',
   'containers.destroy': 'stops',

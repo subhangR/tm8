@@ -488,7 +488,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // execution.terminal.start adds one more (merge 2026-08-13, #161).
     // 11 -> 12 (187): execution.sessions.share registers in the execution
     // handler module, beside terminate and resume.
-    expect(handlers.execution).toHaveLength(12);
+    expect(handlers.execution).toHaveLength(13 /* +1 execution.dispatchers (launch v3 C). MEASURED. */);
     expect(handlers.events).toHaveLength(3); /* +1 events.changes (change feed step 3). MEASURED. */
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.

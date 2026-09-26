@@ -2180,6 +2180,18 @@ const ROWS: Record<OperationName, Row> = {
       'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
     ],
   },
+  'execution.dispatchers': {
+    cmd: null,
+    sum: 'List a Space’s dispatcher sessions, newest first, with whether each is live',
+    authz: 'space',
+    input: 'none',
+    tags: ['dispatch', 'dispatcher', 'route', 'launch', 'live'],
+    notes: [
+      'Launch-card API (launch v3 gap 5): the dispatch-target drop-up. No CLI — `session dispatch` routes to the newest live dispatcher on its own',
+      'stopped dispatchers are listed with `live: false`; liveness is probed against the node’s PTY map, never read off `work_sessions.status`',
+      '`queuedCount` is null when it is not cheap to compute; `title` and `purpose` are untrusted display text',
+    ],
+  },
   'execution.prompt': {
     cmd: null,
     sum: 'INTERNAL: the audited Server-side delivery of an already-stored message into a live session',

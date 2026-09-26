@@ -255,6 +255,8 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.space.spaceDefaultConsent',
       'credentials.space.usage',
       'credentials.status',
+      // Launch v3 C: the launch card's dispatch-target drop-up; `session dispatch` needs no read.
+      'execution.dispatchers',
       // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.

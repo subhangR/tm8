@@ -5303,6 +5303,17 @@ export interface ExecutionSpawnInput extends CommandContext {
    */
   forceNewTask?: boolean;
   /**
+   * Create the task this session works on IN THE SAME REQUEST (launch v3 gap
+   * 4). Exclusive with `taskIds` and `forceNewTask` — otherwise `invalid_input`
+   * with `details.reason = 'new_task_conflict'`. The task is created with
+   * assignee = `teamMemberId`, project = `projectId` (when given), status
+   * `working`, in the same transaction as the spawn's ledger entry: a refused
+   * spawn leaves no task, and a retry with the same `clientMutationId` replays
+   * the same task and the same session. Its id comes back as `createdTaskId`.
+   * `title` is trimmed, 1..200 chars.
+   */
+  newTask?: ExecutionNewTask;
+  /**
    * AM-2 §1: typed project reference (replaces the untyped `projectRef`).
    * The project must be linked to `spaceId` and pass its trust gate.
    * Omitted/null = a projectless scratch session in a server-managed temp dir.
@@ -5411,6 +5422,24 @@ export interface ExecutionSpawnInput extends CommandContext {
   rows?: number;
 }
 
+/** `execution.spawn.newTask` — see `ExecutionSpawnInput.newTask`. */
+export interface ExecutionNewTask {
+  /** Trimmed, 1..200 chars. */
+  title: string;
+}
+
+/** Upper bound on `newTask.title` (after trimming) on spawn and dispatch. */
+export const EXECUTION_NEW_TASK_TITLE_MAX = 200;
+
+/**
+ * What `execution.spawn` answers with: the usual command result, plus the id
+ * of the task it created when the request carried `newTask`.
+ */
+export interface ExecutionSpawnResult extends CommandResult {
+  /** Present only when the request carried `newTask`. */
+  createdTaskId?: EntityId;
+}
+
 /**
  * execution.terminal.start — POST /v2/execution/terminal (101).
  *
@@ -5470,8 +5499,34 @@ export interface ExecutionTerminalStartInput extends CommandContext {
 export interface ExecutionDispatchInput extends CommandContext {
   clientMutationId: string;
   spaceId: EntityId;
-  /** Any launchable entity; derived to a task server-side via 064. */
-  subjectId: EntityId;
+  /**
+   * Any launchable entity; derived to a task server-side via 064. Exactly one
+   * of `subjectId` and `newTask` — otherwise `invalid_input` with
+   * `details.reason = 'new_task_conflict'`.
+   */
+  subjectId?: EntityId;
+  /**
+   * Create the task to dispatch in the same request (launch v3 gap 4). Status
+   * `working`, no assignee (routing is the dispatcher's job), filed under
+   * `projectId` when given — filing only, it does not steer routing. A retry
+   * with the same `clientMutationId` replays the same task. The result's
+   * `taskId` is the created task and `taskCreated` is true.
+   */
+  newTask?: ExecutionDispatchNewTask;
+  /**
+   * The dispatcher session to route to (launch v3 gap 5). When it is a live
+   * dispatcher in this space the request goes to it; when it is no longer live
+   * the server falls back exactly as without it (newest live dispatcher, else
+   * start the resident one) and the result says what really happened. A
+   * session that is not a dispatcher, or is in another space, is refused:
+   * `invalid_input`, `details.reason = 'not_a_dispatcher'`.
+   */
+  dispatcherSessionId?: EntityId;
+  /**
+   * The kind of session the dispatcher should start for the task; carried in
+   * the routing request. Default `worker`.
+   */
+  kind?: ExecutionDispatchKind;
   /**
    * Mint a NEW derived task for `subjectId` even when an open one exists —
    * "start a different piece of work in this thread". Without it, one open
@@ -5483,10 +5538,26 @@ export interface ExecutionDispatchInput extends CommandContext {
   note?: string;
 }
 
+/** `execution.dispatch.newTask` — see `ExecutionDispatchInput.newTask`. */
+export interface ExecutionDispatchNewTask {
+  /** Trimmed, 1..200 chars. */
+  title: string;
+  /** The project the task is filed under. Filing only, never routing. */
+  projectId?: ProjectId;
+}
+
+/** `execution.dispatch.kind` — the session kind the dispatcher should start. */
+export type ExecutionDispatchKind = 'worker' | 'coordinator' | 'dispatcher';
+
 /** What `execution.dispatch` answers with — see the handler for the states. */
 export interface ExecutionDispatchResult {
-  /** The task the subject derived to; the dispatcher's anchor for this request. */
+  /**
+   * The task the subject derived to, or the task `newTask` created; the
+   * dispatcher's anchor for this request.
+   */
   taskId: EntityId;
+  /** True when this request created `taskId` from `newTask`. */
+  taskCreated: boolean;
   /** The dispatcher session the request was delivered to. */
   dispatcherSessionId: EntityId;
   /** True when this call had to spawn the dispatcher rather than reuse one. */
@@ -5495,6 +5566,32 @@ export interface ExecutionDispatchResult {
   requestMessageId?: EntityId;
   /** Honest delivery outcome; `undelivered` still leaves a durable message. */
   delivery: 'delivered' | 'undelivered';
+}
+
+/**
+ * One row of `execution.dispatchers`. `title` and `purpose` are UNTRUSTED text
+ * (a session title and a teammate's purpose), for display only.
+ */
+export interface ExecutionDispatcherRow {
+  sessionId: EntityId;
+  teamMemberId: EntityId;
+  teammateName: string;
+  title: string;
+  purpose: string | null;
+  /** Probed against the node's PTY map, never read off `work_sessions.status`. */
+  live: boolean;
+  /** Requests waiting on this dispatcher; null when it is not cheap to compute. */
+  queuedCount: number | null;
+}
+
+/**
+ * execution.dispatchers — GET /v2/spaces/:spaceId/execution/dispatchers.
+ * The space's dispatcher sessions, newest first, stopped ones included with
+ * `live: false`. Membership-gated: a space the caller cannot read is
+ * `not_found`.
+ */
+export interface ExecutionDispatchers {
+  dispatchers: ExecutionDispatcherRow[];
 }
 
 /**

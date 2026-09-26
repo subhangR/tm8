@@ -21,6 +21,7 @@ import {
   PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES,
   SHA256_HEX_RE,
   SPAWN_SELECTION_GROUP_LIMIT,
+  EXECUTION_NEW_TASK_TITLE_MAX,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
@@ -85,6 +86,8 @@ import type {
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
+  ExecutionDispatchNewTask, ExecutionNewTask, ExecutionDispatcherRow, ExecutionDispatchers,
+  ExecutionSpawnResult,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
@@ -2408,6 +2411,17 @@ export const CommandResultSchema: z.ZodType<CommandResult> = z.lazy(() => z.obje
   warnings: z.array(ResultWarningSchema).optional(),
 }).strict());
 
+/** `execution.spawn`'s answer: the command result plus `createdTaskId` (launch v3). */
+export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.lazy(() => z.object({
+  entity: EntityDetailSchema.optional(),
+  edge: EdgeViewSchema.optional(),
+  activity: ActivityItemSchema.optional(),
+  patches: z.array(EntitySummarySchema),
+  undo: UndoTokenSchema.optional(),
+  warnings: z.array(ResultWarningSchema).optional(),
+  createdTaskId: EntityIdSchema.optional(),
+}).strict());
+
 // ---------------------------------------------------------------------------
 // Command inputs (all strict; unknown field ⇒ invalid_input)
 // ---------------------------------------------------------------------------
@@ -3481,6 +3495,23 @@ export const ContextBudgetsSchema = z.object({
   teammates: z.number().int().min(0).max(32_768).optional(),
 }).strict();
 
+/** `newTask.title` on spawn and dispatch: trimmed, then 1..200 chars. */
+const NewTaskTitleSchema = z.string().trim().min(1).max(EXECUTION_NEW_TASK_TITLE_MAX);
+
+/**
+ * `execution.spawn.newTask`. Its exclusivity with `taskIds`/`forceNewTask` is
+ * the HANDLER's refusal, not this schema's: the contract names the reason
+ * (`details.reason = 'new_task_conflict'`) and a zod issue carries none.
+ */
+export const ExecutionNewTaskSchema: z.ZodType<ExecutionNewTask> = z.object({
+  title: NewTaskTitleSchema,
+}).strict();
+
+export const ExecutionDispatchNewTaskSchema: z.ZodType<ExecutionDispatchNewTask> = z.object({
+  title: NewTaskTitleSchema,
+  projectId: SpawnUuidSchema.optional(),
+}).strict();
+
 const executionSpawnInputObject = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
@@ -3489,6 +3520,7 @@ const executionSpawnInputObject = z.object({
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
   forceNewTask: z.boolean().optional(),
+  newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
@@ -3601,9 +3633,14 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
-  subjectId: SpawnUuidSchema,
+  // Exactly one of subjectId / newTask — refused in the handler with
+  // `details.reason = 'new_task_conflict'`, which a zod issue cannot carry.
+  subjectId: SpawnUuidSchema.optional(),
+  newTask: ExecutionDispatchNewTaskSchema.optional(),
   forceNewTask: z.boolean().optional(),
   note: z.string().max(4000).optional(),
+  dispatcherSessionId: SpawnUuidSchema.optional(),
+  kind: z.enum(['worker', 'coordinator', 'dispatcher']).optional(),
 }).strict();
 
 /**
@@ -3613,10 +3650,26 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
  */
 export const ExecutionDispatchResultSchema: z.ZodType<ExecutionDispatchResult> = z.object({
   taskId: EntityIdSchema,
+  taskCreated: z.boolean(),
   dispatcherSessionId: EntityIdSchema,
   dispatcherSpawned: z.boolean(),
   requestMessageId: EntityIdSchema.optional(),
   delivery: z.enum(['delivered', 'undelivered']),
+}).strict();
+
+/** execution.dispatchers — the space's dispatcher sessions, newest first. */
+export const ExecutionDispatcherRowSchema: z.ZodType<ExecutionDispatcherRow> = z.object({
+  sessionId: EntityIdSchema,
+  teamMemberId: EntityIdSchema,
+  teammateName: z.string(),
+  title: z.string(),
+  purpose: z.string().nullable(),
+  live: z.boolean(),
+  queuedCount: z.number().int().nonnegative().nullable(),
+}).strict();
+
+export const ExecutionDispatchersSchema: z.ZodType<ExecutionDispatchers> = z.object({
+  dispatchers: z.array(ExecutionDispatcherRowSchema),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({

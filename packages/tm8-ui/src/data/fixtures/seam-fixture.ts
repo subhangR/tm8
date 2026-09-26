@@ -4753,6 +4753,8 @@ export function createFixtureSeam(): FixtureSeam {
        * would let a surface render a launch that never happened.
        */
       async dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult> {
+        // Launch v3 `newTask` is not modelled here; the fixture dispatches subjects.
+        if (!input.subjectId) throw new Error('fixture dispatch needs a subjectId');
         const subject = requireSummary(input.subjectId);
         // 064 derives a task for any launchable subject before dispatch; a
         // subject that IS a task is its own derivation.
@@ -4832,6 +4834,7 @@ export function createFixtureSeam(): FixtureSeam {
 
         return {
           taskId: task.id,
+          taskCreated: false,
           dispatcherSessionId: dispatcher.id,
           dispatcherSpawned: existing === undefined,
           requestMessageId: request.id,

@@ -1370,6 +1370,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'entityKinds.update',
   // Forms W3: forms.pendingForSessions refuses a missing spaceId/sessionIds
   // in-handler, as forms.responses.mine does below.
+  // Launch v3 C: the sweep's minimal dispatch body names neither subjectId nor
+  // newTask, which the handler refuses by name (`new_task_conflict`).
+  'execution.dispatch',
   'forms.pendingForSessions',
   // Forms W1: forms.responses.mine without ?spaceId= is refused in-handler
   // (the attentionRequests.list precedent), a handler-reached 400.
