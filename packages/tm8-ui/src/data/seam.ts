@@ -155,6 +155,7 @@ import type {
   NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
+  SpaceLinkView,
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
@@ -1365,6 +1366,29 @@ export interface Seam {
       status(): Promise<NodeCredentialsStatusView>;
       setPolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
     };
+  };
+
+  /**
+   * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
+   *
+   * A link from a home space to a target space the viewer is also a member of.
+   * `list` is open to every home member and carries no secret. Every write is
+   * HUMAN-ONLY in SQL and at the facade: an agent is refused `forbidden` with
+   * `details.reason === 'space_links_human_only'`. No answer here ever carries
+   * the stored session — only the viewer's own row's metadata (`mine`).
+   */
+  spaceLinks: {
+    list(spaceId: SpaceId): Promise<SpaceLinkView[]>;
+    add(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView>;
+    login(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Replaces the stored session; the old one is revoked. */
+    relogin(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Revokes the viewer's session and forgets the stored bytes. */
+    logout(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Deletes the viewer's own row; the link stays for other members. */
+    remove(linkId: EntityId): Promise<SpaceLinkView>;
+    /** `spawnBudget` 0..100; omitted keeps the current budget. */
+    setSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

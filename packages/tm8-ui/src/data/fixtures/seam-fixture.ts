@@ -104,6 +104,7 @@ import {
   type CredentialsSpacePolicyView,
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
+  type SpaceLinkView,
   type ContentionReport,
   type ProjectBranchTopology,
   type ProjectFileBlame,
@@ -1297,6 +1298,51 @@ export function createFixtureSeam(): FixtureSeam {
     const row = spaceCredentialsState.find((c) => c.id === id);
     if (!row) throw new CollabError('not_found', `space credential ${id} not found`);
     return row;
+  };
+  /**
+   * Space links (W6) — one link from the fixture space to a second space the
+   * viewer is signed out of, so Sign in, Allow spawn and Remove all have a row
+   * to act on without a node. Metadata only: the fixture holds no session.
+   */
+  const spaceLinksState: SpaceLinkView[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000d01', homeSpaceId: FIXTURE_SPACE_ID,
+      targetSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e1', targetServerId: null,
+      targetSpaceName: 'Research', createdAt: FIXTURE_NOW,
+      statusSummary: { signedIn: 1, signedOut: 1, left: 0, unreachable: 0 },
+      mine: {
+        memberId: ada.id, status: 'signed_out', allowSpawn: false, spawnBudget: 5,
+        alias: null, sessionId: null, expiresAt: null, lastUsedAt: null,
+      },
+    },
+  ];
+  const spaceLinkById = (id: string): SpaceLinkView => {
+    const link = spaceLinksState.find((l) => l.id === id);
+    if (!link) throw new CollabError('not_found', `space link ${id} not found`);
+    return link;
+  };
+  /** The viewer's own row on a link, created signed out if absent. */
+  const myLinkRow = (link: SpaceLinkView) => {
+    link.mine ??= {
+      memberId: ada.id, status: 'signed_out', allowSpawn: false, spawnBudget: 5,
+      alias: null, sessionId: null, expiresAt: null, lastUsedAt: null,
+    };
+    return link.mine;
+  };
+  const summarize = (link: SpaceLinkView, from: SpaceLinkView['mine'], to: SpaceLinkView['mine']) => {
+    const key = { signed_in: 'signedIn', signed_out: 'signedOut', left: 'left', unreachable: 'unreachable' } as const;
+    if (from) link.statusSummary[key[from.status]] = Math.max(0, link.statusSummary[key[from.status]] - 1);
+    if (to) link.statusSummary[key[to.status]] += 1;
+  };
+  const signLink = (id: string, status: 'signed_in' | 'signed_out'): SpaceLinkView => {
+    const link = spaceLinkById(id);
+    const before = link.mine ? { ...link.mine } : null;
+    const mine = myLinkRow(link);
+    mine.status = status;
+    mine.sessionId = status === 'signed_in' ? `fixture-link-session-${tick()}` : null;
+    mine.expiresAt = status === 'signed_in' ? new Date(FIXTURE_BASE_MS + 90 * 86_400_000).toISOString() : null;
+    summarize(link, before, mine);
+    return clone(link);
   };
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -5526,6 +5572,42 @@ export function createFixtureSeam(): FixtureSeam {
           if (policy) policy.allowNode = allowNode;
           return { provider, allowNode };
         },
+      },
+    },
+
+    spaceLinks: {
+      async list(spaceId) {
+        return clone(spaceLinksState.filter((l) => l.homeSpaceId === spaceId));
+      },
+      async add(spaceId, targetSpaceId) {
+        const existing = spaceLinksState.find((l) => l.homeSpaceId === spaceId && l.targetSpaceId === targetSpaceId);
+        if (existing) return clone(existing);
+        const link: SpaceLinkView = {
+          id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
+          homeSpaceId: spaceId, targetSpaceId, targetServerId: null, targetSpaceName: null,
+          createdAt: tick(),
+          statusSummary: { signedIn: 0, signedOut: 0, left: 0, unreachable: 0 },
+          mine: null,
+        };
+        summarize(link, null, myLinkRow(link));
+        spaceLinksState.push(link);
+        return clone(link);
+      },
+      async login(linkId) { return signLink(linkId, 'signed_in'); },
+      async relogin(linkId) { return signLink(linkId, 'signed_in'); },
+      async logout(linkId) { return signLink(linkId, 'signed_out'); },
+      async remove(linkId) {
+        const link = spaceLinkById(linkId);
+        summarize(link, link.mine, null);
+        link.mine = null;
+        return clone(link);
+      },
+      async setSpawn(linkId, allowSpawn, spawnBudget) {
+        const link = spaceLinkById(linkId);
+        const mine = myLinkRow(link);
+        mine.allowSpawn = allowSpawn;
+        if (spawnBudget !== undefined) mine.spawnBudget = spawnBudget;
+        return clone(link);
       },
     },
 

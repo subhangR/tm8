@@ -136,7 +136,7 @@ class FakeSpacePort implements SpaceCredentialPort {
   ): Promise<SpaceCredentialRepoint> {
     this.events.push(`repoint:${this.who(auth)}`);
     this.repointProviders.push(providers ? [...providers] : null);
-    // R13 (998): rows for a provider this resume no longer runs on are dropped first.
+    // R13 (255): rows for a provider this resume no longer runs on are dropped first.
     if (providers) {
       this.recorded.set(sessionId, (this.recorded.get(sessionId) ?? []).filter((r) => providers.includes(r.provider)));
     }

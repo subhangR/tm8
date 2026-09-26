@@ -623,6 +623,78 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy',
     ],
   },
+  // ── space links (W6, migrations 250/251) ─────────────────────────────────
+  //
+  // No CLI command yet, for scope, as with the credential rows above: the Server
+  // admits a `cli` human to every write, so a later lane adds commands with no
+  // security change. The writes are refused to agent and link sessions twice
+  // (the handler guard and the strict SQL gate); `list` is open and secret-free.
+  'spaceLinks.list': {
+    cmd: null,
+    sum: 'List the Spaces this Space links to, with your own sign-in status on each — no secret is ever returned',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
+    ],
+  },
+  'spaceLinks.add': {
+    cmd: null,
+    sum: 'Link another Space you are a Member of to this one — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.login': {
+    cmd: null,
+    sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    reason: 'human_settings_only',
+    notes: ['agents you launch may use it; nobody else can, and no response carries it'],
+  },
+  'spaceLinks.relogin': {
+    cmd: null,
+    sum: 'Replace your stored session for a linked Space; the old one is revoked — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.logout': {
+    cmd: null,
+    sum: 'Sign out of a linked Space: your stored session is revoked and forgotten — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'logout', 'revoke', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.remove': {
+    cmd: null,
+    sum: 'Remove your own row on a linked Space; the link stays for other Members — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'remove', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.setSpawn': {
+    cmd: null,
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'spawn', 'budget', 'cross-space'],
+    reason: 'human_settings_only',
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -3144,6 +3216,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // but `node` already groups the credential rows, so the noun is `account`.
   // `tools/conformance`'s generator holds the same map.
   accounts: 'account',
+  // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
+  // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
+  spaceLinks: 'space-link',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3233,8 +3308,9 @@ export const CATALOG_DIGEST =
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
   // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
-  // +6 credentials.space.* (W10b, merged onto main a13a29f9): read from the regenerated conformance manifest.
-  'sha256:660c22b867abaaf0482a92085af25a715375be637eba68cdeda867504d40b7ae';
+  // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
+  // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
+  'sha256:e82356d2c70dd8b3d6dea41085510153d3489f7c11effbe9a230706e11e66b7e';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -103,6 +103,12 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
   container: { group: 'runtime', summary: 'a machine an agent runs in or drives', createWith: ['container create'] },
   artifact: { group: 'runtime', summary: 'a published, versioned web page', createWith: ['artifact publish'] },
 
+  space_link: {
+    group: 'runtime',
+    summary: 'a link from this space to another space; each member signs in with their own stored session',
+    createWith: [],
+  },
+  server: { group: 'runtime', summary: 'a remote tm8 server a space link points at', createWith: [] },
   member: { group: 'people', summary: 'a human in the space', createWith: ['auth signup', 'space invite create'] },
   team_member: {
     group: 'people',

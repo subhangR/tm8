@@ -74,7 +74,7 @@ import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
-const RESTRICTED_LIFECYCLE_KINDS = new Set([
+export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'member',
   'message',
   'work_session',
@@ -100,6 +100,12 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // would split the envelope from its row. The SQL guards refuse all of
   // these too (T39/T44) — this is the door's early, named refusal.
   'credential',
+  // `space_link` (W6, 250/251) is born from `spaceLinks.add` and ends only
+  // through `spaceLinks.*` (P7). A generic delete would soft-delete the
+  // envelope without the cascade or the revoke-on-delete trigger, hiding the
+  // link while its tokens and target sessions stayed live (review D1). SQL
+  // refuses the same doors (251 §10b). `server` joins in W8.
+  'space_link',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because

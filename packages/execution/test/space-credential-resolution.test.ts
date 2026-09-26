@@ -631,7 +631,7 @@ describe('A3 / C1 — an agent may choose a space credential; its claims are the
 
 describe('a3 / T43 — auto order: my default → legacy member → space default → node, one test per rung', () => {
   const MINE = 'dddddddd-0000-4000-8000-000000000001';
-  /** The fake port plus the launcher's own default (998's my_space_credential_default_id). */
+  /** The fake port plus the launcher's own default (255's my_space_credential_default_id). */
   const withMine = (port: FakePort, mine: string | null, asks: unknown[] = []): FakePort => ({
     ...port,
     async myDefaultId(auth, _spaceId, provider) {

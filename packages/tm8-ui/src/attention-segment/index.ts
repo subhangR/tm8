@@ -6,4 +6,4 @@ export {
   type AttentionPending,
   type AttentionPendingSeam,
   type AttentionPendingState,
-} from './useAttentionPending';
+} from '../attention/useAttentionPending';

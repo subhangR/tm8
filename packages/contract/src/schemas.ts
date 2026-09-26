@@ -187,6 +187,10 @@ export const CoreEntityKindSchema = z.enum([
   'form',
   // Space credentials (W10a). Not creatable: credentials.space.* is its door.
   'credential',
+  // Space links (250/251, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
+  // is its door. `server` is registered with it and has no door in W6.
+  'space_link',
+  'server',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -637,6 +641,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // W10a — a space credential's row facts; never its secret, hint or login.
   CredentialEntityFactsSchema,
+  // 250 (W6) — space links carry no row facts on the entity; `spaceLinks.list`
+  // answers for them. `server` has no detail row until W8.
+  z.object({ kind: z.literal('space_link') }).strict(),
+  z.object({ kind: z.literal('server') }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -1042,6 +1050,9 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).strict(),
   // W10a — the same allow-list as its state, strict so a leaked field fails.
   CredentialEntityFactsSchema,
+  // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
+  z.object({ kind: z.literal('space_link') }).strict(),
+  z.object({ kind: z.literal('server') }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -1836,7 +1847,7 @@ export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
 
 export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'link']),
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
@@ -2448,7 +2459,7 @@ export const CreatableEntityKindSchema = z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server']),
   CustomEntityKindSchema,
 ]);
 

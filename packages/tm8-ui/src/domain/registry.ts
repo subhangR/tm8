@@ -2368,6 +2368,54 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  // -- space_link (250, W6: managed from Space settings, not browsed) --------
+  {
+    kind: 'space_link',
+    label: 'Space link',
+    labelPlural: 'Space links',
+    icon: '⛓',
+    iconArt: KIND_ART.space_link,
+    slug: 'space-links',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⛓', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    // Born only from `spaceLinks.add` (generic create is refused server-side);
+    // the Space settings section is where a link is signed in, out or removed.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'LINK' }],
+    },
+  },
+
+  // -- server (250 registers it; W8 gives it a detail row) ------------------
+  {
+    kind: 'server',
+    label: 'Server',
+    labelPlural: 'Servers',
+    icon: '◎',
+    iconArt: KIND_ART.server,
+    slug: 'servers',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◎', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'SERVER' }],
+    },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,

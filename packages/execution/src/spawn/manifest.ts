@@ -244,7 +244,7 @@ export interface ResolvedLaunchConfig {
   effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
   /**
    * §6c: how the spawn path picked each space credential — a pin, the
-   * launcher's own default, or the space default. Set with the ids; 998's
+   * launcher's own default, or the space default. Set with the ids; 255's
    * trigger stamps it onto `session_space_credentials.source`.
    */
   spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;

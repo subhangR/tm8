@@ -1,5 +1,5 @@
 /**
- * W10b — the human-only credential writers (migration 998), against a REAL
+ * W10b — the human-only credential writers (migration 255), against a REAL
  * PostgreSQL with every migration applied, running as `tm8_app` under each
  * caller's claims. The service is the real `SpaceCredentialCatalogService`
  * over the real `DbSpaceCredentialStore`; only the vendor probe and the PTY

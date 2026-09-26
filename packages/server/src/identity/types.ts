@@ -100,7 +100,7 @@ export type PasswordAlgorithm = 'scrypt';
  * chat thread's headless runtime, carrying its requesting human's authority
  * while authoring as the selected teammate.
  */
-export type AuthSessionKind = 'browser' | 'cli' | 'agent' | 'agent_runtime';
+export type AuthSessionKind = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
 
 export interface AuthSession {
   id: AuthSessionId;

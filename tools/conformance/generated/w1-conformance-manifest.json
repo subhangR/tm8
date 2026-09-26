@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:660c22b867abaaf0482a92085af25a715375be637eba68cdeda867504d40b7ae",
+  "catalogDigest": "sha256:e82356d2c70dd8b3d6dea41085510153d3489f7c11effbe9a230706e11e66b7e",
   "catalog": {
-    "total": 261,
-    "v1": 259,
+    "total": 268,
+    "v1": 266,
     "reserved": 2,
-    "http": 259,
+    "http": 266,
     "ws": 1,
-    "registerableV1Http": 257,
+    "registerableV1Http": 264,
     "methods": {
-      "GET": 86,
-      "POST": 122,
-      "PATCH": 16,
+      "GET": 87,
+      "POST": 127,
+      "PATCH": 17,
       "DELETE": 18,
       "PUT": 17,
       "WS": 2
     },
     "kinds": {
-      "read": 90,
-      "command": 169,
+      "read": 91,
+      "command": 175,
       "stream": 2
     },
-    "uniqueNames": 261,
-    "uniqueBindings": 260
+    "uniqueNames": 268,
+    "uniqueBindings": 267
   },
   "reservedOperations": [
     "search.query",
@@ -421,6 +421,55 @@
         "operation": "accounts.disable",
         "method": "POST",
         "path": "/v2/accounts/:accountId/disable",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.add",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.login",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/login",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.relogin",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/relogin",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.logout",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/logout",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.remove",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.setSpawn",
+        "method": "PATCH",
+        "path": "/v2/space-links/:linkId/spawn",
         "status": "registered",
         "source": "server-router"
       },
@@ -2231,7 +2280,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 229
+    "unimplementedV1Http": 236
   },
   "schemas": {
     "additive": {
@@ -2913,6 +2962,126 @@
         "intentTags": [
           "accounts",
           "disable"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.list",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.list",
+        "intentTags": [
+          "space",
+          "links",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.add",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.add",
+        "intentTags": [
+          "space",
+          "links",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.login",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.login",
+        "intentTags": [
+          "space",
+          "links",
+          "login"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.relogin",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.relogin",
+        "intentTags": [
+          "space",
+          "links",
+          "relogin"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.logout",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.logout",
+        "intentTags": [
+          "space",
+          "links",
+          "logout"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.remove",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.remove",
+        "intentTags": [
+          "space",
+          "links",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.setSpawn",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.setSpawn",
+        "intentTags": [
+          "space",
+          "links",
+          "set",
+          "spawn"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -7680,6 +7849,80 @@
         },
         "migration": {
           "strategy": "credential-detail"
+        }
+      },
+      "space_link": {
+        "kind": "space_link",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "space-links"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "space-link-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": false,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": [
+            "spaceLinks.list",
+            "spaceLinks.add",
+            "spaceLinks.login",
+            "spaceLinks.relogin",
+            "spaceLinks.logout",
+            "spaceLinks.remove",
+            "spaceLinks.setSpawn"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "space-link-kinds"
+        }
+      },
+      "server": {
+        "kind": "server",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "servers"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "static-no-authority",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": false,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "space-link-kinds"
         }
       }
     },

@@ -329,6 +329,11 @@ describe.sequential('147 — entities.status_category', () => {
       add column visibility text not null default 'public',
       add column owner_account_id uuid`);
     await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
+    // 252 (Attention v2 S1): `entity-read.ts` and the projector read the
+    // badge aggregate through `public.attention_badges`, so a tranche that
+    // stops before 252 has no such function. Additive: one security-invoker
+    // function over 050's `attention_requests`. No assertion here reads it.
+    database.apply(['252_attention_badges.sql']);
   }, 180_000);
 
   afterAll(async () => {

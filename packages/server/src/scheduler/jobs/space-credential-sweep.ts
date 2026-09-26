@@ -7,7 +7,7 @@
  * never saw the change. This job is the backstop, and it runs once right
  * after boot (`runOnStart`) as the post-boot re-check:
  *
- *   1. `public.sweep_unusable_space_credential_sessions` (998) returns a
+ *   1. `public.sweep_unusable_space_credential_sessions` (255) returns a
  *      bounded batch of live sessions (spawning included) whose space
  *      credential is revoked, or private and launched by someone other than
  *      its owner. Node admin only.

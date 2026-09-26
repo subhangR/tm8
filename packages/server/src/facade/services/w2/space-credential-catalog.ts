@@ -209,7 +209,7 @@ export class SpaceCredentialCatalogService {
     // Every refusal the RPC would make is made HERE first, before the probe:
     // otherwise any member could use this node to test arbitrary keys against
     // a vendor. `can_manage` is internal.can_manage_space_credential's body
-    // (998, R12: owned → the owner alone; space-owned → creator or admin) —
+    // (255, R12: owned → the owner alone; space-owned → creator or admin) —
     // that function is granted to nobody, its predicates are granted to tm8_app. provider and shape never change, so reading them
     // before the locked RPC cannot probe against a stale value; the RPC
     // re-checks rights and status under its lock. RLS answers a non-member nothing.
