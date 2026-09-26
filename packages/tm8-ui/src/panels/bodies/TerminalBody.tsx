@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
+import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -237,7 +238,14 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
+      {/* ATTENTION v2 (chapter 4 "Session"): the banner carries the REAL
+          reason this session raised; PTY silence alone no longer draws one
+          (G1). Without an attention module the legacy banner stands. */}
+      <SessionWaitingBanner
+        sessionId={detail.id}
+        tone="dark"
+        legacy={needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
+      />
 
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas

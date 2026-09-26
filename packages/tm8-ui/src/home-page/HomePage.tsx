@@ -30,6 +30,8 @@
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
  */
+import { useAttentionOptional } from '../attention';
+import { AttentionQueueSection } from '../attention/AttentionQueueSection';
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';
 import {
@@ -122,6 +124,7 @@ function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: s
 export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
+  const attention = useAttentionOptional();
 
   /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
      chat/list surface owns the collection inventory; Home does not recreate
@@ -153,7 +156,17 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-        {needsYou && needsYou.rows.length > 0 ? (
+        {attention ? (
+          /* ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the attention queue itself.
+             Reviews and @mentions no longer feed it (Q17) — they live in
+             notifications. */
+          <AttentionQueueSection
+            title="NEEDS YOU"
+            className="hp-needs"
+            testId="hp-needs-you"
+            onOpen={props.onOpenEntity}
+          />
+        ) : needsYou && needsYou.rows.length > 0 ? (
           <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
         ) : needsYou && (home.viewerError || home.notificationsError) ? (
           <p className="hp-note" role="status">{needsYou.emptyNote}</p>
