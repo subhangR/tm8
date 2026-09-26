@@ -132,7 +132,7 @@ const GATE_CALLERS_SQL = `
           or exists (select 1 from pg_depend d
                       where d.classid = 'pg_proc'::regclass and d.objid = p.oid
                         and d.refclassid = 'pg_proc'::regclass and d.refobjid = gate.oid))
-   order by 1`;
+   order by p.oid::regprocedure::text collate "C"`; // byte order, the same order as the JS .sort() it is compared with
 
 // ---------------------------------------------------------------------------
 // Fixture and credentials.
