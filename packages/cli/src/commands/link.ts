@@ -28,14 +28,15 @@ import { assertKnownOptions } from './entity.js';
 export const REDACTED = '[redacted]';
 
 /**
- * Token shapes: a tm8 prefix (`tm8s_`, `tm8c_`, …), a long base64url run, or a
- * long hex run. A UUID (hex groups of at most 12, hyphenated) is none of them.
+ * Token shapes, judged against a whole RUN of the base64url alphabet: a tm8
+ * prefix (`tm8s_`, `tm8c_`, …) anywhere in it, a long hex stretch, or a run of
+ * 40+ that is not a name. The whole run is redacted, never a part: a random
+ * secret with `tm8x_` in its middle must not keep its head visible. A UUID
+ * (hex groups of at most 12, hyphenated, 36 long) is none of them.
  */
-const TOKEN_SHAPES: readonly RegExp[] = [
-  /tm8[a-z]{0,3}_[A-Za-z0-9_-]+/g,
-  /[A-Za-z0-9_-]{40,}/g,
-  /[0-9a-fA-F]{32,}/g,
-];
+const RUN = /[A-Za-z0-9_-]+/g;
+const TM8_PREFIX = /tm8[a-z]{0,3}_[A-Za-z0-9_-]/;
+const LONG_HEX = /[0-9a-fA-F]{32,}/;
 
 /**
  * A long alias or name: lowercase words joined by `-` or `_`, none longer than
@@ -45,12 +46,13 @@ const TOKEN_SHAPES: readonly RegExp[] = [
  */
 const NAME_SHAPE = /^[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+$/;
 
+function tokenShaped(run: string): boolean {
+  if (TM8_PREFIX.test(run) || LONG_HEX.test(run)) return true;
+  return run.length >= 40 && !NAME_SHAPE.test(run);
+}
+
 export function scrubText(text: string): string {
-  const [prefixed, longRun, hex] = TOKEN_SHAPES as [RegExp, RegExp, RegExp];
-  return text
-    .replace(prefixed, REDACTED)
-    .replace(longRun, (run) => (NAME_SHAPE.test(run) ? run : REDACTED))
-    .replace(hex, REDACTED);
+  return text.replace(RUN, (run) => (tokenShaped(run) ? REDACTED : run));
 }
 
 export function scrubSecrets<T>(value: T): T {

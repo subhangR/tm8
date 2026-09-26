@@ -421,6 +421,20 @@ describe('tm8 link login|add never print a secret', () => {
     expect(scrubSecrets({ a: [{ b: PLANT_HEX }], n: 3, x: null })).toEqual({ a: [{ b: REDACTED }], n: 3, x: null });
   });
 
+  it('a secret with a tm8 prefix in its MIDDLE is redacted whole; its head never stays visible', () => {
+    // generateSecret() is 32 random bytes as base64url (43 chars): about 7 in
+    // 2,000,000 carry `tm8x_` somewhere inside. The head before it is under 40.
+    const head = 'Qw3rTy9UioP' + 'a8Sd7Fg6Hj5Kl4Zx3Cv';
+    const secret = head + 'tm8x_' + 'Bn2Mq1Wz';
+    expect(secret).toHaveLength(43);
+    const out = scrubText(`login refused for ${secret} (retry)`);
+    expect(out).toBe(`login refused for ${REDACTED} (retry)`);
+    expect(out).not.toContain(head.slice(0, 8));
+    // Pair: a plain prefixed token and prose around it keep working.
+    expect(scrubText(`use ${PLANT_CRED} now`)).toBe(`use ${REDACTED} now`);
+    expect(scrubText('tm8 link login bee')).toBe('tm8 link login bee');
+  });
+
   it('long aliases and names are kept; a token of the same length is still redacted', () => {
     const alias = 'my-research-space-for-the-quarterly-review';
     const name = 'project_documentation_and_research_notes_2026';
