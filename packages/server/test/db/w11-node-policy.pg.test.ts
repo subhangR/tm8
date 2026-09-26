@@ -42,9 +42,9 @@ let database: W1ScratchDatabase;
 let db: Db | undefined;
 
 type Posture = Pick<ServerConfig, 'nodeMode' | 'publicOrigin' | 'extraAllowedHostnames' | 'allowedOrigins' | 'preview'>;
-const LOOPBACK_SINGLE: Posture = { nodeMode: 'single' };
-const MULTI: Posture = { nodeMode: 'multi' };
-const OPEN_GATE_SINGLE: Posture = { nodeMode: 'single', publicOrigin: 'https://tm8.example.com' };
+const LOOPBACK_SINGLE: Posture = { nodeMode: 'personal' };
+const MULTI: Posture = { nodeMode: 'server' };
+const OPEN_GATE_SINGLE: Posture = { nodeMode: 'personal', publicOrigin: 'https://tm8.example.com' };
 
 async function asApp<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   return database.transaction(async (client) => {
