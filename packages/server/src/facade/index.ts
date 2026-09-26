@@ -3,6 +3,7 @@ import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import { registerChatDefaultsHandlers } from '../chat/defaults.js';
+import { registerMembershipHandlers, type MembershipHandlerDeps } from '../membership/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
@@ -156,6 +157,15 @@ export interface RegisterFacadeHandlersDeps {
    * `failed: no_key`.
    */
   readonly resolveJevAdvisor?: JevAdvisorResolver;
+  /**
+   * G6 (migration 232): what `spaces.leave` / `spaces.members.remove` /
+   * `accounts.disable` reach after their commit — the PTYs of the sessions SQL
+   * recorded ended, and the open event sockets. A parameter here, like
+   * `credentials`, because it reaches exactly one call. Absent: the three are
+   * still mounted and the revocation still happens; only the kill and the
+   * socket close are skipped (a node with no execution runtime has no PTYs).
+   */
+  readonly membership?: MembershipHandlerDeps;
 }
 
 /**
@@ -208,6 +218,8 @@ export function registerFacadeHandlers(
   registerLaunchDefaultsHandler(registry, facade);
   // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 229.
   registerChatDefaultsHandlers(registry, facade);
+  // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
+  registerMembershipHandlers(registry, facade, deps.membership ?? {});
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs

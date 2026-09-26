@@ -118,7 +118,8 @@ export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
   s.session_share_default, s.session_drive_default,
   (select count(*)::text from public.members member_count_row
-    where member_count_row.space_id = s.id) as member_count`;
+    where member_count_row.space_id = s.id
+      and member_count_row.status = 'active') as member_count`;
 
 export const SPACE_FROM = `from public.spaces s`;
 

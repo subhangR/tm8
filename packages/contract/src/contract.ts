@@ -127,6 +127,13 @@ export interface ActorSummary {
    * a consumer that ignores it renders the persona and is still truthful.
    */
   via?: { sessionId: EntityId };
+  /**
+   * Present only when the membership behind this actor has ENDED (migration
+   * 232): a `member` who left or was removed, or a `team_member` whose owner
+   * did. The actor and everything they authored still render; the client adds
+   * "(left)". Absent means active. Additive.
+   */
+  memberStatus?: 'left' | 'removed';
 }
 
 export interface EntityCounters {
@@ -261,7 +268,9 @@ export type CoreEntityState =
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
-  | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
+  | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number;
+      /** 232: present only when this membership has ended. Absent means active. Additive. */
+      memberStatus?: 'left' | 'removed' }
   /* `defaultProfileId` is the teammate's own `defaults_to_profile` target, and
      it is ADDITIVE and OPTIONAL like `model`/`agentTool` above.
 
