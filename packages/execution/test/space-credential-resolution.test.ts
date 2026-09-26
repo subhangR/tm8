@@ -711,6 +711,28 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
         expect(resumed.launch.effectiveCredentialSources?.anthropic).toBe('node');
       });
     }
+
+    // D4: a provider the space cannot hold runs on the node through the link,
+    // and must record 'node' too. Left blank, a non-link resume takes the
+    // pre-space branch, whose resolveMemberHome(null) is the resumer's home.
+    for (const [tool, model] of [['gemini', 'gemini-2.5-pro'], ['hermes', 'some-private-model'], ['cursor', 'some-private-model']] as const) {
+      it(`${tool}: the link spawn records 'node', and R's non-link resume never asks a member`, async () => {
+        const port = fakePort({
+          defaults: { github: GH_DEFAULT },
+          byId: { [GH_DEFAULT]: { ok: true, grant: apiKeyGrant('github', GH_DEFAULT) } },
+        });
+        const r = await linked(launch({}, null, tool, model), deps(port, { home: MEMBER_HOME, github: MEMBER_GH }));
+        expect((r.launch.credentialSources as Record<string, unknown>)[tool]).toBe('node');
+
+        const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+        const resumed = await resolveSessionCredentials(
+          { auth: AUTH_R, spaceId: SPACE, launch: launch({}, recordedFrom(r.launch), tool, model), resume: true },
+          d,
+        );
+        expect(d.memberAsks).toEqual([]);
+        expect(resumed.credentialHome).toBeNull();
+      });
+    }
   });
 
   it('no space model default and no node: a named "no model credential" refusal, never the member key', async () => {

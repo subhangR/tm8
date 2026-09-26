@@ -540,6 +540,10 @@ async function resolveLinkBoundCredentials(
   } else if (toolProvider) {
     // A provider the space cannot hold (gemini): node only.
     refuseMember(toolProvider, (launch.credentialSources as Partial<Record<string, CredentialSource>>)[toolProvider] ?? null);
+    // Recorded for the same reason as above: left blank, a non-link resume
+    // takes the pre-space branch, whose resolveMemberHome(null) is the
+    // resumer's own account home.
+    (sources as Partial<Record<string, CredentialSource>>)[toolProvider] = 'node';
   }
 
   // ---- GitHub: this space's default, nothing else ------------------------
