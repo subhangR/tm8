@@ -2232,6 +2232,15 @@ export function budgetRefusalDetails(error: BudgetExceededError): Record<string,
   return base;
 }
 
+/** `newTask` cannot ride with `taskIds` or `forceNewTask` (launch v3 gap 4); shared by spawn and `launch.preview`. */
+export function assertNewTaskAlone(input: Pick<ExecutionSpawnInput, 'newTask' | 'taskIds' | 'forceNewTask'>): void {
+  if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
+    throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
+      reason: 'new_task_conflict',
+    });
+  }
+}
+
 async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
@@ -3378,6 +3387,7 @@ function registerHandlers(
       db,
       spawnService,
       assertIds: async (q, body) => {
+        assertNewTaskAlone(body);
         if (body.selection) await assertSelectionIds(q, body.spaceId, body.selection);
         if (body.inFullIds?.length) await assertInFullIds(q, body.spaceId, [...new Set(body.inFullIds)]);
       },
@@ -3400,11 +3410,7 @@ function registerHandlers(
 
     // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
     // asking for one to be derived) beside it is refused by name, first.
-    if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
-      throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
-        reason: 'new_task_conflict',
-      });
-    }
+    assertNewTaskAlone(input);
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors

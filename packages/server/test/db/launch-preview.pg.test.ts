@@ -263,6 +263,17 @@ describe('launch.preview', () => {
     expect(result.sections.find((s) => s.key === 'in_full')!.items.map((i) => i.id)).toEqual([ids.note]);
   });
 
+  it('newTask is previewed as the task spawn would create, nothing is created; beside taskIds it is refused', async () => {
+    const before = await counts();
+    const result = await preview({ newTask: { title: '  Ship the card  ' } });
+    expect(await counts()).toEqual(before);
+    expect(result.refusal).toBeNull();
+    expect(result.sections.find((s) => s.key === 'task')!.items[0]?.title).toBe('Ship the card');
+    expect((await preview({ newTask: { title: 'x' }, taskIds: [ids.task!] })).refusal).toMatchObject({
+      code: 'invalid_input', reason: 'new_task_conflict',
+    });
+  });
+
   it('answers 200 with spawn\'s refusal: in_full_kind_not_allowed, not_found, in_full_budget, launch_total', async () => {
     expect((await preview({ taskIds: [ids.task!], inFullIds: [ids.teammate!] })).refusal).toMatchObject({
       code: 'invalid_input', reason: 'in_full_kind_not_allowed', details: { ids: [ids.teammate] },

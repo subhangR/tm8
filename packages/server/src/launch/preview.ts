@@ -5,10 +5,10 @@
  * launch resolution, `composeManifest` and `composePrompt`. Nothing here
  * renders or budgets anything itself; it only reads the composition back.
  *
- * NOTHING IS WRITTEN. The one write on spawn's way to the composer, minting a
- * derived task for a non-task subject, is replaced by a read
- * (`resolveSubjectTask`); a subject with no open task is previewed as the
- * task spawn would mint.
+ * NOTHING IS WRITTEN. The writes on spawn's way to the composer, minting a
+ * derived task for a non-task subject and creating `newTask`, are replaced by
+ * a read (`resolveSubjectTask`) and a stand-in: the preview renders the task
+ * spawn would mint or create.
  *
  * A launch spawn would refuse answers 200 with `refusal` (the code and
  * `details.reason` spawn would give). Only authorization (not a member, a
@@ -16,6 +16,7 @@
  */
 import {
   CollabError,
+  EXECUTION_NEW_TASK_TITLE_MAX,
   LAUNCH_PREVIEW_SECTION_KEYS,
   type LaunchPreviewInput,
   type LaunchPreviewItem,
@@ -118,6 +119,26 @@ async function resolveTasksReadOnly(
       description: inFull.has(anchor.id)
         ? derivedInFullPointer(anchor.id)
         : `Launched from ${anchor.kind} \`${anchor.id}\`.`,
+      priority: 'medium',
+      status: 'working',
+      acceptanceCriteria: [],
+      attachments: [],
+      linked: [],
+      linkedTotal: 0,
+    });
+  }
+  // `newTask`: the task spawn creates in its own transaction (migration 267),
+  // with the trimmed title and an empty body.
+  if (input.newTask) {
+    const title = input.newTask.title.trim();
+    if (title.length < 1 || title.length > EXECUTION_NEW_TASK_TITLE_MAX) {
+      throw fail('invalid_input', `newTask.title must be 1..${EXECUTION_NEW_TASK_TITLE_MAX} characters after trimming`);
+    }
+    synthetic.push({
+      id: syntheticTaskId(synthetic.length),
+      version: 1,
+      title,
+      description: '',
       priority: 'medium',
       status: 'working',
       acceptanceCriteria: [],
