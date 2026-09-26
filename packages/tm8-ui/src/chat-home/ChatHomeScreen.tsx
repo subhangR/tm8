@@ -2892,6 +2892,11 @@ function Turn({
         ledger={ledger}
         turnMessageId={turn.messageId}
         toolNote={toolNote}
+        /* One source of truth for which turn is live (L1's turn-in-progress,
+           which also drives `aria-busy`): every other turn is over, and a call
+           it left `running` reads as stopped — a runtime that died never
+           closes the calls it abandoned. */
+        settled={!live}
       />
     </article>
   );

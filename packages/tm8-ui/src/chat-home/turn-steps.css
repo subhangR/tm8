@@ -1,0 +1,187 @@
+/* ── THE STEP BLOCK (TurnSteps.tsx) — one per run of tool calls ─────────────
+   Advisor D7: a quiet, left-ruled list, never a card. The words are the
+   agent's work in human terms; the ledger's outcomes sit ABOVE this block
+   and stay visible when it collapses. */
+
+.tch-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--pn-line);
+}
+
+/* The header is the block's one control: `37 steps · read 12 files, ran 8
+   commands · 2 failed ▸`. Button chrome stripped so it reads as a line. */
+.tch-steps__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-steps__head:hover { color: var(--pn-ink-2); }
+.tch-steps__count { font-weight: 600; }
+.tch-steps__groups { min-width: 0; }
+.tch-steps__failed { color: var(--pn-block); }
+.tch-steps__caret { color: var(--pn-ink-4); }
+
+.tch-steps__earlier {
+  padding: 2px 0 2px 22px;
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-steps__earlier:hover { color: var(--pn-ink-2); }
+
+.tch-steps__head:focus-visible,
+.tch-steps__earlier:focus-visible,
+.tch-steps__thought-toggle:focus-visible,
+.tch-docedit__open:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tch-steps__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tch-steps__line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  animation: tch-step-rise 0.35s var(--pn-ease-out);
+}
+
+.tch-steps__icon {
+  flex: none;
+  width: 14px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  text-align: center;
+}
+
+.tch-steps__text { min-width: 0; overflow-wrap: anywhere; }
+
+/* One short fact — a basename, the agent's own description of a command, a
+   failure's first line. It ellipsises; it never wraps into a paragraph. */
+.tch-steps__detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Running: the one line in full ink, its dot pulsing — visibly live. */
+.tch-steps__line[data-state='running'] { color: var(--pn-ink); }
+.tch-steps__line[data-state='running'] .tch-steps__icon {
+  color: var(--pn-run);
+  animation: tch-step-pulse 1.2s ease-in-out infinite;
+}
+
+/* Failed: glyph and words in the block colour — visibly failed. */
+.tch-steps__line[data-state='error'],
+.tch-steps__line[data-state='error'] .tch-steps__icon { color: var(--pn-block); }
+
+/* Stopped: the turn ended before this call did — neither live nor failed. */
+.tch-steps__line[data-state='stopped'] .tch-steps__icon { color: var(--pn-ink-3); }
+
+.tch-steps__line--thought { color: var(--pn-ink-4); }
+
+.tch-steps__thought-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tch-steps__thought-toggle:hover { color: var(--pn-ink-2); }
+
+.tch-steps__thought {
+  margin: 4px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--pn-line-2);
+  color: var(--pn-ink-3);
+  white-space: pre-wrap;
+}
+
+/* D13: a failed step's durable record, with the run's outcomes. */
+.tch-errline {
+  padding: 5px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+  font-size: var(--pn-fs-fine);
+  overflow-wrap: anywhere;
+}
+
+/* D11: `✎ Edited ¶ Runbook` — a quiet line, no card. */
+.tch-docedit {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-docedit__glyph,
+.tch-docedit__kind { color: var(--pn-ink-3); font-family: var(--pn-mono); }
+
+.tch-docedit__title,
+.tch-docedit__open {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-docedit__open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-docedit__open:hover { color: var(--pn-brand-2); text-decoration: underline; }
+
+@keyframes tch-step-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes tch-step-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-steps__line,
+  .tch-steps__line[data-state='running'] .tch-steps__icon { animation: none; }
+}

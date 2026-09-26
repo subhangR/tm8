@@ -2,8 +2,9 @@
 /**
  * `toolNote` — a host's one-line note under a tool call (Craft names the
  * blueprint nodes a patch changed). Additive: absent, a plain patch call
- * still renders NOTHING (the no-tool-boxes law); present, only the host's
- * sentence appears — never the tool name or its payload.
+ * draws no note — its one trace is its step in the run's step block (advisor
+ * D15 superseded "renders nothing"); present, only the host's sentence
+ * appears — never the tool name or its payload.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -26,10 +27,12 @@ const parts: ChatTurnPart[] = [
 ];
 
 describe('toolNote', () => {
-  it('absent: a plain patch call renders nothing, exactly as before', () => {
+  it('absent: a plain patch call draws no note, only its counted step', () => {
     const view = render(<TurnParts parts={parts} />);
     expect(view.container.querySelector('.tch-ledger')).toBeNull();
-    expect(view.container.textContent).toBe('');
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('1 step');
+    expect(view.container.textContent).not.toContain('tm8_act');
+    expect(view.container.textContent).not.toContain('entities.patch');
   });
 
   it('present: the host sees the settled call and its note renders under it — and nothing else does', () => {
