@@ -70,7 +70,14 @@ export type CoreEntityKind =
   // Forms (migration 209, FORMS-DESIGN v3): a question set an agent asks a
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
-  | 'form';
+  | 'form'
+  // Space links (migrations 243/244, Phase 1b W6): a home space's link to a
+  // target space. Every home member sees the link; each member's stored
+  // session for the target is their own sealed row. Born only from
+  // `spaceLinks.add`.
+  | 'space_link'
+  // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
+  | 'server';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
