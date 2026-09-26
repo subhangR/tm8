@@ -2,8 +2,8 @@
  * `TM8_SPACE_SESSIONS` boot resolution (plan W0a).
  *
  * Read once at boot. `agents` is the default — an upgraded node pins its agent
- * sessions without opting in — `off` is the kill switch, and `enforce` is
- * accepted now so W3 can turn it on without a config change. What each mode
+ * sessions without opting in — `off` is the kill switch, and `enforce` adds
+ * the human gate (W3, src/http/space-gate.ts). What each mode
  * DOES is proven against Postgres in test/db/cross-space-token.pg.test.ts.
  */
 import { describe, expect, it } from 'vitest';

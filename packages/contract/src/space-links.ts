@@ -1,5 +1,5 @@
 /**
- * Space links (migrations 243/244, Phase 1b W6). A home space links to a
+ * Space links (migrations 250/251, Phase 1b W6). A home space links to a
  * target space; each member of the home space who is also a member of the
  * target signs in once and the server stores that member's own `link`
  * session for the target, sealed, 90 days. Agents launched by that member use
@@ -11,7 +11,9 @@
  *   · spaceLinks.relogin  — replace it; the old one is revoked
  *   · spaceLinks.logout   — revoke it and forget the stored bytes
  *   · spaceLinks.remove   — delete your own row (the link stays for others)
- *   · spaceLinks.setSpawn — your own spawn switch and budget
+ *   · spaceLinks.setSpawn — your own spawn switch and budget. Allow spawn is
+ *                           stored per link; it is enforced when cross-space
+ *                           spawn ships.
  *
  * Every write is human-only (browser or cli) in SQL. No response ever carries
  * the stored session.
@@ -60,7 +62,9 @@ export interface SpaceLinksMutationInput {
   clientMutationId: string;
 }
 
-/** The body of spaceLinks.setSpawn. */
+/**
+ * The body of spaceLinks.setSpawn. Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+ */
 export interface SpaceLinksSetSpawnInput {
   allowSpawn: boolean;
   /** 0..100; omitted keeps the current budget. */

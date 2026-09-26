@@ -9,8 +9,9 @@
  * the UI uses, `collections.query`, plus the single-entity read.
  *
  * Self-provisioning: it creates its own scratch database and applies every
- * migration, so it runs wherever the W1 rehearsal harness does (postgres on
- * 127.0.0.1:5442 by default) and skips only when that admin URL is unreachable.
+ * migration, so it runs wherever the W1 rehearsal harness does (the admin URL
+ * from ../db/pg-port-guard.ts — 5443 on the tm8 host; 5442 and an unset port are
+ * refused) and skips only when TM8_SKIP_PG=1.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HandlerRegistry, registerFacadeHandlers } from '../../src/facade/index.js';

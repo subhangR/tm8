@@ -1,8 +1,8 @@
 -- =============================================================================
--- 244 — space links, part 2: sealed per-member token rows, the spaceLinks.*
+-- 251 — space links, part 2: sealed per-member token rows, the spaceLinks.*
 -- RPCs and stale handling (plan 01a0d9eb §3 W6; decisions 31, 33, 38).
 --
--- Ordinal 244 was reserved for W6 by the Phase 1b coordinator; 243 is part 1.
+-- Ordinal 251 set at the merge position (reserved as 244; re-stacked onto main f54f9ffd); 250 is part 1.
 --
 -- POSTURE — 206's, applied to one member's row instead of a space's:
 --
@@ -19,7 +19,7 @@
 --     The `aad` column stores that string and a CHECK holds it equal to the
 --     row's own columns, but the opener RECOMPUTES it from the columns: a
 --     ciphertext copied to another row, member or target does not open (T19).
---   * The plaintext is a `link` auth session (243) minted here for the target
+--   * The plaintext is a `link` auth session (250) minted here for the target
 --     space: 90 days (identity/service.ts DEFAULT_SESSION_TTL_MS.link, K10),
 --     pinned, and seen and revocable on the target's Sessions page (W4).
 --     There is no target-consent setting (decision 33, K5 rejected).
@@ -109,7 +109,7 @@ grant select (id, link_id, home_space_id, member_id, target_space_id, auth_sessi
   on public.space_link_tokens to tm8_app;
 
 comment on table public.space_link_tokens is
-  'W6 (244): one member''s sealed link session for a space_link. ciphertext is '
+  'W6 (251): one member''s sealed link session for a space_link. ciphertext is '
   'AES-256-GCM under the node key, AAD home_space_id|link_id|member_id|target_space_id. '
   'tm8_app cannot select ciphertext or nonce; RLS shows a row to its member only.';
 
@@ -128,7 +128,11 @@ declare
   row public.space_link_tokens;
 begin
   select * into link from public.space_links where entity_id = p_link_id;
-  if link.entity_id is null then
+  -- A soft-deleted link is gone for every link op (review D1): its tokens are
+  -- not opened, re-signed or managed through it. The lifecycle guard (§10b)
+  -- keeps the generic doors from getting it there; this is the second lock.
+  if link.entity_id is null
+     or exists (select 1 from public.entities e where e.id = p_link_id and e.deleted_at is not null) then
     raise exception 'space link not found' using errcode = 'P0002';
   end if;
   me := internal.current_member_id(link.home_space_id);
@@ -176,10 +180,7 @@ returns jsonb language sql stable security definer set search_path = public, int
     'targetSpaceName', (select s.name from public.spaces s
                          where s.id = l.target_space_id
                            and l.target_server_id is null
-                           and exists (select 1 from public.members m
-                                        where m.space_id = s.id
-                                          and m.identity_id = internal.identity_id()
-                                          and m.status = 'active')),
+                           and internal.is_space_member(s.id)),
     'createdAt', l.created_at,
     'statusSummary', jsonb_build_object(
       'signedIn',    (select count(*) from public.space_link_tokens t where t.link_id = l.entity_id and t.status = 'signed_in'),
@@ -243,12 +244,11 @@ begin
   if p_target_space_id is null or p_target_space_id = p_space_id then
     raise exception 'a space link needs a target space other than its home' using errcode = '22023';
   end if;
-  -- Same server: the caller must be an active member of the target. The same
-  -- answer for "no such space" and "not a member", so add does not probe.
-  if not exists (select 1 from public.members m
-                  where m.space_id = p_target_space_id
-                    and m.identity_id = internal.identity_id()
-                    and m.status = 'active') then
+  -- Same server: the caller must be an active member of the target, through
+  -- is_space_member so the session pin holds (a session pinned to the home space
+  -- cannot reach the target; the same rule store_space_link_session applies). The
+  -- same answer for "no such space" and "not a member", so add does not probe.
+  if not internal.is_space_member(p_target_space_id) then
     raise exception 'target space not found' using errcode = 'P0002';
   end if;
 
@@ -612,10 +612,46 @@ when (old.status = 'active' and new.status <> 'active')
 execute function internal.space_link_target_membership_ended();
 
 -- -----------------------------------------------------------------------------
+-- 10b. The link's lifecycle is command-owned (review D1). A generic
+--    delete/restore/move of the space_link entity would soft-delete the
+--    envelope without firing the FK cascade or the revoke-on-delete trigger:
+--    list_space_links would hide it while its tokens and 90-day target sessions
+--    stayed live. So the generic doors refuse it here, in SQL, 42501 — the
+--    same answer 017's own kind gate gives — and the TS gate
+--    (RESTRICTED_LIFECYCLE_KINDS) refuses it before SQL. A link ends only
+--    through spaceLinks.* (P7). A trigger, not re-copied 017/239 bodies, so
+--    it composes with every present and future definition of those doors.
+--
+--    THE KIND LIST is the one `in (...)` in the WHEN clause below. W8 adds
+--    'server' there when it re-stacks (lead ruling): a one-token change.
+--
+--    Adds-only: a new function and a new trigger. Creating them touches no
+--    row. The columns are exactly what move/delete/restore write; the link's
+--    own activity/attention touch (§2, updated_at/activity_at) passes.
+-- -----------------------------------------------------------------------------
+create or replace function internal.refuse_generic_link_lifecycle()
+returns trigger language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  raise exception 'entity lifecycle is command-owned for kind %', old.kind using errcode = '42501';
+end
+$$;
+
+create trigger entities_link_lifecycle_command_owned
+before update of deleted_at, parent_id, position, space_id on public.entities
+for each row
+when (old.kind in ('space_link')
+      and (new.deleted_at is distinct from old.deleted_at
+           or new.parent_id is distinct from old.parent_id
+           or new.position is distinct from old.position
+           or new.space_id is distinct from old.space_id))
+execute function internal.refuse_generic_link_lifecycle();
+
+-- -----------------------------------------------------------------------------
 -- 11. Grants — full signatures.
 -- -----------------------------------------------------------------------------
 revoke all on function internal.space_link_tokens_revoke_on_delete() from public;
 revoke all on function internal.space_link_target_membership_ended() from public;
+revoke all on function internal.refuse_generic_link_lifecycle() from public;
 
 revoke all on function public.add_space_link(uuid, uuid, text, text) from public;
 grant execute on function public.add_space_link(uuid, uuid, text, text) to tm8_app;

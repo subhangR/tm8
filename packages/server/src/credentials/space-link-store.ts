@@ -1,5 +1,5 @@
 /**
- * The SPACE LINK store (migrations 243/244, plan 01a0d9eb §3 W6): typed
+ * The SPACE LINK store (migrations 250/251, plan 01a0d9eb §3 W6): typed
  * wrappers for the spaceLinks.* RPCs, and the only module that seals or opens
  * a member's stored link session.
  *
@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import { isCollabError, type SpaceLinkAuditEntry } from '@tm8/contract';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
-import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
+import { isInvalidTokenError, resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { DEFAULT_SESSION_TTL_MS } from '../identity/service.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { bindingAad, openSecret, sealSecret, type SpaceLinkSecretBinding } from './secret-box.js';
@@ -39,7 +39,7 @@ export interface SpaceLinkMine {
   lastUsedAt: string | null;
 }
 
-/** One link as a home-space member sees it (244 `internal.space_link_json`). */
+/** One link as a home-space member sees it (251 `internal.space_link_json`). */
 export interface SpaceLink {
   id: string;
   homeSpaceId: string;
@@ -75,7 +75,7 @@ export interface SpaceLinkUse {
   token: string;
 }
 
-/** The caller's own row as invoke resolves it (990): no sealed bytes. */
+/** The caller's own row as invoke resolves it (258): no sealed bytes. */
 export interface SpaceLinkInvokeRow {
   linkId: string;
   tokenRowId: string;
@@ -128,7 +128,7 @@ export interface DbSpaceLinkStoreOptions {
    * W7-BOUND. Nothing in W6 calls `use()` outside tests: the only path that
    * presents a stored link session to the target is W7's cross-space invoke,
    * which owns the caller's claims and work session. So the composition root
-   * wires no `onStale` yet. The member's half needs no hook: 244's
+   * wires no `onStale` yet. The member's half needs no hook: 251's
    * `mark_space_link_stale` and the leave/remove trigger raise attention in
    * SQL. The agent-message half lands with W7's caller.
    */
@@ -230,7 +230,12 @@ export class DbSpaceLinkStore {
     let session: ResolvedAuthSession;
     try {
       session = await resolveBearerIdentity(this.db, token);
-    } catch {
+    } catch (error) {
+      // Only a token the target no longer honours is `signed_out` (review
+      // D2). A pool timeout, statement_timeout or restart says nothing about
+      // the token, and marking stale on it would revoke every link on one
+      // saturated minute. Those propagate; the link stays signed_in.
+      if (!isInvalidTokenError(error)) throw error;
       await this.markStale(claims, linkId, 'signed_out', caller);
       throw new SpaceLinkUnusable(linkId, 'signed_out');
     }
@@ -280,7 +285,7 @@ export class DbSpaceLinkStore {
     ]);
   }
 
-  /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (990). */
+  /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (258). */
   listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
     return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [
       linkId, options.limit ?? 50, options.before ?? null,
@@ -292,7 +297,7 @@ export class DbSpaceLinkStore {
   }
 }
 
-/** The `aad` column value for a binding: what 244's CHECK holds the row to. */
+/** The `aad` column value for a binding: what 251's CHECK holds the row to. */
 export function spaceLinkAad(binding: SpaceLinkSecretBinding): string {
   return bindingAad(binding);
 }

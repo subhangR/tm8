@@ -594,6 +594,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-state__to { color: var(--pn-ink-2); }
 .chs-state__arrow { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
 
+/* Three cells, placed by the markup: kind · text · open. Never auto-placed
+   loose children — see `ActivityContent` in FeedRow.tsx for the collapse that
+   caused. */
 .chs-artifact {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -606,7 +609,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-artifact__kind {
-  grid-row: 1 / span 2;
   align-self: stretch;
   display: grid;
   place-items: center;
@@ -616,9 +618,27 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   color: var(--pn-ink-3);
   font: var(--pn-fs-tick) var(--pn-mono);
 }
+.chs-artifact__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .chs-artifact__title { color: var(--pn-ink); font-size: var(--pn-fs-label); min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
+/* An excerpt is a glimpse, not the body: two lines, and the card's open
+   control is the way to the rest. */
+.chs-artifact__excerpt {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.chs-artifact__provenance { flex-wrap: wrap; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
 
 /*
  * The safe card (S15). Dashed, because a dashed edge reads as "provisional"

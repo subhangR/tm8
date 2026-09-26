@@ -61,7 +61,6 @@ export const CONTAINER_RUNTIME_OPERATIONS = [
   'containers.proxy',
   'containers.snapshot',
   'containers.fork',
-  'containers.attention',
   'containers.providers.list',
   'containers.pools.set',
 ] as const satisfies readonly OperationName[];
@@ -107,7 +106,6 @@ const NOT_BUILT_REASON: Partial<Record<OperationName, string>> = {
   'containers.proxy': 'the exposed-port proxy arrives in phase 3',
   'containers.snapshot': 'snapshots arrive in phase 3',
   'containers.fork': 'forking arrives in phase 3',
-  'containers.attention': 'takeover requests arrive with the screen surface (phase 2)',
   'containers.pools.set': 'warm pools arrive in phase 3',
 };
 
@@ -259,7 +257,6 @@ export function registerW2ContainerHandlers(
     'containers.proxy': unbound('containers.proxy'),
     'containers.snapshot': unbound('containers.snapshot'),
     'containers.fork': unbound('containers.fork'),
-    'containers.attention': unbound('containers.attention'),
     'containers.providers.list': unbound('containers.providers.list'),
     'containers.pools.set': unbound('containers.pools.set'),
   });

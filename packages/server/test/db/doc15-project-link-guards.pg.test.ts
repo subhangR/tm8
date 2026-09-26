@@ -182,6 +182,13 @@ async function seed(): Promise<Fixture> {
 beforeAll(async () => {
   database = await createW1ScratchDatabase('doc15_project_link_guards');
   database.apply(migrationFiles());
+  // Decision 29 (234): these guards are 228's, which a folder shared across
+  // spaces exercises — a loopback-only node. Pin that policy as the owner, the
+  // way the server does at boot; with no row every second link is refused.
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into internal.node_policy(key, value) values ('project_folders', 'shared')`);
+  });
   fixture = await seed();
 }, 180_000);
 
@@ -286,14 +293,6 @@ describe.sequential('doc 15 B4 — link_project requires that the caller can see
       `select public.link_project_w2($1, $2, null, 'doc15-b4-missing')`,
       [fixture.spaceC, randomUUID()],
     )))).toBe('P0002');
-  });
-
-  it('refuses the legacy public.link_project door the same way', async () => {
-    expect(await outcome(() => asApp(fixture.identityH2, (client) => client.query(
-      `select public.link_project($1, $2, null, 'doc15-b4-legacy-refused')`,
-      [fixture.spaceC, fixture.projectB],
-    )))).toBe('P0002');
-    expect(await linked(fixture.spaceC, fixture.projectB)).toBe(false);
   });
 
   it('positive — the same caller links A\'s project (a space they are in) into C', async () => {

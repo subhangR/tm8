@@ -1,8 +1,8 @@
 -- =============================================================================
--- 243 — space links, part 1: the kinds, auth kind `link`, the space_links table
+-- 250 — space links, part 1: the kinds, auth kind `link`, the space_links table
 -- (plan 01a0d9eb §3 W6; phases doc 01a0d9fb §3 W6; decisions 31, 33, 38).
 --
--- Ordinal 243 was reserved for W6 by the Phase 1b coordinator. 244 is the
+-- Ordinal 250 set at the merge position (reserved as 243; re-stacked onto main f54f9ffd). 251 is the
 -- second half (space_link_tokens and the spaceLinks.* RPCs).
 --
 -- WHAT THIS FILE DOES
@@ -17,14 +17,22 @@
 --
 -- THE GATE IS NOT TOUCHED (deputy ruling, 2026-09-26 02:04Z, interim until the
 -- lead rules). `internal.require_human_auth_kind()` (083) stays strict: it
--- admits browser and cli only, so it refuses `link`. Every credential RPC
--- calls it (083, 093, 203, 206), so kind `link` is refused IN SQL on every
--- current and future credential op with no edit (E2, T20b), fail-closed. The
--- spaceLinks.* writes (244) call it too: a link session never manages link
--- tokens (decision 31's refused set). What decision 31 admits for `link`
--- (invites, roles, delete) never called the gate, so it passes as the member
--- with no change here. `space-links.pg.test.ts` pins every caller of the gate
--- against an explicit, labelled list.
+-- admits browser and cli only, so it refuses `link`. It is NOT on every
+-- credential RPC (review Q1). Its callers are exactly the list
+-- `space-links.pg.test.ts` pins (STRICT_GATE_CALLERS, a caller added or lost
+-- fails): the credential MANAGEMENT writes and session RPCs of 083/093/203/206,
+-- read_account_service_key, disable_account (through 239's
+-- internal.disable_account_core), the agent-runtime mint/revoke,
+-- leave_space/remove_space_member/start_chat, W4's list/revoke of auth sessions
+-- (249), and the six spaceLinks.* writes (251): a link session never manages
+-- link tokens (decision 31's refused set). The credential READERS and sweeps
+-- that are security definer and do not call it (e.g. read_account_git_credential,
+-- read_space_credential_for_spawn, read_space_credential_policy,
+-- expire_pending_space_credentials, repoint_session_space_credentials,
+-- read_node_credential_policy (returns policy only, no secret)) are
+-- not refused for `link` by this file: that SQL refusal is W7's gate, and W7
+-- owns it. What decision 31 admits for `link` (invites, roles, delete) never
+-- called the gate, so it passes as the member with no change here.
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -66,7 +74,7 @@ alter table public.auth_sessions
 -- The entity lives in the home space (K9: the member's personal space when
 -- they have one, else the shared home; there is no personal space on this
 -- base, so it is always the home). Every member of the home space can SEE that
--- the link exists (P8); only a member's own token row is theirs (244).
+-- the link exists (P8); only a member's own token row is theirs (251).
 -- target_server_id null = this server; W8 points it at a `server` entity.
 -- -----------------------------------------------------------------------------
 create table public.space_links (
@@ -94,13 +102,15 @@ create policy space_links_select on public.space_links for select to tm8_app
 grant select on public.space_links to tm8_app;
 
 comment on table public.space_links is
-  'W6 (243): the shared space_link entity''s detail row. Holds no secret: the '
-  'per-member sealed token is public.space_link_tokens (244).';
+  'W6 (250): the shared space_link entity''s detail row. Holds no secret: the '
+  'per-member sealed token is public.space_link_tokens (251).';
 
 
 -- -----------------------------------------------------------------------------
--- 4. Content hydration. SHARED OBJECT: body copied from 209 verbatim; the
---    `space_link` arm is the only addition. `server` gets no arm: it has no
+-- 4. Content hydration. SHARED OBJECT: body copied from 239 (W10a, #863)
+--    verbatim, which is 209's plus the `credential` arm; the `space_link` arm
+--    is the only addition. Both arms must survive (pg cell entity_content
+--    carries both arms). `server` gets no arm: it has no
 --    detail table in W6 and resolves to '{}' through `else` (W8 adds its row),
 --    recorded in entity-content-all-kinds' NO_CONTENT_ARM.
 -- -----------------------------------------------------------------------------
@@ -147,8 +157,11 @@ begin
                               || jsonb_build_object('sections', internal.form_sections_json(target),
                                                     'questions', internal.form_questions_json(target))
                          into content from public.forms fm where fm.entity_id = target;
-      -- 243 (W6): the shared link's metadata. `space_links` holds no secret; the
-      -- sealed per-member token is `space_link_tokens` (244) and has no arm.
+      -- An allow-list, never to_jsonb(sc): the row holds the sealed secret,
+      -- the hint and the vendor login (§3a).
+      when 'credential' then select to_jsonb(cc) - 'entity_id' into content from public.credential_cards cc where cc.entity_id = target;
+      -- 250 (W6): the shared link's metadata. `space_links` holds no secret; the
+      -- sealed per-member token is `space_link_tokens` (251) and has no arm.
       when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;
       else content := '{}'::jsonb;
     end case;

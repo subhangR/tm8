@@ -42,12 +42,14 @@ export class ContentionService {
     const projectId = requireUuidParam(ctx, 'projectId');
     const claims = claimsFor(owner, ctx);
 
-    const exists = await this.deps.db.query<{ id: string }>(
+    // W11 (234): the project (entity id or folder id) is resolved inside the
+    // caller's spaces; another space's answers not_found (T31).
+    const resolved = (await this.deps.db.query<{ folder_id: string; space_id: string | null }>(
       claims,
-      'select id from public.projects where id = $1',
+      'select folder_id, space_id from public.resolve_project_ref($1::uuid)',
       [projectId],
-    );
-    if (exists.length === 0) throw new CollabError('not_found', `no such project: ${projectId}`);
+    ))[0];
+    if (!resolved) throw new CollabError('not_found', `no such project: ${projectId}`);
 
     // The lane's session is the newest `in_worktree` edge pointing at it —
     // 081's link_session_worktree writes session -> worktree.
@@ -59,8 +61,11 @@ export class ContentionService {
                 order by e.created_at desc limit 1) as session_id
          from public.worktrees w
         where w.project_id = $1 and w.status = 'active'
+          and ($2::uuid is null
+               or exists (select 1 from public.entities we
+                           where we.id = w.entity_id and we.space_id = $2::uuid))
         order by w.branch asc, w.entity_id asc`,
-      [projectId],
+      [resolved.folder_id, resolved.space_id],
     );
 
     const lanes: ContentionLane[] = [];

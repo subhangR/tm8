@@ -27,7 +27,7 @@ class SpawnDb implements Db {
             capabilities: {}, command_permissions: {},
           }] as R[];
         }
-        if (sql.includes('from public.projects')) {
+        if (sql.includes('from public.projects') || sql.includes('public.resolve_project_ref')) {
           return [{ id: PROJECT, name: 'tm8', working_dir: process.cwd(), trust: 'trusted' }] as R[];
         }
         return [];
@@ -53,6 +53,11 @@ class SpawnDb implements Db {
         source: 'core_default',
         snapshot: { profile: { source: 'core_default' } },
       } as T;
+    }
+    if (fn === 'resolve_auth_session') {
+      // 256 (W7p): the spawn port re-resolves the minted token to read its
+      // via_link stamp. The real mint always resolves; no link here.
+      return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
     }
     if (fn === 'public.issue_work_session_agent_session') {
       // The real function returns the inserted auth_sessions row as jsonb minus

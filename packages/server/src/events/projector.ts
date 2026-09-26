@@ -331,6 +331,12 @@ interface SummaryRow {
   form_status: string | null;
   form_description: string | null;
   form_question_count: number | null;
+  cred_label: string | null;
+  cred_provider: string | null;
+  cred_shape: string | null;
+  cred_visibility: string | null;
+  cred_status: string | null;
+  cred_owner_account_id: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -497,6 +503,14 @@ select
   frm.status         as form_status,
   frm.description    as form_description,
   (select count(*)::int from public.form_questions fq where fq.form_id = frm.entity_id) as form_question_count,
+  -- Space credentials (W10a): non-secret columns only — tm8_app holds no
+  -- grant on the secret, hint or vendor login. MIRRORS entity-read.ts.
+  scr.label            as cred_label,
+  scr.provider         as cred_provider,
+  scr.shape            as cred_shape,
+  scr.visibility       as cred_visibility,
+  scr.status           as cred_status,
+  scr.owner_account_id as cred_owner_account_id,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -568,6 +582,7 @@ left join lateral (
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
+left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -691,13 +706,8 @@ export class PgEntityProjector implements EntityProjector {
       latest_reason: string;
       oldest_requested_at: Date | string;
     }>(
-      `select entity_id, count(*)::int as pending_count,
-              sum(points)::int as total_points, max(points)::int as max_points,
-              (array_agg(reason order by created_at desc, id desc))[1] as latest_reason,
-              min(created_at) as oldest_requested_at
-         from public.attention_requests
-        where entity_id = any($1::uuid[]) and status in ('open', 'acknowledged')
-        group by entity_id`,
+      // The one badge aggregate (252), shared with entity-read.
+      `select * from public.attention_badges($1::uuid[])`,
       [unique],
     );
     const attention = new Map<string, EntityAttentionSummary>();
@@ -1064,6 +1074,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'form':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.form_title ?? 'Form';
+      case 'credential':
+        // The side row's label — MIRRORS entity-read.ts titleOf.
+        return r.cred_label ?? 'Credential';
       case 'chat':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, including
         // the empty-string fallback (the column defaults to '').
@@ -1118,6 +1131,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
       : r.kind === 'form' ? r.form_description
+      : r.kind === 'credential' ? r.cred_provider
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1405,6 +1419,16 @@ export class PgEntityProjector implements EntityProjector {
           status: (r.form_status ?? 'draft') as FormStatus,
           questionCount: r.form_question_count ?? 0,
         };
+      case 'credential':
+        // MIRRORS entity-read.ts stateOf: the non-secret row facts (W10a).
+        return {
+          kind: 'credential',
+          provider: r.cred_provider ?? 'unknown',
+          shape: r.cred_shape ?? 'unknown',
+          visibility: r.cred_visibility === 'private' ? 'private' : 'public',
+          status: r.cred_status ?? 'unknown',
+          ownerAccountId: r.cred_owner_account_id ?? null,
+        };
       case 'chat':
         // MIRRORS entity-read.ts stateOf field for field. Parity is the point:
         // a chat tile hydrated from the event feed and one fetched over
@@ -1470,7 +1494,7 @@ export class PgEntityProjector implements EntityProjector {
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
       case 'space_link':
       case 'server':
-        // 243 (W6): no row facts on the entity; `spaceLinks.list` answers for a
+        // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a
         // link. MIRRORS entity-read.ts stateOf. Without this arm the default
         // below raises EntityKindDriftError for every space_link event.
         return { kind: r.kind };

@@ -55,11 +55,13 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // then `container` joined with migration 177 (Containers P0) → 23.
     // then `drawing` joined with migration 194 (the Excalidraw canvas) → 24.
     // then `form` joined with migration 209 (Forms W0) → 25.
-    // then `space_link` and `server` joined with migration 243 (Phase 1b W6) → 27.
+    // then `space_link` and `server` joined with migration 250 (Phase 1b W6) → 27.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(27);
+    // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
+    // MEASURED: CoreEntityKindSchema.options.length.
+    expect(CORE_KINDS.length).toBe(28);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

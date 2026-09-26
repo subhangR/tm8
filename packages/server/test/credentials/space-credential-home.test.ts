@@ -257,3 +257,95 @@ describe('M6 — a promote that lost the race to a delete writes nothing', () =>
     await expect(stat(spaceLoginCredentialDir(dataDir, k.spaceId, k.credentialId))).rejects.toThrow(/ENOENT/);
   });
 });
+
+describe('R1/R17 narrow scrub — a switch to private removes only non-owner launches\' transcripts', () => {
+  const FAKE_LOGIN = '{"claudeAiOauth":{"accessToken":"fake-W10bFakeCanary7d41-access","refreshToken":"fake-W10bFakeCanary7d41-refresh"}}\n';
+  const FAKE_STATE = '{"hasCompletedOnboarding":true,"oauthAccount":{"emailAddress":"owner@example.com"}}\n';
+  const FAKE_CODEX = '{"auth_mode":"chatgpt","tokens":{"refresh_token":"fake-W10bFakeCanary7d41"}}\n';
+
+  async function put(path: string, content: string): Promise<void> {
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, content);
+  }
+
+  const exists = async (path: string): Promise<boolean> => lstat(path).then(() => true, () => false);
+
+  it('claude: the foreign session file goes from every project dir; the owner\'s, history, the auth files and a symlinked dir stay', async () => {
+    const k = key('anthropic');
+    const { configDir } = await homes.ensureLive(k);
+    const owner = randomUUID();
+    const foreign = randomUUID();
+    await put(join(configDir, '.credentials.json'), FAKE_LOGIN);
+    await put(join(configDir, '.claude.json'), FAKE_STATE);
+    await put(join(configDir, 'history.jsonl'), `{"sessionId":"${foreign}"}\n`);
+    await put(join(configDir, 'projects', '-work-a', `${owner}.jsonl`), 'owner turn\n');
+    await put(join(configDir, 'projects', '-work-a', `${foreign}.jsonl`), 'foreign turn\n');
+    await put(join(configDir, 'projects', '-work-b', `${foreign}.jsonl`), 'foreign turn\n');
+    // A symlinked project dir pointing outside the home is never followed.
+    const outside = await mkdtemp(join(dataDir, 'outside-'));
+    await put(join(outside, `${foreign}.jsonl`), 'outside\n');
+    await symlink(outside, join(configDir, 'projects', '-evil'));
+
+    const removed = await homes.scrubForeignLaunches(k, [{ workSessionId: foreign, nativeSessionId: foreign }]);
+
+    expect(removed).toBe(2);
+    expect(await exists(join(configDir, 'projects', '-work-a', `${foreign}.jsonl`))).toBe(false);
+    expect(await exists(join(configDir, 'projects', '-work-b', `${foreign}.jsonl`))).toBe(false);
+    expect(await readFile(join(configDir, 'projects', '-work-a', `${owner}.jsonl`), 'utf8')).toBe('owner turn\n');
+    expect(await readFile(join(outside, `${foreign}.jsonl`), 'utf8')).toBe('outside\n');
+    // Not attributable by file: stays.
+    expect(await exists(join(configDir, 'history.jsonl'))).toBe(true);
+    // The login survives byte for byte, and the home still serves the next launch.
+    expect(await readFile(join(configDir, '.credentials.json'), 'utf8')).toBe(FAKE_LOGIN);
+    expect(await readFile(join(configDir, '.claude.json'), 'utf8')).toBe(FAKE_STATE);
+    expect((await homes.ensureLive(k)).configDir).toBe(configDir);
+  });
+
+  it('claude: a launch with no recorded native id, or a non-uuid one, removes nothing', async () => {
+    const k = key('anthropic');
+    const { configDir } = await homes.ensureLive(k);
+    await put(join(configDir, 'projects', '-w', '..jsonl'), 'x\n');
+    await put(join(configDir, '.credentials.json'), FAKE_LOGIN);
+    expect(await homes.scrubForeignLaunches(k, [
+      { workSessionId: randomUUID(), nativeSessionId: null },
+      { workSessionId: randomUUID(), nativeSessionId: '../.credentials' },
+    ])).toBe(0);
+    expect(await readFile(join(configDir, '.credentials.json'), 'utf8')).toBe(FAKE_LOGIN);
+  });
+
+  it('codex: only a rollout whose USER message carries the session marker goes; a mere mention stays, and auth.json stays', async () => {
+    const k = key('openai');
+    const { configDir } = await homes.ensureLive(k);
+    const owner = randomUUID();
+    const foreign = randomUUID();
+    const rollout = (id: string, userText: string, extra = ''): string => [
+      JSON.stringify({ type: 'session_meta', timestamp: '2026-09-26T07:00:00Z', payload: { id, cwd: '/w' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] } }),
+      extra,
+    ].join('\n');
+    const day = join(configDir, 'sessions', '2026', '09', '26');
+    await put(join(configDir, 'auth.json'), FAKE_CODEX);
+    await put(join(day, 'rollout-foreign.jsonl'), rollout(randomUUID(), `task <tm8_session_id>${foreign}</tm8_session_id>`));
+    await put(join(day, 'rollout-owner.jsonl'), rollout(randomUUID(), `task <tm8_session_id>${owner}</tm8_session_id>`));
+    // The owner's coordinator output names the foreign session: not ownership.
+    await put(join(day, 'rollout-mention.jsonl'), rollout(randomUUID(), `task <tm8_session_id>${owner}</tm8_session_id>`,
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', output: `<tm8_session_id>${foreign}</tm8_session_id>` } })));
+
+    expect(await homes.scrubForeignLaunches(k, [{ workSessionId: foreign, nativeSessionId: null }])).toBe(1);
+    expect((await readdir(day)).sort()).toEqual(['rollout-mention.jsonl', 'rollout-owner.jsonl']);
+    expect(await readFile(join(configDir, 'auth.json'), 'utf8')).toBe(FAKE_CODEX);
+  });
+
+  it('a home that is absent, or a config dir that is a symlink, is a no-op', async () => {
+    const k = key('anthropic');
+    expect(await homes.scrubForeignLaunches(k, [{ workSessionId: randomUUID(), nativeSessionId: randomUUID() }])).toBe(0);
+    const credentialDir = spaceLoginCredentialDir(dataDir, k.spaceId, k.credentialId);
+    await mkdir(credentialDir, { recursive: true });
+    const elsewhere = await mkdtemp(join(dataDir, 'elsewhere-'));
+    const id = randomUUID();
+    await put(join(elsewhere, 'projects', '-w', `${id}.jsonl`), 'x\n');
+    await symlink(elsewhere, spaceLoginConfigDir(dataDir, k));
+    expect(await homes.scrubForeignLaunches(k, [{ workSessionId: id, nativeSessionId: id }])).toBe(0);
+    expect(await exists(join(elsewhere, 'projects', '-w', `${id}.jsonl`))).toBe(true);
+  });
+});

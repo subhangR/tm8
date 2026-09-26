@@ -1,9 +1,9 @@
 -- =============================================================================
--- 990 (PLACEHOLDER ORDINAL) — space links, part 3: spaceLinks.invoke's SQL
+-- 258 (set at the merge position after #904's 257; was placeholder 990) — space links, part 3: spaceLinks.invoke's SQL
 -- half (plan 01a0d9eb §3 W7; decisions 31, 33, 38).
 --
--- The real ordinal and the sweep pin are taken at the merge position; until
--- then this file is 990 on a draft branch only (coordinator, 08:35Z).
+-- The real ordinal and the sweep pin were taken at the merge position (258,
+-- after 257); on the draft branch this file was placeholder 990 (coordinator, 08:35Z).
 --
 --   * resolve_space_link_invoke: the caller's OWN token row for a link in the
 --     home space, by alias or by link id, WITHOUT the sealed bytes. The row is
@@ -54,7 +54,7 @@ create index cross_space_audit_member_idx on public.cross_space_audit(member_id,
 alter table public.cross_space_audit enable row level security;
 
 comment on table public.cross_space_audit is
-  'W7 (990): one row per spaceLinks.invoke, in the home space. No token, no input, no remote error text.';
+  'W7 (258): one row per spaceLinks.invoke, in the home space. No token, no input, no remote error text.';
 
 -- -----------------------------------------------------------------------------
 -- 2. Resolve the caller's own row (no sealed bytes).

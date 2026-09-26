@@ -121,6 +121,7 @@ const spyStore = {
   liveSessions: (...args: Parameters<DbSpaceCredentialStore['liveSessions']>) => realStore.liveSessions(...args),
   expirePending: (...args: Parameters<DbSpaceCredentialStore['expirePending']>) => realStore.expirePending(...args),
   recordProbe: (...args: Parameters<DbSpaceCredentialStore['recordProbe']>) => realStore.recordProbe(...args),
+  read: (...args: Parameters<DbSpaceCredentialStore['read']>) => realStore.read(...args),
 };
 
 const BINARY_PRESENT: CredentialBinaryResolver = ({ binary }) => `/test/bin/${binary}`;

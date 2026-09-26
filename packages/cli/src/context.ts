@@ -54,7 +54,18 @@ export interface SessionContext {
   actorId?: string | undefined;
   baseUrl?: string | undefined;
   token?: string | undefined;
+  /** `TM8_RETRY_WINDOW_MS`, when set: overrides the restart-gap retry default. */
+  gapRetryMs?: number | undefined;
 }
+
+/**
+ * How long an AGENT's call keeps re-sending while its node is down. A deploy
+ * restarts the server under running agents: deploy.sh stops it, migrates, then
+ * starts it, and boot reaches `listen()` last. Failing the agent's turn on the
+ * first refusal turns a restart the agents should survive into a failed tool
+ * call. A human at a terminal (no session id) keeps the immediate failure.
+ */
+export const AGENT_GAP_RETRY_MS = 120_000;
 
 /** Step 3. Absent, unreadable, or malformed config is NOT an error — it is absent. */
 export interface LocalConfig {
@@ -74,6 +85,8 @@ export interface CliContext {
   timeoutMs: number | undefined;
   /** `--fresh`: this invocation bypasses the session read-cache lookup. */
   fresh: boolean;
+  /** Restart-gap retry window for the request client; 0 fails on the first refusal. */
+  gapRetryMs?: number | undefined;
 }
 
 /**
@@ -88,7 +101,18 @@ export function sessionContextFromEnv(env: NodeJS.ProcessEnv = process.env): Ses
     actorId: env.TM8_ACTOR_ID?.trim() || undefined,
     baseUrl: env.TM8_BASE_URL?.trim() || undefined,
     token: env.TM8_AGENT_TOKEN?.trim() || undefined,
+    gapRetryMs: parseGapRetryMs(env.TM8_RETRY_WINDOW_MS),
   };
+}
+
+function parseGapRetryMs(raw: string | undefined): number | undefined {
+  const text = raw?.trim();
+  if (!text) return undefined;
+  const ms = Number(text);
+  if (!Number.isFinite(ms) || ms < 0) {
+    throw new CliError(`TM8_RETRY_WINDOW_MS must be a non-negative number of ms, got ${JSON.stringify(text)}`, EXIT_USAGE);
+  }
+  return ms;
 }
 
 export interface ConfigIo {
@@ -203,6 +227,7 @@ export function resolveContext(input: ResolveContextInput): CliContext {
     format: input.formatExplicit === false && config.format ? config.format : globals.format,
     timeoutMs: globals.timeoutMs,
     fresh: globals.fresh,
+    gapRetryMs: session.gapRetryMs ?? (session.sessionId ? AGENT_GAP_RETRY_MS : 0),
   };
 }
 

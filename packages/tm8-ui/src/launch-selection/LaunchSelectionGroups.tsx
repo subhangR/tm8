@@ -306,6 +306,11 @@ const LAUNCH_ONE: Record<SpawnSelectionGroup, string> = { memories: 'memory', sk
 export interface LaunchSelectionSources {
   load?: LoadLaunchDefaults;
   candidates: LaunchSelectionCandidates;
+  /**
+   * Asks the host to read the reference kinds into this client, so an add
+   * pool that is unknown (never hydrated) can become known. Idempotent.
+   */
+  hydrateReferences?: () => void;
 }
 
 const CHIP_NOUN: Record<SpawnSelectionGroup, [string, string]> = {
@@ -314,14 +319,19 @@ const CHIP_NOUN: Record<SpawnSelectionGroup, [string, string]> = {
   references: ['ref', 'refs'],
 };
 
-/** A chip's words: how many the launch will carry for that group. */
-function chipLabel(selection: LaunchSelection, group: SpawnSelectionGroup): string {
+/** A chip's words: how many the launch will carry for that group — the count and its noun, apart. */
+function chipLabel(selection: LaunchSelection, group: SpawnSelectionGroup): { count: string; noun: string } {
   const defaults = selection.defaults[group];
   const [one, many] = CHIP_NOUN[group];
-  if (defaults.status === 'loading') return `… ${many}`;
-  if (defaults.status === 'unknown') return `? ${many}`;
+  if (defaults.status === 'loading') return { count: '…', noun: many };
+  if (defaults.status === 'unknown') return { count: '?', noun: many };
   const n = selection.lock(group) ? defaults.total : groupIds(defaults, selection.edits[group]).length;
-  return `${String(n)} ${n === 1 ? one : many}`;
+  return { count: String(n), noun: n === 1 ? one : many };
+}
+
+/** Bytes as the launch card's chips say them. */
+function kb(bytes: number): string {
+  return bytes < 1024 ? `${String(bytes)} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 /**
@@ -353,7 +363,9 @@ export function LaunchSelectionChips({
         {LAUNCH_SELECTION_GROUPS.map((group) => {
           const isGoverned = governed.includes(group);
           const edited = !isGoverned && selection.diff(group).line !== null;
-          const label = isGoverned ? `✦ Jev’s ${CHIP_NOUN[group][1]}` : chipLabel(selection, group);
+          const label = isGoverned ? null : chipLabel(selection, group);
+          /* The group's measured prompt bytes, when every id's size is known. */
+          const used = isGoverned ? null : groupMeter(selection, group, budget.ranked?.[group], budget.contextIndex ?? selection.contextIndex, budget.budgets)?.usedBytes ?? null;
           return (
             <button
               key={group}
@@ -369,7 +381,14 @@ export function LaunchSelectionChips({
                 setOpen((current) => (current === group ? null : group));
               }}
             >
-              <span aria-hidden="true">{GLYPH[group]}</span> {label}
+              <span aria-hidden="true">{GLYPH[group]}</span>{' '}
+              {label ? (
+                <>
+                  <b>{label.count}</b>
+                  <span className="lsel-chip__noun"> {label.noun}</span>
+                  {used ? <span className="lsel-chip__bytes"> {kb(used)}</span> : null}
+                </>
+              ) : `✦ Jev’s ${CHIP_NOUN[group][1]}`}
               {edited ? <span className="lsel-chip__dot" aria-label="edited" /> : null}
             </button>
           );

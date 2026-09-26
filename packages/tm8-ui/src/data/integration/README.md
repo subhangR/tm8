@@ -9,10 +9,11 @@ from the full official migration chain, on an ephemeral loopback port.
 
 ```
 cd packages/tm8-ui
-./node_modules/.bin/vitest run --config src/data/integration/vitest.config.ts
+TM8_PG_PORT=5443 ./node_modules/.bin/vitest run --config src/data/integration/vitest.config.ts
 ```
 
-Requires the Postgres sidecar on `127.0.0.1:5442`. Nothing else — no build, no
+Requires a TEST Postgres named by `TM8_PG_PORT` (5443 on the tm8 host). There is
+no default: `pg-port-guard.ts` refuses an unset port and 5442, the PROD cluster. Nothing else — no build, no
 running server, no `pg` npm dependency.
 
 **Not** `bunx vitest` (charter: server code never runs under bun) and **not** a

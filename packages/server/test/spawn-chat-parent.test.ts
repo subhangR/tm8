@@ -85,6 +85,9 @@ class SpawnDb implements Db {
         snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
+    // 256 (W7p): the spawn port re-resolves the minted token to read its
+    // via_link stamp. The real mint always resolves; no link here.
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {

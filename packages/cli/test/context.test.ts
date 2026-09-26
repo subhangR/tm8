@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AGENT_GAP_RETRY_MS,
   IMPLICIT_LOCAL_BASE_URL,
   loadLocalConfig,
   requireSpace,
@@ -86,6 +87,27 @@ describe('session context from env', () => {
       baseUrl: 'http://127.0.0.1:4610',
       token: 'tok',
     });
+  });
+});
+
+describe('restart-gap retry window', () => {
+  it('an agent (session id present) waits out a restart; a human fails fast', () => {
+    expect(resolveContext({ globals: globals([]), session: { sessionId: 'ws_1' }, config: {} }).gapRetryMs)
+      .toBe(AGENT_GAP_RETRY_MS);
+    expect(resolveContext({ globals: globals([]), session: {}, config: {} }).gapRetryMs).toBe(0);
+  });
+
+  it('TM8_RETRY_WINDOW_MS overrides both, and 0 turns it off for an agent', () => {
+    const env = (v: string) => ({ TM8_SESSION_ID: 'ws_1', TM8_RETRY_WINDOW_MS: v }) as NodeJS.ProcessEnv;
+    expect(resolveContext({ globals: globals([]), session: sessionContextFromEnv(env('0')), config: {} }).gapRetryMs)
+      .toBe(0);
+    expect(resolveContext({ globals: globals([]), session: sessionContextFromEnv(env('5000')), config: {} }).gapRetryMs)
+      .toBe(5_000);
+  });
+
+  it('a malformed override is a usage error, not a silent default', () => {
+    expect(() => sessionContextFromEnv({ TM8_RETRY_WINDOW_MS: 'soon' } as NodeJS.ProcessEnv)).toThrow(CliError);
+    expect(() => sessionContextFromEnv({ TM8_RETRY_WINDOW_MS: '-1' } as NodeJS.ProcessEnv)).toThrow(CliError);
   });
 });
 

@@ -127,7 +127,7 @@ const INTENTIONALLY_UNSTYLED = new Set([
  * deleting someone's class on the way past is how a review turns into a
  * merge conflict.
  */
-const PRE_EXISTING_UNSTYLED = new Set(['tch-group', 'tch-durable']);
+const PRE_EXISTING_UNSTYLED = new Set(['tch-group']);
 
 /**
  * Rules whose element nobody renders any more. Same ratchet, same reasoning:

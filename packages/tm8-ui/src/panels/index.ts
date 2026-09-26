@@ -33,6 +33,7 @@ export {
 export {
   EntityDetailPanel,
   countConnections,
+  countMessages,
   type DetailReasons,
   type EntityDetailPanelProps,
   type MergePrSources,

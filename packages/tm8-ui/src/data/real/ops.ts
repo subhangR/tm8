@@ -80,8 +80,13 @@ import {
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceSetVisibilityResult,
+  type CredentialsSpaceMyDefaultResult,
+  type CredentialsSpaceUsageView,
+  type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
@@ -170,6 +175,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
+  type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -585,6 +592,58 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // W10b ops and W10d's addMine: each a thin call, the refusal is the server's.
+
+    spaceCredentialsSetVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult> {
+      return http.call<CredentialsSpaceSetVisibilityResult>('credentials.space.setVisibility', {
+        params: { credentialId },
+        body: { visibility, clientMutationId: newId('spcredvis') },
+      });
+    },
+
+    spaceCredentialsDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.spaceDefaultConsent', {
+        params: { credentialId },
+        body: { allowed, clientMutationId: newId('spcredconsent') },
+      });
+    },
+
+    spaceCredentialsClaim(credentialId: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.claim', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredclaim') },
+      });
+    },
+
+    spaceCredentialsSetMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.set', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredmine') },
+      });
+    },
+
+    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.clear', {
+        params: { spaceId, provider },
+        body: { clientMutationId: newId('spcredunmine') },
+      });
+    },
+
+    spaceCredentialsUsage(credentialId: string): Promise<CredentialsSpaceUsageView> {
+      return http.call<CredentialsSpaceUsageView>('credentials.space.usage', { params: { credentialId } });
+    },
+
+    spaceCredentialsAddMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.addMine', {
+        params: { spaceId },
+        body: { provider, label, clientMutationId: newId('spcredaddmine') },
+      });
+    },
+
+    nodeMetrics(): Promise<NodeMetricsView> {
+      return http.call<NodeMetricsView>('node.metrics.get');
+    },
+
     nodeCredentialsStatus(): Promise<NodeCredentialsStatusView> {
       return http.call<NodeCredentialsStatusView>('node.credentials.status');
     },
@@ -654,6 +713,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
+    },
+
+    authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {
+      return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
+    },
+
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
+      // Body-less by contract (UNBOUND_COMMAND_OPERATIONS): the session id in
+      // the path is the whole request.
+      return http.call<AuthSessionsRevokeResult>('auth.sessions.revoke', { params: { sessionId } });
     },
 
     setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> {
@@ -1012,7 +1081,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // not a non-negative safe integer becomes null — "cannot establish".
       const hwm = raw.eventHwm;
       const eventHwm = typeof hwm === 'number' && Number.isSafeInteger(hwm) && hwm >= 0 ? hwm : null;
-      return { ...raw, spaceId, eventHwm };
+      // The status-strip counts get the same treatment: anything that is not
+      // a non-negative safe integer (including an older node's absence) is
+      // null — "unknown" — so a strip can never render a made-up zero.
+      const count = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+      return {
+        ...raw,
+        spaceId,
+        eventHwm,
+        liveSessionCount: count(raw.liveSessionCount),
+        liveChatCount: count(raw.liveChatCount),
+        workingChatCount: count(raw.workingChatCount),
+      };
     },
 
     // -- commands ------------------------------------------------------------

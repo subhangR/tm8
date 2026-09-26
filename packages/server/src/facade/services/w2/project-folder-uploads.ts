@@ -156,6 +156,7 @@ export class W2ProjectFolderUploadService {
     // ensureWorkingDir precedent. Provisional policy until an owner approves
     // a server-managed import root for ordinary members.
     requireNodeAdmin(nodeAdmin);
+    requireUnpinned(claims);
 
     // Containment BEFORE the first probe of the target: a lexically
     // out-of-jail parent is forbidden without any filesystem access, so the
@@ -256,6 +257,7 @@ export class W2ProjectFolderUploadService {
     // C1: gate BEFORE the session is even looked up — a non-admin cannot
     // probe which folderUploadIds exist.
     requireNodeAdmin(nodeAdmin);
+    requireUnpinned(claims);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
 
     if (new Date(state.expiresAt).getTime() <= this.now().getTime()) {
@@ -307,11 +309,14 @@ export class W2ProjectFolderUploadService {
       throw new CollabError('invalid_input', (error as Error).message);
     }
 
-    const project = await this.resolveProject(ctx, claims, state, materialized.workingDir);
+    // W11 (234): the folder is the gate's, granted to ONE space. The caller is
+    // a node admin by ACCOUNT (requireNodeAdmin above); the gate RPCs re-check
+    // that fact (`internal.require_node_admin`) and also read the claim, so the
+    // grant runs with the claim set to the fact — never wider than the account.
+    const gateClaims: DbClaims = { ...claims, nodeAdmin: true };
+    const project = await this.resolveProject(ctx, gateClaims, state, materialized.workingDir);
 
-    await this.deps.db.rpc(claims, 'link_project_w2', [
-      state.spaceId, project.id, state.actorId, null,
-    ]);
+    await this.deps.db.rpc(gateClaims, 'grant_folder', [state.spaceId, project.id, null]);
 
     await this.release(claims, state);
 
@@ -372,7 +377,8 @@ export class W2ProjectFolderUploadService {
       claims: {
         ...base,
         identityId: viewerIdentityId,
-        nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
+        // K6 (W3): a space-pinned session never holds node admin.
+        nodeAdmin: ctx.identity?.sessionSpaceId ? false : viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
       },
     };
   }
@@ -441,6 +447,17 @@ export class W2ProjectFolderUploadService {
         await this.options.blobStore.remove(file.storagePath, spaceId).catch(() => undefined);
       }
     }
+  }
+}
+
+/**
+ * W11 (234): the upload ends in `grant_folder`, and `require_gate_admin`
+ * refuses a space-pinned session. Refuse it here, before any byte is written,
+ * rather than with a 42501 after the folder is materialized (R845-F5).
+ */
+function requireUnpinned(claims: DbClaims): void {
+  if (claims.sessionSpaceId) {
+    throw new CollabError('forbidden', 'a folder import grants a gate folder, which a space-pinned session cannot do');
   }
 }
 

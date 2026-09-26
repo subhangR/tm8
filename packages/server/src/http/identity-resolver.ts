@@ -14,11 +14,13 @@
  * `startServer` still owns the wiring; this file owns the RULE, and
  * `test/one-identity-path.test.ts` can now assert it directly.
  */
+import type { IncomingMessage } from 'node:http';
 import { CollabError } from '@tm8/contract';
 
 import type { Db } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { TOKEN_PREFIX } from '../identity/crypto.js';
+import { refuseLinkSessionOnTransport } from '../identity/link-bearer.js';
 import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
@@ -33,12 +35,16 @@ export interface SessionIdentityResolverOptions {
 }
 
 /**
- * The kinds `agents` pins. `enforce` adds humans in W3; until then it is `agents`.
- * `link` matches 226's check (`auth_sessions_pinned_kinds_have_space`): no link
- * session can be minted today, so it pins nothing yet, but it is already pinned
- * on the day W6 makes the kind legal.
+ * Whether a verified session row binds `tm8.session_space_id`. Every row that
+ * carries a space binds it unless the node runs `off`: agent kinds always carry
+ * one (226's `auth_sessions_pinned_kinds_have_space`), and a human row carries
+ * one only when `auth.space.enter` (233, W3) minted it. A human GATE session
+ * has `space_id` null and binds nothing, so under `agents` every pre-W3 human
+ * session answers exactly as before.
  */
-const PINNED_KINDS: ReadonlySet<string> = new Set(['agent', 'agent_runtime', 'link']);
+function sessionSpacePin(mode: SpaceSessionsMode, spaceId: string | null | undefined): string | undefined {
+  return mode !== 'off' && spaceId ? spaceId : undefined;
+}
 
 /**
  * A valid tm8 session is resolved independently of transport; every non-session
@@ -69,6 +75,12 @@ export function createSessionIdentityResolver(
     const raw = authorization || cookie;
     if (raw.startsWith(TOKEN_PREFIX)) {
       const session = await resolveBearerIdentity(db, raw);
+      // 256 (W7p, layer (i)): a `link` session's token is never accepted on
+      // a wire — every transport resolves through this closure. It is refused
+      // HERE, not in the shared `resolveBearerIdentity`, which
+      // `DbSpaceLinkStore.use` calls in-process. No allow-list, ever. See
+      // identity/link-bearer.ts.
+      refuseLinkSessionOnTransport(session.kind);
       return identityFromSession(session, raw, spaceSessions);
     }
 
@@ -86,20 +98,23 @@ export function createSessionIdentityResolver(
 }
 
 /**
- * The ONE mapping from a verified session row to a request identity. The
- * bearer arm above uses it, and so does `spaceLinks.invoke` (W7) for a link
- * session it re-resolved through `resolveBearerIdentity` (F6): a second copy
- * of this mapping would be a second place for the pin or the kind to drift.
+ * The request identity for a resolved session — the one mapping, shared by the
+ * wire closure above and by an in-process caller that resolved a session
+ * itself (`DbSpaceLinkStore.use`, and #884's invoke, which binds a `link`
+ * session the wire never accepts). Every field comes off the verified row.
  */
 export function identityFromSession(
   session: ResolvedAuthSession,
   raw: string,
-  spaceSessions: SpaceSessionsMode = 'agents',
+  spaceSessions: SpaceSessionsMode,
 ): RequestIdentity {
+  const sessionSpaceId = sessionSpacePin(spaceSessions, session.spaceId);
   return {
     kind: 'bearer',
     identityId: session.identityId,
-    nodeAdmin: session.isNodeAdmin,
+    // K6 (W3): a space-pinned session never carries node-admin power; node
+    // admin is gate admin. Migration 233 refuses it in SQL as well.
+    nodeAdmin: sessionSpaceId ? false : session.isNodeAdmin,
     accountId: session.accountId,
     sessionId: session.sessionId,
     ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
@@ -118,8 +133,31 @@ export function identityFromSession(
     authKind: session.kind,
     // 226/227. The space the session was minted for, off the same
     // verified row. Every membership helper intersects with it.
-    ...(spaceSessions !== 'off' && PINNED_KINDS.has(session.kind) && session.spaceId
-      ? { sessionSpaceId: session.spaceId }
-      : {}),
+    ...(sessionSpaceId ? { sessionSpaceId } : {}),
+    // 256 (W7p). Off the same verified row; NOT gated by the spaces mode —
+    // it only narrows, and `off` must not un-bind a link.
+    ...(session.viaLinkId ? { viaLinkId: session.viaLinkId } : {}),
+  };
+}
+
+/**
+ * The WebSocket upgrades' resolver (events WS and PTY attach): the same
+ * closure as HTTP — so layer (i)'s link refusal covers both sockets — with
+ * anonymous refused. Lifted out of `startServer` so a test reaches the exact
+ * function the sockets are wired to.
+ */
+export function createSocketIdentityResolver(
+  resolver: IdentityResolver,
+  disableAutoOwner: boolean,
+): (req: IncomingMessage) => Promise<RequestIdentity> {
+  return async (req) => {
+    const identity = await resolver(req.headers, {
+      remoteAddress: req.socket.remoteAddress,
+      disableAutoOwner,
+    });
+    if (identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    return identity;
   };
 }

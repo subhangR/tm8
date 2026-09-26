@@ -79,8 +79,8 @@ export function registerSkillHandlers(
       if (!member) throw new CollabError('not_found', 'teammate not found in this space');
       let projectRoot: string | null = null;
       if (input.projectId) {
-        const project = (await q.query<{ working_dir: string }>(`select p.working_dir from public.projects p
-          join public.space_projects sp on sp.project_id = p.id where p.id = $1 and sp.space_id = $2`, [input.projectId, spaceId]))[0];
+        const project = (await q.query<{ working_dir: string }>(
+          'select working_dir from public.resolve_project_ref($1::uuid, $2::uuid)', [input.projectId, spaceId]))[0];
         if (!project) throw new CollabError('not_found', 'project not linked to this space');
         projectRoot = project.working_dir;
       }

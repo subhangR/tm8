@@ -1,0 +1,79 @@
+/* The membership confirmation — the sign-out dialog's shape
+   (`account/account.css` .acct-confirm), scoped to this section's lane. The
+   confirming button is block-coloured rather than ink: this act ends someone's
+   access, and it should not look like sign-out. */
+.set-mconfirm__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+}
+.set-mconfirm {
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+.set-mconfirm__title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.set-mconfirm__body {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+.set-mconfirm__body p {
+  margin: 0 0 6px;
+}
+.set-mconfirm__error {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--pn-block);
+}
+.set-mconfirm__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+.set-mconfirm__cancel,
+.set-mconfirm__go {
+  padding: 4px 11px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.set-mconfirm__cancel {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.set-mconfirm__cancel:hover {
+  background: var(--pn-hover);
+}
+.set-mconfirm__go {
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block);
+  color: var(--pn-paper);
+}
+.set-mconfirm__go:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}

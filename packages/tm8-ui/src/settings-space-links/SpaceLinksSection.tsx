@@ -5,9 +5,12 @@
  *
  * WHAT A MEMBER MUST BE TOLD (P8), drawn above everything else: the link itself
  * is shared, so every member of this space can see that a link to the target
- * exists; and while you are signed in, agents working for you in this space can
- * act in the target space as you. Allow spawn decides whether they may also
- * start sessions there.
+ * exists; and once cross-space spawn ships, agents working for you in this
+ * space will be able to act in the target space as you while you are signed in
+ * (future tense: nothing in W6 acts through a link; lead's R4 (ii)). Nothing in W6 reads the Allow spawn switch,
+ * so every place that describes it says only: "Allow spawn is stored per link;
+ * it is enforced when cross-space spawn ships." (Lead's rule, R3 (ii): every
+ * sentence describes only enforcement W6 ships.)
  *
  * Every write is human-only on the server. A refusal it answers (an agent
  * session, a target you are not a member of, anything else) is rendered as a
@@ -28,7 +31,7 @@ export interface SpaceLinksSectionProps {
   heading?: string;
 }
 
-/** The server's typed refusal for a non-human session (244). */
+/** The server's typed refusal for a non-human session (251). */
 export const SPACE_LINKS_HUMAN_ONLY = 'space_links_human_only';
 
 const STATUS_WORD: Record<SpaceLinkStatus, string> = {
@@ -104,8 +107,8 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
             own sign-in.
           </p>
           <p>
-            While you are signed in, agents working for you in this space can act in the target space as you.
-            Allow spawn controls whether they may also start sessions there.
+            Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in.
+            Allow spawn is stored per link; it is enforced when cross-space spawn ships.
           </p>
         </div>
         {notice ? (
@@ -194,17 +197,23 @@ function LinkRow({
               <input
                 type="checkbox"
                 aria-label={`Allow spawn in ${name}`}
+                aria-describedby={`set-spl-spawn-help-${link.id}`}
                 checked={mine.allowSpawn}
                 disabled={busy}
                 onChange={(e) => {
                   const next = e.currentTarget.checked;
                   void run(
                     () => port.setSpawn(link.id, next),
-                    next ? `Agents may start sessions in ${name}.` : `Agents may no longer start sessions in ${name}.`,
+                    next
+                      ? `Allow spawn is on for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`
+                      : `Allow spawn is off for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`,
                   );
                 }}
               />
               Allow spawn
+              <span className="set-spl__spawn-help" id={`set-spl-spawn-help-${link.id}`} data-testid="space-links-spawn-help">
+                Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+              </span>
             </label>
             <button type="button" className="cred-action" aria-label={`Remove ${name}`} disabled={busy}
               onClick={() => void run(() => port.remove(link.id), `Removed your sign-in row for ${name}. The link stays for other members.`)}>

@@ -119,6 +119,7 @@ import type {
   SpaceInviteView,
   UpdateMemberRoleInput,
   UpdateSpaceInput,
+  MembershipEndResult,
   ActivityItem,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -149,8 +150,13 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceMyDefaultResult,
+  CredentialsSpaceUsageView,
+  SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
   SpaceLinkView,
@@ -248,6 +254,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceConfigsView,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
   SpaceSummary,
@@ -312,6 +320,15 @@ export interface LivenessSnapshot {
    * avoid going.
    */
   eventHwm?: number | null;
+  /**
+   * Status strip. Live work sessions by BOTH truths (PTY map AND recorded
+   * status), live chats (`runtimeState === 'live'`), and the live chats with a
+   * turn running or queued. Exact server-side counts. `null` when the node
+   * predates the field — "unknown", never zero.
+   */
+  liveSessionCount?: number | null;
+  liveChatCount?: number | null;
+  workingChatCount?: number | null;
 }
 
 /**
@@ -530,6 +547,12 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
   spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
+  /**
+   * Settings → Sessions (`auth.sessions.list`, W4). `null` = the caller's own
+   * sessions; a space id = the sessions pinned to that space (space admins
+   * only — anyone else is refused by the server, and the section says so).
+   */
+  authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult>;
   /** Per-kind chat defaults (`spaces.chatDefaults.get`, entity-chat §3.4): space-wide, any member reads. */
   chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView>;
   /**
@@ -989,6 +1012,16 @@ export interface Seam {
       input: UpdateMemberRoleInput,
     ): Promise<CommandResult>;
     /**
+     * G6 (migration 231): END a membership. The row is tombstoned, not
+     * deleted — `left` or `removed` — so everything the member authored still
+     * renders under their name, with "(left)". Both are human-only, and every
+     * rule lives in SQL: `leaveSpace` refuses the last owner; `removeMember`
+     * needs an admin, needs an owner to remove an owner, and refuses yourself
+     * (leave instead). The mutation id is minted inside, like `ops`.
+     */
+    leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult>;
+    removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult>;
+    /**
      * `spaces.update` (PATCH /v2/spaces/:spaceId). Absent keys are left alone
      * — the server forwards only the keys the body names — so a caller that
      * changes one sharing default cannot reset the other. The admin rule and
@@ -1004,6 +1037,11 @@ export interface Seam {
     createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView>;
     /** Kill a live code. The row survives, revoked, so the list stays truthful. */
     revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
+    /**
+     * `auth.sessions.revoke` (W4): kill one listed session — and, for a gate
+     * session, the pinned sessions entered from it. Their sockets close.
+     */
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult>;
     /**
      * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
      * that existed all along (`spaces.taskAxes.create|update|delete`): new
@@ -1265,6 +1303,14 @@ export interface Seam {
    * no space except when opening a terminal, so filing the read under
    * `commands` would have been the only alternative and a worse lie.
    */
+  /**
+   * `node.metrics.get` — host CPU / memory / load / disk / server RSS for the
+   * desktop status strip. NODE ADMIN ONLY: a non-admin (or space-pinned)
+   * session gets `forbidden`, which the strip reads as "hide host metrics".
+   * Optional so a seam that predates the strip still type-checks.
+   */
+  nodeMetrics?(): Promise<NodeMetricsView>;
+
   credentials: {
     /** The merged view + `gitCredentialStore`, its own completeness report. */
     status(): Promise<CredentialsStatusView>;
@@ -1318,6 +1364,20 @@ export interface Seam {
         provider: SpaceCredentialProviderName,
         allowedSources: CredentialPolicySource[] | null,
       ): Promise<CredentialsSpacePolicySetResult>;
+      /**
+       * W10b/W10d (doc 13 §7): ownership, visibility and the caller's own
+       * default. The OWNER switches visibility and consent; the creator claims
+       * a migrated row; every member sets their own default. All human-only;
+       * a refusal is rendered with the server's reason text.
+       */
+      setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+      spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
+      claim(credentialId: string): Promise<SpaceCredentialView>;
+      setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
+      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+      usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
+      /** "Add to this space as private" for the caller's own GitHub token (093). The body names no token. */
+      addMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView>;
     };
     /** The node's own fallback credentials (D9) — node admin only. */
     node: {
@@ -1327,7 +1387,7 @@ export interface Seam {
   };
 
   /**
-   * -- space links (`spaceLinks.*`, W6, migrations 243/244) -------------------
+   * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
    *
    * A link from a home space to a target space the viewer is also a member of.
    * `list` is open to every home member and carries no secret. Every write is

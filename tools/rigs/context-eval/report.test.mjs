@@ -490,3 +490,12 @@ test('D12 twin: a git read of a commit NOT in the lane\'s own branch history is 
   assert.deepEqual(far[0].readSiblingCommitUnverified, [sibSha.slice(0, 7)]);
   rmSync(dataDir, { recursive: true });
 });
+
+test('report §5 prints the gate load; rows without it (pre-gateLoad runners) still report', () => {
+  const r = buildReport([row({ gateLoad: 10.2, loadAtStart: 12.2 }), row({ rep: 2, loadAtStart: 11 })], null);
+  assert.deepEqual(r.json.load['c1 / 4621'].gateLoad, { n: 1, median: 10.2, min: 10.2, max: 10.2 });
+  assert.match(r.md, /\| c1 \/ 4621 \| 2 \| 10\.2 \[10\.2–10\.2\] n=1 \| /);
+  const old = buildReport([row()], null);
+  assert.equal(old.json.load['c1 / 4621'].gateLoad, null);
+  assert.match(old.md, /\| c1 \/ 4621 \| 1 \| — \| /);
+});

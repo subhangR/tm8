@@ -186,7 +186,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * the list header's kind switcher entry, the Workspace column menu and the
  * mobile drawer row, all four of which read this one table.
  *
- * `space_link` and `server` (243, W6): not populations either. A link is
+ * `space_link` and `server` (250, W6): not populations either. A link is
  * signed in, out and removed from Settings → Space links, which carries the
  * P8 warning a bare list would drop; `server` has no detail row until W8.
  *
@@ -197,7 +197,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * about the product, not a display filter, and it is deliberately harder to
  * reach for than adding a spine group.
  */
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'space_link', 'server'];
+// `credential` (W10a) is withheld for the same reason: it has a home already —
+// Space settings → Credentials, where its human-only doors live — and a rail
+// list would be a second, door-less surface for it.
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server'];
 
 export interface HomeRailGroup {
   id: string;

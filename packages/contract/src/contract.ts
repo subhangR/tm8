@@ -71,13 +71,21 @@ export type CoreEntityKind =
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
   | 'form'
-  // Space links (migrations 243/244, Phase 1b W6): a home space's link to a
+  // Space credentials (W10a, doc 13): the same-id entity of a
+  // space_credentials row. Born only from credentials.space.create or a
+  // login start, under a SQL guard; never moved, deleted or restored through
+  // the generic doors. The secret, hint and vendor login are never on it.
+  | 'credential'
+  // Space links (migrations 250/251, Phase 1b W6): a home space's link to a
   // target space. Every home member sees the link; each member's stored
   // session for the target is their own sealed row. Born only from
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
   | 'server';
+
+/** A credential entity's visibility (W10a): who may launch on it. */
+export type CredentialVisibility = 'private' | 'public';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -505,8 +513,11 @@ export type CoreEntityState =
   | { kind: 'drawing'; format: string; elementCount: number }
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
+  /** A space credential's row facts (W10a). Never the secret, hint or login. */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
-   * Space links (243, W6): no row facts on the entity. A link's target and
+   * Space links (250, W6): no row facts on the entity. A link's target and
    * every member's status are `spaceLinks.list`'s answer, never a list row's —
    * a join here would widen the shared entity read for a settings screen.
    * `server` has no detail row until W8.
@@ -672,7 +683,34 @@ export interface EntityStaleness {
                independenceBasis: 'session' | 'actor' };
 }
 
-export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+/**
+ * Attention v2 (chapter 1): `acknowledged` is LEGACY — read as `open`, never
+ * written again (Seen moved to the per-person `attention_seen` table).
+ * `dismissed` means the raising agent withdrew it; `cleared` means tm8 settled
+ * its own `system` row because the condition ended.
+ */
+export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed' | 'cleared';
+
+/** How loud a request is. Default `normal`; points derive from it when omitted. */
+export type AttentionLevel = 'fyi' | 'normal' | 'high' | 'urgent';
+
+/** What the raiser wants the human to do. Default `decide`. */
+export type AttentionActionType = 'decide' | 'approve' | 'unblock' | 'review' | 'fyi';
+
+/**
+ * Who raised a request, derived from the CALLER, never from input: an agent
+ * persona is `agent`, a member is `human`, tm8's own writers are `system`.
+ * The public create never produces `system`.
+ */
+export type AttentionOrigin = 'agent' | 'human' | 'system';
+
+/** Points a request gets from its level when the raiser gives none (chapter 1). */
+export const ATTENTION_LEVEL_POINTS: Readonly<Record<AttentionLevel, number>> = {
+  fyi: 10,
+  normal: 40,
+  high: 70,
+  urgent: 95,
+};
 
 /** Compact aggregate carried by every entity summary and used to prioritize lists. */
 export interface EntityAttentionSummary {
@@ -700,11 +738,32 @@ export interface AttentionRequest {
   updatedAt: string;
   acknowledgedAt: string | null;
   resolvedAt: string | null;
+  // Attention v2 (chapter 1). OPTIONAL until the v2 migration and the S4
+  // server verbs land, so a server that does not emit them still validates.
+  /** Whether the VIEWER has marked this request seen. Per person; never changes status. */
+  seenByMe?: boolean;
+  /** The roll-up root it counts against: itself, or the task of a work session / form. */
+  rootId?: EntityId;
+  level?: AttentionLevel;
+  actionType?: AttentionActionType;
+  /** The member it is assigned to; null when unassigned (counts only in "all"). */
+  assigneeId?: EntityId | null;
+  /** The work session OR chat that raised it (F1); null for humans and legacy rows. */
+  sourceWorkSessionId?: EntityId | null;
+  /** Whether that raising session or chat is still live; false when there is none. */
+  sourceSessionLive?: boolean;
+  origin?: AttentionOrigin;
+  /** The Resolve that settled it, so Undo can reopen exactly that set. */
+  resolutionBatchId?: string | null;
 }
 
 export interface AttentionRequestListQuery {
   spaceId: SpaceId;
   entityId?: EntityId;
+  /**
+   * Omitted means OPEN (Attention v2): `open` plus legacy `acknowledged`,
+   * which is read as open. Pass a status to read history.
+   */
   status?: AttentionRequestStatus;
   minPoints?: number;
   limit?: number;
@@ -717,6 +776,11 @@ export interface AttentionRequestMutationResult {
   request: AttentionRequest | null;
   entity: EntitySummary;
   affectedCount: number;
+  /**
+   * Set by a Resolve (and echoed by Unresolve): the batch the settled rows
+   * share, which is what Undo sends back. Optional until S4.
+   */
+  resolutionBatchId?: string | null;
 }
 
 export interface PullState {
@@ -894,9 +958,15 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
-  /** Space links (243, W6): content is `spaceLinks.list`'s; see EntityState. */
+  /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /**
+   * A space credential (W10a): the same allow-list as its state. The sealed
+   * secret, key hint and vendor login never reach an entity read.
+   */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
@@ -1841,7 +1911,7 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
 
 /**
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
- * internal mints, never accepted by `auth.login`. `link` (W6, 243) is a
+ * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
  * member's stored session for a linked space, minted by `spaceLinks.login`.
  */
 export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
@@ -1859,6 +1929,12 @@ export interface AuthSessionView {
   /** Present only for a chat runtime: the chat entity whose process owns it. */
   runtimeChatId?: string | null;
   label: string | null;
+  /**
+   * The one space this session may act in (226 `auth_sessions.space_id`). Null
+   * for a human gate session; set for agent kinds and for a session minted by
+   * `auth.space.enter`.
+   */
+  spaceId?: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
   expiresAt: string;
@@ -1912,6 +1988,34 @@ export interface AuthLoginResult {
 }
 
 /**
+ * `auth.space.enter` — mint a session PINNED to one space (plan 01a0d9eb W3).
+ *
+ * The caller presents a gate session (a human `browser`/`cli` session with no
+ * space) or is the loopback auto-owner, and must be a member of `spaceId`. The
+ * new session has the caller's kind, is bound to `spaceId` for its whole life
+ * (`tm8.session_space_id`), never carries node-admin power (K6), and expires no
+ * later than the gate session it came from. A pinned session cannot enter
+ * another space: go back to the gate token for that.
+ *
+ * A `browser` result also replaces the `tm8_session` cookie, so the browser's
+ * WebSocket follows the space the UI switched to. On this one operation an
+ * explicit `Authorization` wins over a conflicting cookie (the cookie is the
+ * previous space's pinned session; the header is the gate).
+ */
+export interface AuthSpaceEnterInput {
+  spaceId: string;
+  /** Free-form label shown in session listings. */
+  label?: string;
+}
+
+export interface AuthSpaceEnterResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  spaceId: string;
+  session: AuthSessionView;
+}
+
+/**
  * `auth.logout` — revoke the presented bearer session, or (node admin / same
  * account) an explicitly named one. A loopback auto-owner request carries no
  * session; naming none is then an `invalid_input`.
@@ -1924,6 +2028,60 @@ export interface AuthLogoutInput {
 export interface AuthLogoutResult {
   sessionId: string;
   revoked: boolean;
+}
+
+/**
+ * `auth.sessions.list` (plan 01a0d9eb W4, migration 232). Without `spaceId`:
+ * the caller's own live sessions, every kind and space. With `spaceId`: every
+ * live session PINNED to that space, whoever owns it — space admins only (a
+ * session pinned elsewhere is refused). Humans only; never carries a token.
+ */
+export interface AuthSessionsListInput {
+  spaceId?: string;
+}
+
+/** Where a session came from — derived from the row, never stored. */
+export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'link';
+
+export interface AuthSessionListing {
+  sessionId: string;
+  kind: AuthSessionKindView;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  label: string | null;
+  /** Null for a gate session. */
+  spaceId: string | null;
+  spaceName: string | null;
+  /** The gate session `auth.space.enter` minted this one from; revoking it ends this too. */
+  parentSessionId: string | null;
+  origin: AuthSessionOrigin;
+  /** The work session (`spawn`) or chat (`chat`) the session was minted for. */
+  originEntityId: string | null;
+  owner: { identityId: string; displayName: string | null };
+  /** True for the session that made this request. */
+  current: boolean;
+}
+
+export interface AuthSessionsListResult {
+  /** Echoes the input: null for the caller's own list. */
+  spaceId: string | null;
+  sessions: AuthSessionListing[];
+}
+
+/**
+ * `auth.sessions.revoke` — end one session the caller could list: their own,
+ * or one pinned to a space they administer. Revoking a gate session also
+ * revokes the sessions `auth.space.enter` minted from it, and every open event
+ * socket opened with any of them is closed (1008). A session the caller cannot
+ * list answers `not_found`, like a missing one.
+ */
+export interface AuthSessionsRevokeResult {
+  sessionId: string;
+  /** False when the session was already revoked. */
+  revoked: boolean;
+  /** This session plus the children revoked with it, by this call. */
+  revokedSessionIds: string[];
 }
 
 /** `auth.session.get` — who am I, on this server, and how am I authenticated. */
@@ -2447,7 +2605,19 @@ export interface SpaceCredentialView {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /**
+   * Doc 13 §7 (W10a/W10b). Null = space-owned. The server always sets these
+   * three; they are optional only so a view built before them still types.
+   */
+  ownerAccountId?: string | null;
+  /** `private`: only the owner may launch on it. Space-owned is always `public`. */
+  visibility?: SpaceCredentialVisibilityName;
+  /** An owned public credential's consent to be the space default. */
+  mayBeSpaceDefault?: boolean;
 }
+
+/** Who may launch on a space credential (doc 13 §3a). */
+export type SpaceCredentialVisibilityName = 'private' | 'public';
 
 /** `credentials.space.list`. Revoked tombstones are not listed. */
 export interface CredentialsSpaceListView {
@@ -2465,7 +2635,89 @@ export interface CredentialsSpaceCreateInput {
   shape: 'api_key' | 'token';
   label: string;
   secret: string;
+  /**
+   * E1: an owned credential's visibility, OR `spaceOwned: true` — never both.
+   * Neither keeps the pre-W10b contract: space-owned, public, and claimable
+   * by its creator. The contract never takes an account id (I1): the owner
+   * is always the caller.
+   */
+  visibility?: SpaceCredentialVisibilityName;
+  spaceOwned?: boolean;
+  /** An owned public credential may also be the space default (§3e). */
+  mayBeSpaceDefault?: boolean;
   clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.setVisibility` — the owner only; a space-owned credential
+ * has no visibility to change. Going private clears both default flags in the
+ * same statement and kills every live session another member launched on it.
+ */
+export interface CredentialsSpaceSetVisibilityInput {
+  visibility: SpaceCredentialVisibilityName;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpaceSetVisibilityResult {
+  credential: SpaceCredentialView;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.spaceDefaultConsent` — the owner allows (or withdraws)
+ * their public credential as the space default. Withdrawing clears the
+ * space default in the same statement.
+ */
+export interface CredentialsSpaceDefaultConsentInput {
+  allowed: boolean;
+  clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.addMine` (W10d, doc 13 §7 step 2) — "Add to this space as
+ * private": the server reads the CALLER'S own server-level credential for
+ * `provider`, probes it, and re-seals it in TypeScript as a new private space
+ * credential the caller owns. Only a string-shaped personal credential can be
+ * re-sealed (today the GitHub token, 093); a Claude or Codex login is a file
+ * whose refresh token breaks if copied (SC-8 §5), so it takes a fresh sign-in
+ * instead. One space per call: there is no bulk add (R4). The body never
+ * carries a secret and the answer is metadata only (I5).
+ */
+export interface CredentialsSpaceAddMineInput {
+  provider: 'github';
+  label: string;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
+export interface CredentialsSpaceMyDefaultResult {
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  credentialId: string | null;
+}
+
+/** How a launch picked its space credential (§6c); null on rows recorded before it. */
+export type SpaceCredentialPickName = 'pinned' | 'my_default' | 'space_default';
+
+/**
+ * `credentials.space.usage` — launches on a credential: the owner; admins too
+ * for a public or space-owned one.
+ */
+export interface CredentialsSpaceUsageView {
+  credentialId: string;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProviderName;
+    source: SpaceCredentialPickName | null;
+    credentialId: string;
+    ownerAccountId: string | null;
+    launcherAccountId: string | null;
+    agentSessionId: string | null;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+  }>;
 }
 
 /** `credentials.space.rekey` — creator or space admin; the next spawn uses it (D7). */
@@ -2546,6 +2798,43 @@ export interface NodeCredentialStatusEntry extends NodeCredentialPolicyEntry {
 /** `node.credentials.status` — node admin. */
 export interface NodeCredentialsStatusView {
   providers: NodeCredentialStatusEntry[];
+}
+
+/**
+ * `node.metrics.get` — node admin. Host metrics for the machine this tm8
+ * server runs on, measured at request time. Every figure is a measurement;
+ * a figure the host cannot supply is `null`, never a guess or a zero.
+ */
+export interface NodeMetricsView {
+  /** When the figures were taken. */
+  sampledAt: string;
+  cpu: {
+    /**
+     * Busy share of all cores, 0–100, over the window since the previous read
+     * (or a short in-request window on the first read).
+     */
+    percent: number | null;
+    /** Logical cores. */
+    cores: number;
+  };
+  memory: {
+    totalBytes: number;
+    /**
+     * In use by the host, excluding reclaimable cache. On macOS this is read
+     * from `vm_stat`, because the kernel's "free" figure there leaves out
+     * inactive and purgeable pages and would read near 100% on a healthy
+     * machine.
+     */
+    usedBytes: number;
+  };
+  /** 1, 5 and 15 minute load averages. `null` on hosts without them (Windows). */
+  loadAverage: [number, number, number] | null;
+  /** The volume holding the server's data directory. `null` when it cannot be read. */
+  disk: { path: string; totalBytes: number; usedBytes: number } | null;
+  /** The tm8 server process itself. */
+  process: { rssBytes: number; heapUsedBytes: number; uptimeSeconds: number };
+  /** Host uptime. */
+  hostUptimeSeconds: number;
 }
 
 /** `node.credentials.policy.set` — node admin. `null` removes the policy. */
@@ -2659,6 +2948,9 @@ export type CreatableEntityKind = Exclude<
   // `form` is born ONLY from `forms.create`, which writes its questions,
   // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
   | 'form'
+  // `credential` is human-only and born under a SQL guard from
+  // credentials.space.* (W10a); no generic door writes one.
+  | 'credential'
   // `space_link` is born ONLY from `spaceLinks.add` (W6), which checks the
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
@@ -2700,7 +2992,17 @@ export interface PatchEntityInput extends CommandContext {
 export interface CreateAttentionRequestInput extends CommandContext {
   clientMutationId: string;
   reason: string;
-  points: number;
+  /** An override for fine ordering; when omitted it derives from `level` (ATTENTION_LEVEL_POINTS). */
+  points?: number;
+  /** Default `normal`. */
+  level?: AttentionLevel;
+  /** Default `decide`. */
+  actionType?: AttentionActionType;
+  /** A member of the same space. No default: unassigned counts only in "all". */
+  assigneeId?: EntityId;
+  // NEVER input: the raising session (stamped from the bearer,
+  // `workSessionId ?? runtimeChatId`, F1a), `origin` (derived from the
+  // caller), and `signal_key` (internal writers only).
 }
 
 /** PATCH /v2/attention-requests/:requestId. */
@@ -2717,6 +3019,48 @@ export interface UpdateAttentionRequestInput extends CommandContext {
 export interface ResolveEntityAttentionInput extends CommandContext {
   clientMutationId: string;
   resolutionNote?: string;
+  /**
+   * Attention v2: a CLIENT-generated uuid naming this Resolve, so the UI can
+   * settle rows in place and offer Undo before the server replies. The server
+   * generates one when absent and echoes it on the result.
+   */
+  resolutionBatchId?: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-requests/seen (Attention v2).
+ * `entityId` may be ANY entity: the server maps it to its roll-up root and
+ * marks every open request on that root (own and rolled-up) seen by the
+ * CALLER only. Status and counts never change. Result: `request` null,
+ * `entity` the root, `affectedCount` the rows newly seen.
+ */
+export interface MarkAttentionSeenInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * POST /v2/attention-requests/batches/:batchId/unresolve (Attention v2).
+ * Undo of one Resolve: only rows of that batch still `resolved` go back to
+ * open, and their pending note deliveries are cancelled (zero messages).
+ * Only the member who resolved the batch (`forbidden` otherwise), and only
+ * within 8s of the resolve (`conflict` with reason `undo_window_closed`
+ * after). Result: `request` null, `entity` the root, `affectedCount` the
+ * rows reopened, `resolutionBatchId` the batch.
+ */
+export interface UnresolveAttentionBatchInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * POST /v2/attention-requests/:requestId/withdraw (Attention v2).
+ * The raising agent takes back its own request: the caller's actor must be
+ * the row's `requestedBy`, and only an `origin: 'agent'` row that is still
+ * open qualifies (system and human rows are refused). The row goes to
+ * `dismissed` and nothing is delivered. Result: `request` the dismissed row.
+ */
+export interface WithdrawAttentionRequestInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion?: number;
 }
 
 export interface MoveEntityInput extends CommandContext {
@@ -4249,13 +4593,6 @@ export interface ContainersForkInput extends CommandContext {
   spec?: ContainerSpecInput;
 }
 
-export interface ContainersAttentionInput extends CommandContext {
-  clientMutationId: string;
-  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
-  detail?: string;
-  points?: number;
-}
-
 export interface ContainersPoolsSetInput extends CommandContext {
   clientMutationId: string;
   expectedVersion: number;
@@ -4305,8 +4642,18 @@ export interface ProjectResource {
   id: ProjectId;
   name: string;
   repoUrl?: string | null;
-  /** Absolute path on the owning node; path-traversal/symlink-guarded (10-SECURITY-MODEL). */
-  workingDir: string;
+  /**
+   * Absolute path on the owning node; path-traversal/symlink-guarded
+   * (10-SECURITY-MODEL). W11 (migration 234): the folder is the gate's, so the
+   * path is present ONLY for a gate (node) admin and absent for every member.
+   */
+  workingDir?: string;
+  /**
+   * W11: the space's own project entity for this folder, when the read was
+   * made in a space (`projects.list?spaceId=`, `projects.get` by a member).
+   */
+  projectEntityId?: EntityId | null;
+  spaceId?: SpaceId | null;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
   /** Migration/remediation state for the 16-active-link cap. */
@@ -4449,7 +4796,8 @@ export interface ProjectBranch {
  */
 export interface ProjectBranchTopology {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   defaultBranch: string;
   defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
   branches: ProjectBranch[];
@@ -4509,7 +4857,8 @@ export interface ProjectRevisionDiff {
 
 export interface ProjectFileHistory {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   revisions: ProjectFileRevision[];
   /** True when the revision cap cut the walk short — the read is bounded. */
@@ -4544,7 +4893,8 @@ export interface ProjectBlameHunk {
  */
 export interface ProjectFileBlame {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   hunks: ProjectBlameHunk[];
   blamedLines: number;
@@ -4668,9 +5018,84 @@ export interface ProjectUpdateInput extends CommandContext {
   defaults?: ProjectDefaults;
 }
 
-/** POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding. */
+/**
+ * POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding.
+ * Decision 29: a folder already granted to another space is refused ("this
+ * folder belongs to another space") except on a loopback-only `single` node.
+ */
 export interface ProjectLinkInput extends CommandContext {
   projectId: ProjectId;
+}
+
+// --- W11 (migration 234): space-owned projects over gate-owned folders -------
+//
+// A FOLDER (the `projects` row: path, trust, repo_url) is the gate's; a gate
+// admin grants it to exactly ONE space. The space's PROJECT is an entity of
+// that space (kind `project`) that references the grant and never carries the
+// path.
+
+/** One project of a space, as any member of it reads it. Never a path. */
+export interface SpaceProject {
+  /** The space's project entity id. */
+  id: EntityId;
+  spaceId: SpaceId;
+  /** The granted folder (`projects.id`), the id spawn and chats still key on. */
+  folderId: ProjectId;
+  name: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  materializedVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/spaces/:spaceId/projects/create — a space admin names the space's project on a folder granted to it. */
+export interface SpaceProjectCreateInput extends CommandContext {
+  folderId: ProjectId;
+  /** Defaults to the folder's name. */
+  name?: string;
+}
+
+export interface GateFolderGrant {
+  spaceId: SpaceId;
+  spaceName: string;
+  /** The space's project entity for this folder (null if not materialized). */
+  projectId: EntityId | null;
+  grantedBy: string | null;
+  grantedAt: string;
+}
+
+/** A folder on this server, as a gate (node) admin reads it. */
+export interface GateFolder {
+  id: ProjectId;
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  /** One entry normally; two or more only on folders linked twice before 234. */
+  grants: GateFolderGrant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/gate/folders — register a folder (inside TM8_PROJECT_ROOTS), optionally granting it to one space. */
+export interface GateFolderCreateInput extends CommandContext {
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust?: ProjectTrustLevel;
+  defaults?: ProjectDefaults;
+  /** Grant the folder to this space in the same step. */
+  spaceId?: SpaceId;
+  /** Create `workingDir` when it is one missing child beneath an allowed directory. */
+  ensureWorkingDir?: boolean;
+}
+
+export interface GateFolderCreateResult {
+  folder: GateFolder;
+  created: boolean;
 }
 
 export interface CorrectProjectAssociationInput {
@@ -5594,6 +6019,24 @@ export interface ExecutionLiveness {
    * entire retained log. See `DurableSeqSource.latest` for the full argument.
    */
   eventHwm: number | null;
+  /**
+   * How many of THIS space's work sessions are live by BOTH truths: the id is
+   * in this process's PTY map (`liveEntityIds`) AND the recorded
+   * `work_sessions.status` is `spawning`, `running` or `idle`. Either truth
+   * alone overcounts: the PTY map can still hold a session whose record says
+   * it exited, and a record can say `running` about a PTY this boot never
+   * started. Optional because an older node omits it; absence is "unknown",
+   * never zero.
+   */
+  liveSessionCount?: number;
+  /**
+   * This space's chats whose durable `runtimeState` is `live` (the headless
+   * child is up) — the chat parallel of `liveSessionCount`. Exact, counted in
+   * SQL, never a capped page. Optional for the same older-node reason.
+   */
+  liveChatCount?: number;
+  /** Of `liveChatCount`, those with a turn `running` or `queued` right now. */
+  workingChatCount?: number;
 }
 
 // --- execution.journal — the session CLI command journal --------------------

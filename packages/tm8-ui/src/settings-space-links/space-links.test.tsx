@@ -17,6 +17,10 @@ import type { SpaceLinkView } from '@tm8/contract';
 import { SpaceLinksSection } from './SpaceLinksSection';
 import { spaceLinksPortFromSeam, type SpaceLinksPort } from './port';
 
+// Every sentence describes only what W6 ships: the switch is stored, nothing reads it yet.
+const SPAWN_OFF_TEXT =
+  'Allow spawn is stored per link; it is enforced when cross-space spawn ships.';
+
 afterEach(() => cleanup());
 
 function link(over: Partial<SpaceLinkView> = {}): SpaceLinkView {
@@ -62,8 +66,10 @@ describe('SpaceLinksSection', () => {
     const warning = await screen.findByTestId('space-links-warning');
     expect(warning.textContent).toMatch(/Every member of this space can see that a link to the target space exists/);
     expect(warning.textContent).toMatch(/Only you can use your own sign-in/);
-    expect(warning.textContent).toMatch(/agents working for you in this space can act in the target space as you/);
+    expect(warning.textContent).toMatch(/Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in/);
     expect(warning.textContent).toMatch(/Allow spawn/);
+    // The stored-switch wording (enforcement arrives with cross-space spawn).
+    expect(warning.textContent).toContain(SPAWN_OFF_TEXT);
     // Control: an empty list still draws it.
     expect(await screen.findByTestId('space-links-empty')).toBeTruthy();
   });
@@ -133,6 +139,14 @@ describe('SpaceLinksSection', () => {
     render(<SpaceLinksSection port={port} />);
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Allow spawn in Research' }));
     await waitFor(() => expect(port.setSpawn).toHaveBeenCalledWith('link-1', true));
+  });
+
+  it('the spawn switch carries the stored-switch help text and is described by it', async () => {
+    render(<SpaceLinksSection port={fakePort([link()])} />);
+    const help = await screen.findByTestId('space-links-spawn-help');
+    expect(help.textContent?.replace(/\s+/g, ' ').trim()).toBe(SPAWN_OFF_TEXT);
+    const box = screen.getByRole('checkbox', { name: 'Allow spawn in Research' });
+    expect(box.getAttribute('aria-describedby')).toBe(help.id);
   });
 
   it('Add link sends the typed target space id', async () => {

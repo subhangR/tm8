@@ -74,7 +74,7 @@ function stripHtmlInputType(text: string): string {
 
 /**
  * `<SubsystemRow name="server" …>` in `NodeRoom.tsx` is the node health card's
- * row label for the server PROCESS, not the `server` KIND (which 243 made a
+ * row label for the server PROCESS, not the `server` KIND (which 250 made a
  * core kind for W6/W8). Masked the same narrow way: only the literal `server`
  * as the `name` attribute on the line after `<SubsystemRow`.
  */

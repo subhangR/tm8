@@ -13,7 +13,7 @@
 //   +     preflight TOCTOU gate, lease refusal, uniqueness, envelope trigger,
 //         non-member refusal, in_worktree registry row with its own schema
 //
-//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_worktree_verify \
+//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_worktree_verify \
 //     node db/test/worktrees.mjs
 // =============================================================================
 import { json, run, scalar, claimsFor, buildWorld, literal, uuid, cmid, OWNER_URL } from './helpers.mjs';

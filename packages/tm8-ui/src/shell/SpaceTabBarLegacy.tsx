@@ -87,6 +87,10 @@ import type { SpaceTabBarProps } from './SpaceTabBar';
    bars cannot drift apart in what a host may hand them. */
 
 export function SpaceTabBarLegacy(props: SpaceTabBarProps) {
+  /* The View switcher (task 01a0dc6d) is not drawn here — this bar stays the
+     one it was — but its destinations must not vanish, so they lead the row
+     as ordinary tabs. */
+  const tabs = [...(props.viewTabs ?? []), ...(props.tabs ?? [])];
   return (
     <header className="shell-tabbar" data-testid="space-tab-bar">
       {props.onGoHome ? (
@@ -108,9 +112,9 @@ export function SpaceTabBarLegacy(props: SpaceTabBarProps) {
 
       {props.switcherSlot ?? null}
 
-      {props.tabs && props.tabs.length > 0 ? (
+      {tabs.length > 0 ? (
         <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
-          {props.tabs.map((tab) => {
+          {tabs.map((tab) => {
             const active = tab.id === props.activeTabId;
             return (
               <button

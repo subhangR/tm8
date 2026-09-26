@@ -5,20 +5,24 @@
  * WHAT THIS EXISTS TO FIX. `attention_requests` has always retained its rows:
  * resolving is a status flip, never a delete (migration 050:208-212), so the
  * reason, the score, the requester and the resolution note all survive. None of
- * that was reachable from the UI. The badge shows a live count and drops the
- * moment somebody opens the entity — and `views/open-entity.ts:60` opens by
- * bulk-resolving — so the product's answer to "what was escalated here, and who
- * decided what about it" was `tm8 attention list --entity <id>` and nothing else.
+ * that was reachable from the UI, so the product's answer to "what was escalated
+ * here, and who decided what about it" was `tm8 attention list --entity <id>`
+ * and nothing else.
  *
- * IT IS A HISTORY FIRST, AND THAT IS A RULING, NOT AN OVERSIGHT. Auto-resolve-
- * on-open stays (user ruling 2026-08-16), so by the time this section renders,
- * rows that were pending a second ago usually say `Resolved · you · now`. The
- * section is honest about that rather than pretending to be a live queue: the
- * eyebrow states pending and settled counts separately, and the footnote says
- * out loud that opening the page is what settled them. Hiding that would make
- * the surface look broken to anyone who read the badge first.
+ * IT IS A LIVE QUEUE NOW, NOT ONLY A HISTORY (Attention v2, decisions G4/G5/Q18
+ * — this REVERSES the ruling of 2026-08-16). Opening an entity used to bulk-
+ * resolve everything waiting on it, so by the time this dock rendered, rows that
+ * were pending a second ago already said `Resolved · you · now` and a footnote
+ * had to explain that reading the page was what settled them. That footnote was
+ * the tell: a surface whose whole purpose is "what is still waiting" cannot be
+ * the thing that empties it. `open-entity.ts` no longer writes, so what is
+ * pending here is pending because nobody has decided it yet.
  *
- * IT STILL WRITES, because two of the four statuses had no UI path at all.
+ * SETTLING IS THEREFORE EXPLICIT, PER-ROW AND UNDOABLE. It is the only path that
+ * closes a request, which raises the cost of a misclick from nothing to the one
+ * thing a reviewer actually cared about — hence the Undo window below.
+ *
+ * IT WRITES, because two of the four statuses had no UI path at all.
  * `dismissed` in particular was unreachable — a whole quarter of the enum that
  * only the CLI could produce — so a request could be satisfied but never
  * declined. Rows that are still pending carry Resolve and Decline, each with an
@@ -41,7 +45,7 @@
  *      because the full section was too tall for a body that owns its own
  *      height, and a one-line bar is not. One home, every kind.
  *   2. THE DATA DECIDES THE DEFAULT, and nothing is persisted. A settled-only
- *      history — the common case, and the one in the report — opens collapsed.
+ *      history opens collapsed.
  *      A row still pending opens the sheet, because it is the only part anyone
  *      can still act on. `autoOpened` makes that a one-way latch: settling the
  *      last pending row must not yank the list shut under the hand that just
@@ -55,7 +59,12 @@
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AttentionRequest, AttentionRequestStatus, EntityId } from '@tm8/contract';
+import type {
+  AttentionRequest,
+  AttentionRequestMutationResult,
+  AttentionRequestStatus,
+  EntityId,
+} from '@tm8/contract';
 import {
   isPending,
   leadPending,
@@ -68,15 +77,33 @@ import { relTime } from '../kit/time';
 import type { AttentionPort } from './port';
 import './attention.css';
 
+/**
+ * HOW LONG UNDO STAYS ON OFFER. Long enough to read the row you just changed and
+ * notice it was the wrong one; short enough that the toast is not still sitting
+ * there, stale, over a queue you have moved on from. It expires on a timer rather
+ * than on the next click so that settling a SECOND row does not silently retarget
+ * the Undo button at it.
+ */
+export const UNDO_WINDOW_MS = 10_000;
+
 export interface AttentionRequestsProps {
   entityId: EntityId;
   port: AttentionPort;
   /**
-   * A settlement landed. The host refetches the entity so the BADGE catches up
-   * — this section owns its own rows and reloads them itself, but the count in
-   * the list rail is the host's cache and would otherwise keep the old number.
+   * A settlement landed, CARRYING THE SERVER'S NEW SUMMARY OF THE ENTITY.
+   *
+   * The host folds that summary straight into its store (`data.reconcileCommand`)
+   * so the tile's amber and the top-bar count drop on this tick. It used to be a
+   * bare `() => void` and every host answered it with `data.pull?.(id)`, which
+   * CANNOT WORK and silently did nothing: `pull` fills a panel's cache and
+   * returns early when the detail is already there — and the detail is always
+   * already there, because that cache is why the panel is on screen at all (see
+   * the docblock on `useGateData.pull`). So the write landed, this dock redrew,
+   * and the badge outside it kept the old number until something unrelated
+   * refetched. Passing the summary the mutation already returned costs no
+   * request and cannot miss.
    */
-  onSettled?: () => void;
+  onSettled?: (result: AttentionRequestMutationResult) => void;
   /** Test seam: injected rows skip the fetch entirely. */
   rows?: readonly AttentionRequest[];
   /** Test seam: pins relative times. Real renders use the wall clock. */
@@ -102,6 +129,16 @@ export function AttentionRequests(props: AttentionRequestsProps) {
    * moving to the error phase would do.
    */
   const [writeError, setWriteError] = useState<string | null>(null);
+  /**
+   * THE LAST SETTLEMENT, FOR AS LONG AS IT CAN STILL BE TAKEN BACK.
+   *
+   * Holds the row AS THE SERVER RETURNED IT, which is the only copy whose
+   * `version` is the one an undo has to send: settling bumped it, so the row
+   * still in `state.rows` from before the write would conflict. That is also why
+   * this is the returned row and not the row the click started from.
+   */
+  const [undoable, setUndoable] = useState<AttentionRequest | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * THE SHEET'S DISCLOSURE STATE, seeded closed and opened by the data once.
    *
@@ -179,6 +216,80 @@ export function AttentionRequests(props: AttentionRequestsProps) {
     setOpen(true);
   }, [state]);
 
+  const clearUndo = useCallback(() => {
+    if (undoTimer.current != null) clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    setUndoable(null);
+  }, []);
+
+  useEffect(() => clearUndo, [clearUndo]);
+
+  /**
+   * PATCH ONE ROW IN PLACE from the copy the server returned.
+   *
+   * This replaced a `load('refresh')`, and the justification for that refetch is
+   * gone rather than merely outweighed: it existed because a bulk resolve could
+   * settle SIBLING rows behind the one being written, so every other local row
+   * was suspect too. `attentionRequests.update` touches exactly one row
+   * (`affectedCount` is hard-coded 1 in migration 050) and nothing else bulk-
+   * resolves any more, so the returned row is the whole of what changed. Patching
+   * also keeps the list from reordering under the hand that just clicked, and
+   * leaves an exact `version` for Undo to send.
+   */
+  const applyRow = useCallback((row: AttentionRequest) => {
+    setState((prev) =>
+      prev.phase === 'ready'
+        ? { ...prev, rows: prev.rows.map((r) => (r.id === row.id ? row : r)) }
+        : prev,
+    );
+  }, []);
+
+  /**
+   * Fold one landed write into everything that shows it: this dock's own row,
+   * the host's store (so the tile and the top-bar count move without a request),
+   * and the Undo offer.
+   *
+   * `result.request` is null only when the server replayed a ledger entry it no
+   * longer has the row for; a refetch is the honest fallback there, and it also
+   * means no Undo is offered, because there is no version to send.
+   */
+  const absorb = useCallback(
+    (result: AttentionRequestMutationResult, offerUndo: boolean) => {
+      if (result.request) applyRow(result.request);
+      else load('refresh');
+      props.onSettled?.(result);
+      if (offerUndo && result.request) {
+        if (undoTimer.current != null) clearTimeout(undoTimer.current);
+        setUndoable(result.request);
+        undoTimer.current = setTimeout(() => {
+          undoTimer.current = null;
+          setUndoable(null);
+        }, UNDO_WINDOW_MS);
+      } else {
+        clearUndo();
+      }
+    },
+    [applyRow, clearUndo, load, props.onSettled],
+  );
+
+  const onWriteFailed = useCallback(
+    (error: unknown) => {
+      setBusy(null);
+      const code = (error as { code?: string })?.code;
+      setWriteError(
+        code === 'version_conflict'
+          ? 'This request changed while you were looking at it — reloading.'
+          : String((error as { message?: string })?.message ?? error),
+      );
+      // A conflict is not a dead end: the row moved, so re-read it. Now that
+      // opening an entity no longer bulk-resolves its queue, this means somebody
+      // ELSE settled the row — rare, and worth saying out loud rather than
+      // swallowing, which is why the notice stays up alongside the reload.
+      if (code === 'version_conflict') load('refresh');
+    },
+    [load],
+  );
+
   const settle = useCallback(
     (row: AttentionRequest, status: AttentionRequestStatus, note: string) => {
       setBusy(row.id);
@@ -193,32 +304,54 @@ export function AttentionRequests(props: AttentionRequestsProps) {
           resolutionNote: note.trim() || undefined,
         })
         .then(
-          () => {
+          (result) => {
             if (!live.current) return;
             setBusy(null);
             setDrafting(null);
-            // Refetch rather than patch in place: the bulk resolve can settle
-            // SIBLING rows behind this one, so the local copy of everything
-            // else is suspect too, not just the row that was written.
-            load('refresh');
-            props.onSettled?.();
+            absorb(result, true);
           },
           (error: unknown) => {
             if (!live.current) return;
-            setBusy(null);
-            const code = (error as { code?: string })?.code;
-            setWriteError(
-              code === 'version_conflict'
-                ? 'This request changed while you were looking at it — reloading.'
-                : String((error as { message?: string })?.message ?? error),
-            );
-            // A conflict is not a dead end: the row moved, so re-read it. The
-            // usual cause is benign — opening this page bulk-resolved the queue.
-            if (code === 'version_conflict') load('refresh');
+            onWriteFailed(error);
           },
         );
     },
-    [load, props.onSettled],
+    [absorb, onWriteFailed],
+  );
+
+  /**
+   * PUT A SETTLED ROW BACK TO `open`.
+   *
+   * The same verb that closed it — `attentionRequests.update` carries any of the
+   * four statuses, and migration 050 clears `resolved_by`/`resolved_at` when the
+   * new status is `open`, so this is a real reopen rather than a row that merely
+   * reads as pending. The resolution note is deliberately LEFT ALONE: the input
+   * coalesces rather than clears, and a note explaining a decision that was
+   * taken back is still the truthful record of what happened.
+   *
+   * No Undo is offered for the undo. One step back is the affordance; a toggle
+   * that keeps re-arming itself is a way to lose track of where you are.
+   */
+  const undoSettle = useCallback(
+    (settled: AttentionRequest) => {
+      setBusy(settled.id);
+      setWriteError(null);
+      clearUndo();
+      portRef.current
+        .settle({ requestId: settled.id, expectedVersion: settled.version, status: 'open' })
+        .then(
+          (result) => {
+            if (!live.current) return;
+            setBusy(null);
+            absorb(result, false);
+          },
+          (error: unknown) => {
+            if (!live.current) return;
+            onWriteFailed(error);
+          },
+        );
+    },
+    [absorb, clearUndo, onWriteFailed],
   );
 
   // LOADING AND EMPTY BOTH RENDER NOTHING, and for the same reason: this
@@ -277,6 +410,29 @@ export function AttentionRequests(props: AttentionRequestsProps) {
         </p>
       ) : null}
 
+      {/* THE UNDO TOAST LIVES INSIDE THE SHEET, not in the app's notice stack,
+          and that is deliberate. The row it refers to is one line below it: a
+          toast in the corner of the screen would name a request the reader has to
+          go and find, and would outlive the dock being closed — offering to undo
+          something in a surface no longer on screen. `role="status"` announces it
+          without stealing focus from the list the reader is still working. */}
+      {undoable ? (
+        <p className="att-req__undo" role="status" data-testid="attention-undo">
+          <span className="att-req__undo-text">
+            {undoable.status === 'dismissed' ? 'Request declined.' : 'Request resolved.'}
+          </span>
+          <button
+            type="button"
+            className="att-req__act att-req__undo-act"
+            disabled={busy === undoable.id}
+            onClick={() => undoSettle(undoable)}
+            data-testid="attention-undo-act"
+          >
+            {busy === undoable.id ? 'Undoing…' : 'Undo'}
+          </button>
+        </p>
+      ) : null}
+
       <ul className="att-req__list">
         {ordered.map((row) => (
           <HistoryRow
@@ -299,17 +455,11 @@ export function AttentionRequests(props: AttentionRequestsProps) {
         </p>
       ) : null}
 
-      {/* THE FOOTNOTE IS LOAD-BEARING. Without it, a reader who just saw a
-          NEEDS ATTENTION badge finds every row marked resolved-by-them and
-          concludes the surface is lying. It is not: opening the page is the
-          thing that resolved them (`views/open-entity.ts`). Only shown when
-          there is a settled row to explain. */}
-      {summary.settledCount > 0 ? (
-        <p className="att-req__footnote">
-          Opening an entity resolves whatever was waiting on it, so requests may be
-          settled here by the act of reading them.
-        </p>
-      ) : null}
+      {/* THE FOOTNOTE IS GONE, and its absence is the point. It used to explain
+          why every row read `Resolved · you · now` the first time you looked —
+          opening the page had settled them. Nothing settles a request now except
+          somebody pressing Resolve or Decline, so there is no longer a surprise
+          to apologise for, and a note explaining one would be the lie. */}
     </AttentionDock>
   );
 }

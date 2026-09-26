@@ -22,7 +22,6 @@ import { SkillScanInputSchema } from '../skills/handlers.js';
  */
 import {
   ContainersAttachInputSchema,
-  ContainersAttentionInputSchema,
   ContainersBrowserEndpointInputSchema,
   ContainersComputerInputSchema,
   ContainersCreateInputSchema,
@@ -56,6 +55,7 @@ import {
   AuthClaimInputSchema,
   AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
+  AuthSpaceEnterInputSchema,
   AuthLogoutInputSchema,
   AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
@@ -65,7 +65,10 @@ import {
   CredentialsLoginSessionFinishInputSchema,
   CredentialsServiceKeyDeleteInputSchema,
   CredentialsServiceKeyPutInputSchema,
+  CredentialsSpaceAddMineInputSchema,
   CredentialsSpaceCommandInputSchema,
+  CredentialsSpaceDefaultConsentInputSchema,
+  CredentialsSpaceSetVisibilityInputSchema,
   CredentialsSpaceCreateInputSchema,
   CredentialsSpacePolicySetInputSchema,
   CredentialsSpaceRekeyInputSchema,
@@ -133,6 +136,8 @@ import {
   ProjectFolderUploadCompleteInputSchema,
   ProjectFolderUploadInitInputSchema,
   ProjectLinkInputSchema,
+  SpaceProjectCreateInputSchema,
+  GateFolderCreateInputSchema,
   ProjectUpdateInputSchema,
   PullInputSchema,
   ReactionInputSchema,
@@ -197,6 +202,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // authentication has no authoring persona and no idempotency ledger entry.
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
+  'auth.space.enter': AuthSpaceEnterInputSchema,
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,
@@ -228,6 +234,12 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.setDefault': CredentialsSpaceCommandInputSchema,
   'credentials.space.rename': CredentialsSpaceRenameInputSchema,
   'credentials.space.delete': CredentialsSpaceCommandInputSchema,
+  'credentials.space.setVisibility': CredentialsSpaceSetVisibilityInputSchema,
+  'credentials.space.spaceDefaultConsent': CredentialsSpaceDefaultConsentInputSchema,
+  'credentials.space.addMine': CredentialsSpaceAddMineInputSchema,
+  'credentials.space.claim': CredentialsSpaceCommandInputSchema,
+  'credentials.space.myDefault.set': CredentialsSpaceCommandInputSchema,
+  'credentials.space.myDefault.clear': CredentialsSpaceCommandInputSchema,
   'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
 
@@ -250,7 +262,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.members.remove': SpacesMembersRemoveInputSchema,
   'spaces.leave': SpacesLeaveInputSchema,
   'accounts.disable': AccountsDisableInputSchema,
-  // W6 (243/244): human-only in SQL; the body never carries a secret.
+  // W6 (250/251): human-only in SQL; the body never carries a secret.
   'spaceLinks.add': SpaceLinksAddInputSchema,
   'spaceLinks.login': SpaceLinksMutationInputSchema,
   'spaceLinks.relogin': SpaceLinksMutationInputSchema,
@@ -336,6 +348,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.chatDefaults.set': SetChatDefaultsInputSchema,
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,
+  'spaces.projects.create': SpaceProjectCreateInputSchema,
+  'gate.folders.create': GateFolderCreateInputSchema,
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
   'projects.files.attach': ProjectFileAttachInputSchema,
@@ -426,7 +440,6 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'containers.unexpose': ContainersUnexposeInputSchema,
   'containers.snapshot': ContainersSnapshotInputSchema,
   'containers.fork': ContainersForkInputSchema,
-  'containers.attention': ContainersAttentionInputSchema,
   'containers.pools.set': ContainersPoolsSetInputSchema,
 };
 
@@ -468,6 +481,10 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // actorId/clientMutationId, so there is no CommandContext to bind either. A
   // strict empty schema would only break the no-body POST the CLI sends.
   'auth.claim.reissue',
+  // W4 (232): GENUINELY body-less for the same reason — the session is the
+  // path, the caller's claims are the authorization, and auth.* has no
+  // CommandContext to bind.
+  'auth.sessions.revoke',
   // containers (177): the ONE container command with no zod body, and it is
   // the first clause above rather than a gap. `containers.files.put` carries a
   // TAR STREAM, not JSON — its request body is bytes, and a strict object

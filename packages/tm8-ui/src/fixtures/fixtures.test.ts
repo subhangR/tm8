@@ -55,8 +55,8 @@ const CORE_KINDS: CoreEntityKind[] = CoreEntityKindSchema.options;
  * `chat` is deliberately NOT here: it is the kind this note was written for,
  * and it now has both.
  */
-// `space_link` (243) is managed only from Space settings, never browsed as a
-// row; `server` (243) has no detail table until W8.
+// `space_link` (250) is managed only from Space settings, never browsed as a
+// row; `server` (250) has no detail table until W8.
 const NO_SUMMARY_FIXTURE_YET: readonly CoreEntityKind[] = ['worktree', 'graph', 'space_link', 'server'];
 const NO_DETAIL_FIXTURE_YET: readonly CoreEntityKind[] = ['worktree', 'graph', 'voice_channel', 'space_link', 'server'];
 

@@ -145,6 +145,7 @@ export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenCha
       </div>
       {open ? (
         <div
+          className="jev-entry__pop"
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.stopPropagation();

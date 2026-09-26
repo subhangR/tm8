@@ -1,5 +1,5 @@
 /**
- * `spaceLinks.invoke` and `spaceLinks.audit` (W7, migration 990; decisions
+ * `spaceLinks.invoke` and `spaceLinks.audit` (W7, migration 258; decisions
  * 31, 33, 38 and E2).
  *
  * An agent in home space A runs ONE catalog op in target space B as its
@@ -16,7 +16,7 @@
  *      rule for explicit credential sources (F9, K11);
  *   3. the via chain from `x-tm8-via` (it can only ADD spaces): at most
  *      SPACE_LINK_MAX_HOPS hops, never back into a space already in it;
- *   4. the caller's OWN token row (990 resolve, no sealed bytes): an agent
+ *   4. the caller's OWN token row (258 resolve, no sealed bytes): an agent
  *      resolves its launching member's row and nobody else's (T18);
  *   5. the target half of the via rule, and the row's spawn switch;
  *   6. a rate bucket per token row.
