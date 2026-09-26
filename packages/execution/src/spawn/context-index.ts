@@ -492,19 +492,20 @@ const UNKNOWN_MIME = 'application/octet-stream';
  *   and, without a reference selection, the task's own files. An unticked
  *   task file is left out; a picked file no task carries goes on the first
  *   task; a file two tasks carry is listed once, on the first.
- * - `<linked>`: the picks decide it. A link the index carries (rendered or
- *   dropped for the budget, which its group's `omitted` declares), a file, or
- *   an unticked reference leaves it. Links past the spawn read are the index
- *   group's `omitted` too, so `linkedTotal` is the list's own length.
+ * - `<linked>`: the picks decide it. A file or an unticked reference leaves
+ *   it; every ticked link keeps its identity line, and `linkedTotal` keeps
+ *   the links past the spawn read. A link the FITTED index names is not
+ *   named twice: the prompt leaves its title out of `linked-names`
+ *   (`namedInIndex`, built at render time from the fitted index), so a link
+ *   the index dropped for the budget still has its id here (coordinator
+ *   ruling on #920 review round 2).
  *
  * Pure: `tasks` are the manifest's (already redacted) tasks, `references`
- * the launch's selected set, `indexIds` the candidate ids
- * (`contextIndexCandidates`). The caller redacts the file names it adds.
+ * the launch's selected set. The caller redacts the file names it adds.
  */
 export function launchTaskSnapshots(
   tasks: SpawnContext['tasks'],
   references: SpawnContext['references'],
-  indexIds: ReadonlySet<string>,
 ): SpawnContext['tasks'] {
   const selected = references !== undefined;
   const picks = new Set((references ?? []).map((ref) => ref.entityId));
@@ -516,11 +517,13 @@ export function launchTaskSnapshots(
       listed.add(file.fileEntityId);
       return true;
     });
-    const linked = (task.linked ?? []).filter((item) =>
+    const all = task.linked ?? [];
+    const linked = all.filter((item) =>
       item.kind !== 'file'
-      && !indexIds.has(item.entityId)
       && !(selected && REFERENCE_KINDS.has(item.kind) && !picks.has(item.entityId)));
-    return { ...task, attachments, linked, linkedTotal: linked.length };
+    // The links past the spawn read stay counted: only what left is subtracted.
+    const linkedTotal = Math.max(linked.length, (task.linkedTotal ?? all.length) - (all.length - linked.length));
+    return { ...task, attachments, linked, linkedTotal };
   });
   const first = out[0];
   if (first) {

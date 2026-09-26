@@ -1998,7 +1998,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   // load pointer), never a whole `<memory>`, in the order the launch sent
   // them. Only the legacy jsonb remainder, which has no id to point at, stays
   // whole. Files leave the index for `<attachments>`, and `<linked>` follows
-  // the picks (`launchTaskSnapshots`), so each id is in one section.
+  // the picks (`launchTaskSnapshots`); a name the fitted index carries is not
+  // repeated (`namedInIndex`, at render time).
   let candidates: PromptContextGroup[] = [];
   if (input.contextIndex) {
     const ids = manifest.context?.memoryIds ?? [];
@@ -2011,11 +2012,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
     candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories }));
-    manifest.tasks = redactSecretsDeep(launchTaskSnapshots(
-      manifest.tasks,
-      context.references,
-      new Set(candidates.flatMap(g => g.entries.map(e => e.id))),
-    ));
+    manifest.tasks = redactSecretsDeep(launchTaskSnapshots(manifest.tasks, context.references));
   }
   // Measure the real non-index prompt once, then account for the exact escaped
   // serializer. This stays linear even when a deep equipment chain has no count cap.

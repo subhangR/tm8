@@ -353,12 +353,11 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     expect(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.omitted).toBe(0);
   });
 
-  it('(a) nothing is in two sections: a link the index carries leaves <linked>, and the unread are the index\'s omitted', () => {
+  it('(a) the v1 snapshot drops only the titles the index names; <linked> keeps every id and the unread count', () => {
     const { prompt } = compose(context, { on: true });
-    expect(prompt.task).not.toContain('<entity id="doc-1"');
-    expect(prompt.task).not.toContain('<entity id="doc-2"');
-    expect(prompt.task).toContain('<linked count="0" />');
-    expect(prompt.system).toContain('omitted="44"');
+    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
+    expect(prompt.task).toContain('<entity id="doc-2" kind="doc" link="relates_to" />');
+    expect(prompt.task).toContain('omitted="44"');
     expect(prompt.task).not.toContain('type="linked-names"');
   });
 
@@ -689,31 +688,56 @@ describe('launch card v3: files ride in <attachments>, and <linked> follows the 
     ]);
   });
 
-  it('<linked> follows the picks: an unticked link leaves it, a ticked one is in the index only', () => {
+  it('<linked> follows the picks: an unticked link leaves it; a ticked one keeps its id, named once (in the index)', () => {
     const { manifest, prompt } = compose(picked, { on: true });
     expect(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries.map((e) => e.id)).toEqual(['doc-1']);
-    expect(prompt.task).not.toContain('<entity id="doc-1"');
+    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
+    expect(prompt.task).not.toContain('Doc one');
     expect(prompt.task).not.toContain('doc-2');
     // What no other section carries stays: the teammate's own link.
     expect(prompt.task).toContain('<entity id="persona" kind="team_member" link="relates_to" />');
   });
 
-  it('nothing appears in two sections', () => {
+  it('a file is in exactly one section, and a fitted link is named once', () => {
     const { prompt } = compose(picked, { on: true });
     const all = `${prompt.system}\n${prompt.task}`;
-    for (const id of ['doc-1', 'file-own-1', 'file-picked']) {
-      const sections = [
-        /<entry id="([^"]+)"/g, /<entity id="([^"]+)"/g, /<file entity_id="([^"]+)"/g,
-      ].filter((re) => [...all.matchAll(re)].some((m) => m[1] === id));
-      expect(sections).toHaveLength(1);
+    for (const id of ['file-own-1', 'file-picked']) {
+      expect([...all.matchAll(/<file entity_id="([^"]+)"/g)].filter((m) => m[1] === id)).toHaveLength(1);
+      expect(all).not.toContain(`<entry id="${id}"`);
+      expect(all).not.toContain(`<entity id="${id}"`);
     }
+    // Named by the index (its header name), never again in linked-names.
+    expect(all.split('Doc doc-1').length - 1).toBe(1);
+    expect(prompt.task).not.toContain('&quot;entityId&quot;:&quot;doc-1&quot;');
+  });
+
+  it('a ticked link the index drops for the budget keeps its <linked> identity line and its name', () => {
+    // Twelve links whose whenToUse (never cut) is ~4 KB each: far past the 32 KB ceiling.
+    const many = Array.from({ length: 12 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked: many, linkedTotal: many.length })],
+      headers: many.map((l) => ({ ...docHeader(l.entityId), whenToUse: `open ${l.entityId} ${'w'.repeat(4000)}` })),
+      references: many.map((l) => ({ entityId: l.entityId, kind: 'doc', title: l.title, via: 'linked' as const, link: 'relates_to' })),
+    }), { on: true });
+    const fitted = new Set(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries.map((e) => e.id));
+    const dropped = manifest.context!.dropped!.filter((d) => d.group === 'references' && d.level === 'entry').map((d) => d.entityId);
+    expect(dropped.length).toBeGreaterThan(0);
+    const gone = dropped.find((id) => Number(id.slice(4)) < 16)!;
+    expect(gone).toBeDefined();
+    expect(fitted.has(gone)).toBe(false);
+    // Its identity line and its name stay in the snapshot; a fitted one is named only by the index.
+    expect(prompt.task).toContain(`<entity id="${gone}" kind="doc" link="relates_to" />`);
+    const named = (id: string): string => `&quot;entityId&quot;:&quot;${id}&quot;`;
+    expect(prompt.task).toContain(named(gone));
+    const kept = [...fitted][0]!;
+    expect(prompt.task).not.toContain(named(kept));
   });
 
   it('without a reference selection every task file is attached, once, and no link is repeated in <linked>', () => {
     const { prompt } = compose(ctx({ tasks: [task({ linked, attachments }), task({ id: 'task-2', attachments: [attachments[0]!] })], headers: [docHeader('doc-1')] }), { on: true });
     expect(prompt.task.match(/<file entity_id="file-own-1"/g)).toHaveLength(1);
     expect(prompt.task).toContain('<file entity_id="file-own-2"');
-    expect(prompt.task).not.toContain('<entity id="doc-1"');
+    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
   });
 });
 
