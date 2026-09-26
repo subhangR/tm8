@@ -119,7 +119,7 @@ import {
   resolveInteractionProfileForLaunch,
 } from '../profiles/w2-profile-resolver.js';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
-import { SESSION_TTL_MS } from '../identity/pg-auth.js';
+import { resolveBearerIdentity, SESSION_TTL_MS } from '../identity/pg-auth.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -362,13 +362,18 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * 992 (W7p): a `link` session, or an agent minted under one. Both are read
-   * off the verified auth-session row (`createSessionIdentityResolver`), never
-   * from the client.
+   * 992 (W7p): a `link` session, or an agent minted under one — read off the
+   * verified auth-session row (`createSessionIdentityResolver`), never from
+   * the client — OR a launch whose freshly minted session carries the
+   * via_link stamp: a non-link member resuming a work session that ran under
+   * a link. That stamp is the SQL decision (`link_provenance_for`), so the TS
+   * policy follows it rather than the resumer's claims. A token that does not
+   * resolve throws, and the launch is refused.
    */
-  isLinkBound(auth: GraphAuth): boolean {
+  async isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean> {
     const claims = this.claims(auth);
-    return claims.authKind === 'link' || Boolean(claims.viaLinkId);
+    if (claims.authKind === 'link' || claims.viaLinkId) return true;
+    return Boolean((await resolveBearerIdentity(this.db, agentToken)).viaLinkId);
   }
 
   /**

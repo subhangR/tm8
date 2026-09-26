@@ -665,15 +665,19 @@ export class SpawnService {
    * space API key is materialized into the session's own 0700 home from the
    * key read NOW, so a resume picks up a rekey (D7).
    */
-  private resolveSessionCredentials(
+  private async resolveSessionCredentials(
     auth: GraphAuth,
     spaceId: string,
     sessionId: string,
     launch: ResolvedLaunchConfig,
+    agentToken: string,
     resume = false,
   ): Promise<ResolvedSessionCredentials> {
+    // After the mint, so a resume of a link-provenance session is link-bound
+    // off the child's own stamp (992), whoever resumes it.
+    const linkBound = (await this.graph.isLinkBound?.(auth, agentToken)) === true;
     return resolveSessionCredentials(
-      { auth, spaceId, launch, resume, linkBound: this.graph.isLinkBound?.(auth) === true },
+      { auth, spaceId, launch, resume, linkBound },
       {
         ...(this.spaceCredentials ? { spaceCredentials: this.spaceCredentials } : {}),
         resolveMemberHome: (source) =>
@@ -1541,6 +1545,7 @@ export class SpawnService {
         request.spaceId,
         sessionId,
         launch,
+        agentToken,
       );
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
@@ -2337,6 +2342,7 @@ export class SpawnService {
         info.spaceId,
         sessionId,
         launch,
+        agentToken,
         true,
       );
       spaceCredentialIds = credentials.spaceCredentialIds;

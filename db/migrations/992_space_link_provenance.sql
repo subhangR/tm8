@@ -36,7 +36,8 @@
 --      caller only for the target's DEFAULT credential (no pinned id), and only
 --      while the caller's own row for that link and target is signed in with
 --      spawning allowed; anything else 42501. Other kinds are unchanged.
---   6. `open_space_link_token` refuses a via_link caller (no link chaining).
+--   6. `open_space_link_token` and `mark_space_link_stale` refuse a via_link
+--      caller (no link chaining; a descendant never changes a link's state).
 --   7. A RESTRICTIVE select policy hides `account_agent_credentials` from a
 --      link-bound caller, so the member's model key is never offered to a
 --      link spawn (ruling (i)); the spawn layer refuses by name as well.
@@ -489,6 +490,50 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
+-- 8b. mark_space_link_stale — 251's body plus the same via_link refusal as
+--     open_space_link_token: a link-descended session reports nothing about a
+--     link (it never opened one), so it cannot sign one out or strand it.
+-- -----------------------------------------------------------------------------
+create or replace function public.mark_space_link_stale(p_link_id uuid, p_status text)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  row public.space_link_tokens;
+begin
+  if p_status not in ('signed_out', 'unreachable') then
+    raise exception 'a use can only mark a link signed_out or unreachable' using errcode = '22023';
+  end if;
+  -- ALLOW-list, not a deny-list: the human kinds plus 'agent' (W7's own-row
+  -- path). link, agent_runtime, any later kind, null and empty all refuse.
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') not in ('browser', 'cli', 'agent') then
+    raise exception 'this session kind cannot use a space link' using errcode = '42501',
+      detail = jsonb_build_object('authKind', coalesce(internal.claim_text('tm8.auth_kind'), 'none'))::text;
+  end if;
+  -- W7p: a session minted under a link never changes a link's state — the
+  -- same refusal as open_space_link_token.
+  if internal.claim_text('tm8.via_link') is not null then
+    raise exception 'a session minted under a space link cannot use a space link' using errcode = '42501';
+  end if;
+  row := internal.space_link_own_row(p_link_id);
+  if p_status = 'signed_out' then
+    if row.auth_session_id is not null then
+      update public.auth_sessions set revoked_at = now()
+       where id = row.auth_session_id and revoked_at is null;
+    end if;
+    update public.space_link_tokens
+       set status = 'signed_out', ciphertext = null, nonce = null, auth_session_id = null
+     where id = row.id
+     returning * into row;
+    perform internal.space_link_raise_attention(row,
+      'Space link signed out: the target refused the stored session. Sign in again.');
+  else
+    update public.space_link_tokens set status = 'unreachable' where id = row.id returning * into row;
+    perform internal.space_link_raise_attention(row, 'Space link unreachable: the target did not answer.');
+  end if;
+  return internal.space_link_json(p_link_id, row.member_id);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- 9. A row leaving `signed_in` ends the descendants of its session, including
 --    the one path that keeps the link session alive (stale `unreachable`).
 --    Every other exit revokes the link session and 249's cascade already ran.
@@ -536,6 +581,8 @@ revoke all on function public.store_space_link_session(uuid, uuid, text, timesta
 grant execute on function public.store_space_link_session(uuid, uuid, text, timestamptz, bytea, bytea, text, text) to tm8_app;
 revoke all on function public.open_space_link_token(uuid) from public;
 grant execute on function public.open_space_link_token(uuid) to tm8_app;
+revoke all on function public.mark_space_link_stale(uuid, text) from public;
+grant execute on function public.mark_space_link_stale(uuid, text) to tm8_app;
 
 reset role;
 

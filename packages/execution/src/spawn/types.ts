@@ -943,12 +943,17 @@ export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /**
-   * Whether `auth` is link-bound (992, W7p): a `link` session, or an agent
-   * minted under one. `GraphAuth` is opaque here, so the graph answers. Such a
-   * launch has no member credential rung (`resolveLinkBoundCredentials`).
-   * Optional: a graph without it has no links, so nothing is link-bound.
+   * Whether this launch is link-bound (992, W7p): `auth` is a `link` session
+   * or an agent minted under one, OR `agentToken` — the session just minted
+   * for the launch — carries a via_link stamp. The second arm is the resume
+   * case: a non-link member resuming a work session that ran under a link
+   * gets a stamped child in SQL, and the TS policy must follow that stamp,
+   * never the resumer's own claims. `GraphAuth` is opaque here, so the graph
+   * answers. Such a launch has no member credential rung
+   * (`resolveLinkBoundCredentials`). Optional: a graph without it has no
+   * links, so nothing is link-bound.
    */
-  isLinkBound?(auth: GraphAuth): boolean;
+  isLinkBound?(auth: GraphAuth, agentToken: string): Promise<boolean>;
   /**
    * Selection headers for `<context_index>` (design 01a0d348 §2.1), read
    * under the caller's RLS: an id the caller cannot read is simply absent.

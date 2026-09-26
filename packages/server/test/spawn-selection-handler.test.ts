@@ -72,6 +72,9 @@ class SpawnDb implements Db {
     if (fn === 'internal.w2_resolve_interaction_profile_for_launch') {
       return { profileId: null, profileVersion: null, templateKey: 'tm8.chat.core', templateVersion: 1, resolvedHash: 'h', source: 'core_default', snapshot: { profile: { source: 'core_default' } } } as T;
     }
+    // 992 (W7p): the spawn port re-resolves the minted token to read its
+    // via_link stamp. The real mint always resolves; no link here.
+    if (fn === 'resolve_auth_session') return { sessionId: 'auth', viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: 'auth' } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return { workSessionId: SESSION, pinRevision: 1, profileId: null, profileVersion: null, templateKey: 'tm8.chat.core', templateVersion: 1, resolvedHash: 'h', source: 'core_default', createdAt: '2026-09-23T00:00:00.000Z' } as T;

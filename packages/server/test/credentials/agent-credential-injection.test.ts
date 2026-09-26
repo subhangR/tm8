@@ -351,4 +351,32 @@ describe('DbAgentCredentialHome', () => {
     // the SQL or it is nowhere.
     expect(recorded[0]?.sql).toContain("status = 'active'");
   });
+
+  /**
+   * 992 (W7p): a link-bound caller never runs on the linking human's model
+   * login. In Postgres the restrictive policy already hides the row, which
+   * masks this guard; the stub answers WITH the row, as a database missing
+   * that policy would, so this cell is the guard's own red.
+   */
+  it('a link-bound caller gets null WITHOUT querying, even when the row would be returned', async () => {
+    const cases: DbClaims[] = [
+      { ...CLAIMS, authKind: 'link', viaLinkId: 'link-1', sessionSpaceId: 'space-b' },
+      { ...CLAIMS, authKind: 'agent', viaLinkId: 'link-1', sessionSpaceId: 'space-b' },
+    ];
+    for (const claims of cases) {
+      const recorded: RecordedQuery[] = [];
+      const home = await resolver([{ provider: 'anthropic' }], recorded).resolve(claims, {
+        agentTool: 'claude-code',
+        model: 'opus',
+      });
+      expect(home, JSON.stringify(claims)).toBeNull();
+      expect(recorded).toHaveLength(0);
+    }
+    // Paired positive: the same row, an ordinary agent of the same human.
+    const home = await resolver([{ provider: 'anthropic' }]).resolve(
+      { ...CLAIMS, authKind: 'agent', sessionSpaceId: 'space-b' },
+      { agentTool: 'claude-code', model: 'opus' },
+    );
+    expect(home?.provider).toBe('anthropic');
+  });
 });

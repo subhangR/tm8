@@ -27,6 +27,7 @@ import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-link-store.js';
 import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
 import { DbAgentCredentialHome } from '../../src/credentials/agent-credential-injection.js';
+import { DbGraphPort } from '../../src/facade/execution-handlers.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
@@ -270,6 +271,19 @@ describe('W7p the link session and its children carry via_link', () => {
     expect((await sessionRow(child.id)).revoked).toBe(true);
   });
 
+  it('the spawn port reads that stamp: the non-link resumer\'s launch is link-bound, an ordinary one is not', async () => {
+    // SpawnService asks this AFTER the mint, so its TS credential policy
+    // follows the SQL stamp rather than the resumer's own claims.
+    const graph = new DbGraphPort(db);
+    const child = await mintChild(L.linkClaims);
+    const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
+    expect(L.human.viaLinkId ?? null).toBeNull();
+    expect(await graph.isLinkBound(L.human, resumed.token)).toBe(true);
+    const ordinary = await mintChild(L.human);
+    expect(await graph.isLinkBound(L.human, ordinary.token)).toBe(false);
+    expect(await graph.isLinkBound(L.linkClaims, ordinary.token)).toBe(true);
+  });
+
   it('a child never outlives its link session (expiry capped)', async () => {
     const child = await mintChild(L.linkClaims, { days: 400 });
     const [c, p] = [await sessionRow(child.id), await sessionRow(L.linkSessionId)];
@@ -374,7 +388,7 @@ describe('W7p 206 — a link-bound caller gets the target default only, while it
   });
 });
 
-describe('W7p open_space_link_token — no chaining', () => {
+describe('W7p open_space_link_token and mark_space_link_stale — no chaining', () => {
   it('a link child cannot open a link (42501); an ordinary agent child of H opens H\'s row', async () => {
     const L = await linked();
     const child = await claimsForToken((await mintChild(L.linkClaims)).token);
@@ -387,6 +401,22 @@ describe('W7p open_space_link_token — no chaining', () => {
     ]);
     const g = await claimsForToken(formatToken(row.id, secret));
     expect(await outcome(() => db.rpc(g, 'open_space_link_token', [L.link.id]))).toBe('ok');
+  });
+
+  it('a link child cannot mark a link stale (42501, row untouched); H\'s ordinary agent child can', async () => {
+    const L = await linked();
+    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    for (const status of ['signed_out', 'unreachable']) {
+      expect(await outcome(() => db.rpc(child, 'mark_space_link_stale', [L.link.id, status]))).toBe('42501');
+    }
+    expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
+    const ws = await workSession(fixture.spaceA, fixture.personaA, fixture.memberHA);
+    const secret = generateSecret();
+    const row = await db.rpc<{ id: string }>(L.human, 'issue_agent_auth_session', [
+      ws, fixture.personaA, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'w7p G stale',
+    ]);
+    const g = await claimsForToken(formatToken(row.id, secret));
+    expect(await outcome(() => db.rpc(g, 'mark_space_link_stale', [L.link.id, 'unreachable']))).toBe('ok');
   });
 });
 

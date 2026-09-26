@@ -58,6 +58,9 @@ class SpawnDb implements Db {
   async rpc<T>(_claims: DbClaims, fn: string): Promise<T> {
     this.rpcCalls.push(fn);
     if (fn === 'public.execution_spawn') return { entity: { id: SESSION }, patches: [], __tm8_replayed: false } as T;
+    // 992 (W7p): the spawn port re-resolves the minted token to read its
+    // via_link stamp. The real mint always resolves; no link here.
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_resolve_interaction_profile_for_launch') {
       return {
