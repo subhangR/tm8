@@ -140,21 +140,6 @@ export function inviteRoles(): string[] {
 }
 
 /**
- * The roles that can administer a space — every role except the least
- * privileged one.
- *
- * Same derivation `defaultInviteRole` already relies on (the registry lists
- * roles most-privileged first, so the last entry is the plain one), and the
- * same reason for deriving it. This mirrors `internal.is_space_admin`, which
- * tests `role in ('owner','admin')` — but SQL is the authority and this is
- * only what the UI shows before the click.
- */
-export function adminRoles(): string[] {
-  const roles = memberRoles();
-  return roles.slice(0, Math.max(0, roles.length - 1));
-}
-
-/**
  * The kinds whose rows carry per-space axes, from REGISTRY DATA — every kind
  * declaring `list.axisControls`. Today that is exactly the task kind; a
  * second axis-bearing kind arrives here by registry entry alone, which is the

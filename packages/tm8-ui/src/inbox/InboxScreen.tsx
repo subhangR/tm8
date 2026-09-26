@@ -31,7 +31,6 @@ import {
   applyFilters,
   buildGroups,
   emptyGroupsNote,
-  filtersActive,
   inboxEmptyNote,
   inboxRowOf,
   kindsPresent,

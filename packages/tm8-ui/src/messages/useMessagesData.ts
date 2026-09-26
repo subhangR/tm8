@@ -66,7 +66,6 @@ import type {
   EntityFeedPage,
   EntityId,
   EntityKind,
-  EntitySummary,
   MessageBatchResult,
   PostMessageInput,
   SpaceId,

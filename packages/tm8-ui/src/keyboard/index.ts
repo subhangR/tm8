@@ -9,7 +9,6 @@ export {
   BINDINGS,
   CHORD_LEAD,
   CHORD_WINDOW_MS,
-  LAYER_ORDER,
   hasMod,
   isAdvertised,
   isBrowserReserved,
