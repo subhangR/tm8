@@ -244,8 +244,8 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   ['public.link_project', '234_space_owned_projects.sql'],
   // 260 (W11-repoint) drops 234's fill trigger function with its two triggers:
   // every writer now names the project entity itself. See
-  // db/migrations/262_w11_repoint_project_entity.sql, section 2.
-  ['internal.fill_project_entity_ref', '262_w11_repoint_project_entity.sql'],
+  // db/migrations/263_w11_repoint_project_entity.sql, section 2.
+  ['internal.fill_project_entity_ref', '263_w11_repoint_project_entity.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {
