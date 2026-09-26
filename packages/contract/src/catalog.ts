@@ -64,6 +64,10 @@ export const OPERATIONS = [
   // selected (design 01a0d348 §5.1, I9): spawn's own default loaders, read in
   // the caller's RLS tx, so the launch sheet pre-ticks exactly what spawn loads.
   { name: 'launch.defaults', method: 'GET', path: '/v2/spaces/:spaceId/launch/defaults', kind: 'read', status: 'v1' },
+  // launch.preview — the launch card's dry run (launch card v3, decision 6):
+  // spawn's own context load and prompt budget on spawn's body, nothing
+  // written. A POST read because the body is a whole spawn input.
+  { name: 'launch.preview', method: 'POST', path: '/v2/spaces/:spaceId/launch/preview', kind: 'read', status: 'v1' },
   // Per-kind chat defaults (entity-chat design 01a0da4e §3.4, migration 229):
   // space-wide teammate + model per entity kind. Read by any member; written
   // by a human owner/admin, the interactionProfile.setDefault gate.

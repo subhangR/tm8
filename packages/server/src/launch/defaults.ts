@@ -34,6 +34,7 @@ import {
   type SelectionHeader,
 } from '@tm8/contract';
 import type { ContextVia } from '@tm8/execution';
+import { BYTE_BUDGETS } from '@tm8/prompt';
 
 import type { DbClaims } from '../db/types.js';
 import { claimsFor, requireUuidParam } from '../facade/context.js';
@@ -230,6 +231,9 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
       teammates: finish(read.teammates, rules.teammates, 'teammates'),
       taskId: read.taskId,
       contextIndex: contextIndex ? 'on' : 'off',
+      // Served, not hard-coded in the card (decision 1): the budgets spawn enforces.
+      inFullBudgetBytes: BYTE_BUDGETS.inFullInjection,
+      launchCapBytes: BYTE_BUDGETS.combinedInitialInjection,
       warnings,
     } satisfies LaunchDefaultsResult;
   });

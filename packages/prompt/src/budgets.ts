@@ -53,6 +53,14 @@ export const BYTE_BUDGETS = {
    * replaces it.
    */
   memoryInjection: 12288,
+  /**
+   * The launch title row, sent in full (launch card v3, decision 1): the
+   * subject's `<task>` plus every `inFullIds` section, inside
+   * `combinedInitialInjection`. Fixed, and served by `launch.defaults` as
+   * `inFullBudgetBytes`. Past it a launch is refused `in_full_budget`; a
+   * subject alone past it goes to reference mode instead.
+   */
+  inFullInjection: 24576,
 } as const;
 
 export type BudgetName = keyof typeof BYTE_BUDGETS;

@@ -117,6 +117,18 @@ export interface LaunchDefaultsResult {
    */
   contextIndex: 'on' | 'off';
   /**
+   * Bytes the title row may send in full (launch card v3, decision 1): the
+   * subject's `<task>` plus every `inFullIds` entry. A fixed share of
+   * `launchCapBytes`. Past it spawn refuses `payload_too_large` /
+   * `in_full_budget`; a subject alone past it goes to reference mode instead.
+   */
+  inFullBudgetBytes: number;
+  /**
+   * The whole initial injection's hard cap (`combinedInitialInjection`,
+   * 32768 today). Past it spawn refuses `payload_too_large` / `launch_total`.
+   */
+  launchCapBytes: number;
+  /**
    * Why a group is emptier than asked (a teammate or subject that does not
    * resolve), or why budgets are the node defaults (a profile that does not).
    */

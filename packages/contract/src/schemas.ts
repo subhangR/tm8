@@ -35,6 +35,7 @@ import {
   type SetEntityHeaderInput,
 } from './selection-header.js';
 import type { SameShape } from './launch-suggest.js';
+import type { LaunchPreviewInput } from './launch-preview.js';
 import type {
   ArtifactsCreateInput, ArtifactsPreviewStartInput,
   ArtifactsPublishInput, ArtifactsRestoreInput,
@@ -3558,6 +3559,8 @@ const executionSpawnInputObject = z.object({
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
   selection: SpawnSelectionSchema.optional(),
   selectionReasons: SpawnSelectionReasonsSchema.optional(),
+  // Kinds and readability are checked against the graph (`in_full_kind_not_allowed`, `not_found`).
+  inFullIds: SelectionGroupIdsSchema.optional(),
   contextBudgets: ContextBudgetsSchema.optional(),
   jevRunId: SpawnUuidSchema.optional(),
   harnessSurface: z.enum(['minimal', 'inherit']).optional(),
@@ -3570,32 +3573,45 @@ export const SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE =
   'selection and memoryIds cannot be combined: selection is the exact memory and skill set for the session, '
   + 'memoryIds adds to the working set — send one or the other';
 
-export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = executionSpawnInputObject.superRefine(
-  (input, ctx) => {
-    if (input.selection && input.memoryIds !== undefined) {
+/** Cross-field rules shared by `execution.spawn` and `launch.preview`, which takes the same body. */
+function refineSpawnSelection(
+  input: Pick<ExecutionSpawnInput, 'selection' | 'memoryIds' | 'selectionReasons'>,
+  ctx: z.RefinementCtx,
+): void {
+  if (input.selection && input.memoryIds !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['selection'],
+      message: SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE,
+    });
+  }
+  // A group is either selected or defaulted for a reason, never both.
+  const named: Record<string, boolean> = {
+    memories: input.selection?.memoryIds !== undefined,
+    skills: input.selection?.skillIds !== undefined,
+    references: input.selection?.referenceIds !== undefined,
+  };
+  for (const group of Object.keys(input.selectionReasons ?? {})) {
+    if (named[group]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['selection'],
-        message: SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE,
+        path: ['selectionReasons', group],
+        message: `selectionReasons.${group} explains a defaulted group, but selection names ${group}`,
       });
     }
-    // A group is either selected or defaulted for a reason, never both.
-    const named: Record<string, boolean> = {
-      memories: input.selection?.memoryIds !== undefined,
-      skills: input.selection?.skillIds !== undefined,
-      references: input.selection?.referenceIds !== undefined,
-    };
-    for (const group of Object.keys(input.selectionReasons ?? {})) {
-      if (named[group]) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['selectionReasons', group],
-          message: `selectionReasons.${group} explains a defaulted group, but selection names ${group}`,
-        });
-      }
-    }
-  },
-);
+  }
+}
+
+export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> =
+  executionSpawnInputObject.superRefine(refineSpawnSelection);
+
+/**
+ * launch.preview (launch card v3, decision 6): spawn's body minus the
+ * idempotency key and the terminal geometry, with spawn's own rules.
+ */
+const launchPreviewInputObject = executionSpawnInputObject.omit({ clientMutationId: true, cols: true, rows: true });
+export const LaunchPreviewInputSchema: z.ZodType<LaunchPreviewInput> =
+  launchPreviewInputObject.superRefine(refineSpawnSelection);
 
 type Assert<T extends true> = T;
 
@@ -3615,6 +3631,11 @@ export type SpawnSelectionShapeProof = [
     z.infer<typeof executionSpawnInputObject>['jevRunId'],
     ExecutionSpawnInput['jevRunId']
   >>,
+  Assert<SameShape<
+    z.infer<typeof executionSpawnInputObject>['inFullIds'],
+    ExecutionSpawnInput['inFullIds']
+  >>,
+  Assert<SameShape<keyof z.infer<typeof launchPreviewInputObject>, keyof LaunchPreviewInput>>,
 ];
 
 /**

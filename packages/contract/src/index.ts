@@ -20,6 +20,7 @@ export * from './pty-protocol.js';
 export * from './skill-reference.js';
 export * from './launch-suggest.js';
 export * from './launch-defaults.js';
+export * from './launch-preview.js';
 export * from './chat-defaults.js';
 export * from './membership.js';
 export * from './space-links.js';
