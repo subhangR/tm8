@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # tm8 migration gate.
 #
-# Two layers, both cheap:
+# Three layers, all cheap:
 #   A. static  — naming, ordering, duplicate numbering, and the "no legacy
 #                references" law (zero Firebase/Supabase/UID-bypass residue, T-D3).
 #                Runs everywhere, always.
 #   B. apply   — apply the whole sequence to a throwaway database and roll it back.
 #                Runs only when a Postgres is reachable; otherwise SKIPS LOUDLY.
+#   C. identity — on B's migrated database, fail on any function reading identity_id()
+#                that is not on tools/ci/identity-id-allowlist.txt (identity-id-gate.sh).
+#                Runs only when B ran and passed.
 #
 # Until db/migrations has content (W1, Cygnus) this is a passing placeholder that
 # says so out loud. It is wired into tools/ci/check.sh from day one so the gate
@@ -170,4 +173,15 @@ for path in "${MIGRATIONS[@]}"; do
 done
 
 [ "$FAILED" -eq 0 ] && note "the full sequence applies clean to a fresh database"
+
+# --- layer C: the identity_id() gate (plan 01a0d9eb W3, F7) -----------------
+# Against the same freshly migrated catalog: every function that reads the
+# caller's identity must be on tools/ci/identity-id-allowlist.txt.
+if [ "$FAILED" -eq 0 ]; then
+  note "identity_id() gate over the migrated catalog"
+  if ! bash "$REPO_ROOT/tools/ci/identity-id-gate.sh" "$SCRATCH_URL"; then
+    err "identity_id() gate failed (tools/ci/identity-id-gate.sh)"
+    FAILED=1
+  fi
+fi
 exit "$FAILED"

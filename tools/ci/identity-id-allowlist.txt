@@ -1,0 +1,71 @@
+# The identity_id() allow-list (plan 01a0d9eb §3 W3, F7), read by tools/ci/identity-id-gate.sh.
+#
+# One line per live function that reads the caller's identity, as
+#   <reader> <schema.name(identity args)>
+# where <reader> is `identity_id` (calls internal.identity_id()) or `setting`
+# (reads the raw tm8.identity_id setting). The gate fails on a live function
+# missing from this list AND on a line here that matches no live function.
+#
+# Adding a line is a security review. Such a function decides for itself whether
+# the caller may act, so check that it cannot reach a space other than the pinned
+# one (internal.session_space_id(), 227): it goes through a pinned membership
+# helper, RLS as tm8_app, node admin (pinned out by 231), or touches only the
+# caller's own account rows. Put the verdict in the trailing comment.
+#
+# Tags: PIN-HELPER, ACCOUNT, GUARDED, NODE-ADMIN, KNOWN-GAP (see the W3-audit
+# matrix in packages/server/test/db/cross-space-token.pg.test.ts).
+
+identity_id internal.can_act_as(target_actor uuid, target_space uuid)
+identity_id internal.current_account_id()
+identity_id internal.current_member_id(target_space uuid)
+identity_id internal.entity_readable(target uuid)
+identity_id internal.entity_row_visible(p_id uuid, p_space_id uuid, p_kind text, p_visibility text)
+identity_id internal.form_is_caller(p_respondent_id uuid)
+identity_id internal.is_authenticated()
+identity_id internal.is_space_admin(target_space uuid)
+identity_id internal.is_space_member(target_space uuid)
+identity_id internal.ledger_record(p_cmid text, p_operation text, p_result jsonb)
+identity_id internal.ledger_replay(p_cmid text, p_operation text)
+identity_id internal.member_space_ids()
+identity_id internal.require_identity()
+identity_id internal.require_node_admin()
+identity_id internal.require_replay_principal(p_cmid text)
+identity_id internal.w2_space_settings_view(p_space_id uuid)
+identity_id internal.w2g12_profile_validation_evidence(p_profile_id uuid, p_profile_version integer, p_draft jsonb, p_generated_by uuid, p_active_version integer)
+identity_id public.append_chat_message_part(p_message_id uuid, p_seq integer, p_kind text, p_payload jsonb)
+identity_id public.bind_chat_agent_message(p_turn_id uuid, p_agent_message_id uuid)
+identity_id public.claim_form_deliveries(p_response_id uuid, p_work_session_id uuid, p_limit integer, p_lease_seconds integer, p_route_modes text[])
+identity_id public.claim_next_chat_turn(p_chat_id uuid)
+identity_id public.complete_chat_turn(p_turn_id uuid, p_state text, p_body text, p_usage jsonb, p_total_cost_usd numeric, p_failure jsonb)
+identity_id public.create_space_credential(p_credential_id uuid, p_space_id uuid, p_provider text, p_shape text, p_label text, p_key_hint text, p_secret_ciphertext bytea, p_secret_nonce bytea, p_display_login text)
+identity_id public.current_space_identity(p_space_id uuid)
+identity_id public.ensure_account(p_identity_id text, p_username text, p_display_name text, p_email text, p_is_owner boolean, p_is_node_admin boolean, p_password_algorithm text, p_password_hash text)
+identity_id public.grant_stream_attach(p_session_id uuid, p_mode text, p_token_hash text, p_ttl interval, p_client_mutation_id text)
+identity_id public.grant_surface_attach(p_container_id uuid, p_surface text, p_mode text, p_token_hash text, p_ttl interval, p_multi_use boolean)
+identity_id public.inspect_owned_teammate_inbox(p_team_member_id uuid, p_limit integer)
+identity_id public.inspect_owned_teammate_inbox(p_team_member_id uuid, p_space_id uuid, p_unread boolean, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)
+identity_id public.issue_auth_session(p_account_id uuid, p_token_hash text, p_kind text, p_expires_at timestamp with time zone, p_acting_as_team_member_id uuid, p_label text)
+identity_id public.issue_work_session_agent_session(p_work_session_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)
+identity_id public.mark_chat_runtime_state(p_chat_id uuid, p_state text)
+identity_id public.mark_notification_read(p_notification_id uuid)
+identity_id public.mark_notification_read(p_notification_id uuid, p_recipient_type text, p_recipient_id uuid, p_client_mutation_id text)
+identity_id public.mark_read(p_anchor_id uuid, p_client_mutation_id text)
+identity_id public.preview_invite(p_code text)
+identity_id public.queue_tracking_refresh(p_entity_ids uuid[], p_actor_id uuid, p_client_mutation_id text)
+identity_id public.revoke_account_sessions(p_account_id uuid)
+identity_id public.revoke_account_sessions_except(p_account_id uuid, p_keep_session_id uuid)
+identity_id public.revoke_auth_session(p_session_id uuid)
+identity_id public.set_account_credential(p_account_id uuid, p_hash text, p_algo text)
+identity_id public.set_member_role(p_space_id uuid, p_member_id uuid, p_role text, p_actor_id uuid, p_client_mutation_id text)
+identity_id public.space_kind_counts(p_space_id uuid)
+identity_id public.start_chat(p_chat_id uuid, p_space_id uuid, p_teammate_id uuid, p_model text, p_provider text, p_agent_tool text, p_chat_mode text, p_workdir_mode text, p_project_id uuid, p_native_session_id uuid, p_cwd text, p_title text, p_body text, p_attachment_ids uuid[], p_about_id uuid, p_client_mutation_id text)
+identity_id public.start_space_credential_login(p_space_id uuid, p_provider text, p_label text, p_credential_id uuid, p_ttl_seconds integer, p_session_cap integer)
+identity_id public.w2_claim_handoff_dispatch(p_handoff_id text, p_envelope_hash text, p_session_epoch text)
+identity_id public.w2_post_message_batch(p_anchor_ids uuid[], p_body text, p_parent_message_id uuid, p_mention_ids uuid[], p_attachment_ids uuid[], p_source_work_session_id uuid, p_actor_id uuid, p_client_mutation_id text, p_chat_turn_mode text, p_source_chat_id uuid)
+identity_id public.w2_prepare_handoff(p_handoff_id text, p_source_entity_id uuid, p_target_work_session_id uuid, p_expected_content_version integer, p_actor_id uuid, p_session_epoch text)
+identity_id public.w2_settle_handoff(p_handoff_id text, p_outcome text, p_failure_reason text, p_envelope_hash text, p_session_epoch text)
+identity_id public.w2_withdraw_handoff(p_handoff_id text, p_expected_record_version integer, p_reason text, p_actor_id uuid, p_client_mutation_id text)
+setting internal.identity_id()
+setting internal.require_identity()
+setting public.consume_stream_attach(p_session_id uuid, p_mode text, p_token_hash text)
+setting public.consume_surface_attach(p_container_id uuid, p_surface text, p_mode text, p_token_hash text)
