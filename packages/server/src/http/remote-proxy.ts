@@ -66,6 +66,21 @@ function isUnauthenticated(error: unknown): boolean {
  *     the local caller is whatever the request is without it (the loopback
  *     auto-owner, or anonymous).
  *
+ * "Unknown here" is not "does not resolve here". A LOCAL token that is revoked
+ * or expired does not resolve either, and it has the same `tm8s_<uuid>.<secret>`
+ * shape as a remote's pass. So before anything is forwarded, `issuedHere` asks
+ * whether this node ever issued that session id, in any state (236). If it
+ * did, the token is ours: it is never forwarded, and when it is DEAD it is
+ * refused 401, with or without a cookie beside it. A presented invalid
+ * credential never degrades — not to the auto-owner, not to the cookie's
+ * caller (program-lead ruling, R18). That is what every other route does: the
+ * ordinary path 401s a dead bearer, and the relay already 401s a dead cookie.
+ * A LIVE local token that is not the cookie is dropped and the cookie names
+ * the caller (a follow-on cell: the ordinary path answers that pair 401
+ * `conflicting authentication credentials`). The probe sees the token only to
+ * parse out the id; the secret never reaches the database. Without a probe (no
+ * database: nothing can resolve a token anyway) the old rule stands.
+ *
  * Then: anonymous is `unauthenticated`; anything but a browser/cli session is
  * `forbidden`. The auto-owner resolves as `browser` (identity-resolver.ts).
  */
@@ -73,6 +88,7 @@ export async function resolveRelayCaller(
   headers: IncomingHttpHeaders,
   resolveIdentity: IdentityResolver,
   context: IdentityResolutionContext,
+  issuedHere?: (token: string) => Promise<boolean>,
 ): Promise<RelayCaller> {
   const { authorization, ...withoutAuthorization } = headers;
   const presented = typeof authorization === 'string'
@@ -82,16 +98,25 @@ export async function resolveRelayCaller(
 
   let caller: RelayCaller;
   if (cookie) {
-    caller = {
-      identity: await resolveIdentity(withoutAuthorization, context),
-      forwardAuthorization: presented !== '' && presented !== cookie,
-    };
+    const identity = await resolveIdentity(withoutAuthorization, context);
+    let forwardAuthorization = presented !== '' && presented !== cookie;
+    if (forwardAuthorization && (await issuedHere?.(presented))) {
+      // Ours, so it stays here. Resolve it alone: a dead one throws
+      // `unauthenticated` and the request is refused; a live one is dropped.
+      const { cookie: _cookie, ...authorizationOnly } = headers;
+      await resolveIdentity(authorizationOnly, context);
+      forwardAuthorization = false;
+    }
+    caller = { identity, forwardAuthorization };
   } else if (presented) {
     try {
       const identity = await resolveIdentity(headers, context);
       caller = { identity, forwardAuthorization: identity.kind !== 'bearer' };
     } catch (error) {
       if (!isUnauthenticated(error)) throw error;
+      // Ours and it did not resolve: dead (or its account is disabled). Never
+      // the auto-owner.
+      if (await issuedHere?.(presented)) throw error;
       caller = {
         identity: await resolveIdentity(withoutAuthorization, context),
         forwardAuthorization: true,
