@@ -383,6 +383,21 @@ describe('remembered picks, per teammate', () => {
     expect((await second.spawn()).reasoningEffort).toBe('low');
   });
 
+  it('re-picking the teammate already shown keeps its restored picks', async () => {
+    const first = renderPopup();
+    fireEvent.click(first.getByTestId('nsx-effort'));
+    fireEvent.click(within(first.getByTestId('lcd-effort-menu')).getByRole('menuitemradio', { name: 'Low' }));
+    await first.spawn();
+    first.unmount();
+
+    const second = renderPopup();
+    await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
+    fireEvent.click(second.getByTestId('nsx-team'));
+    fireEvent.click(within(second.getByTestId('nsx-team-menu')).getByRole('menuitemradio', { name: /^forge/ }));
+    await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
+    expect((await second.spawn()).reasoningEffort).toBe('low');
+  });
+
   it('unticked, a launch remembers nothing', async () => {
     const first = renderPopup();
     fireEvent.click(first.getByTestId('nsx-team'));

@@ -237,16 +237,33 @@ export function LaunchComposerPopup({
   const resolvedTeammate = config.teamMemberId;
   const restoreRef = useRef(bind);
   restoreRef.current = bind;
+  /* Re-picking the teammate already resolved changes no id, so the effect
+     below would not re-run while `pickTeammate` had already re-seeded the
+     persona's defaults: the picks were wiped under a "restored: …" line
+     (found live on a real node). Every pick from the menu re-runs it. */
+  const [pickCount, setPickCount] = useState(0);
+  /* A Jev Apply that sets the model in the same commit as the teammate
+     (Apply all) is the person's latest choice: the teammate's remembered
+     model and effort must not land on top of it. The flag lives for one
+     commit — the effect after the restore clears it. */
+  const jevModelApplied = useRef(false);
+  const onPickTeammate = bind.onPickTeammate;
+  const pickTeammate = useCallback((id: string | null) => {
+    onPickTeammate(id);
+    setPickCount((n) => n + 1);
+  }, [onPickTeammate]);
   useEffect(() => {
     const picks = readPicks(resolvedTeammate);
     setRestored(picks);
     if (!picks) return;
     const b = restoreRef.current;
-    if (picks.model) b.onPickModel(picks.model);
-    if (picks.effort !== undefined) b.onEffortChange(picks.effort);
+    const keepModel = jevModelApplied.current;
+    if (picks.model && !keepModel) b.onPickModel(picks.model);
+    if (picks.effort !== undefined && !keepModel) b.onEffortChange(picks.effort);
     if (picks.accessMode) b.onAccessModeChange(picks.accessMode);
     if (picks.workdirMode) b.onWorkdirModeChange(picks.workdirMode);
-  }, [resolvedTeammate]);
+  }, [resolvedTeammate, pickCount]);
+  useEffect(() => { jevModelApplied.current = false; });
 
   /* THE DESCRIPTION, autofilled. `null` means "not answered yet": the load
      seeds it exactly once, and ONLY if the viewer has not started typing —
@@ -336,6 +353,7 @@ export function LaunchComposerPopup({
       ? { model: config.model, agentToolId: config.agentToolId, reasoningEffort: config.reasoningEffort }
       : null,
     setModel: (choice) => {
+      jevModelApplied.current = true;
       bind.onPickModel(choice.model);
       bind.onEffortChange(choice.reasoningEffort);
     },
@@ -610,7 +628,7 @@ export function LaunchComposerPopup({
         verbLabel={verbLabel ?? 'Run'}
         teammates={bind.teammates}
         teammateId={bind.teammateId}
-        onPickTeammate={bind.onPickTeammate}
+        onPickTeammate={pickTeammate}
         remember={remember}
         onRememberChange={(on) => { setRemember(on); writeRemember(on); }}
         restoredLine={restoredLine}
