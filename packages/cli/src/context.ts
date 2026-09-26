@@ -74,6 +74,19 @@ export interface CliContext {
   timeoutMs: number | undefined;
   /** `--fresh`: this invocation bypasses the session read-cache lookup. */
   fresh: boolean;
+  /**
+   * Set when `--space` named a Space other than the session's own and a space
+   * link resolved it (space-link-route.ts). Every catalog call then leaves as
+   * `spaceLinks.invoke` on the HOME Space; `space` above holds the target.
+   */
+  link?: SpaceLinkRoute | undefined;
+}
+
+/** Where a linked invocation goes: the home Space and the link, never a token. */
+export interface SpaceLinkRoute {
+  homeSpaceId: string;
+  linkId: string;
+  targetSpaceId: string;
 }
 
 /**

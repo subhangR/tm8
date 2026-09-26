@@ -243,6 +243,13 @@ async function dispatch(
   };
   await applyStoredCredential();
 
+  // `--space` naming another Space than the session's: through a space link on
+  // the home server, or not at all (space-link-route.ts).
+  // Before `--server`: a linked --space with --server is refused before the
+  // registry lookup, so neither route is half-taken.
+  const { routeThroughSpaceLink } = await import('./space-link-route.js');
+  ctx = await routeThroughSpaceLink(ctx, match.path, { serverFlag: globals.server });
+
   if (globals.server !== undefined) {
     if (match.path[0] === 'server') {
       throw new CliError('server registry commands always act on the local Server; omit --server', EXIT_USAGE);

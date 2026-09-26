@@ -283,14 +283,10 @@ const COMMANDLESS_OPERATIONS = [
       'skills.preview',
       // F4: authoring roots are a composer read with no CLI verb.
       'skills.roots',
-      // W6 (243/244): space links are managed from space settings by a
-      // human only; `list` is the settings read. Commandless by decision.
-      'spaceLinks.add',
-      // W7 (990): invoke and audit ship server-first; the CLI lane follows.
-      'spaceLinks.audit',
+      // W6 (243/244) / W7: `tm8 link list|add|login|audit` exist; invoke is
+      // reached through `--space`, and relogin/logout/remove/setSpawn stay
+      // settings-only for scope.
       'spaceLinks.invoke',
-      'spaceLinks.list',
-      'spaceLinks.login',
       'spaceLinks.logout',
       'spaceLinks.relogin',
       'spaceLinks.remove',

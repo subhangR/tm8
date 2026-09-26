@@ -302,7 +302,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** A fresh client: every read in the loop must reach the Server, never the read-cache. */
 function freshClient(ctx: CliContext): Tm8Client {
-  return new Tm8Client({ baseUrl: ctx.baseUrl.value, token: ctx.token, timeoutMs: ctx.timeoutMs, fresh: true });
+  return new Tm8Client({ baseUrl: ctx.baseUrl.value, token: ctx.token, timeoutMs: ctx.timeoutMs, fresh: true, link: ctx.link });
 }
 
 export function wireDeps(cmd: CommandContext, formId: string): FormWaitDeps {
