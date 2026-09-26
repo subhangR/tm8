@@ -142,6 +142,25 @@ describe('send paints in the same frame', () => {
     expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).value).toBe('This will fail.');
     expect(view.queryByTestId('chat-turn-shell')).toBeNull();
   });
+
+  /**
+   * HINGES ON: `restoreDraft` putting back `typed` — the box as it was — and
+   * not `draftBody`, the trimmed text that was posted. Indentation and blank
+   * lines the writer left are theirs to keep.
+   */
+  it('a failed post restores the draft exactly as typed, whitespace and all', async () => {
+    const script = scriptedPort();
+    const port: ChatHomePort = {
+      ...script.port,
+      postTurn: async () => { throw new Error('node refused the post'); },
+    };
+    const view = await openThread(port);
+    const typed = '  Indented first line\nthen a blank line after\n\n';
+
+    type(view, typed);
+    await waitFor(() => expect(view.getByText('node refused the post')).toBeTruthy());
+    expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).value).toBe(typed);
+  });
 });
 
 describe('a failed send leaves a turn already running alone', () => {
@@ -480,6 +499,47 @@ describe('the done part names how a turn ended', () => {
     });
     await waitFor(() => expect(view.queryByTestId('tch-send-working')).toBeNull());
     expect(transcript(view).getAttribute('data-turn-phase')).toBeNull();
+  });
+
+  /**
+   * HINGES ON: `turnFailureOf` judging only the LAST attempt — the parts after
+   * the previous done. A turn whose `complete_chat_turn` did not land is
+   * re-claimed and re-run into the SAME agent message, seq continuing (live:
+   * turn 01a0d439, done at seq 18, then seq 19–34 fifty minutes later), so one
+   * message can carry two done parts. Attempt 1 is durable (in the snapshot);
+   * attempt 2 streams.
+   */
+  const part = (seq: number, item: Extract<ChatTurnFrame, { type: 'chat.turn.delta' }>['part']): ChatTurnFrame => ({
+    type: 'chat.turn.delta', chatId: CHAT, messageId: AGENT_MSG, seq, part: item,
+  });
+
+  it('a re-run that succeeds after a failed first attempt is not held as failed', async () => {
+    const script = scriptedPort();
+    script.store(part(0, { kind: 'error', message: 'runtime died' }));
+    script.store(part(1, { kind: 'done', reason: 'error' }));
+    const view = await openThread(script.port);
+
+    act(() => {
+      script.emit(delta(2, 'Second attempt got there.'));
+      script.emit(part(3, { kind: 'done', reason: 'success' }));
+      script.emit(done());
+    });
+    await waitFor(() => expect(view.queryByTestId('tch-send-working')).toBeNull());
+    expect(transcript(view).getAttribute('data-turn-phase')).toBeNull();
+  });
+
+  it('a re-run that fails after a clean first attempt is held as failed', async () => {
+    const script = scriptedPort();
+    script.store(delta(0, 'First attempt answered.'));
+    script.store(part(1, { kind: 'done', reason: 'success' }));
+    const view = await openThread(script.port);
+
+    act(() => {
+      script.emit(part(2, { kind: 'error', message: 'second attempt died' }));
+      script.emit(part(3, { kind: 'done', reason: 'error' }));
+      script.emit(done());
+    });
+    await waitFor(() => expect(transcript(view).getAttribute('data-turn-phase')).toBe('failed'));
   });
 });
 
