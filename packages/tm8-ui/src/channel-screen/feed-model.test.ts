@@ -205,6 +205,18 @@ describe('typed activity presentation', () => {
       kind: 'entity-change', verb: 'created', entity: { id: 'doc-1' },
     });
 
+    // The same row about the feed's OWN anchor is an event, not a card.
+    expect(activityPresentation(artifact as Extract<FeedItem, { itemKind: 'activity' }>, 'doc-1')).toMatchObject({
+      kind: 'self-change', verb: 'created', entity: { id: 'doc-1' },
+    });
+    expect(activityPresentation(artifact as Extract<FeedItem, { itemKind: 'activity' }>, 'task-9').kind)
+      .toBe('entity-change');
+
+    const pr = activityItem({}, { verb: 'pr.linked', summary: { url: 'https://github.com/o/r/pull/898' } });
+    expect(activityPresentation(pr as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({
+      kind: 'state', label: 'Linked pull request', from: null, to: '#898',
+    });
+
     const work = activityItem({}, { verb: 'work.changed', summary: { status: 'in_review' } });
     expect(activityPresentation(work as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({
       kind: 'state', label: 'Work status', from: null, to: 'in_review',

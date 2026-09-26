@@ -335,6 +335,30 @@ describe('the feed region', () => {
     expect(screen.getByTestId('chs-state').textContent).toMatch(/work status.*in_review/i);
   });
 
+  it('draws a created/updated row about the feed\'s OWN anchor as a line, not a card', () => {
+    // A task's feed is mostly activity on the task itself; as cards, every one
+    // repeated the task's title and excerpt the panel is already showing.
+    const self = activityItem('updated', { kind: 'task' }, {
+      itemId: 'feed-self',
+      anchor: { id: ANCHOR, kind: 'task', title: 'The task itself', excerpt: 'Its whole body' } as never,
+    });
+    const other = activityItem('created', { kind: 'doc' }, {
+      itemId: 'feed-other',
+      anchor: { id: 'doc-other', kind: 'doc', title: 'A different doc', excerpt: 'Its excerpt' } as never,
+    });
+    render(<ChannelScreen {...base} page={page([self, other])} onOpenEntity={vi.fn()} />);
+    const line = screen.getByTestId('chs-self-change');
+    expect(line.textContent).toMatch(/forge\s*edited this task/);
+    expect(line.textContent).not.toContain('Its whole body');
+    // The one card is the OTHER entity's, and its text sits in ONE cell — the
+    // loose auto-placed children are what collapsed the title column.
+    const cards = screen.getAllByTestId('chs-artifact');
+    expect(cards).toHaveLength(1);
+    const text = cards[0]!.querySelector('.chs-artifact__text')!;
+    expect(text.querySelector('.chs-artifact__title')!.textContent).toBe('A different doc');
+    expect(text.querySelector('.chs-artifact__excerpt')!.textContent).toBe('Its excerpt');
+  });
+
   it('renders an activity variant it does not understand rather than dropping it (S15)', () => {
     // Oracle: "A pinned template can be older than the feed … rows are never
     // silently dropped." The safe card always carries timestamp + actor +
