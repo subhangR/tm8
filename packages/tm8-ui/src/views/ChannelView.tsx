@@ -23,7 +23,6 @@ import type { GateData } from './useGateData';
 import type { ContentSurface } from '../routes';
 import { conversationSurfaceFor } from './conversationSurface';
 import './channel-view.css';
-import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
@@ -249,7 +248,6 @@ export function ChannelView({
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
-      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}

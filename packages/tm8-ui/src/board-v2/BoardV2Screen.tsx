@@ -30,6 +30,7 @@
  * render-time snapshot, and a write must not consult the stale render it
  * started in.
  */
+import { EntityAttentionChip } from '../attention';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ActorSummary, EntityId, EntitySummary, SpaceId, Workflow } from '@tm8/contract';
 import { collectionKinds, getKind } from '../domain';
@@ -671,6 +672,7 @@ function CardView({
         {row.title}
       </button>
       <div className="b2__card-meta">
+        <EntityAttentionChip entity={row} />
         {typeof state.priority === 'string' ? <Pill tone="idle">{state.priority}</Pill> : null}
         {state.dueDate ? <span className="b2__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
         {state.acceptance && state.acceptance.total > 0 ? (

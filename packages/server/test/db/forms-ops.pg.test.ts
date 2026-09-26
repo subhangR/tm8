@@ -247,8 +247,11 @@ describe('forms.create', () => {
       dst_id: w.session, props: expect.objectContaining({ attribution: 'verified', origin: 'materialized' }),
     });
     expect(edges.filter((e) => e.type === 'attached_to').map((e) => e.dst_id).sort()).toEqual([w.task, w.task2].sort());
-    const attention = await sql(`select reason, points, status from public.attention_requests where entity_id = $1`, [id]);
-    expect(attention).toEqual([{ reason: 'Form: Pick the strategy', points: 60, status: 'open' }]);
+    // Attention v2 S6: tm8's own request (origin system, keyed form:<id>), normal / decide.
+    const attention = await sql(`select reason, points, status, origin, signal_key, level, action_type
+                                   from public.attention_requests where entity_id = $1`, [id]);
+    expect(attention).toEqual([{ reason: 'Form: Pick the strategy', points: 60, status: 'open', origin: 'system',
+      signal_key: `form:${id}`, level: 'normal', action_type: 'decide' }]);
   });
 
   it('a human: draft by default; forSession writes the edge recorded_only; no attention while draft', async () => {
@@ -472,17 +475,17 @@ describe('forms.transition', () => {
   const attention = async (id: string) =>
     (await sql(`select status from public.attention_requests where entity_id = $1 order by created_at`, [id])).map((r) => r.status);
 
-  it('draft → open raises attention; close resolves it; reopen raises a new one', async () => {
+  it('draft → open raises attention; close clears it; reopen raises a new one', async () => {
     const id = (await createForm(human(ID2), { settings: { attentionPoints: 80 } })).entity!.id;
     await transition(id, 'open');
     expect(await sql(`select reason, points from public.attention_requests where entity_id = $1`, [id]))
       .toEqual([{ reason: 'Form: Pick the strategy', points: 80 }]);
     await transition(id, 'closed');
-    expect(await attention(id)).toEqual(['resolved']);
+    expect(await attention(id)).toEqual(['cleared']);
     const reopened = await transition(id, 'open');
     expect((reopened.entity!.content as Row)['status']).toBe('open');
     expect((reopened.entity!.content as Row)['closedAt']).toBeNull();
-    expect(await attention(id)).toEqual(['resolved', 'open']);
+    expect(await attention(id)).toEqual(['cleared', 'open']);
   });
 
   it('an illegal transition is 409 conflict (form_transition_invalid)', async () => {
@@ -501,7 +504,7 @@ describe('forms.transition', () => {
       [`form_cancelled:${id}`]);
     expect(messages.map((m) => m.anchor_id).sort()).toEqual([w.session, id].sort());
     expect(messages[0]!.body).toMatch(/^form_cancelled: Pick the strategy\nform: .*\nreason: no longer needed$/);
-    expect(await attention(id)).toEqual(['resolved']);
+    expect(await attention(id)).toEqual(['cleared']);
   });
 });
 
@@ -567,8 +570,9 @@ describe('forms.responses.submit', () => {
       '1. [pick] Pick one → x ("X") [recommended]',
       '2. [why] Why? → cheap',
     ].join('\n'));
-    expect(await sql(`select status from public.attention_requests where entity_id = $1`, [id]))
-      .toEqual([{ status: 'resolved' }]);
+    // The first submitted response clears tm8's own request: no resolver, no delivery.
+    expect(await sql(`select status, resolved_by, note_deliver_after from public.attention_requests where entity_id = $1`, [id]))
+      .toEqual([{ status: 'cleared', resolved_by: null, note_deliver_after: null }]);
     expect(submitted).toEqual([{ formId: id, responseId: view.id, messageId: view.messageId, workSessionId: w.session }]);
   });
 
