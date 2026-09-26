@@ -18,7 +18,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Db, DbClaims } from '../db/types.js';
-import { isCollabError } from '@tm8/contract';
+import { isCollabError, type SpaceLinkAuditEntry } from '@tm8/contract';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
 import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { DEFAULT_SESSION_TTL_MS } from '../identity/service.js';
@@ -73,6 +73,32 @@ export interface SpaceLinkUse {
   session: ResolvedAuthSession;
   /** The stored bearer. Forward it; never log it. */
   token: string;
+}
+
+/** The caller's own row as invoke resolves it (990): no sealed bytes. */
+export interface SpaceLinkInvokeRow {
+  linkId: string;
+  tokenRowId: string;
+  memberId: string;
+  homeSpaceId: string;
+  targetSpaceId: string;
+  status: SpaceLinkStatus;
+  allowSpawn: boolean;
+  spawnBudget: number;
+}
+
+export interface SpaceLinkAuditInput {
+  homeSpaceId: string;
+  linkId: string | null;
+  linkRef: string;
+  targetSpaceId: string | null;
+  workSessionId?: string | null;
+  /** The canonical op name, or `(unknown)`: never the caller's raw string. */
+  op: string;
+  via: string[];
+  result: 'ok' | 'refused' | 'error';
+  reason?: string | null;
+  remoteId?: string | null;
 }
 
 /** Why a use failed. `signed_out`/`left`/`unreachable` are terminal until a human acts. */
@@ -233,6 +259,30 @@ export class DbSpaceLinkStore {
       });
     }
     return link;
+  }
+
+  /**
+   * W7: the caller's own row for `ref` (alias or link id) in the home space,
+   * WITHOUT the sealed bytes. Cheap enough to run before the refusal checks
+   * that need the row (the spawn switch, the via target) and before any unseal.
+   */
+  resolveInvoke(claims: DbClaims, homeSpaceId: string, ref: string): Promise<SpaceLinkInvokeRow> {
+    return this.db.rpc<SpaceLinkInvokeRow>(claims, 'resolve_space_link_invoke', [homeSpaceId, ref]);
+  }
+
+  /** W7: one audit row in the home space, under the caller's own claims. */
+  recordAudit(claims: DbClaims, entry: SpaceLinkAuditInput): Promise<string> {
+    return this.db.rpc<string>(claims, 'record_cross_space_audit', [
+      entry.homeSpaceId, entry.linkId, entry.linkRef, entry.targetSpaceId, entry.workSessionId ?? null,
+      entry.op, entry.via, entry.result, entry.reason ?? null, entry.remoteId ?? null,
+    ]);
+  }
+
+  /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (990). */
+  listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
+    return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [
+      linkId, options.limit ?? 50, options.before ?? null,
+    ]);
   }
 
   private key(): Promise<Buffer> {

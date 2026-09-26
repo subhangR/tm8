@@ -589,6 +589,27 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['link', 'spawn', 'budget', 'cross-space'],
     reason: 'human_settings_only',
   },
+  'spaceLinks.invoke': {
+    cmd: null,
+    sum: 'Run one operation in a linked Space as the Member who launched you — credential management, link and session management are refused',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'cross-space', 'invoke', 'agent'],
+    reason: 'cli_lane_pending',
+    notes: [
+      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, matched by prefix on the exact catalog name, on the home server before anything is forwarded',
+      'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+    ],
+  },
+  'spaceLinks.audit': {
+    cmd: null,
+    sum: 'Read the audit of calls made through a space link — your own rows, or every Member\'s for a home admin',
+    authz: 'server',
+    input: 'none',
+    tags: ['link', 'cross-space', 'audit'],
+    reason: 'cli_lane_pending',
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -3161,7 +3182,8 @@ export const CATALOG_DIGEST =
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // +7 spaceLinks.* (W6, 243/244): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest.
-  'sha256:3b8dcc96fcc96d2e640bdf6794ab7f5ba5dde491274e8f5b12c010038be27e78';
+  // +2 spaceLinks.invoke/audit (W7): RECOMPUTED from JSON.stringify(OPERATIONS) of the built contract.
+  'sha256:4201f8cb2f4e561a9ae4e239cec5d2401257c6cffec74775849368a82f5a2088';
 
 export const GRAMMAR_VERSION = '2';
 

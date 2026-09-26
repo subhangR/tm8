@@ -101,6 +101,11 @@ export const OPERATIONS = [
   { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
   { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
   { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
+  // W7: one op in the target, as the calling agent's launching member, minus
+  // the refused set (SPACE_LINK_REFUSED). `:link` is the caller's alias or the link id.
+  { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
+  // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
+  { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },

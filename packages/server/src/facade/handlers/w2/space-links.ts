@@ -9,7 +9,8 @@
  * the strict `internal.require_human_auth_kind()` on the bound claim. A `link`
  * session is refused by both, so a link can never manage links.
  *
- * No handler returns the stored session. `use` (W7) is not an operation.
+ * No handler returns the stored session. `use` is not an operation: W7's
+ * `spaceLinks.invoke` calls it server-side and never returns the bytes.
  */
 import {
   CollabError,
@@ -24,6 +25,7 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import { DbSpaceLinkStore } from '../../../credentials/space-link-store.js';
+import { createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
 
 const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
 
@@ -53,6 +55,8 @@ export interface SpaceLinkHandlerDeps {
    * `DbSpaceLinkStoreOptions.onStale`); defaults to a plain store.
    */
   store?: DbSpaceLinkStore;
+  /** W7 invoke tuning (the per-token-row bucket); defaults are production's. */
+  invoke?: SpaceLinkInvokeOptions;
 }
 
 function pathParam(ctx: RequestContext, name: 'spaceId' | 'linkId'): string {
@@ -105,9 +109,15 @@ export function registerSpaceLinkHandlers(
     });
   };
 
-  // Every write is wrapped; `list` alone is open (no secret, read-only).
+  // W7. invoke is NOT human-only: it is the agent's door. Its own guard
+  // (space-link-invoke.ts) refuses the refused set before anything is opened.
+  const { invoke, audit } = createSpaceLinkInvokeHandlers(registry, deps, store, claimsOf, links.invoke);
+
+  // Every write is wrapped; `list`, `audit` and `invoke` are the open three.
   registry.registerAll({
     'spaceLinks.list': list,
+    'spaceLinks.audit': audit,
+    'spaceLinks.invoke': invoke,
     'spaceLinks.add': requireHumanLinkSession(add),
     'spaceLinks.login': requireHumanLinkSession(login(false)),
     'spaceLinks.relogin': requireHumanLinkSession(login(true)),
