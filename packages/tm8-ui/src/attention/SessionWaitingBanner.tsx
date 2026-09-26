@@ -16,7 +16,8 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
-import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
+import { useAttentionOptional, type AttentionQueueRow } from './index';
+import { AttentionChipView } from './AttentionChipView';
 import { attentionAge } from './attention-subtitles';
 import './attention-surfaces.css';
 

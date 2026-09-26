@@ -30,7 +30,8 @@
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
  */
-import { AttentionList, useAttentionOptional } from '../attention';
+import { useAttentionOptional } from '../attention';
+import { AttentionList } from '../attention/AttentionList';
 import '../attention/attention-surfaces.css';
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';

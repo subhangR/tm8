@@ -14,7 +14,8 @@
  */
 import type { EntityId } from '@tm8/contract';
 import { MobileSheet } from '../mobile/MobileSheet';
-import { AttentionList, useAttentionOptional } from './index';
+import { useAttentionOptional } from './index';
+import { AttentionList } from './AttentionList';
 import './attention-surfaces.css';
 
 /**

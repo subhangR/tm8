@@ -3194,7 +3194,6 @@ export function Tile({
     useAttentionOptional(),
     row,
     verdict === 'not-running' || verdict === 'stale',
-    (id) => props.rows?.find((r) => r.id === id)?.title ?? null,
   );
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;

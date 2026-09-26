@@ -18,7 +18,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AttentionRequest, EntityAttentionSummary, EntityId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
-import { AttentionChipView, useAttentionOptional } from './index';
+import { useAttentionOptional } from './index';
+import { AttentionChipView } from './AttentionChipView';
 import {
   attentionAge,
   isRolledUp,

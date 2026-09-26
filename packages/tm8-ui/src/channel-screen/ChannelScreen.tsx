@@ -410,15 +410,15 @@ export function ChannelScreen({
           */}
           {attentionDetail ? (
             <span className="chs-needs-you__detail">{attentionDetail}</span>
-            ) : null}
-      />
+          ) : null}
           {onSwitchToTerminal ? (
             <button type="button" className="chs-chip-btn" onClick={onSwitchToTerminal}>
               Open the terminal
             </button>
           ) : null}
         </div>
-      ) : null}
+        ) : null}
+      />
       {/* The three-column split's inner half: feed+composer is one column,
           the thread pane the next — the same aside-beside-a-feed shape as
           `chv-split`/`chv-aside`, solved here so both hosts inherit it. */}

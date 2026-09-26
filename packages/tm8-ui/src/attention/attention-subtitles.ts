@@ -7,6 +7,7 @@
  * rows from the module's selectors and hand them here.
  */
 import type { AttentionRequest, EntityId } from '@tm8/contract';
+import { formatAge } from './attention-selectors';
 
 /** `#a41f`: the last four hex digits. A v7 uuid's head is its timestamp, so
  *  sibling sessions started the same minute share it; the tail does not. */
@@ -14,18 +15,10 @@ export function shortSessionId(id: string): string {
   return `#${id.replace(/-/g, '').slice(-4)}`;
 }
 
-/** Coarse age, as the mock prints it: `now`, `40m`, `3h`, `2d`, `3w`. */
+/** The module's one age format (`formatAge`), so every chip, block and banner
+ *  prints the same `3h` for the same request. */
 export function attentionAge(iso: string, now = Date.now()): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return '—';
-  const mins = Math.max(0, Math.round((now - then) / 60000));
-  if (mins < 2) return 'now';
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d`;
-  return `${Math.round(days / 7)}w`;
+  return formatAge(iso, now);
 }
 
 /**

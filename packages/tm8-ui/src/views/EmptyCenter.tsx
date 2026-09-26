@@ -14,7 +14,8 @@
  *  - **No kind literal** (§15.2): rows arrive as `SessionRow`, already
  *    projected structurally by `toSessionRow`.
  */
-import { AttentionList, useAttentionOptional } from '../attention';
+import { useAttentionOptional } from '../attention';
+import { AttentionList } from '../attention/AttentionList';
 import '../attention/attention-surfaces.css';
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
