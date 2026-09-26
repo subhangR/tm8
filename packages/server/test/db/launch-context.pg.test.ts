@@ -119,8 +119,8 @@ beforeAll(async () => {
     );
     await client.query(
       `insert into public.work_sessions(entity_id, title, status, workdir_mode)
-       values ($1, 'Launched session', 'running', 'project'),
-              ($2, 'Coordinator session', 'running', 'project')`,
+       values ($1, 'Launched session', 'running', 'scratch'),
+              ($2, 'Coordinator session', 'running', 'scratch')`,
       [ids.session, ids.coordinator],
     );
     await client.query(

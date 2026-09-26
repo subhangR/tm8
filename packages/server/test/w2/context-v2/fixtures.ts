@@ -318,20 +318,29 @@ export async function seedContextV2Fixtures(database: W1ScratchDatabase): Promis
     );
 
     // --- CS (coordinator) → WS (worker), WS working_on T ----------------
-    for (const [sessionId, parent, title, branch] of [
-      [F.CS, null, 'Module 2 coordinator', 'tm8/coordinator'],
-      [F.WS, F.CS, 'Align: byte budgets that never drop the assignment', 'tm8/01a0cf17-ff23'],
+    // W11 260: a 'project' session must name its project entity; the coordinator has no project
+    // edge, so it is 'scratch'.
+    for (const [sessionId, parent, title, branch, mode, project] of [
+      [F.CS, null, 'Module 2 coordinator', 'tm8/coordinator', 'scratch', null],
+      [F.WS, F.CS, 'Align: byte budgets that never drop the assignment', 'tm8/01a0cf17-ff23', 'project', F.PJ],
     ] as const) {
       await entity(c, sessionId, 'work_session', { parent, at: AT(22) });
       await c.query(
         `insert into public.work_sessions(entity_id,title,status,share_mode,agent_tool,model,
-                                          checkout_branch,started_at,skills,drive_mode,workdir_mode)
+                                          checkout_branch,started_at,skills,drive_mode,workdir_mode,
+                                          project_entity_id)
          values ($1,$2,'running','space','claude-code','claude-opus-5-5[1m]',$3,$4::timestamptz,
-                 '[]'::jsonb,'owner','project')`,
-        [sessionId, title, branch, AT(22)],
+                 '[]'::jsonb,'owner',$5,$6)`,
+        [sessionId, title, branch, AT(22), mode, project],
       );
     }
     await edge(c, F.WS, F.T, 'working_on');
+    // The W1 insert trigger already wrote WS -> PJ in_project; replace it with the fixture's
+    // deterministic edge (created_by F.member, created_at AT(1)).
+    await c.query(
+      `delete from public.edges where src_id = $1 and dst_id = $2 and type = 'in_project'`,
+      [F.WS, F.PJ],
+    );
     await edge(c, F.WS, F.PJ, 'in_project');
     for (const [i, messageId] of F.wsMessages.entries()) {
       await message(c, messageId, F.WS, BODIES.message('worker note', i), AT(50 + i));
