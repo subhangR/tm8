@@ -64,9 +64,10 @@ export class HandlerRegistry {
   /**
    * The handler the frame dispatches — the single point every transport's
    * operation passes through. 256 (W7p, deny-by-default): an identity of
-   * authKind `link` is refused here on every operation not in
-   * `LINK_BEARER_ALLOWED_OPS` (empty), before the handler runs — so before
-   * `claimsFor`, any write, mint or rpc. See identity/link-bearer.ts.
+   * authKind `link` is refused here on every operation, before the handler
+   * runs — so before `claimsFor`, any write, mint or rpc — unless the
+   * `spaceLinks.invoke` executor marked this context in-process for this op
+   * (#884). See identity/link-bearer.ts.
    */
   get(name: OperationName): OperationHandler | undefined {
     const handler = this.handlers.get(name);
@@ -74,7 +75,7 @@ export class HandlerRegistry {
     return (ctx) => {
       // A context with no identity (in-process callers and tests that build
       // one by hand) is not a link bearer: it passes through, as before.
-      refuseLinkBearerOp(name, ctx.identity?.authKind);
+      refuseLinkBearerOp(name, ctx);
       return handler(ctx);
     };
   }

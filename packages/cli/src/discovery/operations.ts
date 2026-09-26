@@ -706,6 +706,27 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['link', 'spawn', 'budget', 'cross-space'],
     reason: 'human_settings_only',
   },
+  'spaceLinks.invoke': {
+    cmd: null,
+    sum: 'Run one operation in a linked Space as the Member who launched you — credential management, link and session management are refused',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'cross-space', 'invoke', 'agent'],
+    reason: 'cli_lane_pending',
+    notes: [
+      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
+      'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+    ],
+  },
+  'spaceLinks.audit': {
+    cmd: null,
+    sum: 'Read the audit of calls made through a space link — your own rows, or every Member\'s for a home admin',
+    authz: 'server',
+    input: 'none',
+    tags: ['link', 'cross-space', 'audit'],
+    reason: 'cli_lane_pending',
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -3322,7 +3343,7 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  'sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b';
+  'sha256:595e27f2717b9f53028aba61647fb7124210c6bb55b94c79c8983a4120dd353c';
 
 export const GRAMMAR_VERSION = '2';
 
