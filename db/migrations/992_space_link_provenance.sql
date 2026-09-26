@@ -326,6 +326,12 @@ create or replace function public.read_space_credential_for_spawn(
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare stored public.space_credentials; v_launcher uuid;
 begin
+  -- W7p (ruling A'): a link session's own claims read no spawn credential at
+  -- all. Its children (auth kind 'agent', via_link set) take the link
+  -- admission below. #884's spaceLinks.invoke owns the only exception.
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'a space link session cannot read a spawn credential' using errcode = '42501';
+  end if;
   perform internal.require_space_member(p_launch_space_id);
   v_launcher := internal.current_account_id();
 

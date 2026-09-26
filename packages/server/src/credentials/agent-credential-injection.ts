@@ -188,7 +188,9 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     // 992 (W7p): a link-bound caller never runs on the linking human's own
     // model login. `resolveLinkBoundCredentials` never asks, and 992's
     // restrictive policy hides the row; this is the third layer, with the same
-    // answer the policy gives.
+    // answer the policy gives. The `authKind === 'link'` half is not live —
+    // a link bearer is refused at spawn and resume first (ruling A') — and is
+    // reachable once #884 wires `spaceLinks.invoke`.
     if (claims.authKind === 'link' || claims.viaLinkId) return null;
 
     const rows = await this.db.query<CredentialIndexRow>(

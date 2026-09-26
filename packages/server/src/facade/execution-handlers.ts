@@ -105,6 +105,7 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
@@ -369,6 +370,10 @@ export class DbGraphPort implements GraphPort {
    * a link. That stamp is the SQL decision (`link_provenance_for`), so the TS
    * policy follows it rather than the resumer's claims. A token that does not
    * resolve throws, and the launch is refused.
+   *
+   * The `authKind === 'link'` half is not live: execution.spawn and
+   * execution.resume refuse a link bearer before any launch (ruling A'). It
+   * is reachable once #884 wires `spaceLinks.invoke`, and fails closed.
    */
   async isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean> {
     const claims = this.claims(auth);
@@ -3043,6 +3048,9 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 992 (W7p, ruling A'): a link session launches nothing, before anything
+    // is read or written. See identity/link-bearer.ts.
+    refuseLinkBearer(claims);
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3332,6 +3340,8 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 992 (W7p, ruling A'): nor resumes anything. See identity/link-bearer.ts.
+    refuseLinkBearer(claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {

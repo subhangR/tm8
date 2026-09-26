@@ -373,29 +373,40 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
   });
 });
 
+/** A via_link agent under `L` (authKind 'agent', viaLinkId set): a real child of the link session. */
+async function childOf(L: Linked, spaceSessions?: 'off'): Promise<DbClaims> {
+  return claimsForToken((await mintChild(L.linkClaims)).token, spaceSessions);
+}
+
 describe('W7p 206 — a link-bound caller gets the target default only, while its own row allows it', () => {
   let L: Linked;
-  beforeAll(async () => { L = await linked(); });
+  let child: DbClaims;
+  beforeAll(async () => { L = await linked(); child = await childOf(L); });
 
-  it('default, own row signed in with spawning allowed: admitted (link session and child)', async () => {
-    expect(await read206(L.linkClaims)).toMatchObject({ credentialId: fixture.antDefaultB });
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+  // Ruling A': the link session's own claims read no spawn credential at all;
+  // only an agent minted under it takes the link admission.
+  it('link session refused; via_link child (authKind agent) still admitted', async () => {
+    expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+    expect(await outcome(() => read206(L.linkClaims, null, 'github'))).toBe('42501');
+    expect(child.authKind).toBe('agent');
+    expect(child.viaLinkId).toBe(L.link.id);
+    expect(await read206(child)).toMatchObject({ credentialId: fixture.antDefaultB });
     expect(await read206(child, null, 'github')).toMatchObject({ credentialId: fixture.ghDefaultB });
   });
 
   it('a pinned id — even the default\'s own id — is 42501; the non-link human may pin it', async () => {
-    expect(await outcome(() => read206(L.linkClaims, fixture.antDefaultB))).toBe('42501');
+    expect(await outcome(() => read206(child, fixture.antDefaultB))).toBe('42501');
     expect(await read206(L.human, fixture.antDefaultB)).toMatchObject({ credentialId: fixture.antDefaultB });
   });
 
   it('spawning switched off on the row: 42501; switched back on: admitted', async () => {
     await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: false });
     try {
-      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+      expect(await outcome(() => read206(child))).toBe('42501');
     } finally {
       await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: true });
     }
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    expect(await outcome(() => read206(child))).toBe('ok');
   });
 
   it('no own row: H3 claiming H\'s link is 42501; H with the same crafted claims is admitted', async () => {
@@ -411,17 +422,18 @@ describe('W7p 206 — a link-bound caller gets the target default only, while it
 // the caller's own row; a predicate a cell does not reach is a mutant that
 // survives (the review's M1 `status = 'signed_in'` and M2 `target_space_id`).
 describe('W7p 206 — each predicate of the link admission refuses on its own', () => {
-  it("row not signed_in: stale 'unreachable' keeps the link session live, and that session is refused", async () => {
+  it("row not signed_in: stale 'unreachable' keeps the link session live, and its child is refused", async () => {
     const L = await linked();
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    const child = await childOf(L);
+    expect(await outcome(() => read206(child))).toBe('ok');
     await db.rpc(L.human, 'mark_space_link_stale', [L.link.id, 'unreachable']);
     expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
-    expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+    expect(await outcome(() => read206(child))).toBe('42501');
   });
 
   it('wrong launch space: unpinned claims (TM8_SPACE_SESSIONS=off) launching into A, where H is a member, are refused', async () => {
     const L = await linked();
-    const unpinned = await claimsForToken(L.linkToken, 'off');
+    const unpinned = await childOf(L, 'off');
     expect(unpinned.sessionSpaceId).toBeUndefined();
     expect(unpinned.viaLinkId).toBe(L.link.id);
     // A has its own default, so only the target predicate stands between
@@ -450,7 +462,8 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
 
   it("the linking member no longer active (m.status <> 'active'): refused; active again: admitted", async () => {
     const L = await linked('H3');
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    const child = await childOf(L);
+    expect(await outcome(() => read206(child))).toBe('ok');
     const setStatus = (status: 'left' | 'active') => database.query(
       `update public.members set status = $2, left_at = case when $2 = 'active' then null else now() end
         where entity_id = (select t.member_id from public.space_link_tokens t
@@ -459,20 +472,21 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
       [L.link.id, status, fixture.identityH3]);
     await setStatus('left');
     try {
-      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+      expect(await outcome(() => read206(child))).toBe('42501');
     } finally {
       await setStatus('active');
     }
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    expect(await outcome(() => read206(child))).toBe('ok');
   });
 
   it('the link entity soft-deleted (e.deleted_at not null): refused; restored: admitted', async () => {
     const L = await linked();
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    const child = await childOf(L);
+    expect(await outcome(() => read206(child))).toBe('ok');
     // The generic door refuses the soft-delete itself (251 §10b), even here.
     expect(await outcome(() => database.query(`update public.entities set deleted_at = now() where id = $1`, [L.link.id])))
       .toBe('42501');
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    expect(await outcome(() => read206(child))).toBe('ok');
     // 206's own predicate, isolated: reach the state past 251's trigger (a
     // fixture-only bypass; the tokens stay live, so only e.deleted_at refuses).
     // `replica` needs a superuser: `database` is the harness's admin role, not
@@ -488,11 +502,11 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
       expect((await database.query<{ r: string }>(`select current_setting('session_replication_role') r`))[0]!.r).toBe('origin');
       expect((await db.query<{ r: string; u: string }>(L.linkClaims, `select current_setting('session_replication_role') r, current_user u`))[0])
         .toEqual({ r: 'origin', u: 'tm8_app' });
-      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+      expect(await outcome(() => read206(child))).toBe('42501');
     } finally {
       await setDeleted('null');
     }
-    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    expect(await outcome(() => read206(child))).toBe('ok');
   });
 });
 
@@ -528,6 +542,7 @@ describe("W7p 206 on 239's body — the private-owner gate survives the link adm
       const text = `${(err as Error).message} ${JSON.stringify((err as { details?: unknown }).details ?? null)}`;
       if (text.includes('private to its owner')) return '239 not_usable';
       if (text.includes('a space link spawn uses only')) return 'link guard';
+      if (text.includes('a space link session cannot read a spawn credential')) return 'link session';
       return `other: ${await outcome(() => Promise.reject(err))}`;
     }
   }
@@ -542,11 +557,14 @@ describe("W7p 206 on 239's body — the private-owner gate survives the link adm
 
   it("(b) a via_link spawn naming another account's private credential is refused — by the link guard first", async () => {
     const L = await linked();
+    const child = await childOf(L);
     await withPrivate(async ({ ofH3 }) => {
-      expect(await outcome(() => read206(L.linkClaims, ofH3))).toBe('42501');
+      expect(await outcome(() => read206(child, ofH3))).toBe('42501');
       // Two layers: the link guard refuses any pinned id; with it removed, 239's
       // gate refuses the same call ('239 not_usable'); with both removed, 'ok'.
-      expect(await refusedBy(() => read206(L.linkClaims, ofH3))).toBe('link guard');
+      expect(await refusedBy(() => read206(child, ofH3))).toBe('link guard');
+      // The link session itself stops one step earlier (ruling A').
+      expect(await refusedBy(() => read206(L.linkClaims, ofH3))).toBe('link session');
     });
   });
 
