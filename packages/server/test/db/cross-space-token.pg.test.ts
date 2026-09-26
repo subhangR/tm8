@@ -1900,6 +1900,24 @@ describe('enter_space — who may pin a session to which space (W3)', () => {
     const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
     expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gate)!.sessionId)).toBe('ok');
   });
+  it('enter_space: a member who LEFT or was removed cannot pin (232 tombstone, 248)', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const sessionId = parseToken(gate)!.sessionId;
+    for (const status of ['left', 'removed']) {
+      await database.query(
+        `update public.members set status = $3, left_at = now() where space_id = $1 and identity_id = $2`,
+        [fixture.spaceA, fixture.identityH2, status]);
+      try {
+        expect(await enter(fixture.identityH2, fixture.spaceA, sessionId)).toBe('42501');
+      } finally {
+        await database.query(
+          `update public.members set status = 'active', left_at = null where space_id = $1 and identity_id = $2`,
+          [fixture.spaceA, fixture.identityH2]);
+      }
+    }
+    // The positive: reactivated, the same gate enters A again.
+    expect(await enter(fixture.identityH2, fixture.spaceA, sessionId)).toBe('ok');
+  });
   it('a parent session that belongs to another account is refused', async () => {
     const gateH = await mintBrowser(fixture.accountH, fixture.identityH);
     expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gateH)!.sessionId)).toBe('42501');
