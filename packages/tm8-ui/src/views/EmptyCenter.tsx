@@ -14,6 +14,8 @@
  *  - **No kind literal** (§15.2): rows arrive as `SessionRow`, already
  *    projected structurally by `toSessionRow`.
  */
+import { AttentionList, useAttentionOptional } from '../attention';
+import '../attention/attention-surfaces.css';
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
 import { Avatar } from '../kit';
@@ -40,6 +42,8 @@ export interface EmptyCenterProps {
   /** Sessions blocked on the viewer — dormant per R8, rendered when it fires. */
   attentionIds?: readonly string[];
   onFocusSession?(id: string): void;
+  /** Opens a roll-up root from the attention queue group (v2, tab 8). */
+  onOpenEntity?(id: string): void;
   /**
    * "＋ New task" — the first-run action. A workspace with no sessions and no
    * tasks is a dead end otherwise: this is the one move that starts everything
@@ -91,6 +95,14 @@ interface RosterGroupConfig {
   limit: number;
 }
 
+/**
+ * ATTENTION v2 (G1, chapter 4 tab 8): with an attention module mounted, "Needs
+ * attention" is the attention QUEUE (rendered above the roster) and session
+ * health stops meaning "needs you". Failed and stale sessions keep their own
+ * group under this label, as status.
+ */
+const HEALTH_LABEL_V2 = 'Stale or failed';
+
 const ROSTER_GROUPS: readonly RosterGroupConfig[] = [
   { id: 'attention', label: 'Needs attention', limit: 2 },
   { id: 'running', label: 'Running', limit: 3 },
@@ -127,7 +139,9 @@ function presentationOf(session: ImportantSession): { word: string; tone: Roster
 
 export function EmptyCenter(props: EmptyCenterProps) {
   const { rows, livenessOf, liveIds } = props;
-  const attentionIds = new Set(props.attentionIds ?? []);
+  const attention = useAttentionOptional();
+  const attentionIds = new Set(attention ? [] : (props.attentionIds ?? []));
+  const queueCount = attention ? attention.counts().all : 0;
   const grouped = new Map<RosterGroupId, ImportantSession[]>();
 
   for (const row of rows) {
@@ -144,6 +158,7 @@ export function EmptyCenter(props: EmptyCenterProps) {
   }
 
   const visibleGroups = ROSTER_GROUPS
+    .map((config) => (attention && config.id === 'attention' ? { ...config, label: HEALTH_LABEL_V2 } : config))
     .map((config) => ({ config, sessions: grouped.get(config.id) ?? [] }))
     .filter(({ sessions }) => sessions.length > 0);
 
@@ -153,6 +168,24 @@ export function EmptyCenter(props: EmptyCenterProps) {
         <div className="shell-empty__eyebrow kit-eyebrow">
           Terminal activity{liveIds.length > 0 ? ` · ${liveIds.length} live` : ''}
         </div>
+
+        {attention && queueCount > 0 ? (
+          <section
+            className="shell-empty__group att-queue-section"
+            aria-labelledby="empty-attention-queue"
+            data-testid="empty-attention-queue"
+          >
+            <h2 className="shell-empty__group-title" id="empty-attention-queue" aria-label={`Needs attention, ${queueCount}`}>
+              <span>Needs attention</span>
+              <span className="shell-empty__group-count">{queueCount}</span>
+            </h2>
+            <AttentionList
+              filter={attention.counts().mine > 0 ? 'mine' : 'all'}
+              onOpen={(id) => (props.onOpenEntity ?? props.onFocusSession)?.(id)}
+              compact
+            />
+          </section>
+        ) : null}
 
         {visibleGroups.length === 0 ? (
           <div className="shell-empty__firstrun" data-testid="empty-center-firstrun">

@@ -30,6 +30,7 @@
  * phone screen SAYS SO rather than silently drawing something else — the same
  * honesty rule the desktop switch was repaired to follow.
  */
+import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
@@ -383,6 +384,7 @@ export function MobileShell(props: MobileShellProps) {
     return row?.title ?? data.detailOf(target.ref)?.title ?? null;
   });
   const [accountOpen, setAccountOpen] = useState(false);
+  const [attentionOpen, setAttentionOpen] = useState(false);
 
   /*
    * THE SHEET HOST — always mounted, so a screen has somewhere to portal to.
@@ -566,6 +568,10 @@ export function MobileShell(props: MobileShellProps) {
         actor and no sign-out verb, so there is no control — the same rule
         `auth/AccountMenu` follows when it returns null outside a gate.
       */}
+      {/* ATTENTION v2 (chapter 4 "Phone", tab 7): the top-bar segment as one
+          button — the mine count — opening the same list as a sheet. Renders
+          nothing when no request is open or no attention module is mounted. */}
+      <AttentionHeaderButton expanded={attentionOpen} onOpen={() => setAttentionOpen(true)} />
       {props.viewerActor ? (
         <button
           type="button"
@@ -679,6 +685,16 @@ export function MobileShell(props: MobileShellProps) {
               screen under it, which is what lets Back close it and show the
               entity again. */}
           <PhoneChatSheet shell={props} sheetHost={sheetHost} />
+          {attentionOpen ? (
+            <AttentionSheet
+              onDismiss={() => setAttentionOpen(false)}
+              onOpenEntity={(id, kind) => {
+                setAttentionOpen(false);
+                const resolved = kind ?? data.detailOf(id)?.kind ?? null;
+                if (resolved) openEntityOnPhone(navigateTo, id, resolved);
+              }}
+            />
+          ) : null}
           {accountOpen && props.viewerActor ? (
             <MobileAccountSheet
               actor={props.viewerActor}

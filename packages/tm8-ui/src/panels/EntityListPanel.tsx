@@ -108,6 +108,8 @@ import { LaunchComposerPopup } from '../new-session';
 import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
+import { useAttentionOptional } from '../attention';
+import { attentionTileLine } from '../attention/AttentionTileSubtitle';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -3185,6 +3187,15 @@ export function Tile({
      read serves every tile in the list — see `forms/pending.ts`. */
   const pendingForms = usePendingForms(sessionTree ? row.id : null);
   const verdict = props.livenessOf?.(row.id);
+  /* ATTENTION v2 (F1, tab 4-5): the subtitle under the chip — a session or
+     chat's `waiting on you: …`, a roll-up root's `n requests · own, via …`.
+     Null outside an attention module. */
+  const attentionLine = attentionTileLine(
+    useAttentionOptional(),
+    row,
+    verdict === 'not-running' || verdict === 'stale',
+    (id) => props.rows?.find((r) => r.id === id)?.title ?? null,
+  );
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
 
@@ -3498,7 +3509,12 @@ export function Tile({
             } : undefined}
           />
         ) : undefined}
-        badges={tileBadges}
+        badges={attentionLine || tileBadges ? (
+          <>
+            {attentionLine ? <span className="att-tile-sub" data-testid="attention-tile-subtitle">{attentionLine}</span> : null}
+            {tileBadges}
+          </>
+        ) : null}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -3860,6 +3876,9 @@ export function Tile({
           expanded under a task carries the same chips and can keep going.
           Rendered as its own sub-row because the standard tile's main row
           holds the 17px floor. */}
+      {attentionLine ? (
+        <span className="att-tile-sub lp__att-sub" data-testid="attention-tile-subtitle">{attentionLine}</span>
+      ) : null}
       {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}

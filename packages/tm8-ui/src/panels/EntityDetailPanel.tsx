@@ -1,4 +1,6 @@
 import { PendingFormsBanner } from '../forms/PendingFormsBanner';
+import { AttentionBlock } from '../attention/AttentionBlock';
+import { LegacyAttentionDock } from '../attention/LegacyAttentionDock';
 import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
@@ -1024,6 +1026,20 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       ) : null}
 
+      {/* ATTENTION v2 — the block on top of the detail, above the tabs, for
+          every kind (chapter 4, tab 3 variant A). The entity stays usable
+          underneath; it renders nothing when no request is open or when no
+          attention module is mounted. */}
+      {isTombstone ? null : (
+        <AttentionBlock
+          key={detail.id}
+          entityId={detail.id}
+          badges={detail.badges}
+          noun={config.label.toLowerCase()}
+          onOpenEntity={props.onOpenEntity}
+        />
+      )}
+
       <TabStrip
         active={tab}
         contentLabel={config.label}
@@ -1467,7 +1483,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           undefined without a seam, and the component itself returns null for
           an entity with no history, which is the overwhelming majority. No
           empty strip appears on every entity in the app. */}
-      {isTombstone ? null : props.attentionSection}
+      {isTombstone ? null : <LegacyAttentionDock>{props.attentionSection}</LegacyAttentionDock>}
 
       {/* USER RULING 2026-07-31 — "terminal all the way, till the component
           bottom." The footer is the last strip between the canvas and the

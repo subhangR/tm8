@@ -9,6 +9,8 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
+import { useAttentionOptional } from '../attention';
+import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EntityId,
@@ -127,6 +129,7 @@ export interface WorkspaceViewProps {
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
+  const attentionApi = useAttentionOptional();
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
   /** In-flight read marks, so a double click on a row is one write. */
   const markingRead = useRef(new Set<EntityId>());
@@ -813,9 +816,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                mismatched shape, which is the same blindness that let `rowsFor`
                ignore its filter for so long. The signatures line up on their
                own now. */
-            rowsFor={data.rowsFor(leftKind)}
-            pageStateOf={data.pageStateOf(leftKind)}
-            loadMore={data.loadMore(leftKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, leftKind, data, {
+              rowsFor: data.rowsFor(leftKind),
+              pageStateOf: data.pageStateOf(leftKind),
+              loadMore: data.loadMore(leftKind),
+            })}
             boardFor={data.boardFor(leftKind) as never}
             mode={leftLayout}
             members={data.members}
@@ -978,6 +984,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               rows={rosterRows}
               livenessOf={data.livenessOf}
               onFocusSession={openEntity}
+              onOpenEntity={openEntity}
               newTask={{
                 unavailable: centreCreateFlow.unavailable,
                 create: centreCreateFlow.create,
@@ -1002,9 +1009,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           <EntityListPanel
             kind={rightKind}
             selectorSlot="host"
-            rowsFor={data.rowsFor(rightKind)}
-            pageStateOf={data.pageStateOf(rightKind)}
-            loadMore={data.loadMore(rightKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, rightKind, data, {
+              rowsFor: data.rowsFor(rightKind),
+              pageStateOf: data.pageStateOf(rightKind),
+              loadMore: data.loadMore(rightKind),
+            })}
             boardFor={data.boardFor(rightKind) as never}
             mode={rightLayout}
             members={data.members}

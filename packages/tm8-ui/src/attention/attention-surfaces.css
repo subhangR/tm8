@@ -1,0 +1,175 @@
+/* Attention v2 · S5b surfaces: the detail block, the session banner, the tile
+   subtitle and the phone button. Every colour is a token (§14); amber is
+   --pn-wait, red --pn-block, FYI the ink greys. */
+
+/* -- Detail block (tab 3, variant A) ------------------------------------- */
+.cv2-root .att-block {
+  flex: none;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+  border: 1px solid var(--pn-wait);
+  border-left-width: 3px;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-wait-soft);
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+.cv2-root .att-block__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv2-root .att-block__age { font-weight: 400; color: var(--pn-ink-3); }
+.cv2-root .att-block__caret { margin-left: auto; color: var(--pn-ink-3); }
+
+.cv2-root .att-block__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--pn-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.cv2-root .att-block__row {
+  padding: var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+}
+
+.cv2-root .att-block__tags { display: flex; gap: var(--pn-space-1); align-items: center; font-size: 11px; }
+.cv2-root .att-block__points { margin-left: auto; font-family: var(--pn-mono); color: var(--pn-ink-2); }
+.cv2-root .att-block__reason { margin: var(--pn-space-1) 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.cv2-root .att-block__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .att-block__via { font-style: italic; }
+.cv2-root .att-block__actions { display: flex; gap: var(--pn-space-2); margin-top: var(--pn-space-2); }
+
+.cv2-root .att-block__foot {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3) var(--pn-space-3);
+}
+.cv2-root .att-block__note { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cv2-root .att-block__note-label { font-size: 11px; color: var(--pn-ink-3); }
+.cv2-root .att-block__note input,
+.cv2-root .att-banner__form input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  font: inherit;
+  font-size: 13px;
+  color: var(--pn-ink);
+}
+
+/* -- Tags and buttons ----------------------------------------------------- */
+.cv2-root .att-tag {
+  padding: 1px 6px;
+  border-radius: var(--pn-r-pill);
+  border: 1px solid var(--pn-line-2);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+}
+.cv2-root .att-tag--high,
+.cv2-root .att-tag--normal { border-color: var(--pn-wait); color: var(--pn-wait); }
+.cv2-root .att-tag--urgent { border-color: var(--pn-block); color: var(--pn-block); }
+
+.cv2-root .att-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .att-btn--primary { background: var(--pn-ink); border-color: var(--pn-ink); color: var(--pn-paper); }
+.cv2-root .att-btn--quiet { border-color: transparent; background: transparent; color: var(--pn-ink-3); }
+.cv2-root .att-btn:disabled { opacity: 0.55; cursor: default; }
+.cv2-root .att-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--pn-info);
+  cursor: pointer;
+}
+
+/* -- Session banner (tab 4) ---------------------------------------------- */
+.cv2-root .att-banner {
+  flex: none;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-wait);
+  background: var(--pn-wait-soft);
+  font-family: var(--pn-ui);
+  font-size: 13px;
+  color: var(--pn-ink);
+}
+.cv2-root .att-banner__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pn-space-2); }
+.cv2-root .att-banner__label { font-weight: 600; }
+.cv2-root .att-banner__reason { min-width: 0; overflow-wrap: anywhere; }
+.cv2-root .att-banner__meta { color: var(--pn-ink-3); font-size: 12px; }
+.cv2-root .att-banner__actions { display: flex; gap: var(--pn-space-2); margin-left: auto; }
+.cv2-root .att-banner__form { display: flex; gap: var(--pn-space-2); margin-top: var(--pn-space-2); }
+
+/* -- Tile subtitle (tabs 4-5) -------------------------------------------- */
+.cv2-root .att-tile-sub {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--pn-wait);
+}
+
+/* -- Phone (tab 7) -------------------------------------------------------- */
+.cv2-root .att-phone-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--pn-wait);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-wait-soft);
+  font-family: var(--pn-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pn-wait);
+}
+.cv2-root .att-phone-btn--block { border-color: var(--pn-block); background: var(--pn-block-soft); color: var(--pn-block); }
+.cv2-root .att-phone-btn--fyi,
+.cv2-root .att-phone-btn--muted { border-color: var(--pn-line-2); background: var(--pn-surface); color: var(--pn-ink-3); }
+.cv2-root .att-phone-sheet { padding-bottom: var(--pn-space-4); }
+
+/* -- Home and the empty centre (tab 8) ----------------------------------- */
+.cv2-root .att-queue-section { display: flex; flex-direction: column; gap: var(--pn-space-2); }

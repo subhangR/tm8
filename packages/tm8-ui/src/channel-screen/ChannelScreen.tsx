@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { SessionWaitingBanner } from '../attention/SessionWaitingBanner';
 import type { Cursor, EntityFeedPage, EntityId, FeedItem, MessageView, Page } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { DisabledAction, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
@@ -391,7 +392,12 @@ export function ChannelScreen({
       data-testid="chs-root"
       data-thread-open={threads && thread ? 'true' : undefined}
     >
-      {needsAttention ? (
+      {/* ATTENTION v2 (chapter 4 "Session"): the real reason this session or
+          chat raised, with Resolve and Reply. The legacy quiet-PTY strip below
+          stands only where no attention module is mounted. */}
+      <SessionWaitingBanner
+        sessionId={anchorId}
+        legacy={needsAttention ? (
         <div className="chs-needs-you" role="status" aria-live="polite" data-testid="chs-needs-you">
           <span className="chs-needs-you__label">⚠ needs you</span>
           {/*
@@ -404,7 +410,8 @@ export function ChannelScreen({
           */}
           {attentionDetail ? (
             <span className="chs-needs-you__detail">{attentionDetail}</span>
-          ) : null}
+            ) : null}
+      />
           {onSwitchToTerminal ? (
             <button type="button" className="chs-chip-btn" onClick={onSwitchToTerminal}>
               Open the terminal

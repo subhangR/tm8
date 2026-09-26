@@ -30,6 +30,8 @@
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
  */
+import { AttentionList, useAttentionOptional } from '../attention';
+import '../attention/attention-surfaces.css';
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';
 import {
@@ -119,9 +121,33 @@ function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: s
   );
 }
 
+/**
+ * ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the attention queue itself — the
+ * same list, rows and order as the top-bar popover, Mine when anything is mine
+ * and All otherwise. Reviews and @mentions no longer feed it (Q17): they live
+ * in notifications. Hidden when nothing is waiting on anyone.
+ */
+function AttentionNeedsYou({ onOpen }: { onOpen(id: string): void }) {
+  const api = useAttentionOptional();
+  if (!api) return null;
+  const { mine, all } = api.counts();
+  if (all === 0) return null;
+  return (
+    <section className="hp-needs att-queue-section" aria-label="NEEDS YOU" data-testid="hp-needs-you">
+      <div className="hp-rail__head">
+        <span className="hp-rail__label kit-eyebrow">
+          NEEDS YOU · {mine > 0 ? mine : all}
+        </span>
+      </div>
+      <AttentionList filter={mine > 0 ? 'mine' : 'all'} onOpen={onOpen} compact />
+    </section>
+  );
+}
+
 export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
+  const attention = useAttentionOptional();
 
   /* The full T5-1 composition is reused for NEEDS YOU alone. Main's merged
      chat/list surface owns the collection inventory; Home does not recreate
@@ -153,7 +179,9 @@ export function HomePage(props: HomePageProps) {
     >
       {props.rail ?? null}
       <div className="hp-page">
-        {needsYou && needsYou.rows.length > 0 ? (
+        {attention ? (
+          <AttentionNeedsYou onOpen={props.onOpenEntity} />
+        ) : needsYou && needsYou.rows.length > 0 ? (
           <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
         ) : needsYou && (home.viewerError || home.notificationsError) ? (
           <p className="hp-note" role="status">{needsYou.emptyNote}</p>

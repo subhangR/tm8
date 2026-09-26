@@ -32,6 +32,8 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
+import { useAttentionOptional } from '../attention';
+import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
 import {
@@ -224,6 +226,7 @@ const clampWidth = (want: number, min: number, max: number): number =>
   Math.min(Math.max(min, want), Math.max(min, max));
 
 export function EntityView(props: EntityViewProps) {
+  const attentionApi = useAttentionOptional();
   const { data, kind, reasons } = props;
   /** Attention v2: the shell's attention store, when one is mounted above. */
   const attentionApi = useAttentionOptional();
@@ -1055,9 +1058,12 @@ export function EntityView(props: EntityViewProps) {
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
-          rowsFor={data.rowsFor(kind)}
-          pageStateOf={data.pageStateOf(kind)}
-          loadMore={data.loadMore(kind)}
+          /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+          {...needsMeListSource(attentionApi, kind, data, {
+            rowsFor: data.rowsFor(kind),
+            pageStateOf: data.pageStateOf(kind),
+            loadMore: data.loadMore(kind),
+          })}
           boardFor={data.boardFor(kind) as never}
           mode={mode}
           groupBy={props.groupBy}
