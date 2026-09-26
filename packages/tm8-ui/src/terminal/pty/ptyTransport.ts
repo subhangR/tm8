@@ -729,6 +729,18 @@ export const ptyTransport = {
   },
 
   /**
+   * The mode this session is ACTUALLY attached in — which is not always the one
+   * the view asked for. `mintPtyAttachGrant` narrows a refused `drive` to `view`
+   * without telling the caller, so a live panel can be view-only for a session
+   * someone else created. A view-only socket cannot resize the PTY (the server
+   * drops the frame), so the view must adopt the PTY's geometry instead of
+   * fitting its own box; see LiveTerminal's `followsPty`.
+   */
+  attachMode(id: string): 'view' | 'drive' | undefined {
+    return _attachModes.get(id);
+  },
+
+  /**
    * Tell the server the grid size (a JSON text control frame).
    *
    * `force` asks the server to drive a SIGWINCH even when the geometry it
