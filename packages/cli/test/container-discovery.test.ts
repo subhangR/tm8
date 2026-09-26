@@ -115,7 +115,6 @@ describe('the per-row dispositions', () => {
     ['containers.unexpose', 'expectedVersion', 'execution'],
     ['containers.snapshot', 'expectedVersion', 'execution'],
     ['containers.fork', 'none', 'execution'],
-    ['containers.attention', 'none', 'durable'],
     ['containers.pools.set', 'expectedVersion', 'execution'],
   ];
 

@@ -591,7 +591,6 @@ export const OPERATIONS = [
   { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
   { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
   { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
-  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
   { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
   { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];

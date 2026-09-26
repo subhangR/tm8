@@ -301,7 +301,6 @@ const WORKFLOW_NET_NEW_OPERATIONS = [
  */
 const CONTAINER_NET_NEW_OPERATIONS = [
   'containers.attach',
-  'containers.attention',
   'containers.browser.endpoint',
   'containers.computer',
   'containers.create',

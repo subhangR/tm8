@@ -180,7 +180,7 @@ describe('CONTAINER_GUIDES ride the closed catalog, adding no row', () => {
     for (const expected of [
       'containers.create', 'containers.start', 'containers.stop', 'containers.destroy',
       'containers.run', 'containers.policy.set', 'containers.expose', 'containers.snapshot',
-      'containers.fork', 'containers.attention',
+      'containers.fork',
     ]) {
       expect(names, expected).toContain(expected);
     }

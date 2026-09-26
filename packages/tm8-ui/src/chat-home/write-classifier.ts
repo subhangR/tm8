@@ -115,7 +115,6 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'containers.expose',
   'containers.snapshot',
   'containers.fork',
-  'containers.attention',
 ]);
 
 /** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */

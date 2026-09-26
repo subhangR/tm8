@@ -1287,7 +1287,6 @@ const EXPECTED_HANDLER_501: readonly string[] = [
   // does not exist when it is in the contract and this node simply cannot
   // serve it (DEV-13). This is where that trade is written down, by name.
   'containers.attach',
-  'containers.attention',
   'containers.browser.endpoint',
   'containers.computer',
   'containers.create',

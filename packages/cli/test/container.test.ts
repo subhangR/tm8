@@ -170,11 +170,11 @@ const body = (): Record<string, unknown> => only().body as Record<string, unknow
 
 // ── registration ────────────────────────────────────────────────────────────
 
-describe('the container noun registers exactly its 24 verbs', () => {
+describe('the container noun registers exactly its 23 verbs', () => {
   it('registers the verb set, and nothing else', async () => {
     const paths = (await containerCommands()).map((m) => m.path.join(' ')).sort();
     expect(paths).toEqual([
-      'container adb', 'container attach', 'container attention', 'container browser',
+      'container adb', 'container attach', 'container browser',
       'container computer', 'container cp', 'container create', 'container destroy',
       'container expose', 'container fork', 'container logs', 'container pause',
       'container policy', 'container pool', 'container providers', 'container resume',

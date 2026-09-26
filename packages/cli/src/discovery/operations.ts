@@ -2981,18 +2981,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
     notes: ['no version guard: a fork READS the source machine and never changes its record'],
   },
-  'containers.attention': {
-    cmd: ['container', 'attention'],
-    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
-    sum: 'Ask a human to take over a machine, with a bounded score',
-    authz: 'entity',
-    input: 'bound',
-    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
-    notes: [
-      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
-      'points are 1-100 and rank the request against every other call on human attention',
-    ],
-  },
+
   'containers.providers.list': {
     cmd: ['container', 'providers'],
     syn: 'tm8 container providers [--node <name>]',

@@ -4351,13 +4351,6 @@ export interface ContainersForkInput extends CommandContext {
   spec?: ContainerSpecInput;
 }
 
-export interface ContainersAttentionInput extends CommandContext {
-  clientMutationId: string;
-  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
-  detail?: string;
-  points?: number;
-}
-
 export interface ContainersPoolsSetInput extends CommandContext {
   clientMutationId: string;
   expectedVersion: number;

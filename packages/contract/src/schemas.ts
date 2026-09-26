@@ -54,7 +54,7 @@ import type {
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
   ContainerSurfaceSpec,
-  ContainersAttachInput, ContainersAttentionInput, ContainersBrowserEndpointInput,
+  ContainersAttachInput, ContainersBrowserEndpointInput,
   ContainersCreateInput, ContainersComputerInput, ContainersDestroyInput,
   ContainersExposeInput, ContainersForkInput, ContainersLifecycleInput,
   ContainersLogsResult, ContainersPolicySetInput, ContainersPoolsSetInput,
@@ -5186,14 +5186,6 @@ export const ContainersForkInputSchema: z.ZodType<ContainersForkInput> = z.objec
   lifecycle: ContainerLifecycleInputSchema.optional(),
   spec: ContainerSpecInputSchema.optional(),
 }).strict() as z.ZodType<ContainersForkInput>;
-
-export const ContainersAttentionInputSchema: z.ZodType<ContainersAttentionInput> = z.object({
-  ...commandContextShape,
-  clientMutationId: z.string().min(1),
-  reason: z.enum(['login', 'captcha', '2fa', 'payment', 'approval', 'other']),
-  detail: z.string().max(4096).optional(),
-  points: z.number().int().min(1).max(100).optional(),
-}).strict() as z.ZodType<ContainersAttentionInput>;
 
 export const ContainersPoolsSetInputSchema: z.ZodType<ContainersPoolsSetInput> = z.object({
   ...commandContextShape,
