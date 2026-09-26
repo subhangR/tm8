@@ -126,6 +126,9 @@ import type {
   AttentionRequestListQuery,
   AttentionRequestMutationResult,
   AttentionRequestPage,
+  MarkAttentionSeenInput,
+  UnresolveAttentionBatchInput,
+  WithdrawAttentionRequestInput,
   CollectionAddItemInput,
   CollectionQuery,
   CollectionResult,
@@ -499,6 +502,19 @@ export interface GitDiffOpts {
    * these apart; a client cannot derive one from another.
    */
   scope?: SessionGitDiffScope;
+}
+
+/**
+ * The Attention v2 verbs (`attentionRequests.markSeen|unresolve|withdraw`),
+ * each present only once the catalog declares it. See `commands.attentionV2`.
+ */
+export interface AttentionV2Ops {
+  /** Mark every open request on `entityId`'s roll-up root seen by the CALLER. */
+  markSeen?(entityId: EntityId, input: MarkAttentionSeenInput): Promise<AttentionRequestMutationResult>;
+  /** Undo one Resolve: reopen that batch's rows (resolver only, within 8s). */
+  unresolve?(batchId: string, input: UnresolveAttentionBatchInput): Promise<AttentionRequestMutationResult>;
+  /** The raising agent takes back its own open request. */
+  withdraw?(requestId: string, input: WithdrawAttentionRequestInput): Promise<AttentionRequestMutationResult>;
 }
 
 export interface Seam {
@@ -980,6 +996,15 @@ export interface Seam {
       requestId: string,
       input: UpdateAttentionRequestInput,
     ): Promise<AttentionRequestMutationResult>;
+    /**
+     * Attention v2's three new verbs (chapter 3), FEATURE-DETECTED: each method
+     * exists only when this build's catalog carries its op, so a caller tests
+     * for the method and degrades when it is absent. The namespace itself is
+     * always present on the real seam (so the lock below does not move when S4
+     * adds the catalog rows) and optional on the type (so a fixture that never
+     * heard of v2 still satisfies it). Only `src/attention/` may call these.
+     */
+    attentionV2?: AttentionV2Ops;
     /**
      * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
      * subject by design (`identity.profile.update`, contract.ts). All fields

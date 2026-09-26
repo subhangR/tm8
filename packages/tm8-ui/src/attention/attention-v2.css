@@ -1,0 +1,44 @@
+/* Attention v2 module surfaces (chapter 4): the Undo toast, the chip and the
+   popover list. Colours come from the level tokens only: FYI grey, normal and
+   high amber (--pn-wait), urgent red (--pn-block). */
+
+.att-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--pn-space-4);
+  transform: translateX(-50%);
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  max-width: min(420px, calc(100% - 32px));
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+}
+
+.att-toast__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-toast__text--error {
+  color: var(--pn-block);
+}
+
+.att-toast__act {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--pn-ink);
+  text-decoration: underline;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

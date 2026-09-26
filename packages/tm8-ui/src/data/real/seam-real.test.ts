@@ -424,6 +424,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // edge (auto-position on add, remove addressed by the pair). They sort
       // beside the edge verbs they specialize.
       'addToCollection',
+      // Attention v2 (S5a): `attentionV2` — the markSeen/unresolve/withdraw
+      // namespace. Always present; its METHODS are feature-detected against
+      // the catalog, so S4 adding the rows does not move this list.
+      'attentionV2',
       'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which
