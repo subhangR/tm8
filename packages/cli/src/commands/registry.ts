@@ -70,6 +70,7 @@ import { ARTIFACT_COMMANDS } from './artifact.js';
 import { VOICE_COMMANDS } from './voice.js';
 import { CONTAINER_COMMANDS } from './container.js';
 import { FORM_COMMANDS } from './form.js';
+import { LINK_COMMANDS } from './link.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -147,6 +148,7 @@ export const COMMANDS: CommandModule[] = [
   ...VOICE_COMMANDS,
   ...CONTAINER_COMMANDS,
   ...FORM_COMMANDS,
+  ...LINK_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));
