@@ -11,6 +11,12 @@ export interface StatusSegmentProps {
   /** Renders a button when set; a plain span otherwise. */
   onClick?: () => void;
   testId?: string;
+  /**
+   * Where this segment falls in the in-bar sacrifice order — 1 leaves first.
+   * Only the top bar's container ladder reads it (`shell.css`); the stand-alone
+   * row never sheds. Unset → never shed.
+   */
+  shed?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
 }
 
 /**
@@ -18,8 +24,8 @@ export interface StatusSegmentProps {
  * `status-strip__segment` class is the strip's styling contract, so a segment
  * built elsewhere (the attention lane's) can carry it without importing this.
  */
-export function StatusSegment({ label, value, title, tone = 'normal', onClick, testId }: StatusSegmentProps) {
-  const className = `status-strip__segment status-strip__segment--${tone}`;
+export function StatusSegment({ label, value, title, tone = 'normal', onClick, testId, shed }: StatusSegmentProps) {
+  const className = `status-strip__segment status-strip__segment--${tone}${shed ? ` status-strip__segment--shed-${shed}` : ''}`;
   const body = (
     <>
       <span className="status-strip__label">{label}</span>

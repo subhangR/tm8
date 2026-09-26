@@ -1955,6 +1955,29 @@ export function GateApp(props: GateAppProps = {}) {
     );
   }
 
+  /* THE STATUS STRIP (task 01a0dc78): host metrics + live sessions and
+     chats. The lead slot is the attention segment's seat (task 01a0dc79-0015).
+     Rendered in ONE place per bar — never both. */
+  const statusStrip = (placement: 'row' | 'bar') =>
+    data.spaceId ? (
+      <StatusStrip
+        seam={data.seam}
+        spaceId={data.spaceId as SpaceId}
+        placement={placement}
+        leadSlot={
+          <AttentionSegment
+            seam={data.seam}
+            spaceId={data.spaceId as SpaceId}
+            reconcile={data.reconcileCommand}
+            onOpenEntity={(id) => {
+              navigateTo(WORKSPACE_TARGET);
+              nav.push(id as EntityId);
+            }}
+          />
+        }
+      />
+    ) : null;
+
   return withPendingForms(
     /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
        a containing block that is exactly the viewport, so the shell can size
@@ -1969,6 +1992,10 @@ export function GateApp(props: GateAppProps = {}) {
     >
       <div className="shell-root">
         <TopBar
+          /* ONE ROW (owner, 2026-09-26): on the current bar the status strip
+             is the right zone's lead, and the tabs move left beside the
+             switcher. The legacy bar ignores the slot. */
+          statusSlot={LEGACY_BAR ? undefined : statusStrip('bar')}
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
              Still ONE control — the single-home rule holds, only the address
              changed; the old read-only server label is not restored. The
@@ -2097,26 +2124,8 @@ export function GateApp(props: GateAppProps = {}) {
           }
         />
 
-        {/* THE STATUS STRIP (task 01a0dc78): host metrics + live sessions and
-            chats, directly beneath the top bar on the desktop shell. The lead
-            slot is the attention segment's seat (task 01a0dc79-0015). */}
-        {data.spaceId ? (
-          <StatusStrip
-            seam={data.seam}
-            spaceId={data.spaceId as SpaceId}
-            leadSlot={
-              <AttentionSegment
-                seam={data.seam}
-                spaceId={data.spaceId as SpaceId}
-                reconcile={data.reconcileCommand}
-                onOpenEntity={(id) => {
-                  navigateTo(WORKSPACE_TARGET);
-                  nav.push(id as EntityId);
-                }}
-              />
-            }
-          />
-        ) : null}
+        {/* The legacy bar has no seat for the strip, so it keeps its own row. */}
+        {LEGACY_BAR ? statusStrip('row') : null}
 
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the

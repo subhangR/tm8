@@ -69,6 +69,9 @@ class FakeSpacePort implements SpaceCredentialPort {
   readonly recorded = new Map<string, Array<{ provider: SpaceCredentialProvider; spaceCredentialId: string }>>();
   /** Flip a credential to inactive when this call count of activeIds is reached. */
   revokeOnActiveIds: string | null = null;
+  /** Which activeIds call flips it: 1 is the pre-PTY re-check (R1), 2 the post-PTY one (M7). */
+  revokeOnActiveIdsCall = 2;
+  private activeIdsCalls = 0;
   /** A space GitHub token, when the space holds one; github has no default otherwise. */
   githubToken: { id: string; token: string; login: string } | null = null;
 
@@ -119,7 +122,8 @@ class FakeSpacePort implements SpaceCredentialPort {
 
   async activeIds(auth: GraphAuth, ids: readonly string[]) {
     this.events.push(`activeIds:${this.who(auth)}`);
-    if (this.revokeOnActiveIds) this.active.delete(this.revokeOnActiveIds);
+    this.activeIdsCalls += 1;
+    if (this.revokeOnActiveIds && this.activeIdsCalls >= this.revokeOnActiveIdsCall) this.active.delete(this.revokeOnActiveIds);
     return new Set(ids.filter((id) => this.active.has(id)));
   }
 
@@ -260,7 +264,9 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     expect(graph.manifests[0]!.manifest.launch.spaceCredentialIds).toEqual({ anthropic: ANT });
     expect(graph.manifests[0]!.manifest.launch.credentialSources?.anthropic).toBe('space');
     const order = events.filter((e) => ['recordManifest', 'spawnIfAbsent', 'activeIds:identity-A'].includes(e));
-    expect(order).toEqual(['recordManifest', 'spawnIfAbsent', 'activeIds:identity-A']);
+    // R1 (W10a): asked once after the manifest commit and before the PTY, and
+    // again after it (M7).
+    expect(order).toEqual(['recordManifest', 'activeIds:identity-A', 'spawnIfAbsent', 'activeIds:identity-A']);
   });
 
   it('t2-8 (unit): a delete between read and record — the locked writer refuses — starts no PTY', async () => {
@@ -277,6 +283,20 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     expect(graph.transitions.at(-1)?.status).toBe('failed');
   });
 
+  it('R1 / N1 (unit): a revoke or switch to private after the manifest commit refuses before any PTY exists', async () => {
+    const port = new FakeSpacePort(events, new Set(['identity-A']));
+    port.revokeOnActiveIds = OAI;
+    port.revokeOnActiveIdsCall = 1;
+    const { spawnIfAbsent } = spyPty();
+    const error = await service(port)
+      .spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, model: 'gpt-5.5', agentTool: 'codex', credentialSources: { openai: 'space' } })
+      .then(() => null, (e: unknown) => e);
+    expect(error).toBeInstanceOf(SpawnError);
+    expect((error as SpawnError).message).toContain(`space credential ${OAI} was deleted, disabled or made private`);
+    expect(spawnIfAbsent).not.toHaveBeenCalled();
+    expect(graph.transitions.at(-1)?.status).toBe('failed');
+  });
+
   it('t2-8 / M7 (unit): a delete between record and PTY start kills the session and scrubs its key', async () => {
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     port.revokeOnActiveIds = OAI;
@@ -285,7 +305,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       .spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, model: 'gpt-5.5', agentTool: 'codex', credentialSources: { openai: 'space' } })
       .then(() => null, (e: unknown) => e);
     expect(error).toBeInstanceOf(SpawnError);
-    expect((error as SpawnError).message).toContain(`space credential ${OAI} was deleted or disabled while this session was starting`);
+    expect((error as SpawnError).message).toContain(`space credential ${OAI} was deleted, disabled or made private while this session was starting`);
     expect(kill).toHaveBeenCalled();
     expect(events.indexOf('kill')).toBeGreaterThan(events.indexOf('spawnIfAbsent'));
     expect(graph.transitions.at(-1)?.status).toBe('failed');
@@ -363,7 +383,10 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(gate).toBeGreaterThanOrEqual(0);
       expect(repoint).toBeGreaterThan(gate);
       expect(ptyStart).toBeGreaterThan(repoint);
-      expect(events.indexOf('activeIds:identity-A')).toBeGreaterThan(ptyStart);
+      // R1 (W10a): re-checked after the repoint and before the PTY, then again after it.
+      expect(events.indexOf('activeIds:identity-A')).toBeGreaterThan(repoint);
+      expect(events.indexOf('activeIds:identity-A')).toBeLessThan(ptyStart);
+      expect(events.lastIndexOf('activeIds:identity-A')).toBeGreaterThan(ptyStart);
       expect(port.launcher.get(SESSION_ID)).toBe('identity-A');
       // D7: the per-session home is re-seeded from the key read NOW.
       const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;

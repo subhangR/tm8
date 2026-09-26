@@ -262,9 +262,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // entity_kinds row.
     // 24 -> 25 (2026-09-24): `form` (migration 209, Forms W0). MEASURED on
     // this tree by counting the `core(` rows in kind-dispositions.ts.
-    // 25 -> 27 (2026-09-26): `space_link` + `server` (migration 250, W6). MEASURED
-    // by counting the `core(` rows in kind-dispositions.ts.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(27);
+    // 25 -> 26 (2026-09-26): `credential` (W10a, space credentials as
+    // entities); 26 -> 28: `space_link` + `server` (migration 250, W6).
+    // MEASURED: Object.keys(CORE_KIND_DISPOSITIONS).length = 28.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(28);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',

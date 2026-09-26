@@ -37,6 +37,7 @@ const REFUSAL_REASONS: ReadonlySet<string> = new Set<SpaceCredentialRefusalReaso
   'pending',
   'stale',
   'revoked',
+  'not_usable',
 ]);
 
 /** A login credential's file home (design §3); the provider dir sits under it. */
@@ -137,15 +138,11 @@ export class DbSpaceCredentialPort implements SpaceCredentialPort {
 
   async activeIds(auth: GraphAuth, credentialIds: readonly string[]): Promise<ReadonlySet<string>> {
     if (credentialIds.length === 0) return new Set();
-    // RLS: a member sees its space's rows; a credential whose space the caller
-    // has since left is invisible, and so is not active for this session.
-    const rows = await this.db.query<{ id: string }>(
-      auth as DbClaims,
-      `select id from public.space_credentials
-        where id = any($1::uuid[]) and status = 'active'`,
-      [credentialIds],
-    );
-    return new Set(rows.map((row) => row.id));
+    // The recorder's gate, asked again: active, in a space the caller still
+    // belongs to, and public, space-owned or the launcher's own (R1). A
+    // credential switched to private since commit is not usable here.
+    const ids = await this.db.rpc<string[] | null>(auth as DbClaims, 'usable_space_credential_ids', [credentialIds]);
+    return new Set(ids ?? []);
   }
 
   async repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint> {
@@ -155,6 +152,9 @@ export class DbSpaceCredentialPort implements SpaceCredentialPort {
     } catch (error) {
       if (error instanceof CollabError && error.details?.sqlstate === '23514') {
         return { ok: false, reason: 'inactive' };
+      }
+      if (error instanceof CollabError && error.details?.reason === 'not_usable') {
+        return { ok: false, reason: 'not_usable' };
       }
       throw error;
     }

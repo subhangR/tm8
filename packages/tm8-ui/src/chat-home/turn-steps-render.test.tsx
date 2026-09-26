@@ -274,7 +274,10 @@ describe('order and interleaving', () => {
   it('folds thinking between steps into a quiet Thought line, not a step', () => {
     const view = render(<TurnParts parts={interleaved()} />);
     const firstRun = view.getAllByTestId('chat-steps')[0]!;
-    expect(within(firstRun).getByTestId('chat-steps-head').textContent).toMatch(/^2 steps/);
+    // The first run carries the TURN's header, counting every run (R2).
+    expect(within(firstRun).getByTestId('chat-steps-head').textContent).toMatch(/^3 steps/);
+    // The turn is live and past this run, so it is folded (R4): open it.
+    fireEvent.click(within(firstRun).getByTestId('chat-steps-head'));
     const thought = within(firstRun).getByTestId('chat-step-thought');
     expect(thought.textContent).toContain('Thought');
     expect(thought.textContent).not.toContain('check the tests');
@@ -373,9 +376,12 @@ describe('a 150-tool-call turn is scannable', () => {
     const sentence = head.cloneNode(true) as HTMLElement;
     sentence.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
     expect(sentence.textContent).toBe('150 steps · read 38 files, ran 38 commands · 3 failed');
-    // Collapsed: no step lines at all — just the header, and the three errlines.
+    // Collapsed: no step lines at all — just the header and the errlines, the
+    // two identical shell failures folded into one line with a count (R6).
     expect(lines(view.container)).toHaveLength(0);
-    expect(view.getAllByTestId('chat-step-errline')).toHaveLength(3);
+    const errlines = view.getAllByTestId('chat-step-errline').map((line) => line.textContent);
+    expect(errlines).toHaveLength(2);
+    expect(errlines).toContainEqual(expect.stringContaining('Running a shell command failed 2 times: Exit code 1'));
     // The answer is still there, after the block.
     expect(view.getAllByTestId('chat-turn-text').map((t) => t.textContent?.trim())).toContain('All 150 checked.');
   });

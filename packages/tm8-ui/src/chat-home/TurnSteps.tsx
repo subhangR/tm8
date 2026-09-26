@@ -19,15 +19,27 @@ const ICON: Record<Extract<StepLine, { kind: 'step' }>['state'], string> = {
   stopped: '■',
 };
 
+/** The turn's one step header (rules R2/R3, doc 01a0ddb5): the whole turn's
+ *  summary and the only toggle for every run's list. */
+export interface TurnStepsHead {
+  summary: RunSummary;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
 /**
  * ONE RUN'S STEP BLOCK — the agent's work between two pieces of content, as a
- * quiet, left-ruled list (advisor D7/D8/D15/D19).
+ * quiet, left-ruled list (advisor D7/D15; tool-call rules R1–R8, doc
+ * `01a0ddb5` on task 01a0ddad, signed off by Subhang).
  *
- * - While the TURN is live the block is open and shows the latest five lines,
- *   the running step last with a pulse. When the turn ends it collapses to its
- *   header, `37 steps · read 12 files, ran 8 commands · 2 failed ▸`.
- * - Collapsed, the one line still pinned under the header is a STOPPED step
- *   (a failure is already its errline above plus the header's count, D19).
+ * - The TURN owns the fold, not the run (R2/R3, amending D15 §3 and D19): the
+ *   turn's FIRST run carries the one header, `37 steps · ran 12 commands,
+ *   read 6 tasks · 2 failed ▸`, counting every run of the turn, and pressing
+ *   it opens or closes every run's list at once.
+ * - While the turn is live only the CURRENT run is open (R4, amending D15 §2):
+ *   a run the agent has written past folds into the header's count.
+ * - A run that is not open still pins its stopped step (D19, one at most) and
+ *   anything running (D25), and draws nothing when it has neither.
  * - Not a live region: the status row under the conversation is the only
  *   thing that announces, so nothing is said twice (D15 §2).
  * - Never a box, never a tool name, never a payload (R8). The words come from
@@ -35,17 +47,18 @@ const ICON: Record<Extract<StepLine, { kind: 'step' }>['state'], string> = {
  */
 export function TurnSteps({
   lines,
-  summary,
+  head,
+  open,
   live,
 }: {
   lines: readonly StepLine[];
-  summary: RunSummary;
-  /** The turn is still going: the block opens by default. */
+  /** Present on the turn's first run only. */
+  head?: TurnStepsHead | undefined;
+  /** This run's list is open (the latest five lines, the rest one press away). */
+  open: boolean;
+  /** The turn is still going. */
   live: boolean;
 }) {
-  // null ⇒ follow the turn: open while live, closed once it ends. A press
-  // pins the viewer's choice for the life of the block.
-  const [open, setOpen] = useState<boolean | null>(null);
   const [showAll, setShowAll] = useState(false);
   const listId = useId();
   const listRef = useRef<HTMLOListElement>(null);
@@ -58,41 +71,43 @@ export function TurnSteps({
       listRef.current?.focus();
     }
   }, [showAll]);
-  const expanded = open ?? live;
 
   let visible: readonly StepLine[];
   let hidden = 0;
-  if (expanded) {
+  if (open) {
     visible = showAll ? lines : lines.slice(-STEP_TAIL);
     hidden = lines.length - visible.length;
   } else {
-    // Collapsed: only a stopped step is pinned (D19, one at most). A viewer who
-    // folded a LIVE run still sees what is running.
+    // Folded: only a stopped step is pinned (D19, one at most). A viewer who
+    // folded a LIVE turn still sees what is running (D25).
     const stopped = lines.filter((line) => line.kind === 'step' && line.state === 'stopped').slice(-1);
     const running = lines.filter((line) => line.kind === 'step' && line.state === 'running');
     visible = [...stopped, ...running];
   }
+  if (!head && visible.length === 0) return null;
   const hiddenSteps = stepsIn(lines.slice(0, hidden));
 
   return (
     <section className="tch-steps" data-testid="chat-steps" data-live={live ? 'true' : undefined}>
-      <button
-        type="button"
-        className="tch-steps__head"
-        data-testid="chat-steps-head"
-        aria-expanded={expanded}
-        aria-controls={visible.length > 0 ? listId : undefined}
-        onClick={() => setOpen(!expanded)}
-      >
-        <span className="tch-steps__count">
-          {summary.steps} {summary.steps === 1 ? 'step' : 'steps'}
-        </span>
-        {summary.groups ? <span className="tch-steps__groups">{` · ${summary.groups}`}</span> : null}
-        {summary.failed > 0 ? (
-          <span className="tch-steps__failed">{` · ${summary.failed} failed`}</span>
-        ) : null}
-        <span className="tch-steps__caret" aria-hidden>{expanded ? '▾' : '▸'}</span>
-      </button>
+      {head ? (
+        <button
+          type="button"
+          className="tch-steps__head"
+          data-testid="chat-steps-head"
+          aria-expanded={head.expanded}
+          aria-controls={visible.length > 0 ? listId : undefined}
+          onClick={head.onToggle}
+        >
+          <span className="tch-steps__count">
+            {head.summary.steps} {head.summary.steps === 1 ? 'step' : 'steps'}
+          </span>
+          {head.summary.groups ? <span className="tch-steps__groups">{` · ${head.summary.groups}`}</span> : null}
+          {head.summary.failed > 0 ? (
+            <span className="tch-steps__failed">{` · ${head.summary.failed} failed`}</span>
+          ) : null}
+          <span className="tch-steps__caret" aria-hidden>{head.expanded ? '▾' : '▸'}</span>
+        </button>
+      ) : null}
       {hidden > 0 ? (
         <button
           type="button"
@@ -166,17 +181,24 @@ function ThoughtLine({ text }: { text: string }) {
 }
 
 /**
- * `✕ Running a shell command failed: Exit code 1 · The agent retried` — the
- * durable record of one failed step, drawn with the run's outcomes above its
- * step block (D13). It stays when the block collapses.
+ * `✕ Resuming a session failed 8 times: team member not found · The agent
+ * retried` — the durable record of a run's failed steps, drawn with its
+ * outcomes above the step block (D13). It stays when the turn folds (R5:
+ * no failure is ever hidden); identical failures fold into one line with a
+ * count (R6).
  */
-export function StepErrorLine({ view }: { view: StepView }) {
+export function StepErrorLine({ view, count = 1, retried = view.retried }: {
+  view: StepView;
+  count?: number;
+  retried?: boolean;
+}) {
   return (
     <div className="tch-errline" data-testid="chat-step-errline">
       <span aria-hidden>✕ </span>
       {`${view.words.active} failed`}
+      {count > 1 ? ` ${count} times` : ''}
       {view.reason ? `: ${view.reason}` : ''}
-      {view.retried ? ' · The agent retried' : ''}
+      {retried ? ' · The agent retried' : ''}
     </div>
   );
 }

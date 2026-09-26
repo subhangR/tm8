@@ -34,6 +34,17 @@ export type SpaceCredentialSource = 'member' | 'space' | 'node';
 /** How many trailing characters of a key the screen may show. */
 export const SPACE_CREDENTIAL_HINT_LENGTH = 4;
 
+/** Who may launch on a credential (doc 13 §3a): its owner only, or every member. */
+export type SpaceCredentialVisibility = 'private' | 'public';
+
+/** A live session another launcher holds on a credential just made private. */
+export interface SpaceCredentialKillSession {
+  workSessionId: string;
+  provider: SpaceCredentialProvider;
+  launcherAccountId: string | null;
+  status: 'spawning' | 'running' | 'idle';
+}
+
 /** Metadata only — 206 answers no secret column to anything but the spawn reader. */
 export interface SpaceCredential {
   id: string;
@@ -44,6 +55,11 @@ export interface SpaceCredential {
   isDefault: boolean;
   status: SpaceCredentialStatus;
   createdByAccountId: string | null;
+  /** Null = space-owned (always public). Doc 13 §7, migration 239. */
+  ownerAccountId: string | null;
+  visibility: SpaceCredentialVisibility;
+  mayBeSpaceDefault: boolean;
+  /** Masked to null by visibility (R3): private, owner only; public, every member (206 picker contract). */
   displayLogin: string | null;
   keyHint: string | null;
   pendingExpiresAt: string | null;
@@ -182,22 +198,17 @@ export class DbSpaceCredentialStore {
    * the column grant. Revoked tombstones are left out unless asked for.
    */
   async list(claims: DbClaims, spaceId: string, options: { includeRevoked?: boolean } = {}): Promise<SpaceCredential[]> {
-    const rows = await this.db.query<{ credential: SpaceCredential }>(
-      claims,
-      `select jsonb_build_object(
-                'id', id, 'spaceId', space_id, 'provider', provider, 'shape', shape,
-                'label', label, 'isDefault', is_default, 'status', status,
-                'createdByAccountId', created_by_account_id,
-                'displayLogin', display_login, 'keyHint', key_hint,
-                'pendingExpiresAt', pending_expires_at,
-                'createdAt', created_at, 'updatedAt', updated_at,
-                'lastUsedAt', last_used_at, 'lastProbeAt', last_probe_at) as credential
-         from public.space_credentials
-        where space_id = $1 and ($2 or status <> 'revoked')
-        order by provider, is_default desc, label`,
-      [spaceId, options.includeRevoked === true],
-    );
-    return rows.map((row) => row.credential);
+    // R3: key_hint and display_login are not granted to tm8_app; the definer
+    // reader masks them per caller.
+    return this.db.rpc<SpaceCredential[]>(claims, 'list_space_credentials', [
+      spaceId,
+      options.includeRevoked === true,
+    ]);
+  }
+
+  /** One card by id, masked like `list`; null when absent or not the caller's space. */
+  async read(claims: DbClaims, credentialId: string): Promise<SpaceCredential | null> {
+    return this.db.rpc<SpaceCredential | null>(claims, 'read_space_credential', [credentialId]);
   }
 
   /**
@@ -330,6 +341,24 @@ export class DbSpaceCredentialStore {
   /** A probe's verdict on an existing credential: active or stale (I6). */
   async recordProbe(claims: DbClaims, credentialId: string, ok: boolean): Promise<SpaceCredential> {
     return this.db.rpc<SpaceCredential>(claims, 'record_space_credential_probe', [credentialId, ok]);
+  }
+
+  /**
+   * W10a: the owner switches their credential public or private. Going
+   * private clears `mayBeSpaceDefault` and `isDefault` in the same statement
+   * and returns `killSessions`: the live sessions (spawning included) whose
+   * launcher is not the owner. Killing them is the caller's.
+   */
+  async setVisibility(
+    claims: DbClaims,
+    credentialId: string,
+    visibility: SpaceCredentialVisibility,
+  ): Promise<SpaceCredential & { killSessions: SpaceCredentialKillSession[] }> {
+    return this.db.rpc<SpaceCredential & { killSessions: SpaceCredentialKillSession[] }>(
+      claims,
+      'set_space_credential_visibility',
+      [credentialId, visibility],
+    );
   }
 
   /**

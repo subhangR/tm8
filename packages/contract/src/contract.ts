@@ -71,6 +71,11 @@ export type CoreEntityKind =
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
   | 'form'
+  // Space credentials (W10a, doc 13): the same-id entity of a
+  // space_credentials row. Born only from credentials.space.create or a
+  // login start, under a SQL guard; never moved, deleted or restored through
+  // the generic doors. The secret, hint and vendor login are never on it.
+  | 'credential'
   // Space links (migrations 250/251, Phase 1b W6): a home space's link to a
   // target space. Every home member sees the link; each member's stored
   // session for the target is their own sealed row. Born only from
@@ -78,6 +83,9 @@ export type CoreEntityKind =
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
   | 'server';
+
+/** A credential entity's visibility (W10a): who may launch on it. */
+export type CredentialVisibility = 'private' | 'public';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -505,6 +513,9 @@ export type CoreEntityState =
   | { kind: 'drawing'; format: string; elementCount: number }
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
+  /** A space credential's row facts (W10a). Never the secret, hint or login. */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * Space links (250, W6): no row facts on the entity. A link's target and
    * every member's status are `spaceLinks.list`'s answer, never a list row's —
@@ -897,6 +908,12 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /**
+   * A space credential (W10a): the same allow-list as its state. The sealed
+   * secret, key hint and vendor login never reach an entity read.
+   */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
@@ -2784,6 +2801,9 @@ export type CreatableEntityKind = Exclude<
   // `form` is born ONLY from `forms.create`, which writes its questions,
   // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
   | 'form'
+  // `credential` is human-only and born under a SQL guard from
+  // credentials.space.* (W10a); no generic door writes one.
+  | 'credential'
   // `space_link` is born ONLY from `spaceLinks.add` (W6), which checks the
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'

@@ -2455,11 +2455,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
      * memories, or nobody has asked for the kind — and they are different
      * facts. Returning `[]` would let the picker say "this space has no
      * memories" on the strength of a read that never happened. The `rows`
-     * cache settles it: `memory::*` exists only once `ensureKind` has actually
+     * cache settles it: `memory::*::*` exists only once `ensureKind` has actually
      * run the query, which is the same key every list panel hydrates through.
      */
     const memoryRows = summaries.filter((row) => row.state.kind === 'memory');
-    const memories: LaunchMemory[] | undefined = rows['memory::*']
+    const memories: LaunchMemory[] | undefined = rows[rowsKey('memory', undefined, undefined)]
       ? memoryRows.map((row) => {
           const mark = memoryEpistemics(row.badges);
           const scope = memoryScopeOf(row);
@@ -2482,7 +2482,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
        memories: a kind nobody has hydrated is UNKNOWN, not empty, so the
        reference pool exists only once at least one reference kind was read,
        and holds only the kinds that were. */
-    const referenceKinds = REFERENCE_KINDS.filter((kind) => rows[`${kind}::*`]);
+    /* `rowsKey`, not a hand-spelled key: the row keys grew a sort segment
+       (`kind::*::*`) and the literal `${kind}::*` never matched again, so on a
+       real node both pools read as never-hydrated forever. */
+    const referenceKinds = REFERENCE_KINDS.filter((kind) => rows[rowsKey(kind, undefined, undefined)]);
     const referenceCandidates = referenceKinds.length > 0
       ? summaries.filter((row) => referenceKinds.includes(row.state.kind)).map(referenceCandidateRow)
       : undefined;
