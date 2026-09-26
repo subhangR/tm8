@@ -283,6 +283,9 @@ interface SummaryRow {
   commit_sha: string | null;
   commit_message: string | null;
   commit_committed_at: Date | string | null;
+  commit_author: string | null;
+  commit_url: string | null;
+  commit_fetched_at: Date | string | null;
   spell_name: string | null;
   spell_description: string | null;
   skill_name: string | null;
@@ -445,6 +448,9 @@ select
   cm.sha             as commit_sha,
   cm.message         as commit_message,
   cm.committed_at    as commit_committed_at,
+  cm.author          as commit_author,
+  cm.url             as commit_url,
+  cm.fetched_at      as commit_fetched_at,
   sp.name            as spell_name,
   sp.description     as spell_description,
   ${SKILL_REFERENCE_SQL} as skill_reference,
@@ -1319,14 +1325,26 @@ export class PgEntityProjector implements EntityProjector {
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
       }
-      case 'commit':
-        return {
-          kind: 'commit',
+      case 'commit': {
+        // Same three facts the pull request arm above carries, and missing here
+        // for no reason anyone chose: the panel's link-summary row reads
+        // `state.url` and `state.stale` for BOTH kinds, so a commit could never
+        // render its link or say it was unsynced. `stale` being REQUIRED on the
+        // contract type is what surfaced this projection at all — it is one of
+        // three that build a commit state, and only one of them was known about.
+        const base = {
+          kind: 'commit' as const,
           repository: r.commit_repo ?? '',
           sha: r.commit_sha ?? '',
           message: r.commit_message ?? '',
           committedAt: iso(r.commit_committed_at),
+          author: r.commit_author,
+          fetchedAt: iso(r.commit_fetched_at),
+          // Never fetched ⇒ definitionally stale, exactly as the PR arm reads it.
+          stale: r.commit_fetched_at === null,
         };
+        return r.commit_url === null ? base : { ...base, url: r.commit_url };
+      }
       case 'spell':
         return { kind: 'spell', description: r.spell_description ?? undefined, equipped: r.equipped === true };
       case 'skill':
