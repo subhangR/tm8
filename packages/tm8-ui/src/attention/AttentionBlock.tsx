@@ -5,7 +5,8 @@
  * Every open request that counts on this entity, its own and rolled up, with
  * one optional note and one Resolve all. The entity stays usable underneath
  * (Q1): this is a band above the tabs, not a gate. Hidden when nothing is
- * pending; history lives in the Activity tab (R9).
+ * pending. Settled history has no UI surface yet: R9 sends it to an Activity
+ * tab the panel does not have (only the CLI lists it today).
  *
  * Reads only the module's selectors and commands. Outside an
  * `AttentionProvider` it renders nothing.
@@ -26,7 +27,6 @@ import {
   viaLabel,
 } from './attention-subtitles';
 import { isAnswerableForm } from '../domain/attention-kinds';
-import { useKeepTypedOnFailure } from './use-keep-typed-on-failure';
 import './attention-surfaces.css';
 
 const COLLAPSE_KEY = 'tm8.attention.block.collapsed.';
@@ -96,7 +96,6 @@ export function AttentionBlock(props: AttentionBlockProps) {
     () => all.filter((r) => r.seenByMe !== true).map((r) => r.id).join(','),
     [all],
   );
-  const stashNote = useKeepTypedOnFailure(api, setNote);
   useEffect(() => {
     if (!api || unseenKey === '') return;
     void api.markSeen(root);
@@ -125,10 +124,13 @@ export function AttentionBlock(props: AttentionBlockProps) {
   const resolveAll = async () => {
     setBusy(true);
     try {
+      // Cleared on submit; a resolve that did not land gives the note back,
+      // unless something new was typed meanwhile.
       const typed = note;
-      stashNote(typed);
       setNote('');
-      if (await api.resolve(root, typed.trim() || undefined)) stashNote('');
+      if (!(await api.resolve(root, typed.trim() || undefined))) {
+        setNote((current) => (current === '' ? typed : current));
+      }
     } finally {
       setBusy(false);
     }

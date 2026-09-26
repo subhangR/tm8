@@ -244,8 +244,8 @@ describe('AttentionBlock (tab 3, variant A)', () => {
 
   it('a failed Resolve gives the typed note back', async () => {
     const reqs = [request({ id: 'r1' })];
-    let api = fakeApi(reqs);
-    const view = render(
+    const api = fakeApi(reqs);
+    render(
       <AttentionApiProvider api={api}>
         <AttentionBlock entityId={TASK} />
       </AttentionApiProvider>,
@@ -255,14 +255,29 @@ describe('AttentionBlock (tab 3, variant A)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId('attention-block-resolve'));
     });
-    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('');
-    api = { ...api, error: "Couldn't resolve: 500" };
+    // The command's own answer is the signal, not the module-wide error.
+    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('cap at 1h');
+  });
+
+  it('another surface failing WHILE this resolve is in flight does not restore its note', async () => {
+    let release!: (landed: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = resolve; });
+    let api = fakeApi([request({ id: 'r1' })], { resolve: vi.fn(() => gate) });
+    const view = render(
+      <AttentionApiProvider api={api}>
+        <AttentionBlock entityId={TASK} />
+      </AttentionApiProvider>,
+    );
+    fireEvent.change(screen.getByTestId('attention-block-note'), { target: { value: 'cap at 1h' } });
+    act(() => { fireEvent.click(screen.getByTestId('attention-block-resolve')); });
+    api = { ...api, error: "Couldn't send the reply: 500" };
     view.rerender(
       <AttentionApiProvider api={api}>
         <AttentionBlock entityId={TASK} />
       </AttentionApiProvider>,
     );
-    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('cap at 1h');
+    await act(async () => { release(true); await gate; });
+    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('');
   });
 
   it('a Resolve that LANDED drops the note: a later failure does not bring it back', async () => {
@@ -366,8 +381,8 @@ describe('SessionWaitingBanner (tab 4)', () => {
   });
 
   it('a failed Reply comes back as a REPLY, never as a Resolve note', async () => {
-    let api = fakeApi([request({ id: 'r1' })]);
-    const view = render(
+    const api = fakeApi([request({ id: 'r1' })]);
+    render(
       <AttentionApiProvider api={api}>
         <SessionWaitingBanner sessionId={SESSION} />
       </AttentionApiProvider>,
@@ -378,12 +393,6 @@ describe('SessionWaitingBanner (tab 4)', () => {
     await act(async () => {
       fireEvent.submit(screen.getByTestId('session-waiting-input').closest('form')!);
     });
-    api = { ...api, error: "Couldn't send the reply: offline" };
-    view.rerender(
-      <AttentionApiProvider api={api}>
-        <SessionWaitingBanner sessionId={SESSION} />
-      </AttentionApiProvider>,
-    );
     expect((screen.getByTestId('session-waiting-input') as HTMLInputElement).value).toBe('use exponential');
     expect(screen.getByTestId('session-waiting-reply').getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByTestId('session-waiting-scope')).toBeNull();

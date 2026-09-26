@@ -1977,8 +1977,7 @@ export function GateApp(props: GateAppProps = {}) {
         placement={placement}
         leadSlot={
           /* Attention v2 (chapter 4): `! mine · all` and the one list, read
-             from the shell's attention store. The old `AttentionSegment`
-             stays in the tree until S7 deletes it. */
+             from the shell's attention store. */
           <AttentionTopSegment
             onOpenEntity={(id) => {
               navigateTo(WORKSPACE_TARGET);

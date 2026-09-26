@@ -16,7 +16,6 @@ import { useRef, useState } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
 import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
 import { attentionAge } from './attention-subtitles';
-import { useKeepTypedOnFailure } from './use-keep-typed-on-failure';
 import './attention-surfaces.css';
 
 export interface SessionWaitingBannerProps {
@@ -45,13 +44,9 @@ export function SessionWaitingBanner({ sessionId, tone = 'light' }: SessionWaiti
   const [mode, setMode] = useState<'idle' | 'resolve' | 'reply'>('idle');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  // The MODE rides with the text: a failed Reply must come back as a Reply,
-  // never as a Resolve note one Enter away from settling the task.
-  const submittedMode = useRef<'resolve' | 'reply'>('resolve');
-  const stash = useKeepTypedOnFailure(api, (typed) => {
-    setText(typed);
-    setMode(submittedMode.current);
-  });
+  // What is open NOW, read after the command settles (the closure's is stale).
+  const modeNow = useRef(mode);
+  modeNow.current = mode;
   if (!api) return null;
 
   const raised = raisedBy(api.queue('all'), String(sessionId));
@@ -71,16 +66,21 @@ export function SessionWaitingBanner({ sessionId, tone = 'light' }: SessionWaiti
 
   const submit = async () => {
     const typed = text;
-    submittedMode.current = mode === 'reply' ? 'reply' : 'resolve';
-    stash(typed);
+    const submitted = mode === 'reply' ? 'reply' : 'resolve';
     setText('');
     setMode('idle');
     setBusy(true);
     try {
-      const landed = mode === 'reply'
+      const landed = submitted === 'reply'
         ? await api.reply(sessionId as EntityId, typed.trim())
         : await api.resolve(root, typed.trim() || undefined);
-      if (landed) stash('');
+      // A command that did not land gives the text back IN ITS MODE: a failed
+      // Reply must come back as a Reply, never as a Resolve note one Enter away
+      // from settling the task. Not over anything opened meanwhile.
+      if (!landed && modeNow.current === 'idle') {
+        setText(typed);
+        setMode(submitted);
+      }
     } finally {
       setBusy(false);
     }

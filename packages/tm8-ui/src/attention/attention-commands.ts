@@ -248,8 +248,8 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
     async reply(sessionId, body) {
       const text = body.trim();
       if (!text) return false;
-      // Clear first, like resolve: a second failure with the same message
-      // must still be a CHANGE, or the surface never restores what was typed.
+      // Clear first, like resolve: a retry must not keep showing the last
+      // attempt's failure while it runs.
       ctx.setError(null);
       try {
         await ctx.seam.commands.postMessage({
