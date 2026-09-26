@@ -235,6 +235,21 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  'auth.space.enter': {
+    cmd: ['auth', 'space', 'enter'],
+    syn: 'tm8 auth space enter <space-id> [--label <label>]',
+    sum: 'Mint a session pinned to one space from your unpinned (gate) session',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['space', 'enter', 'switch', 'session', 'token', 'pin'],
+    notes: [
+      'requires membership of the space and an unpinned browser/cli session; a pinned session cannot enter another space',
+      'the new session has the same kind, never carries node-admin power, and expires no later than the session that minted it',
+      'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
+      'the pinned token is printed once and not stored, so the stored gate credential stays usable for entering other spaces',
+    ],
+  },
   'auth.password.change': {
     cmd: ['auth', 'password'],
     syn: 'tm8 auth password --current <current-password> --new <new-password>',
@@ -3085,7 +3100,8 @@ export const CATALOG_DIGEST =
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
-  'sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d';
+  // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  'sha256:33d3b716fdba0a7b9f4a0dfca4abd8824038589b0556608c35682b40d9c933b5';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -128,8 +128,9 @@ export const SPACE_SELECT = `select ${SPACE_COLUMNS} ${SPACE_FROM}`;
 export function spacesList(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
     const owner = await deps.owner();
-    // No explicit membership filter: `spaces_select` (008:69) already limits
-    // this to spaces the caller belongs to, plus public ones. Re-filtering here
+    // No explicit membership filter: `spaces_select` (008:69, membership only
+    // since 233) already limits this to spaces the caller belongs to — and,
+    // for a pinned session, to its one space. Re-filtering here
     // would be a second, divergent copy of the same rule.
     const rows = await deps.db.query<SpaceRow>(
       claimsFor(owner, ctx),
@@ -165,6 +166,16 @@ interface CreateSpaceResult {
 
 export function spacesCreate(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
+    // W3. A space-pinned session reaches nothing outside its space, so the
+    // space it created would be unreadable to it: `create_space` committed and
+    // the read-back below answered a retryable 503. Refuse before writing; a
+    // new space is made from the gate session (then `auth.space.enter`).
+    if (ctx.identity?.sessionSpaceId) {
+      throw new CollabError(
+        'forbidden',
+        'a space-pinned session cannot create a space; use the gate session',
+      );
+    }
     const owner = await deps.owner();
     const envelope = commandEnvelope(ctx);
     const body = (ctx.body ?? {}) as {

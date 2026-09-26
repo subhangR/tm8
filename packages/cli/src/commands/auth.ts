@@ -29,6 +29,7 @@ import type {
   AuthLogoutResult,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSpaceEnterResult,
   AuthSignupResult,
 } from '@tm8/contract';
 import { readFile } from 'node:fs/promises';
@@ -225,6 +226,36 @@ async function authSession(cmd: CommandContext): Promise<ExitCode> {
     }
     return lines.join('\n');
   });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth space enter <space-id>` — mint a session pinned to one space from
+ * this shell's gate (unpinned) session (plan W3).
+ *
+ * The pinned token is PRINTED, never stored: the stored credential for this
+ * Server origin is the gate session, and overwriting it with a pinned one would
+ * leave the shell unable to enter any other space. How a shell holds both is
+ * W3-client's; until then the caller exports the printed token.
+ */
+async function authSpaceEnter(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth space enter', cmd.options.value('mutation-id'));
+  const usage = 'usage: tm8 auth space enter <space-id> [--label <label>]';
+  const spaceId = requireOnePositional(cmd, usage);
+  const body: Record<string, unknown> = { spaceId };
+  const label = cmd.options.value('label');
+  if (label !== undefined) body.label = label;
+
+  const data = await observedInvoke<AuthSpaceEnterResult>(clientFor(cmd.ctx), 'auth.space.enter', { body });
+  cmd.out.data(data, (result) =>
+    [
+      `entered space ${result.spaceId}`,
+      `session ${result.session.sessionId} (${result.session.kind}) expires ${result.session.expiresAt}`,
+      '',
+      '# The token below is shown exactly once and acts only in this space:',
+      `export TM8_AGENT_TOKEN=${result.token}`,
+    ].join('\n'),
+  );
   return EXIT_OK;
 }
 
@@ -505,6 +536,7 @@ export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'login'], run: authLogin },
   { path: ['auth', 'logout'], run: authLogout },
   { path: ['auth', 'session'], run: authSession },
+  { path: ['auth', 'space', 'enter'], run: authSpaceEnter },
   { path: ['auth', 'password'], run: authPasswordChange },
   { path: ['auth', 'invite', 'signup'], run: authInviteSignup },
   // Order here is irrelevant — `findCommand` is an exact Map lookup on the

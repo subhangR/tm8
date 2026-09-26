@@ -398,6 +398,10 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // W3 (plan 01a0d9eb): a gate session + membership mints a session pinned to
+  // one space. Under TM8_SPACE_SESSIONS=enforce this is how a human gets past
+  // the gate at all.
+  { name: 'auth.space.enter',                            method: 'POST',   path: '/v2/auth/space/enter',                                               kind: 'command', status: 'v1' },
   // `auth.password.change` — the day a human forgets their password, the only
   // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
   // reset: it demands the CURRENT password in the body and proves it with the

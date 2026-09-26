@@ -1840,6 +1840,12 @@ export interface AuthSessionView {
   /** Present only for a chat runtime: the chat entity whose process owns it. */
   runtimeChatId?: string | null;
   label: string | null;
+  /**
+   * The one space this session may act in (226 `auth_sessions.space_id`). Null
+   * for a human gate session; set for agent kinds and for a session minted by
+   * `auth.space.enter`.
+   */
+  spaceId?: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
   expiresAt: string;
@@ -1889,6 +1895,34 @@ export interface AuthLoginResult {
   /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
   token: string;
   account: AuthAccountView;
+  session: AuthSessionView;
+}
+
+/**
+ * `auth.space.enter` — mint a session PINNED to one space (plan 01a0d9eb W3).
+ *
+ * The caller presents a gate session (a human `browser`/`cli` session with no
+ * space) or is the loopback auto-owner, and must be a member of `spaceId`. The
+ * new session has the caller's kind, is bound to `spaceId` for its whole life
+ * (`tm8.session_space_id`), never carries node-admin power (K6), and expires no
+ * later than the gate session it came from. A pinned session cannot enter
+ * another space: go back to the gate token for that.
+ *
+ * A `browser` result also replaces the `tm8_session` cookie, so the browser's
+ * WebSocket follows the space the UI switched to. On this one operation an
+ * explicit `Authorization` wins over a conflicting cookie (the cookie is the
+ * previous space's pinned session; the header is the gate).
+ */
+export interface AuthSpaceEnterInput {
+  spaceId: string;
+  /** Free-form label shown in session listings. */
+  label?: string;
+}
+
+export interface AuthSpaceEnterResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  spaceId: string;
   session: AuthSessionView;
 }
 

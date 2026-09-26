@@ -99,7 +99,8 @@ export function toClaimBindings(
   const bindings: ClaimBinding[] = [
     { name: CLAIM_NAMES.identityId, value: claims.identityId },
     { name: CLAIM_NAMES.actorId, value: claims.actorId },
-    { name: CLAIM_NAMES.nodeAdmin, value: boolClaim(claims.isNodeAdmin) },
+    // K6 (W3): a pinned session never binds node admin.
+    { name: CLAIM_NAMES.nodeAdmin, value: boolClaim(sessionSpaceId ? false : claims.isNodeAdmin) },
     { name: CLAIM_NAMES.authKind, value: authKind ?? '' },
     { name: CLAIM_NAMES.sessionSpaceId, value: sessionSpaceId ?? '' },
   ];

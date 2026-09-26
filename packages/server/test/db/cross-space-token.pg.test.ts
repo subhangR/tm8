@@ -29,16 +29,18 @@ import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
 
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import { DbSubscriptionAuthorizer, createControlChannel } from '../../src/events/control.js';
+import type { DurableEventLog } from '../../src/events/poll.js';
+import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { loadConfig } from '../../src/http/config.js';
 import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
-import type { RequestContext, SpaceSessionsMode } from '../../src/http/types.js';
+import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
-import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
@@ -122,21 +124,26 @@ async function mintAgentRuntime(): Promise<string> {
   return formatToken(row.id, secret);
 }
 
+/** The production identity resolver's answer for a bearer string. */
+async function identityForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<RequestIdentity> {
+  const resolve = createSessionIdentityResolver({
+    db,
+    owner: async () => NOT_THE_OWNER,
+    spaceSessions: mode,
+  });
+  return resolve(
+    { authorization: `Bearer ${token}` },
+    { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+  );
+}
+
 /**
  * The production path from a bearer string to `SET LOCAL`: identity resolver
  * (token hash → `auth_sessions` row) then `claimsFor`. `mode` is the
  * boot-time `TM8_SPACE_SESSIONS` value the server would have read.
  */
 async function claimsForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<DbClaims> {
-  const resolve = createSessionIdentityResolver({
-    db,
-    owner: async () => NOT_THE_OWNER,
-    spaceSessions: mode,
-  });
-  const identity = await resolve(
-    { authorization: `Bearer ${token}` },
-    { remoteAddress: '203.0.113.9', disableAutoOwner: true },
-  );
+  const identity = await identityForToken(token, mode);
   const ctx = { identity, requestId: `cross-space-${randomUUID()}` } as unknown as RequestContext;
   return claimsFor(NOT_THE_OWNER, ctx);
 }
@@ -377,8 +384,8 @@ describe('T9 agent G (A) reads B — refused (W0a)', () => {
       expect(row).toMatchObject({ member: true, admin: true, me: fixture.memberHB });
     });
 
-    // TM8_SPACE_SESSIONS=enforce is reserved for W3 (human sessions) and is a
-    // no-op here: an agent token behaves exactly as under `agents`.
+    // TM8_SPACE_SESSIONS=enforce adds the human gate (W3) and changes nothing
+    // for an agent token: it behaves exactly as under `agents`.
     it(`${kind}: enforce — B entities are invisible, as under agents`, async () => {
       const token = await mint();
       expect((await claimsForToken(token, 'enforce')).sessionSpaceId).toBe(fixture.spaceA);
@@ -390,8 +397,10 @@ describe('T9 agent G (A) reads B — refused (W0a)', () => {
     });
   }
 
-  // `enforce` does not pin humans yet (W3). H's browser token sees both spaces
-  // under every mode — the agents-only scope of W0a, pinned.
+  // A GATE browser session (space_id null — every session `issue_auth_session`
+  // mints) is unpinned under every mode: it sees both spaces at the RLS layer.
+  // Under `enforce` the HTTP gate refuses it everything but spaces.list/auth.*
+  // (T8c); pinning a human is `auth.space.enter`'s job (T1–T8b).
   for (const mode of ['off', 'agents', 'enforce'] as const) {
     it(`browser (H), ${mode}: unpinned — B entities are visible`, async () => {
       const token = await mintBrowser(fixture.accountH, fixture.identityH);
@@ -536,22 +545,21 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
   });
 
   /**
-   * KNOWN GAP (W3, K7). spaces_select's public arm admits any authenticated
-   * identity, so `spaces.list`/`spaces.get` return a PUBLIC B's row (name,
-   * description, repo, share defaults) to an agent pinned to A. This cell
-   * asserts today's behaviour; W3 flips it to `[]`.
+   * K7 REJECTED (owner decision 32): nobody reads a public space without
+   * joining it. 233 closed spaces_select's public arm (218:291, the W0a gap
+   * this cell used to document), so a public B is as invisible as a private one.
    */
-  it('KNOWN GAP (W3, K7) agent: a PUBLIC B is still readable through spaces_select\'s public arm', async () => {
+  it('K7 rejected, agent: a PUBLIC B is not readable either (no public arm)', async () => {
     const token = await mintAgent();
     await database.query(`update public.spaces set visibility = 'public' where id = $1`, [fixture.spaceB]);
     try {
       expect(await asToken(token, (q) =>
-        q.query('select id from public.spaces where id = $1', [fixture.spaceB]))).toHaveLength(1);
+        q.query('select id from public.spaces where id = $1', [fixture.spaceB]))).toEqual([]);
     } finally {
       await database.query(`update public.spaces set visibility = 'private' where id = $1`, [fixture.spaceB]);
     }
   });
-  it('agent: positive for the gap — a PRIVATE B is refused (the member arm is pinned)', async () => {
+  it('agent: positive — a PRIVATE B is refused and its own A is read (the member arm is pinned)', async () => {
     const token = await mintAgent();
     expect(await asToken(token, (q) =>
       q.query('select id from public.spaces where id = $1', [fixture.spaceB]))).toEqual([]);
@@ -1381,5 +1389,942 @@ describe.sequential('T15 accounts.disable — every session of the account is re
         'select status from public.members where entity_id = $1', [memberXA])).rows;
     });
     expect(rows).toEqual([{ status: 'active' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W3 — HUMAN SESSIONS PINNED TO A SPACE (T1–T8c).
+//
+// H's gate session (space_id null, `issue_auth_session`) enters A through the
+// production `enter_space` RPC, the same call `auth.space.enter` makes. The
+// pinned token is then resolved by the production resolver like every other
+// credential in this file. Human pins apply under `agents` AND `enforce`
+// (`off` is the kill switch); rows run under `enforce` unless they say so.
+// ---------------------------------------------------------------------------
+
+/** H's (or H2's) session pinned to `spaceId`, entered from a fresh gate session. */
+async function mintPinned(
+  accountId: string,
+  identityId: string,
+  spaceId: string,
+): Promise<string> {
+  const gate = await mintBrowser(accountId, identityId);
+  const secret = generateSecret();
+  const row = await asIdentity(identityId, (q) =>
+    q.rpc<{ id: string; space_id: string }>('enter_space', [
+      spaceId, parseToken(gate)!.sessionId, hashToken(secret),
+      new Date(Date.now() + 3_600_000).toISOString(), 'cross-space pinned',
+    ]));
+  expect(row.space_id).toBe(spaceId);
+  return formatToken(row.id, secret);
+}
+
+/** Run `fn` with H's `accounts.is_node_admin` set to `value`, restored after. */
+async function withNodeAdmin<T>(accountId: string, value: boolean, fn: () => Promise<T>): Promise<T> {
+  const read = await database.query<{ is_node_admin: boolean }>(
+    'select is_node_admin from public.accounts where id = $1', [accountId]);
+  const before = read[0]!.is_node_admin;
+  await database.query('update public.accounts set is_node_admin = $2 where id = $1', [accountId, value]);
+  try {
+    return await fn();
+  } finally {
+    await database.query('update public.accounts set is_node_admin = $2 where id = $1', [accountId, before]);
+  }
+}
+
+describe('T1 H pinned to A reads B — not_found / empty (W3)', () => {
+  for (const mode of ['agents', 'enforce'] as const) {
+    it(`${mode}: the pin reaches SET LOCAL and B entities are invisible`, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect((await claimsForToken(token, mode)).sessionSpaceId).toBe(fixture.spaceA);
+      expect(await asToken(token, (q) => idsIn(q, fixture.spaceB), mode)).toEqual([]);
+    });
+    it(`${mode}: positive — A entities are visible with the same credential`, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await asToken(token, (q) => idsIn(q, fixture.spaceA), mode)).toContain(fixture.docA);
+    });
+  }
+  it('B\'s doc is not_found by id', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.entities where id = $1', [fixture.docB]), 'enforce')).toEqual([]);
+  });
+  it('positive — A\'s doc is found by id', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.entities where id = $1', [fixture.docA]), 'enforce')).toHaveLength(1);
+  });
+  it('a SECURITY DEFINER read guarded by require_space_member refuses B', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('get_space_menu', [fixture.spaceB]), 'enforce')))
+      .toBe('42501');
+  });
+  it('positive — the same read answers for A', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('get_space_menu', [fixture.spaceA]), 'enforce')))
+      .toBe('ok');
+  });
+  it('off: the pin is inert — B is visible (kill switch, pre-W3 behaviour)', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await claimsForToken(token, 'off')).sessionSpaceId).toBeUndefined();
+    expect(await asToken(token, (q) => idsIn(q, fixture.spaceB), 'off')).toContain(fixture.docB);
+  });
+});
+
+describe('T2 H pinned to A writes B — 42501 (W3)', () => {
+  it('update_document on B\'s doc is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => editDoc(token, fixture.docB, 'enforce'))).toBe('42501');
+  });
+  it('positive — update_document on A\'s doc succeeds', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => editDoc(token, fixture.docA, 'enforce'))).toBe('ok');
+  });
+  it('create_document in B is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_document', [fixture.spaceB, 'T2 pinned H in B']), 'enforce'))).toBe('42501');
+  });
+  it('positive — create_document in A succeeds', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_document', [fixture.spaceA, 'T2 pinned H in A']), 'enforce'))).toBe('ok');
+  });
+  it('provider_etag_record in B (no actor binding) is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => recordEtag(token, fixture.spaceB, 'enforce'))).toBe('42501');
+  });
+  it('positive — provider_etag_record in A succeeds', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => recordEtag(token, fixture.spaceA, 'enforce'))).toBe('ok');
+  });
+});
+
+/**
+ * The WS control channel (subscribe and resume) driven with the REAL
+ * authorizer for `mode`, a recording sink, and a log that records every read.
+ * A refused frame answers with a `control.refused` ack and never reads the log.
+ */
+function controlChannelFor(identity: RequestIdentity, mode: SpaceSessionsMode) {
+  const sent: Array<Record<string, unknown>> = [];
+  const logCalls: string[] = [];
+  const registry = new SubscriptionRegistry();
+  const sink = {
+    id: `w3-${randomUUID()}`,
+    identity,
+    isOpen: true,
+    send: (text: string) => { sent.push(JSON.parse(text) as Record<string, unknown>); },
+    close: () => undefined,
+    onMessage: () => undefined,
+    onClose: () => undefined,
+  };
+  registry.add(sink);
+  const log: DurableEventLog = {
+    since: (spaceId, sinceSeq) => {
+      logCalls.push(spaceId);
+      return Promise.resolve({ items: [], nextCursor: String(sinceSeq) });
+    },
+  };
+  const channel = createControlChannel({
+    registry,
+    authorizer: new DbSubscriptionAuthorizer(db, async (id) =>
+      claimsFor(NOT_THE_OWNER, { identity: id, requestId: `w3c-${randomUUID()}` } as unknown as RequestContext),
+    { spaceSessions: mode }),
+    log,
+    claimsFor: async (id) =>
+      claimsFor(NOT_THE_OWNER, { identity: id, requestId: `w3c-${randomUUID()}` } as unknown as RequestContext),
+  });
+  return {
+    send: (frame: unknown) => channel.handle(sink, JSON.stringify(frame)),
+    acks: () => sent.filter((m) => String(m['type']).startsWith('control.')),
+    subscribed: () => registry.spacesFor(sink.id),
+    logCalls,
+  };
+}
+
+describe('T3 H pinned to A — events and WS subscribe on B refused (W3)', () => {
+  const authorizer = () => new DbSubscriptionAuthorizer(db, async (identity) =>
+    claimsFor(NOT_THE_OWNER, { identity, requestId: `t3-${randomUUID()}` } as unknown as RequestContext));
+  const authorizerIn = (spaceSessions: SpaceSessionsMode) => new DbSubscriptionAuthorizer(db, async (identity) =>
+    claimsFor(NOT_THE_OWNER, { identity, requestId: `t3-${randomUUID()}` } as unknown as RequestContext),
+  { spaceSessions });
+
+  it('WS subscribe to B is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const identity = await identityForToken(token, 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceB)).toBe(false);
+  });
+  it('positive — WS subscribe to A is admitted for the same credential', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const identity = await identityForToken(token, 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceA)).toBe(true);
+  });
+  it('WS subscribe to a PUBLIC B is refused too (K7 rejected: public is not readable)', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const identity = await identityForToken(token, 'enforce');
+    await database.query(`update public.spaces set visibility = 'public' where id = $1`, [fixture.spaceB]);
+    try {
+      expect(await authorizer().canSubscribe(identity, fixture.spaceB)).toBe(false);
+    } finally {
+      await database.query(`update public.spaces set visibility = 'private' where id = $1`, [fixture.spaceB]);
+    }
+  });
+  it('positive — H\'s gate session subscribes to B (a gate is not pinned)', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await identityForToken(token, 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceB)).toBe(true);
+  });
+  it('a gate session subscribes to nothing when the authorizer runs under enforce (W3 audit)', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await identityForToken(token, 'enforce');
+    expect(await authorizerIn('enforce').canSubscribe(identity, fixture.spaceB)).toBe(false);
+    expect(await authorizerIn('enforce').canSubscribe(identity, fixture.spaceA)).toBe(false);
+  });
+  it('positive — the same gate session subscribes to B when the authorizer runs under agents', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await identityForToken(token, 'agents');
+    expect(await authorizerIn('agents').canSubscribe(identity, fixture.spaceB)).toBe(true);
+  });
+  it('W3 audit: under enforce a gate session\'s subscribe AND resume to a member space are refused, the log never read', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const c = controlChannelFor(await identityForToken(gate, 'enforce'), 'enforce');
+    await c.send({ type: 'subscribe', spaceIds: [fixture.spaceA] });
+    await c.send({ type: 'resume', spaceId: fixture.spaceA, since: 0 });
+    expect(c.subscribed()).toEqual([]);
+    expect(c.logCalls, 'the log must not be read before authorization decides').toEqual([]);
+    expect(c.acks()).toEqual([
+      { type: 'control.refused', frame: 'subscribe', spaceId: fixture.spaceA, reason: 'forbidden' },
+      { type: 'control.refused', frame: 'resume', spaceId: fixture.spaceA, reason: 'forbidden' },
+    ]);
+  });
+  it('W3 audit: positive — the agents twin admits the same gate session\'s subscribe and resume', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const c = controlChannelFor(await identityForToken(gate, 'agents'), 'agents');
+    await c.send({ type: 'subscribe', spaceIds: [fixture.spaceA] });
+    await c.send({ type: 'resume', spaceId: fixture.spaceA, since: 0 });
+    expect(c.subscribed()).toEqual([fixture.spaceA]);
+    expect(c.logCalls).toEqual([fixture.spaceA]);
+    expect(c.acks().filter((a) => a['type'] === 'control.refused')).toEqual([]);
+  });
+  it('positive — a pinned session still subscribes to its own space under enforce', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const identity = await identityForToken(token, 'enforce');
+    expect(await authorizerIn('enforce').canSubscribe(identity, fixture.spaceA)).toBe(true);
+  });
+  it('B\'s workspace_events are invisible (events.poll reads under the pin)', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await asToken(token, (q) => q.query(
+      'select 1 from public.workspace_events where space_id = $1 limit 1', [fixture.spaceB]), 'enforce'))
+      .toEqual([]);
+    // The discriminating half: the same rows are visible to H's gate session.
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await asToken(gate, (q) => q.query(
+      'select 1 from public.workspace_events where space_id = $1 limit 1', [fixture.spaceB]), 'enforce')).length)
+      .toBeGreaterThan(0);
+  });
+  it('positive — A\'s workspace_events are visible', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await asToken(token, (q) => q.query(
+      'select 1 from public.workspace_events where space_id = $1 limit 1', [fixture.spaceA]), 'enforce')).length)
+      .toBeGreaterThan(0);
+  });
+});
+
+describe('T5 H pinned to A — PTY attach to a B session refused (W3)', () => {
+  const workSessionB = randomUUID();
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'work_session', $3, 'space')`,
+        [workSessionB, fixture.spaceB, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+         values ($1, 'T5 B run', 'running', 'none', now())`,
+        [workSessionB],
+      );
+    });
+  });
+
+  /** A single-use attach grant for `sessionId`, minted by `token`. Returns the grant's hash. */
+  async function grant(token: string, sessionId: string, mode: SpaceSessionsMode = 'enforce'): Promise<string> {
+    const hash = hashToken(generateSecret());
+    await asToken(token, (q) => q.rpc('grant_stream_attach', [sessionId, 'view', hash, null, null]), mode);
+    return hash;
+  }
+
+  it('grant_stream_attach on B\'s session is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => grant(token, workSessionB))).toBe('42501');
+  });
+  it('positive — grant + consume on A\'s session succeeds with the same credential', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const hash = await grant(token, fixture.workSessionA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('consume_stream_attach', [fixture.workSessionA, 'view', hash]), 'enforce'))).toBe('ok');
+  });
+  it('consume_stream_attach refuses a B grant under an A pin (233), even one H\'s gate minted', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const hash = await grant(gate, workSessionB);
+    const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(pinned, (q) =>
+      q.rpc('consume_stream_attach', [workSessionB, 'view', hash]), 'enforce'))).toBe('42501');
+    // Positive: the grant was live — the gate session consumes it.
+    expect(await outcome(() => asToken(gate, (q) =>
+      q.rpc('consume_stream_attach', [workSessionB, 'view', hash]), 'enforce'))).toBe('ok');
+  });
+});
+
+describe('T6 H pinned to A — projects without a spaceId are only A\'s (W3)', () => {
+  const projectA = randomUUID();
+  const projectB = randomUUID();
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'T6 A project', '/tmp/cross-space-t6-a', 'trusted'),
+                ($2, 'T6 B project', '/tmp/cross-space-t6-b', 'trusted')`,
+        [projectA, projectB],
+      );
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($1, $3, $5), ($2, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectA, projectB, fixture.memberHA, fixture.memberHB],
+      );
+    });
+  });
+
+  // projects.list's no-spaceId query is `PROJECT_SELECT` with no filter: RLS
+  // (projects_select: is_node_admin() OR linked into member_space_ids()) is
+  // the whole answer, so H is a NODE ADMIN here — the arm that used to make it
+  // node-wide.
+  const projectsVisible = (token: string): Promise<string[]> =>
+    asToken(token, (q) => q.query<{ id: string }>(
+      'select id::text from public.projects where id = any($1::uuid[])', [[projectA, projectB]]), 'enforce')
+      .then((rows) => rows.map((r) => r.id));
+
+  it('pinned node-admin H sees only A\'s project', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await projectsVisible(token)).toEqual([projectA]);
+    });
+  });
+  it('positive — H\'s gate session (node admin) sees both: the pin, not the account, narrowed it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await projectsVisible(token)).sort()).toEqual([projectA, projectB].sort());
+    });
+  });
+});
+
+describe('T7/T8 pinned sessions never hold node-admin; gate sessions keep it (W3, K6)', () => {
+  const adminProbe = (token: string) => asToken(token, async (q) => (await q.query<{ admin: boolean }>(
+    'select internal.is_node_admin() as admin'))[0]!.admin, 'enforce');
+  // internal.require_node_admin() is not granted to tm8_app; it is reached
+  // through a node-admin RPC. A 100-year retention deletes nothing.
+  const requireAdmin = (token: string) => outcome(() => asToken(token, (q) =>
+    q.rpc('prune_auth_sessions', ['100 years']), 'enforce'));
+
+  it('T8: pinned node-admin H — claims carry nodeAdmin=false and is_node_admin() is false', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect((await claimsForToken(token, 'enforce')).nodeAdmin).toBe(false);
+      expect(await adminProbe(token)).toBe(false);
+    });
+  });
+  it('T8: pinned node-admin H — prune_auth_sessions (require_node_admin reads accounts) refuses 42501', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await requireAdmin(token)).toBe('42501');
+    });
+  });
+  it('T8: positive — H\'s gate session keeps node-admin (claims, is_node_admin, prune_auth_sessions)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await claimsForToken(token, 'enforce')).nodeAdmin).toBe(true);
+      expect(await adminProbe(token)).toBe(true);
+      expect(await requireAdmin(token)).toBe('ok');
+    });
+  });
+  it('T8: pinned node-admin H cannot mint a session (issue_auth_session refuses a pinned caller)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await outcome(() => asToken(token, (q) => q.rpc('issue_auth_session', [
+        fixture.accountH, hashToken(generateSecret()), 'cli',
+        new Date(Date.now() + 3_600_000).toISOString(), null, 'T8 pinned mint',
+      ]), 'enforce'))).toBe('42501');
+    });
+  });
+  it('T7: pinned H2 (not a node admin) is refused', async () => {
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await adminProbe(token)).toBe(false);
+    expect(await requireAdmin(token)).toBe('42501');
+  });
+  it('T7: H2\'s gate session is refused too — the refusal is the account\'s, as before W3', async () => {
+    const token = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await adminProbe(token)).toBe(false);
+    expect(await requireAdmin(token)).toBe('42501');
+  });
+  it('T7: positive — pinned H2 still works in its own space A', async () => {
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await asToken(token, (q) => idsIn(q, fixture.spaceA), 'enforce')).toContain(fixture.docA);
+  });
+});
+
+describe('T8b a non-member of public space P — read refused, write refused (W3, K7 rejected)', () => {
+  const spaceP = randomUUID();
+  let docP: string;
+
+  beforeAll(async () => {
+    const memberP = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity, visibility)
+         values ($1, 'Cross-space P (public)', $2, 'public')`,
+        [spaceP, fixture.identityH2],
+      );
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'member', $1, 'space')`,
+        [memberP, spaceP],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $2, $3, 'owner', 'H2')`,
+        [memberP, spaceP, fixture.identityH2],
+      );
+    });
+    docP = await asIdentity(fixture.identityH2, async (q) =>
+      (await q.rpc<{ id?: string; entity?: { id: string } }>('create_document', [spaceP, 'Public doc in P']))
+    ).then((row) => (row.entity?.id ?? row.id)!);
+  });
+
+  /** `update_document` on P's doc; the version is read by the test harness, not by H (not a member of P). */
+  async function editP(token: string): Promise<unknown> {
+    const [row] = await database.query<{ version: number }>(
+      'select version from public.entities where id = $1', [docP]);
+    return asToken(token, (q) => q.rpc('update_document', [
+      docP, Number(row!.version), null, `edited ${randomUUID()}`, null, null, `cross-space-${randomUUID()}`,
+    ]), 'enforce');
+  }
+
+  it('the K7 toggle is gone (decision 32: not a toggle)', async () => {
+    expect(await database.query(
+      `select 1 from pg_proc where proname = 'pinned_session_reads_public_spaces'`)).toEqual([]);
+  });
+  it('read refused — P\'s space row is invisible to H pinned to A (not a member of P)', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.spaces where id = $1', [spaceP]), 'enforce')).toEqual([]);
+  });
+  it('read refused — and to H\'s unpinned gate session too (no public arm in any mode)', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    for (const mode of ['agents', 'enforce'] as const) {
+      expect(await asToken(gate, (q) =>
+        q.query('select id from public.spaces where id = $1', [spaceP]), mode)).toEqual([]);
+    }
+  });
+  it('positive — H2 pinned to P (its member) reads P and P\'s doc', async () => {
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, spaceP);
+    expect(await asToken(token, (q) =>
+      q.query('select id from public.spaces where id = $1', [spaceP]), 'enforce')).toHaveLength(1);
+    expect(await asToken(token, (q) => idsIn(q, spaceP), 'enforce')).toContain(docP);
+  });
+  it('write no — create_document in P is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_document', [spaceP, 'T8b pinned H in P']), 'enforce'))).toBe('42501');
+  });
+  it('write no — update_document on P\'s doc is refused', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => editP(token))).toBe('42501');
+  });
+  it('write no — join_public_space(P) is refused while pinned to A', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('join_public_space', [spaceP, null]), 'enforce'))).toBe('42501');
+    const members = await database.query(
+      'select 1 from public.members where space_id = $1 and identity_id = $2', [spaceP, fixture.identityH]);
+    expect(members).toEqual([]);
+  });
+  it('positive — the same pinned credential writes its own space A', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_document', [fixture.spaceA, 'T8b pinned H in A']), 'enforce'))).toBe('ok');
+  });
+  it('positive — H2 pinned to P (its member) writes P', async () => {
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, spaceP);
+    expect(await outcome(() => editP(token))).toBe('ok');
+  });
+  // Last in the block: it makes H a member of P. Joining BY ID stays open
+  // (decision 32 keeps join_public_space; discovery is an open question).
+  it('positive — H\'s gate session joins P by id, then reads it as a member', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    try {
+      expect(await outcome(() => asToken(gate, (q) =>
+        q.rpc('join_public_space', [spaceP, null]), 'agents'))).toBe('ok');
+      expect(await asToken(gate, (q) =>
+        q.query('select id from public.spaces where id = $1', [spaceP]), 'agents')).toHaveLength(1);
+    } finally {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query('delete from public.members where space_id = $1 and identity_id = $2',
+          [spaceP, fixture.identityH]);
+      });
+    }
+  });
+});
+
+describe('enter_space — who may pin a session to which space (W3)', () => {
+  const enter = (
+    claimsIdentity: string,
+    spaceId: string,
+    parent: string | null,
+    opts: { authKind?: string; expiresAt?: Date } = {},
+  ) => outcome(() => asIdentity(claimsIdentity, (q) => q.rpc('enter_space', [
+    spaceId, parent, hashToken(generateSecret()),
+    (opts.expiresAt ?? new Date(Date.now() + 3_600_000)).toISOString(), 'enter_space cell',
+  ]), opts.authKind));
+
+  it('a non-member is refused (H2 into B)', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await enter(fixture.identityH2, fixture.spaceB, parseToken(gate)!.sessionId)).toBe('42501');
+  });
+  it('positive — the same H2 gate enters A', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gate)!.sessionId)).toBe('ok');
+  });
+  it('a parent session that belongs to another account is refused', async () => {
+    const gateH = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gateH)!.sessionId)).toBe('42501');
+  });
+  it('a pinned parent is refused (a pinned session cannot enter again)', async () => {
+    const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await enter(fixture.identityH, fixture.spaceB, parseToken(pinned)!.sessionId)).toBe('42501');
+  });
+  it('a pinned CALLER is refused', async () => {
+    const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(pinned, (q) => q.rpc('enter_space', [
+      fixture.spaceB, parseToken(gate)!.sessionId, hashToken(generateSecret()),
+      new Date(Date.now() + 3_600_000).toISOString(), 'pinned caller',
+    ]), 'enforce'))).toBe('42501');
+  });
+  it('an agent-kind caller is refused', async () => {
+    expect(await enter(fixture.identityH, fixture.spaceA, null, { authKind: 'agent' })).toBe('42501');
+  });
+  it('a revoked parent is refused', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    await database.query('update public.auth_sessions set revoked_at = now() where id = $1',
+      [parseToken(gate)!.sessionId]);
+    expect(await enter(fixture.identityH, fixture.spaceA, parseToken(gate)!.sessionId)).toBe('42501');
+  });
+  it('the child inherits the parent\'s kind and never outlives it', async () => {
+    const secret = generateSecret();
+    const parentRow = await asIdentity(fixture.identityH, (q) => q.rpc<{ id: string; expires_at: string }>(
+      'issue_auth_session', [fixture.accountH, hashToken(secret), 'cli',
+        new Date(Date.now() + 600_000).toISOString(), null, 'short cli parent']));
+    const child = await asIdentity(fixture.identityH, (q) => q.rpc<{ kind: string; expires_at: string; space_id: string }>(
+      'enter_space', [fixture.spaceA, parentRow.id, hashToken(generateSecret()),
+        new Date(Date.now() + 86_400_000).toISOString(), 'long child']), 'cli');
+    expect(child.kind).toBe('cli');
+    expect(child.space_id).toBe(fixture.spaceA);
+    expect(new Date(child.expires_at).getTime()).toBeLessThanOrEqual(new Date(parentRow.expires_at).getTime());
+    expect(child).not.toHaveProperty('token_hash');
+  }, 120_000);
+});
+
+describe('claim-free resolvers — returned keys pinned (W3)', () => {
+  // These three run before any claim is bound (007:105-130, 142). A key added
+  // to one is a field every pre-auth caller can read, so each key set is pinned
+  // EXACTLY; widening one is a reviewed change to this list.
+  const keys = (row: Record<string, unknown> | null | undefined): string[] =>
+    Object.keys(row ?? {}).sort();
+
+  it('resolve_auth_session: a gate row and a pinned row carry the same keys, spaceId included', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const resolve = async (token: string) => (await database.query<{ r: Record<string, unknown> }>(
+      'select public.resolve_auth_session($1) as r', [hashToken(parseToken(token)!.secret)]))[0]!.r;
+    const gateRow = await resolve(gate);
+    const pinnedRow = await resolve(pinned);
+    expect(keys(pinnedRow)).toEqual(keys(gateRow));
+    expect(keys(gateRow)).toEqual(RESOLVE_AUTH_SESSION_KEYS);
+    expect(pinnedRow.spaceId).toBe(fixture.spaceA);
+    expect(gateRow.spaceId ?? null).toBeNull();
+  });
+  it('resolve_account_credential: key set', async () => {
+    const row = (await database.query<{ r: Record<string, unknown> }>(
+      'select public.resolve_account_credential($1) as r', ['cross-space-h']))[0]!.r;
+    expect(keys(row)).toEqual(RESOLVE_ACCOUNT_CREDENTIAL_KEYS);
+  });
+  it('resolve_node_owner: key set, and no secret', async () => {
+    const [before] = await database.query<{ is_owner: boolean }>(
+      'select is_owner from public.accounts where id = $1', [fixture.accountH]);
+    await database.query('update public.accounts set is_owner = true where id = $1', [fixture.accountH]);
+    try {
+      const row = (await database.query<{ r: Record<string, unknown> }>(
+        'select public.resolve_node_owner() as r'))[0]!.r;
+      expect(keys(row)).toEqual(RESOLVE_NODE_OWNER_KEYS);
+      expect(keys(row)).not.toContain('passwordHash');
+    } finally {
+      await database.query('update public.accounts set is_owner = $2 where id = $1',
+        [fixture.accountH, before!.is_owner]);
+    }
+  });
+});
+
+// MEASURED against the migrated scratch database (233). `spaceId` is 226's.
+const RESOLVE_AUTH_SESSION_KEYS = [
+  'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
+  'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
+  'sessionId', 'spaceId', 'username', 'workSessionId',
+];
+const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
+  'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
+  'passwordHash', 'status', 'username',
+];
+const RESOLVE_NODE_OWNER_KEYS = ['accountId', 'identityId', 'isNodeAdmin', 'isOwner', 'status', 'username'];
+
+/**
+ * W3 over HTTP: the enforce gate (T8c), `auth.space.enter`'s wire shape, and the
+ * pinned token through the real server (T1, T6, T8). Two servers over the same
+ * database — `enforce` and `agents` — so every enforce refusal has its `agents`
+ * twin (a5: human behaviour unchanged there). Auto-owner is OFF on both: every
+ * call carries a bearer.
+ */
+describe('T8c / T6 / T8 over HTTP — the enforce gate and auth.space.enter (W3)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  const projectA = randomUUID();
+  const projectB = randomUUID();
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      // `bootstrap` needs an owner: H owns and administers the node for this
+      // block (T26's arrangement), restored in afterAll.
+      adminBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid)
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]],
+      );
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'W3 HTTP A project', '/tmp/cross-space-w3-a', 'trusted'),
+                ($2, 'W3 HTTP B project', '/tmp/cross-space-w3-b', 'trusted')`,
+        [projectA, projectB],
+      );
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($1, $3, $5), ($2, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectA, projectB, fixture.memberHA, fixture.memberHB],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w3-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        'update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+        [row.id, row.is_node_admin, row.is_owner],
+      );
+    }
+  }, 180_000);
+
+  async function call(
+    server: BootstrappedServer,
+    token: string,
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: any }> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    // Success bodies are the `{ data, requestId }` envelope; `json` is `data`.
+    const parsed = text ? JSON.parse(text) : null;
+    return { status: response.status, json: parsed && 'data' in parsed ? parsed.data : parsed };
+  }
+
+  const enterOverHttp = (server: BootstrappedServer, gate: string, spaceId: string) =>
+    call(server, gate, 'POST', '/v2/auth/space/enter', { spaceId });
+
+  it('T8c enforce: a gate session is refused a space read (entities.get on A)', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await call(enforceServer, gate, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(403);
+  });
+  it('T8c enforce: a gate session is refused projects.list and a space write', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await call(enforceServer, gate, 'GET', '/v2/projects')).status).toBe(403);
+    expect((await call(enforceServer, gate, 'GET', `/v2/spaces/${fixture.spaceA}/events`)).status).toBe(403);
+  });
+  it('T8c enforce: positive — the same gate session lists spaces and reads its own session', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const spaces = await call(enforceServer, gate, 'GET', '/v2/spaces');
+    expect(spaces.status).toBe(200);
+    expect(JSON.stringify(spaces.json)).toContain(fixture.spaceA);
+    const session = await call(enforceServer, gate, 'GET', '/v2/auth/session');
+    expect(session.status).toBe(200);
+    // auth.session.get is {authKind, account, session}: the pin is session.spaceId.
+    expect(session.json.session).not.toBeNull();
+    expect(session.json.session.spaceId ?? null).toBeNull();
+    // The discriminating half: the pinned child of the same gate reports A.
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    const pinnedSession = await call(enforceServer, pinned, 'GET', '/v2/auth/session');
+    expect(pinnedSession.status).toBe(200);
+    expect(pinnedSession.json.session.spaceId).toBe(fixture.spaceA);
+  });
+  it('spaces.list does not list an unjoined public space (K7 rejected), in either mode', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    await database.query(`update public.spaces set visibility = 'public' where id = $1`, [fixture.spaceB]);
+    try {
+      for (const server of [enforceServer, agentsServer]) {
+        const spaces = await call(server, gate, 'GET', '/v2/spaces');
+        expect(spaces.status).toBe(200);
+        expect(JSON.stringify(spaces.json)).toContain(fixture.spaceA);
+        expect(JSON.stringify(spaces.json)).not.toContain(fixture.spaceB);
+      }
+    } finally {
+      await database.query(`update public.spaces set visibility = 'private' where id = $1`, [fixture.spaceB]);
+    }
+  });
+  it('a5 agents: the same gate session reads A exactly as before W3', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await call(agentsServer, gate, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+    expect((await call(agentsServer, gate, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(200);
+  });
+
+  it('auth.space.enter: returns {token, spaceId, session} with session.spaceId set, and the token is pinned', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const entered = await enterOverHttp(enforceServer, gate, fixture.spaceA);
+    expect(entered.status).toBe(200);
+    expect(Object.keys(entered.json).sort()).toEqual(['session', 'spaceId', 'token']);
+    expect(entered.json.spaceId).toBe(fixture.spaceA);
+    expect(entered.json.session.spaceId).toBe(fixture.spaceA);
+    expect(entered.json.session.kind).toBe('browser');
+    expect(entered.json.token).not.toBe(gate);
+    // T1 over HTTP, paired: A readable, B not_found, with the entered token.
+    expect((await call(enforceServer, entered.json.token, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+    expect((await call(enforceServer, entered.json.token, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+  });
+  it('auth.space.enter: a non-member is refused (H2 into B)', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect((await enterOverHttp(enforceServer, gate, fixture.spaceB)).status).toBe(403);
+  });
+  it('auth.space.enter: positive — the same H2 gate enters A', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect((await enterOverHttp(enforceServer, gate, fixture.spaceA)).status).toBe(200);
+  });
+  it('auth.space.enter: a pinned session cannot enter another space', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    expect((await enterOverHttp(enforceServer, pinned, fixture.spaceB)).status).toBe(403);
+  });
+  it('auth.space.enter: an agent token is refused', async () => {
+    const agent = await mintAgent();
+    expect((await enterOverHttp(enforceServer, agent, fixture.spaceA)).status).toBe(403);
+  });
+
+  it('T6: GET /v2/projects (no spaceId) with a pinned node-admin token returns only A\'s project', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+      const listed = await call(enforceServer, pinned, 'GET', '/v2/projects');
+      expect(listed.status).toBe(200);
+      const ids = (listed.json as Array<{ id: string }>).map((p) => p.id);
+      expect(ids).toContain(projectA);
+      expect(ids).not.toContain(projectB);
+    });
+  });
+  it('T6: positive — the node-admin gate session under agents lists node-wide (both)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      const listed = await call(agentsServer, gate, 'GET', '/v2/projects');
+      expect(listed.status).toBe(200);
+      const ids = (listed.json as Array<{ id: string }>).map((p) => p.id);
+      expect(ids).toEqual(expect.arrayContaining([projectA, projectB]));
+    });
+  });
+
+  /**
+   * THE ENFORCE-BLOCKER WALK (lead ruling B). A brand-new user under enforce,
+   * with nothing but a gate session, must reach a first space: every op it
+   * needed is on the gate list (identity.get, spaces.list, spaces.create,
+   * spaces.invites.redeem, and auth.* for login / invite resolve / enter).
+   */
+  async function newUserGate(): Promise<string> {
+    const admin = await mintBrowser(fixture.accountH, fixture.identityH);
+    const username = `w3new${randomUUID().slice(0, 8)}`;
+    const password = `pw-${randomUUID()}`;
+    const signedUp = await call(enforceServer, admin, 'POST', '/v2/auth/signup', { username, password });
+    expect(signedUp.status, JSON.stringify(signedUp.json)).toBeLessThan(300);
+    const response = await fetch(new URL('/v2/auth/login', enforceServer.url), {
+      method: 'POST',
+      headers: { [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE, 'content-type': 'application/json' },
+      body: JSON.stringify({ username, password, kind: 'cli' }),
+    });
+    expect(response.status).toBe(200);
+    const parsed = await response.json() as { data: { token: string; session: { spaceId?: string | null } } };
+    expect(parsed.data.session.spaceId ?? null).toBeNull();
+    return parsed.data.token;
+  }
+
+  it('enforce-blocker walk (create): sign up, identity.get, spaces.list, spaces.create, auth.space.enter', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await newUserGate();
+      expect((await call(enforceServer, gate, 'GET', '/v2/identity')).status).toBe(200);
+      const before = await call(enforceServer, gate, 'GET', '/v2/spaces');
+      expect(before.status).toBe(200);
+      expect(before.json).toEqual([]);
+      const created = await call(enforceServer, gate, 'POST', '/v2/spaces',
+        { name: 'W3 first space', clientMutationId: `w3-${randomUUID()}` });
+      expect(created.status, JSON.stringify(created.json)).toBeLessThan(300);
+      const spaceId = created.json.space.id as string;
+      // Still a gate: the new space is listed but not usable until entered.
+      expect(JSON.stringify((await call(enforceServer, gate, 'GET', '/v2/spaces')).json)).toContain(spaceId);
+      expect((await call(enforceServer, gate, 'GET', `/v2/spaces/${spaceId}`)).status).toBe(403);
+      const entered = await enterOverHttp(enforceServer, gate, spaceId);
+      expect(entered.status).toBe(200);
+      expect((await call(enforceServer, entered.json.token, 'GET', `/v2/spaces/${spaceId}`)).status).toBe(200);
+    });
+  });
+  it('enforce-blocker walk (invite): sign up, auth.invite.resolve, spaces.invites.redeem, auth.space.enter', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const hGate = await mintBrowser(fixture.accountH, fixture.identityH);
+      const hPinned = (await enterOverHttp(enforceServer, hGate, fixture.spaceA)).json.token as string;
+      const invite = await call(enforceServer, hPinned, 'POST', `/v2/spaces/${fixture.spaceA}/invites`,
+        { clientMutationId: `w3-${randomUUID()}` });
+      expect(invite.status, JSON.stringify(invite.json)).toBe(201);
+      const code = invite.json.code as string;
+      const gate = await newUserGate();
+      expect((await call(enforceServer, gate, 'POST', '/v2/auth/invite/resolve', { code })).status).toBe(200);
+      const redeemed = await call(enforceServer, gate, 'POST', '/v2/invites/redeem',
+        { code, clientMutationId: `w3-${randomUUID()}` });
+      expect(redeemed.status, JSON.stringify(redeemed.json)).toBeLessThan(300);
+      expect(redeemed.json.spaceId).toBe(fixture.spaceA);
+      const entered = await enterOverHttp(enforceServer, gate, fixture.spaceA);
+      expect(entered.status).toBe(200);
+      expect((await call(enforceServer, entered.json.token, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+      expect((await call(enforceServer, entered.json.token, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+    });
+  });
+  it('gate list, paired: identity.get is allowed pinned too; the other invite ops stay refused to a gate', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    expect((await call(enforceServer, pinned, 'GET', '/v2/identity')).status).toBe(200);
+    expect((await call(enforceServer, gate, 'POST', `/v2/spaces/${fixture.spaceA}/invites`,
+      { clientMutationId: `w3-${randomUUID()}` })).status).toBe(403);
+  });
+  it('gate list, paired: spaces.create from a session pinned to A is refused before it writes', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    const name = `W3 pinned create ${randomUUID()}`;
+    const created = await call(enforceServer, pinned, 'POST', '/v2/spaces',
+      { name, clientMutationId: `w3-${randomUUID()}` });
+    expect(created.status).toBe(403);
+    expect(await database.query('select 1 from public.spaces where name = $1', [name])).toEqual([]);
+  });
+  it('gate list, paired: a session pinned to A redeems an invite into B (not pin-checked) and still cannot read B', async () => {
+    const hGate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const hInB = (await enterOverHttp(enforceServer, hGate, fixture.spaceB)).json.token as string;
+    const invite = await call(enforceServer, hInB, 'POST', `/v2/spaces/${fixture.spaceB}/invites`,
+      { clientMutationId: `w3-${randomUUID()}` });
+    expect(invite.status).toBe(201);
+    const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const h2PinnedA = (await enterOverHttp(enforceServer, h2Gate, fixture.spaceA)).json.token as string;
+    try {
+      const redeemed = await call(enforceServer, h2PinnedA, 'POST', '/v2/invites/redeem',
+        { code: invite.json.code, clientMutationId: `w3-${randomUUID()}` });
+      // Accepted by the lead: redeem_invite is not pin-checked (an invite is
+      // explicit authority). The membership lands; the pin still holds.
+      expect(redeemed.status).toBe(200);
+      expect((await call(enforceServer, h2PinnedA, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+    } finally {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `delete from public.entities where id in (
+             select entity_id from public.members where space_id = $1 and identity_id = $2)`,
+          [fixture.spaceB, fixture.identityH2]);
+      });
+    }
+  });
+
+  it('T8: a pinned node-admin token is refused node.credentials.status', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+      expect((await call(enforceServer, pinned, 'GET', '/v2/node/credentials')).status).toBe(403);
+    });
+  });
+  it('T8: positive — the same account\'s gate session keeps it under enforce (node admin is gate admin)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await call(enforceServer, gate, 'GET', '/v2/node/credentials')).status).toBe(200);
+    });
+  });
+
+  it('W3 audit: positive — after auth.space.enter the pinned session subscribes to that space under enforce', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    const c = controlChannelFor(await identityForToken(pinned, 'enforce'), 'enforce');
+    await c.send({ type: 'subscribe', spaceIds: [fixture.spaceA, fixture.spaceB] });
+    expect(c.subscribed()).toEqual([fixture.spaceA]);
+    expect(c.acks()).toEqual([
+      { type: 'control.refused', frame: 'subscribe', spaceId: fixture.spaceB, reason: 'forbidden' },
+    ]);
+  });
+  // PTY is grant-bound: the attach grant comes from execution.streams.attach,
+  // a catalog op the gate refuses (the consume side is T5, 233).
+  it('W3 audit: a gate session cannot mint a PTY attach grant under enforce', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const res = await call(enforceServer, gate, 'POST',
+      `/v2/entities/${fixture.workSessionA}/commands/streams-attach`, { mode: 'view' });
+    expect(res.status).toBe(403);
+  });
+  it('W3 audit: positive — a pinned session\'s streams-attach is not gate-refused under enforce', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const pinned = (await enterOverHttp(enforceServer, gate, fixture.spaceA)).json.token as string;
+    const res = await call(enforceServer, pinned, 'POST',
+      `/v2/entities/${fixture.workSessionA}/commands/streams-attach`, { mode: 'view' });
+    expect(res.status).not.toBe(403);
   });
 });

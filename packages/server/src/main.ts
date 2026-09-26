@@ -486,7 +486,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
     return {
       identityId: identity.identityId,
-      nodeAdmin: identity.nodeAdmin === true,
+      // K6 (W3): the resolver already clears nodeAdmin for a pinned session.
+      nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
     };
   };
@@ -522,7 +523,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         registry: subscriptions,
         // The REAL authorizer, invoked on every subscribe and every resume.
         // There is no allow-all implementation left in the tree to fall back to.
-        authorizer: new DbSubscriptionAuthorizer(db, wsClaimsFor),
+        authorizer: new DbSubscriptionAuthorizer(db, wsClaimsFor, {
+          ...(config.spaceSessions ? { spaceSessions: config.spaceSessions } : {}),
+        }),
         log: eventLog,
         claimsFor: wsClaimsFor,
         presence,
@@ -550,9 +553,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * a browser cookie. When a cookie is present, resolve it so the database can
    * additionally require the grant's exact subject identity.
    */
-  const resolveOptionalSocketIdentityId = async (req: IncomingMessage): Promise<string | undefined> => {
+  const resolveOptionalSocketIdentityId = async (
+    req: IncomingMessage,
+  ): Promise<{ identityId: string; sessionSpaceId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
-    return (await resolveSocketIdentity(req)).identityId;
+    const identity = await resolveSocketIdentity(req);
+    if (!identity.identityId) return undefined;
+    // W3: a pinned session may attach only to a work session in its space.
+    return {
+      identityId: identity.identityId,
+      ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+    };
   };
 
   const wsAdmission = new WsAdmissionController();
