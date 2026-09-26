@@ -889,8 +889,8 @@ describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alon
         `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
         [sessionId, fixture.spaceA, fixture.personaA]);
       await client.query(
-        `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool)
-         values ($1, 'W10c G run', 'spawning', 'agent', 'claude-code')`, [sessionId]);
+        `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool, workdir_mode)
+         values ($1, 'W10c G run', 'spawning', 'agent', 'claude-code', 'scratch')`, [sessionId]);
     });
     if (visibility === 'private') {
       await asIdentity(fixture.identityH, (q) => q.rpc('set_space_credential_visibility', [credentialId, 'private']));
@@ -1713,8 +1713,8 @@ describe.sequential('T14 spaces.leave — L leaves B; B refuses L, A still admit
         [personaLB, memberLB],
       );
       await client.query(
-        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-         values ($1, 'T14 run in B', 'running', 'none', now())`,
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+         values ($1, 'T14 run in B', 'running', 'none', now(), 'scratch')`,
         [workSessionLB],
       );
       await client.query(
@@ -2130,8 +2130,8 @@ describe('T5 H pinned to A — PTY attach to a B session refused (W3)', () => {
         [workSessionB, fixture.spaceB, fixture.memberHB],
       );
       await client.query(
-        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-         values ($1, 'T5 B run', 'running', 'none', now())`,
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+         values ($1, 'T5 B run', 'running', 'none', now(), 'scratch')`,
         [workSessionB],
       );
     });
@@ -3140,8 +3140,8 @@ describe('W3-audit teammate-session hole (075 + grant_stream_attach 187/202) —
         `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
         [workSessionB, fixture.spaceB, fixture.memberHB]);
       await client.query(
-        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-         values ($1, 'audit B run', 'running', 'none', now())`, [workSessionB]);
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+         values ($1, 'audit B run', 'running', 'none', now(), 'scratch')`, [workSessionB]);
     });
     const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
     expect(await outcome(() => grant(token, workSessionB, 'view'))).toBe('42501');

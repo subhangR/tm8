@@ -195,9 +195,16 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('spawn-starts-the-task');
   const files = migrationFiles();
   const migration = spawnStartsTheTaskMigration(files);
-  database.apply(files.filter((f) => f !== migration));
+  // 260 (W11-repoint) and later hold back until the migration under test has
+  // applied: it re-creates execution_spawn at its own era's body, which names
+  // work_sessions.project_id, and 260 drops that column. 260 then re-bases
+  // execution_spawn onto 178's body, the latest before it.
+  const repoint = files.findIndex((f) => f.endsWith('_w11_repoint_project_entity.sql'));
+  expect(repoint).toBeGreaterThan(-1);
+  database.apply(files.slice(0, repoint).filter((f) => f !== migration));
   fixture = await seedPre131(database);
   database.apply([migration]);
+  database.apply(files.slice(repoint));
 });
 
 afterAll(async () => {

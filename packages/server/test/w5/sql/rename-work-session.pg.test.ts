@@ -109,7 +109,7 @@ describe.sequential('085 — rename_work_session: a session title is editable, a
   async function spawn(suffix: string, title: string): Promise<string> {
     const spawned = await appValue<{ entity: { id: string } }>(
       `select public.execution_spawn(p_space_id => $1, p_team_member_id => $2,
-              p_title => $3, p_node_id => 'w5-rename-node', p_model => 'w5-rename-model',
+              p_title => $3, p_node_id => 'w5-rename-node', p_model => 'w5-rename-model', p_workdir_mode => 'scratch',
               p_session_cap => 64, p_client_mutation_id => $4) value`,
       [spaceId, personaId, title, `w5-rename-spawn-${suffix}`],
     );

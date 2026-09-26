@@ -177,8 +177,8 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [ids.agentA, ids.ownerA],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status)
-       values ($1, 'G12 pin test', 'spawning')`,
+      `insert into public.work_sessions(entity_id, title, status, workdir_mode)
+       values ($1, 'G12 pin test', 'spawning', 'scratch')`,
       [ids.sessionA],
     );
     await client.query(

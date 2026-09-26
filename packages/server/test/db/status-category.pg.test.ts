@@ -334,6 +334,20 @@ describe.sequential('147 — entities.status_category', () => {
     // stops before 252 has no such function. Additive: one security-invoker
     // function over 050's `attention_requests`. No assertion here reads it.
     database.apply(['252_attention_badges.sql']);
+    // A SHIM of W11's read path: `entity-read.ts` and the projector select
+    // `internal.project_folder_for(e.space_id, <ws|cht|wt>.project_entity_id)`
+    // (260, W11-repoint; the columns are 234's). Neither migration can apply
+    // on this partial chain, so only the three nullable columns and the
+    // reader's signature are mirrored; the stub answers null, which is what 260
+    // answers for a row with no project entity. No assertion here reads them.
+    // DELETE this shim if this suite ever applies the chain through 260.
+    await database.query(`alter table public.work_sessions add column project_entity_id uuid;
+      alter table public.chats add column project_entity_id uuid;
+      alter table public.worktrees add column project_entity_id uuid;
+      grant select (project_entity_id) on public.work_sessions, public.chats, public.worktrees to tm8_app;
+      create function internal.project_folder_for(p_space_id uuid, p_project_entity_id uuid)
+        returns uuid language sql stable strict as $$ select null::uuid $$;
+      grant execute on function internal.project_folder_for(uuid, uuid) to tm8_app`);
   }, 180_000);
 
   afterAll(async () => {

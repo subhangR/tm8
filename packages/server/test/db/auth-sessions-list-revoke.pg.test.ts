@@ -228,8 +228,8 @@ async function seed(): Promise<Fixture> {
       `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
        values ($1, $2, 'W4 G', 'worker', 'persona')`, [x.personaA, admA]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'W4 G run', 'running', 'none', now())`, [x.workSessionA]);
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'W4 G run', 'running', 'none', now(), 'scratch')`, [x.workSessionA]);
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
        values ($1, $2, $3, 'participates_in', $2)`, [x.spaceA, x.personaA, x.workSessionA]);

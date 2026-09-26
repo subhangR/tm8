@@ -112,8 +112,8 @@ async function workSession(space: string, persona: string, createdBy: string): P
       `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
       [id, space, createdBy]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'W7p run', 'running', 'none', now())`, [id]);
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'W7p run', 'running', 'none', now(), 'scratch')`, [id]);
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
        values ($1, $2, $3, 'participates_in', $2), ($1, $3, $2, 'relates_to', $2)`,

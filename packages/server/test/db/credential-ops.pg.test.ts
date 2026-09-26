@@ -98,7 +98,7 @@ async function session(createdBy: string, status = 'spawning'): Promise<string> 
     const id = await newId(c);
     await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`, [id, ids.S, createdBy]);
     await c.query(
-      `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool) values ($1, 'fixture', $2, 'agent', 'claude-code')`,
+      `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool, workdir_mode) values ($1, 'fixture', $2, 'agent', 'claude-code', 'scratch')`,
       [id, status],
     );
     return id;

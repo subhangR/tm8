@@ -242,6 +242,10 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // second door that skipped 234's one-space-per-folder guard is not left
   // behind. See db/migrations/234_space_owned_projects.sql, section 4.
   ['public.link_project', '234_space_owned_projects.sql'],
+  // 260 (W11-repoint) drops 234's fill trigger function with its two triggers:
+  // every writer now names the project entity itself. See
+  // db/migrations/260_w11_repoint_project_entity.sql, section 2.
+  ['internal.fill_project_entity_ref', '260_w11_repoint_project_entity.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

@@ -197,8 +197,10 @@ describe.sequential('decision 29 — internal.node_policy is the owner\'s alone'
 
 describe('234 — no function carries PUBLIC EXECUTE', () => {
   it('every function 234 creates or replaces is revoked from PUBLIC (a grant property, not a test outcome)', async () => {
+    // fill_project_entity_ref is not listed: 260 (W11-repoint) drops it with
+    // its two fill triggers, and w11-repoint.pg.test.ts asserts it is gone.
     const names = [
-      'fill_project_entity_ref', 'fill_worktree_space', 'guard_space_project_link', 'sync_project_projections',
+      'fill_worktree_space', 'guard_space_project_link', 'sync_project_projections',
       'materialize_project_projection', 'grant_folder_row', 'project_entity_for', 'project_folders_shared',
       'require_gate_admin', 'space_project_unique_index_sql', 'create_space_project', 'gate_folders_list',
       'grant_folder', 'register_folder', 'resolve_project_ref', 'space_folders_for_caller', 'space_projects_for_caller',

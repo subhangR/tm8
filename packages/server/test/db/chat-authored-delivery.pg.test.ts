@@ -87,8 +87,8 @@ async function seed(db: W1ScratchDatabase): Promise<Fixture> {
       [values.teammateId, values.memberId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1,'source worker','running','space'), ($2,'target worker','running','space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1,'source worker','running','space', 'scratch'), ($2,'target worker','running','space', 'scratch')`,
       [values.sourceSessionId, values.targetSessionId],
     );
     // 176:1275 refuses a source session the author does not participate in.

@@ -307,6 +307,21 @@ describe.sequential('260 applied once sharing has ended', () => {
     expect(await folderColumns()).toBe(0);
   });
 
+  it('the fill triggers and their function are gone; the launch-project guard is re-created on project_entity_id', async () => {
+    const triggers = await database.query<{ tgname: string }>(
+      `select tgname from pg_trigger
+        where tgname in ('chats_fill_project_entity', 'work_sessions_fill_project_entity',
+                         'work_sessions_launch_project_immutable')
+        order by tgname`,
+    );
+    expect(triggers.map((t) => t.tgname)).toEqual(['work_sessions_launch_project_immutable']);
+    const fill = await database.query(
+      `select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'internal' and p.proname = 'fill_project_entity_ref'`,
+    );
+    expect(fill).toHaveLength(0);
+  });
+
   it('the three project_entity_id FKs are ON DELETE RESTRICT; worktrees.project_entity_id is NOT NULL', async () => {
     const fks = await database.query<{ rel: string; confdeltype: string }>(
       `select c.conrelid::regclass::text rel, c.confdeltype::text confdeltype
@@ -621,8 +636,10 @@ describe.sequential('stale-body pin: 260 keeps every later hardening of what it 
   }
 
   it('spot-check: main 234 R845-F2 re-grant pass survives in guard_space_project_link', async () => {
-    const [{ src }] = await database.query<{ src: string }>(
+    const rows = await database.query<{ src: string }>(
       `select prosrc src from pg_proc where proname = 'guard_space_project_link'`);
+    expect(rows).toHaveLength(1);
+    const src = rows[0]!.src;
     expect(src).toMatch(/from public\.space_projects same\s+where same\.space_id = new\.space_id and same\.project_id = new\.project_id\) then\s+return new;/);
     expect(src).toContain('ws.project_entity_id = projection_id');
   });

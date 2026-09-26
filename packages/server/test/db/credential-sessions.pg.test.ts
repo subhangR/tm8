@@ -524,7 +524,7 @@ describe('083 — D3: a live credential session does not move the spawn cap', ()
       (await client.query<{ result: unknown }>(
         `select public.execution_spawn(
            p_space_id => $1, p_team_member_id => $2, p_session_cap => 1,
-           p_title => 'real agent'
+           p_workdir_mode => 'scratch', p_title => 'real agent'
          ) as result`,
         [fixture.space, fixture.teamMember],
       )).rows[0]!.result,
@@ -689,7 +689,10 @@ describe('083 — a credential_sessions row over an agent work_session is unprod
       () =>
         asOwner((client) =>
           client.query(
-            `update public.work_sessions set session_kind = 'agent' where entity_id = $1`,
+            // workdir_mode 'scratch' too: 260's CHECK (W11-repoint) would otherwise
+            // refuse a project-less agent row first (23514), hiding the FK under test.
+            `update public.work_sessions set session_kind = 'agent', workdir_mode = 'scratch'
+              where entity_id = $1`,
             [credentialSession],
           ),
         ),
