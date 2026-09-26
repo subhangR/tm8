@@ -250,6 +250,12 @@ export function createSpaceLinkInvokeHandlers(
       // The row can only ever hold a link session; anything else is refused, not run.
       throw new SpaceLinkExecuteFailure('link_kind', new CollabError('forbidden', 'the stored session is not a link session'));
     }
+    // Pinned to the link's target Space in EVERY TM8_SPACE_SESSIONS mode, the
+    // way viaLinkId already is. identityFromSession drops the pin under `off`,
+    // and nothing else compares an input spaceId with the target: without
+    // this, an invoke under `off` read and wrote the HOME Space as the member.
+    // A pinned session never carries node admin (K6).
+    identity = { ...identity, sessionSpaceId: row.targetSpaceId, nodeAdmin: false };
 
     let body: unknown;
     try {

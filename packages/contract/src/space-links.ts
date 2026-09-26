@@ -112,7 +112,9 @@ export type SpaceLinkRefusalReason =
   | 'credential_management'
   | 'link_management'
   | 'session_minting'
-  | 'token_minting'
+  | 'grant'
+  | 'process_start'
+  | 'session_body'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
   | 'unknown_op'
@@ -137,6 +139,38 @@ export type SpaceLinkRefusalReason =
  * authorised by itself on its socket or route, so returning it to A would let
  * A drive B outside every per-op check here. `execution.streams.*` is a
  * prefix so any future stream grant is covered; the rest are exact.
+ *
+ * Session and process starts (#884, security re-review R-1): an op that starts
+ * a session, a shell or a process in B, or resumes or dispatches one, is
+ * refused at home. `execution.terminal.start` starts an unbudgeted shell work
+ * session that no spawn switch, budget or link gate covers, so through a link
+ * it would be a shell in B. `execution.spawn` is refused too, whatever the
+ * switch says (lead tightening on #884): allow_spawn defaults on and the spawn
+ * budget arrives with W7b, so main must never carry an unbudgeted link spawn.
+ * W7b restores it through a budgeted reservation; until then the spawn rule
+ * below (switch, explicit credentials) is unreachable, kept for W7b. W7p layer
+ * (iii) refuses a link identity's spawn on B as well. The indirect starts
+ * are listed too: a form response submit (and redeliver) queues a delivery
+ * that resumes the requesting session or spawns a new one
+ * (form-delivery-spawn.ts). `containers.pools.set` keeps warm containers
+ * running. `execution.git*` (reads too) runs git in B's worktree without
+ * `core.hooksPath` or `core.fsmonitor` overridden, so a commit, merge or
+ * status there can run a hook or monitor B's worktree configures: a process
+ * started in B. It is a prefix, so a future git op is covered. The other
+ * entries are exact, so a NEW start op is not
+ * refused by name; instead packages/server/test/space-link-classification.test.ts
+ * walks the catalog and fails until every start or grant op is classified.
+ * `forms.create` and `forms.update` are refused by INPUT (below) when the
+ * delivery policy they set can start one: create unless it sets
+ * `onSessionNotLive: 'queue'` with the default target (the default is resume),
+ * update when it sets `new_session`, `resume` or `spawn_new`.
+ *
+ * Session bodies (W9 v4 alignment): `execution.journal` and
+ * `execution.transcript` read a session's body, and a journal can hold a live
+ * token (the F3 journal-redaction item), so they are refused, reads too.
+ *
+ * The reason is the CLASS the refusal error carries: `grant`,
+ * `process_start`, `session_body`, and the credential/link/session classes.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
@@ -144,14 +178,33 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
   { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
-  { prefix: 'voice.token.create', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'execution.streams.', kinds: 'all', reason: 'token_minting' },
-  { prefix: 'files.uploadInit', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'projects.folderUploads.init', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'artifacts.preview.start', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'containers.attach', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'token_minting', exact: true },
-  { prefix: 'containers.expose', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'voice.token.create', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'execution.streams.', kinds: 'all', reason: 'grant' },
+  { prefix: 'files.uploadInit', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'projects.folderUploads.init', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'artifacts.preview.start', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'containers.attach', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'containers.expose', kinds: 'all', reason: 'grant', exact: true },
+  { prefix: 'execution.spawn', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'execution.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'execution.resume', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'execution.dispatch', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'forms.responses.submit', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'forms.responses.redeliver', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.create', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.start', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.resume', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.run', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.computer', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.fork', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'containers.pools.set', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'execution.git', kinds: 'all', reason: 'process_start' },
+  { prefix: 'execution.journal', kinds: 'all', reason: 'session_body', exact: true },
+  { prefix: 'execution.transcript', kinds: 'all', reason: 'session_body', exact: true },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
@@ -185,6 +238,7 @@ export function spaceLinkRefusal(
     const hit = entry.exact ? op === entry.prefix : op.startsWith(entry.prefix);
     if (hit && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
   }
+  if (formDeliveryCanStart(op, input)) return 'process_start';
   if (op === SPACE_LINK_SPAWN_OP) {
     const body = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
     if (SPACE_LINK_SPAWN_CREDENTIAL_FIELDS.some((field) => body[field] !== undefined)) {
@@ -195,6 +249,28 @@ export function spaceLinkRefusal(
     if (allowSpawn === false) return 'spawn_switch_off';
   }
   return null;
+}
+
+/**
+ * True when a forms.create or forms.update input sets a delivery policy that
+ * resumes or spawns a session (form-delivery-spawn.ts runs it under the
+ * node's claims). create: anything but `queue` to the requesting session,
+ * since the default is `resume`. update: only what it sets.
+ */
+function formDeliveryCanStart(op: string, input: unknown): boolean {
+  if (op !== 'forms.create' && op !== 'forms.update') return false;
+  const body = typeof input === 'object' && input !== null ? input as { settings?: unknown } : {};
+  const settings = typeof body.settings === 'object' && body.settings !== null ? body.settings as { delivery?: unknown } : {};
+  const delivery = typeof settings.delivery === 'object' && settings.delivery !== null
+    ? settings.delivery as { target?: unknown; onSessionNotLive?: unknown }
+    : undefined;
+  if (op === 'forms.create') {
+    return (delivery?.target ?? 'requesting_session') !== 'requesting_session'
+      || (delivery?.onSessionNotLive ?? 'resume') !== 'queue';
+  }
+  if (delivery === undefined) return false;
+  return (delivery.target !== undefined && delivery.target !== 'requesting_session')
+    || (delivery.onSessionNotLive !== undefined && delivery.onSessionNotLive !== 'queue');
 }
 
 /**

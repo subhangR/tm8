@@ -4477,8 +4477,8 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
   it('stricter than D31 refused — voice.token.create (it mints a token), exact op only', async () => {
     const res = await invoke(gToken, { op: 'voice.token.create', params: { id: fixture.docB }, input: { clientMutationId: 'x' } });
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'token_minting' } });
-    expect(await lastAudit('voice.token.create')).toMatchObject({ result: 'refused', reason: 'token_minting' });
+    expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'grant' } });
+    expect(await lastAudit('voice.token.create')).toMatchObject({ result: 'refused', reason: 'grant' });
     // Exact, not a prefix: a neighbour of the name is not caught by this entry.
     expect(spaceLinkRefusal('voice.token.createAnother', 'command', {}, true)).toBeNull();
     expect(spaceLinkRefusal('voice.channels.list', 'read', {}, true)).toBeNull();
@@ -4486,20 +4486,20 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
 
   // ---- S1 (W9 review): side-channel grants are refused at home ------------
 
-  it('S1 refused — execution.streams.attach via invoke (a PTY attach grant for B\'s session): 403 token_minting at home, B\'s handler never looked up', async () => {
+  it('S1 refused — execution.streams.attach via invoke (a PTY attach grant for B\'s session): 403 grant at home, B\'s handler never looked up', async () => {
     const lookups = vi.spyOn(node.server.registry, 'get');
     try {
       const res = await invoke(gToken, {
         op: 'execution.streams.attach', params: { id: fixture.workSessionA }, input: { mode: 'drive' },
       });
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'token_minting' } });
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'grant' } });
       expect(JSON.stringify(res.body)).not.toMatch(/"token"/);
       expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
     } finally {
       lookups.mockRestore();
     }
-    expect(await lastAudit('execution.streams.attach')).toMatchObject({ result: 'refused', reason: 'token_minting', link_id: null });
+    expect(await lastAudit('execution.streams.attach')).toMatchObject({ result: 'refused', reason: 'grant', link_id: null });
   });
 
   it('S1 positive — entities.get via invoke passes on the same link', async () => {
@@ -4517,7 +4517,7 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     ['containers.browser.endpoint', 'command'],
     ['containers.expose', 'command'],
   ] as const)('S1 refused — %s mints a side-channel grant (%s)', (op, kind) => {
-    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('token_minting');
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('grant');
   });
 
   it.each([
@@ -4529,6 +4529,95 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     ['containers.unexpose', 'command'],
   ] as const)('S1 positive (scope) — %s mints no grant and is not caught by these entries', (op, kind) => {
     expect(spaceLinkRefusal(op, kind, {}, true)).toBeNull();
+  });
+
+  // ---- R-1 + W9 v4: process starts and session bodies are refused at home ----
+
+  /** Refused at home with `refusal`, B's handler never looked up, and audited in A. */
+  async function refusedAtHome(input: Parameters<typeof invoke>[1], refusal: string): Promise<void> {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, input);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit(input.op)).toMatchObject({ result: 'refused', reason: refusal, link_id: null });
+  }
+
+  it('R-1 refused (process_start) — execution.terminal.start via invoke (an unbudgeted shell in B)', async () => {
+    await refusedAtHome({ op: 'execution.terminal.start', input: { spaceId: fixture.spaceB, clientMutationId: cmid('term') } }, 'process_start');
+  });
+
+  it('R-1 refused (process_start) — execution.resume and execution.dispatch via invoke, at home, before layer (iii)', async () => {
+    await refusedAtHome({ op: 'execution.resume', params: { id: fixture.workSessionA }, input: { clientMutationId: cmid('resume') } }, 'process_start');
+    await refusedAtHome({ op: 'execution.dispatch', input: { spaceId: fixture.spaceB, clientMutationId: cmid('dispatch') } }, 'process_start');
+  });
+
+  it('R-1 refused (process_start) — forms.create with the default delivery (resume) via invoke', async () => {
+    await refusedAtHome({ op: 'forms.create', input: { spaceId: fixture.spaceB, title: 'r1', questions: [], clientMutationId: cmid('form') } }, 'process_start');
+  });
+
+  it('W9 v4 refused (session_body) — execution.journal via invoke', async () => {
+    await refusedAtHome({ op: 'execution.journal', params: { workSessionId: fixture.workSessionA } }, 'session_body');
+  });
+
+  it('R-1 / W9 v4 positive — entities.get via invoke passes on the same link', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['execution.spawn', 'command', {}],
+    ['execution.terminal.start', 'command', {}],
+    ['execution.resume', 'command', {}],
+    ['execution.dispatch', 'command', {}],
+    ['execution.prompt', 'command', {}],
+    ['chat.start', 'command', {}],
+    ['containers.create', 'command', {}],
+    ['containers.start', 'command', {}],
+    ['containers.resume', 'command', {}],
+    ['containers.run', 'command', {}],
+    ['containers.terminal.start', 'command', {}],
+    ['containers.computer', 'command', {}],
+    ['containers.fork', 'command', {}],
+    ['containers.pools.set', 'command', {}],
+    ['execution.gitStatus', 'read', {}],
+    ['execution.gitCommit', 'command', {}],
+    ['forms.responses.submit', 'command', {}],
+    ['forms.responses.redeliver', 'command', {}],
+    ['forms.create', 'command', {}],
+    ['forms.create', 'command', { settings: { delivery: { onSessionNotLive: 'spawn_new' } } }],
+    ['forms.create', 'command', { settings: { delivery: { target: 'new_session', onSessionNotLive: 'queue' } } }],
+    ['forms.update', 'command', { settings: { delivery: { onSessionNotLive: 'resume' } } }],
+    ['forms.update', 'command', { settings: { delivery: { target: 'new_session' } } }],
+  ] as const)('R-1 refused (process_start) — %s (%s) %j', (op, kind, input) => {
+    expect(spaceLinkRefusal(op, kind, input, true)).toBe('process_start');
+  });
+
+  it.each([
+    ['execution.journal', 'read'],
+    ['execution.transcript', 'read'],
+  ] as const)('W9 v4 refused (session_body) — %s (%s)', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('session_body');
+  });
+
+  it.each([
+    ['execution.terminate', 'command', {}],
+    ['execution.launch', 'read', {}],
+    ['execution.liveness', 'read', {}],
+    ['containers.stop', 'command', {}],
+    ['containers.destroy', 'command', {}],
+    ['messages.post', 'command', {}],
+    ['forms.create', 'command', { settings: { delivery: { onSessionNotLive: 'queue' } } }],
+    ['forms.update', 'command', {}],
+    ['forms.update', 'command', { settings: { delivery: { onSessionNotLive: 'queue' } } }],
+    ['forms.responses.save', 'command', {}],
+    ['forms.transition', 'command', {}],
+  ] as const)('R-1 / W9 v4 positive (scope) — %s (%s) %j starts nothing and reads no session body', (op, kind, input) => {
+    expect(spaceLinkRefusal(op, kind, input, true)).toBeNull();
   });
 
   it('stricter than D31 positive — the same voice.token.create reaches the voice service for H\'s own session', async () => {
@@ -4653,6 +4742,68 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(res.status).toBe(200);
   });
 
+  // ---- #884 review HIGH: the inner identity is pinned to B in every mode ----
+
+  /** A node booted with `TM8_SPACE_SESSIONS=mode`; `agents` is the block's own node. */
+  async function withMode<T>(mode: 'off' | 'agents' | 'enforce', run: (url: URL) => Promise<T>): Promise<T> {
+    if (mode === 'agents') return run(new URL(node.url));
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: linkDataDir,
+      TM8_DISABLE_AUTO_OWNER: '1',
+      TM8_SPACE_SESSIONS: mode,
+    });
+    const other = await bootstrap({ config: { ...configured, port: 0 } });
+    try {
+      return await run(new URL(other.url));
+    } finally {
+      await other.server.close();
+      await other.db?.end();
+    }
+  }
+
+  const invokeAt = async (url: URL, input: Record<string, unknown>): Promise<InvokeResponse> => {
+    const response = await fetch(new URL(`/v2/spaces/${fixture.spaceA}/space-links/${hLink.id}/invoke`, url), {
+      method: 'POST',
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${gToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    });
+    return { status: response.status, body: await response.json() as InvokeResponse['body'] };
+  };
+
+  it.each(['off', 'agents', 'enforce'] as const)(
+    'pin (%s) — through the link, A\'s doc is not readable and A takes no write; positive: B\'s doc reads and a B create passes (T21)',
+    async (mode) => {
+      await withMode(mode, async (url) => {
+        const readA = await invokeAt(url, { op: 'entities.get', params: { id: fixture.docA } });
+        expect(readA.status, JSON.stringify(readA.body)).not.toBe(200);
+        const writeA = await invokeAt(url, {
+          op: 'entities.create',
+          input: { spaceId: fixture.spaceA, kind: 'doc', title: `pin-${mode}-A`, clientMutationId: cmid(`pin-${mode}-a`) },
+        });
+        expect(writeA.status, JSON.stringify(writeA.body)).not.toBe(200);
+
+        const readB = await invokeAt(url, { op: 'entities.get', params: { id: fixture.docB } });
+        expect(readB.status, JSON.stringify(readB.body)).toBe(200);
+        const writeB = await invokeAt(url, {
+          op: 'entities.create',
+          input: { spaceId: fixture.spaceB, kind: 'doc', title: `pin-${mode}-B`, clientMutationId: cmid(`pin-${mode}-b`) },
+        });
+        expect(writeB.status, JSON.stringify(writeB.body)).toBe(200);
+        expect(writeB.body.data?.targetSpaceId).toBe(fixture.spaceB);
+      });
+    },
+    180_000,
+  );
+
   // ---- a5 / T23 ------------------------------------------------------------
 
   const spawnInput = (extra: Record<string, unknown> = {}) => ({
@@ -4660,32 +4811,39 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     input: { spaceId: fixture.spaceB, clientMutationId: cmid('spawn'), ...extra },
   });
 
-  it('T23 positive — a new link defaults to allow_spawn; a default spawn passes the link guard', async () => {
-    // The guard admits it; the spawn itself then answers on its own terms
-    // (this input names no teammate) — nothing is launched on this box.
-    const res = await invoke(gToken, spawnInput());
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatchObject({ code: 'invalid_input' });
-    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
-    // Past the guard, the spawn's own schema answered, and that is audited too.
-    expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'error', reason: 'invalid_input', link_id: hLink.id });
+  // Every T23 spawn cell is a refusal until W7b: restored by W7b via a
+  // budgeted reservation (lead tightening on #884). Before this, the old
+  // "positive" only ever reached the spawn schema's 400; W7p layer (iii)
+  // refuses a link identity's spawn in B regardless.
+
+  it('T23 refused (restored by W7b via a budgeted reservation) — a default spawn is refused at home: 403 process_start, B\'s handler never looked up', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, spawnInput());
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'process_start' } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'refused', reason: 'process_start', link_id: null });
   });
 
-  it('T23 — explicit credentialSources is refused (F9)', async () => {
+  it('T23 refused (restored by W7b via a budgeted reservation) — explicit credentialSources (F9)', async () => {
     const res = await invoke(gToken, spawnInput({ credentialSources: { anthropic: 'personal' } }));
-    expect(refusalOf(res)).toBe('spawn_explicit_credentials');
+    expect(refusalOf(res)).toBe('process_start');
   });
 
-  it('T23 / K11 — an explicit space credential id is refused', async () => {
+  it('T23 / K11 refused (restored by W7b via a budgeted reservation) — an explicit space credential id', async () => {
     const res = await invoke(gToken, spawnInput({ spaceCredentialIds: [randomUUID()] }));
-    expect(refusalOf(res)).toBe('spawn_explicit_credentials');
+    expect(refusalOf(res)).toBe('process_start');
   });
 
-  it('T23 — allow_spawn off is refused; positive — a non-spawn op on the same link still passes', async () => {
+  it('T23 refused (restored by W7b via a budgeted reservation) — allow_spawn off; positive — a non-spawn op on the same link still passes', async () => {
     const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
     await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: false });
     try {
-      expect(refusalOf(await invoke(gToken, spawnInput()))).toBe('spawn_switch_off');
+      expect(refusalOf(await invoke(gToken, spawnInput()))).toBe('process_start');
       expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
     } finally {
       await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: true });

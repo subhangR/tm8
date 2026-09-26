@@ -278,18 +278,36 @@ describe('#884 layer (ii) — the in-process invoke marker', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('admitLinkInvoke has exactly one caller in server src: the spaceLinks.invoke executor', () => {
+  it('admitLinkInvoke is named once as an import and once as a call, in the spaceLinks.invoke executor only (identifiers, alias-proof)', () => {
     const src = fileURLToPath(new URL('../src', import.meta.url));
-    const callers: string[] = [];
+    // Code only: a comment may name it; an alias or re-export still has to.
+    const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const named: Record<string, string[]> = {};
+    const namespaceImports: string[] = [];
     const walk = (dir: string): void => {
       for (const name of readdirSync(dir)) {
         const path = join(dir, name);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (/\.ts$/.test(name) && /admitLinkInvoke\(/.test(readFileSync(path, 'utf8'))) callers.push(path.slice(src.length + 1));
+        if (statSync(path).isDirectory()) { walk(path); continue; }
+        if (!/\.ts$/.test(name)) continue;
+        const text = code(readFileSync(path, 'utf8'));
+        const rel = path.slice(src.length + 1);
+        const hits = text.match(/[\w$]*admitLinkInvoke[\w$]*/g) ?? [];
+        if (hits.length > 0) named[rel] = hits;
+        // `import * as x` / `export *` of link-bearer would reach it without naming it.
+        if (/(import\s*\*\s*as\s+[\w$]+|export\s*\*)[^;]*from\s*['"][^'"]*link-bearer(\.js)?['"]/.test(text)) namespaceImports.push(rel);
+        if (/import\(\s*['"][^'"]*link-bearer(\.js)?['"]\s*\)/.test(text)) namespaceImports.push(rel);
       }
     };
     walk(src);
-    expect(callers.sort()).toEqual(['facade/handlers/w2/space-link-invoke.ts', 'identity/link-bearer.ts']);
+    expect(Object.keys(named).sort()).toEqual(['facade/handlers/w2/space-link-invoke.ts', 'identity/link-bearer.ts']);
+    expect(named['identity/link-bearer.ts']).toEqual(['admitLinkInvoke']);
+    expect(named['facade/handlers/w2/space-link-invoke.ts']).toEqual(['admitLinkInvoke', 'admitLinkInvoke']);
+    const invoke = code(readFileSync(join(src, 'facade/handlers/w2/space-link-invoke.ts'), 'utf8'));
+    expect(invoke.match(/import\s*\{[^}]*\badmitLinkInvoke\b[^}]*\}\s*from\s*'[^']*identity\/link-bearer\.js'/g)).toHaveLength(1);
+    expect(invoke).not.toMatch(/\badmitLinkInvoke\s+as\b/);
+    expect(invoke.match(/\badmitLinkInvoke\s*\(/g)).toHaveLength(1);
+    expect(code(readFileSync(join(src, 'identity/link-bearer.ts'), 'utf8'))).toMatch(/export function admitLinkInvoke\(/);
+    expect(namespaceImports).toEqual([]);
   });
 });
 
