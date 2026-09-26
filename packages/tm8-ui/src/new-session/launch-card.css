@@ -405,10 +405,12 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  /* A mask reads ALPHA only, so the colour is arbitrary — `black`, not a raw
-     hex, because §14's hex ban is a package law and a mask is no carve-out. */
-  mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent);
 }
+/* The fade says "more past here", so it is drawn only while something is:
+   at the scroll end it faded the last chip. A mask reads ALPHA only, so the
+   colour is arbitrary — `black`, not a raw hex, because §14's hex ban is a
+   package law and a mask is no carve-out. */
+.lcd-attlist[data-more] { mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); }
 .lcd-attlist::-webkit-scrollbar { display: none; }
 .lcd-empty { color: var(--pn-ink-4); font-size: 12px; white-space: nowrap; }
 
@@ -690,6 +692,17 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
    then secondary facts (branch, effort word). The avatar, ⋯, ✕ and Launch
    always stay, and every dropped label is still its control's title. */
 
+/* Above the phone the top band is ONE row, and the teammate and project names
+   are what give. A wrapping flex line breaks before it shrinks, so with wrap
+   on, a long teammate name at 800px pushed ⋯ and ✕ onto a second row (then a
+   third) on a real node instead of ellipsizing the name. */
+@container card (min-width: 561px) {
+  .lcd-band--top { flex-wrap: nowrap; }
+  .lcd-band--top > .lcd-a-tm, .lcd-band--top > .lcd-a-pj { flex: 0 1 auto; }
+  .lcd-band--top > .lcd-a-tm > .lcd-tool, .lcd-band--top > .lcd-a-pj > .lcd-tool { max-width: 100%; }
+  .lcd-band--top .lcd-tool b { min-width: 0; }
+}
+
 @container card (max-width: 1120px) {
   .lcd-summary, .lcd-nodename, .lcd-meta { display: none; }
   .lcd-band--bot .lcd-spacer { flex: 1; }
@@ -734,6 +747,11 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
      ellipsizes (the full text is its title). */
   .lcd-a-wt { flex: 1 1 0; }
   .lcd-a-wt .lcd-tool { max-width: 100%; }
+  /* The same on the "who" row: a long teammate name pushed ✕ onto a row of
+     its own. The teammate takes a zero basis and its name ellipsizes. */
+  .lcd-a-tm { flex: 1 1 0; }
+  .lcd-a-tm .lcd-tool { max-width: 100%; }
+  .lcd-tool b { min-width: 0; }
   .lcd-wt-name { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .lcd-node { display: none; }
   .lcd-band--bot .lcd-spacer { flex-basis: 100%; height: 0; }
