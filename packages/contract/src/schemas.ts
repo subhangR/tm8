@@ -3050,6 +3050,7 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
   ensureWorkingDir: z.boolean().optional(),
+  spaceId: SpaceIdSchema.optional(),
 }).strict();
 
 const ProjectFolderRelativePathSchema = z.string().min(1).superRefine((value, context) => {

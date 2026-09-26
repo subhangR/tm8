@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
+import { CollabError } from '@tm8/contract';
 import type {
   EntityId,
   ProjectId,
@@ -12,6 +13,7 @@ import type {
 import {
   FOLDER_CONNECT_FORBIDDEN,
   NewSpaceProjectDialog,
+  REUSED_PROJECT_ELSEWHERE,
   newOnboardingMutationIds,
   onboardSpaceProject,
   validateOnboarding,
@@ -166,6 +168,9 @@ describe('Create Space — a project from a node-local folder', () => {
       workingDir: '/srv/projects/website',
       ensureWorkingDir: true,
       trust: 'untrusted',
+      // Born linked (980): the create names the new space, so the path-pinned
+      // link that follows can see the project.
+      spaceId: space.id,
       clientMutationId: ids.project,
     }));
     expect(p.linkProject).toHaveBeenCalledWith(space.id, {
@@ -303,6 +308,33 @@ describe('Create Space — a project from a node-local folder', () => {
         mechanism: expect.stringContaining('already-connected folder'),
       }),
     }));
+  });
+
+  it('a reused project the pinned link cannot see says to link it from the CLI', async () => {
+    // Plan W2 pins the browser owner to the new space's path, where a project
+    // linked in ANOTHER space is invisible, so the link answers not_found.
+    const existing: ProjectResource = { ...project, id: 'project-existing' as ProjectId };
+    const p = port({
+      createProject: vi.fn().mockRejectedValue(
+        new Error('duplicate key value violates unique constraint "projects_working_dir_key"'),
+      ),
+      listProjects: vi.fn().mockResolvedValue([existing]),
+      linkProject: vi.fn().mockRejectedValue(new CollabError('not_found', 'Project not found')),
+    });
+
+    await expect(
+      onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, newOnboardingMutationIds('elsewhere')),
+    ).rejects.toMatchObject({ stage: 'link', message: REUSED_PROJECT_ELSEWHERE });
+    expect(p.createMemory).not.toHaveBeenCalled();
+  });
+
+  it('a CREATED project whose link fails keeps the original refusal (the CLI hint is for reuse only)', async () => {
+    const refusal = new CollabError('not_found', 'Project not found');
+    const p = port({ linkProject: vi.fn().mockRejectedValue(refusal) });
+
+    await expect(
+      onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, newOnboardingMutationIds('created')),
+    ).rejects.toMatchObject({ stage: 'link', message: refusal.message });
   });
 
   it('a working-dir conflict with NO project match still surfaces the original refusal', async () => {

@@ -4693,7 +4693,13 @@ export interface ProjectCreateInput extends CommandContext {
    * filesystem; it only records the supplied path, preserving the original
    * projects.create contract for CLI and migration callers.
    */
-  ensureWorkingDir?: boolean;
+  ensureWorkingDir?: boolean;  /**
+   * Link the new project into this space in the same transaction (980). The
+   * caller must be node admin AND an admin of the space; a create-time link is
+   * equivalent to create plus a node-admin link. Absent keeps the original
+   * space-less create.
+   */
+  spaceId?: SpaceId;
 }
 
 // --- browser-originated project folder upload ------------------------------

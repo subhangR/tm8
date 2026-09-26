@@ -12,6 +12,7 @@ import type {
   SpaceId,
   SpaceSummary,
 } from '@tm8/contract';
+import { isCollabError } from '@tm8/contract';
 
 import type { PickedFile } from '../files-explorer/picker';
 import { filesFromInput } from '../files-explorer/picker';
@@ -218,6 +219,13 @@ export function isWorkingDirConflict(cause: unknown): boolean {
     .includes('projects_working_dir_key');
 }
 
+export const REUSED_PROJECT_ELSEWHERE =
+  "this folder's project is linked in another space; run tm8 project link from the CLI";
+
+function isProjectNotFound(cause: unknown): boolean {
+  return isCollabError(cause) && cause.code === 'not_found';
+}
+
 async function existingProjectForWorkingDir(
   port: ProjectOnboardingPort,
   workingDir: string,
@@ -290,6 +298,7 @@ export async function onboardSpaceProject(
           ensureWorkingDir: source.ensureWorkingDir,
           trust,
           ...(source.kind === 'github' ? { repoUrl: source.repoUrl.trim() } : {}),
+          spaceId: space.id,
           clientMutationId: ids.project,
         });
       } catch (cause) {
@@ -299,10 +308,17 @@ export async function onboardSpaceProject(
         return existing;
       }
     });
-    await stage('link', onStage, () => port.linkProject(space.id, {
-      projectId: project.id,
-      clientMutationId: ids.link,
-    }));
+    // A created project is born linked (`spaceId`, 980), so this link is an
+    // idempotent no-op the path-pinned caller can see. A REUSED project is
+    // linked elsewhere, and the pin keeps it invisible here: say what works.
+    await stage('link', onStage, async () => {
+      try {
+        await port.linkProject(space.id, { projectId: project.id, clientMutationId: ids.link });
+      } catch (cause) {
+        if (!reused || !isProjectNotFound(cause)) throw cause;
+        throw new Error(REUSED_PROJECT_ELSEWHERE);
+      }
+    });
     reusedExisting = reused;
   }
 

@@ -1761,6 +1761,75 @@ describe('T13 no token + X-Forwarded-For — anonymous, cookie or not (W2)', () 
   });
 });
 
+describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (980)', () => {
+  // The NewSpaceProjectDialog path, over HTTP, as the launch-cookie owner:
+  // spaces.create, projects.create with spaceId, the (now idempotent)
+  // projects.link, then the pinned list. Under the plan W2 path pin the link
+  // and the list run pinned to the new space.
+  let node: BootstrappedServer;
+  let restoreOwner: () => Promise<void>;
+  let cookie: { cookie: string };
+
+  beforeAll(async () => {
+    restoreOwner = await withNodeOwner(fixture.accountH);
+    node = await startSingleNode({});
+    cookie = await launchCookieVia(node.url, await mintCliToken(fixture.accountH, fixture.identityH));
+  }, 180_000);
+
+  afterAll(async () => {
+    await node?.server.close();
+    await node?.db?.end();
+    await restoreOwner?.();
+  }, 180_000);
+
+  async function call(method: string, path: string, body?: unknown): Promise<{ status: number; data: unknown }> {
+    const response = await fetch(new URL(path, node.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...cookie,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify({ clientMutationId: `a3-${randomUUID()}`, ...body as object }) }),
+    });
+    const parsed = (await response.json().catch(() => ({}))) as { data?: unknown };
+    return { status: response.status, data: parsed.data };
+  }
+
+  async function newSpace(name: string): Promise<string> {
+    const created = await call('POST', '/v2/spaces', { name, visibility: 'private' });
+    expect(created.status).toBe(201);
+    return (created.data as { space: { id: string } }).space.id;
+  }
+
+  async function listed(spaceId: string, projectId: string): Promise<boolean> {
+    const list = await call('GET', `/v2/spaces/${spaceId}/projects`);
+    expect(list.status).toBe(200);
+    return JSON.stringify(list.data).includes(projectId);
+  }
+
+  it('create with spaceId, link, list: the pinned GET under the new space lists the project', async () => {
+    const spaceId = await newSpace('A3 dialog space');
+    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-born-'));
+    const created = await call('POST', '/v2/projects', { name: 'A3 born linked', workingDir, spaceId });
+    expect(created.status).toBe(201);
+    const projectId = (created.data as { id: string }).id;
+    const link = await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId });
+    expect(link.status).toBe(200);
+    expect(await listed(spaceId, projectId)).toBe(true);
+  });
+
+  it('pair — without spaceId the pinned link cannot see the new project: 404, and the list omits it', async () => {
+    const spaceId = await newSpace('A3 unlinked space');
+    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-plain-'));
+    const created = await call('POST', '/v2/projects', { name: 'A3 space-less', workingDir });
+    expect(created.status).toBe(201);
+    const projectId = (created.data as { id: string }).id;
+    expect((await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId })).status).toBe(404);
+    expect(await listed(spaceId, projectId)).toBe(false);
+  });
+});
+
 describe('a4 auto-owner under /v2/spaces/:spaceId pins session_space_id to the path (W2)', () => {
   /** H as the node owner, NOT a node admin, so the membership arm is what answers. */
   const ownerH = (): LoopbackOwner => ({
