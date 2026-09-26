@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult, RankedEntity } from '@tm8/contract';
 import { composeManifest, contextHeaderIds, DISPATCHER_ROSTER_READ_MAX, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
-import { contextEntryBytes, serializeContextGroup, serializeMemoryEntry, serializeSkillIndexEntry, utf8Bytes } from '@tm8/prompt';
+import { contextEntryBytes, serializeContextGroup, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/index.js';
@@ -207,7 +207,7 @@ async function spawn(profileSnapshot: unknown, selection: { memoryIds: string[];
 describe('suggest-ticked == spawn-kept, byte for byte (design 01a0d348 §10 Q5.8)', () => {
   const PROFILE = {
     profile: { source: 'core_default' },
-    draft: { contextIndex: true, contextBudgets: { memories: 3000, skills: 1500, references: 1400 } },
+    draft: { contextIndex: true, contextBudgets: { memories: 1400, skills: 1500, references: 1400 } },
   };
 
   it('with <context_index> on: every group keeps exactly its ticks, each entry at its promptBytes, each group at the bytes the fill counted', async () => {
@@ -233,17 +233,13 @@ describe('suggest-ticked == spawn-kept, byte for byte (design 01a0d348 §10 Q5.8
     const index = manifest.contextIndex!;
     const promptBytes = new Map([...memories.items, ...skills.items, ...references.items].map((item) => [item.entityId, item.promptBytes]));
 
-    // MEMORIES: all kept whole, none collapsed; each <entry> is its promptBytes.
-    expect(manifest.context!.memoryIds).toEqual(selection.memoryIds);
-    expect(index.groups.find((g) => g.name === 'memories')?.entries ?? []).toEqual([]);
-    const texts = (manifest.agent.memory as unknown[]).map(String);
-    expect(texts.map((text) => utf8Bytes(serializeMemoryEntry(text)))).toEqual(selection.memoryIds.map((id) => promptBytes.get(id)));
-    expect(manifest.context!.budgets!.memoryInjection!.used).toBe(filledBytes(memories.items, rules.memories));
-    expect(manifest.context!.budgets!.memoryInjection!.used).toBeLessThanOrEqual(3000);
+    // MEMORIES are index entries (launch card v3), never whole text.
+    expect(manifest.context!.memoryIds).toEqual([]);
+    expect(manifest.agent.memory).toEqual([]);
 
-    // SKILLS and REFERENCES: every ticked entry rendered whole (no header or
-    // entry drop), each at its promptBytes, and the group at the fill's bytes.
-    for (const [name, ticks, g] of [['skills', selection.skillIds, skills], ['references', selection.referenceIds, references]] as const) {
+    // Every group: each ticked entry rendered whole (no header or entry
+    // drop), each at its promptBytes, and the group at the fill's bytes.
+    for (const [name, ticks, g] of [['memories', selection.memoryIds, memories], ['skills', selection.skillIds, skills], ['references', selection.referenceIds, references]] as const) {
       const rendered = index.groups.find((candidate) => candidate.name === name)!;
       expect(rendered.entries.map((entry) => entry.id), name).toEqual(ticks);
       expect(rendered.entries.some((entry) => entry.headerDropped), name).toBe(false);
@@ -260,25 +256,11 @@ describe('suggest-ticked == spawn-kept, byte for byte (design 01a0d348 §10 Q5.8
     }
   });
 
-  it('with <context_index> off: memories are kept at their promptBytes, and a skill\'s promptBytes is its <skills> line', async () => {
-    const OFF = { profile: { source: 'core_default' }, draft: { contextBudgets: { memories: 3000 } } };
-    const runId = randomUUID();
-    const result = await suggest(OFF, runId);
-    expect(result.contextIndex).toBe('off');
-    const memories = group(result, 'memories');
-    const skills = group(result, 'skills');
-    expect(group(result, 'references').items.every((item) => item.promptBytes === 0)).toBe(true);
-    const selection = { memoryIds: ticked(memories.items), skillIds: ticked(skills.items), referenceIds: [] };
-    const manifest = await spawn(OFF, selection, runId, false);
-    expect(manifest.contextIndex).toBeUndefined();
-    const texts = (manifest.agent.memory as unknown[]).map(String);
-    expect(texts.map((text) => utf8Bytes(serializeMemoryEntry(text)))).toEqual(
-      selection.memoryIds.map((id) => memories.items.find((item) => item.entityId === id)!.promptBytes),
-    );
-    expect(manifest.skills.map((s) => s.entityId)).toEqual(selection.skillIds);
-    expect(manifest.skills.map((s) => utf8Bytes(serializeSkillIndexEntry(s)) + 1)).toEqual(
-      selection.skillIds.map((id) => skills.items.find((item) => item.entityId === id)!.promptBytes),
-    );
+  it('a profile\'s contextIndex:false is ignored: the index is always on (launch card v3)', async () => {
+    const OFF = { profile: { source: 'core_default' }, draft: { contextIndex: false, contextBudgets: { memories: 3000 } } };
+    const result = await suggest(OFF, randomUUID());
+    expect(result.contextIndex).toBe('on');
+    expect(groupRules({ TM8_CONTEXT_INDEX: 'off' }, OFF).contextIndex).toBe(true);
   });
 
   it('a teammate Jev ranks measures as a dispatcher\'s roster renders it (I8 rosterEntry: mode and model included)', async () => {

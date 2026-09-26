@@ -21,7 +21,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult } from '@tm8/contract';
-import { BYTE_BUDGETS, serializeMemoryEntry, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, contextGroupFrameBytes, serializeMemoryEntry, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/index.js';
@@ -542,8 +542,9 @@ describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, 
     expect(result.contextIndex).toBe('on');
     const mTask = items(result, 'memories').find((row) => row.entityId === ids.mTask)!;
     expect(mTask.header).toEqual({ whenToUse: 'scratch', summary: 'task memory', keywords: [], source: 'native', version: 0 });
-    // A memory costs its whole rendered <entry>.
-    expect(mTask.promptBytes).toBe(utf8Bytes(serializeMemoryEntry('task memory')));
+    // A memory costs its <context_index> entry (launch card v3), not a whole <entry>.
+    expect(mTask.promptBytes).toBeGreaterThan(0);
+    expect(mTask.promptBytes).not.toBe(utf8Bytes(serializeMemoryEntry('task memory')));
     for (const group of ['memories', 'skills', 'teammates'] as const) {
       for (const row of items(result, group)) expect(row.promptBytes, `${group} ${row.entityId}`).toBeGreaterThan(0);
     }
@@ -557,22 +558,21 @@ describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, 
     expect(teammates.value.floor).toBe(1.0);
   });
 
-  it('with <context_index> off (the fleet default), never counts bytes that do not reach the prompt', async () => {
-    const off = await handlerFor(fakePort())(input({ subjectId: ids.refTask, groups: ['references'] }));
-    expect(off.contextIndex).toBe('off');
-    const references = off.groups.references;
-    if (references?.status !== 'ok') throw new Error('references');
-    expect(references.value.budget).toBeNull();
-    expect(references.value.items.every((row) => row.promptBytes === 0)).toBe(true);
-    // A skill is its <skills> line, not an index entry: the two measure differently.
-    const skillOff = items(await handlerFor(fakePort())(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
-    const skillOn = items(await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
-    expect(skillOff.promptBytes).toBeGreaterThan(0);
-    expect(skillOff.promptBytes).not.toBe(skillOn.promptBytes);
+  it('the index is always on (launch card v3): no env, or TM8_CONTEXT_INDEX=off, measures as on; a file costs 0', async () => {
+    for (const env of [{}, { TM8_CONTEXT_INDEX: 'off' }]) {
+      const result = await handlerFor(fakePort(), OWNER, { env })(input({ subjectId: ids.refTask, groups: ['references'] }));
+      expect(result.contextIndex).toBe('on');
+      const references = result.groups.references;
+      if (references?.status !== 'ok') throw new Error('references');
+      expect(references.value.budget).toBe(BYTE_BUDGETS.referenceIndex);
+      // Files ride in <attachments>, never the index.
+      for (const row of references.value.items) expect(row.promptBytes > 0, row.entityId).toBe(row.kind !== 'file');
+    }
   });
 
   it('the profile the launch would pin sets the floors and budgets; a default the budget leaves out says over-budget', async () => {
-    const taskEntry = utf8Bytes(serializeMemoryEntry('task memory'));
+    const measured = items(await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['memories'] })), 'memories');
+    const taskEntry = measured.find((row) => row.entityId === ids.mTask)!.promptBytes + contextGroupFrameBytes('memories', 1);
     const profile = { draft: { contextIndex: true, contextBudgets: { memories: taskEntry }, contextFloors: { skills: 2.5 } } };
     const score = (noun: string, c: { id: string }) => (noun === 'memory' && c.id === ids.mTask ? 2.4 : 2);
     const result = await handlerFor(fakePort({ score }), OWNER, { profile })(input({ groups: ['memories', 'skills'] }));

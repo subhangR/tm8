@@ -91,9 +91,9 @@ export interface GroupRules {
 }
 
 /**
- * Each group's fill rule for one launch (§10 Q5). Memories: their budget with
- * or without the index (they are injected whole either way), and a critical
- * memory always fits (spawn never collapses one). Skills: the profile's cap,
+ * Each group's fill rule for one launch (§10 Q5). Memories: their budget and
+ * the index group's frame (every memory is an index entry, launch card v3),
+ * and a critical memory always fits. Skills: the profile's cap,
  * charged with the index's group frame; none of their own otherwise (they
  * take what the prompt has left), and none while the index is off, because
  * the `<skills>` trim ignores it. References: their sub-cap and frame; none
@@ -103,11 +103,11 @@ export function groupRules(env: Readonly<Record<string, string | undefined>>, pr
   const contextIndex = contextIndexSwitch(env, profileSnapshot).on;
   const budgets = contextBudgetsFrom(profileSnapshot);
   const floors = { ...CONTEXT_FLOOR_DEFAULTS, ...contextFloorsFrom(profileSnapshot) };
-  const frame = (group: 'skills' | 'references') => (count: number) => contextGroupFrameBytes(group, count);
+  const frame = (group: 'memories' | 'skills' | 'references') => (count: number) => contextGroupFrameBytes(group, count);
   return {
     contextIndex,
     rules: {
-      memories: { budget: budgets.memories ?? BYTE_BUDGETS.memoryInjection, floor: floors.memories, criticalAlwaysFits: true },
+      memories: { budget: budgets.memories ?? BYTE_BUDGETS.memoryInjection, floor: floors.memories, criticalAlwaysFits: true, frameBytes: frame('memories') },
       skills: contextIndex
         ? { budget: budgets.skills ?? null, floor: floors.skills, frameBytes: frame('skills') }
         : { budget: null, floor: floors.skills },

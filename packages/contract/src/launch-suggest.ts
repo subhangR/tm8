@@ -232,8 +232,9 @@ export interface LaunchSuggestResult {
     references?: JevGroupResult<EntitySuggestion>;
   };
   /**
-   * Whether the launch would render `<context_index>` (the node's
-   * `TM8_CONTEXT_INDEX`, else the profile's `contextIndex`). `off`: references
+   * Whether the launch would render `<context_index>`: always `on` (launch
+   * card v3, `index_always`); `off` is kept for back-compat, never served.
+   * Historically `off` meant: references
    * reach the prompt only as linked names, so their `promptBytes` are 0 and
    * their group has no budget, and a skill's `promptBytes` is its `<skills>`
    * line. `promptBytes` never counts bytes that do not reach the prompt.

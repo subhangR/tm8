@@ -178,9 +178,16 @@ export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-s
 export {
   contextBudgetsFrom,
   contextFloorsFrom,
+  collapsedMemoryEntry,
   contextHeaderIds,
+  contextIndexCandidates,
   contextIndexSwitch,
+  fitLaunchContextIndex,
+  indexDroppedOf,
+  launchTaskSnapshots,
   referenceIndexEntry,
   rosterEntry,
   skillIndexEntry,
+  type ContextIndexSource,
+  type LaunchIndexFitInput,
 } from './context-index.js';
