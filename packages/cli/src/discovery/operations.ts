@@ -649,41 +649,45 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy',
     ],
   },
-  // ── space links (W6, migrations 250/251) ─────────────────────────────────
+  // ── space links (W6, migrations 250/251; CLI W7) ─────────────────────────
   //
-  // No CLI command yet, for scope, as with the credential rows above: the Server
-  // admits a `cli` human to every write, so a later lane adds commands with no
-  // security change. The writes are refused to agent and link sessions twice
-  // (the handler guard and the strict SQL gate); `list` is open and secret-free.
+  // `tm8 link list|add|login|audit` (commands/link.ts). The writes are refused
+  // to agent and link sessions twice (the handler guard and the strict SQL
+  // gate); the CLI adds no check and no bypass. relogin/logout/remove/setSpawn
+  // stay command-less for scope. `list` is open and secret-free.
   'spaceLinks.list': {
-    cmd: null,
+    cmd: ['link', 'list'],
+    syn: 'tm8 link list',
     sum: 'List the Spaces this Space links to, with your own sign-in status on each — no secret is ever returned',
     authz: 'space',
     input: 'none',
     tags: ['link', 'space', 'cross-space', 'settings'],
-    reason: 'human_settings_only',
     notes: [
       'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
     ],
   },
   'spaceLinks.add': {
-    cmd: null,
+    cmd: ['link', 'add'],
+    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
     sum: 'Link another Space you are a Member of to this one — human sessions only',
     authz: 'space',
     input: 'bound',
     side: 'durable',
     tags: ['link', 'space', 'cross-space', 'settings'],
-    reason: 'human_settings_only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
   },
   'spaceLinks.login': {
-    cmd: null,
+    cmd: ['link', 'login'],
+    syn: 'tm8 link login <alias|link-id> [--mutation-id <id>]',
     sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
     authz: 'server',
     input: 'bound',
     side: 'durable',
     tags: ['link', 'login', 'session', 'cross-space'],
-    reason: 'human_settings_only',
-    notes: ['agents you launch may use it; nobody else can, and no response carries it'],
+    notes: [
+      'agents you launch may use it; nobody else can, and no response carries it',
+      'an agent is refused by the Server; it asks its human to run this',
+    ],
   },
   'spaceLinks.relogin': {
     cmd: null,
@@ -720,6 +724,28 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['link', 'spawn', 'budget', 'cross-space'],
     reason: 'human_settings_only',
+  },
+  'spaceLinks.invoke': {
+    cmd: null,
+    sum: 'Run one operation in a linked Space as the Member who launched you — credential management, link and session management are refused',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'cross-space', 'invoke', 'agent'],
+    reason: 'use_space_flag',
+    notes: [
+      'the CLI sends it for you: from a session, `--space <alias|space-id>` naming another Space routes every call of that command through it, and nothing else reaches the target',
+      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
+      'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+    ],
+  },
+  'spaceLinks.audit': {
+    cmd: ['link', 'audit'],
+    syn: 'tm8 link audit <alias|link-id> [--limit <count>] [--before <timestamp>]',
+    sum: 'Read the audit of calls made through a space link — your own rows, or every Member\'s for a home admin',
+    authz: 'server',
+    input: 'none',
+    tags: ['link', 'cross-space', 'audit'],
   },
   'node.credentials.status': {
     cmd: null,
@@ -3338,8 +3364,8 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  // Re-measured (plan W2, rebased onto main 55b5d3e5): + auth.launch on top of W10d. Read from the regenerated conformance manifest.
-  'sha256:60e8e43f447ca05ce812eb26492cc97c7a10d16a787cec62cf41a782b6c84b1f';
+  // Re-measured (plan W2, merged with main a0597278): + auth.launch on top of W7 spaceLinks.invoke/audit. Read from the regenerated conformance manifest.
+  'sha256:cc627719e184767c52c1d0a17c5001e00b789f07b5a162799b990943faf06f1d';
 
 export const GRAMMAR_VERSION = '2';
 
