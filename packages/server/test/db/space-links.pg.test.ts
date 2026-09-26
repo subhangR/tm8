@@ -20,6 +20,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { AuthSessionViewSchema } from '@tm8/contract';
+
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
@@ -662,3 +664,62 @@ describe('W6 T17 — leaving or being removed ends the member\'s rows', () => {
 
 // Keeps sealSecret referenced for readers checking what a1 exercises.
 void sealSecret;
+
+async function resolveToken(token: string): Promise<{ authKind?: string; sessionSpaceId?: string; sessionId?: string }> {
+  const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+  return resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true }) as never;
+}
+
+describe('W6 kind `link` — the resolver, the session view, revoke', () => {
+  it('a stored link token resolves as authKind `link`, pinned to the target space', async () => {
+    const link = await linkAB();
+    const use = await store.use(await hClaims(), link.id);
+    const identity = await resolveToken(use.token);
+    expect(identity).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB, sessionId: link.mine!.sessionId });
+  });
+
+  it('positive — the session view accepts kind `link`; an unknown kind is refused', () => {
+    const view = { sessionId: randomUUID(), actingAsTeamMemberId: null, label: 'Space link from Links A', expiresAt: new Date().toISOString() };
+    expect(AuthSessionViewSchema.safeParse({ ...view, kind: 'link' }).success).toBe(true);
+    expect(AuthSessionViewSchema.safeParse({ ...view, kind: 'linked' }).success).toBe(false);
+  });
+
+  it('the row shape forbids a persona, work session or runtime on a link session (23514); positive without', async () => {
+    const link = await linkAB();
+    expect(await outcome(() => database.query(
+      `update public.auth_sessions set work_session_id = $2 where id = $1`, [link.mine!.sessionId, fixture.workSessionA]))).toBe('23514');
+    const [row] = await database.query<{ kind: string; ws: string | null }>(
+      `select kind, work_session_id::text as ws from public.auth_sessions where id = $1`, [link.mine!.sessionId]);
+    expect(row).toEqual({ kind: 'link', ws: null });
+  });
+});
+
+// SECURITY CHOICE (PR #864): a link session is inserted with no parent session
+// (244's login insert), so revoking the browser session that performed the
+// login does not end it. Only logout / relogin / remove / leaving / W1 removal
+// (the five P7 paths) and a direct revoke end it.
+describe('W6 no cascade — a link session outlives the browser session that minted it', () => {
+  it('revoking the minting browser session leaves the link session live and usable', async () => {
+    const browserToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const claims = await claimsForToken(browserToken);
+    const link = await store.login(claims, (await linkAB()).id, { relogin: true });
+    const browserSessionId = (await resolveToken(browserToken)).sessionId!;
+    await db.rpc(claims, 'revoke_auth_session', [browserSessionId]);
+    await expect(resolveToken(browserToken)).rejects.toBeTruthy();
+    const use = await store.use(await hClaims(), link.id);
+    expect((await resolveToken(use.token)).authKind).toBe('link');
+    const [row] = await database.query<{ revoked: boolean }>(
+      `select revoked_at is not null as revoked from public.auth_sessions where id = $1`, [link.mine!.sessionId]);
+    expect(row!.revoked).toBe(false);
+  });
+
+  it('positive — revoking the link session itself ends it: the resolver refuses it and use turns the link signed_out', async () => {
+    const link = await linkAB();
+    const claims = await hClaims();
+    const use = await store.use(claims, link.id);
+    await db.rpc(claims, 'revoke_auth_session', [link.mine!.sessionId]);
+    await expect(resolveToken(use.token)).rejects.toBeTruthy();
+    await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
+    await store.login(claims, link.id, { relogin: true });
+  });
+});
