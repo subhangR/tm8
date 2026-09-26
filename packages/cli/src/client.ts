@@ -138,9 +138,6 @@ export function gapFailureKind(err: unknown): 'refused' | 'ambiguous' {
   return (cause as { code?: unknown } | null)?.code === 'ECONNREFUSED' ? 'refused' : 'ambiguous';
 }
 
-/** The answers a proxy or a booting/draining node gives while it cannot serve. */
-const GAP_STATUSES = new Set([502, 503, 504]);
-
 /**
  * Whether this request may be sent again after `kind` of failure.
  *
@@ -155,6 +152,13 @@ const GAP_STATUSES = new Set([502, 503, 504]);
  * A request TIMEOUT is never re-sent at all: a restart gap is a refusal or a
  * reset, never a slow answer. A timeout is a node that is up and busy, and
  * re-sending for two minutes adds load to exactly the node that cannot keep up.
+ *
+ * Nor is any HTTP answer, 5xx included. An agent calls its node directly with
+ * no proxy in between, so a 502/504 never reaches it, and every 503 was
+ * written by a LIVE node: read admission refusing under pool pressure, a
+ * handler that threw (the ledger stores only committed results, so a re-send
+ * re-runs it), or /health on a sick database. A node that answered is not in
+ * a restart gap.
  */
 function mayResend(method: string, body: unknown, kind: 'refused' | 'ambiguous'): boolean {
   if (kind === 'refused' || method === 'GET') return true;
@@ -519,26 +523,6 @@ export class Tm8Client {
           `${op.method} ${url.pathname} failed: ${reason}${retried} (is tm8-server running at ${this.baseUrl}?)`,
           err,
         );
-      }
-      if (
-        GAP_STATUSES.has(res.status)
-        && mayResend(op.method, opts.body, 'ambiguous')
-        && Date.now() + delayMs <= gapDeadlineMs
-      ) {
-        journal.noteCall({
-          operation: name,
-          method: op.method,
-          path: url.pathname,
-          baseUrl: this.baseUrl,
-          status: res.status,
-          requestChars,
-          responseChars: 0,
-          durationMs: Date.now() - startedMs,
-        });
-        clearTimeout(timer);
-        await res.body?.cancel().catch(() => undefined);
-        await backoff(`answered ${res.status}`);
-        continue;
       }
       break;
     }

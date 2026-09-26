@@ -335,18 +335,21 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
     }
   });
 
-  it('re-sends on 502/503/504 until the node answers', async () => {
-    const statuses = [502, 503, 504];
-    const { fetchImpl, calls } = stub(() => {
-      const next = statuses.shift();
-      return next === undefined ? ok({ id: 'ent_1' }) : new Response('<html>down</html>', { status: next });
-    });
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      await expect(gapClient(fetchImpl, 120_000).invoke('identity.get')).resolves.toEqual({ id: 'ent_1' });
-      expect(calls).toHaveLength(4);
-    } finally {
-      stderr.mockRestore();
+  it('never re-sends a 5xx: a node that answered is up, not in a restart gap', async () => {
+    // Agents reach the node directly, so every 503 is a LIVE node shedding load
+    // or a handler that threw. Re-sending adds load, or re-runs the crash.
+    for (const status of [500, 502, 503, 504]) {
+      const { fetchImpl, calls } = stub(() => new Response('<html>down</html>', { status }));
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const err = await gapClient(fetchImpl, 120_000).invoke('identity.get').catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(TransportError);
+        expect(calls).toHaveLength(1);
+        expect(stderr).not.toHaveBeenCalled();
+      } finally {
+        stderr.mockRestore();
+      }
     }
   });
 
@@ -403,7 +406,7 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
     }
   });
 
-  it('carries an agent call across a REAL restart: port closed, then a node comes back on it', async () => {
+  it('carries an agent call across a REAL restart: port closed, then a node comes back on it (can flake if another process takes the freed port in the 700ms gap)', async () => {
     const probe = createServer();
     await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
     const { port } = probe.address() as AddressInfo;
