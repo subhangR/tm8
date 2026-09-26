@@ -7139,9 +7139,10 @@ export interface InteractionProfileDraft {
       means "defer to the pinned static template", which is what every draft
       written before this field existed meant implicitly. */
   initialContentSurface?: 'terminal' | 'chat';
-  /** Sessions on this profile render `<context_index>` in place of `<skills>`
-      (design 01a0d348 §2; shipped dark, §10 Q2). Absent or false: off.
-      `TM8_CONTEXT_INDEX` on the node outranks it either way. */
+  /** @deprecated Accepted and ignored (launch card v3, owner answer
+      `index_always`): every launch renders `<context_index>`, whatever this
+      says and whatever the node's `TM8_CONTEXT_INDEX` says. Kept so earlier
+      drafts stay valid. */
   contextIndex?: boolean;
   /** Per-kind prompt byte budgets (§10 Q5); absent keys take the node default. */
   contextBudgets?: import('./context-budgets.js').ContextBudgets;

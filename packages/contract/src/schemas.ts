@@ -4476,8 +4476,8 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
      means "defer to the pinned static template" — exactly the behaviour those
      drafts already had. Authors who set it are choosing, not overriding. */
   initialContentSurface: z.enum(['terminal', 'chat']).optional(),
-  /* `<context_index>` on (design 01a0d348 §2). OPTIONAL: absent is off, and
-     every earlier draft stays valid. Shipped dark (§10 Q2). */
+  /* DEPRECATED, accepted and ignored: the index is always on (launch card
+     v3, `index_always`). OPTIONAL so every earlier draft stays valid. */
   contextIndex: z.boolean().optional(),
   /* Per-kind prompt budgets and Jev score floors (design 01a0d348 §10 Q5).
      OPTIONAL, every key too: an absent key takes the node default. A budget
