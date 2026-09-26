@@ -2551,7 +2551,7 @@ describe('W3-audit T31 (W3 half) — B\'s project and everything read through it
   // (projects-associations.ts projectRowFor, contention.ts), so the project row
   // IS their authorization. The HTTP twin is in the W3-audit HTTP block.
   const projectB = randomUUID();
-  const projectBoth = randomUUID();
+  const projectOfA = randomUUID();
 
   beforeAll(async () => {
     await database.transaction(async (client) => {
@@ -2559,12 +2559,12 @@ describe('W3-audit T31 (W3 half) — B\'s project and everything read through it
       await client.query(
         `insert into public.projects(id, name, working_dir, trust)
          values ($1, 'T31 B project', '/tmp/w3-audit-t31-b', 'trusted'),
-                ($2, 'T31 shared project', '/tmp/w3-audit-t31-both', 'trusted')`,
-        [projectB, projectBoth]);
+                ($2, 'T31 A project', '/tmp/w3-audit-t31-a', 'trusted')`,
+        [projectB, projectOfA]);
       await client.query(
         `insert into public.space_projects(space_id, project_id, linked_by)
-         values ($2, $3, $5), ($1, $4, $6), ($2, $4, $5)`,
-        [fixture.spaceA, fixture.spaceB, projectB, projectBoth, fixture.memberHB, fixture.memberHA]);
+         values ($2, $3, $5), ($1, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectB, projectOfA, fixture.memberHB, fixture.memberHA]);
     });
   });
 
@@ -2576,12 +2576,18 @@ describe('W3-audit T31 (W3 half) — B\'s project and everything read through it
       expect(await seen(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), projectB)).toEqual([]);
     });
   });
-  it('positive — H\'s gate session sees it', async () => {
-    expect((await seen(await mintBrowser(fixture.accountH, fixture.identityH), projectB)).length).toBe(1);
+  // 234 (W11): public.projects is the folder grant, readable only by a gate
+  // admin on an unpinned session (projects_select); the space's project is the
+  // `project` entity.
+  it('positive — H\'s unpinned gate-admin session sees it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      expect((await seen(await mintBrowser(fixture.accountH, fixture.identityH), projectB)).length).toBe(1);
+    });
   });
-  it('a project linked into A and B is visible pinned to A (pre-W11 shared folder — W11 splits it)', async () => {
-    expect((await seen(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), projectBoth)).length)
-      .toBe(1);
+  it('A\'s own folder is not readable pinned to A, even as node admin (234: folders are the gate\'s; one space per folder)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      expect(await seen(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), projectOfA)).toEqual([]);
+    });
   });
 });
 
