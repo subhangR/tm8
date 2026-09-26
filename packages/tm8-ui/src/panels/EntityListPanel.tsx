@@ -108,8 +108,8 @@ import { LaunchComposerPopup } from '../new-session';
 import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
-import { attentionTileLine } from '../attention/AttentionTileSubtitle';
-import { isNeedsMeFilter } from '../attention/needs-me';
+import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
+import { isNeedsMeFilter, needsMeCount } from '../attention/needs-me';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -583,6 +583,7 @@ function placeHoverBar(event: ReactPointerEvent<HTMLElement>): void {
 export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
+  const listAttentionApi = useAttentionOptional();
 
   /**
    * The open category tab, REMEMBERED PER KIND (user ruling, task 01a02470:
@@ -702,6 +703,10 @@ export function EntityListPanel(props: EntityListPanelProps) {
     list.membership && lensId
       ? ((props.membershipSets ?? []).find((set) => set.id === lensId) ?? null)
       : null;
+  /* ATTENTION v2: with an attention module mounted, "Needs me" swaps the
+     body for one flat band over the queue (see the body below). */
+  const selectedFilter = mergeSelectedFilters(config, selected, props.ctx);
+  const needsMeActive = listAttentionApi !== null && isNeedsMeFilter(selectedFilter);
   const lensFilter: QueryFilter | undefined =
     list.membership && lensSet
       ? ({
@@ -850,7 +855,24 @@ export function EntityListPanel(props: EntityListPanelProps) {
       ) : null}
 
       <div className="lp__body" onPointerOver={placeHoverBar}>
-        {mode === 'board' && list.board ? (
+        {needsMeActive ? (
+          /* ATTENTION v2 — "Needs me" is the attention QUEUE, one flat list in
+             queue order (needs-me.ts). Tabs, sections, people chips and the
+             lens partition entities, not the queue, so none of them narrow it:
+             the band reads the needs-me clause alone, and the note says so. */
+          <>
+            <p className="att-needs-me-note" data-testid="needs-me-note">
+              Needs me lists what is waiting on you, in queue order — tabs and sections don’t apply.
+            </p>
+            <Band
+              label={null}
+              filter={selectedFilter}
+              props={props}
+              config={config}
+              query={query}
+            />
+          </>
+        ) : mode === 'board' && list.board ? (
           <BoardBody
             props={props}
             config={config}
@@ -2652,6 +2674,7 @@ function Band({
   /** Present ⇒ an empty band means "no matches", not "nothing here". */
   query?: string;
 }) {
+  const bandAttention = useAttentionOptional();
   const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
   const visible = matching(rows, query ?? '');
@@ -2702,7 +2725,16 @@ function Band({
              its empty state is "nothing is waiting on you", not "create one". */
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
-            sentence="Nothing needs you."
+            sentence={
+              page?.loading
+                ? 'Loading what needs you…'
+                : needsMeCount(bandAttention, config.kind) > 0
+                  /* The queue names roots this list could not load (deleted,
+                     or not readable here). Saying "nothing" would contradict
+                     the top bar's count. */
+                  ? `${needsMeCount(bandAttention, config.kind)} waiting on you could not be shown here — open them from the top bar.`
+                  : 'Nothing needs you.'
+            }
           />
         ) : query && query.trim().length > 0 ? (
           <EmptyBody
@@ -3198,7 +3230,7 @@ export function Tile({
      chat's `waiting on you: …`, a roll-up root's `n requests · own, via …`.
      Null outside an attention module. */
   const attentionLine = attentionTileLine(
-    useAttentionOptional(),
+    attentionApi,
     row,
     verdict === 'not-running' || verdict === 'stale',
   );
@@ -3517,7 +3549,7 @@ export function Tile({
         ) : undefined}
         badges={attentionLine || tileBadges ? (
           <>
-            {attentionLine ? <span className="att-tile-sub" data-testid="attention-tile-subtitle">{attentionLine}</span> : null}
+            <AttentionTileSubtitle line={attentionLine} />
             {tileBadges}
           </>
         ) : null}
@@ -3598,7 +3630,7 @@ export function Tile({
         creator={controlFacts.creator}
         badges={attentionLine || tileBadges ? (
           <>
-            {attentionLine ? <span className="att-tile-sub" data-testid="attention-tile-subtitle">{attentionLine}</span> : null}
+            <AttentionTileSubtitle line={attentionLine} />
             {tileBadges}
           </>
         ) : null}
@@ -3887,9 +3919,7 @@ export function Tile({
           expanded under a task carries the same chips and can keep going.
           Rendered as its own sub-row because the standard tile's main row
           holds the 17px floor. */}
-      {attentionLine ? (
-        <span className="att-tile-sub lp__att-sub" data-testid="attention-tile-subtitle">{attentionLine}</span>
-      ) : null}
+      <AttentionTileSubtitle line={attentionLine} />
       {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}

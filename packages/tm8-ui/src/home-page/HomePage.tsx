@@ -30,8 +30,8 @@
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
  */
-import { AttentionList, useAttentionOptional } from '../attention';
-import '../attention/attention-surfaces.css';
+import { useAttentionOptional } from '../attention';
+import { AttentionQueueSection } from '../attention/AttentionQueueSection';
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';
 import {
@@ -121,23 +121,6 @@ function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: s
   );
 }
 
-/**
- * ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the attention queue itself — the
- * same list, rows and order as the top-bar popover, Mine when anything is mine
- * and All otherwise. Reviews and @mentions no longer feed it (Q17): they live
- * in notifications. Hidden when nothing is waiting on anyone.
- */
-function AttentionNeedsYou({ onOpen }: { onOpen(id: string): void }) {
-  const api = useAttentionOptional();
-  if (!api) return null;
-  if (api.counts().all === 0) return null;
-  return (
-    <section className="hp-needs att-queue-section" aria-label="NEEDS YOU" data-testid="hp-needs-you">
-      <AttentionList title="NEEDS YOU" onOpen={onOpen} />
-    </section>
-  );
-}
-
 export function HomePage(props: HomePageProps) {
   const { data } = props;
   const home = useHomeData(data);
@@ -174,7 +157,15 @@ export function HomePage(props: HomePageProps) {
       {props.rail ?? null}
       <div className="hp-page">
         {attention ? (
-          <AttentionNeedsYou onOpen={props.onOpenEntity} />
+          /* ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the attention queue itself.
+             Reviews and @mentions no longer feed it (Q17) — they live in
+             notifications. */
+          <AttentionQueueSection
+            title="NEEDS YOU"
+            className="hp-needs"
+            testId="hp-needs-you"
+            onOpen={props.onOpenEntity}
+          />
         ) : needsYou && needsYou.rows.length > 0 ? (
           <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
         ) : needsYou && (home.viewerError || home.notificationsError) ? (

@@ -26,6 +26,8 @@ import {
   sourceLine,
   viaLabel,
 } from './attention-subtitles';
+import { isAnswerableForm } from '../domain/attention-kinds';
+import { useKeepTypedOnFailure } from './use-keep-typed-on-failure';
 import './attention-surfaces.css';
 
 const COLLAPSE_KEY = 'tm8.attention.block.collapsed.';
@@ -67,23 +69,35 @@ export interface AttentionBlockProps {
   viewerSessionId?: string | null;
   /** Overrides the phone default (collapsed) and the desktop one (open). */
   defaultCollapsed?: boolean;
+  /**
+   * On a session's or chat's own detail: the requests IT raised are the
+   * banner's ("waiting on you"), so the block lists everything else pinned on
+   * it. Opening still marks all of them seen.
+   */
+  excludeRaisedBy?: string | null;
 }
 
 export function AttentionBlock(props: AttentionBlockProps) {
   const api = useAttentionOptional();
   const { oneSurface } = useMobileSurface();
   const root = props.entityId as EntityId;
-  const requests = api ? api.requestsFor(root) : [];
+  const all = api ? api.requestsFor(root) : [];
+  const requests = props.excludeRaisedBy
+    ? all.filter((r) => r.sourceWorkSessionId !== props.excludeRaisedBy)
+    : all;
   const [collapsed, setCollapsed] = useState(() =>
     readCollapsed(root, props.defaultCollapsed ?? oneSurface),
   );
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Seen covers EVERY request on the entity, including the ones the banner
+  // shows instead of the block (G4: opening marks everything seen).
   const unseenKey = useMemo(
-    () => requests.filter((r) => r.seenByMe !== true).map((r) => r.id).join(','),
-    [requests],
+    () => all.filter((r) => r.seenByMe !== true).map((r) => r.id).join(','),
+    [all],
   );
+  const stashNote = useKeepTypedOnFailure(api, setNote);
   useEffect(() => {
     if (!api || unseenKey === '') return;
     void api.markSeen(root);
@@ -107,8 +121,10 @@ export function AttentionBlock(props: AttentionBlockProps) {
   const resolveAll = async () => {
     setBusy(true);
     try {
-      await api.resolve(root, note.trim() || undefined);
+      const typed = note;
+      stashNote(typed);
       setNote('');
+      await api.resolve(root, typed.trim() || undefined);
     } finally {
       setBusy(false);
     }
@@ -130,7 +146,7 @@ export function AttentionBlock(props: AttentionBlockProps) {
       >
         <AttentionChipView chip={chip} />
         <span className="att-block__title">
-          {count} {count === 1 ? 'request needs' : 'requests need'} you
+          {count} {count === 1 ? 'request' : 'requests'} waiting
         </span>
         <span className="att-block__age">· oldest {attentionAge(oldest)}</span>
         <span className="att-block__caret" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
@@ -192,7 +208,7 @@ function RequestRow({
 }) {
   const source = sourceLine(request);
   const rolled = isRolledUp(request, root);
-  const isForm = props.kindOf?.(request.entityId) === 'form';
+  const isForm = isAnswerableForm(props.kindOf?.(request.entityId));
   const assignee = request.assigneeId ? props.nameOf?.(request.assigneeId) : null;
   const canWithdraw =
     !!props.viewerSessionId &&

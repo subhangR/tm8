@@ -173,3 +173,13 @@
 
 /* -- Home and the empty centre (tab 8) ----------------------------------- */
 .cv2-root .att-queue-section { display: flex; flex-direction: column; gap: var(--pn-space-2); }
+
+.cv2-root .att-banner__scope { margin: var(--pn-space-2) 0 0; font-size: 12px; color: var(--pn-ink-3); }
+
+/* -- "Needs me" list note (tab 8) ---------------------------------------- */
+.cv2-root .att-needs-me-note {
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}

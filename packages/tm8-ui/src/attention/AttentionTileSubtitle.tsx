@@ -9,32 +9,31 @@
  * outside an `AttentionProvider`.
  */
 import type { EntityId } from '@tm8/contract';
-import { useAttentionOptional } from './index';
+import type { AttentionApi } from './index';
+import './attention-surfaces.css';
 import { rollupLine, sessionWaitingLine } from './attention-subtitles';
-
-const ASKERS = new Set(['work_session', 'chat']);
+import { raisesAttention } from '../domain/attention-kinds';
 
 export function attentionTileLine(
-  api: ReturnType<typeof useAttentionOptional>,
+  api: AttentionApi | null,
   row: { id: string; kind: string },
   ended: boolean,
   titleOf?: (id: string) => string | null | undefined,
 ): string | null {
   if (!api) return null;
-  if (ASKERS.has(row.kind)) {
+  if (raisesAttention(row.kind)) {
     const raised = api.raisedChipFor(row.id as EntityId);
     if (raised) return sessionWaitingLine(raised.latestReason, ended);
   }
   return rollupLine(row.id as EntityId, api.requestsFor(row.id as EntityId), titleOf);
 }
 
-export function AttentionTileSubtitle(props: {
-  row: { id: string; kind: string };
-  ended?: boolean;
-  titleOf?: (id: string) => string | null | undefined;
-}) {
-  const api = useAttentionOptional();
-  const line = attentionTileLine(api, props.row, props.ended ?? false, props.titleOf);
+/**
+ * The line itself. Presentational: the tile computes the line once with
+ * `attentionTileLine` (it needs to know whether to open its badge band at all)
+ * and hands it here, so production and the tests render the same markup.
+ */
+export function AttentionTileSubtitle({ line }: { line: string | null }) {
   if (!line) return null;
   return (
     <span className="att-tile-sub" data-testid="attention-tile-subtitle" title={line}>

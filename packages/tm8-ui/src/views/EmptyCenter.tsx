@@ -14,8 +14,8 @@
  *  - **No kind literal** (§15.2): rows arrive as `SessionRow`, already
  *    projected structurally by `toSessionRow`.
  */
-import { AttentionList, useAttentionOptional } from '../attention';
-import '../attention/attention-surfaces.css';
+import { useAttentionOptional } from '../attention';
+import { AttentionQueueSection } from '../attention/AttentionQueueSection';
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
 import { Avatar } from '../kit';
@@ -141,7 +141,6 @@ export function EmptyCenter(props: EmptyCenterProps) {
   const { rows, livenessOf, liveIds } = props;
   const attention = useAttentionOptional();
   const attentionIds = new Set(attention ? [] : (props.attentionIds ?? []));
-  const queueCount = attention ? attention.counts().all : 0;
   const grouped = new Map<RosterGroupId, ImportantSession[]>();
 
   for (const row of rows) {
@@ -169,18 +168,14 @@ export function EmptyCenter(props: EmptyCenterProps) {
           Terminal activity{liveIds.length > 0 ? ` · ${liveIds.length} live` : ''}
         </div>
 
-        {attention && queueCount > 0 ? (
-          <section
-            className="shell-empty__group att-queue-section"
-            aria-label={`Needs attention, ${queueCount}`}
-            data-testid="empty-attention-queue"
-          >
-            <AttentionList
-              title="Needs attention"
-              onOpen={(id) => (props.onOpenEntity ?? props.onFocusSession)?.(id)}
-            />
-          </section>
-        ) : null}
+        {/* ATTENTION v2: "Needs attention" is the attention queue — the same
+            list as the top bar's popover, hidden when nothing is waiting. */}
+        <AttentionQueueSection
+          title="Needs attention"
+          className="shell-empty__group"
+          testId="empty-attention-queue"
+          onOpen={(id) => (props.onOpenEntity ?? props.onFocusSession)?.(id)}
+        />
 
         {visibleGroups.length === 0 ? (
           <div className="shell-empty__firstrun" data-testid="empty-center-firstrun">

@@ -18,6 +18,7 @@ import { useState, type ReactNode } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
 import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
 import { attentionAge } from './attention-subtitles';
+import { useKeepTypedOnFailure } from './use-keep-typed-on-failure';
 import './attention-surfaces.css';
 
 export interface SessionWaitingBannerProps {
@@ -48,6 +49,10 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
   const [mode, setMode] = useState<'idle' | 'resolve' | 'reply'>('idle');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const stash = useKeepTypedOnFailure(api, (typed) => {
+    setText(typed);
+    setMode((m) => (m === 'idle' ? 'resolve' : m));
+  });
   if (!api) return <>{legacy}</>;
 
   const raised = raisedBy(api.queue('all'), String(sessionId));
@@ -55,20 +60,28 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
   if (raised.length === 0 || !chip) return null;
 
   const latest = raised[0]!;
-  const roots = [...new Set(raised.map((r) => r.row.rootId))];
-  const onOther = latest.row.rootId !== sessionId;
+  const root = latest.row.rootId;
+  const onOther = root !== sessionId;
+  /* RESOLVE IS ROOT-SCOPED (chapter 3: it closes everything on that task, for
+     everyone), so the banner settles ONE root — the one its latest request
+     counts on — and says up front what else that settles. One root per press
+     also keeps the 8s Undo covering everything the press did. */
+  const siblings = api.requestsFor(root).filter((r) => r.sourceWorkSessionId !== sessionId).length;
+  const elsewhere = new Set(raised.map((r) => r.row.rootId)).size - 1;
+  const where = onOther && latest.row.title ? `${latest.row.kind ?? 'entity'} ${latest.row.title}` : 'this session';
 
   const submit = async () => {
+    const typed = text;
+    stash(typed);
+    setText('');
+    setMode('idle');
     setBusy(true);
     try {
       if (mode === 'reply') {
-        if (text.trim()) await api.reply(sessionId as EntityId, text.trim());
+        if (typed.trim()) await api.reply(sessionId as EntityId, typed.trim());
       } else {
-        const note = text.trim() || undefined;
-        for (const root of roots) await api.resolve(root, note);
+        await api.resolve(root, typed.trim() || undefined);
       }
-      setText('');
-      setMode('idle');
     } finally {
       setBusy(false);
     }
@@ -92,6 +105,7 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
         <span className="att-banner__meta">
           · {attentionAge(latest.request.createdAt)}
           {onOther && latest.row.title ? ` · on ${latest.row.kind ?? 'entity'} ${latest.row.title}` : ''}
+          {elsewhere > 0 ? ` · +${elsewhere} more elsewhere` : ''}
         </span>
         <span className="att-banner__actions">
           <button
@@ -114,6 +128,12 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
           </button>
         </span>
       </div>
+      {mode === 'resolve' ? (
+        <p className="att-banner__scope" data-testid="session-waiting-scope">
+          Resolves every open request on {where}
+          {siblings > 0 ? `, including ${siblings} from other sessions` : ''}.
+        </p>
+      ) : null}
       {mode === 'idle' ? null : (
         <form
           className="att-banner__form"

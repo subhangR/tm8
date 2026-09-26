@@ -1029,11 +1029,12 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {/* ATTENTION v2 — the block on top of the detail, above the tabs, for
           every kind (chapter 4, tab 3 variant A). The entity stays usable
           underneath; it renders nothing when no request is open or when no
-          attention module is mounted. A session or chat shows its requests in
-          the "waiting on you" banner instead (chapter 4 "Session"), so the
-          block would only restate it there. */}
-      {isTombstone || isTerminal || config.panel.archetype === 'conversation' ? null : (
+          attention module is mounted. On a session or chat the requests it
+          RAISED are the banner's ("waiting on you", chapter 4 "Session"), so
+          the block lists only the rest; opening still marks all of them seen. */}
+      {isTombstone ? null : (
         <AttentionBlock
+          excludeRaisedBy={isTerminal || config.panel.archetype === 'conversation' ? detail.id : null}
           key={detail.id}
           entityId={detail.id}
           badges={detail.badges}
