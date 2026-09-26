@@ -9,7 +9,7 @@
  * the graph, as sentences —
  *
  *   Read 3 tasks, 4 docs        ← ONE counted line per turn
- *   Task 1 Created              ← one line per create, tree-indented
+ *   ┃ Task 1 · New task …  CREATED  ← one highlighted card per create (D9)
  *   Task 1  in_progress → done  ← one line per transition
  *
  * WHAT IS DELIBERATELY KEPT from the original ruling, as assertions: no
@@ -96,16 +96,20 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     expect(view.queryByTestId('chat-touched-entities')).toBeNull();
   });
 
-  it('draws one create line per created entity, indented under an in-thread parent', () => {
+  it('draws one highlighted card per created entity, naming where it landed', () => {
+    /* Was: a line per create, indented 16px under an in-thread parent. The
+       card (advisor D9) SAYS the parent instead — `under ◆ Task 21` — which
+       also works for a parent created in another thread, where the indent
+       had nothing to indent under. */
     const parts = [...create(TASK_ID), ...create(CHILD_ID, TASK_ID)];
     const view = render(<TurnParts parts={parts} />);
 
-    const lines = view.getAllByTestId('chat-ledger-create');
-    expect(lines).toHaveLength(2);
-    expect(lines[0]!.textContent).toContain('Created');
-    // The child indents under the parent created earlier in the same thread.
-    expect(lines[0]!.style.paddingLeft).toBe('0px');
-    expect(lines[1]!.style.paddingLeft).toBe('16px');
+    const cards = view.getAllByTestId('chat-ledger-create');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.textContent).toContain('Task 21');
+    expect(cards[0]!.textContent).toContain('New task · at the root');
+    expect(cards[0]!.textContent).toContain('Created');
+    expect(cards[1]!.textContent).toContain('New task · under Task 21');
   });
 
   it('draws a transition line, one-sided when the prior status was never read here', () => {
@@ -121,7 +125,7 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     const line = view.getByTestId('chat-ledger-transition');
     // An invented left side would be a lie about history; absence is honest.
     expect(line.textContent).toContain('→ working');
-    expect(line.textContent).not.toMatch(/\w+ → working/);
+    expect(line.querySelector('[data-side="from"]')).toBeNull();
   });
 
   it('fills the from-side when the entity was read earlier in the same fold', () => {

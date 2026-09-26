@@ -346,6 +346,10 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
       if (statusOp && subject) {
         const outcome = statusOutcome(part, statusOp, prior);
         if (outcome) {
+          // The verb names the kind: `commands.work/complete` are task-only,
+          // `forms.transition` form-only — so an unread subject still reads
+          // as "Task", never as a bare id.
+          learn(subject, FORM_TRANSITION_OPS.has(statusOp) ? 'form' : 'task');
           statusNow.set(subject, outcome.to);
           // A write that left the status where it was caused no transition —
           // `working → working` is a no-op wearing an arrow.

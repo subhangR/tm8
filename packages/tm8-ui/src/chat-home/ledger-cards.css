@@ -1,0 +1,252 @@
+/* THE LEDGER'S WRITES (LedgerCards.tsx) — advisor D9–D11, D17; mockup
+   01a0dc85. What the chat MADE is a card with a brand rail; what it MOVED is
+   a pill line; what it EDITED is one quiet line. Reads are not here: they keep
+   the counted sentence in chat-home.css and are never highlighted. */
+
+/* ── created / spawned cards ─────────────────────────────────────────────── */
+
+/* A card's call block gets the group's breathing room: `.tch-parts` spaces
+   its children by --pn-space-2 (8px), so 2px more makes the 10px the group
+   sits in (D9: margin 10px 0). */
+.tch-ledger:has(> .tch-created) {
+  margin-block: 2px;
+}
+
+/* CONSECUTIVE CREATES ARE ONE STACK (coordinator ruling on the L3/L4 seam):
+   each call draws its own block, so the stack is made here, by closing the
+   gap between adjacent card blocks to D9's 6px: 2px (prior margin) + 8px
+   (parent gap) - 4px = 6px. */
+.tch-ledger:has(> .tch-created) + .tch-ledger:has(> .tch-created) {
+  margin-top: -4px;
+}
+
+.tch-created {
+  display: grid;
+}
+
+.tch-lcard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  max-width: var(--pn-read-measure);
+  padding: 9px 12px;
+  border: 1px solid var(--pn-line);
+  border-left: 3px solid var(--pn-brand);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  transition: box-shadow var(--pn-dur-base) var(--pn-ease-standard);
+}
+
+.tch-lcard[data-variant='spawned'] {
+  border-left-color: var(--pn-run);
+}
+
+button.tch-lcard {
+  cursor: pointer;
+}
+
+button.tch-lcard:hover {
+  box-shadow: var(--pn-sh-md);
+}
+
+button.tch-lcard:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* Once per entity per page session (useEnterOnce), and never under reduced
+   motion — see the media query at the foot. */
+.tch-lcard[data-enter] {
+  animation: tch-lcard-rise 0.45s var(--pn-ease-out) both;
+}
+
+@keyframes tch-lcard-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tch-lcard__mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font: 600 12px/1 var(--pn-mono);
+}
+
+.tch-lcard[data-variant='spawned'] .tch-lcard__mark {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.tch-lcard__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tch-lcard__title {
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: var(--pn-lh-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-lcard__title[data-placeholder] {
+  color: var(--pn-ink-3);
+}
+
+.tch-lcard__sub {
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+  line-height: var(--pn-lh-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-lcard__rel {
+  color: var(--pn-ink-2);
+}
+
+.tch-lcard__relmark {
+  display: inline-flex;
+  margin-right: 3px;
+  color: var(--pn-ink-3);
+  vertical-align: -1px;
+}
+
+.tch-lcard__reltitle[data-placeholder] {
+  color: var(--pn-ink-3);
+}
+
+.tch-lcard__tag {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: var(--pn-r-pill);
+  font: 600 10px/1 var(--pn-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tch-lcard__tag[data-tone='created'] {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+.tch-lcard__tag[data-tone='live'] {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.tch-lcard__tag[data-tone='waiting'] {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+
+.tch-lcard__tag[data-tone='done'] {
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+}
+
+.tch-lcard__tag[data-tone='failed'] {
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+
+/* The live dot pulses on the kit's own keyframe (kit.css `pnPulse`), 1.6s. */
+.tch-lcard__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  animation: pnPulse 1.6s ease-in-out infinite;
+}
+
+/* ── transition + edit lines ─────────────────────────────────────────────── */
+
+.tch-ltrans {
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--pn-ink-2);
+}
+
+.tch-ltrans__glyph {
+  display: inline-flex;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+}
+
+.tch-ltrans__pill {
+  padding: 3px 7px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+  font: 600 11px/1 var(--pn-mono);
+  white-space: nowrap;
+}
+
+.tch-ltrans__pill[data-side='to'] {
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+}
+
+.tch-ltrans__pill[data-side='to'][data-done] {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.tch-ltrans__arrow {
+  color: var(--pn-ink-3);
+}
+
+.tch-ledger__edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+}
+
+.tch-ledger__editmark {
+  color: var(--pn-ink-3);
+}
+
+.tch-ledger__entity[data-placeholder] {
+  color: var(--pn-ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-lcard[data-enter] {
+    animation: none;
+  }
+
+  .tch-lcard__dot {
+    animation: none;
+  }
+
+  .tch-lcard {
+    transition: none;
+  }
+}
