@@ -60,7 +60,7 @@ export class ContentionService {
                 where e.dst_id = w.entity_id and e.type = 'in_worktree'
                 order by e.created_at desc limit 1) as session_id
          from public.worktrees w
-        where w.project_id = $1 and w.status = 'active'
+        where internal.project_folder_for(w.space_id, w.project_entity_id) = $1 and w.status = 'active'
           and ($2::uuid is null
                or exists (select 1 from public.entities we
                            where we.id = w.entity_id and we.space_id = $2::uuid))

@@ -59,6 +59,9 @@ delete from public.work_session_interaction_pins p using public.entities e
 delete from public.file_upload_slots  where space_id        in (:'space_a', :'space_b');
 delete from public.notifications      where space_id        in (:'space_a', :'space_b');
 delete from public.activity           where space_id        in (:'space_a', :'space_b');
+-- 245 made chats/work_sessions/worktrees.project_entity_id ON DELETE RESTRICT:
+-- their envelopes go first, or the sweep below trips on a project entity.
+delete from public.entities where space_id in (:'space_a', :'space_b') and kind in ('work_session', 'chat', 'worktree');
 delete from public.entities           where space_id        in (:'space_a', :'space_b');
 -- space_projects has an AFTER-DELETE audit trigger that writes a workspace
 -- event, so it too must go while the space row is still present.

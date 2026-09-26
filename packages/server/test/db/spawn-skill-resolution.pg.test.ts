@@ -251,7 +251,7 @@ it('atomically persists the effective session audit and creates no session equip
   const sessionId = await database.transaction(async client => {
     const id = (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
     await client.query(`insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'work_session',0,$3)`, [id, fx.spaceId, fx.memberId]);
-    await client.query('insert into public.work_sessions(entity_id,title) values($1,$2)', [id, 'Skill audit']);
+    await client.query(`insert into public.work_sessions(entity_id,title,workdir_mode) values($1,$2,'scratch')`, [id, 'Skill audit']);
     return id;
   });
   const audit = { native: [], indexed: [{ entityId: 'skill', name: 'Skill', description: 'metadata only', provider: 'tm8', level: 'space', native: false, loadPointer: 'tm8 entity get skill', hash: 'abc' }], skipped: [{ entityId: 'gone', name: 'Gone', reason: 'missing', hash: 'old' }], scannedAt: '2026-09-22T00:00:00Z' };

@@ -569,8 +569,8 @@ describe('B2: a null-runner firing leaves a request the dispatcher can read', ()
       // Space lives on the entity row, not here — `work_sessions` has no
       // space_id column; `findLiveDispatcherSession` joins to get it.
       await client.query(
-        `insert into public.work_sessions(entity_id,title,status,mode,node_id)
-         values($1,'Dispatcher','running','dispatcher','node-local')`,
+        `insert into public.work_sessions(entity_id,title,status,mode,node_id, workdir_mode)
+         values($1,'Dispatcher','running','dispatcher','node-local', 'scratch')`,
         [id],
       );
       return id;

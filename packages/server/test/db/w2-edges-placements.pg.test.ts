@@ -128,8 +128,8 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [ids.channelId, ids.spaceId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1, 'G03 session', 'running', 'space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1, 'G03 session', 'running', 'space', 'scratch')`,
       [ids.workSessionId],
     );
     await client.query(`insert into public.interaction_profiles(entity_id) values ($1)`, [ids.profileId]);

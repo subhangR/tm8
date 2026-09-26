@@ -81,8 +81,10 @@ async function seed(): Promise<void> {
        values ($1, $2, 'GA', 'worker', 'persona'), ($3, $4, 'GB', 'worker', 'persona')`,
       [ids.personaA, ids.memberA, ids.personaB, ids.memberB]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'run', 'running', 'none', now())`, [ids.workSessionA]);
+      // scratch: this session only places auth_sessions by its space; 245's
+      // CHECK refuses an agent/project row with no project entity.
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'run', 'running', 'none', now(), 'scratch')`, [ids.workSessionA]);
     await client.query(
       `insert into public.chats(
          entity_id, space_id, title, teammate_id, model, provider, agent_tool,

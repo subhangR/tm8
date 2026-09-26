@@ -110,8 +110,8 @@ beforeAll(async () => {
     db,
     `insert into public.entities(id, space_id, kind, visibility, created_by)
        select '${sessionId}', space_id, 'work_session', 'space', created_by from public.entities where id = '${anchorId}';
-     insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ('${sessionId}', 'forms cli session', 'running', 'space', now());`,
+     insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ('${sessionId}', 'forms cli session', 'running', 'space', now(), 'scratch');`,
   );
   if (r.code !== 0) throw new Error(`work_session fixture: ${r.stderr}`);
 }, 180_000);
