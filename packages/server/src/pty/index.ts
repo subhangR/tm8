@@ -11,3 +11,4 @@ export * from './grant-token.js';
 export * from './audit-logger.js';
 export * from './pty-ws-connection.js';
 export * from './pty-ws-server.js';
+export * from './credential-stream-close.js';

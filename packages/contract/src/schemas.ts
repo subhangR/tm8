@@ -73,7 +73,7 @@ import type {
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
-  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceDefaultConsentInput,
+  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
@@ -2214,6 +2214,13 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
 
 export const CredentialsSpaceSetVisibilityInputSchema: z.ZodType<CredentialsSpaceSetVisibilityInput> = z.object({
   visibility: z.enum(['private', 'public']),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+/** W10d: the provider and label only — the secret is the caller's own, read server-side. */
+export const CredentialsSpaceAddMineInputSchema: z.ZodType<CredentialsSpaceAddMineInput> = z.object({
+  provider: z.literal('github'),
+  label: SpaceCredentialLabelSchema,
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 

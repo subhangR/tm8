@@ -35,11 +35,12 @@ import type { DurableEventLog } from '../../src/events/poll.js';
 import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { loadConfig } from '../../src/http/config.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
 import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
+import { resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -48,6 +49,8 @@ import { registerMembershipHandlers } from '../../src/membership/handlers.js';
 import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
 import { openSecret } from '../../src/credentials/secret-box.js';
+import { registerCredentialHandlers } from '../../src/facade/handlers/w2/credentials.js';
+import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
 
 import {
   createW1ScratchDatabase,
@@ -131,6 +134,14 @@ async function mintAgentRuntime(): Promise<string> {
 
 /** The production identity resolver's answer for a bearer string. */
 async function identityForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<RequestIdentity> {
+  // 256 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // a link token is bound in-process — resolved by hash and mapped by the
+  // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
+  // invoke do. Every other token still goes through the wire resolver. These
+  // are SQL-policy cells; the wire refusal has its own
+  // (link-session-transport.test.ts).
+  const session = await resolveBearerIdentity(db, token);
+  if (String(session.kind) === 'link') return identityFromSession(session, token, mode);
   const resolve = createSessionIdentityResolver({
     db,
     owner: async () => NOT_THE_OWNER,
@@ -846,6 +857,70 @@ describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by
   });
 });
 
+describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alone to watch and drive', () => {
+  // The W3-audit a6 row ("H2 — a plain member of A — may DRIVE H's agent
+  // session in A", #852, not on this branch's base) recorded CURRENT BEHAVIOUR.
+  // Its closure lands here: when the session records H's PRIVATE credential,
+  // H2 is refused at grant_stream_attach even though 075 lets any member act
+  // as G. The public-credential session is the paired positive: the a6
+  // behaviour is unchanged there.
+  const sessionOn = async (visibility: 'public' | 'private'): Promise<string> => {
+    const credentialId = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', `w10c ${credentialId.slice(0, 8)}`, 'Fk0x',
+      Buffer.alloc(17, 7), Buffer.alloc(12, 3),
+    ]));
+    const sessionId = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.space_credentials set owner_account_id = $2, is_default = false where id = $1`,
+        [credentialId, fixture.accountH]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+        [sessionId, fixture.spaceA, fixture.personaA]);
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool)
+         values ($1, 'W10c G run', 'spawning', 'agent', 'claude-code')`, [sessionId]);
+    });
+    if (visibility === 'private') {
+      await asIdentity(fixture.identityH, (q) => q.rpc('set_space_credential_visibility', [credentialId, 'private']));
+    }
+    await asIdentity(fixture.identityH, (q) => q.rpc('record_session_manifest', [
+      sessionId,
+      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+    ]), 'agent');
+    return sessionId;
+  };
+  const attach = (token: string, sessionId: string, mode: 'view' | 'drive') =>
+    outcome(() => asToken(token, (q) =>
+      q.rpc('grant_stream_attach', [sessionId, mode, hashToken(generateSecret()), null, null]), 'enforce'));
+
+  for (const mode of ['view', 'drive'] as const) {
+    it(`H2 (browser, member of A): ${mode} on G's session on H's PRIVATE credential is refused`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('42501');
+    });
+    it(`positive — H (browser, the credential's owner): ${mode} on the same session succeeds`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH, fixture.identityH), sessionId, mode)).toBe('ok');
+    });
+    it(`positive — H2 (browser): ${mode} on G's session on a PUBLIC credential succeeds (a6 behaviour unchanged)`, async () => {
+      const sessionId = await sessionOn('public');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('ok');
+    });
+  }
+  it('H2 (browser): widening sharing on the private-credential session is refused; H widens', async () => {
+    const sessionId = await sessionOn('private');
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(h2, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('42501');
+    expect(await outcome(() => asToken(h, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('ok');
+  });
+});
+
 describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a credential in A — refused by kind', () => {
   // Every writer is require_human_auth_kind first, so G is refused even on
   // H's own credential; the paired positive is H's browser token on the same
@@ -890,6 +965,135 @@ describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a cr
     expect(await outcome(() => asToken(token, (q) =>
       q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('ok');
     expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('ok');
+  });
+});
+
+describe('W10d addMine — my own 093 GitHub token into a space as private; human-only, own token, own membership', () => {
+  // credentials.space.addMine behind requireHumanSession (credentials.ts), then
+  // the caller's OWN account_git_credentials row, then create_space_credential
+  // (require_human_auth_kind + require_space_member). Driven through the
+  // registered handler with a real bearer resolved by the production resolver.
+  // The token strings are random test values, never real credentials; the
+  // hint is the last four characters, so each owner's tail is distinguishable.
+  let registry: HandlerRegistry;
+  let dataDir: string;
+  const tailH = 'hH1x';
+  const tailH2 = 'h2Q9';
+  const fakeToken = (tail: string): string => `test-${randomUUID()}-${tail}`;
+  // Every card a positive cell creates, with its owner, so afterAll can revoke it.
+  const created: Array<{ id: string; identityId: string }> = [];
+
+  const addMine = async (token: string, spaceId: string): Promise<{ ok: true; card: Record<string, unknown> } | { ok: false; code: string; reason: unknown }> => {
+    const identity = await createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER })(
+      { authorization: `Bearer ${token}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+    );
+    const ctx = {
+      op: { name: 'credentials.space.addMine', method: 'POST', path: '/v2/spaces/:spaceId/credentials/from-mine', kind: 'command', status: 'v1' },
+      opName: 'credentials.space.addMine',
+      params: { spaceId },
+      query: new URLSearchParams(),
+      body: { provider: 'github', label: `w10d ${randomUUID().slice(0, 8)}` },
+      requestId: `cross-space-${randomUUID()}`,
+      identity,
+      headers: {},
+      method: 'POST',
+      path: `/v2/spaces/${spaceId}/credentials/from-mine`,
+    } as unknown as RequestContext;
+    try {
+      return { ok: true, card: await registry.get('credentials.space.addMine')!(ctx) as Record<string, unknown> };
+    } catch (err) {
+      const e = err as { code?: string; details?: Record<string, unknown> };
+      return { ok: false, code: String(e.details?.['sqlstate'] ?? e.code), reason: e.details?.['reason'] };
+    }
+  };
+
+  const storeGitHub = async (accountId: string, identityId: string, tail: string): Promise<void> => {
+    const token = await mintBrowser(accountId, identityId);
+    await new DbGitHubCredentialStore({ db, dataDir })
+      .store(await claimsForToken(token), { login: `w10d-${tail}`, token: fakeToken(tail) });
+  };
+
+  const countIn = (spaceId: string): Promise<number> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const { rows } = await client.query<{ n: string }>(
+        `select count(*)::text as n from public.space_credentials where space_id = $1 and provider = 'github'`, [spaceId]);
+      return Number(rows[0]!.n);
+    });
+
+  beforeAll(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-w10d-addmine-'));
+    registry = new HandlerRegistry();
+    const deps = { db, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    registerCredentialHandlers(registry, deps, {
+      launcher: { launch: () => { throw new Error('no PTY in this suite'); } } as never,
+      agentSessions: { containCredentialSession: () => { throw new Error('no agent sessions in this suite'); } } as never,
+      dataDir,
+      // Never reach GitHub from a test.
+      probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
+    });
+    await storeGitHub(fixture.accountH, fixture.identityH, tailH);
+  });
+  // Revoke every created card through the real writer and drop both seeded 093
+  // rows, so the rest of the file sees neither: 239's members backstop refuses
+  // to end a membership whose account still owns a live credential (the
+  // enter_space cells flip H2's status by hand), and W3-audit seeds its own
+  // github row for H under account_git_credentials_one_per_provider.
+  afterAll(async () => {
+    for (const { id, identityId } of created) {
+      await asIdentity(identityId, (q) => q.rpc('delete_space_credential', [id]));
+    }
+    await database.query(
+      `delete from public.account_git_credentials where account_id = any($1::uuid[]) and provider = 'github' and login like 'w10d-%'`,
+      [[fixture.accountH, fixture.accountH2]]);
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind} (pinned to A, launcher H who HAS a token): refused credentials_human_only, no row written`, async () => {
+      const before = await countIn(fixture.spaceA);
+      const result = await addMine(await mint(), fixture.spaceA);
+      expect(result).toEqual({ ok: false, code: 'forbidden', reason: 'credentials_human_only' });
+      expect(await countIn(fixture.spaceA)).toBe(before);
+    });
+  }
+  it('positive — H (browser) adds H\'s own token to A: private, owned by H, token shape, H\'s hint, no secret in the card', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    const card = (result as { card: Record<string, unknown> }).card;
+    created.push({ id: String(card['id']), identityId: fixture.identityH });
+    expect(card).toMatchObject({ provider: 'github', shape: 'token', visibility: 'private', ownerAccountId: fixture.accountH, keyHint: tailH });
+    expect(JSON.stringify(card)).not.toMatch(/test-[0-9a-f-]{36}-/);
+    expect(Object.keys(card)).not.toEqual(expect.arrayContaining(['secret']));
+  });
+
+  it('non-owner token source: H2 (browser, no token of H2\'s own) is refused not_found — never H\'s token', async () => {
+    const before = await countIn(fixture.spaceA);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result).toEqual({ ok: false, code: 'not_found', reason: 'no_personal_credential' });
+    expect(await countIn(fixture.spaceA)).toBe(before);
+  });
+  it('positive — once H2 connects a token of H2\'s own, H2 adds it to A, and the hint is H2\'s, not H\'s', async () => {
+    await storeGitHub(fixture.accountH2, fixture.identityH2, tailH2);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH2 });
+    expect((result as { card: Record<string, unknown> }).card)
+      .toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH2, keyHint: tailH2 });
+  });
+
+  it('other space: H2 (browser, member of A only, token connected) adding to B is refused forbidden, no row in B', async () => {
+    const before = await countIn(fixture.spaceB);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceB);
+    expect(result.ok).toBe(false);
+    expect((result as { code: string }).code).toBe('forbidden');
+    expect(await countIn(fixture.spaceB)).toBe(before);
+  });
+  it('positive — H (browser, member of B) adds the same kind of row to B', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceB);
+    expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH });
+    expect((result as { card: Record<string, unknown> }).card).toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH });
   });
 });
 
@@ -2293,8 +2497,8 @@ describe('claim-free resolvers — returned keys pinned (W3)', () => {
 const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
   'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
-  'sessionId', 'spaceId', 'username', 'workSessionId',
-];
+  'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
+]; // + viaLinkId (256, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
   'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
   'passwordHash', 'status', 'username',
@@ -3777,8 +3981,14 @@ describe.sequential('W6 space links — H\'s link session A → B', () => {
   beforeAll(ensureHLink);
 
   it('the stored session is kind link, pinned to B', async () => {
-    const claims = await claimsForToken(hLinkToken);
-    expect(claims).toMatchObject({ identityId: fixture.identityH, authKind: 'link', sessionSpaceId: fixture.spaceB });
+    // Resolved in-process, as `DbSpaceLinkStore.use` does: 256 (W7p) refuses a
+    // link session's token on every wire (identity-resolver.ts), so the bare
+    // wire resolver answers 42501 for the same token.
+    expect(await resolveBearerIdentity(db, hLinkToken))
+      .toMatchObject({ identityId: fixture.identityH, kind: 'link', spaceId: fixture.spaceB });
+    const wire = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    await expect(wire({ authorization: `Bearer ${hLinkToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true }))
+      .rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 });
 
@@ -3789,7 +3999,7 @@ describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_
     const g = await claimsForToken(await mintAgent());
     const use = await linkStore.use(g, hLink.id, { workSessionId: fixture.workSessionA });
     expect(use.targetSpaceId).toBe(fixture.spaceB);
-    expect(await claimsForToken(use.token)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+    expect(await resolveBearerIdentity(db, use.token)).toMatchObject({ kind: 'link', spaceId: fixture.spaceB });
   });
 
   it('B revokes the link session; G\'s next use is signed_out, forgets the bytes, notifies G\'s session once, and never retries', async () => {
@@ -3799,7 +4009,7 @@ describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_
     // The revoke on this base: revoke_auth_session as the session's owner. W4's
     // Sessions page (238, auth.sessions.revoke by a B admin) reaches the same row.
     await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
-    await expect(claimsForToken(hLinkToken)).rejects.toBeTruthy();
+    await expect(resolveBearerIdentity(db, hLinkToken)).rejects.toMatchObject({ code: 'unauthenticated' });
 
     const g = await claimsForToken(await mintAgent());
     await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA }))

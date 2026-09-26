@@ -35,6 +35,7 @@ import {
   CredentialsLoginSessionFinishResultSchema,
   CredentialsLoginSessionStartInputSchema,
   CredentialsLoginSessionStartResultSchema,
+  CredentialsSpaceAddMineInputSchema,
   CredentialsStatusViewSchema,
   OPERATIONS,
 } from '@tm8/contract';
@@ -52,6 +53,7 @@ import { W2CredentialCatalogService } from '../../src/facade/services/w2/credent
 import { W2CredentialSessionsService } from '../../src/facade/services/w2/credential-sessions.js';
 import { spaceCredentialViewOf } from '../../src/facade/services/w2/space-credential-catalog.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
 const SESSION_ID = '00000000-0000-7000-8000-0000000000a1';
@@ -263,6 +265,8 @@ function bodyFor(opName: OperationName): unknown {
   // W10b: the two owner commands with bodies.
   if (opName === 'credentials.space.setVisibility') return { visibility: 'public' };
   if (opName === 'credentials.space.spaceDefaultConsent') return { allowed: true };
+  // W10d: add-mine names only a provider and a label — never a token or its id.
+  if (opName === 'credentials.space.addMine') return { provider: 'github', label: 'My GitHub' };
   if (opName === 'node.credentials.policy.set') return { allowNode: false };
   return {};
 }
@@ -275,6 +279,7 @@ function paramsFor(opName: OperationName): Record<string, string> {
     return { spaceId: SPACE_ID, provider: 'anthropic' };
   }
   if (opName === 'credentials.space.myDefault.clear') return { spaceId: SPACE_ID, provider: 'anthropic' };
+  if (opName === 'credentials.space.addMine') return { spaceId: SPACE_ID };
   if (opName.startsWith('credentials.space.')) {
     return { spaceId: SPACE_ID, credentialId: SPACE_CREDENTIAL_ID };
   }
@@ -309,6 +314,8 @@ describe('the four credential operations exist in the contract', () => {
       // W10b: ownership, visibility, per-member default and usage.
       'PUT /v2/space-credentials/:credentialId/visibility',
       'PUT /v2/space-credentials/:credentialId/space-default-consent',
+      // W10d: add my own GitHub token to this space as private (doc 13 §7 step 2).
+      'POST /v2/spaces/:spaceId/credentials/from-mine',
       'POST /v2/space-credentials/:credentialId/claim',
       'POST /v2/space-credentials/:credentialId/my-default',
       'DELETE /v2/spaces/:spaceId/credentials/my-default/:provider',
@@ -1112,5 +1119,39 @@ describe('SC-4 — a space login is the same start, with a spaceCredential targe
     };
     expect(CredentialsLoginSessionStartResultSchema.safeParse({ ...base, spaceCredential: stored }).success).toBe(false);
     expect(CredentialsLoginSessionStartResultSchema.safeParse({ ...base, spaceCredential: spaceCredentialViewOf(stored) }).success).toBe(true);
+  });
+});
+
+describe('W10d — credentials.space.addMine takes no token and no token id, and refuses a link caller', () => {
+  const params = { spaceId: SPACE_ID };
+  it('REFUSES a link session (pinned kind, W6) with the typed code before any database call', async () => {
+    const db = new FakeDb();
+    const ctx = context('credentials.space.addMine', 'browser', { params, body: { provider: 'github', label: 'Mine' } });
+    (ctx.identity as { authKind?: string }).authKind = 'link';
+    const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
+    // 256 (W7p #898) deny-by-default: the registry refuses kind link on every op
+    // outside LINK_BEARER_ALLOWED_OPS before requireHumanSession runs, so the
+    // typed code is the registry's. The agent-kind sweep above still pins
+    // CREDENTIALS_HUMAN_ONLY on this op.
+    expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+    expect(db.calls).toEqual([]);
+  });
+  it('positive — a browser session with the same body is admitted past the guard', async () => {
+    const db = new FakeDb(serviceQueries, serviceRpcs);
+    const ctx = context('credentials.space.addMine', 'browser', { params, body: { provider: 'github', label: 'Mine' } });
+    const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
+    expect((error as CollabError | null)?.details?.['reason']).not.toBe(CREDENTIALS_HUMAN_ONLY);
+    expect(db.calls.length).toBeGreaterThan(0);
+  });
+  for (const extra of [{ tokenId: 'x' }, { secret: 'x' }, { token: 'x' }, { accountId: 'x' }, { actorId: 'x' }]) {
+    it(`the strict body refuses ${Object.keys(extra)[0]} — the token is always the caller's own`, () => {
+      expect(CredentialsSpaceAddMineInputSchema.safeParse({ provider: 'github', label: 'Mine', ...extra }).success).toBe(false);
+    });
+  }
+  it('positive — and accepts provider + label alone; only github (093) is in scope', () => {
+    expect(CredentialsSpaceAddMineInputSchema.safeParse({ provider: 'github', label: 'Mine' }).success).toBe(true);
+    for (const provider of ['anthropic', 'openai', 'kimi', 'groq']) {
+      expect(CredentialsSpaceAddMineInputSchema.safeParse({ provider, label: 'Mine' }).success).toBe(false);
+    }
   });
 });
