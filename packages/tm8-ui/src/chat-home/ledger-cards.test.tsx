@@ -18,12 +18,7 @@ import type { SessionLiveness } from '../data/seam';
 import { resetChatEntityResolutionCache } from './EntityChip';
 import { resetFleetEntityCache } from './fleet/use-fleet-entities';
 import { buildChatLedger } from './ledger';
-import {
-  LedgerHostProvider,
-  SESSION_VERDICT_TICK_MS,
-  resetLedgerCardEntrances,
-  type LedgerHost,
-} from './LedgerCards';
+import { LedgerHostProvider, SESSION_VERDICT_TICK_MS, type LedgerHost } from './LedgerCards';
 import { TurnParts } from './TurnParts';
 import type { ChatTurn, ChatTurnPart } from './types';
 
@@ -163,16 +158,23 @@ function Transcript({
   turns,
   host = {},
   onOpenEntity,
+  thread = 'thread-1',
+  generation = 0,
 }: {
   turns: ChatTurn[];
   host?: LedgerHost;
   onOpenEntity?: (id: EntityId) => void;
+  /** Keys the provider, as ChatHomeScreen keys it by the open thread. */
+  thread?: string;
+  /** Bumping it REMOUNTS every turn under the same provider — what a run's
+   *  step list regrouping around a card does to it. */
+  generation?: number;
 }) {
   const ledger = buildChatLedger(turns);
   return (
-    <LedgerHostProvider {...host}>
+    <LedgerHostProvider key={thread} {...host}>
       {turns.map((t) => (
-        <article key={t.messageId} data-testid="turn">
+        <article key={`${t.messageId}:${generation}`} data-testid="turn">
           <TurnParts
             parts={t.parts}
             ledger={ledger}
@@ -192,7 +194,6 @@ const sessionDetail = (status: string): EntityDetail =>
 beforeEach(() => {
   resetFleetEntityCache();
   resetChatEntityResolutionCache();
-  resetLedgerCardEntrances();
 });
 afterEach(() => {
   cleanup();
@@ -402,13 +403,24 @@ describe('titles on first paint, entrance once', () => {
     expect(titles).toEqual(['Containers P1 — docker provider', 'Provider interface', 'Docker socket lifecycle']);
   });
 
-  it('rises on first mount only — a remount (a regrouped run, a re-read thread) does not replay it', () => {
-    const first = render(<Transcript turns={[fixtureThread()[0]!]} onOpenEntity={vi.fn()} />);
-    const entering = first.container.querySelectorAll('.tch-lcard[data-enter]');
-    expect(entering).toHaveLength(3);
-    first.unmount();
-    const again = render(<Transcript turns={[fixtureThread()[0]!]} onOpenEntity={vi.fn()} />);
-    expect(again.container.querySelectorAll('.tch-lcard[data-enter]')).toHaveLength(0);
+  it('history renders still; a create that ARRIVES rises once; a remount does not replay it', () => {
+    const [first, second] = fixtureThread();
+    const rising = (view: ReturnType<typeof render>) => view.container.querySelectorAll('.tch-lcard[data-enter]').length;
+    const view = render(<Transcript turns={[first!]} onOpenEntity={vi.fn()} />);
+    // The first paint is history: three cards, none bouncing.
+    expect(view.getAllByTestId('chat-ledger-create')).toHaveLength(3);
+    expect(rising(view)).toBe(0);
+    // The spawn streams in: it, and only it, rises.
+    view.rerender(<Transcript turns={[first!, second!]} onOpenEntity={vi.fn()} />);
+    expect(rising(view)).toBe(1);
+    expect(view.container.querySelector('.tch-lcard[data-enter]')!.textContent).toContain('Worker · provider interface');
+    // The turns regroup and remount under the same transcript: nothing replays.
+    view.rerender(<Transcript turns={[first!, second!]} onOpenEntity={vi.fn()} generation={1} />);
+    expect(view.getAllByTestId('chat-ledger-create')).toHaveLength(4);
+    expect(rising(view)).toBe(0);
+    // Opening another thread starts from still history again.
+    view.rerender(<Transcript turns={[first!, second!]} onOpenEntity={vi.fn()} thread="thread-2" />);
+    expect(rising(view)).toBe(0);
   });
 });
 

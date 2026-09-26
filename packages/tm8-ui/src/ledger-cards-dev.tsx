@@ -145,7 +145,7 @@ function App() {
         <Column label="Before — main">
           {THREAD.map((t) => (
             <article key={t.messageId} className="tch-turn" data-role="assistant" style={{ marginBottom: 18 }}>
-              <Before parts={t.parts} ledger={beforeFold(THREAD) as never} turnMessageId={t.messageId} onOpenEntity={() => undefined} />
+              <Before parts={t.parts} ledger={beforeFold(THREAD) as never} turnMessageId={t.messageId} onOpenEntity={(opened) => console.log('open', opened)} />
             </article>
           ))}
         </Column>

@@ -2220,7 +2220,7 @@ export function ChatHomeScreen({
                   the conversation for vertical space and needing a second,
                   fullscreen way to be big. It is a STAGE now — one drawing in
                   region B, reached from the tray, addressed by `?stage=graph`. */}
-              <LedgerHostProvider resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
+              <LedgerHostProvider key={detail.summary.rootId} resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}

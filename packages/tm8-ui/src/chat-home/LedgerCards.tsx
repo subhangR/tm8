@@ -67,7 +67,14 @@ export interface LedgerHost {
   models?: readonly ChatModelOption[] | undefined;
 }
 
-const LedgerHostContext = createContext<LedgerHost>({});
+/** Which cards this transcript has already shown, and whether its first
+ *  paint is behind it — see `useEnterOnce`. Absent without a provider. */
+interface Entrances {
+  seen: Set<string>;
+  painted: { current: boolean };
+}
+
+const LedgerHostContext = createContext<LedgerHost & { entrances?: Entrances }>({});
 
 export function LedgerHostProvider({
   resolveEntity,
@@ -76,9 +83,15 @@ export function LedgerHostProvider({
   models,
   children,
 }: LedgerHost & { children: ReactNode }) {
+  const [entrances] = useState<Entrances>(() => ({ seen: new Set(), painted: { current: false } }));
+  /* A parent's effect runs after its children's, so every card of the first
+     paint has recorded itself before this flips. */
+  useEffect(() => {
+    entrances.painted.current = true;
+  }, [entrances]);
   const value = useMemo(
-    () => ({ resolveEntity, readEntity, livenessOf, models }),
-    [resolveEntity, readEntity, livenessOf, models],
+    () => ({ resolveEntity, readEntity, livenessOf, models, entrances }),
+    [resolveEntity, readEntity, livenessOf, models, entrances],
   );
   return <LedgerHostContext.Provider value={value}>{children}</LedgerHostContext.Provider>;
 }
@@ -111,24 +124,21 @@ function useLedgerLabel(id: string | null, ledger: ChatLedger) {
 }
 
 /**
- * ONE ENTRANCE PER ENTITY, per page session. A card remounts whenever the
- * turn's layout regroups around it (a run's step list collapsing, a thread
- * re-read); replaying the rise each time would make settled history twitch.
- * The initializer is pure — the id is recorded after mount — so StrictMode's
- * double render cannot eat the first entrance.
+ * A CARD RISES ONCE, AND ONLY WHEN IT ARRIVES (D9). What the transcript
+ * already held at its first paint is history and renders still — opening an
+ * old thread must not make every card in it bounce. A card that mounts later
+ * (a create streaming in) rises once; a remount of one already shown (a run's
+ * step list regrouping around it) does not replay it. The record lives in the
+ * provider — one per open thread — so nothing leaks between threads, or tests.
+ * The initializer only reads; the id is recorded after mount, so StrictMode's
+ * double render cannot eat the entrance.
  */
-const entered = new Set<string>();
-
-/** Test seam only. */
-export function resetLedgerCardEntrances(): void {
-  entered.clear();
-}
-
 function useEnterOnce(id: string): boolean {
-  const [enter] = useState(() => !entered.has(id));
+  const { entrances } = useContext(LedgerHostContext);
+  const [enter] = useState(() => entrances !== undefined && entrances.painted.current && !entrances.seen.has(id));
   useEffect(() => {
-    entered.add(id);
-  }, [id]);
+    entrances?.seen.add(id);
+  }, [entrances, id]);
   return enter;
 }
 
