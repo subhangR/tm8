@@ -1190,6 +1190,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     jev={props.launch.jev}
                     loadInstalledPlugins={props.launch.loadInstalledPlugins}
                     selection={props.launch.selection}
+                    profileFor={props.launch.profileFor}
+                    upload={props.launch.upload}
+                    onDispatch={props.launch.dispatch ? (note) => props.launch!.dispatch!(detail.id, note) : undefined}
                     onSpawn={props.launch.onSpawn}
                     loadDescription={
                       props.launch.descriptionOf

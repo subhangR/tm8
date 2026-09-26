@@ -59,6 +59,19 @@ export interface LaunchComposerState {
     | 'harnessApplies' | 'harnessSurface' | 'onHarnessChange'
     | 'installedPlugins' | 'installedPluginsNote' | 'pluginSkillCounts' | 'plugins' | 'onPluginsChange'
     | 'mode' | 'onModeChange'>;
+  /**
+   * The launch card's extra knobs (launch card v2, artifact 01a0dd42): the
+   * worktree's base ref and the GitHub credential. Kept OUT of `bind` so the
+   * create screen's composer, which has neither control, is unchanged.
+   */
+  more: {
+    /** Null lets the node choose the base — the honest default. */
+    worktreeBaseRef: string | null;
+    onWorktreeBaseRefChange(next: string | null): void;
+    /** Null is Auto; GitHub's credential is chosen independently of the tool's. */
+    githubCredential: LaunchCredentialSource | null;
+    onGithubCredentialChange(next: LaunchCredentialSource | null): void;
+  };
 }
 
 /** Why the Plugins row has nothing to offer, when it does not. */
@@ -91,6 +104,8 @@ export function useLaunchComposerState(args: {
      not overwrite what the persona says. */
   const [harnessSurface, setHarnessSurface] = useState<'minimal' | 'inherit' | null>(null);
   const [plugins, setPlugins] = useState<readonly string[] | null>(null);
+  const [worktreeBaseRef, setWorktreeBaseRef] = useState<string | null>(null);
+  const [githubCredential, setGithubCredential] = useState<LaunchCredentialSource | null>(null);
 
   const mode: LaunchMode = modeOverride ?? launchMode ?? 'worker';
 
@@ -259,19 +274,23 @@ export function useLaunchComposerState(args: {
     setPlugins(null);
   }, []);
 
+  /* The tool's provider and GitHub, each only when picked: an absent key is
+     Auto, and an empty object is not sent at all. */
+  const credentialSources = useMemo(() => {
+    const sources: NonNullable<LaunchConfig['credentialSources']> = {
+      ...(credential && credentialKey ? { [credentialKey]: credential } : {}),
+      ...(githubCredential ? { github: githubCredential } : {}),
+    };
+    return Object.keys(sources).length > 0 ? sources : null;
+  }, [credential, credentialKey, githubCredential]);
+
   const config: LaunchConfig = useMemo(() => ({
     teamMemberId: (teammate?.id ?? null) as EntityId | null,
     agentToolId: toolId,
     model,
     reasoningEffort: effortPinned,
     accessMode,
-    ...(credential && credentialKey
-      ? {
-        credentialSources: (credentialKey === 'anthropic'
-          ? { anthropic: credential }
-          : { openai: credential }) satisfies LaunchConfig['credentialSources'],
-      }
-      : {}),
+    ...(credentialSources ? { credentialSources } : {}),
     ...(harnessApplies && harnessSurface ? { harnessSurface } : {}),
     ...(harnessApplies && plugins !== null && harnessSurface !== 'inherit'
       ? { plugins, ...(pluginSkills ? { pluginSkills } : {}) }
@@ -281,7 +300,8 @@ export function useLaunchComposerState(args: {
       ? { kind: 'scratch' as const }
       : { kind: 'project' as const, projectId: workdirId as ProjectId },
     workdirMode,
-  }), [teammate, toolId, model, effortPinned, accessMode, credential, credentialKey, harnessApplies, harnessSurface, plugins, pluginSkills, mode, workdirId, workdirMode]);
+    ...(workdirMode === 'worktree' && worktreeBaseRef ? { worktreeBaseRef } : {}),
+  }), [teammate, toolId, model, effortPinned, accessMode, credentialSources, worktreeBaseRef, harnessApplies, harnessSurface, plugins, pluginSkills, mode, workdirId, workdirMode]);
 
   return {
     config,
@@ -317,6 +337,12 @@ export function useLaunchComposerState(args: {
       onPluginsChange: setPlugins,
       mode,
       onModeChange: setModeOverride,
+    },
+    more: {
+      worktreeBaseRef,
+      onWorktreeBaseRefChange: setWorktreeBaseRef,
+      githubCredential,
+      onGithubCredentialChange: setGithubCredential,
     },
   };
 }

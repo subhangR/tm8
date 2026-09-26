@@ -22,7 +22,6 @@ import { SkillScanInputSchema } from '../skills/handlers.js';
  */
 import {
   ContainersAttachInputSchema,
-  ContainersAttentionInputSchema,
   ContainersBrowserEndpointInputSchema,
   ContainersComputerInputSchema,
   ContainersCreateInputSchema,
@@ -437,7 +436,6 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'containers.unexpose': ContainersUnexposeInputSchema,
   'containers.snapshot': ContainersSnapshotInputSchema,
   'containers.fork': ContainersForkInputSchema,
-  'containers.attention': ContainersAttentionInputSchema,
   'containers.pools.set': ContainersPoolsSetInputSchema,
 };
 

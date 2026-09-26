@@ -13,6 +13,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type {
+  AttentionRequestMutationResult,
   CommandResult,
   EdgeView,
   EntityDetail,
@@ -76,7 +77,14 @@ export interface GraphScreenData {
    * supplies it, so the real caller gets the same behaviour as everywhere
    * else without naming it.
    */
-  reconcileCommand?(result: CommandResult): void;
+  /**
+   * Widened to the union `GateData.reconcileCommand` actually accepts. The graph
+   * mount also feeds the attention dock, whose settlements resolve to an
+   * `AttentionRequestMutationResult` — narrower than a `CommandResult` (an entity
+   * SUMMARY and no `patches`), so a signature naming only `CommandResult` cannot
+   * receive it.
+   */
+  reconcileCommand?(result: CommandResult | AttentionRequestMutationResult): void;
 }
 
 export interface GraphScreenProps {
@@ -228,7 +236,7 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
-      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}

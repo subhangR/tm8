@@ -7,7 +7,12 @@
  * is shared, so every member of this space can see that a link to the target
  * exists; and while you are signed in, agents working for you in this space can
  * act in the target space as you. Allow spawn decides whether they may also
- * start sessions there.
+ * start sessions there. Its help text is the lead's Q-a wording, verbatim:
+ * "Turning spawning off stops new sessions and resumes under this link.
+ * Sessions already running keep running, but cannot fetch space credentials
+ * again until spawning is back on; revoke the link to end them." (The lead's
+ * final default A-6b appended the credential clause.) (Enforcement is W7's,
+ * #898; this surface only states it.)
  *
  * Every write is human-only on the server. A refusal it answers (an agent
  * session, a target you are not a member of, anything else) is rendered as a
@@ -105,7 +110,7 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
           </p>
           <p>
             While you are signed in, agents working for you in this space can act in the target space as you.
-            Allow spawn controls whether they may also start sessions there.
+            Allow spawn controls whether they may also start sessions there. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
           </p>
         </div>
         {notice ? (
@@ -194,17 +199,23 @@ function LinkRow({
               <input
                 type="checkbox"
                 aria-label={`Allow spawn in ${name}`}
+                aria-describedby={`set-spl-spawn-help-${link.id}`}
                 checked={mine.allowSpawn}
                 disabled={busy}
                 onChange={(e) => {
                   const next = e.currentTarget.checked;
                   void run(
                     () => port.setSpawn(link.id, next),
-                    next ? `Agents may start sessions in ${name}.` : `Agents may no longer start sessions in ${name}.`,
+                    next
+                      ? `Agents may start sessions in ${name}.`
+                      : `Agents may no longer start or resume sessions in ${name}. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.`,
                   );
                 }}
               />
               Allow spawn
+              <span className="set-spl__spawn-help" id={`set-spl-spawn-help-${link.id}`} data-testid="space-links-spawn-help">
+                Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
+              </span>
             </label>
             <button type="button" className="cred-action" aria-label={`Remove ${name}`} disabled={busy}
               onClick={() => void run(() => port.remove(link.id), `Removed your sign-in row for ${name}. The link stays for other members.`)}>

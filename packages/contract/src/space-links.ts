@@ -11,7 +11,11 @@
  *   · spaceLinks.relogin  — replace it; the old one is revoked
  *   · spaceLinks.logout   — revoke it and forget the stored bytes
  *   · spaceLinks.remove   — delete your own row (the link stays for others)
- *   · spaceLinks.setSpawn — your own spawn switch and budget
+ *   · spaceLinks.setSpawn — your own spawn switch and budget. Turning spawning
+ *                           off stops new sessions and resumes under this link.
+ *                           Sessions already running keep running, but cannot
+ *                           fetch space credentials again until spawning is
+ *                           back on; revoke the link to end them.
  *
  * Every write is human-only (browser or cli) in SQL. No response ever carries
  * the stored session.
@@ -60,7 +64,9 @@ export interface SpaceLinksMutationInput {
   clientMutationId: string;
 }
 
-/** The body of spaceLinks.setSpawn. */
+/**
+ * The body of spaceLinks.setSpawn. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
+ */
 export interface SpaceLinksSetSpawnInput {
   allowSpawn: boolean;
   /** 0..100; omitted keeps the current budget. */

@@ -32,7 +32,7 @@ import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
 import { bindingAad, openSecret, sealSecret } from '../../src/credentials/secret-box.js';
-import { W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/entities-commands-tracking.js';
+import { RESTRICTED_LIFECYCLE_KINDS, W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/entities-commands-tracking.js';
 import type { ServerConfig } from '../../src/http/config.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -42,8 +42,9 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // ---------------------------------------------------------------------------
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
-// Measured on this branch: 21 credential management + 6 non-credential + 2
-// W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 42.
+// Measured on this branch: 22 credential management (21 + W10a's
+// set_space_credential_visibility, 239) + 6 non-credential + 2
+// W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 43.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -75,11 +76,15 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_node_credential_policy(text,boolean)': CREDENTIAL_MANAGEMENT,
   'set_space_credential_default(uuid)': CREDENTIAL_MANAGEMENT,
   'set_space_credential_policy(uuid,text,text[])': CREDENTIAL_MANAGEMENT,
+  'set_space_credential_visibility(uuid,text)': CREDENTIAL_MANAGEMENT, // W10a (239, #863)
   'space_credential_live_sessions(uuid)': CREDENTIAL_MANAGEMENT,
   'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
   'start_space_credential_login(uuid,text,text,uuid,integer,integer)': CREDENTIAL_MANAGEMENT,
 
-  'disable_account(uuid,text)': IDENTITY_WIDE,
+  // 239 (W10a, #863) renamed the gated body to internal.disable_account_core;
+  // public.disable_account wraps it and calls it first, so the gate still runs
+  // before anything the wrapper does. The caller is the core.
+  'internal.disable_account_core(uuid,text)': IDENTITY_WIDE,
   'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
   'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
   'leave_space(uuid,text)': PENDING,
@@ -314,14 +319,14 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 21 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 7 servers (W8)', () => {
+  it('the list is 22 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 7 servers (W8)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(21);
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(22);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
-    expect(labels).toHaveLength(42);
+    expect(labels).toHaveLength(43);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
@@ -1055,5 +1060,111 @@ describe('W6 (b) — the AAD domain separation holds: no sealed provider carries
     expect(() => bindingAad({ accountId: randomUUID(), provider: 'a|b' })).toThrow(/must not contain/);
     expect(() => bindingAad({ spaceId: randomUUID(), credentialId: randomUUID(), provider: 'x|y' })).toThrow(/must not contain/);
     expect(bindingAad({ accountId: 'acc', provider: 'github' })).toBe('acc|github');
+  });
+});
+
+describe('W6 × W10a — entity_content carries BOTH shared-object arms (250 is built on 239)', () => {
+  it('a credential resolves through the credential arm and a space link through the space_link arm', async () => {
+    const claims = await hClaims();
+    const credentialId = randomUUID();
+    const label = `both-arms ${credentialId.slice(0, 8)}`;
+    await db.rpc(claims, 'create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', label, 'Fk9x',
+      Buffer.alloc(17, 1), Buffer.alloc(12, 2),
+    ]);
+    let [existing] = await database.query<{ entity_id: string }>(
+      'select entity_id from public.space_links where home_space_id = $1 and target_space_id = $2',
+      [fixture.spaceA, fixture.spaceB]);
+    if (!existing) {
+      const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+      existing = { entity_id: link.id };
+    }
+    const content = async (id: string) =>
+      (await database.query<{ c: Record<string, unknown> }>('select internal.entity_content($1) c', [id]))[0]!.c;
+    // Each arm names its own row; the `else` arm would answer '{}' for either.
+    expect(await content(credentialId)).toMatchObject({ title: label, provider: 'anthropic', shape: 'api_key' });
+    expect(await content(existing.entity_id)).toMatchObject({
+      home_space_id: fixture.spaceA, target_space_id: fixture.spaceB,
+    });
+  });
+});
+
+describe('W6 × W10a — both lifecycle guards fire: 239 owns credential, 251 owns space_link', () => {
+  // Two guards, one refusal text. 239's delete_entity kind list refuses a
+  // credential ('entity lifecycle is command-owned for kind credential');
+  // 251 §10b's trigger refuses a space_link with the same words. So the RPC
+  // arms tell them apart by the PL/pgSQL frames in pg's `where`, which
+  // db.rpc's translateDbError drops: they run on a raw client that binds
+  // the same claims db.tx does (client.ts BIND_CLAIMS_SQL).
+  type RawPgError = { code?: string; message?: string; where?: string };
+  async function rawDelete(claims: DbClaims, id: string): Promise<RawPgError | 'ok'> {
+    try {
+      await database.transaction(async (client) => {
+        await client.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.actor_id', $2, true),
+          set_config('tm8.node_admin', 'false', true), set_config('tm8.request_id', $3, true),
+          set_config('tm8.auth_kind', $4, true), set_config('tm8.session_space_id', $5, true),
+          set_config('role', 'tm8_app', true)`,
+        [claims.identityId ?? '', claims.actorId ?? '', randomUUID(), claims.authKind ?? '', claims.sessionSpaceId ?? '']);
+        await client.query('select public.delete_entity($1, null, null)', [id]);
+      });
+      return 'ok';
+    } catch (err) {
+      const e = err as RawPgError;
+      return { code: e.code, message: e.message, where: e.where };
+    }
+  }
+  const facade = () => new W2EntitiesCommandsTrackingService({
+    db, config: {} as ServerConfig, owner: async () => NOT_THE_OWNER,
+  });
+  async function facadeDelete(id: string): Promise<string> {
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    const ctx = {
+      identity, requestId: `space-links-${randomUUID()}`, params: { id }, query: new URLSearchParams(), body: {},
+      headers: {}, method: 'POST', path: '/test',
+    } as unknown as RequestContext;
+    // `forbidden` is the TS gate (no sqlstate); '42501' would mean it fell through to SQL.
+    return outcome(() => facade().deleteEntity(ctx));
+  }
+  const deletedAt = async (id: string) =>
+    (await database.query<{ deleted_at: string | null }>('select deleted_at from public.entities where id = $1', [id]))[0]!.deleted_at;
+
+  let credentialId: string;
+  let linkId: string;
+  beforeAll(async () => {
+    const claims = await hClaims();
+    credentialId = randomUUID();
+    await db.rpc(claims, 'create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', `both-guards ${credentialId.slice(0, 8)}`, 'Fk9x',
+      Buffer.alloc(17, 1), Buffer.alloc(12, 2),
+    ]);
+    const [existing] = await database.query<{ entity_id: string }>(
+      `select sl.entity_id from public.space_links sl join public.entities e on e.id = sl.entity_id
+        where sl.home_space_id = $1 and sl.target_space_id = $2 and e.deleted_at is null`,
+      [fixture.spaceA, fixture.spaceB]);
+    linkId = existing?.entity_id ?? (await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB })).id;
+  });
+
+  it('arm 1 — a credential: 239 refuses the generic delete (RPC and facade); 251\'s trigger is not in the frames', async () => {
+    const rpc = await rawDelete(await hClaims(), credentialId);
+    expect(rpc).toMatchObject({ code: '42501', message: 'entity lifecycle is command-owned for kind credential' });
+    expect((rpc as RawPgError).where ?? '').not.toContain('refuse_generic_link_lifecycle');
+    expect(await facadeDelete(credentialId)).toBe('forbidden');
+    expect(await deletedAt(credentialId)).toBeNull();
+  });
+
+  it('arm 2 — a space_link: 251\'s trigger refuses it inside delete_entity\'s UPDATE (both frames); the facade is forbidden', async () => {
+    const rpc = await rawDelete(await hClaims(), linkId);
+    expect(rpc).toMatchObject({ code: '42501', message: 'entity lifecycle is command-owned for kind space_link' });
+    expect((rpc as RawPgError).where ?? '').toContain('refuse_generic_link_lifecycle');
+    expect((rpc as RawPgError).where ?? '').toContain('delete_entity');
+    expect(await facadeDelete(linkId)).toBe('forbidden');
+    expect(await deletedAt(linkId)).toBeNull();
+  });
+
+  it('arm 3 — the merged TS gate names both kinds', () => {
+    expect(RESTRICTED_LIFECYCLE_KINDS.has('credential')).toBe(true);
+    expect(RESTRICTED_LIFECYCLE_KINDS.has('space_link')).toBe(true);
   });
 });

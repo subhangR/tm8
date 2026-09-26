@@ -240,6 +240,19 @@
 .cv2-root .shell-tabbar--r21 .shell-tabbar__zone--trail {
   justify-content: flex-end;
 }
+/* ONE ROW (owner, 2026-09-26: "move the Home/Work/Board strip to the left
+   and put this on the right — both collapse into a single row"). With the
+   status strip in the bar, the tabs stop centring and follow the switcher on
+   the left; the trail track takes every remaining pixel and right-aligns the
+   strip, the palette hint and the account menu. The strip still never clips —
+   the attention popover drops out of it — so it narrows by SHEDDING segments
+   on the ladder below, not by overflow. */
+.cv2-root .shell-tabbar--with-status {
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+.cv2-root .shell-tabbar--with-status .shell-tabbar__zone--centre {
+  justify-content: flex-start;
+}
 .cv2-root .shell-tabbar__tabs {
   display: flex;
   align-items: center;
@@ -483,6 +496,84 @@
   }
   .cv2-root .shell-tabbar--r21 .shell-tabbar__views-select {
     display: block;
+  }
+}
+
+/* THE ONE-ROW LADDER — only when the status strip rides in the bar.
+   
+   MEASURED in `tabbar-dev.tsx` (real segment component, the owner's screenshot
+   values): lead 166, tabs 501, palette 103, strip 716 = Attention 104 · CPU 73
+   · Mem 122 · Load 87 · Disk 76 · tm8 92 · Sessions 89 · Chats 72. With
+   padding and gaps the full row needs ~1613 CSS px; each threshold below is
+   the measured need of the state it leaves, plus ~25px of slack for a wider
+   account name or value ("10.9 / 16 GB" vs "9.1 / 16 GB").
+   
+   ORDER: host metrics leave first, in their `shed` order (tm8 RSS, disk, load,
+   memory, CPU) — each is one click away in the node's machine view. THEN the
+   bar's own rungs 3–6 fire, each earlier than on a strip-less bar by the
+   strip's remaining width, so the tabs fold before anything overlaps. Chats
+   and sessions go only after the views have folded; attention never goes. */
+@container tabbar (max-width: 1640px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-1 {
+    display: none;
+  }
+}
+@container tabbar (max-width: 1550px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-2 {
+    display: none;
+  }
+}
+@container tabbar (max-width: 1470px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-3 {
+    display: none;
+  }
+}
+@container tabbar (max-width: 1380px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-4 {
+    display: none;
+  }
+}
+/* Palette prose is already gone here (rung 1, ≤1240). */
+@container tabbar (max-width: 1190px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-5 {
+    display: none;
+  }
+}
+@container tabbar (max-width: 1110px) {
+  .cv2-root .shell-tabbar--with-status {
+    gap: 7px;
+  }
+  .cv2-root .shell-tabbar--with-status .shell-tabbar__tabs .shell-tabbar__tab {
+    padding: 2px 7px;
+  }
+}
+@container tabbar (max-width: 1060px) {
+  .cv2-root .shell-tabbar--with-status .shell-switcher__space,
+  .cv2-root .shell-tabbar--with-status .shell-switcher__caret {
+    display: none;
+  }
+}
+@container tabbar (max-width: 980px) {
+  .cv2-root .shell-tabbar--with-status .shell-tabbar__tab-glyph {
+    display: none;
+  }
+}
+@container tabbar (max-width: 910px) {
+  .cv2-root .shell-tabbar--with-status .shell-tabbar__views {
+    display: none;
+  }
+  .cv2-root .shell-tabbar--with-status .shell-tabbar__views-select {
+    display: block;
+  }
+}
+@container tabbar (max-width: 690px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-6 {
+    display: none;
+  }
+}
+@container tabbar (max-width: 610px) {
+  .cv2-root .shell-tabbar--with-status .status-strip__segment--shed-7 {
+    display: none;
   }
 }
 

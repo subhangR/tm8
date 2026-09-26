@@ -299,3 +299,27 @@ function record(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
+
+/** Failures that share their words and reason, folded to one errline with a
+ *  count (R6): eight identical `Resuming a session failed` make ONE line. */
+export interface FailureGroup {
+  first: StepView;
+  count: number;
+  /** Every failure in the group was retried on its own target (D13). */
+  retried: boolean;
+}
+
+export function foldFailures(failed: readonly StepView[]): FailureGroup[] {
+  const groups = new Map<string, FailureGroup>();
+  for (const view of failed) {
+    const key = `${view.words.active}\u0000${view.reason ?? ''}`;
+    const group = groups.get(key);
+    if (group) {
+      group.count += 1;
+      group.retried = group.retried && view.retried;
+    } else {
+      groups.set(key, { first: view, count: 1, retried: view.retried });
+    }
+  }
+  return [...groups.values()];
+}

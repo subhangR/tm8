@@ -19,6 +19,7 @@ import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
 import {
   buildStepLines,
   buildStepViews,
+  foldFailures,
   isStepTool,
   segmentTurn,
   summarizeRun,
@@ -241,6 +242,31 @@ export function TurnParts({
     return <DocEditLine key={`edit:${part.seq}`} docId={docId} title={title} onOpenEntity={onOpenEntity} />;
   };
 
+  /**
+   * THE TURN'S ONE FOLD (tool-call rules R2–R7, doc 01a0ddb5, signed off by
+   * Subhang). Every run of the turn answers to ONE header on its first run:
+   * - null ⇒ follow the turn: while it is live only the CURRENT run is open
+   *   (R4), and once it ends every run folds into the header (R2);
+   * - a press opens every run's list, or folds them all (R3).
+   * Failures never fold away: each keeps its errline at its run (R5 signed
+   * off as "never recovered", R6 folds identical ones, R7 holds by
+   * construction) and counts in the header's `· N failed`.
+   */
+  const [turnOpen, setTurnOpen] = useState<boolean | null>(null);
+  const runKeys = useMemo(
+    () => segments.flatMap((segment) => (segment.kind === 'run' ? [segment.key] : [])),
+    [segments],
+  );
+  const lastSegment = segments[segments.length - 1];
+  const currentRunKey = turnLive && lastSegment?.kind === 'run' ? lastSegment.key : null;
+  const turnSummary = useMemo(
+    () => summarizeRun(segments.flatMap((segment) => (segment.kind === 'run' ? segment.items : [])), views),
+    [segments, views],
+  );
+  // A turn whose only run is the one it is in reads as open; a press folds it.
+  const turnExpanded = turnOpen ?? (currentRunKey !== null && runKeys.length === 1);
+  const runOpen = (key: string): boolean => turnOpen ?? key === currentRunKey;
+
   const renderRun = (key: string, items: readonly RunItem[]) => {
     const steps = items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
     const failed = steps.flatMap((part) => {
@@ -248,16 +274,23 @@ export function TurnParts({
       return view?.state === 'error' ? [view] : [];
     });
     /* D15 §5: the run's outcomes first — its calls' ledger lines in seq
-       order, then any edit lines, then its failures (D13) — and the step
-       block last, so the live step is the last thing on screen. */
+       order, then any edit lines, then its failures (D13, folded per R6) —
+       and the step block last, so the live step is the last thing on screen. */
     return (
       <Fragment key={key}>
         {steps.map((part) => ledgerLines(part, views.get(part.seq)))}
         {steps.map((part) => docEdit(part, views.get(part.seq)))}
-        {failed.map((view) => <StepErrorLine key={`err:${view.seq}`} view={view} />)}
+        {foldFailures(failed).map((group) => (
+          <StepErrorLine key={`err:${group.first.seq}`} view={group.first} count={group.count} retried={group.retried} />
+        ))}
         <TurnSteps
           lines={buildStepLines(items, views)}
-          summary={summarizeRun(items, views)}
+          head={
+            key === runKeys[0]
+              ? { summary: turnSummary, expanded: turnExpanded, onToggle: () => setTurnOpen(!turnExpanded) }
+              : undefined
+          }
+          open={runOpen(key)}
           live={turnLive}
         />
       </Fragment>

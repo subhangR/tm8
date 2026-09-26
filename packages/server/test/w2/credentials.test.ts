@@ -1090,6 +1090,7 @@ describe('SC-4 — a space login is the same start, with a spaceCredential targe
     const stored = {
       id: CREDENTIAL, spaceId: SPACE, provider: 'anthropic' as const, shape: 'login' as const,
       label: 'Team Claude', isDefault: false, status: 'pending' as const, createdByAccountId: null,
+      ownerAccountId: null, visibility: 'public' as const, mayBeSpaceDefault: false,
       displayLogin: null, keyHint: null, pendingExpiresAt: '2026-09-24T00:00:00.000Z',
       createdAt: '2026-09-24T00:00:00.000Z', updatedAt: '2026-09-24T00:00:00.000Z',
       lastUsedAt: null, lastProbeAt: null,

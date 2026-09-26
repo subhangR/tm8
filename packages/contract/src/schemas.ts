@@ -54,7 +54,7 @@ import type {
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
   ContainerSurfaceSpec,
-  ContainersAttachInput, ContainersAttentionInput, ContainersBrowserEndpointInput,
+  ContainersAttachInput, ContainersBrowserEndpointInput,
   ContainersCreateInput, ContainersComputerInput, ContainersDestroyInput,
   ContainersExposeInput, ContainersForkInput, ContainersLifecycleInput,
   ContainersLogsResult, ContainersPolicySetInput, ContainersPoolsSetInput,
@@ -184,6 +184,8 @@ export const CoreEntityKindSchema = z.enum([
   'drawing',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
+  // Space credentials (W10a). Not creatable: credentials.space.* is its door.
+  'credential',
   // Space links (250/251, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
@@ -379,6 +381,16 @@ export const EffectiveSkillsSchema = z.object({
   native: z.array(SkillIndexEntrySchema), indexed: z.array(SkillIndexEntrySchema),
   skipped: z.array(z.object({ entityId: z.string(), name: z.string(), hash: z.string().optional(), sourcePath: z.string().optional(), reason: z.string() }).strict()),
   scannedAt: z.string().nullable(),
+}).strict();
+
+/** W10a: a credential entity's state and content share one allow-list. */
+const CredentialEntityFactsSchema = z.object({
+  kind: z.literal('credential'),
+  provider: z.string().min(1),
+  shape: z.string().min(1),
+  visibility: z.enum(['private', 'public']),
+  status: z.string().min(1),
+  ownerAccountId: z.string().nullable(),
 }).strict();
 
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
@@ -626,6 +638,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     status: FormStatusSchema,
     questionCount: z.number().int().nonnegative(),
   }).strict(),
+  // W10a — a space credential's row facts; never its secret, hint or login.
+  CredentialEntityFactsSchema,
   // 250 (W6) — space links carry no row facts on the entity; `spaceLinks.list`
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
@@ -1033,6 +1047,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     openedAt: z.string().nullable(),
     closedAt: z.string().nullable(),
   }).strict(),
+  // W10a — the same allow-list as its state, strict so a leaked field fails.
+  CredentialEntityFactsSchema,
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
@@ -2417,8 +2433,9 @@ export const CreatableEntityKindSchema = z.union([
   // `containers.create` — which supply a runtime binding a generic create
   // could not. A generic create would make a record with nothing behind it.
   // `form` likewise: `forms.create` writes its questions and requesting
-  // session in the same call (FORMS-DESIGN §6).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'space_link', 'server']),
+  // session in the same call (FORMS-DESIGN §6). `credential` is human-only
+  // and born under a SQL guard from credentials.space.* (W10a).
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server']),
   CustomEntityKindSchema,
 ]);
 
@@ -5197,14 +5214,6 @@ export const ContainersForkInputSchema: z.ZodType<ContainersForkInput> = z.objec
   lifecycle: ContainerLifecycleInputSchema.optional(),
   spec: ContainerSpecInputSchema.optional(),
 }).strict() as z.ZodType<ContainersForkInput>;
-
-export const ContainersAttentionInputSchema: z.ZodType<ContainersAttentionInput> = z.object({
-  ...commandContextShape,
-  clientMutationId: z.string().min(1),
-  reason: z.enum(['login', 'captcha', '2fa', 'payment', 'approval', 'other']),
-  detail: z.string().max(4096).optional(),
-  points: z.number().int().min(1).max(100).optional(),
-}).strict() as z.ZodType<ContainersAttentionInput>;
 
 export const ContainersPoolsSetInputSchema: z.ZodType<ContainersPoolsSetInput> = z.object({
   ...commandContextShape,

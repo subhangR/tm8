@@ -212,11 +212,13 @@ export type SpaceCredentialRefusalReason =
   | 'pending'
   | 'stale'
   | 'revoked'
-  | 'unreadable';
+  | 'unreadable'
+  /** Another member's private credential: never usable by this launcher (W10a). */
+  | 'not_usable';
 
 export type SpaceCredentialRepoint =
   | { ok: true; credentials: ReadonlyArray<{ provider: SpaceCredentialProvider; spaceCredentialId: string }> }
-  | { ok: false; reason: 'inactive' };
+  | { ok: false; reason: 'inactive' | 'not_usable' };
 
 export type SpaceCredentialRead =
   | { ok: true; grant: SpaceCredentialGrant }
@@ -240,12 +242,17 @@ export interface SpaceCredentialPort {
     provider: SpaceCredentialProvider,
     credentialId: string | null,
   ): Promise<SpaceCredentialRead>;
-  /** The subset of `credentialIds` that is active AND visible to the caller now. */
+  /**
+   * The subset of `credentialIds` that is active, in a space the caller still
+   * belongs to, and usable by the caller as launcher (public, space-owned, or
+   * the caller's own) now.
+   */
   activeIds(auth: GraphAuth, credentialIds: readonly string[]): Promise<ReadonlySet<string>>;
   /**
    * Resume (C3): the resumer becomes the recorded launcher of every space
    * credential the session holds, and the recorded rows come back. `inactive`
-   * means one of them is no longer active (206 refuses the re-point whole).
+   * means one of them is no longer active, `not_usable` that one is now
+   * another member's private credential (206 refuses the re-point whole).
    */
   repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint>;
 }

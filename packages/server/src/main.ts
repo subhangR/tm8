@@ -44,6 +44,7 @@ import { jevAdvisorForKey } from './jev/jev-adapter.js';
 import { createJevAdvisorResolver } from './jev/advisor.js';
 import type { SpaceCredentialProbe } from './credentials/space-credential-probe.js';
 import { DbServiceKeyStore } from './credentials/service-key-store.js';
+import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
@@ -427,6 +428,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       membership: {
         sockets: subscriptions,
         ...(execution ? { sessions: execution.spawnService } : {}),
+        // W10a T41b: a revoked member credential's login home, as delete removes it.
+        ...(credentials
+          ? { removeCredentialHome: (home: { spaceId: string; credentialId: string }) => new SpaceLoginHomes({ dataDir }).remove(home) }
+          : {}),
       },
       // W4: auth.sessions.revoke closes the revoked sessions' event sockets.
       sessionSockets: subscriptions,
