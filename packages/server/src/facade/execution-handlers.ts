@@ -259,26 +259,44 @@ function renderMemories(
  * it means that group's defaults.
  */
 export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
-  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds } =
+  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds, kinds } =
     await invalidSelectionIds(q, spaceId, selection);
-  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0 && badTeammateIds.length === 0) return;
-  const named = [
-    ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
-    ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
-    ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
-    ...(badTeammateIds.length ? [`teammateIds ${badTeammateIds.join(', ')}`] : []),
-  ].join('; ');
-  throw fail(
-    'invalid_input',
-    'selection names entities that are not live memories/skills/references '
-      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')})/teammates in this space: ${named}`,
-    {
-      invalidMemoryIds: badMemoryIds,
-      invalidSkillIds: badSkillIds,
-      invalidReferenceIds: badReferenceIds,
-      ...(badTeammateIds.length ? { invalidTeammateIds: badTeammateIds } : {}),
-    },
-  );
+  if (badMemoryIds.length > 0 || badSkillIds.length > 0 || badReferenceIds.length > 0) {
+    const named = [
+      ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
+      ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
+      ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
+    ].join('; ');
+    throw fail(
+      'invalid_input',
+      'selection names entities that are not live memories/skills/references '
+        + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
+      { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
+    );
+  }
+  assertTeammateIds(badTeammateIds, kinds);
+}
+
+/**
+ * `selection.teammateIds` refusals (ruling 01a0df8e-555c, aligned with the
+ * in-full rule): a readable entity that is not a teammate is `invalid_input`
+ * (`details.reason: 'teammate_kind_not_allowed'`); an id that does not exist
+ * or cannot be read is `not_found` — one answer for both, so existence is not
+ * leaked. Both name every such id in `details.ids`. A resume never refuses:
+ * it leaves them out as `unavailable` (`pruneReplayedSelection`).
+ */
+function assertTeammateIds(bad: readonly string[], kinds: ReadonlyMap<string, string>): void {
+  const wrongKind = bad.filter((id) => kinds.has(id));
+  if (wrongKind.length > 0) {
+    throw fail('invalid_input', `selection.teammateIds names entities that are not teammates: ${wrongKind.join(', ')}`, {
+      reason: 'teammate_kind_not_allowed',
+      ids: wrongKind,
+    });
+  }
+  const missing = bad.filter((id) => !kinds.has(id));
+  if (missing.length > 0) {
+    throw fail('not_found', `selection.teammateIds not found in this space: ${missing.join(', ')}`, { ids: missing });
+  }
 }
 
 /** Per group, the selected ids that are not live, readable entities of that group's kind in this space. */
@@ -794,9 +812,10 @@ export class DbGraphPort implements GraphPort {
             where tm.entity_id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
           [wanted, input.spaceId],
         )).map((row) => [row.entity_id, row]));
+        // Validated above; a teammate deleted since is `not_found`, as there.
         const missing = wanted.filter((id) => !found.has(id));
         if (missing.length > 0) {
-          throw fail('invalid_input', `selection.teammateIds not found in this space (or not teammates): ${missing.join(', ')}`);
+          throw fail('not_found', `selection.teammateIds not found in this space: ${missing.join(', ')}`, { ids: missing });
         }
         teammates = wanted.map((id) => {
           const row = found.get(id)!;

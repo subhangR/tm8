@@ -2011,7 +2011,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     manifest.context = { ...manifest.context, memoryIds: [] };
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
-    candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories }));
+    candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories, mode: launch.mode }));
     manifest.tasks = redactSecretsDeep(launchTaskSnapshots(manifest.tasks, context.references));
   }
   // Measure the real non-index prompt once, then account for the exact escaped

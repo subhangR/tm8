@@ -373,7 +373,9 @@ describe('candidates', () => {
 
 describe('skips, failures and no_key', () => {
   it('without a teammate, memories and skills are skipped: no_teammate; the rest still answer', async () => {
-    const result = await handlerFor(fakePort())(input({ teamMemberId: undefined }));
+    // rankForSuggestedTeammate false: Jev's top teammate does not rank the strip (Decision 7).
+    const result = await handlerFor(fakePort())(input({ teamMemberId: undefined, rankForSuggestedTeammate: false }));
+    expect(result.rankedForTeamMemberId).toBeNull();
     expect(result.groups.memories).toMatchObject({ status: 'skipped', reason: 'no_teammate', cost: { calls: 0 } });
     expect(result.groups.skills).toMatchObject({ status: 'skipped', reason: 'no_teammate' });
     expect(result.groups.teammates?.status).toBe('ok');
@@ -483,6 +485,79 @@ describe('cost records', () => {
     ))[0]!;
     expect(row.suggestions.skills!.requestId).toBe(second);
     expect(row.suggestions.memories!.requestId).not.toBe(second);
+  });
+});
+
+describe('Decision 7: the strip is ranked for Jev\'s top teammate', () => {
+  // Draco (ids.teammate) remembers mWorking and equips sEquipped; Lead (ids.parent) neither.
+  const dracoTop = (noun: string, candidate: JevCandidate): number =>
+    noun === 'teammate' ? (candidate.id === ids.teammate ? 3 : 0.5) : 2;
+
+  it('no fixed teammate: teammates answer first, then memories and skills rank for the top one', async () => {
+    const port = fakePort({ score: dracoTop });
+    const result = await handlerFor(port)(input({ teamMemberId: undefined }));
+    expect(result.rankedForTeamMemberId).toBe(ids.teammate);
+    const nouns = port.seen.map((row) => row.noun);
+    expect(nouns.indexOf('teammate')).toBeLessThan(nouns.indexOf('memory'));
+    expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toContain('teammate');
+    expect(items(result, 'skills').find((item) => item.entityId === ids.sEquipped)?.default).toBe(true);
+  });
+
+  it('rankForSuggestedTeammate overrides a teammate the card still holds by default', async () => {
+    const result = await handlerFor(fakePort({ score: dracoTop }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true }),
+    );
+    expect(result.rankedForTeamMemberId).toBe(ids.teammate);
+    expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toContain('teammate');
+  });
+
+  it('a fixed teammate (flag absent or false) ranks the strip for that teammate', async () => {
+    for (const flag of [undefined, false]) {
+      const result = await handlerFor(fakePort({ score: dracoTop }))(
+        input({ teamMemberId: ids.parent, ...(flag === undefined ? {} : { rankForSuggestedTeammate: flag }) }),
+      );
+      expect(result.rankedForTeamMemberId).toBe(ids.parent);
+      expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toEqual(['space']);
+    }
+  });
+
+  it('no teammate fits: the strip falls back to teamMemberId, else skips no_teammate', async () => {
+    const noFit = (noun: string): number => (noun === 'teammate' ? 0 : 2);
+    const fallback = await handlerFor(fakePort({ score: noFit }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true }),
+    );
+    expect(fallback.rankedForTeamMemberId).toBe(ids.parent);
+    const none = await handlerFor(fakePort({ score: noFit }))(input({ teamMemberId: undefined }));
+    expect(none.rankedForTeamMemberId).toBeNull();
+    expect(none.groups.memories).toMatchObject({ status: 'skipped', reason: 'no_teammate' });
+  });
+
+  it('without the teammates group the flag cannot apply: the strip ranks for teamMemberId', async () => {
+    const result = await handlerFor(fakePort({ score: dracoTop }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true, groups: ['memories'] }),
+    );
+    expect(result.rankedForTeamMemberId).toBe(ids.parent);
+  });
+
+  it('the strip uses the suggested teammate\'s profile for budgets and floors', async () => {
+    const seen: Array<string | null> = [];
+    const registry = new HandlerRegistry();
+    const deps = { db, config: {}, owner: async () => ({ identityId: OWNER, isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerJevHandlers(registry, deps, {
+      advisor: fakePort({ score: dracoTop }),
+      env: {},
+      resolveProfile: async (_claims, profileInput) => {
+        seen.push(profileInput.teamMemberId);
+        return profileInput.teamMemberId === ids.teammate ? { draft: { contextFloors: { memories: 0.5 } } } : null;
+      },
+    });
+    const result = await registry.get('launch.suggest')!({
+      params: { spaceId: ids.space }, query: new URLSearchParams(), body: input({ teamMemberId: undefined }), requestId: randomUUID(),
+      identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/',
+    } as unknown as RequestContext) as LaunchSuggestResult;
+    expect(seen).toEqual([null, ids.teammate]);
+    const memories = result.groups.memories;
+    expect(memories?.status === 'ok' ? memories.value.floor : null).toBe(0.5);
   });
 });
 

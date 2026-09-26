@@ -70,7 +70,7 @@ import {
   readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
-import { contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
+import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1453,6 +1453,7 @@ export class SpawnService {
     // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
+    applyDispatcherTeammates(context, launch.mode);
     if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
 
     const { sessionId, commandResult, replayed, createdTaskId } = await this.graph.createWorkSession(auth, {
@@ -2165,6 +2166,7 @@ export class SpawnService {
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
     // After the launch resolves, so a resumed dispatcher reads its roster by
     // the mode it runs in, exactly as its spawn did.
+    applyDispatcherTeammates(context, launch.mode);
     if (resumeIndex) await this.loadIndexHeaders(auth, context, launch.mode);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {

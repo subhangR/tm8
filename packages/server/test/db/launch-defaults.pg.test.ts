@@ -130,6 +130,7 @@ beforeAll(async () => {
     await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Upstream bug')`, [ids.linkedTask]);
     await edge(c, s, ids.task, ids.linkedTask, 'relates_to');
     await edge(c, s, ids.task, ids.parent, 'relates_to'); // a teammate: not a reference kind
+    await edge(c, s, ids.task, ids.teammate, 'relates_to'); // the launch teammate: never its own teammates default
 
     // A non-task subject with one open derived task.
     ids.note = await entity(c, s, 'doc');
@@ -189,13 +190,25 @@ describe('launch.defaults — spawn’s defaults, per group', () => {
     ]);
   });
 
+  it('teammates (Decision 7): the task’s linked teammates, the launch teammate excluded, with budget and floor', async () => {
+    const result = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! });
+    expect(result.teammates.items.map((i) => [i.entityId, i.kind, i.via, i.title])).toEqual([
+      [ids.parent, 'team_member', 'linked', 'Lead'],
+    ]);
+    expect(result.teammates).toMatchObject({ total: 1, budget: null, floor: 1 });
+    const asParent = await call({ teamMemberId: ids.parent!, subjectId: ids.task! });
+    expect(idsOf(asParent.teammates)).toEqual([ids.teammate]);
+    // No task: nothing links a teammate — a worker's usual empty group.
+    expect((await call({ teamMemberId: ids.teammate! })).teammates).toMatchObject({ items: [], total: 0 });
+  });
+
   it('PARITY: a spawn that removes every default records EXACTLY these ids as not-selected', async () => {
     const result = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! });
     const port = new DbGraphPort(db);
     const claims: DbClaims = { identityId: OWNER, nodeAdmin: false, requestId: randomUUID() };
     const context: SpawnContext = await port.loadSpawnContext(claims, {
       spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!],
-      selection: { memoryIds: [], skillIds: [], referenceIds: [] },
+      selection: { memoryIds: [], skillIds: [], referenceIds: [], teammateIds: [] },
     });
     const request = { spaceId: ids.space!, teamMemberId: ids.teammate! };
     const manifest = composeManifest({
@@ -206,6 +219,7 @@ describe('launch.defaults — spawn’s defaults, per group', () => {
       .filter((d) => d.group === group && d.reason === 'not-selected').map((d) => d.entityId);
     expect(dropped('memories')).toEqual(idsOf(result.memories));
     expect(dropped('references')).toEqual(idsOf(result.references));
+    expect(dropped('teammates')).toEqual(idsOf(result.teammates));
     expect((context.skippedSkills ?? []).filter((s) => s.reason === 'not-selected').map((s) => s.entityId))
       .toEqual(idsOf(result.skills));
   });

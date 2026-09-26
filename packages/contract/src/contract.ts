@@ -5281,9 +5281,15 @@ export interface SpawnSelection {
    * Teammates, same space (launch card v3, Decision 7): rendered as the
    * `teammates` group of `<context_index>` — the group a dispatcher uses for
    * its roster — budgeted by `contextBudgets.teammates`. Replaces the tasks'
-   * linked teammates (and a dispatcher's roster). Only `team_member`
-   * entities the caller can read; the launch teammate itself is removed
-   * silently, never refused.
+   * linked teammates. Only `team_member` entities the caller can read: a
+   * readable non-teammate is `invalid_input` (`details.reason:
+   * 'teammate_kind_not_allowed'`), a missing or unreadable id `not_found`,
+   * both naming the ids in `details.ids`; a resume leaves such an id out,
+   * recorded `unavailable` in the launch record, never refusing. The
+   * launch teammate itself is removed silently, never refused. IGNORED by a
+   * dispatcher launch, whose teammates group stays its full roster; the
+   * launch record says so (`manifest.context.groups.teammates.reason:
+   * 'dispatcher-roster'`, `ignored`).
    */
   teammateIds?: EntityId[];
 }

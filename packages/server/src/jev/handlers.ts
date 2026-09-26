@@ -8,8 +8,11 @@
  *      the candidates of each requested group — under RLS, so Jev is never
  *      shown what the caller cannot read.
  *   2. ASK, outside any transaction (a Jev call can take seconds and must not
- *      hold a connection): every requested group at once, `Promise.allSettled`.
- *      Groups are independent — one failing never touches another.
+ *      hold a connection): every requested group at once. Groups are
+ *      independent — one failing never touches another. The one ordering
+ *      (launch card v3, Decision 7): when the strip is ranked for Jev's own
+ *      top teammate, memories, skills and references are read and asked
+ *      once the teammates group has answered, for that teammate.
  *   3. RECORD, in the caller's transaction: the run's id-only suggestions, one
  *      `jev_calls` row per Jev call (failures included, `requestId` makes a
  *      retry free), and the run's running total, which is what `run` returns.
@@ -229,6 +232,10 @@ export function registerJevHandlers(
       skips: advisor && !head.text ? Object.fromEntries(input.groups.map((g) => [g, 'no_subject_text' as const])) : {},
       sets: head.teammates ? { teammates: head.teammates } : {},
     };
+    // A fixed teammate: the strip is read up front, and every group is asked at once.
+    const fixedPlan = !rankForSuggested && stripGroups.length > 0
+      ? await readStrip(input.teamMemberId ?? null, fixedRules.contextIndex, head.teammateTool)
+      : null;
     const headRuns = new Map<LaunchSuggestGroup, Promise<AnyGroupRun>>(input.groups
       .filter((group) => !STRIP_GROUPS.has(group))
       .map((group) => [group, settle(ask(group, headPlan, fixedRules.rules))]));
@@ -240,9 +247,9 @@ export function registerJevHandlers(
       if (top) rankedFor = top.entityId;
     }
     const stripRules = rankedFor === (input.teamMemberId ?? null) ? fixedRules : await rulesFor(rankedFor);
-    const stripPlan = stripGroups.length > 0
+    const stripPlan = fixedPlan ?? (stripGroups.length > 0
       ? await readStrip(rankedFor, stripRules.contextIndex, head.teammateTool)
-      : { skips: {}, sets: {} };
+      : { skips: {}, sets: {} });
     const stripRuns = new Map<LaunchSuggestGroup, Promise<AnyGroupRun>>(stripGroups
       .map((group) => [group, settle(ask(group, stripPlan, stripRules.rules))]));
     const runs = new Map<LaunchSuggestGroup, AnyGroupRun>();

@@ -392,12 +392,33 @@ export function rosterEntry(
   };
 }
 
+/**
+ * A DISPATCHER ignores `selection.teammateIds` (coordinator ruling, launch
+ * card v3 Decision 7): its teammates group stays the full space roster. The
+ * ignored set leaves the context, with its `not-selected` teammate drops, and
+ * the launch record says so (`groups.teammates.reason: 'dispatcher-roster'`,
+ * `ignored`). Every other mode keeps the exact set. Run once the launch's
+ * mode is known, before the roster read.
+ */
+export function applyDispatcherTeammates(context: SpawnContext, mode: string | null | undefined): void {
+  if (mode !== 'dispatcher' || !context.teammates) return;
+  const ignored = context.teammates.length;
+  delete context.teammates;
+  const audit = context.contextAudit;
+  if (audit) {
+    audit.dropped = audit.dropped.filter((drop) => !(drop.group === 'teammates' && drop.reason === 'not-selected'));
+    audit.teammatesIgnored = ignored;
+  }
+}
+
 export interface ContextIndexCandidatesInput {
   context: SpawnContext;
   /** The launch's memories as index entries (`collapsedMemoryEntry`), in rank order. */
   memories?: PromptContextEntry[];
   /** The skills the index may carry (after the native-shadow pass), in index order. */
   skills: readonly ManifestSkillContext[];
+  /** The launch's mode: a dispatcher never renders `context.teammates` (it keeps its roster). */
+  mode?: string | null;
 }
 
 /**
@@ -419,7 +440,9 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   const selected = context.references !== undefined;
   // Selected teammates (Decision 7) are the whole group, rendered with the
   // roster's columns; a task's linked teammate then enters only by selection.
-  const selectedTeammates = context.teammates;
+  // Never for a dispatcher: its teammates group is its roster
+  // (`applyDispatcherTeammates` has already dropped the set and recorded it).
+  const selectedTeammates = input.mode === 'dispatcher' ? undefined : context.teammates;
   for (const row of selectedTeammates ?? []) {
     if (row.entityId === self || seen.has(row.entityId)) continue;
     seen.add(row.entityId);

@@ -60,6 +60,12 @@ describe('LaunchSuggestInputSchema', () => {
     expect(LaunchSuggestInputSchema.safeParse({ ...suggest, clientMutationId: 'injected' }).success).toBe(true);
   });
 
+  it('takes rankForSuggestedTeammate as a boolean (Decision 7)', () => {
+    expect(LaunchSuggestInputSchema.safeParse({ ...suggest, rankForSuggestedTeammate: true }).success).toBe(true);
+    expect(LaunchSuggestInputSchema.safeParse({ ...suggest, rankForSuggestedTeammate: false }).success).toBe(true);
+    expect(LaunchSuggestInputSchema.safeParse({ ...suggest, rankForSuggestedTeammate: 'yes' }).success).toBe(false);
+  });
+
   it('is strict: an unknown key is refused, not ignored', () => {
     expect(LaunchSuggestInputSchema.safeParse({ ...suggest, model: 'opus' }).success).toBe(false);
     expect(LaunchSuggestInputSchema.safeParse({
@@ -144,6 +150,13 @@ describe('LaunchSuggestResultSchema', () => {
     run: { ...cost, calls: 3 },
   };
 
+  it('names the teammate the strip was ranked for: a uuid or null, never absent (Decision 7)', () => {
+    expect(LaunchSuggestResultSchema.safeParse({ ...result, rankedForTeamMemberId: uuid(77) }).success).toBe(true);
+    expect(LaunchSuggestResultSchema.safeParse({ ...result, rankedForTeamMemberId: 'tm-1' }).success).toBe(false);
+    const { rankedForTeamMemberId: _r, ...without } = result;
+    expect(LaunchSuggestResultSchema.safeParse(without).success).toBe(false);
+  });
+
   it('accepts every group status', () => {
     const parsed = LaunchSuggestResultSchema.safeParse(result);
     expect(parsed.success, JSON.stringify(parsed.success ? {} : parsed.error.issues)).toBe(true);
@@ -171,7 +184,7 @@ describe('LaunchSuggestResultSchema — the budget fill (design 01a0d348 §10 Q5
   const header = { whenToUse: null, summary: null, keywords: [], source: 'derived', version: 0 };
   const item = { entityId: uuid(40), kind: 'artifact', title: 'a', sources: ['space'], score: 1, level: 'background', suggested: false, default: false, promptBytes: 10, header };
   const group = (extra: Record<string, unknown>) => ({
-    runId: uuid(1), contextIndex: 'off', run: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 },
+    runId: uuid(1), contextIndex: 'off', rankedForTeamMemberId: null, run: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 },
     groups: { references: { status: 'ok', cost: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 }, value: { items: [{ ...item, ...extra }], considered: 1, total: 1, budget: null, floor: 1.5 } } },
   });
 
@@ -253,7 +266,13 @@ describe('ExecutionSpawnInputSchema — selection and jevRunId', () => {
 
   it('is strict inside selection and wants uuids', () => {
     expect(ExecutionSpawnInputSchema.safeParse({
-      ...spawn, selection: { ...selection, teammateIds: [] },
+      ...spawn, selection: { ...selection, agentIds: [] },
+    }).success).toBe(false);
+    // Decision 7: teammates are a selection group of their own, capped like the rest.
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, selection: { teammateIds: [uuid(60)] } }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...spawn, selection: { teammateIds: ['tm-1'] } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...spawn, selection: { teammateIds: Array.from({ length: SPAWN_SELECTION_GROUP_LIMIT + 1 }, (_, i) => uuid(1000 + i)) },
     }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
       ...spawn, selection: { memoryIds: ['m0'], skillIds: [] },

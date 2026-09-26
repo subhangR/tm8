@@ -186,6 +186,7 @@ export {
   indexDroppedOf,
   launchTaskSnapshots,
   referenceIndexEntry,
+  applyDispatcherTeammates,
   rosterEntry,
   skillIndexEntry,
   type ContextIndexSource,

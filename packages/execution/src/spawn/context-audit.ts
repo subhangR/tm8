@@ -328,7 +328,9 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     // its read are counted, as unread links are.
     teammates: context.teammates ? { mode: 'selected' } : {
       mode: 'default',
-      reason: 'not-selectable',
+      ...(audit?.teammatesIgnored !== undefined
+        ? { reason: 'dispatcher-roster' as const, ignored: audit.teammatesIgnored }
+        : { reason: 'not-selectable' as const }),
       ...(input.index && context.roster && context.roster.total > context.roster.members.length
         ? { unread: context.roster.total - context.roster.members.length }
         : {}),
