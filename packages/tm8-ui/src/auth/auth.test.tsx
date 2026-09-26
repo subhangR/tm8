@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 describe('the frame set matches the oracle', () => {
-  it('carries all 17 data-screen-labels, in the oracle DOM order', () => {
+  it('carries all 17 oracle data-screen-labels in DOM order, then the two mode frames', () => {
     // Oracle order is 1h → 1j → 1i and 1l → 1o → 1m: the file's DOM order, not
     // the alphabet. Asserting the ORDER (not just the set) is what makes this
     // a transcription check rather than a spelling check.
@@ -86,6 +86,8 @@ describe('the frame set matches the oracle', () => {
       '1h', '1j', '1i',
       '1k', '1l', '1o', '1m', '1n',
       '1p', '1q',
+      // Not oracle: node modes (doc 20 §5.3), appended after the transcription.
+      '1s', '1r',
     ]);
   });
 
@@ -98,7 +100,7 @@ describe('the frame set matches the oracle', () => {
 
 describe('every frame renders, in both themes', () => {
   for (const theme of ['light', 'dark'] as const) {
-    it(`renders all 17 frames under data-theme="${theme}"`, () => {
+    it(`renders all 19 frames under data-theme="${theme}"`, () => {
       for (const id of ALL_IDS()) {
         const { unmount } = render(<AuthFlow frame={id} theme={theme} onDone={() => {}} />);
         const root = document.querySelector('.cv2-root');
@@ -130,7 +132,7 @@ describe('THE HONESTY LAW — nothing here pretends to authenticate', () => {
    * why it is dead, which defeats the whole treatment.
    */
   const FRAMES_WITH_A_DEAD_VERB: AuthFrameId[] = [
-    '1a', '1b', '1c', '1d', '1e', '1f', '1g', '1h', '1k', '1l', '1m', '1n', '1p', '1q',
+    '1a', '1b', '1c', '1d', '1e', '1f', '1g', '1h', '1k', '1l', '1m', '1n', '1p', '1q', '1s', '1r',
   ];
 
   for (const id of FRAMES_WITH_A_DEAD_VERB) {
@@ -349,8 +351,8 @@ describe('the review board', () => {
     // Both themes present for every frame, not seventeen of one and none of
     // the other: "renders in both themes" is the claim, so count the scopes.
     const scopes = [...document.querySelectorAll('.authboard__viewport > .cv2-root')];
-    expect(scopes.filter((s) => s.getAttribute('data-theme') === 'light')).toHaveLength(17);
-    expect(scopes.filter((s) => s.getAttribute('data-theme') === 'dark')).toHaveLength(17);
+    expect(scopes.filter((s) => s.getAttribute('data-theme') === 'light')).toHaveLength(AUTH_FRAMES.length);
+    expect(scopes.filter((s) => s.getAttribute('data-theme') === 'dark')).toHaveLength(AUTH_FRAMES.length);
   });
 
   it('gives the overlay frames a backdrop and the full-stage frames none', () => {

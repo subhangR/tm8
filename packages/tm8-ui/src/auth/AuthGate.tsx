@@ -21,11 +21,12 @@
  * cannot render an enabled verb it has no executor for, because the enabled
  * branch requires a value that only the gate provides.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { NodeModeView } from '@tm8/contract';
 import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
-import { fetchNodeClaim, readCachedNodeClaim, type NodeClaim } from './session';
+import { fetchNodeClaim, needsModeChoice, readCachedNodeClaim, type NodeClaim } from './session';
 import type { AuthFrameId, AuthIdentity } from './types';
 
 /**
@@ -117,11 +118,31 @@ export function AuthGate({
   // before the loopback probe has said whether a card belongs at all.
   const [coldAtMount] = useState(() => readCachedNodeClaim() === null);
 
-  // Asked only while signed OUT. A signed-in viewer has already answered the
-  // question this read exists to ask, and firing it anyway would put a
-  // credential-free request on every authenticated page load.
+  // A mode switch that needs a restart holds the gate on 1r until dismissed.
+  const [restartNotice, setRestartNotice] = useState(false);
+
+  // Asked only while signed OUT — with one bounded exception. A signed-in
+  // viewer has already answered the question this read exists to ask, and
+  // firing it anyway would put a credential-free request on every
+  // authenticated page load. The exception is the first-run chooser (decision
+  // 34: it runs AFTER the claim, so it is a signed-in frame): when the cached
+  // answer says the node is claimed and has no mode yet, the live answer is
+  // asked once, so a mode chosen elsewhere does not re-open the chooser here.
   useEffect(() => {
-    if (session.status === 'signed-in') return;
+    if (session.status === 'signed-in') {
+      const cached = readCachedNodeClaim();
+      setNodeClaim(cached);
+      // Also asked once when this browser has NO answer at all, so the account
+      // menu's node-mode row has something to show after a cold sign-in.
+      if (cached && !needsModeChoice(cached)) return;
+      let live = true;
+      void fetchNodeClaim().then((claim) => {
+        if (live && claim) setNodeClaim(claim);
+      });
+      return () => {
+        live = false;
+      };
+    }
     let live = true;
     // Re-read the cache FIRST, synchronously within the effect. Claiming and
     // switching servers both change the answer, and the in-memory copy from
@@ -147,8 +168,27 @@ export function AuthGate({
     if (session.status === 'signed-in' && session.handle) onSignedIn?.(session.handle);
   }, [session.status, session.handle, onSignedIn]);
 
+  const chooseMode = useCallback(
+    async (mode: NodeModeView) => {
+      // Only the FIRST-RUN chooser hands over to 1r; the account menu's row
+      // shows the same notice inline and must not blank the app over it.
+      const fromChooser = needsModeChoice(nodeClaim);
+      const result = await session.chooseMode(mode);
+      if (result) {
+        // `setNodeMode` re-read the claim into the cache; the gate follows it.
+        setNodeClaim(readCachedNodeClaim());
+        if (result.restartRequired && fromChooser) setRestartNotice(true);
+      }
+      return result;
+    },
+    [session.chooseMode, nodeClaim],
+  );
+  const dismissModeNotice = useCallback(() => setRestartNotice(false), []);
+
   const actions = useMemo<AuthActions>(
     () => ({
+      chooseMode,
+      dismissModeNotice,
       createAccount: session.createAccount,
       claimNode: session.claimNode,
       nodeClaim,
@@ -159,8 +199,11 @@ export function AuthGate({
       busy: session.busy,
       account: session.account,
       accounts: session.accounts,
+      signedInWith: session.signedInWith,
     }),
     [
+      chooseMode,
+      dismissModeNotice,
       session.createAccount,
       session.claimNode,
       nodeClaim,
@@ -171,6 +214,7 @@ export function AuthGate({
       session.busy,
       session.account,
       session.accounts,
+      session.signedInWith,
     ],
   );
 
@@ -182,9 +226,30 @@ export function AuthGate({
   // missing gate from a gate that withheld its actions. The actions are a
   // property of the gate, not of one of its two states.
   if (session.status === 'signed-in') {
+    // THE FIRST-RUN CHOOSER, AFTER THE CLAIM (decision 34). Only the owner is
+    // asked — anyone else on a claimed, mode-less node gets the app — and a
+    // pinned node never asks, because no operation can move it. The restart
+    // notice follows a choice that needs one, until dismissed.
+    const modeFrame = restartNotice
+      ? '1r'
+      : !initialFrame && session.account?.isOwner && needsModeChoice(nodeClaim)
+        ? '1s'
+        : null;
     return (
       <AuthSessionContext.Provider value={session}>
-        <AuthActionsContext.Provider value={actions}>{children}</AuthActionsContext.Provider>
+        <AuthActionsContext.Provider value={actions}>
+          {modeFrame ? (
+            <AuthFlow
+              key={modeFrame}
+              frame={undefined}
+              initialFrame={modeFrame}
+              identity={session.serverIdentity}
+              onDone={() => {}}
+            />
+          ) : (
+            children
+          )}
+        </AuthActionsContext.Provider>
       </AuthSessionContext.Provider>
     );
   }

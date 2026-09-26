@@ -75,7 +75,11 @@ export interface W3PublicServer {
  * `bootstrap()`/`main()` composition, its public response stays the production
  * Server's honest 501 and the W3 gate catches the missing wiring.
  */
-export async function startW3PublicServer(label: string): Promise<W3PublicServer> {
+export async function startW3PublicServer(
+  label: string,
+  /** Extra server env, applied last (e.g. `TM8_NODE_MODE` to pin a mode). */
+  envOverrides: Readonly<Record<string, string>> = {},
+): Promise<W3PublicServer> {
   const database = await createW1ScratchDatabase(`w3_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-w3-'));
   let production: BootstrappedServer | undefined;
@@ -93,6 +97,7 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
       // the harness opts out so it keeps testing what it was written for. The
       // cookie gate itself is covered in test/db/cross-space-token.pg.test.ts.
       TM8_AUTO_OWNER_COOKIE: 'off',
+      ...envOverrides,
     });
     // `loadConfig` correctly rejects port 0 for operator input. Tests replace
     // the already-validated port afterward so the kernel assigns one isolated

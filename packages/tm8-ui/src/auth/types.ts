@@ -18,7 +18,8 @@ export type AuthFrameId =
   | '1d' | '1e' | '1f' | '1g'
   | '1h' | '1j' | '1i'
   | '1k' | '1l' | '1o' | '1m' | '1n'
-  | '1p' | '1q';
+  | '1p' | '1q'
+  | '1s' | '1r';
 
 export type AuthFlowName = 'first-run' | 'sign-in' | 'invite' | 'server' | 'account';
 

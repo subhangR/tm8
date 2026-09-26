@@ -48,6 +48,9 @@ You cannot miss this — the server says so at boot, in a box, after the listene
 is up:
 
 ```
+  node: personal (default, no mode chosen yet) · first run · unclaimed
+  First run. Claim this node below first; after the claim, run tm8 open and choose Personal, Peer or Server.
+
   ┌─ THIS NODE IS UNCLAIMED ─────────────────────────────────────────
   │  No account here has a password yet, so nobody can sign in.
   │  Claim it — from this machine or any other — at:
@@ -56,6 +59,7 @@ is up:
   │
   │  Also written to /Users/subhang/.tm8-dev/setup-token (0600).
   │  The token is single-use and is burned the moment it is claimed.
+  │  Claim once with the setup token, then run: tm8 open
   └──────────────────────────────────────────────────────────────────
 ```
 
@@ -66,7 +70,7 @@ tm8 auth claim status
 ```
 
 ```
-node: UNCLAIMED · mode single
+node: UNCLAIMED · mode personal (default)
 no account here has a password yet, so nobody can sign in
 claim it with the tm8c_… token from the Server's boot log or <dataDir>/setup-token:
   tm8 auth claim --token <tm8c_…> --username <you> --password <password>
@@ -112,6 +116,34 @@ PATH, it is `packages/cli/dist/tm8` in your clone.
 The browser does the same thing: from a loopback browser on a claimed node you
 land straight in the workspace — no card, no password. Verified on a running
 node, which answered with the Space open and the tab row live.
+
+### Then choose who else gets in
+
+Every node claims once, whatever its mode: the first line of every boot says
+which mode it runs in and why (`node: <mode> (from <source>)`). Right after the
+claim the app asks **“Who will use this node?”**:
+
+| Choice | Mode | Who is trusted |
+|---|---|---|
+| Just me | `personal` | the owner on this machine, nobody else |
+| Me and a few others | `peer` | the owner on this machine, a password for everyone else |
+| A shared server | `server` | everyone signs in, everywhere — this machine included |
+
+Change it later from the account menu (**This node**), or:
+
+```bash
+tm8 node mode                 # the mode, where it came from, and how to change it
+tm8 node mode set peer        # personal | peer | server
+```
+
+The choice is recorded in `<dataDir>/mode`. Moving **to or from `server`**
+needs a restart of the server to take effect; personal ↔ peer does not. Making
+a node *more* open (server → peer → personal) needs your password session: the
+passwordless loopback path can only tighten it. `TM8_NODE_MODE` in the server's
+environment pins the mode, and then neither the app nor `node mode set` can move
+it — `install.sh --systemd` pins `server`. The old values `single` and `multi`
+still work and mean `personal` and `server`; the boot line says they are
+deprecated.
 
 ---
 
