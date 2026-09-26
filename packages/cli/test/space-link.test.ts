@@ -8,13 +8,14 @@
  * positive. No secret is ever printed: the stub plants token-shaped values in
  * success and error bodies and the cells assert none reaches stdout or stderr.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createServer, type Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../src/run.js';
-import { REMOTE_LINK_HINT } from '../src/client.js';
+import { REMOTE_LINK_HINT, Tm8Client } from '../src/client.js';
 import { REDACTED, scrubSecrets, scrubText } from '../src/commands/link.js';
 import { ledger } from '../src/discovery/availability.js';
 
@@ -256,6 +257,81 @@ describe('tm8 --space <other> — only through spaceLinks.invoke on home', () =>
   });
 });
 
+describe('W7 review follow-ups (#887)', () => {
+  it('a multi-value query key through a link is refused before any request; paired one-value key rides the invoke', async () => {
+    const link = { homeSpaceId: HOME, linkId: LINK, targetSpaceId: TARGET };
+    const client = new Tm8Client({ baseUrl, token: undefined, timeoutMs: 5_000, fresh: true, link });
+
+    await expect(
+      client.invoke('entities.get', { params: { id: DOC }, query: { include: ['a', 'b'] } }),
+    ).rejects.toThrow(/carries one value per query key; --include was given 2/);
+    expect(paths()).toEqual([]);
+
+    const res = await client.invoke('entities.get', { params: { id: DOC }, query: { include: ['a'] } });
+    expect(res).toMatchObject({ id: DOC });
+    expect(paths()).toEqual([INVOKE]);
+    expect(recorded[0]!.body).toMatchObject({ op: 'entities.get', params: { id: DOC }, query: { include: 'a' } });
+  });
+
+  it('an auth.space.enter refusal through a link points at HOME, never at entering the linked Space; paired direct call keeps its hint', async () => {
+    const gate = () => fail(403, 'forbidden', 'this call needs a session pinned to the space (auth.space.enter)');
+    routes[INVOKE] = gate;
+    const linked = await tm8(['--space', 'bee', 'entity', 'get', DOC]);
+    expect(linked.code).not.toBe(0);
+    expect(paths()).toEqual([LIST, INVOKE]);
+    expect(linked.stderr).not.toContain(`auth space enter ${TARGET}`);
+    expect(linked.stderr).toContain(`do not enter the linked Space ${TARGET}`);
+    expect(linked.stderr).toContain(`tm8 auth space enter ${HOME}`);
+
+    // Pair: no session marker, so --space keeps its old meaning; the direct
+    // hint still names the Space the call went to.
+    delete process.env.TM8_SESSION_ID;
+    recorded = [];
+    routes[`GET /v2/entities/${DOC}`] = gate;
+    const direct = await tm8(['--space', TARGET, 'entity', 'get', DOC]);
+    expect(direct.code).not.toBe(0);
+    expect(paths()).toEqual([`GET /v2/entities/${DOC}`]);
+    expect(direct.stderr).toContain(`tm8 auth space enter ${TARGET}`);
+  });
+
+  it('every `new Tm8Client` in the CLI forwards ctx.link, except an exact allow-list of home-only clients', () => {
+    // A client that drops `link` would send a linked call straight to the
+    // server with the home pass, skipping home's refused set and audit.
+    const ALLOWED: Record<string, string> = {
+      // The link lookup itself is a home read and must not be routed.
+      'space-link-route.ts': 'spaceLinks.list on home, before the link exists',
+      // Reached only with --server, which routeThroughSpaceLink refuses when a
+      // link would be set (cell "--server with a linked --space").
+      'server-target.ts': 'registry read on home; --server and a link are exclusive',
+    };
+    const src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+    const files = (readdirSync(src, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'));
+    const seen = new Set<string>();
+    const dropped: string[] = [];
+    let forwarding = 0;
+    for (const file of files) {
+      const text = readFileSync(join(src, file), 'utf8');
+      for (const m of text.matchAll(/new Tm8Client\(\{/g)) {
+        let depth = 0;
+        let end = m.index + m[0].length - 1;
+        for (; end < text.length; end += 1) {
+          if (text[end] === '{') depth += 1;
+          else if (text[end] === '}' && (depth -= 1) === 0) break;
+        }
+        const args = text.slice(m.index, end + 1);
+        const rel = relative(src, join(src, file));
+        if (/\blink: ctx\.link\b/.test(args)) forwarding += 1;
+        else if (rel.split('/').pop()! in ALLOWED) seen.add(rel.split('/').pop()!);
+        else dropped.push(rel);
+      }
+    }
+    expect(dropped).toEqual([]);
+    // Exact: an allow-listed file that no longer builds a client is stale.
+    expect([...seen].sort()).toEqual(Object.keys(ALLOWED).sort());
+    expect(forwarding).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('tm8 link list|add|login|audit', () => {
   it('list reads home and renders the alias and target', async () => {
     const r = await tm8(['link', 'list']);
@@ -343,5 +419,22 @@ describe('tm8 link login|add never print a secret', () => {
     expect(scrubText('tm8 link login bee')).toBe('tm8 link login bee');
     expect(scrubText(`a ${PLANT_SESSION} b`)).toBe(`a ${REDACTED} b`);
     expect(scrubSecrets({ a: [{ b: PLANT_HEX }], n: 3, x: null })).toEqual({ a: [{ b: REDACTED }], n: 3, x: null });
+  });
+
+  it('long aliases and names are kept; a token of the same length is still redacted', () => {
+    const alias = 'my-research-space-for-the-quarterly-review';
+    const name = 'project_documentation_and_research_notes_2026';
+    expect(alias.length).toBeGreaterThanOrEqual(40);
+    expect(scrubText(`linked: ${alias} (${name})`)).toBe(`linked: ${alias} (${name})`);
+    // Pair: same length, token-shaped (mixed case, one long word) — redacted.
+    // Word-joined like a name, so only its case marks it as a token.
+    const token = 'Ab3' + 'xY9-kQ2_'.repeat(5) + 'Zz';
+    expect(token.length).toBeGreaterThanOrEqual(40);
+    expect(scrubText(`a ${token} b`)).toBe(`a ${REDACTED} b`);
+    // A lowercase run with no word breaks is not a name either.
+    expect(scrubText('a ' + 'q'.repeat(44) + ' b')).toBe(`a ${REDACTED} b`);
+    // Nor is one whose words are longer than any name's.
+    expect(scrubText('a ' + 'q'.repeat(30) + '-' + 'r'.repeat(15) + ' b')).toBe(`a ${REDACTED} b`);
+    for (const plant of PLANTS) expect(scrubText(plant)).toBe(REDACTED);
   });
 });

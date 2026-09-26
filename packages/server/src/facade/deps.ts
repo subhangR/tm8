@@ -10,6 +10,7 @@ import type { Db } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
 import type { LaunchCookieIssuer } from '../http/launch-cookie.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
+import type { RemoteInvokeForwarder } from '../remote/forwarder.js';
 
 export interface FacadeDeps {
   readonly db: Db;
@@ -22,4 +23,10 @@ export interface FacadeDeps {
    * through it; absent, it refuses.
    */
   readonly launchCookie?: LaunchCookieIssuer;
+  /**
+   * W8: forwards `spaceLinks.invoke` to a link whose target is on another
+   * server. W7 passes it into `SpaceLinkInvokeOptions.forwarder`. Today it
+   * refuses every call with `remote_links_disabled` (remote/forwarder.ts).
+   */
+  readonly remoteInvokeForwarder?: RemoteInvokeForwarder;
 }

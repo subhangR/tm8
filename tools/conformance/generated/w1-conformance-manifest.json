@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cc627719e184767c52c1d0a17c5001e00b789f07b5a162799b990943faf06f1d",
+  "catalogDigest": "sha256:61cdc78ba1aa992c3d436ca20307bdaba760bfbe4acc86daa059eae2814cde21",
   "catalog": {
-    "total": 272,
-    "v1": 270,
+    "total": 278,
+    "v1": 276,
     "reserved": 2,
-    "http": 270,
+    "http": 276,
     "ws": 1,
-    "registerableV1Http": 268,
+    "registerableV1Http": 274,
     "methods": {
-      "GET": 88,
-      "POST": 130,
+      "GET": 90,
+      "POST": 134,
       "PATCH": 17,
       "DELETE": 18,
       "PUT": 17,
       "WS": 2
     },
     "kinds": {
-      "read": 92,
-      "command": 178,
+      "read": 94,
+      "command": 182,
       "stream": 2
     },
-    "uniqueNames": 272,
-    "uniqueBindings": 271
+    "uniqueNames": 278,
+    "uniqueBindings": 277
   },
   "reservedOperations": [
     "search.query",
@@ -484,6 +484,48 @@
         "operation": "spaceLinks.audit",
         "method": "GET",
         "path": "/v2/space-links/:linkId/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/servers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.get",
+        "method": "GET",
+        "path": "/v2/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.add",
+        "method": "POST",
+        "path": "/v2/servers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.adopt",
+        "method": "POST",
+        "path": "/v2/servers/adopt",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.remove",
+        "method": "POST",
+        "path": "/v2/servers/:serverId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "servers.probe",
+        "method": "POST",
+        "path": "/v2/servers/:serverId/probe",
         "status": "registered",
         "source": "server-router"
       },
@@ -2308,7 +2350,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 240
+    "unimplementedV1Http": 246
   },
   "schemas": {
     "additive": {
@@ -3144,6 +3186,102 @@
           "space",
           "links",
           "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.list",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.list",
+        "intentTags": [
+          "servers",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.get",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.get",
+        "intentTags": [
+          "servers",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.add",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.add",
+        "intentTags": [
+          "servers",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.adopt",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.adopt",
+        "intentTags": [
+          "servers",
+          "adopt"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.remove",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.remove",
+        "intentTags": [
+          "servers",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "servers.probe",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/servers.probe",
+        "intentTags": [
+          "servers",
+          "probe"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -8003,7 +8141,7 @@
           "strategy": "universal-typed"
         },
         "capabilities": {
-          "profile": "static-no-authority",
+          "profile": "server-lifecycle",
           "genericCreate": false,
           "genericPatch": false,
           "genericMove": false,
@@ -8013,7 +8151,14 @@
           "messages": false,
           "reactions": false,
           "connections": false,
-          "lifecycleOperations": []
+          "lifecycleOperations": [
+            "servers.list",
+            "servers.get",
+            "servers.add",
+            "servers.adopt",
+            "servers.remove",
+            "servers.probe"
+          ]
         },
         "menu": {
           "strategy": "not-addressable"
