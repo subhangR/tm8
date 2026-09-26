@@ -256,6 +256,22 @@ export async function resolveBearerIdentity(db: Db, token: string): Promise<Reso
   return session;
 }
 
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Did THIS node ever issue the session id in `token` — live, revoked or
+ * expired? (NNN `auth_session_issued_here`.) The named-Server relay asks this
+ * of an `Authorization` that did not resolve, so a dead local token is never
+ * forwarded as a remote's pass. Only the session id reaches the database, never
+ * the secret. A token that does not parse, or whose id is not a uuid, cannot be
+ * one of ours: `false`.
+ */
+export async function sessionIssuedHere(db: Db, token: string): Promise<boolean> {
+  const sessionId = parseToken(token)?.sessionId;
+  if (!sessionId || !SESSION_ID.test(sessionId)) return false;
+  return (await db.rpc<boolean | null>({}, 'auth_session_issued_here', [sessionId])) === true;
+}
+
 export interface LoginInput {
   username: string;
   password: string;

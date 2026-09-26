@@ -105,6 +105,12 @@ export interface FacadeServerOptions {
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
   /**
+   * Did this node ever issue the session id in this token, in any state? The
+   * relay drops such an `Authorization` instead of forwarding it as a remote's
+   * pass (`resolveRelayCaller`, NNN).
+   */
+  readonly sessionIssuedHere?: (token: string) => Promise<boolean>;
+  /**
    * The artifact-preview renderer mounted same-origin (the default preview
    * deployment): every `/p/...` request is handed to it wholesale. It
    * authenticates by the capability token IN THE PATH and must never go
@@ -214,7 +220,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         void resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        }).then(
+        }, opts.sessionIssuedHere).then(
           (caller) => relay.handleUpgrade(req, socket, head, caller),
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
@@ -368,7 +374,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         const caller = await resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        });
+        }, opts.sessionIssuedHere);
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }

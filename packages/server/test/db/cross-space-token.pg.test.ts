@@ -977,24 +977,81 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     expect(seen).toBeDefined();
   });
 
+  async function expire(token: string): Promise<void> {
+    const sessionId = parseToken(token)?.sessionId;
+    if (!sessionId) throw new Error('minted token did not parse');
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.auth_sessions
+            set created_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+          where id = $1::uuid`,
+        [sessionId],
+      );
+    });
+  }
+
   /**
-   * DOCUMENTS A KNOWN GAP (review round 1, item 2). A LOCAL token that no
-   * longer resolves (revoked, expired) is indistinguishable here from a
-   * remote's pass: both are `tm8s_<uuid>.<secret>`, and `tm8_app` cannot read
-   * `auth_sessions` to ask "was this session id ever ours?" — that needs a new
-   * security-definer RPC, i.e. a migration, which this PR does not add. So
-   * next to a live cookie such a token is FORWARDED. It is dead on this node,
-   * so the remote cannot replay it here; the disclosure is of a spent secret.
-   * When the RPC lands, flip this cell to `false`.
+   * WAS A KNOWN GAP (review round 1, item 2), CLOSED BY migration NNN_auth_session_issued_here. A LOCAL token that
+   * no longer resolves (revoked, expired) has the same `tm8s_<uuid>.<secret>`
+   * shape as a remote's pass. The relay now asks `auth_session_issued_here`
+   * whether this node ever issued its session id, in any state; if it did, the
+   * token is ours and never leaves. Each cell is paired with a real remote pass
+   * on the same carrier, which is still forwarded.
    */
-  it('KNOWN GAP: a revoked LOCAL token beside H\'s cookie is forwarded as if it were a remote pass', async () => {
+  it('a revoked LOCAL token beside H\'s cookie is NOT forwarded', async () => {
     const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
     const dead = await mintCli(fixture.accountH, fixture.identityH);
     await revoke(dead);
     const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(dead) });
     expect(status).toBe(200);
-    expect(seen?.authorization === `Bearer ${dead}`).toBe(true);
+    // Booleans, not values: a failing assertion must never print a token.
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(dead)).toBe(false);
     expect(JSON.stringify(seen).includes(cookieToken)).toBe(false);
+  });
+
+  it('an expired LOCAL token beside H\'s cookie is NOT forwarded', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await expire(dead);
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(dead) });
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(dead)).toBe(false);
+  });
+
+  it('a LIVE LOCAL token that is not the cookie, beside H\'s cookie, is NOT forwarded', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const other = await mintCli(fixture.accountH, fixture.identityH);
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(other) });
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(other)).toBe(false);
+  });
+
+  it('auto-owner on, no cookie: a revoked LOCAL token is NOT forwarded', async () => {
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await revoke(dead);
+    const { status, seen } = await relay(bearer(dead), ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(dead)).toBe(false);
+  });
+
+  it('positive — auto-owner on, no cookie: a real remote pass IS forwarded', async () => {
+    const remotePass = 'tm8s_00000000-0000-0000-0000-000000000000.remote-pass-not-local';
+    const { status, seen } = await relay(bearer(remotePass), ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen?.authorization).toBe(`Bearer ${remotePass}`);
+  });
+
+  it('positive — a remote pass whose session id is not a uuid IS forwarded beside H\'s cookie', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const remotePass = 'tm8s_not-a-uuid.remote-pass-not-local';
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(remotePass) });
+    expect(status).toBe(200);
+    expect(seen?.authorization).toBe(`Bearer ${remotePass}`);
   });
 
   it('a revoked LOCAL token alone is refused 401 with auto-owner off, and nothing reaches the remote', async () => {
