@@ -1090,6 +1090,10 @@ export class DbGraphPort implements GraphPort {
     return formatToken(row.id, secret);
   }
 
+  async revokeWorkSessionAgentToken(auth: GraphAuth, sessionId: string): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.revoke_agent_auth_session', [sessionId]);
+  }
+
   async recordManifest(
     auth: GraphAuth,
     sessionId: string,

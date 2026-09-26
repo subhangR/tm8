@@ -54,6 +54,7 @@ import type {
   SessionLaunchPosture,
   ManifestSkillContext,
   SpawnContext,
+  SpaceCredentialPick,
   SpaceCredentialProvider,
   SpawnRequest,
   Tm8Manifest,
@@ -241,6 +242,12 @@ export interface ResolvedLaunchConfig {
   spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>>;
   /** D9: set by the spawn path once it has resolved auto; absent before that. */
   effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+  /**
+   * §6c: how the spawn path picked each space credential — a pin, the
+   * launcher's own default, or the space default. Set with the ids; 998's
+   * trigger stamps it onto `session_space_credentials.source`.
+   */
+  spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
   /**
    * Which harness surface a Claude lane boots with — see `harness-surface.ts`.
    * `minimal` strips the operator's MCP connectors, non-allowlisted plugins
@@ -1920,6 +1927,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       ...(launch.effectiveCredentialSources &&
       Object.keys(launch.effectiveCredentialSources).length > 0
         ? { effectiveCredentialSources: { ...launch.effectiveCredentialSources } }
+        : {}),
+      ...(launch.spaceCredentialPicks && Object.keys(launch.spaceCredentialPicks).length > 0
+        ? { spaceCredentialPicks: { ...launch.spaceCredentialPicks } }
         : {}),
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,

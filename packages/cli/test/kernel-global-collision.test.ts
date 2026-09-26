@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(245); /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
+    expect(rows.length).toBe(251); /* +6 credentials.space.* (W10b). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED.
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -435,6 +435,11 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // a question is required by default, so the flag a caller needs is the one
   // that turns it OFF, and it must name WHICH question.
   required: '`--optional <question-key>` (repeatable) on form create / form question add, and `--required true|false` on form question update (2026-09-24)',
+  // W10b: the credentials.space.* rows that carry these are commandless human
+  // settings rows (`cmd: null`), like allowNode above — no CLI flag to collide with.
+  spaceOwned: 'no CLI flag: credentials.space.create is a commandless human-settings row; the space credentials screen sets it (2026-09-26)',
+  mayBeSpaceDefault: 'no CLI flag: credentials.space.create is a commandless human-settings row (2026-09-26)',
+  allowed: 'no CLI flag: credentials.space.spaceDefaultConsent is a commandless human-settings row (2026-09-26)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 

@@ -438,7 +438,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rekey': {
     cmd: null,
-    sum: 'Replace a space credential\'s key — its creator or a space admin, human sessions only',
+    sum: 'Replace a space credential\'s key — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'rotate', 'settings'],
@@ -449,7 +449,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.setDefault': {
     cmd: null,
-    sum: 'Make a space credential its provider\'s default — its creator or a space admin, human sessions only',
+    sum: 'Make a space credential its provider\'s space default — an opted-in owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'default', 'settings'],
@@ -460,7 +460,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rename': {
     cmd: null,
-    sum: 'Rename a space credential — its creator or a space admin, human sessions only',
+    sum: 'Rename a space credential — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'settings'],
@@ -471,13 +471,79 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.delete': {
     cmd: null,
-    sum: 'Delete a space credential and kill every live session using it — its creator or a space admin, human sessions only',
+    sum: 'Delete a space credential and kill every live session using it — its owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'disconnect', 'settings'],
     reason: 'human_settings_only',
     notes: [
       'the row is revoked first; every live session and login terminal on it is then killed, whoever launched it',
+    ],
+  },
+  'credentials.space.setVisibility': {
+    cmd: null,
+    sum: 'Make a space credential private or public — its owner (a space admin for a space-owned one), human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'visibility', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'private clears both default flags and kills every live session its owner did not launch',
+    ],
+  },
+  'credentials.space.spaceDefaultConsent': {
+    cmd: null,
+    sum: 'Let (or stop) a public credential you own serving as the space default — its owner, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'withdrawing consent clears the space default flag in the same statement',
+    ],
+  },
+  'credentials.space.claim': {
+    cmd: null,
+    sum: 'Take ownership of a migrated space credential you created — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'only a pre-ownership row its creator never chose to leave space-owned can be claimed',
+    ],
+  },
+  'credentials.space.myDefault.set': {
+    cmd: null,
+    sum: 'Make a credential you own your own default for its provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'auto order: my default, then legacy member key, then space default, then node',
+    ],
+  },
+  'credentials.space.myDefault.clear': {
+    cmd: null,
+    sum: 'Clear your own default credential for a provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'idempotent',
+    ],
+  },
+  'credentials.space.usage': {
+    cmd: null,
+    sum: 'List the sessions launched on a space credential — its owner, or an admin for a public or space-owned one',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'audit', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'each row names the pick source, owner, root launcher and agent session',
     ],
   },
   'credentials.space.policy.get': {
@@ -3038,7 +3104,8 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35';
+  // Re-measured (W10b): + six credentials.space.* ops and narrowed summaries. Read from the failing digest test.
+  'sha256:056c74dca661f23db8016c3a9f8759bf7171a86c8723ac1175b7435753d01260';
 
 export const GRAMMAR_VERSION = '2';
 

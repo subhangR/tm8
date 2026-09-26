@@ -116,6 +116,7 @@ import type {
   SpawnRequest,
   SpawnResult,
   SpaceCredentialPort,
+  SpaceCredentialProvider,
   Tm8Manifest,
   TransitionInput,
   WorkSessionEndedKind,
@@ -715,8 +716,25 @@ export class SpawnService {
         `space credential ${gone.join(', ')} was deleted, disabled or made private while this ` +
           'session was starting, so it was stopped — launch again to use another credential',
         'conflict',
-        { sessionId, spaceCredentialIds: gone },
+        { sessionId, spaceCredentialIds: gone, reason: 'credential_not_usable' },
       );
+    }
+  }
+
+  /**
+   * R14: retire the agent token of a session that failed to spawn or resume.
+   * Best effort — the session is already failed and the token maps only to
+   * it — so a failure is logged by session id and the TTL is the backstop.
+   */
+  private async revokeAgentToken(auth: GraphAuth, sessionId: string): Promise<void> {
+    if (!this.graph.revokeWorkSessionAgentToken) return;
+    try {
+      await this.graph.revokeWorkSessionAgentToken(auth, sessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not revoke a failed session agent token', {
+        sessionId,
+        cause: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1132,10 +1150,21 @@ export class SpawnService {
     postureUnreadable: boolean,
   ): Promise<void> {
     if (!this.spaceCredentials) return;
-    if (resolved.spaceCredentialIds.length === 0 && !postureUnreadable) return;
+    const chosen = resolved.launch.spaceCredentialIds ?? {};
     let repoint;
     try {
-      repoint = await this.spaceCredentials.repointSession(auth, sessionId);
+      // R13: a readable posture names exactly the providers this resume runs
+      // on a space credential, so rows for any other provider — a run that
+      // was on the space and now resolves to a member or node key — are
+      // dropped rather than left naming the old launcher. An unreadable
+      // posture drops nothing: its recorded rows are what refuses below.
+      repoint = postureUnreadable
+        ? await this.spaceCredentials.repointSession(auth, sessionId)
+        : await this.spaceCredentials.repointSession(
+            auth,
+            sessionId,
+            Object.keys(chosen) as SpaceCredentialProvider[],
+          );
     } catch (error) {
       throw new SpawnError(
         'could not re-point the space credentials this session runs on to you, so the resume ' +
@@ -1152,7 +1181,6 @@ export class SpawnService {
         { sessionId, reason: repoint.reason },
       );
     }
-    const chosen = resolved.launch.spaceCredentialIds ?? {};
     const recorded = new Map(repoint.credentials.map((c) => [c.provider, c.spaceCredentialId]));
     const agrees =
       recorded.size === Object.keys(chosen).length &&
@@ -1478,6 +1506,7 @@ export class SpawnService {
       };
     }
 
+    let agentTokenIssued = false;
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
@@ -1526,6 +1555,7 @@ export class SpawnService {
         sessionId,
         request.teamMemberId,
       );
+      agentTokenIssued = true;
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -1794,6 +1824,8 @@ export class SpawnService {
       }
       // The session is dead; its space key must not outlive it on disk.
       await this.scrubSpaceSecrets(sessionId);
+      // R14: nor its agent token in auth_sessions.
+      if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -2227,6 +2259,7 @@ export class SpawnService {
       };
     }
 
+    let agentTokenIssued = false;
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
@@ -2319,6 +2352,7 @@ export class SpawnService {
         sessionId,
         info.teamMemberId,
       );
+      agentTokenIssued = true;
 
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
@@ -2457,7 +2491,11 @@ export class SpawnService {
       await this.failSession(auth, sessionId, error, bootExit);
       if (launchedPty) this.pty.kill(sessionId);
       // A PTY this resume merely FOUND is healthy and still reads its key.
-      if (!this.pty.hasSession(sessionId)) await this.scrubSpaceSecrets(sessionId);
+      if (!this.pty.hasSession(sessionId)) {
+        await this.scrubSpaceSecrets(sessionId);
+        // R14: the re-minted agent token of a resume that never ran.
+        if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
+      }
       this.sessionAuth.delete(sessionId);
       throw error;
     }

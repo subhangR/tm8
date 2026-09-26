@@ -497,6 +497,12 @@ export const OPERATIONS = [
   { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1' },
+  { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
