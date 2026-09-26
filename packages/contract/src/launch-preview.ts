@@ -37,6 +37,16 @@ export interface LaunchPreviewItem {
   bytes: number;
 }
 
+/** An index entry the budget dropped whole. */
+export interface LaunchPreviewIndexDropped extends LaunchPreviewItem {
+  /**
+   * The entry is one of the task's own links, so its id line stays in
+   * `<linked>` (only its name leaves the index); false: it is gone from the
+   * prompt entirely.
+   */
+  stillLinked: boolean;
+}
+
 export interface LaunchPreviewSection {
   key: LaunchPreviewSectionKey;
   /** UTF-8 bytes of the whole section as rendered, frame included. */
@@ -78,7 +88,7 @@ export interface LaunchPreviewResult {
   /** The title row: the subject's `<task>` plus the in-full extras, against `inFullBudgetBytes`. */
   inFull: { budgetBytes: number; bytes: number };
   /** Index entries dropped to fit what the cap left, lowest-ranked first. */
-  indexDropped: LaunchPreviewItem[];
+  indexDropped: LaunchPreviewIndexDropped[];
   leftOut: LaunchPreviewLeftOut[];
   /** Set when spawn would refuse this launch; the sections are then what could be measured. */
   refusal: LaunchPreviewRefusal | null;

@@ -25,6 +25,7 @@ import {
   type LaunchPreviewSection,
 } from '@tm8/contract';
 import {
+  indexDroppedOf,
   SpawnError,
   type SpawnContext,
   type SpawnPreview,
@@ -253,14 +254,18 @@ function resultOf(preview: SpawnPreview, input: LaunchPreviewInput, titles: Titl
   });
   sections.sort((a, b) => LAUNCH_PREVIEW_SECTION_KEYS.indexOf(a.key) - LAUNCH_PREVIEW_SECTION_KEYS.indexOf(b.key));
 
-  // What the index fit dropped whole, measured as the candidate would have rendered.
+  // What the index fit dropped whole (`indexDroppedOf`, lane A's rule),
+  // measured as the candidate would have rendered. A dropped task link keeps
+  // its `<linked>` id line.
   const candidates = new Map((preview.index?.candidates ?? []).flatMap((group) => group.entries.map((entry) => [entry.id, entry] as const)));
-  const indexDropped = (preview.index?.fit.drops ?? [])
-    .filter((drop) => drop.level === 'entry')
-    .map((drop) => {
-      const entry = candidates.get(drop.id);
-      return item(drop.id, drop.kind, entry ? contextEntryBytes(entry) : 0, entry?.header?.name);
-    });
+  const linkedIds = new Set(manifest.tasks.flatMap((task) => (task.linked ?? []).map((link) => link.entityId)));
+  const indexDropped = (preview.index ? indexDroppedOf(preview.index.fit) : []).map((drop) => {
+    const entry = candidates.get(drop.id);
+    return {
+      ...item(drop.id, drop.kind, entry ? contextEntryBytes(entry) : 0, entry?.header?.name),
+      stillLinked: linkedIds.has(drop.id),
+    };
+  });
 
   const jev = new Set(input.jevRemovedIds ?? []);
   const leftOut: LaunchPreviewLeftOut[] = [];
