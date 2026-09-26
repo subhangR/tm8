@@ -48,65 +48,135 @@ describe('one identity path (R2 / claims contract)', () => {
   describe('the guarded auto-owner arm', () => {
     const cookieOk = () => true;
     const noCookie = () => false;
+    // What the tm8 CLI's transport sends (Node v22 global fetch, measured
+    // 2026-09-26): a loopback Host, `sec-fetch-mode: cors`, nothing else.
+    const cli = { host: '127.0.0.1:17777', 'sec-fetch-mode': 'cors' } as const;
+    // A browser at the node's own UI: same Host, plus the fetch metadata.
+    const browser = { ...cli, 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': 'empty' } as const;
+    const peer = (autoOwnerCookie: 'off' | (() => boolean), method = 'GET') => ({
+      remoteAddress: '127.0.0.1', disableAutoOwner: false, autoOwnerCookie, method,
+    });
 
     it('keeps the bare loopback single-machine path when the cookie is off (pre-W2 rule)', async () => {
-      expect(await autoOwnerResolver({}, {
-        remoteAddress: '127.0.0.1',
-        disableAutoOwner: false,
-        autoOwnerCookie: 'off',
-      })).toEqual({ kind: 'auto-owner' });
+      expect(await autoOwnerResolver(browser, peer('off'))).toEqual({ kind: 'auto-owner', autoOwnerVia: 'browser' });
     });
 
-    it('T12 (W2): a bare loopback peer WITHOUT the launch cookie is anonymous', async () => {
-      expect(await autoOwnerResolver({}, {
-        remoteAddress: '127.0.0.1',
-        disableAutoOwner: false,
-        autoOwnerCookie: noCookie,
-      })).toEqual({ kind: 'anonymous' });
+    it('T12 (W2): a loopback BROWSER without the launch cookie is anonymous', async () => {
+      expect(await autoOwnerResolver(browser, peer(noCookie))).toEqual({ kind: 'anonymous' });
     });
 
-    it('T12 positive (W2): the same peer WITH a valid launch cookie is the auto-owner', async () => {
-      expect(await autoOwnerResolver({}, {
-        remoteAddress: '127.0.0.1',
-        disableAutoOwner: false,
-        autoOwnerCookie: cookieOk,
-      })).toEqual({ kind: 'auto-owner' });
+    it('T12 positive (W2): the same browser WITH a valid launch cookie is the auto-owner, via browser', async () => {
+      expect(await autoOwnerResolver(browser, peer(cookieOk))).toEqual({ kind: 'auto-owner', autoOwnerVia: 'browser' });
+    });
+
+    it('L1: a token-less CLI request (Node fetch, sec-fetch-mode: cors) is the owner with no cookie, via local', async () => {
+      expect(await autoOwnerResolver(cli, peer(noCookie))).toEqual({ kind: 'auto-owner', autoOwnerVia: 'local' });
+      // Bun sends no sec-fetch-* at all: the same.
+      expect(await autoOwnerResolver({ host: 'localhost:17777' }, peer(noCookie)))
+        .toEqual({ kind: 'auto-owner', autoOwnerVia: 'local' });
+      expect(await autoOwnerResolver({ host: '[::1]:17777' }, peer(noCookie)))
+        .toEqual({ kind: 'auto-owner', autoOwnerVia: 'local' });
+    });
+
+    it('L1: ANY one browser marker makes the same CLI request need the cookie (fail closed)', async () => {
+      for (const marker of [
+        { 'sec-fetch-mode': 'navigate' },
+        { 'sec-fetch-mode': ' NAVIGATE ' },
+        { 'sec-fetch-site': 'cross-site' },
+        { 'sec-fetch-dest': 'document' },
+        { origin: 'http://127.0.0.1:17777' },
+        { origin: 'null' },
+        { cookie: 'unrelated=1' },
+      ]) {
+        const headers = { ...cli, ...marker };
+        expect(await autoOwnerResolver(headers, peer(noCookie)), JSON.stringify(marker)).toEqual({ kind: 'anonymous' });
+        // Pair: the marker routes to the browser arm, which the cookie opens.
+        expect(await autoOwnerResolver(headers, peer(cookieOk)), JSON.stringify(marker))
+          .toEqual({ kind: 'auto-owner', autoOwnerVia: 'browser' });
+      }
+    });
+
+    it('L1: a Sec-Fetch-Mode that is not navigate is not a marker', async () => {
+      for (const mode of ['cors', 'no-cors', 'same-origin', 'websocket']) {
+        expect(await autoOwnerResolver({ ...cli, 'sec-fetch-mode': mode }, peer(noCookie)), mode)
+          .toEqual({ kind: 'auto-owner', autoOwnerVia: 'local' });
+      }
+    });
+
+    it('L1: the local arm needs a loopback Host LITERAL (DNS rebinding); absent Host is refused too', async () => {
+      for (const host of ['evil.example:17777', 'evil.example', 'tm8.internal', '127.0.0.2:17777', undefined]) {
+        const headers = host === undefined ? { 'sec-fetch-mode': 'cors' } : { ...cli, host };
+        expect(await autoOwnerResolver(headers, peer(noCookie)), String(host)).toEqual({ kind: 'anonymous' });
+      }
+      // Pair: each loopback literal, any port or none.
+      for (const host of ['127.0.0.1', 'LOCALHOST:1', '[::1]']) {
+        expect(await autoOwnerResolver({ ...cli, host }, peer(noCookie)), host)
+          .toEqual({ kind: 'auto-owner', autoOwnerVia: 'local' });
+      }
+    });
+
+    it('L1 CSRF: a markerless POST shaped like a cross-site simple write is refused; the CLI shapes are the owner', async () => {
+      for (const type of ['text/plain', 'Text/Plain; charset=utf-8', 'application/x-www-form-urlencoded',
+        'multipart/form-data; boundary=x', '']) {
+        expect(await autoOwnerResolver({ ...cli, 'content-type': type, 'content-length': '2' }, peer(noCookie, 'POST')), type)
+          .toEqual({ kind: 'anonymous' });
+      }
+      // A body with no content type at all (a Blob body) is simple too.
+      expect(await autoOwnerResolver({ ...cli, 'content-length': '2' }, peer(noCookie, 'POST'))).toEqual({ kind: 'anonymous' });
+      expect(await autoOwnerResolver({ ...cli, 'transfer-encoding': 'chunked' }, peer(noCookie, 'POST'))).toEqual({ kind: 'anonymous' });
+      // An unknown method fails closed as a POST.
+      expect(await autoOwnerResolver({ ...cli, 'content-type': 'text/plain' }, { ...peer(noCookie), method: undefined }))
+        .toEqual({ kind: 'anonymous' });
+      // Pairs: the JSON POST, the bodyless POST, and the octet-stream upload PUT the CLI sends.
+      const local = { kind: 'auto-owner', autoOwnerVia: 'local' };
+      expect(await autoOwnerResolver({ ...cli, 'content-type': 'application/json', 'content-length': '2' }, peer(noCookie, 'POST'))).toEqual(local);
+      expect(await autoOwnerResolver({ ...cli, 'content-length': '0' }, peer(noCookie, 'POST'))).toEqual(local);
+      expect(await autoOwnerResolver(cli, peer(noCookie, 'POST'))).toEqual(local);
+      expect(await autoOwnerResolver({ ...cli, 'content-type': 'application/octet-stream', 'content-length': '2' }, peer(noCookie, 'PUT'))).toEqual(local);
+      // PUT is never CORS-simple, so its content type is not the rule's business.
+      expect(await autoOwnerResolver({ ...cli, 'content-type': 'text/plain', 'content-length': '2' }, peer(noCookie, 'PUT'))).toEqual(local);
     });
 
     it('fails closed: a context with no cookie rule at all is anonymous', async () => {
-      expect(await autoOwnerResolver({}, {
+      expect(await autoOwnerResolver(browser, {
         remoteAddress: '127.0.0.1',
         disableAutoOwner: false,
       } as unknown as Parameters<typeof autoOwnerResolver>[1])).toEqual({ kind: 'anonymous' });
     });
 
-    it('treats a loopback proxy hop as anonymous when any forwarding evidence exists — cookie or not (T13)', async () => {
+    it('treats a loopback proxy hop as anonymous when any forwarding evidence exists — cookie or not, browser or CLI (T13)', async () => {
       for (const header of ['x-forwarded-for', 'X-Forwarded-Host', 'x-real-ip', 'Forwarded']) {
         for (const autoOwnerCookie of ['off', cookieOk] as const) {
-          expect(await autoOwnerResolver({ [header]: '' }, {
-            remoteAddress: '::ffff:127.0.0.1',
-            disableAutoOwner: false,
-            autoOwnerCookie,
-          })).toEqual({ kind: 'anonymous' });
+          for (const base of [browser, cli]) {
+            expect(await autoOwnerResolver({ ...base, [header]: '' }, {
+              remoteAddress: '::ffff:127.0.0.1',
+              disableAutoOwner: false,
+              autoOwnerCookie,
+            })).toEqual({ kind: 'anonymous' });
+          }
         }
       }
     });
 
-    it('the kill switch disables auto-owner even for a bare loopback peer holding the cookie', async () => {
-      expect(await autoOwnerResolver({}, {
-        remoteAddress: '::1',
-        disableAutoOwner: true,
-        autoOwnerCookie: cookieOk,
-      })).toEqual({ kind: 'anonymous' });
-    });
-
-    it('unknown and non-loopback peers never auto-own, cookie or not', async () => {
-      for (const remoteAddress of [undefined, '10.0.0.8']) {
-        expect(await autoOwnerResolver({}, {
-          remoteAddress,
-          disableAutoOwner: false,
+    it('the kill switch disables auto-owner even for a loopback peer holding the cookie, or a CLI', async () => {
+      for (const base of [browser, cli]) {
+        expect(await autoOwnerResolver(base, {
+          remoteAddress: '::1',
+          disableAutoOwner: true,
           autoOwnerCookie: cookieOk,
         })).toEqual({ kind: 'anonymous' });
+      }
+    });
+
+    it('unknown and non-loopback peers never auto-own, cookie or not, browser or CLI', async () => {
+      for (const remoteAddress of [undefined, '10.0.0.8']) {
+        for (const base of [browser, cli]) {
+          expect(await autoOwnerResolver(base, {
+            remoteAddress,
+            disableAutoOwner: false,
+            autoOwnerCookie: cookieOk,
+          })).toEqual({ kind: 'anonymous' });
+        }
       }
     });
   });

@@ -87,23 +87,24 @@ export function createSessionIdentityResolver(
     const fallback = await autoOwnerResolver(headers, context);
     if (fallback.kind === 'anonymous') return fallback;
     const resolved = await owner();
-    // The auto-owner is the person at the node's own UI — a browser session
-    // in everything but the token. It is never an agent: an agent always
-    // arrives with a bearer credential on the branch above. The auto-owner
-    // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
-    // kind here would duplicate that control in the wrong file and break
-    // local development for no gain. Since W2 the arm also needs the launch
-    // cookie (`autoOwnerResolver`), which is what keeps an agent's bare
-    // `curl 127.0.0.1` out of this branch.
+    // The auto-owner is the person at the node's own machine — at its UI, or
+    // at its shell. It is never an agent BY CREDENTIAL: an agent arrives with
+    // a bearer on the branch above. The arm's exposure is gated by
+    // TM8_DISABLE_AUTO_OWNER; refusing it a kind here would duplicate that
+    // control in the wrong file.
     //
-    // W2: the owner's claims pin to the space the request PATH names, so an
-    // owner request under /v2/spaces/:spaceId/... obeys the same pinned
-    // policies an agent's does. `claimsFor` binds it; `off` pins nothing.
+    // W2 x L1: a BROWSER owner (launch cookie) is pinned to the space its
+    // request PATH names, so under /v2/spaces/:spaceId/... it obeys the same
+    // pinned policies an agent's session does; `claimsFor` binds it and `off`
+    // pins nothing. A LOCAL-process owner (the CLI with no token) is the owner
+    // exactly as before W2: unpinned.
+    const via = fallback.autoOwnerVia ?? 'browser';
     return {
       kind: 'auto-owner',
       identityId: resolved.identityId,
       authKind: 'browser',
-      ...(spaceSessions !== 'off' ? { pinToPathSpace: true } : {}),
+      autoOwnerVia: via,
+      ...(spaceSessions !== 'off' && via === 'browser' ? { pinToPathSpace: true } : {}),
     };
   };
 }
@@ -169,6 +170,7 @@ export function createSocketIdentityResolver(
       remoteAddress: req.socket.remoteAddress,
       disableAutoOwner,
       autoOwnerCookie,
+      method: req.method,
     });
     if (identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');

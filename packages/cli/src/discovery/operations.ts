@@ -339,7 +339,7 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
     notes: [
-      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (which now also needs the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (a local process, no token; a browser would also need the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
@@ -353,9 +353,9 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['open', 'launch', 'browser', 'cookie', 'no-login', 'owner', 'single-player'],
     notes: [
-      'the node owner\'s own human session only (`tm8 auth login`): an agent token is refused, so an agent never sees the URL',
-      'the URL works once, for a few minutes, and only from a browser on the node\'s own machine (loopback, no forwarding headers); it sets an HttpOnly cookie the no-login owner path requires',
-      'nothing is written to the CLI credentials file; set TM8_AUTO_OWNER_COOKIE=off to restore the pre-cookie loopback behaviour',
+      'the node owner only: a local process with no token (the loopback owner), or the owner\'s own human session (`tm8 auth login`); an agent token is refused, so an agent that uses its token never sees the URL',
+      'the URL works once, for a few minutes, and only from a browser on the node\'s own machine (loopback, no forwarding headers); it sets the HttpOnly cookie a browser needs to be the no-login owner (a local process with no token needs none)',
+      'nothing is written to the CLI credentials file; set TM8_AUTO_OWNER_COOKIE=off to let a loopback browser be the owner without the cookie, as before',
       '`tm8 open` is the root shorthand for the same command',
     ],
   },
@@ -3338,7 +3338,8 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  'sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b';
+  // Re-measured (plan W2, rebased onto main 55b5d3e5): + auth.launch on top of W10d. Read from the regenerated conformance manifest.
+  'sha256:60e8e43f447ca05ce812eb26492cc97c7a10d16a787cec62cf41a782b6c84b1f';
 
 export const GRAMMAR_VERSION = '2';
 

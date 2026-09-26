@@ -19,7 +19,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
-import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
+import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -1379,16 +1379,26 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
   });
 
   /**
-   * F1 / W2 — FLIPPED BY W2 (task 01a0d9fd, TM8_AUTO_OWNER_COOKIE=required).
-   * Loopback peer, single mode, auto-owner arm on, no token, no
-   * X-Forwarded-For. Before W2 this was 200: the node-wide loopback rule made
-   * the request the node owner. Now the arm also needs the launch cookie, so
-   * a local process with no credential is anonymous and the relay refuses it.
+   * F1 / W2 — FLIPPED BY W2 (task 01a0d9fd, TM8_AUTO_OWNER_COOKIE=required),
+   * then SPLIT BY L1 (owner form 01a0df1e). Loopback peer, single mode,
+   * auto-owner arm on, no token, no X-Forwarded-For. Before W2 this was 200:
+   * the node-wide loopback rule made the request the node owner. W2 made the
+   * arm need the launch cookie; L1 keeps that for a BROWSER only, so a
+   * browser-shaped request with no cookie is anonymous and the relay refuses
+   * it, while a local process with no browser marker is the owner as on main.
    */
-  it('F1/W2: loopback, single mode, no token, no cookie, no X-Forwarded-For — refused 401, nothing reaches the remote', async () => {
+  it('F1/W2: loopback BROWSER (fetch metadata), no token, no cookie, no X-Forwarded-For — refused 401, nothing reaches the remote', async () => {
+    for (const marker of [{ 'sec-fetch-site': 'same-origin' }, { origin: ownerRelayServer.url.replace(/\/$/, '') }]) {
+      const { status, seen } = await relay(marker, ownerRelayServer);
+      expect(status, JSON.stringify(marker)).toBe(401);
+      expect(seen).toBeUndefined();
+    }
+  });
+
+  it('L1 pair — the same request from a local process (no browser marker) is the owner, as on main: it reaches the connection', async () => {
     const { status, seen } = await relay({}, ownerRelayServer);
-    expect(status).toBe(401);
-    expect(seen).toBeUndefined();
+    expect(status).toBe(200);
+    expect(seen).toBeDefined();
   });
 
   it('F1/W2 positive — the same loopback request WITH the launch cookie `tm8 open` set reaches the connection', async () => {
@@ -1629,8 +1639,12 @@ describe('T12 local process, no token, no cookie — anonymous (W2)', () => {
     return response.status;
   }
 
-  it('no token, no cookie, loopback, no forwarding header: /v2/spaces/A/members is 401', async () => {
-    expect(await membersOfA({})).toBe(401);
+  it('a BROWSER (fetch metadata), no token, no cookie, loopback, no forwarding header: /v2/spaces/A/members is 401', async () => {
+    expect(await membersOfA({ 'sec-fetch-site': 'same-origin' })).toBe(401);
+  });
+
+  it('L1 pair — the same request from a local process (no browser marker) is the owner, exactly as on main: 200', async () => {
+    expect(await membersOfA({})).toBe(200);
   });
 
   it('positive — the same request with the launch cookie is the owner: 200', async () => {
@@ -1689,10 +1703,21 @@ describe('T12 local process, no token, no cookie — anonymous (W2)', () => {
     expect(minted.url).toBeNull();
   });
 
-  it('auth.launch: no credential is refused 401', async () => {
+  it('L1: `tm8 open` with NO stored token (a local process) gets a URL, and the browser that opens it lands signed in', async () => {
     const minted = await mintLaunch(node.url, null);
-    expect(minted.status).toBe(401);
-    expect(minted.url).toBeNull();
+    expect(minted.status).toBe(200);
+    const redeemed = await redeemLaunch(minted.url!);
+    expect(redeemed.status).toBe(303);
+    expect(await membersOfA({ cookie: redeemed.cookie!, 'sec-fetch-site': 'same-origin' })).toBe(200);
+  });
+
+  it('L1 pair — auth.launch with no credential from a BROWSER (Origin, no cookie) is refused 401', async () => {
+    const response = await fetch(new URL('/v2/auth/launch', node.url), {
+      method: 'POST',
+      headers: { [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE, origin: new URL(node.url).origin },
+    });
+    await response.arrayBuffer();
+    expect(response.status).toBe(401);
   });
 
   it('auth.launch: H2 (browser, a member but NOT the owner) is refused 403', async () => {
@@ -1761,75 +1786,6 @@ describe('T13 no token + X-Forwarded-For — anonymous, cookie or not (W2)', () 
   });
 });
 
-describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (980)', () => {
-  // The NewSpaceProjectDialog path, over HTTP, as the launch-cookie owner:
-  // spaces.create, projects.create with spaceId, the (now idempotent)
-  // projects.link, then the pinned list. Under the plan W2 path pin the link
-  // and the list run pinned to the new space.
-  let node: BootstrappedServer;
-  let restoreOwner: () => Promise<void>;
-  let cookie: { cookie: string };
-
-  beforeAll(async () => {
-    restoreOwner = await withNodeOwner(fixture.accountH);
-    node = await startSingleNode({});
-    cookie = await launchCookieVia(node.url, await mintCliToken(fixture.accountH, fixture.identityH));
-  }, 180_000);
-
-  afterAll(async () => {
-    await node?.server.close();
-    await node?.db?.end();
-    await restoreOwner?.();
-  }, 180_000);
-
-  async function call(method: string, path: string, body?: unknown): Promise<{ status: number; data: unknown }> {
-    const response = await fetch(new URL(path, node.url), {
-      method,
-      headers: {
-        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
-        ...cookie,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify({ clientMutationId: `a3-${randomUUID()}`, ...body as object }) }),
-    });
-    const parsed = (await response.json().catch(() => ({}))) as { data?: unknown };
-    return { status: response.status, data: parsed.data };
-  }
-
-  async function newSpace(name: string): Promise<string> {
-    const created = await call('POST', '/v2/spaces', { name, visibility: 'private' });
-    expect(created.status).toBe(201);
-    return (created.data as { space: { id: string } }).space.id;
-  }
-
-  async function listed(spaceId: string, projectId: string): Promise<boolean> {
-    const list = await call('GET', `/v2/spaces/${spaceId}/projects`);
-    expect(list.status).toBe(200);
-    return JSON.stringify(list.data).includes(projectId);
-  }
-
-  it('create with spaceId, link, list: the pinned GET under the new space lists the project', async () => {
-    const spaceId = await newSpace('A3 dialog space');
-    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-born-'));
-    const created = await call('POST', '/v2/projects', { name: 'A3 born linked', workingDir, spaceId });
-    expect(created.status).toBe(201);
-    const projectId = (created.data as { id: string }).id;
-    const link = await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId });
-    expect(link.status).toBe(200);
-    expect(await listed(spaceId, projectId)).toBe(true);
-  });
-
-  it('pair — without spaceId the pinned link cannot see the new project: 404, and the list omits it', async () => {
-    const spaceId = await newSpace('A3 unlinked space');
-    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-plain-'));
-    const created = await call('POST', '/v2/projects', { name: 'A3 space-less', workingDir });
-    expect(created.status).toBe(201);
-    const projectId = (created.data as { id: string }).id;
-    expect((await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId })).status).toBe(404);
-    expect(await listed(spaceId, projectId)).toBe(false);
-  });
-});
-
 describe('a4 auto-owner under /v2/spaces/:spaceId pins session_space_id to the path (W2)', () => {
   /** H as the node owner, NOT a node admin, so the membership arm is what answers. */
   const ownerH = (): LoopbackOwner => ({
@@ -1841,9 +1797,15 @@ describe('a4 auto-owner under /v2/spaces/:spaceId pins session_space_id to the p
   });
 
   /** The production resolver over a loopback peer holding a valid cookie, then `claimsFor`. */
-  async function autoOwnerClaims(params: Record<string, string>, mode: SpaceSessionsMode = 'agents'): Promise<DbClaims> {
+  const LOCAL = { host: '127.0.0.1:17777', 'sec-fetch-mode': 'cors' };
+  const BROWSER = { ...LOCAL, 'sec-fetch-site': 'same-origin' };
+  async function autoOwnerClaims(
+    params: Record<string, string>,
+    mode: SpaceSessionsMode = 'agents',
+    via: 'browser' | 'local' = 'browser',
+  ): Promise<DbClaims> {
     const resolve = createSessionIdentityResolver({ db, owner: async () => ownerH(), spaceSessions: mode });
-    const identity = await resolve({}, {
+    const identity = await resolve(via === 'browser' ? BROWSER : LOCAL, {
       remoteAddress: '127.0.0.1',
       disableAutoOwner: false,
       autoOwnerCookie: () => true,
@@ -1900,6 +1862,16 @@ describe('a4 auto-owner under /v2/spaces/:spaceId pins session_space_id to the p
     const claims = await autoOwnerClaims({ spaceId: fixture.spaceA }, 'off');
     expect(claims.sessionSpaceId).toBeUndefined();
     expect((await db.tx(claims, (q) => idsIn(q, fixture.spaceB))).length).toBeGreaterThan(0);
+  });
+
+  it('L1: the LOCAL-process owner (no browser marker) is NOT pinned under /v2/spaces/A: blank pin, {A, B}', async () => {
+    for (const mode of ['agents', 'enforce'] as const) {
+      const claims = await autoOwnerClaims({ spaceId: fixture.spaceA }, mode, 'local');
+      expect(claims.sessionSpaceId, mode).toBeUndefined();
+      const [row] = await db.tx(claims, (q) => q.query<Row>(READ));
+      expect(row!.pin === null || row!.pin === '', mode).toBe(true);
+      expect(row!.spaces, mode).toEqual(sorted([fixture.spaceA, fixture.spaceB]));
+    }
   });
 
   it('enforce: pinned exactly as under agents', async () => {
@@ -4633,5 +4605,188 @@ describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
 
   it('positive — H\'s link session on the same link still resolves in B', async () => {
     expect(await outcome(() => asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
+  });
+});
+
+// A3 (ii) and L1 run LAST: they create spaces as H, and every describe above
+// asserts H's exact space set.
+describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (980)', () => {
+  // The NewSpaceProjectDialog path, over HTTP, as the launch-cookie owner:
+  // spaces.create, projects.create with spaceId, the (now idempotent)
+  // projects.link, then the pinned list. Under the plan W2 path pin the link
+  // and the list run pinned to the new space.
+  let node: BootstrappedServer;
+  let restoreOwner: () => Promise<void>;
+  let cookie: { cookie: string };
+
+  beforeAll(async () => {
+    restoreOwner = await withNodeOwner(fixture.accountH);
+    node = await startSingleNode({});
+    cookie = await launchCookieVia(node.url, await mintCliToken(fixture.accountH, fixture.identityH));
+  }, 180_000);
+
+  afterAll(async () => {
+    await node?.server.close();
+    await node?.db?.end();
+    await restoreOwner?.();
+  }, 180_000);
+
+  async function call(method: string, path: string, body?: unknown): Promise<{ status: number; data: unknown }> {
+    const response = await fetch(new URL(path, node.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...cookie,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify({ clientMutationId: `a3-${randomUUID()}`, ...body as object }) }),
+    });
+    const parsed = (await response.json().catch(() => ({}))) as { data?: unknown };
+    return { status: response.status, data: parsed.data };
+  }
+
+  async function newSpace(name: string): Promise<string> {
+    const created = await call('POST', '/v2/spaces', { name, visibility: 'private' });
+    expect(created.status).toBe(201);
+    return (created.data as { space: { id: string } }).space.id;
+  }
+
+  async function listed(spaceId: string, projectId: string): Promise<boolean> {
+    const list = await call('GET', `/v2/spaces/${spaceId}/projects`);
+    expect(list.status).toBe(200);
+    return JSON.stringify(list.data).includes(projectId);
+  }
+
+  it('create with spaceId, link, list: the pinned GET under the new space lists the project', async () => {
+    const spaceId = await newSpace('A3 dialog space');
+    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-born-'));
+    const created = await call('POST', '/v2/projects', { name: 'A3 born linked', workingDir, spaceId });
+    expect(created.status).toBe(201);
+    const projectId = (created.data as { id: string }).id;
+    const link = await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId });
+    expect(link.status).toBe(200);
+    expect(await listed(spaceId, projectId)).toBe(true);
+  });
+
+  it('pair — without spaceId the pinned link cannot see the new project: 404, and the list omits it', async () => {
+    const spaceId = await newSpace('A3 unlinked space');
+    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-a3-plain-'));
+    const created = await call('POST', '/v2/projects', { name: 'A3 space-less', workingDir });
+    expect(created.status).toBe(201);
+    const projectId = (created.data as { id: string }).id;
+    expect((await call('POST', `/v2/spaces/${spaceId}/projects`, { projectId })).status).toBe(404);
+    expect(await listed(spaceId, projectId)).toBe(false);
+  });
+});
+
+/**
+ * Plan W2 x L1 (owner form 01a0df1e; lead ruling (A)+CSRF) — local access over
+ * HTTP. The launch cookie is for BROWSERS only: a request with no browser
+ * marker from a loopback peer, with a loopback Host literal, is the owner
+ * exactly as on main — unpinned. `node:http` is used where Node's fetch will
+ * not send the header under test (it forces `sec-fetch-mode: cors` and owns
+ * Host). Every refusal is paired with the owner shape it is one header from.
+ */
+describe('L1 local access — a loopback process is the owner; a browser needs the cookie (W2)', () => {
+  let node: BootstrappedServer;
+  let restoreOwner: () => Promise<void>;
+  let port: number;
+
+  beforeAll(async () => {
+    restoreOwner = await withNodeOwner(fixture.accountH);
+    node = await startSingleNode({});
+    port = Number(new URL(node.url).port);
+  }, 180_000);
+
+  afterAll(async () => {
+    await node?.server.close();
+    await node?.db?.end();
+    await restoreOwner?.();
+  }, 180_000);
+
+  /** One raw request: exactly these headers (plus Node's Host unless given), nothing added. */
+  function raw(method: string, path: string, headers: Record<string, string>, body?: string): Promise<{ status: number; text: string }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port, method, path, headers: {
+        ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }),
+        ...headers,
+      } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }));
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  const membersOfA = (headers: Record<string, string>) => raw('GET', `/v2/spaces/${fixture.spaceA}/members`, headers);
+  /** The Node-fetch CLI shape, measured: Host + sec-fetch-mode: cors, nothing else. */
+  const CLI = (): Record<string, string> => ({ host: `127.0.0.1:${port}`, 'sec-fetch-mode': 'cors' });
+
+  it('a Node-fetch CLI request (sec-fetch-mode: cors), no token, no cookie, is the owner: 200', async () => {
+    expect((await membersOfA(CLI())).status).toBe(200);
+    // And through Node's real fetch, headers untouched.
+    const response = await fetch(new URL(`/v2/spaces/${fixture.spaceA}/members`, node.url));
+    await response.arrayBuffer();
+    expect(response.status).toBe(200);
+  });
+
+  it('Bun shape (no sec-fetch-* at all) is the owner: 200; localhost and [::1] Host literals too', async () => {
+    expect((await membersOfA({ host: `127.0.0.1:${port}` })).status).toBe(200);
+    expect((await membersOfA({ host: `localhost:${port}` })).status).toBe(200);
+    expect((await membersOfA({ host: `[::1]:${port}` })).status).toBe(200);
+  });
+
+  it('the same request with sec-fetch-mode: navigate is refused 401', async () => {
+    expect((await membersOfA({ ...CLI(), 'sec-fetch-mode': 'navigate' })).status).toBe(401);
+  });
+
+  it('Sec-Fetch-Site alone is refused 401', async () => {
+    expect((await membersOfA({ host: `127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin' })).status).toBe(401);
+  });
+
+  it('Origin alone is refused 401', async () => {
+    expect((await membersOfA({ host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` })).status).toBe(401);
+  });
+
+  it('a non-loopback Host (DNS rebinding) is refused, by the Host allowlist or the L1 literal rule', async () => {
+    const response = await membersOfA({ ...CLI(), host: `rebind.example:${port}` });
+    expect([401, 403, 421]).toContain(response.status);
+    expect(response.status).not.toBe(200);
+  });
+
+  it('a text/plain POST with no markers is refused 401; the JSON POST is the owner (201)', async () => {
+    const body = JSON.stringify({ clientMutationId: `l1-${randomUUID()}`, name: 'L1 csrf', visibility: 'private' });
+    const plain = await raw('POST', '/v2/spaces', { ...CLI(), 'content-type': 'text/plain' }, body);
+    expect(plain.status).toBe(401);
+    const form = await raw('POST', '/v2/spaces', { ...CLI(), 'content-type': 'application/x-www-form-urlencoded' }, body);
+    expect(form.status).toBe(401);
+    const json = await raw('POST', '/v2/spaces', { ...CLI(), 'content-type': 'application/json' }, body);
+    expect(json.status).toBe(201);
+  });
+
+  it('the token-less CLI owner is UNPINNED: it links a space-less project under /v2/spaces/:id (200)', async () => {
+    const json = { ...CLI(), 'content-type': 'application/json' };
+    const space = await raw('POST', '/v2/spaces', json,
+      JSON.stringify({ clientMutationId: `l1-${randomUUID()}`, name: 'L1 link space', visibility: 'private' }));
+    expect(space.status).toBe(201);
+    const spaceId = (JSON.parse(space.text) as { data: { space: { id: string } } }).data.space.id;
+    const workingDir = await mkdtemp(join(tmpdir(), 'tm8-l1-link-'));
+    const project = await raw('POST', '/v2/projects', json,
+      JSON.stringify({ clientMutationId: `l1-${randomUUID()}`, name: 'L1 space-less', workingDir }));
+    expect(project.status).toBe(201);
+    const projectId = (JSON.parse(project.text) as { data: { id: string } }).data.id;
+    // Pair: A3 (ii) above shows the pinned BROWSER owner gets 404 on this same link.
+    const link = await raw('POST', `/v2/spaces/${spaceId}/projects`, json,
+      JSON.stringify({ clientMutationId: `l1-${randomUUID()}`, projectId }));
+    expect(link.status).toBe(200);
+  });
+
+  it('an agent token is never the owner, even from loopback with no marker: auth.launch 403', async () => {
+    const minted = await mintLaunch(node.url, await mintAgent());
+    expect(minted.status).toBe(403);
+    // Pair: the same request without the token is the owner.
+    expect((await mintLaunch(node.url, null)).status).toBe(200);
   });
 });

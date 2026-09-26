@@ -205,6 +205,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     remoteAddress: req.socket.remoteAddress,
     disableAutoOwner: config.disableAutoOwner === true,
     autoOwnerCookie,
+    method: req.method,
   });
   // `undefined` means "build the default"; `null` means "explicitly none".
   // Defaulting to ON is the point: a limiter you have to remember to enable is

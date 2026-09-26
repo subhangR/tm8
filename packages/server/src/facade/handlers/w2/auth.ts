@@ -483,10 +483,10 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
  * An ordinary restart REPRINTS the live token (node-claim-boot.ts) rather than
  * rotating it, so this is the deliberate act §3.1 leans on.
  *
- * Since W2 the auto-owner arm also needs the launch cookie
- * (`TM8_AUTO_OWNER_COOKIE=required`), so a bare `curl` on the host no longer
- * reaches this: the browser `tm8 open` launched does, and an unclaimed node
- * with the cookie off (`TM8_AUTO_OWNER_COOKIE=off`) behaves as before.
+ * Since W2 (L1, owner form 01a0df1e) a BROWSER on the host needs the launch
+ * cookie (`TM8_AUTO_OWNER_COOKIE=required`) to reach this; a local process
+ * with no token (a bare `curl`, the CLI) is the loopback owner and reaches it
+ * exactly as before W2. A browser `tm8 open` launched reaches it too.
  */
 function authClaimReissue(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {

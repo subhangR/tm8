@@ -174,6 +174,7 @@ async function listen(options: { disableAutoOwner?: boolean } = {}): Promise<{
           disableAutoOwner: options.disableAutoOwner ?? true,
           // The legacy-shape cell below needs the pre-W2 peer-only arm.
           autoOwnerCookie: 'off',
+          method: req.method,
         });
         if (await route(req, res, { requestId, identity })) return;
         res.writeHead(404).end();

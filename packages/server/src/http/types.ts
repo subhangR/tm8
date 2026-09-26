@@ -85,6 +85,12 @@ export interface RequestIdentity {
    * resolver while `TM8_SPACE_SESSIONS` is not `off`; read by `claimsFor`.
    */
   pinToPathSpace?: boolean;
+  /**
+   * `auto-owner` only (plan W2 x L1). Which side of the arm admitted it: a
+   * `browser` (a marker, and the launch cookie) or a `local` process (no
+   * marker, a loopback Host literal). Only a browser is pinned to its path.
+   */
+  autoOwnerVia?: 'browser' | 'local';
 }
 
 /**
@@ -205,6 +211,12 @@ export interface IdentityResolutionContext {
    * silently fall back to the pre-W2 rule.
    */
   readonly autoOwnerCookie: 'off' | ((headers: IncomingHttpHeaders) => boolean);
+  /**
+   * The request method (plan W2 x L1): the cookie-less LOCAL owner refuses a
+   * POST shaped like a cross-site simple write (`looksLikeSimpleCrossSiteWrite`).
+   * Absent fails closed: an unknown method is treated as a POST.
+   */
+  readonly method?: string;
 }
 
 /**

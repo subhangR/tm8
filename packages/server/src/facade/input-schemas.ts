@@ -484,7 +484,8 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // CommandContext to bind.
   'auth.sessions.revoke',
   // W2: auth.launch is body-less for the same reason — who the caller is (the
-  // owner's human session) is its whole authorization, and it is auth.*.
+  // node owner: the loopback owner or its human session) is its whole
+  // authorization, and it is auth.*.
   'auth.launch',
   // containers (177): the ONE container command with no zod body, and it is
   // the first clause above rather than a gap. `containers.files.put` carries a

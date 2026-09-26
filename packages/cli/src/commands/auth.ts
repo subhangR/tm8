@@ -552,8 +552,9 @@ async function authClaimReissue(cmd: CommandContext): Promise<ExitCode> {
  * `tm8 open` (= `tm8 auth open`) — print a one-time URL that signs THIS machine's browser in as the
  * node owner, with no password (plan W2, `auth.launch`).
  *
- * The Server mints it only for the owner's own human session (`tm8 auth login`);
- * an agent's token is refused. The URL is printed to the terminal and nowhere
+ * The Server mints it only for the node owner: a local process with no token
+ * (the loopback owner, plan W2 L1) or the owner's own human session
+ * (`tm8 auth login`); an agent's token is refused. The URL is printed to the terminal and nowhere
  * else: nothing is written to the credentials file, and the cookie it sets
  * lives only in the browser that opens it.
  */

@@ -4,9 +4,11 @@
  * With `TM8_AUTO_OWNER_COOKIE=required` (the default), nobody can hold the
  * launch cookie before the node is claimed: `auth.launch` needs the owner's
  * human session, and the owner has no credential yet. So the loopback owner
- * arm is closed on an unclaimed node, and `auth.claim.reissue`, which rides
- * that arm, is unreachable before the claim. That is BY DESIGN (decision 34;
- * option C, #850, closes gap (c)).
+ * arm is closed to a BROWSER on an unclaimed node, and `auth.claim.reissue`,
+ * which rides that arm, is unreachable from one before the claim. That is BY
+ * DESIGN (decision 34; option C, #850, closes gap (c)). L1 (owner form
+ * 01a0df1e): the cookie is for browsers only, so a LOCAL PROCESS (the CLI's
+ * `tm8 auth claim reissue`) still rides the arm, exactly as on main.
  *
  * This file pins the way in that remains: the `setup-token` file the boot
  * path writes at 0600. A restart reprints the SAME live token rather than
@@ -58,7 +60,7 @@ async function stop(): Promise<void> {
 async function call(
   method: string,
   path: string,
-  options: { body?: unknown; bearer?: string } = {},
+  options: { body?: unknown; bearer?: string; headers?: Record<string, string> } = {},
 ): Promise<{ status: number; body: { data?: Record<string, unknown>; error?: { code: string } } }> {
   const response = await fetch(new URL(path, node!.url), {
     method,
@@ -66,6 +68,7 @@ async function call(
       [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
       ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(options.bearer ? { authorization: `Bearer ${options.bearer}` } : {}),
+      ...options.headers,
     },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
   });
@@ -107,14 +110,22 @@ describe('W2: an unclaimed node with the launch cookie required is claimed throu
     expect(status.body.data).toMatchObject({ claimed: false });
   });
 
-  it('a loopback caller with no token and no cookie is anonymous, so reissue is unreachable pre-claim', async () => {
-    const session = await call('GET', '/v2/auth/session');
+  it('a loopback BROWSER with no token and no cookie is anonymous, so reissue is unreachable from it pre-claim', async () => {
+    const browser = { 'sec-fetch-site': 'same-origin' };
+    const session = await call('GET', '/v2/auth/session', { headers: browser });
     expect(session.status).toBe(401);
     expect(session.body.error?.code).toBe('unauthenticated');
-    const reissue = await call('POST', '/v2/auth/claim/reissue', { body: {} });
+    const reissue = await call('POST', '/v2/auth/claim/reissue', { body: {}, headers: browser });
     expect(reissue.status).toBeGreaterThanOrEqual(400);
     expect(['unauthenticated', 'forbidden']).toContain(reissue.body.error?.code);
     // Refused BEFORE minting: the file still holds the live token.
+    expect((await setupTokenFile()).token).toBe(firstToken);
+  });
+
+  it('L1 pair — the same session read from a local process (no browser marker) is the owner, not 401', async () => {
+    const session = await call('GET', '/v2/auth/session');
+    expect(session.status).toBe(200);
+    // A read: the file still holds the live token.
     expect((await setupTokenFile()).token).toBe(firstToken);
   });
 
