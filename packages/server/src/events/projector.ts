@@ -706,8 +706,10 @@ export class PgEntityProjector implements EntityProjector {
       latest_reason: string;
       oldest_requested_at: Date | string;
     }>(
-      // The one badge aggregate (252), shared with entity-read.
-      `select * from public.attention_badges($1::uuid[])`,
+      // The one badge aggregate (252, rolled up by 255), shared with entity-read.
+      // Since 255 a row can carry only the raised-by badge (pending_count 0);
+      // badges.attention is only for entities with a pending request (own or rolled up).
+      `select * from public.attention_badges($1::uuid[]) where pending_count > 0`,
       [unique],
     );
     const attention = new Map<string, EntityAttentionSummary>();
