@@ -2,19 +2,18 @@
  * `promptBytes` — what one ranked entity adds to the launch prompt when it is
  * ticked (design 01a0d348 §10 Q5.8).
  *
- * THE SAME SERIALIZERS SPAWN USES, ON THE SAME TEXT. A memory is its whole
- * `<entry>` (`serializeMemoryEntry` over `renderMemoryText`, redacted as the
- * manifest redacts it). Anything else is its `<context_index>` entry, built by
+ * THE SAME SERIALIZERS SPAWN USES, ON THE SAME TEXT. Everything is its
+ * `<context_index>` entry (a memory's over `renderMemoryText`), built by
  * the spawn path's own builders (`skillIndexEntry`, `referenceIndexEntry`,
  * `rosterEntry`)
  * from the same resolved header and measured by `contextEntryBytes`. So for an
  * unchanged graph the set the launch sheet ticks within a budget is the set
  * spawn keeps whole (`jev-suggest-equals-spawn.pg.test.ts`).
  *
- * NEVER BYTES THAT DO NOT REACH THE PROMPT. With `<context_index>` off (the
- * node's `TM8_CONTEXT_INDEX`, else the profile's `contextIndex`), a skill is
- * its `<skills>` line and a reference or teammate is not in the prompt at all
- * (the snapshot's linked names are there either way), so it measures 0.
+ * NEVER BYTES THAT DO NOT REACH THE PROMPT THROUGH THE INDEX. A file is 0
+ * (it rides in `<attachments>`). The index is always on (launch card v3); the
+ * `contextIndex: false` branches remain for a caller that measures the old
+ * `<skills>` frame.
  *
  * Two approximations, both declared: a project or nested skill is measured
  * as indexed, because whether it is native depends on the launch's working
@@ -23,6 +22,7 @@
  */
 import type { SelectionHeader } from '@tm8/contract';
 import {
+  collapsedMemoryEntry,
   computeEffectiveSkills,
   redactSecretsDeep,
   referenceIndexEntry,
@@ -32,7 +32,7 @@ import {
   type DispatcherRoster,
   type ResolvedSkillRow,
 } from '@tm8/execution';
-import { contextEntryBytes, serializeMemoryEntry, serializeSkillIndexEntry, utf8Bytes, type ContextIndexVia } from '@tm8/prompt';
+import { contextEntryBytes, serializeSkillIndexEntry, utf8Bytes, type ContextIndexVia } from '@tm8/prompt';
 
 export interface MeasureContext {
   /** The launch renders `<context_index>` (`contextIndexSwitch`). */
@@ -41,9 +41,18 @@ export interface MeasureContext {
   agentTool: string;
 }
 
-/** A memory's whole `<entry>`: injected whole, with `<context_index>` or without. */
-export function memoryPromptBytes(renderedText: string): number {
-  return utf8Bytes(serializeMemoryEntry(redactSecretsDeep(renderedText)));
+/**
+ * A memory's `<context_index>` entry (launch card v3: every memory is one,
+ * never a whole `<memory>`), built by spawn's `collapsedMemoryEntry` from the
+ * rendered statement and its header.
+ */
+export function memoryPromptBytes(
+  entityId: string,
+  renderedText: string,
+  via: ContextVia,
+  header: SelectionHeader | undefined,
+): number {
+  return contextEntryBytes(redactSecretsDeep(collapsedMemoryEntry(entityId, renderedText, via, header)));
 }
 
 /**
@@ -68,13 +77,13 @@ export function skillPromptBytes(
   return contextEntryBytes(redactSecretsDeep(skillIndexEntry(shipped, via, header)));
 }
 
-/** A reference's (or linked teammate's) entry; 0 while `<context_index>` is off. */
+/** A reference's (or linked teammate's) entry. A file is 0: files ride in `<attachments>`, never the index. */
 export function referencePromptBytes(
   ref: { entityId: string; kind: string; via: ContextIndexVia; link?: string | null; title: string | null },
   header: SelectionHeader | undefined,
   measure: MeasureContext,
 ): number {
-  if (!measure.contextIndex) return 0;
+  if (!measure.contextIndex || ref.kind === 'file') return 0;
   return contextEntryBytes(redactSecretsDeep(referenceIndexEntry(ref, header)));
 }
 

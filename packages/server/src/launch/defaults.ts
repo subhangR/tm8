@@ -25,7 +25,9 @@
  * defaults and a warning, never a refusal.
  */
 import {
+  contextIndexMinEntries,
   SPAWN_SELECTION_GROUP_LIMIT,
+  type ContextIndexBudgetGroup,
   type LaunchDefaultItem,
   type LaunchDefaultsGroup,
   type LaunchDefaultsResult,
@@ -116,7 +118,7 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
       }
       const taskIds = taskId ? [taskId] : [];
 
-      // The WHOLE statement with its marks, as spawn injects it (as `loadMemories` measures it).
+      // The statement with its marks, as spawn renders its index entry.
       const memoryRows = await loadMemoryDefaults(q, spaceId, teamMemberId, taskIds);
       const rendered = new Map((await loadMemoriesById(q, spaceId, memoryRows.map((row) => row.entityId)))
         .map((row) => [row.entity_id, renderMemoryText(row)]));
@@ -125,9 +127,12 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
         kind: 'memory',
         via: row.fromTeammate ? 'teammate' : 'task',
         fallbackTitle: 'Memory',
-        measure: () => {
+        measure: (header) => {
           const text = rendered.get(row.entityId);
-          return text === undefined ? 0 : memoryPromptBytes(text);
+          // Measured as the sheet sends it, a `selection.memoryIds` tick
+          // (`via="selection"`), as `launch.suggest` measures it: an untouched
+          // group renders `teammate`/`task`, at most 5 bytes apart.
+          return text === undefined ? 0 : memoryPromptBytes(row.entityId, text, 'selection', header);
         },
       }));
       const skills: Draft[] = (await loadSkillDefaults(q, spaceId, teamMemberId, taskIds)).map((row) => {
@@ -186,7 +191,11 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
     const { contextIndex, rules } = groupRules(env, profileSnapshot);
     const measure: MeasureContext = { contextIndex, agentTool };
 
-    const finish = (rows: readonly Draft[], rule: { budget: number | null; floor: number }): LaunchDefaultsGroup => {
+    const finish = (
+      rows: readonly Draft[],
+      rule: { budget: number | null; floor: number },
+      group: ContextIndexBudgetGroup,
+    ): LaunchDefaultsGroup => {
       const items = rows.map(({ fallbackTitle, measure: bytesOf, ...row }): LaunchDefaultItem => {
         const header = read.headers.get(row.entityId);
         const text = header?.whenToUse ?? header?.summary ?? null;
@@ -198,13 +207,14 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
           promptBytes: bytesOf(header, measure),
         };
       });
-      return { items: items.slice(0, SPAWN_SELECTION_GROUP_LIMIT), total: items.length, budget: rule.budget, floor: rule.floor };
+      return { items: items.slice(0, SPAWN_SELECTION_GROUP_LIMIT), total: items.length, budget: rule.budget, floor: rule.floor,
+        minEntries: contextIndexMinEntries(group) };
     };
 
     return {
-      memories: finish(read.memories, rules.memories),
-      skills: finish(read.skills, rules.skills),
-      references: finish(read.references, rules.references),
+      memories: finish(read.memories, rules.memories, 'memories'),
+      skills: finish(read.skills, rules.skills, 'skills'),
+      references: finish(read.references, rules.references, 'references'),
       taskId: read.taskId,
       contextIndex: contextIndex ? 'on' : 'off',
       warnings,

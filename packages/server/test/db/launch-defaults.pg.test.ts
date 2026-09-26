@@ -274,9 +274,11 @@ describe('launch.defaults measures what launch.suggest measures', () => {
     } as unknown as RequestContext) as Promise<LaunchSuggestResult>;
   }
 
-  for (const index of ['on', 'off'] as const) {
-    it(`index ${index}: every default's promptBytes, and each group's budget and floor, equal launch.suggest's`, async () => {
-      const options: LaunchDefaultsOptions = { env: { TM8_CONTEXT_INDEX: index }, resolveProfile: async () => profile };
+  // Always on (launch card v3): TM8_CONTEXT_INDEX=off no longer turns it off.
+  for (const env of ['on', 'off'] as const) {
+    const index = 'on';
+    it(`TM8_CONTEXT_INDEX=${env}: the index is on, and every default's promptBytes, and each group's budget and floor, equal launch.suggest's`, async () => {
+      const options: LaunchDefaultsOptions = { env: { TM8_CONTEXT_INDEX: env }, resolveProfile: async () => profile };
       const defaults = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! }, OWNER, ids.space!, options);
       const suggested = await suggest(options);
       expect(defaults.contextIndex).toBe(index);
@@ -300,13 +302,10 @@ describe('launch.defaults measures what launch.suggest measures', () => {
       // Memory bytes are real either way; references reach the prompt only with the index.
       expect(defaults.memories.items.every((item) => item.promptBytes > 0)).toBe(true);
       expect(defaults.skills.items.every((item) => item.promptBytes > 0)).toBe(true);
-      if (index === 'on') {
-        expect(defaults.references.items.every((item) => item.promptBytes > 0)).toBe(true);
-        expect(defaults.references.budget).toBe(2000);
-      } else {
-        expect(defaults.references.items.map((item) => item.promptBytes)).toEqual([0, 0]);
-        expect(defaults.references.budget).toBeNull();
-      }
+      // A file is 0: it rides in <attachments>, never the index.
+      expect(defaults.references.items.every((item) => (item.kind === 'file' ? item.promptBytes === 0 : item.promptBytes > 0))).toBe(true);
+      expect(defaults.references.budget).toBe(2000);
+      expect([defaults.memories, defaults.skills, defaults.references].map((g) => g.minEntries)).toEqual([1, 1, 1]);
     });
   }
 
@@ -314,7 +313,7 @@ describe('launch.defaults measures what launch.suggest measures', () => {
     const result = await call({ teamMemberId: ids.teammate!, subjectId: ids.task! }, OWNER, ids.space!, {
       env: {}, resolveProfile: async () => { throw new Error('no profile'); },
     });
-    expect(result.contextIndex).toBe('off');
+    expect(result.contextIndex).toBe('on');
     expect(result.memories.budget).toBe(12288);
     expect(result.memories.items.length).toBe(2);
     expect(result.warnings).toEqual([expect.stringMatching(/Interaction Profile could not be resolved/)]);

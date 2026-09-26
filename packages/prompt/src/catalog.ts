@@ -599,7 +599,7 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     rendering: 'verbatim',
     source: 'packages/prompt/src/context-index.ts',
     injectedWhen:
-      'Inside <context_index>, in place of <skills>, on v1 and v2 frames — only when TM8_CONTEXT_INDEX is on for the node or the pinned profile sets contextIndex (default off, design 01a0d348 §10 Q2).',
+      'Inside <context_index>, in place of <skills>, on v1 and v2 frames — always (launch card v3: TM8_CONTEXT_INDEX and a profile contextIndex no longer turn it off).',
     text: CONTEXT_INDEX_INSTRUCTION,
   },
   {

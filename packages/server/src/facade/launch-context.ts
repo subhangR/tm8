@@ -173,6 +173,12 @@ function collectCandidates(manifest: Record<string, unknown>): {
     .filter((t): t is Record<string, unknown> => t !== null);
   for (const task of tasks) add(task.id, 'task', 'launch');
   for (const id of memoryIdsOf(manifest) ?? []) add(id, 'memory', 'requested');
+  // Since launch card v3 every memory is a `<context_index>` entry, not a
+  // `memoryIds` text (a dropped one is not in the prompt, so not here).
+  for (const group of arrayOf(recordOf(manifest.contextIndex)?.groups)) {
+    if (recordOf(group)?.name !== 'memories') continue;
+    for (const entry of arrayOf(recordOf(group)?.entries)) add(recordOf(entry)?.id, 'memory', 'requested');
+  }
 
   // `effectiveSkills` says which load path each skill took; a manifest that
   // predates it lists them in `skills` only.

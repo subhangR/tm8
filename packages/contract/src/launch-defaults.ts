@@ -52,9 +52,9 @@ export interface LaunchDefaultItem {
   /**
    * Bytes this default adds to the launch prompt, measured with spawn's
    * serializers — the same number `launch.suggest` gives the same entity. A
-   * memory's whole `<entry>`; a skill's `<context_index>` entry (its
-   * `<skills>` line while the index is off), measured as indexed, not native;
-   * a reference's entry, 0 while the index is off.
+   * memory's, a skill's (measured as indexed, not native) or a reference's
+   * `<context_index>` entry. A file is 0: files are never index entries, they
+   * ride in `<attachments>`.
    */
   promptBytes: number;
 }
@@ -73,6 +73,14 @@ export interface LaunchDefaultsGroup {
   budget: number | null;
   /** The profile's `contextFloors` for the group, else the node default. */
   floor: number;
+  /**
+   * The COUNT of entries the launch's index budget never shrinks this group
+   * below when groups compete for room (`contextIndexMinEntries`): 1 for
+   * every group. Only when even the minimums do not fit do
+   * groups give way, lowest tier first (`CONTEXT_INDEX_GIVE_WAY_ORDER`). Not
+   * `floor`, which is Jev's relevance-score floor.
+   */
+  minEntries: number;
 }
 
 export interface LaunchDefaultsInput {
@@ -93,10 +101,10 @@ export interface LaunchDefaultsResult {
   /** The task the subject resolved to; null when it has none yet (spawn would mint one). */
   taskId: EntityId | null;
   /**
-   * Whether the launch renders `<context_index>` (the node's
-   * `TM8_CONTEXT_INDEX`, else the profile's `contextIndex`). `off`: references
-   * are not in the prompt (their `promptBytes` are 0) and memory bytes are
-   * still real.
+   * Whether the launch renders `<context_index>`: always `on` (launch card v3,
+   * owner answer `index_always`). `TM8_CONTEXT_INDEX` and a profile's
+   * `contextIndex` no longer turn it off; the `off` member stays in the type
+   * for back-compat only and is never served.
    */
   contextIndex: 'on' | 'off';
   /**

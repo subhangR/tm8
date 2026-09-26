@@ -395,7 +395,7 @@ export interface SessionLaunchPosture {
    */
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
-  contextIndex?: 'env' | 'profile' | null;
+  contextIndex?: 'env' | 'profile' | 'default' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -539,6 +539,8 @@ export interface SpawnContext {
     title: string | null;
     via: 'selection' | 'linked' | 'attached';
     link?: string;
+    /** A file's declared mime, for its `<attachments>` line (files are never index entries). */
+    mime?: string | null;
   }>;
   /**
    * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
@@ -725,8 +727,8 @@ export interface ContextBudgetsRecord {
 
 /** `manifest.context.index`. */
 export interface ContextIndexRecord {
-  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
-  source: 'env' | 'profile';
+  /** `default`: always on (launch card v3); `env` / `profile`: the switch a launch before that recorded. */
+  source: 'env' | 'profile' | 'default';
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
@@ -780,6 +782,11 @@ export interface CreateWorkSessionInput {
   nodeId: string | null;
   confirmUntrusted: boolean;
   clientMutationId: string | null;
+  /**
+   * `SpawnRequest.newTask`'s title: the RPC creates that task in the spawn's
+   * own transaction (267). Absent/null creates none.
+   */
+  newTaskTitle?: string | null;
 }
 
 export interface CreateWorkSessionResult {
@@ -788,6 +795,8 @@ export interface CreateWorkSessionResult {
   commandResult: unknown;
   /** True when the command ledger returned an earlier spawn result. */
   replayed: boolean;
+  /** The task `newTaskTitle` created (a replay answers the same one). */
+  createdTaskId?: string;
 }
 
 // --- vanilla terminals (101) -------------------------------------------------
@@ -1449,6 +1458,12 @@ export interface SpawnRequest {
   /** Session that invoked this spawn; null/absent means a human-launched root. */
   parentSessionId?: string | null;
   taskIds?: string[];
+  /**
+   * Create the session's task in the same transaction as the session (launch
+   * v3 gap 4). The caller refuses it beside `taskIds`; see
+   * `ExecutionSpawnInput.newTask`.
+   */
+  newTask?: { title: string };
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
   interactionProfileId?: string | null;
@@ -1530,6 +1545,14 @@ export interface SpawnResult {
   envVarNames: string[];
   reused: boolean;
   commandResult: unknown;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /**
+   * A dispatcher launched on tasks ROUTES them (launch v3): these are the tasks
+   * its first turn asked it to route, in order. The caller stores the durable
+   * request on each. Absent for every other mode.
+   */
+  routedTaskIds?: string[];
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

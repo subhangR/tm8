@@ -134,6 +134,11 @@ export function AgentPreview(p: AgentPreviewProps) {
       <Section head="your notes" hint="this launch only">
         {p.notes.trim() ? <div className="lcd3-pre">{p.notes}</div> : <div className="lcd3-none">None.</div>}
       </Section>
+      {p.verb === 'dispatcher' ? (
+        <Section head="teammates" hint="the roster it routes to" testId="lcd3-preview-roster">
+          <div className="lcd3-none">A dispatcher gets the whole space’s roster — no teammates are picked for it.</div>
+        </Section>
+      ) : null}
       <Section head="<memory>" hint="whole text — the node doesn’t index memories yet" testId="lcd3-preview-memories">
         <Rows rows={p.memories} empty="None." />
       </Section>

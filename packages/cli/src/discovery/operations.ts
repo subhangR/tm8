@@ -2214,6 +2214,18 @@ const ROWS: Record<OperationName, Row> = {
       'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
     ],
   },
+  'execution.dispatchers': {
+    cmd: null,
+    sum: 'List a Space’s dispatcher sessions, newest first, with whether each is live',
+    authz: 'space',
+    input: 'none',
+    tags: ['dispatch', 'dispatcher', 'route', 'launch', 'live'],
+    notes: [
+      'Launch-card API (launch v3 gap 5): the dispatch-target drop-up. No CLI — `session dispatch` routes to the newest live dispatcher on its own',
+      'stopped dispatchers are listed with `live: false`; liveness is probed against the node’s PTY map, never read off `work_sessions.status`',
+      '`queuedCount` is null when it is not cheap to compute; `title` and `purpose` are untrusted display text',
+    ],
+  },
   'execution.prompt': {
     cmd: null,
     sum: 'INTERNAL: the audited Server-side delivery of an already-stored message into a live session',
@@ -3500,9 +3512,9 @@ export const CATALOG_DIGEST =
   // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
-  // Re-measured (W5 #917, merge of main dd1c8215): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks and attention rows. Read from the regenerated conformance manifest.
+  // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:477fec69d22a85871192a4bd3b30913ef7e73e9170109ebe02acc6f557e2b5c2';
+  'sha256:89a7173aa0badf0233ebd13818273f789f5ef1142682b1e46ecdf4af7241f395';
 
 export const GRAMMAR_VERSION = '2';
 

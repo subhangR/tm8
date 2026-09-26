@@ -66,7 +66,7 @@ class ClaimRecordingDb implements Db {
 }
 
 /**
- * A LIVE code makes one more call (W5, 267): whether the invite's space asks
+ * A LIVE code makes one more call (W5, 268): whether the invite's space asks
  * for a space password. It is claim-free on purpose — no identity rides on it —
  * so it cannot widen what the preview read can see.
  */
