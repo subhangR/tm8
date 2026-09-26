@@ -91,8 +91,13 @@ const HIDDEN: Seen = { list: [], get: 'not_found', relay: null };
 beforeAll(async () => {
   database = await createW1ScratchDatabase('remote_servers_legacy');
   const files = migrationFiles();
-  expect(files.at(-1)).toBe(W8);
-  database.apply(files.filter((f) => f !== W8));
+  // Position-pinned (R15): this suite asserts the chain AT 261, so it applies
+  // the slice BEFORE 261, seeds through 044, then applies 261 itself.
+  // `files.at(-1)` was the original pin and broke the moment a later migration
+  // landed — and the filter() it guarded would have applied it before 261.
+  const index = files.indexOf(W8);
+  expect(index).toBeGreaterThan(-1);
+  database.apply(files.slice(0, index));
   db = createDb(database.url, { max: 4 });
 
   await database.transaction(async (client) => {
