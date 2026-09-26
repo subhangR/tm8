@@ -1,16 +1,16 @@
 /**
- * W11-repoint, THE DRY RUN of migration 260 (plan 01a0d9eb W11; owner step 2,
+ * W11-repoint, THE DRY RUN of the W11-repoint migration (plan 01a0d9eb W11; owner step 2,
  * after W11-migrate's real run).
  *
- * 260 re-points chats, work_sessions and worktrees at the space's project
+ * The migration re-points chats, work_sessions and worktrees at the space's project
  * entity and DROPS their folder column project_id. That drop is irreversible,
- * so the owner runs this first: it counts, applies 260's own text inside a
+ * so the owner runs this first: it counts, applies the migration's own text inside a
  * transaction, counts again and ROLLS BACK. Nothing it does survives.
  *
  *   loadRepointCounts    one read: per table, the project columns' shape and
- *                        every row 260's CHECKs would refuse (with ids);
- *   dryRunRepoint        begin -> before -> 260 -> after -> rollback; a
- *                        refusal is 260's own preflight message, verbatim;
+ *                        every row the repoint's CHECKs would refuse (with ids);
+ *   dryRunRepoint        begin -> before -> repoint -> after -> rollback; a
+ *                        refusal is the repoint's own preflight message, verbatim;
  *   formatRepointReport  the before/after table the PR and the RUNBOOK quote.
  *
  * The counts never name project_id unless the column is still there, so the
@@ -39,7 +39,7 @@ export interface SharedFolder {
 }
 
 export interface RepointCounts {
-  /** False once 260 has dropped the folder columns. */
+  /** False once the repoint has dropped the folder columns. */
   folderColumns: boolean;
   chats: { total: number; byMode: Record<string, number>; withEntity: number; violators: string[] };
   worktrees: { total: number; withEntity: number; withSpace: number; residue: number };
@@ -56,8 +56,8 @@ export interface RepointCounts {
   sharedFolders: SharedFolder[];
   /**
    * internal.node_policy 'project_folders' (234, decision 29), or null for no
-   * row. Only 'shared' skips 260's sharing refusal; it is written by the
-   * server at boot from its gate posture, so read it before applying 260.
+   * row. Only 'shared' skips the repoint's sharing refusal; it is written by the
+   * server at boot from its gate posture, so read it before applying the repoint.
    */
   projectFoldersPolicy: string | null;
 }
@@ -94,7 +94,7 @@ export async function loadRepointCounts(client: Queryable, confirmed: W11Confirm
     `select count(*) filter (where workdir_mode = 'project' and project_entity_id is not null)::int n
        from public.work_sessions`)).rows[0] ?? {};
 
-  // The CHECK 260 adds, evaluated before it exists.
+  // The CHECK the repoint adds, evaluated before it exists.
   const violators = (await client.query(
     `select entity_id::text id, session_kind, workdir_mode from public.work_sessions
       where not (session_kind = 'credential' or workdir_mode in ('scratch', 'container')
@@ -160,9 +160,9 @@ export async function loadRepointCounts(client: Queryable, confirmed: W11Confirm
 
 export interface RepointDryRun {
   before: RepointCounts;
-  /** Null when 260 refused. */
+  /** Null when the repoint refused. */
   after: RepointCounts | null;
-  /** 260's refusal, verbatim (message, then detail), or null when it applied. */
+  /** The repoint's refusal, verbatim (message, then detail), or null when it applied. */
   refusal: string | null;
 }
 
@@ -215,7 +215,7 @@ function side(c: RepointCounts): string[] {
 }
 
 export function formatRepointReport(run: RepointDryRun): string {
-  const out = ['# W11-repoint dry run (migration 260; rolled back)', '', '## Before', ...side(run.before)];
+  const out = ['# W11-repoint dry run (rolled back)', '', '## Before', ...side(run.before)];
   if (run.before.sharedFolders.length > 0) {
     out.push('', '### Folders granted to more than one space');
     for (const f of run.before.sharedFolders) {
@@ -227,7 +227,7 @@ export function formatRepointReport(run: RepointDryRun): string {
     for (const v of run.before.workSessions.violators) out.push(`- ${v.id} (${v.sessionKind}/${v.workdirMode})`);
   }
   if (run.refusal !== null) {
-    out.push('', '## 260 REFUSED', run.refusal);
+    out.push('', '## W11-repoint REFUSED', run.refusal);
   } else if (run.after !== null) {
     out.push('', '## After (inside the transaction, then rolled back)', ...side(run.after));
   }

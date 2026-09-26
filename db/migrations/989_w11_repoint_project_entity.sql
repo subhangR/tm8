@@ -1,11 +1,11 @@
 -- =============================================================================
--- 260 — W11-repoint: chats, work_sessions and worktrees point at the space's
--- project ENTITY; the folder column project_id is dropped (plan 01a0d9eb W11).
+-- W11-repoint (placeholder ordinal 989; the owner's merge takes the real one):
+-- chats, work_sessions and worktrees point at the space's project ENTITY; the folder column project_id is dropped (plan 01a0d9eb W11).
 --
 -- OWNER STEP. IRREVERSIBLE: the three project_id columns are DROPPED. GATE:
--- 259 applied, its row counts verified against this file's dry run (residue
+-- the 259 backfill applied, its row counts verified against this file's dry run (residue
 -- 0/0/0, 0 CHECK violators: the CHECKs below validate EXISTING rows), then
--- 260. Read internal.node_policy first: 'shared' skips the sharing refusal.
+-- this file. Read internal.node_policy first: 'shared' skips the sharing refusal.
 -- Run it only after W11-migrate's real run (#856), and dry-run it first with
 --   node packages/server/dist/projects/w11-repoint-cli.js --dry-run
 -- which applies this file inside a transaction, prints before/after counts and
@@ -119,7 +119,7 @@ begin
   if n > 0 then problems := problems || format('chats: %s row(s) violate the chats project CHECKs: %s', n, ids); end if;
 
   if cardinality(problems) > 0 then
-    raise exception E'W11-repoint (260) refused:\n  - %', array_to_string(problems, E'\n  - ')
+    raise exception E'W11-repoint refused:\n  - %', array_to_string(problems, E'\n  - ')
       using errcode = '23514', detail = 'w11_repoint_preflight',
             hint = 'Run the W11-migrate real run and the RUNBOOK steps first; the dry run lists every row.';
   end if;
@@ -257,7 +257,7 @@ begin
         using errcode = '42501',
               detail = jsonb_build_object('projectId', p_project_id, 'trust', project.trust)::text;
     end if;
-    -- 260: the row stores the space's project ENTITY; the folder id stays the
+    -- W11-repoint: the row stores the space's project ENTITY; the folder id stays the
     -- argument (Q4 option i) and is resolved in this space, once.
     project_entity := internal.project_entity_for(p_space_id, p_project_id);
     if project_entity is null then
@@ -374,7 +374,7 @@ begin
         using errcode = '42501',
               detail = jsonb_build_object('projectId', p_project_id, 'trust', project.trust)::text;
     end if;
-    -- 260: resolved in this space through the one resolver, as spawn does.
+    -- W11-repoint: resolved in this space through the one resolver, as spawn does.
     project_entity := internal.project_entity_for(p_space_id, p_project_id);
     if project_entity is null then
       raise exception 'project has no project entity in this space' using errcode = 'P0002',
@@ -633,7 +633,7 @@ begin
     if resolved_cwd is null then
       raise exception 'project is not linked to this space' using errcode = 'P0002';
     end if;
-    -- 260: the chat row stores the space's project ENTITY; p_project_id stays
+    -- W11-repoint: the chat row stores the space's project ENTITY; p_project_id stays
     -- the folder (it is in the request hash and in every stored replay).
     project_entity := internal.project_entity_for(p_space_id, p_project_id);
     if project_entity is null then
@@ -733,7 +733,7 @@ begin
                   where space_id = p_space_id and project_id = p_project_id) then
     raise exception 'project is not linked to this space' using errcode = '42501';
   end if;
-  -- 260: the worktree row stores the space's project ENTITY. The branch key is
+  -- W11-repoint: the worktree row stores the space's project ENTITY. The branch key is
   -- now (space, project entity, branch) alone: git's own one-worktree-per-branch
   -- rule refuses a second checkout of a branch in one repository before this
   -- door is ever called, so no row is written for a refused checkout.
@@ -1158,10 +1158,10 @@ alter table public.work_sessions drop column project_id;
 alter table public.worktrees drop column project_id;
 
 comment on column public.chats.project_entity_id is
-  'The space''s project entity this chat is bound to (234; the only project column since 260).';
+  'The space''s project entity this chat is bound to (234; the only project column since the W11-repoint).';
 comment on column public.work_sessions.project_entity_id is
-  'The space''s project entity this session launched from (234; the only project column since 260). Immutable.';
+  'The space''s project entity this session launched from (234; the only project column since the W11-repoint). Immutable.';
 comment on column public.worktrees.project_entity_id is
-  'The space''s project entity the worktree was cut from (234; NOT NULL and the only project column since 260).';
+  'The space''s project entity the worktree was cut from (234; NOT NULL and the only project column since the W11-repoint).';
 
 reset role;

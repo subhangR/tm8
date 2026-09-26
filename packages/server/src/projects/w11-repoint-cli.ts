@@ -1,13 +1,13 @@
 /**
  * W11-repoint dry-run entry (see w11-repoint.ts). Run by the node's operator,
- * against the node database, AFTER W11-migrate's real run and BEFORE 260:
+ * against the node database, AFTER W11-migrate's real run and BEFORE the W11-repoint migration:
  *
  *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-repoint-cli.js --dry-run
  *     [--migration db/migrations/989_w11_repoint_project_entity.sql]
  *     [--confirmed <file.json>] [--format md|json]
  *
- * Applies 260 inside one transaction between two counts and ROLLS BACK. Exit
- * 0 when 260 would apply, 2 when it refuses (the refusal is printed verbatim).
+ * Applies the W11-repoint migration inside one transaction between two counts and ROLLS BACK. Exit
+ * 0 when the migration would apply, 2 when it refuses (the refusal is printed verbatim).
  * There is no real-run mode: the real run is `node db/migrate.mjs up`, an
  * owner step. `--confirmed` takes W11-migrate's owner-confirmed table
  * (`{ "<folder id>": "<owning space id>" }`) and shows it against each folder

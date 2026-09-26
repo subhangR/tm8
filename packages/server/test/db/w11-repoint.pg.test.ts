@@ -1,5 +1,5 @@
 /**
- * W11-repoint (migration 260) on an old-shaped node, the whole chain:
+ * W11-repoint (placeholder migration 989) on an old-shaped node, the whole chain:
  *
  *   < 234  seed: folder F granted to A AND B, G to A only; a chat, a work
  *          session and a worktree on F in each space;
@@ -212,7 +212,7 @@ describe.sequential('260 needs 259 to have RUN', () => {
   it('refuses on a 234-without-259 node: every pre-234 row is residue, and nothing is dropped', async () => {
     const run = await dryRun();
     expect(run.after).toBeNull();
-    expect(run.refusal).toContain('W11-repoint (260) refused:');
+    expect(run.refusal).toContain('W11-repoint refused:');
     expect(run.refusal).toContain('chats: 2 row(s) whose folder has no matching entity');
     expect(run.refusal).toContain('work_sessions: 2 row(s) whose folder has no matching entity');
     expect(run.refusal).toContain('worktrees: 2 row(s) whose folder has no matching entity');
@@ -277,7 +277,7 @@ describe.sequential('the sharing refusal under decision 29 (after 259)', () => {
       expect(await repointCli([], {})).toBe(64);
       expect(await repointCli(['--dry-run'], {})).toBe(64);
       expect(await repointCli(['--dry-run'], { TM8_DATABASE_URL: database.url })).toBe(2);
-      expect(out.mock.calls.map((c) => String(c[0])).join('')).toContain('## 260 REFUSED');
+      expect(out.mock.calls.map((c) => String(c[0])).join('')).toContain('## W11-repoint REFUSED');
     } finally {
       quiet.mockRestore();
       out.mockRestore();
