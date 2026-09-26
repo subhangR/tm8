@@ -172,7 +172,7 @@ describe('files from this computer', () => {
 });
 
 describe('Dispatch', () => {
-  it('is absent unless a host wires it (pending the owner’s call)', () => {
+  it('is absent unless a host wires it', () => {
     const view = renderPopup();
     expect(view.queryByTestId('launch-dispatch')).toBeNull();
   });
@@ -188,6 +188,31 @@ describe('Dispatch', () => {
     fireEvent.click(view.getByTestId('launch-dispatch'));
     await waitFor(() => expect(view.onDismiss).toHaveBeenCalledTimes(1));
     expect(view.onSpawn).not.toHaveBeenCalled();
+  });
+
+  it('saves the subject edits first, then hands off with the instructions as the note', async () => {
+    const order: string[] = [];
+    const onSaveSubject = vi.fn(() => { order.push('save'); return Promise.resolve(); });
+    const onDispatch = vi.fn((note?: string) => { order.push(`dispatch:${String(note)}`); return Promise.resolve(); });
+    const view = renderPopup({ onDispatch, onSaveSubject });
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Wire it end to end' } });
+    fireEvent.change(view.getByLabelText('Instructions for this session'), { target: { value: '  Prefer the UI builder.  ' } });
+    fireEvent.click(view.getByTestId('launch-dispatch'));
+    await waitFor(() => expect(view.onDismiss).toHaveBeenCalledTimes(1));
+    expect(onSaveSubject).toHaveBeenCalledWith({ title: 'Wire it end to end' });
+    expect(order).toEqual(['save', 'dispatch:Prefer the UI builder.']);
+  });
+
+  it('sends no note when the instructions are empty, and refuses one over the contract’s 4000 characters', async () => {
+    const onDispatch = vi.fn(() => Promise.resolve());
+    const view = renderPopup({ onDispatch });
+    fireEvent.change(view.getByLabelText('Instructions for this session'), { target: { value: 'x'.repeat(4001) } });
+    fireEvent.click(view.getByTestId('launch-dispatch'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('at most 4000'));
+    expect(onDispatch).not.toHaveBeenCalled();
+    fireEvent.change(view.getByLabelText('Instructions for this session'), { target: { value: '   ' } });
+    fireEvent.click(view.getByTestId('launch-dispatch'));
+    await waitFor(() => expect(onDispatch).toHaveBeenCalledWith(undefined));
   });
 });
 

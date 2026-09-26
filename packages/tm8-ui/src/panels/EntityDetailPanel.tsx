@@ -1192,6 +1192,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     selection={props.launch.selection}
                     profileFor={props.launch.profileFor}
                     upload={props.launch.upload}
+                    onDispatch={props.launch.dispatch ? (note) => props.launch!.dispatch!(detail.id, note) : undefined}
                     onSpawn={props.launch.onSpawn}
                     loadDescription={
                       props.launch.descriptionOf
