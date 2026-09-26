@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../src/run.js';
+import { REMOTE_LINK_HINT } from '../src/client.js';
 import { REDACTED, scrubSecrets, scrubText } from '../src/commands/link.js';
 import { ledger } from '../src/discovery/availability.js';
 
@@ -178,6 +179,34 @@ describe('tm8 --space <other> — only through spaceLinks.invoke on home', () =>
     const allowed = await tm8(['--space', 'bee', 'entity', 'get', DOC, '--format', 'json']);
     expect(allowed.code, allowed.stderr).toBe(0);
     expect(paths()).toEqual([LIST, INVOKE]);
+  });
+
+  it('a link to another server: home refuses cleanly (no forwarder, or W8 disabled) and the CLI says why; paired same-node link passes', async () => {
+    for (const reply of [
+      fail(501, 'not_implemented', 'this node cannot forward to a remote space link yet'),
+      fail(403, 'forbidden', 'remote space links are disabled on this node', { reason: 'space_link_remote_disabled' }),
+    ]) {
+      routes[INVOKE] = () => reply;
+      recorded = [];
+      const r = await tm8(['--space', 'bee', 'entity', 'get', DOC]);
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toContain(REMOTE_LINK_HINT);
+      expect(paths()).toEqual([LIST, INVOKE]);
+    }
+
+    // Scope: a reserved op's own 501 through the link is not a remote refusal.
+    routes[INVOKE] = () => fail(501, 'not_implemented', 'this operation is reserved');
+    const reserved = await tm8(['--space', 'bee', 'entity', 'get', DOC]);
+    expect(reserved.code).not.toBe(0);
+    expect(reserved.stderr).not.toContain(REMOTE_LINK_HINT);
+
+    routes = defaultRoutes();
+    recorded = [];
+    const refused = await tm8(['--space', 'bee', 'voice', 'token', DOC]);
+    expect(refused.stderr).not.toContain(REMOTE_LINK_HINT);
+    recorded = [];
+    const allowed = await tm8(['--space', 'bee', 'entity', 'get', DOC, '--format', 'json']);
+    expect(allowed.code, allowed.stderr).toBe(0);
   });
 
   it('a raw id with no link fails with "ask your human to run `tm8 link add`", and nothing is invoked', async () => {

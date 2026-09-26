@@ -118,6 +118,7 @@ export interface ClientOptions {
   gapRetryMs?: number | undefined;
   /** Injectable for tests. */
   sleepImpl?: (ms: number) => Promise<void>;
+  /**
    * `--space` through a space link (space-link-route.ts). When set, EVERY
    * catalog call leaves as `spaceLinks.invoke` on the home Space, so the home
    * server's refused set and audit see all of it; bytes are refused here.
@@ -221,6 +222,26 @@ const SLOW_OPERATION_TIMEOUT_MS: Partial<Record<OperationName, number>> = {
   'execution.resume': 180_000,
 };
 
+/**
+ * A link whose target Space is on ANOTHER server: home refuses it, since remote
+ * forwarding is not enabled (W8 ships it disabled; W9c turns it on). The home
+ * server stays the authority, so the CLI does not pre-refuse by
+ * `targetServerId`; it only says why, and that no retry or flag changes it.
+ * With no forwarder wired it is a `not_implemented` naming a remote space link;
+ * `space_link_remote_disabled` is W8's disabled forwarder.
+ */
+export const REMOTE_LINK_HINT =
+  'the linked Space is on another server and remote space links are not enabled on this node; run the command from a session in that Space';
+
+function isRemoteLinkRefusal(err: unknown): err is ApiError {
+  if (!(err instanceof ApiError)) return false;
+  const reason = (err.details as { reason?: unknown } | null | undefined)?.reason;
+  if (reason === 'space_link_remote_disabled') return true;
+  // No forwarder wired: home's 501 carries no reason, only this message. A
+  // reserved op's own 501 through a link must not read as a remote refusal.
+  return err.code === 'not_implemented' && /remote space link/.test(err.message);
+}
+
 export class Tm8Client {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
@@ -306,16 +327,22 @@ export class Tm8Client {
       }
     }
     const params = opts.params ?? {};
-    const inner = await this.invokeDirect<SpaceLinksInvokeResult>('spaceLinks.invoke', {
-      params: { spaceId: link.homeSpaceId, link: link.linkId },
-      body: {
-        op: name,
-        ...(Object.keys(params).length > 0 ? { params } : {}),
-        ...(Object.keys(query).length > 0 ? { query } : {}),
-        ...(opts.body === undefined ? {} : { input: opts.body }),
-      },
-      timeoutMs: opts.timeoutMs ?? this.deadlineFor(name),
-    });
+    let inner: InvokeResult<SpaceLinksInvokeResult>;
+    try {
+      inner = await this.invokeDirect<SpaceLinksInvokeResult>('spaceLinks.invoke', {
+        params: { spaceId: link.homeSpaceId, link: link.linkId },
+        body: {
+          op: name,
+          ...(Object.keys(params).length > 0 ? { params } : {}),
+          ...(Object.keys(query).length > 0 ? { query } : {}),
+          ...(opts.body === undefined ? {} : { input: opts.body }),
+        },
+        timeoutMs: opts.timeoutMs ?? this.deadlineFor(name),
+      });
+    } catch (err) {
+      if (isRemoteLinkRefusal(err)) err.hint = REMOTE_LINK_HINT;
+      throw err;
+    }
     return { data: inner.data.result as T, requestId: inner.requestId, status: inner.status };
   }
 
