@@ -5,8 +5,9 @@
  *
  * WHAT A MEMBER MUST BE TOLD (P8), drawn above everything else: the link itself
  * is shared, so every member of this space can see that a link to the target
- * exists; and while you are signed in, agents working for you in this space can
- * act in the target space as you. Nothing in W6 reads the Allow spawn switch,
+ * exists; and once cross-space spawn ships, agents working for you in this
+ * space will be able to act in the target space as you while you are signed in
+ * (future tense: nothing in W6 acts through a link; lead's R4 (ii)). Nothing in W6 reads the Allow spawn switch,
  * so every place that describes it says only: "Allow spawn is stored per link;
  * it is enforced when cross-space spawn ships." (Lead's rule, R3 (ii): every
  * sentence describes only enforcement W6 ships.)
@@ -106,7 +107,7 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
             own sign-in.
           </p>
           <p>
-            While you are signed in, agents working for you in this space can act in the target space as you.
+            Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in.
             Allow spawn is stored per link; it is enforced when cross-space spawn ships.
           </p>
         </div>

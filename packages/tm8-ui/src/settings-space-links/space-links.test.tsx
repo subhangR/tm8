@@ -66,7 +66,7 @@ describe('SpaceLinksSection', () => {
     const warning = await screen.findByTestId('space-links-warning');
     expect(warning.textContent).toMatch(/Every member of this space can see that a link to the target space exists/);
     expect(warning.textContent).toMatch(/Only you can use your own sign-in/);
-    expect(warning.textContent).toMatch(/agents working for you in this space can act in the target space as you/);
+    expect(warning.textContent).toMatch(/Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in/);
     expect(warning.textContent).toMatch(/Allow spawn/);
     // The stored-switch wording (enforcement arrives with cross-space spawn).
     expect(warning.textContent).toContain(SPAWN_OFF_TEXT);
