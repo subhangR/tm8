@@ -101,15 +101,6 @@ export function recordFacet(h: HandoffView): FacetView {
   return RECORD[h.recordStatus];
 }
 
-/**
- * The ONE place that may claim a share fully worked: both facets positive.
- * Anything else — including `delivered × pending` — is not done yet, and the
- * row must not read as if it were.
- */
-export function isFullySettled(h: HandoffView): boolean {
-  return h.deliveryStatus === 'delivered' && h.recordStatus === 'recorded';
-}
-
 /** Audit sentence for a withdrawn share (T4: "decorates, never rewrites"). */
 export function withdrawalAudit(h: HandoffView): string | null {
   if (h.recordStatus !== 'withdrawn' || !h.withdrawnAt) return null;

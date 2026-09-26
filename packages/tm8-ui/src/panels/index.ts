@@ -71,7 +71,6 @@ export { SharedContextSection } from './share/SharedContextSection';
 export { ShareDragGhost, ShareDropTarget } from './share/ShareDropTarget';
 export {
   deliveryFacet,
-  isFullySettled,
   recordFacet,
   withdrawalAudit,
   type FacetView,

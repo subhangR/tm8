@@ -29,7 +29,6 @@
 import { useCallback, useMemo } from 'react';
 import type { EntityDetail, EntityId, SpaceId } from '@tm8/contract';
 import {
-  editsFrom,
   draftValueFor,
   fieldKey,
   useEntityEdit,
@@ -208,6 +207,3 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
     addChild,
   };
 }
-
-/** Re-exported so a host can assert the projection without reaching into the lane. */
-export { editsFrom };
