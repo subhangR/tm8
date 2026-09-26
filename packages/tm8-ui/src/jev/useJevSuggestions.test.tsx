@@ -411,6 +411,18 @@ describe('review round (#828): the ledger states what the launch carries', () =>
     expect(result.current.jev.applied.references).toBeUndefined();
   });
 
+  it('a pick that changes the teammate AND the harness in one render re-asks ONCE (one call, one charge)', async () => {
+    const port = pendingPort();
+    const h = renderHook((p: { teammateId: string; agentTool: 'claude-code' | 'codex' }) => useJevSuggestions({
+      port, spaceId: 'sp-1', subjectId: 'task-1', teammateId: p.teammateId, agentTool: p.agentTool,
+    }), { initialProps: { teammateId: 'tm-1', agentTool: 'claude-code' as const } });
+    act(() => h.result.current.ask());
+    await act(async () => port.calls[0]!.resolve(answer(port.calls[0]!.input)));
+    h.rerender({ teammateId: 'tm-2', agentTool: 'codex' });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1]!.input).toMatchObject({ teamMemberId: 'tm-2', agentTool: 'codex', groups: ['memories', 'skills', 'references'] });
+  });
+
   it('D3 — Jev is asked with the launch’s Interaction Profile, and a profile change re-asks the three groups', async () => {
     const port = pendingPort();
     const h = mountApply({ port, profileId: 'prof-1' });
