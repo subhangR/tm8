@@ -75,6 +75,19 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(container.querySelector('.shell-root')).not.toBeNull();
   });
 
+  /* ONE ROW (owner, 2026-09-26): on the current bar the status strip is a
+     guest in the top bar's trail zone, and there is no second strip row. */
+  it('mounts the status strip INSIDE the top bar, once', async () => {
+    const { getByTestId, container } = renderGate();
+    await waitFor(() => expect(getByTestId('workspace-grid')).toBeTruthy());
+    const bar = getByTestId('space-tab-bar');
+    expect(bar.className).toContain('shell-tabbar--with-status');
+    const strips = container.querySelectorAll('[data-testid="status-strip"]');
+    expect(strips).toHaveLength(1);
+    expect(bar.querySelector('.shell-tabbar__zone--trail [data-testid="status-strip"]')).toBe(strips[0]);
+    expect(strips[0]!.className).toContain('status-strip--in-bar');
+  });
+
   /**
    * The shipped default still reaches the screen unaided — that is what this
    * has always been for — but it arrives as the SCREENS TAB ROW, not as a rail.

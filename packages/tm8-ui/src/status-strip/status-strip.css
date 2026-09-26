@@ -63,3 +63,24 @@
 .cv2-root .status-strip__segment--alert .status-strip__value {
   color: var(--pn-block);
 }
+
+/* IN THE TOP BAR (owner, 2026-09-26: one row). A guest in the bar's right
+   zone: no row chrome of its own, dividers on the LEADING edge so the first
+   segment separates the strip from the tabs and the last sits flush against
+   the palette hint. Still `overflow: visible` — the bar's ladder sheds
+   segments (`status-strip__segment--shed-N`) instead of clipping. */
+.cv2-root .status-strip--in-bar {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+}
+.cv2-root .status-strip--in-bar .status-strip__segment {
+  border-right: 0;
+  border-left: 1px solid var(--pn-line);
+}
+.cv2-root .status-strip--in-bar .status-strip__segment:last-child {
+  border-right: 1px solid var(--pn-line);
+}
