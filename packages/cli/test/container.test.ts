@@ -249,11 +249,10 @@ describe('--expect-version is MANDATORY on the eleven record-changing verbs', ()
     expect(seen).toEqual([]);
   });
 
-  it('the seven unguarded verbs do NOT advertise --expect-version', async () => {
+  it('the six unguarded verbs do NOT advertise --expect-version', async () => {
     for (const path of [
       ['container', 'create'], ['container', 'run'], ['container', 'terminal'],
       ['container', 'attach'], ['container', 'computer'], ['container', 'fork'],
-      ['container', 'attention'],
     ]) {
       expect(commandDiscovery(path)?.syntax, path.join(' ')).not.toMatch(/--expect-version/);
     }
@@ -657,7 +656,7 @@ describe('container browser', () => {
   });
 });
 
-// ── ports, policy, pool, attention, cp ─────────────────────────────────────
+// ── ports, policy, pool, cp ─────────────────────────────────────
 
 describe('the remaining verbs bind their own shapes', () => {
   it('expose sends a bounded port and the PORT share vocabulary', async () => {
@@ -703,17 +702,6 @@ describe('the remaining verbs bind their own shapes', () => {
 
     const over = await drive(['container', 'pool', CTR, '--expect-version', '1', '--warm', '9']);
     expect(over.code).toBe(EXIT_USAGE);
-    expect(seen).toEqual([]);
-  });
-
-  it('attention requires a reason from the closed set and bounds --points 1..100', async () => {
-    const ran = await drive(['container', 'attention', CTR, '--reason', 'captcha', '--points', '80']);
-    expect(ran.code, ran.stderr).toBe(0);
-    expect(body()).toMatchObject({ reason: 'captcha', points: 80 });
-
-    seen = [];
-    const bad = await drive(['container', 'attention', CTR, '--reason', 'bored']);
-    expect(bad.code).toBe(EXIT_USAGE);
     expect(seen).toEqual([]);
   });
 

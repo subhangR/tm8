@@ -32,8 +32,8 @@ const CONTAINER_OPS = OPERATIONS
   .map((o) => o.name as OperationName);
 
 describe('the container family is complete and discoverable', () => {
-  it('is exactly 25 rows — the number Design §4.1 enumerates, not the 27 its prose says', () => {
-    expect(CONTAINER_OPS).toHaveLength(25);
+  it('is exactly 24 rows — Design §4.1 enumerated 25; containers.attention was deleted (Attention v2 S7a)', () => {
+    expect(CONTAINER_OPS).toHaveLength(24); /* -1 containers.attention (Attention v2 S7a). MEASURED. */
   });
 
   it('`container` is a public noun a caller can type', () => {
@@ -151,13 +151,14 @@ describe('the per-row dispositions', () => {
 });
 
 describe('the noun index renders the whole family', () => {
-  it('lists 24 commands under `container`: 22 from rows plus 2 aliases', () => {
-    // 25 rows − 2 commandless (stream, proxy) = 23, and `container cp` serves
-    // BOTH files.put and files.get, so 22 distinct row-derived paths. The two
+  it('lists 23 commands under `container`: 21 from rows plus 2 aliases', () => {
+    // 24 rows − 2 commandless (stream, proxy) = 22, and `container cp` serves
+    // BOTH files.put and files.get, so 21 distinct row-derived paths. The two
     // aliases (`screenshot` over containers.computer, `adb` over containers.run)
-    // add no catalog row. 22 + 2 = 24, which is also the +24 in COMMAND_PATHS.
+    // add no catalog row. 21 + 2 = 23 (was 24 before Attention v2 S7a deleted
+    // `container attention`).
     const commands = commandsForNoun('container').map((c) => c.command).sort();
-    expect(commands).toHaveLength(24);
+    expect(commands).toHaveLength(23); /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     expect(commands).toContain('container screenshot');
     expect(commands).toContain('container adb');
   });
