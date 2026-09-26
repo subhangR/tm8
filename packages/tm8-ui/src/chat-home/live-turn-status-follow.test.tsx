@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import { NEAR_BOTTOM_PX } from './live-turn-status-follow';
+import { JUMP_SETTLE_MS, NEAR_BOTTOM_PX } from './live-turn-status-follow';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -228,6 +228,49 @@ describe('Jump respects motion preferences (D5)', () => {
     transcript.scrollTop = contentHeight / 2;
     fireEvent.scroll(transcript);
     expect(pill(view)).toBeNull();
+  });
+
+  /**
+   * HINGES ON: the finisher `jumpToLatest` arms. A smooth scroll is not
+   * guaranteed to arrive — in a hidden Chrome tab it never moves (no animation
+   * frames) — and without the finisher the reader was left 634px short of the
+   * end with the pill gone. `scrollTo` here is a stub that goes nowhere, which
+   * is exactly that tab.
+   */
+  it('finishes a smooth jump that never arrived', async () => {
+    motion(false);
+    const { view, transcript } = await mounted();
+    transcript.scrollTo = vi.fn() as unknown as typeof transcript.scrollTo;
+    readBack(transcript);
+    fireEvent.click(pill(view)!);
+    expect(writes).toEqual([]);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, JUMP_SETTLE_MS + 100));
+    });
+    expect(writes.at(-1)).toBe(contentHeight);
+  });
+
+  it('a reader who scrolls back up mid-jump is honoured, not snapped', async () => {
+    motion(false);
+    const { view, transcript } = await mounted();
+    transcript.scrollTo = vi.fn() as unknown as typeof transcript.scrollTo;
+    transcript.scrollTop = 1000;
+    fireEvent.scroll(transcript);
+    writes.length = 0;
+    fireEvent.click(pill(view)!);
+    // The jump's own travel toward the end is excused…
+    transcript.scrollTop = 1500;
+    fireEvent.scroll(transcript);
+    expect(pill(view)).toBeNull();
+    // …the reader pulling back up is not.
+    transcript.scrollTop = 200;
+    fireEvent.scroll(transcript);
+    expect(pill(view)).not.toBeNull();
+    writes.length = 0;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, JUMP_SETTLE_MS + 100));
+    });
+    expect(writes).toEqual([]);
   });
 
   it('jumps instantly under reduced motion', async () => {

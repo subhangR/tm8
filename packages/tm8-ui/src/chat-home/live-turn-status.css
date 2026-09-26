@@ -9,11 +9,19 @@
    only re-follows its end when the SCREEN re-renders — not when this row's own
    clock does. So nothing that ticks is allowed to wrap: the text and the meta
    are `nowrap` + ellipsis, and on a phone the meta takes its own line for the
-   whole turn rather than wrapping onto one when it grows. */
+   whole turn rather than wrapping onto one when it grows.
+
+   4px ABOVE THE COMPOSER MEANS A NEGATIVE OFFSET. A sticky box sticks inside
+   its scroller's CONTENT box, so `bottom: 4px` left the card 4px above the
+   transcript's bottom PADDING — measured 31px above the composer, with the
+   turns scrolling past visibly underneath it. The offset gives the padding
+   back (`.tch-transcript`: `--pn-space-6`, `--pn-space-4` under 760px). At the
+   end of the thread it changes nothing: the card's natural place is already
+   above the stick line, so it only sticks once the reader scrolls up. */
 
 .tch-dock {
   position: sticky;
-  bottom: 4px;
+  bottom: calc(4px - var(--pn-space-6));
   z-index: 1;
   display: flex;
   align-items: center;
@@ -38,8 +46,12 @@
 
 /* Without one, it is only the pill, centred and floated a little higher. */
 .tch-dock:not([data-live]) {
-  bottom: 12px;
+  bottom: calc(12px - var(--pn-space-6));
   justify-content: center;
+}
+@media (max-width: 760px) {
+  .tch-dock { bottom: calc(4px - var(--pn-space-4)); }
+  .tch-dock:not([data-live]) { bottom: calc(12px - var(--pn-space-4)); }
 }
 
 @keyframes tch-live-rise {

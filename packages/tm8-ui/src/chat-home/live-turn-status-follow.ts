@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type UIEvent } from 'react';
 
 /**
  * ── THE TRANSCRIPT FOLLOWS THE END, UNLESS THE READER LEFT IT ──────────────
@@ -35,12 +35,20 @@ import { useCallback, useLayoutEffect, useRef, useState, type UIEvent } from 're
 export const NEAR_BOTTOM_PX = 40;
 
 /**
- * How long after a Jump the scroll events of its own smooth scroll are not
- * read as the reader leaving. A smooth scroll passes through every position
- * between here and the end; without this, its first frame would re-arm the
- * pill it was pressed to dismiss.
+ * How long a Jump's smooth scroll is given to arrive.
+ *
+ * WHILE IT TRAVELS, its own scroll events are not the reader leaving — a smooth
+ * scroll passes through every position between here and the end, and its first
+ * frame would otherwise re-arm the pill it was pressed to dismiss. Only travel
+ * TOWARD the end is excused: a reader who scrolls back up mid-jump has changed
+ * their mind, and that is honoured at once.
+ *
+ * WHEN IT EXPIRES, a jump that did not arrive is FINISHED instantly. A smooth
+ * scroll is not guaranteed to complete — measured in Chrome: in a hidden tab it
+ * never moves at all (no animation frames), and a pressed Jump left the reader
+ * 634px short of the end, pill gone, the hook believing it was following.
  */
-const JUMP_SETTLE_MS = 1000;
+export const JUMP_SETTLE_MS = 1000;
 
 export interface TranscriptFollowInput {
   /** The open conversation. A change is a new box of content: land on its end. */
@@ -95,8 +103,14 @@ export function useTranscriptFollow({
   const followedHeightRef = useRef(-1);
   /** The message count when the reader left the end; `null` while following. */
   const [leftAt, setLeftAt] = useState<number | null>(null);
-  /** Until when a Jump's own smooth scroll is still travelling. */
-  const jumpUntilRef = useRef(0);
+  /** A Jump's smooth scroll in flight: until when, the distance to the end it
+   *  has reached so far, and the timer that finishes it if it stalls. */
+  const jumpRef = useRef<{ until: number; distance: number; timer: number } | null>(null);
+  const endJump = useCallback(() => {
+    if (jumpRef.current) window.clearTimeout(jumpRef.current.timer);
+    jumpRef.current = null;
+  }, []);
+  useEffect(() => endJump, [endJump]);
   const itemCountRef = useRef(itemCount);
   useLayoutEffect(() => {
     itemCountRef.current = itemCount;
@@ -109,6 +123,7 @@ export function useTranscriptFollow({
   /* Opening a conversation is not growth — it always lands on the newest
      turn, whatever the reader was doing in the thread they just left. */
   useLayoutEffect(() => {
+    endJump();
     stickRef.current = true;
     followedHeightRef.current = -1;
     setLeftAt(null);
@@ -139,16 +154,25 @@ export function useTranscriptFollow({
 
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
-    const atEnd =
-      element.scrollHeight - element.scrollTop - element.clientHeight <= NEAR_BOTTOM_PX;
-    // A Jump's smooth scroll in flight is not the reader leaving.
-    if (!atEnd && Date.now() < jumpUntilRef.current) return;
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const atEnd = distance <= NEAR_BOTTOM_PX;
+    const jump = jumpRef.current;
+    if (jump) {
+      if (atEnd) endJump();
+      // Its own travel toward the end is not the reader leaving…
+      else if (Date.now() < jump.until && distance <= jump.distance) {
+        jump.distance = distance;
+        return;
+      }
+      // …but travel AWAY from it is: they changed their mind mid-jump.
+      else endJump();
+    }
     stickRef.current = atEnd;
     /* Two writes per excursion, not one per scroll event: `null → n` when the
        reader leaves, `n → null` when they return. Everything between returns
        the current value and React bails out. */
     setLeftAt((current) => (atEnd ? null : (current ?? itemCountRef.current)));
-  }, []);
+  }, [endJump]);
 
   const jumpToLatest = useCallback(() => {
     const element = elementRef.current;
@@ -156,8 +180,22 @@ export function useTranscriptFollow({
     stickRef.current = true;
     const height = element.scrollHeight;
     followedHeightRef.current = height;
+    endJump();
     if (smoothScrollAllowed() && typeof element.scrollTo === 'function') {
-      jumpUntilRef.current = Date.now() + JUMP_SETTLE_MS;
+      const finish = () => {
+        jumpRef.current = null;
+        if (!stickRef.current) return;
+        const end = element.scrollHeight;
+        if (end - element.scrollTop - element.clientHeight > NEAR_BOTTOM_PX) {
+          followedHeightRef.current = end;
+          element.scrollTop = end;
+        }
+      };
+      jumpRef.current = {
+        until: Date.now() + JUMP_SETTLE_MS,
+        distance: element.scrollHeight - element.scrollTop - element.clientHeight,
+        timer: window.setTimeout(finish, JUMP_SETTLE_MS),
+      };
       element.scrollTo({ top: height, behavior: 'smooth' });
     } else {
       element.scrollTop = height;
@@ -167,7 +205,7 @@ export function useTranscriptFollow({
        falls to <body> and a keyboard reader is thrown back to the top of the
        page; the transcript is where they asked to be. */
     element.focus({ preventScroll: true });
-  }, []);
+  }, [endJump]);
 
   return {
     ref,

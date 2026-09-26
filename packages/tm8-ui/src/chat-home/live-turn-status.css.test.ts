@@ -27,10 +27,20 @@ function reducedMotionBlock(): string {
 }
 
 describe('live-turn-status.css', () => {
-  it('the dock sticks to the bottom of the transcript (D1)', () => {
+  /**
+   * D1: 4px above the composer. A sticky box sticks inside its scroller's
+   * CONTENT box, so the offset must give back the transcript's bottom padding —
+   * `bottom: 4px` measured 31px in Chrome, with turns scrolling past beneath
+   * the card. The paddings named here are `.tch-transcript`'s in chat-home.css.
+   */
+  it('the dock sticks 4px above the composer, giving back the transcript padding (D1)', () => {
     const dock = rule('.tch-dock');
     expect(dock).toMatch(/position:\s*sticky/);
-    expect(dock).toMatch(/bottom:\s*4px/);
+    expect(dock).toMatch(/bottom:\s*calc\(4px - var\(--pn-space-6\)\)/);
+    expect(CSS).toMatch(/max-width: 760px\)\s*\{\s*\.tch-dock\s*\{\s*bottom:\s*calc\(4px - var\(--pn-space-4\)\)/);
+    const transcriptCss = readFileSync(new URL('./chat-home.css', import.meta.url), 'utf8');
+    expect(rule('.tch-transcript', transcriptCss)).toMatch(/padding:\s*var\(--pn-space-6\)/);
+    expect(transcriptCss).toMatch(/max-width: 760px\)[\s\S]*?\.tch-transcript\s*\{\s*padding:\s*var\(--pn-space-4\)/);
   });
 
   it('the card is D1’s card', () => {
