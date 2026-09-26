@@ -795,6 +795,14 @@ describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by
     privateOfH2 = await seedCredential(fixture.identityH2, fixture.accountH2);
     privateOfH = await seedCredential(fixture.identityH, fixture.accountH);
   });
+  // Revoke both through the real writer, so the rest of the file sees no live
+  // credential owned by H or H2 in A: 239's members backstop (G6) refuses to
+  // end a membership whose account still owns one, and the enter_space cells
+  // below flip H2's status by hand.
+  afterAll(async () => {
+    await asIdentity(fixture.identityH2, (q) => q.rpc('delete_space_credential', [privateOfH2]));
+    await asIdentity(fixture.identityH, (q) => q.rpc('delete_space_credential', [privateOfH]));
+  });
 
   for (const [kind, mint] of AGENT_KINDS) {
     it(`${kind}: H2's private credential is not usable; H's own private one is (launcher = H)`, async () => {

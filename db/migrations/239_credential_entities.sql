@@ -127,8 +127,14 @@ before insert or update on public.member_defaults
 for each row execute function internal.guard_member_default();
 
 alter table public.member_defaults enable row level security;
+-- Own rows only, and under a pinned session (227) only the pinned space's:
+-- the literal pin conjunct, as 227 inlines it, so an agent token minted in
+-- space A cannot list its human's defaults in space B.
 create policy member_defaults_own_select on public.member_defaults
-  for select using (account_id = (select internal.current_account_id()));
+  for select using (
+    account_id = (select internal.current_account_id())
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid));
 grant select (space_id, account_id, provider, credential_id, updated_at)
   on public.member_defaults to tm8_app;
 
