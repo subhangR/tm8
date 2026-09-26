@@ -565,6 +565,15 @@ export interface SpawnContext {
    * read are declared, never dropped silently.
    */
   roster?: DispatcherRoster;
+  /**
+   * The EXACT teammates group when the launch selected teammates
+   * (`selection.teammateIds`, launch card v3 Decision 7), in the selected
+   * order, the launch teammate removed; each a live, same-space teammate the
+   * caller can read, with the roster's columns. Rendered as the `teammates`
+   * group of `<context_index>`, replacing the tasks' linked teammates and a
+   * dispatcher's roster. Absent when teammates were not selected.
+   */
+  teammates?: DispatcherRoster['members'];
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */

@@ -64,6 +64,9 @@ import { insertCalls, runTotals, storedSuggestion, upsertRun } from './store.js'
 
 type AnyGroupRun = GroupRun<ModelSuggestion | TeammateSuggestion | EntitySuggestion>;
 type RankGroup = Exclude<LaunchSuggestGroup, 'model'>;
+/** The launch strip: the groups ranked for one teammate (Decision 7). */
+type StripGroup = 'memories' | 'skills' | 'references';
+const STRIP_GROUPS: ReadonlySet<LaunchSuggestGroup> = new Set<LaunchSuggestGroup>(['memories', 'skills', 'references']);
 
 export interface JevHandlerOptions {
   /**
@@ -97,7 +100,8 @@ export interface GroupRules {
  * charged with the index's group frame; none of their own otherwise (they
  * take what the prompt has left), and none while the index is off, because
  * the `<skills>` trim ignores it. References: their sub-cap and frame; none
- * while the index is off (they are not in the prompt). Teammates: a floor.
+ * while the index is off (they are not in the prompt). Teammates: a floor,
+ * and the profile's `contextBudgets.teammates` while the index is on.
  */
 export function groupRules(env: Readonly<Record<string, string | undefined>>, profileSnapshot: unknown): GroupRules {
   const contextIndex = contextIndexSwitch(env, profileSnapshot).on;
@@ -114,7 +118,9 @@ export function groupRules(env: Readonly<Record<string, string | undefined>>, pr
       references: contextIndex
         ? { budget: budgets.references ?? BYTE_BUDGETS.referenceIndex, floor: floors.references, frameBytes: frame('references') }
         : { budget: null, floor: floors.references },
-      teammates: { budget: null, floor: floors.teammates },
+      // A worker's teammates share the references cap unless the profile
+      // gives them their own; none while the index is off (not in the prompt).
+      teammates: { budget: contextIndex ? budgets.teammates ?? null : null, floor: floors.teammates },
     },
   };
 }
@@ -144,64 +150,104 @@ export function registerJevHandlers(
     // The profile the launch would pin decides the budgets, floors and index
     // switch. Unresolvable (no such profile, a teammate not yet readable) is
     // the node's defaults: advice is never refused over a budget.
-    let profileSnapshot: unknown = null;
-    try {
-      profileSnapshot = await resolveProfile(claims, {
-        spaceId,
-        teamMemberId: input.teamMemberId ?? null,
-        interactionProfileId: input.interactionProfileId ?? null,
-      });
-    } catch {
-      profileSnapshot = null;
-    }
-    const { contextIndex, rules } = groupRules(env, profileSnapshot);
+    const rulesFor = async (teamMemberId: string | null): Promise<GroupRules> => {
+      let profileSnapshot: unknown = null;
+      try {
+        profileSnapshot = await resolveProfile(claims, {
+          spaceId,
+          teamMemberId,
+          interactionProfileId: input.interactionProfileId ?? null,
+        });
+      } catch {
+        profileSnapshot = null;
+      }
+      return groupRules(env, profileSnapshot);
+    };
+    const fixedRules = await rulesFor(input.teamMemberId ?? null);
 
-    // 1. READ.
-    const plan = await deps.db.tx(claims, async (q) => {
+    // WHOSE STRIP (launch card v3, Decision 7). Jev's top teammate is
+    // auto-applied by the UI, so memories, skills and references are ranked
+    // for it — asked AFTER the teammates group has answered — when the card's
+    // teammate is not fixed. Anything else ranks for `teamMemberId`.
+    const wantsTeammates = input.groups.includes('teammates');
+    const rankForSuggested = wantsTeammates && (input.rankForSuggestedTeammate ?? input.teamMemberId === undefined);
+    const stripGroups = input.groups.filter((group): group is StripGroup => STRIP_GROUPS.has(group));
+
+    // 1. READ — the subject, the fixed teammate and the teammate pool.
+    const head = await deps.db.tx(claims, async (q) => {
       const member = (await q.query<{ ok: boolean }>(
         'select internal.is_space_member($1::uuid) as ok', [spaceId],
       ))[0]?.ok === true;
       if (!member) throw fail('forbidden', 'you are not a member of this space');
 
-      const { subject, taskId, parentTaskId } = await loadSubject(q, spaceId, input.subjectId, input.draft);
+      const subject = await loadSubject(q, spaceId, input.subjectId, input.draft);
       const teammate = input.teamMemberId ? await requireTeammate(q, spaceId, input.teamMemberId) : null;
-      const measure = { contextIndex, agentTool: input.agentTool ?? teammate?.agentTool ?? 'claude-code' };
-
-      const skips: Partial<Record<LaunchSuggestGroup, JevSkipReason>> = {};
-      const sets: Partial<Record<RankGroup, CandidateSet>> = {};
-      // Without a client every group is `no_key`; there is nothing to load for.
-      if (advisor) {
-        const text = hasSubjectText(subject);
-        for (const group of input.groups) {
-          if (!text) { skips[group] = 'no_subject_text'; continue; }
-          if (group === 'teammates') sets.teammates = await loadTeammates(q, spaceId, measure);
-          if (group === 'references') sets.references = await loadReferences(q, spaceId, taskId, parentTaskId, measure);
-          if (group === 'memories' || group === 'skills') {
-            if (!input.teamMemberId) { skips[group] = 'no_teammate'; continue; }
-            sets[group] = group === 'memories'
-              ? await loadMemories(q, spaceId, input.teamMemberId, taskId)
-              : await loadSkills(q, spaceId, input.teamMemberId, taskId, measure);
-          }
-        }
-      }
-      return { subject, skips, sets };
+      const measure = { contextIndex: fixedRules.contextIndex, agentTool: input.agentTool ?? teammate?.agentTool ?? 'claude-code' };
+      const text = hasSubjectText(subject.subject);
+      const teammates = advisor && text && wantsTeammates ? await loadTeammates(q, spaceId, measure) : undefined;
+      return { ...subject, text, teammates, teammateTool: teammate?.agentTool ?? null };
     });
 
-    // 2. ASK — all requested groups in flight at once.
-    const settled = await Promise.allSettled(input.groups.map((group): Promise<AnyGroupRun> => {
+    // The strip's candidates, for one teammate, in the caller's transaction.
+    const readStrip = (teamMemberId: string | null, contextIndex: boolean, knownTool: string | null) =>
+      deps.db.tx(claims, async (q) => {
+        const skips: Partial<Record<LaunchSuggestGroup, JevSkipReason>> = {};
+        const sets: Partial<Record<RankGroup, CandidateSet>> = {};
+        // Without a client every group is `no_key`; there is nothing to load for.
+        if (!advisor) return { skips, sets };
+        const tool = teamMemberId === null
+          ? null
+          : teamMemberId === input.teamMemberId ? knownTool : (await requireTeammate(q, spaceId, teamMemberId)).agentTool;
+        const measure = { contextIndex, agentTool: input.agentTool ?? tool ?? 'claude-code' };
+        for (const group of stripGroups) {
+          if (!head.text) { skips[group] = 'no_subject_text'; continue; }
+          if (group === 'references') sets.references = await loadReferences(q, spaceId, head.taskId, head.parentTaskId, measure);
+          else if (!teamMemberId) skips[group] = 'no_teammate';
+          else {
+            sets[group] = group === 'memories'
+              ? await loadMemories(q, spaceId, teamMemberId, head.taskId)
+              : await loadSkills(q, spaceId, teamMemberId, head.taskId, measure);
+          }
+        }
+        return { skips, sets };
+      });
+
+    // 2. ASK — the model and teammates groups at once; the strip with them
+    // unless it waits for Jev's top teammate.
+    const ask = (group: LaunchSuggestGroup, plan: { skips: Partial<Record<LaunchSuggestGroup, JevSkipReason>>; sets: Partial<Record<RankGroup, CandidateSet>> }, rules: GroupRules['rules']): Promise<AnyGroupRun> => {
       const skip = plan.skips[group];
       if (skip) return Promise.resolve(skipped(skip));
       return group === 'model'
-        ? runGroup(advisor, 'model', null, plan.subject)
-        : runGroup(advisor, group as 'memories', plan.sets[group] ?? { items: [], considered: 0, total: 0 }, plan.subject, rules[group]);
-    }));
-    const runs = new Map<LaunchSuggestGroup, AnyGroupRun>(input.groups.map((group, i) => {
-      const outcome = settled[i]!;
+        ? runGroup(advisor, 'model', null, head.subject)
+        : runGroup(advisor, group as 'memories', plan.sets[group] ?? { items: [], considered: 0, total: 0 }, head.subject, rules[group]);
+    };
+    const settle = (promise: Promise<AnyGroupRun>): Promise<AnyGroupRun> => promise.catch(
       // runGroup never rejects; this keeps the promise honest if it ever did.
-      return [group, outcome.status === 'fulfilled'
-        ? outcome.value
-        : { result: { status: 'failed', reason: 'network', cost: { ...ZERO_COST } }, calls: [] }];
-    }));
+      (): AnyGroupRun => ({ result: { status: 'failed', reason: 'network', cost: { ...ZERO_COST } }, calls: [] }),
+    );
+    const headPlan = {
+      skips: advisor && !head.text ? Object.fromEntries(input.groups.map((g) => [g, 'no_subject_text' as const])) : {},
+      sets: head.teammates ? { teammates: head.teammates } : {},
+    };
+    const headRuns = new Map<LaunchSuggestGroup, Promise<AnyGroupRun>>(input.groups
+      .filter((group) => !STRIP_GROUPS.has(group))
+      .map((group) => [group, settle(ask(group, headPlan, fixedRules.rules))]));
+
+    let rankedFor: string | null = input.teamMemberId ?? null;
+    if (rankForSuggested) {
+      const teammates = (await headRuns.get('teammates')!).result;
+      const top = teammates.status === 'ok' ? (teammates.value as TeammateSuggestion).items.find((item) => item.suggested) : undefined;
+      if (top) rankedFor = top.entityId;
+    }
+    const stripRules = rankedFor === (input.teamMemberId ?? null) ? fixedRules : await rulesFor(rankedFor);
+    const stripPlan = stripGroups.length > 0
+      ? await readStrip(rankedFor, stripRules.contextIndex, head.teammateTool)
+      : { skips: {}, sets: {} };
+    const stripRuns = new Map<LaunchSuggestGroup, Promise<AnyGroupRun>>(stripGroups
+      .map((group) => [group, settle(ask(group, stripPlan, stripRules.rules))]));
+    const runs = new Map<LaunchSuggestGroup, AnyGroupRun>();
+    for (const group of input.groups) runs.set(group, await (headRuns.get(group) ?? stripRuns.get(group))!);
+    const contextIndex = stripRules.contextIndex;
 
     // 3. RECORD.
     return deps.db.tx(claims, async (q): Promise<LaunchSuggestResult> => {
@@ -215,7 +261,13 @@ export function registerJevHandlers(
       for (const [group, run] of runs) {
         (groups as Record<LaunchSuggestGroup, JevGroupResult<unknown>>)[group] = run.result;
       }
-      return { runId: input.runId, groups, contextIndex: contextIndex ? 'on' : 'off', run: await runTotals(q, input.runId) };
+      return {
+        runId: input.runId,
+        groups,
+        contextIndex: contextIndex ? 'on' : 'off',
+        rankedForTeamMemberId: rankedFor,
+        run: await runTotals(q, input.runId),
+      };
     });
   });
 }

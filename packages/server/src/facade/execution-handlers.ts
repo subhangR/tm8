@@ -1,6 +1,6 @@
 import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
-import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
+import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
 import { loadSkillsById } from '../skills/equipment.js';
 import { linkSession } from '../jev/store.js';
@@ -251,26 +251,33 @@ function renderMemories(
 /**
  * `execution.spawn.selection` names only live entities of THIS space that the
  * caller can read (the query runs under the caller's RLS), each of its group's
- * kind (design 01a0d348 §5.1, §8 I6): memories, skills, and references —
- * docs, artifacts, drawings, files and tasks. Anything else is refused with
+ * kind (design 01a0d348 §5.1, §8 I6): memories, skills, references —
+ * docs, artifacts, drawings, files and tasks — and teammates (launch card v3,
+ * Decision 7). Anything else is refused with
  * `invalid_input` NAMING every bad id — a selected entity deleted before
  * launch is surfaced, never silently dropped. An absent group is not checked:
  * it means that group's defaults.
  */
 export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
-  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds } =
+  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds } =
     await invalidSelectionIds(q, spaceId, selection);
-  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0) return;
+  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0 && badTeammateIds.length === 0) return;
   const named = [
     ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
     ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
     ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
+    ...(badTeammateIds.length ? [`teammateIds ${badTeammateIds.join(', ')}`] : []),
   ].join('; ');
   throw fail(
     'invalid_input',
     'selection names entities that are not live memories/skills/references '
-      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
-    { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
+      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')})/teammates in this space: ${named}`,
+    {
+      invalidMemoryIds: badMemoryIds,
+      invalidSkillIds: badSkillIds,
+      invalidReferenceIds: badReferenceIds,
+      ...(badTeammateIds.length ? { invalidTeammateIds: badTeammateIds } : {}),
+    },
   );
 }
 
@@ -279,11 +286,12 @@ async function invalidSelectionIds(
   q: Querier,
   spaceId: string,
   selection: SpawnSelection,
-): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; kinds: ReadonlyMap<string, string> }> {
+): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; teammateIds: string[]; kinds: ReadonlyMap<string, string> }> {
   const memoryIds = selection.memoryIds ?? [];
   const skillIds = selection.skillIds ?? [];
   const referenceIds = selection.referenceIds ?? [];
-  const ids = [...new Set([...memoryIds, ...skillIds, ...referenceIds])];
+  const teammateIds = selection.teammateIds ?? [];
+  const ids = [...new Set([...memoryIds, ...skillIds, ...referenceIds, ...teammateIds])];
   const rows = ids.length === 0 ? [] : await q.query<{ id: string; kind: string }>(
     `select e.id, e.kind from public.entities e
       where e.id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
@@ -295,7 +303,8 @@ async function invalidSelectionIds(
   const badMemoryIds = bad(memoryIds, (kind) => kind === 'memory');
   const badSkillIds = bad(skillIds, (kind) => kind === 'skill');
   const badReferenceIds = bad(referenceIds, (kind) => REFERENCE_KINDS.has(kind ?? ''));
-  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, kinds };
+  const badTeammateIds = bad(teammateIds, (kind) => kind === 'team_member');
+  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds, kinds };
 }
 
 /**
@@ -324,17 +333,20 @@ async function pruneReplayedSelection(
     ...bad.memoryIds.map(drop('memories')),
     ...bad.skillIds.map(drop('skills')),
     ...bad.referenceIds.map(drop('references')),
+    ...bad.teammateIds.map(drop('teammates')),
   ];
   const keep = (ids: string[] | undefined, gone: string[]): string[] | undefined =>
     ids === undefined ? undefined : ids.filter((id) => !gone.includes(id));
   const memoryIds = keep(selection.memoryIds, bad.memoryIds);
   const skillIds = keep(selection.skillIds, bad.skillIds);
   const referenceIds = keep(selection.referenceIds, bad.referenceIds);
+  const teammateIds = keep(selection.teammateIds, bad.teammateIds);
   return {
     selection: {
       ...(memoryIds ? { memoryIds } : {}),
       ...(skillIds ? { skillIds } : {}),
       ...(referenceIds ? { referenceIds } : {}),
+      ...(teammateIds ? { teammateIds } : {}),
     },
     dropped,
   };
@@ -764,6 +776,40 @@ export class DbGraphPort implements GraphPort {
         }
       }
 
+      // `selection.teammateIds` (launch card v3, Decision 7): exactly these
+      // teammates, in the selected order, as the `teammates` group of
+      // `<context_index>` — replacing the tasks' linked teammates and a
+      // dispatcher's roster. The launch teammate is removed silently (it is
+      // never in its own group). Validated above; read here under RLS with
+      // the roster's columns, so an entry renders as a roster entry does.
+      let teammates: SpawnContext['teammates'];
+      const teammateDrops: ContextDrop[] = [];
+      const selectedTeammateIds = selection?.teammateIds;
+      if (selectedTeammateIds) {
+        const wanted = [...new Set(selectedTeammateIds)].filter((id) => id !== member.entity_id);
+        const found = new Map((wanted.length === 0 ? [] : await q.query<{ entity_id: string; name: string; mode: string | null; model: string | null }>(
+          `select tm.entity_id, tm.name, tm.mode, tm.model
+             from public.team_members tm
+             join public.entities e on e.id = tm.entity_id
+            where tm.entity_id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
+          [wanted, input.spaceId],
+        )).map((row) => [row.entity_id, row]));
+        const missing = wanted.filter((id) => !found.has(id));
+        if (missing.length > 0) {
+          throw fail('invalid_input', `selection.teammateIds not found in this space (or not teammates): ${missing.join(', ')}`);
+        }
+        teammates = wanted.map((id) => {
+          const row = found.get(id)!;
+          return { entityId: id, name: row.name, mode: row.mode, model: row.model };
+        });
+        const kept = new Set(wanted);
+        for (const row of await loadTeammateDefaults(q, input.spaceId, spawnTaskIds, member.entity_id)) {
+          if (!kept.has(row.entityId)) {
+            teammateDrops.push({ entityId: row.entityId, kind: row.kind, group: 'teammates', reason: 'not-selected' });
+          }
+        }
+      }
+
       return {
         spaceId: input.spaceId,
         parentKind,
@@ -841,6 +887,7 @@ export class DbGraphPort implements GraphPort {
         skillsScannedAt,
         droppedSkills: [],
         ...(references ? { references } : {}),
+        ...(teammates ? { teammates } : {}),
         contextAudit: {
           selectedGroups: [
             ...(memoriesSelected ? ['memories' as const] : []),
@@ -849,7 +896,7 @@ export class DbGraphPort implements GraphPort {
           ],
           memoryVia: injectedMemories.via,
           ...(selectionOnlySkillIds.length > 0 ? { selectionOnlySkillIds } : {}),
-          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops],
+          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops, ...teammateDrops],
           // A memory selection replaces the legacy jsonb remainder too; it has no ids.
           ...(memoriesSelected && Array.isArray(member.memories) && member.memories.length > 0
             ? { legacyMemoriesDropped: member.memories.length }

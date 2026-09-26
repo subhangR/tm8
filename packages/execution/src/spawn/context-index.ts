@@ -100,6 +100,7 @@ export function contextHeaderIds(context: SpawnContext): string[] {
     ...(context.skillEquips ?? context.skills ?? []).map((row) => row.entityId),
     ...(context.teamMember.memoryIds ?? []),
     ...(context.roster?.members ?? []).map((row) => row.entityId),
+    ...(context.teammates ?? []).map((row) => row.entityId),
   ])];
 }
 
@@ -379,11 +380,12 @@ export function skillIndexEntry(skill: ManifestSkillContext, via: ContextVia, he
 export function rosterEntry(
   row: DispatcherRoster['members'][number],
   header: SelectionHeader | undefined,
+  via: 'roster' | 'selection' = 'roster',
 ): PromptContextEntry {
   return {
     id: row.entityId,
     kind: 'team_member',
-    via: 'roster',
+    via,
     teammate: { mode: row.mode, model: row.model },
     load: loadPointerFor('team_member', row.entityId),
     ...withHeader(header, row.name),
@@ -415,6 +417,14 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   const teammates: PromptContextEntry[] = [];
   const seen = new Set<string>();
   const selected = context.references !== undefined;
+  // Selected teammates (Decision 7) are the whole group, rendered with the
+  // roster's columns; a task's linked teammate then enters only by selection.
+  const selectedTeammates = context.teammates;
+  for (const row of selectedTeammates ?? []) {
+    if (row.entityId === self || seen.has(row.entityId)) continue;
+    seen.add(row.entityId);
+    teammates.push(rosterEntry(row, headers.get(row.entityId), 'selection'));
+  }
   for (const ref of context.references ?? []) {
     // Files are never index entries: they ride in `<attachments>`.
     if (ref.kind === 'file' || seen.has(ref.entityId)) continue;
@@ -424,7 +434,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   for (const task of context.tasks) {
     for (const item of task.linked ?? []) {
       const teammate = item.kind === 'team_member';
-      if (teammate && item.entityId === self) continue;
+      if (teammate && (item.entityId === self || selectedTeammates)) continue;
       if (item.kind === 'file') continue;
       if (selected && REFERENCE_KINDS.has(item.kind)) continue;
       if (seen.has(item.entityId)) continue;
@@ -437,7 +447,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   // A dispatcher's roster, after any teammate a task links (those were named
   // for this work). Mode and model are the teammate's own columns, rendered as
   // control attributes; its name and header stay untrusted text.
-  const roster = context.roster;
+  const roster = selectedTeammates ? undefined : context.roster;
   let rosterUnread = 0;
   if (roster) {
     for (const row of roster.members) {

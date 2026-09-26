@@ -1323,7 +1323,8 @@ export class SpawnService {
    * same header read (design 01a0d348 §8 I8).
    */
   private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext, mode: string | null | undefined, jevRunId?: string): Promise<void> {
-    if (mode === 'dispatcher' && this.graph.loadDispatcherRoster) {
+    // Selected teammates (`selection.teammateIds`) replace the roster read.
+    if (mode === 'dispatcher' && !context.teammates && this.graph.loadDispatcherRoster) {
       context.roster = await this.graph.loadDispatcherRoster(auth, {
         spaceId: context.spaceId,
         excludeTeamMemberId: context.teamMember.id,

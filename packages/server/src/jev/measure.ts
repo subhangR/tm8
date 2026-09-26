@@ -88,7 +88,8 @@ export function referencePromptBytes(
 }
 
 /**
- * A teammate's entry as a dispatcher's roster renders it (I8, `rosterEntry`):
+ * A teammate's entry as a dispatcher's roster (or, `via` selection, a
+ * selected teammate) renders it (I8, `rosterEntry`):
  * its `mode` and `model` columns are control attributes. 0 while
  * `<context_index>` is off, which renders no roster.
  */
@@ -96,7 +97,8 @@ export function teammatePromptBytes(
   row: DispatcherRoster['members'][number],
   header: SelectionHeader | undefined,
   measure: MeasureContext,
+  via: 'roster' | 'selection' = 'roster',
 ): number {
   if (!measure.contextIndex) return 0;
-  return contextEntryBytes(redactSecretsDeep(rosterEntry(row, header)));
+  return contextEntryBytes(redactSecretsDeep(rosterEntry(row, header, via)));
 }

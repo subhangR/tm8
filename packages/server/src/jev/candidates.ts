@@ -297,8 +297,9 @@ export async function loadTeammates(q: Querier, spaceId: string, measure: Measur
       sources: ['space'],
       // Picking who runs the launch is not a context group: nothing is a default.
       default: false,
-      // As a dispatcher's roster renders it (I8's `rosterEntry`): mode and model included.
-      promptBytes: teammatePromptBytes({ entityId: row.id, name: row.name, mode: row.mode, model: row.model }, header, measure),
+      // As a selected teammate renders in the teammates group (Decision 7,
+      // `rosterEntry` via `selection`): mode and model included.
+      promptBytes: teammatePromptBytes({ entityId: row.id, name: row.name, mode: row.mode, model: row.model }, header, measure, 'selection'),
       header: rankedHeader(header),
     }];
   });
