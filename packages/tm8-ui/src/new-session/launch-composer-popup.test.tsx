@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import type { ExecutionSpawnInput, ProjectId } from '@tm8/contract';
 
@@ -11,11 +11,22 @@ import { LaunchComposerPopup, type LaunchComposerPopupProps } from './LaunchComp
  * The Run popup — the canvas card as a modal tile over an existing task.
  *
  * The load-bearing claims: the payload names THE SUBJECT (taskIds, title), the
- * verb's mode is prop-authoritative, the body field IS the task's description
- * (autofilled, and a real edit saves back onto the task in one patch with a
- * title edit, BEFORE the spawn), success closes the tile, and a refusal keeps
- * it up with the reason and a shake.
+ * verb's mode is prop-authoritative, the big textarea is INSTRUCTIONS for this
+ * launch (`promptExtra`) while the task's description is edited from the
+ * subject chip (autofilled, and a real edit saves back onto the task in one
+ * patch with a title edit, BEFORE the spawn), success closes the tile, and a
+ * refusal keeps it up with the reason and a shake.
  */
+
+/* Remembered picks live in localStorage, which jsdom keeps across a file's
+   tests: every test starts with none. */
+beforeEach(() => { localStorage.clear(); });
+
+/** Opens the subject chip's popover and returns the description field. */
+function openDescription(view: { getByTestId(id: string): HTMLElement }): HTMLTextAreaElement {
+  fireEvent.click(view.getByTestId('lcd-subject'));
+  return view.getByTestId('lcd-description') as HTMLTextAreaElement;
+}
 
 const TEAMMATES = [
   { id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-sonnet-5' },
@@ -65,20 +76,36 @@ describe('the spawn payload', () => {
     await waitFor(() => expect(props.onDismiss).toHaveBeenCalledTimes(1));
   });
 
-  it('the body is the task’s DESCRIPTION: edits save onto the task in one patch, never as promptExtra', async () => {
+  it('the textarea is INSTRUCTIONS for this launch: it rides as promptExtra and never touches the task', async () => {
     const onSaveSubject = vi.fn();
-    const { getByTestId, getByLabelText, props } = renderPopup({
+    const { getByLabelText, getByTestId, props } = renderPopup({
+      loadDescription: () => Promise.resolve('Reconnect drops after 30s.'),
+      onSaveSubject,
+    });
+    fireEvent.change(getByLabelText('Instructions for this session'), {
+      target: { value: '  Start from latest main.  ' },
+    });
+    fireEvent.click(getByTestId('nsx-send'));
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.promptExtra).toBe('Start from latest main.');
+    expect(onSaveSubject).not.toHaveBeenCalled();
+  });
+
+  it('the task’s DESCRIPTION is edited from the subject chip: it saves onto the task in one patch, never as promptExtra', async () => {
+    const onSaveSubject = vi.fn();
+    const view = renderPopup({
       loadDescription: () => Promise.resolve('Reconnect drops after 30s.'),
       onSaveSubject,
     });
     // Autofilled with the task's real body before any edit.
-    const area = getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
+    const area = openDescription(view);
     await waitFor(() => expect(area.value).toBe('Reconnect drops after 30s.'));
 
     fireEvent.change(area, { target: { value: 'Reconnect drops after 30s. Logs in #build-failures.' } });
-    fireEvent.change(getByTestId('nsx-title'), { target: { value: 'Launch flow session' } });
-    fireEvent.click(getByTestId('nsx-send'));
-    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Launch flow session' } });
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(view.props.onSpawn).toHaveBeenCalled());
 
     // ONE save call carrying both edits — atomic on the wire.
     expect(onSaveSubject).toHaveBeenCalledTimes(1);
@@ -86,7 +113,7 @@ describe('the spawn payload', () => {
       title: 'Launch flow session',
       description: 'Reconnect drops after 30s. Logs in #build-failures.',
     });
-    const input = (props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
+    const input = (view.props.onSpawn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExecutionSpawnInput;
     expect(input.title).toBe('Launch flow session');
     // The description travels ON THE TASK, not as a launch side-channel.
     expect('promptExtra' in input).toBe(false);
@@ -94,14 +121,23 @@ describe('the spawn payload', () => {
 
   it('an untouched autofill saves nothing back', async () => {
     const onSaveSubject = vi.fn();
-    const { getByTestId, getByLabelText, props } = renderPopup({
+    const view = renderPopup({
       loadDescription: () => Promise.resolve('Existing body.'),
       onSaveSubject,
     });
-    await waitFor(() => expect((getByLabelText('Describe what this session should do') as HTMLTextAreaElement).value).toBe('Existing body.'));
-    fireEvent.click(getByTestId('nsx-send'));
-    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    const area = openDescription(view);
+    await waitFor(() => expect(area.value).toBe('Existing body.'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(view.props.onSpawn).toHaveBeenCalled());
     expect(onSaveSubject).not.toHaveBeenCalled();
+  });
+
+  it('with no save path the description is read-only, and says why', async () => {
+    const view = renderPopup({ loadDescription: () => Promise.resolve('Existing body.') });
+    const area = openDescription(view);
+    await waitFor(() => expect(area.value).toBe('Existing body.'));
+    expect(area.readOnly).toBe(true);
+    expect(view.getByTestId('lcd-subject-menu').textContent).toContain('can’t save onto the task');
   });
 
   it('the verb’s mode is prop-authoritative: Coordinate commits a coordinator', async () => {
@@ -189,7 +225,7 @@ describe('dismissal and refusal honesty', () => {
     await waitFor(() => expect(getByRole('alert').textContent).toContain('no session slots free'));
     expect(props.onDismiss).not.toHaveBeenCalled();
     // The refusal is FELT: the frame carries the shake for its animation's life.
-    expect(container.querySelector('.nsx-popup__frame')!.hasAttribute('data-shake')).toBe(true);
+    expect(container.querySelector('[data-testid="launch-card"]')!.hasAttribute('data-shake')).toBe(true);
     // And it is correctable: Launch stays enabled so a second click retries.
     expect(getByTestId('nsx-send').getAttribute('aria-disabled')).not.toBe('true');
     fireEvent.click(getByTestId('nsx-send'));
@@ -271,16 +307,20 @@ describe('a session subject is continued, not edited', () => {
   it('opens titled "Continue: …", loads no description, and saves nothing back', async () => {
     const onSaveSubject = vi.fn();
     const loadDescription = vi.fn(() => Promise.resolve('never shown'));
-    const { getByTestId, getByLabelText, props } = renderPopup({
+    const { getByTestId, getByLabelText, queryByTestId, props } = renderPopup({
       subject: session,
       loadDescription,
       onSaveSubject,
     });
     expect((getByTestId('nsx-title') as HTMLInputElement).value).toBe('Continue: Fix the reconnect loop');
     expect(loadDescription).not.toHaveBeenCalled();
+    // The subject chip explains the continuation instead of offering an editor.
+    fireEvent.click(getByTestId('lcd-subject'));
+    expect(queryByTestId('lcd-description')).toBeNull();
+    expect(getByTestId('lcd-subject-menu').textContent).toContain('Nothing here is loaded');
 
     fireEvent.change(getByTestId('nsx-title'), { target: { value: 'Reconnect, round two' } });
-    fireEvent.change(getByLabelText('Describe what this session should do'), {
+    fireEvent.change(getByLabelText('Instructions for this session'), {
       target: { value: 'Then check the backoff constants.' },
     });
     fireEvent.click(getByTestId('nsx-send'));

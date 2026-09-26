@@ -1,0 +1,775 @@
+/*
+ * THE LAUNCH CARD — v2 (artifact 01a0dd42 rev 4). Two border bands, a center
+ * for writing, an advanced drawer over the center's right edge.
+ *
+ * SIZE. The popup layer is a SIZE container (`lcpop`) and the card is sized in
+ * its units: 80% × 82% of it, clamped to 640–1280 × 480–900. The layer is
+ * `position: fixed; inset: 0`, so its box is the viewport as the viewer sees
+ * it whatever zoom `.cv2-root` carries — `vw` inside a zoomed ancestor would be
+ * multiplied by that zoom (the terminal ran at 1.21× that way for weeks).
+ *
+ * ONE GUTTER (`--g`) for both bands and the center, so the verb, the context
+ * row, the title, the attach button and the model control share a left edge.
+ * Controls are 32px, chips 30px.
+ *
+ * NARROW. The card is itself an inline-size container (`card`) and sheds
+ * text in steps at the bottom of this file — never a control, never clipped.
+ */
+
+.nsx-popup--card {
+  container: lcpop / size;
+  padding: 0;
+}
+
+.lcd {
+  --g: clamp(16px, 1.9cqw, 28px);
+  --h: 32px;
+  container: card / inline-size;
+  position: relative;
+  box-sizing: border-box;
+  width: clamp(min(640px, calc(100cqw - 24px)), 80cqw, 1280px);
+  height: clamp(min(480px, calc(100cqh - 24px)), 82cqh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+  color: var(--pn-ink);
+  font: 14px/1.5 var(--pn-ui);
+  /* Menus are inside the card and fitted to it (`useFitInside`); nothing is
+     allowed past its edge, so clipping here is a guarantee, not a hazard.
+     `clip`, not `hidden`: a hidden box is still a scroll container, and a
+     menu's autofocused filter scrolled the whole card sideways on a phone
+     before the fit ran (seen at 390px). A clipped box cannot be scrolled. */
+  overflow: clip;
+}
+
+.lcd *, .lcd *::before, .lcd *::after { box-sizing: border-box; }
+.lcd button { font: inherit; color: inherit; }
+
+.lcd[data-shake] { animation: lcd-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+@keyframes lcd-shake {
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+/* Files dropped anywhere on the card. */
+.lcd[data-drop]::after {
+  content: 'Drop to attach';
+  position: absolute;
+  inset: 8px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--pn-brand);
+  border-radius: var(--pn-r-lg);
+  background: color-mix(in srgb, var(--pn-surface) 88%, transparent);
+  color: var(--pn-brand);
+  font: 600 15px var(--pn-ui);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ the bands */
+
+.lcd-band {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  row-gap: 6px;
+  min-width: 0;
+  padding: 10px var(--g);
+}
+
+.lcd-band--top { border-bottom: 1px solid var(--pn-line); min-height: 56px; }
+.lcd-band--bot { border-top: 1px solid var(--pn-line); min-height: 60px; }
+
+/* The first control's glyph sits on the gutter, not its hover padding. */
+.lcd-band--bot > .lcd-a-first .lcd-tool { margin-left: -10px; }
+.lcd-i-close { margin-right: -6px; }
+
+.lcd-spacer { flex: 1; }
+.lcd-band--bot .lcd-spacer { flex: 0; }
+.lcd-sep { flex: none; width: 1px; height: 20px; margin: 0 6px; background: var(--pn-line); }
+.lcd-brk { display: none; }
+.lcd-anchor { position: relative; flex: none; min-width: 0; }
+
+.lcd-verb {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  margin-right: 2px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+  font: 600 10.5px/1 var(--pn-ui);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.lcd-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--h);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-2) !important;
+  font: 500 13px/1.2 var(--pn-ui) !important;
+}
+
+.lcd-tool:hover, .lcd-tool[aria-expanded='true'] { background: var(--pn-hover); }
+.lcd-tool[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+.lcd-tool b {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--pn-ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.lcd-tool--full, .lcd-tool--full span { color: var(--pn-block) !important; }
+.lcd-tool--full .lcd-dot { background: var(--pn-block); }
+
+.lcd-caret { color: var(--pn-ink-3); font-size: 8px; }
+.lcd-meta { color: var(--pn-ink-3); font: 11.5px var(--pn-mono); }
+.lcd-glyph { font-size: 15px; line-height: 1; }
+.lcd-branch { color: var(--pn-ink-2); font: 12px var(--pn-mono); }
+.lcd-dirty {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+  font: 11px var(--pn-mono);
+}
+.lcd-pjbadge {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  font: 600 11px var(--pn-ui);
+}
+
+.lcd-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--pn-ink-3);
+  font: 11.5px var(--pn-mono);
+  white-space: nowrap;
+}
+
+.lcd-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
+.lcd-dot[data-full] { background: var(--pn-block); }
+
+.lcd-icon {
+  position: relative;
+  flex: none;
+  width: var(--h);
+  height: var(--h);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3) !important;
+  font-size: 15px !important;
+}
+.lcd-icon:hover, .lcd-icon[aria-pressed='true'] { background: var(--pn-hover); color: var(--pn-ink-2) !important; }
+.lcd-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-brand);
+}
+
+.lcd-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.lcd-bars i { width: 3px; border-radius: 1px; background: var(--pn-line-2); }
+.lcd-bars i[data-on] { background: var(--pn-ink-2); }
+
+.lcd-tool:focus-visible, .lcd-icon:focus-visible, .lcd-attbtn:focus-visible,
+.lcd-ent:focus-visible, .lcd-btn:focus-visible, .lcd-more:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* ----------------------------------------------------------- the center */
+
+.lcd-stage { position: relative; display: flex; flex: 1; min-height: 0; }
+
+.lcd-center {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: clamp(14px, 2.2cqh, 24px) var(--g) 0;
+  overflow: visible;
+}
+
+/* ROW 1 — what the agent starts with: one bordered row, never wraps. Not
+   `overflow: hidden` — its popovers hang below it — so the container steps
+   below are what keep it inside the card. */
+.lcd-ctx {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  min-width: 0;
+  padding: 0 12px 0 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+  white-space: nowrap;
+  z-index: 6;
+}
+
+.lcd-lead {
+  flex: none;
+  padding: 0 8px;
+  color: var(--pn-ink-3);
+  font: 600 10px/1 var(--pn-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* The context chips, flattened into the row: their popover hangs below it. */
+.lcd-ctx .lsel-chips { display: contents; }
+.lcd-ctx .lsel-chips__row { display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; }
+.lcd-ctx .lsel-chip {
+  flex: none;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 12px;
+}
+.lcd-ctx .lsel-chip:hover { border-color: var(--pn-line); background: var(--pn-card); }
+.lcd-ctx .lsel-chip--edited { border-color: var(--pn-wait); background: var(--pn-wait-soft); }
+.lcd-ctx .lsel-chip b { font-weight: 600; color: var(--pn-ink); }
+.lcd-ctx .lsel-chip__bytes { color: var(--pn-ink-3); font: 11px var(--pn-mono); }
+.lcd-ctx .lsel-popover,
+.lcd-ctx .jev-entry__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 12;
+  max-height: min(440px, 52cqh);
+  overflow-y: auto;
+  box-shadow: var(--pn-sh-pop);
+}
+.lcd-ctx .jev-entry__pop { background: var(--pn-card); border-radius: 10px; }
+.lcd-ctx .jev-entry { flex: none; flex-direction: row; }
+.lcd-ctx .jev-entry__bar { flex-wrap: nowrap; }
+.lcd-ctx .jev-entry__button { height: 28px; }
+.lcd-ctx .jev-entry__badge { max-width: 280px; }
+
+.lcd-meter {
+  flex: none;
+  width: 110px;
+  height: 5px;
+  margin: 0 8px 0 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--pn-active);
+}
+.lcd-meter i { display: block; height: 100%; background: var(--pn-run); }
+.lcd-meter[data-over] i { background: var(--pn-wait); }
+.lcd-budget { flex: none; color: var(--pn-ink-3); font: 11.5px var(--pn-mono); }
+
+.lcd-title {
+  width: 100%;
+  padding: clamp(14px, 2.2cqh, 24px) 0 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--pn-ink);
+  font: 500 clamp(20px, 2.4cqh, 26px)/1.25 var(--pn-serif);
+  letter-spacing: -0.005em;
+  text-overflow: ellipsis;
+}
+.lcd-title::placeholder { color: var(--pn-ink-4); }
+.lcd-title::-webkit-contacts-auto-fill-button,
+.lcd-title::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
+.lcd-instr {
+  flex: 1;
+  width: 100%;
+  min-height: 100px;
+  padding: 6px 0 12px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--pn-ink);
+  font: clamp(15px, 1.8cqh, 16.5px)/1.6 var(--pn-ui);
+  overflow-x: hidden;
+}
+.lcd-instr::placeholder { color: var(--pn-ink-4); }
+
+/* ROW 3 — what the agent is handed: attach, the pinned subject, a scroller. */
+.lcd-attrow { display: flex; flex: none; align-items: center; gap: 6px; height: 52px; min-width: 0; }
+
+.lcd-attbtn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-2) !important;
+  font-size: 12.5px !important;
+}
+.lcd-attbtn:hover, .lcd-attbtn[aria-expanded='true'] { border-style: solid; background: var(--pn-hover); }
+
+.lcd-ent {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.lcd-ent__kind { flex: none; color: var(--pn-ink-3); font-size: 12px; }
+.lcd-ent__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lcd-ent__meta { flex: none; color: var(--pn-ink-3); font: 11px var(--pn-mono); }
+.lcd-ent__meta--bad { color: var(--pn-block); }
+.lcd-ent[data-status='failed'] { border-color: var(--pn-block-soft); }
+.lcd-ent__rm {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  line-height: 1;
+  color: var(--pn-ink-3) !important;
+}
+.lcd-ent__rm:hover { background: var(--pn-active); color: var(--pn-ink) !important; }
+
+button.lcd-ent { cursor: pointer; padding-right: 10px; font-size: 12.5px !important; }
+.lcd-ent--subject { border-color: transparent; background: var(--pn-brand-soft); }
+.lcd-ent--subject .lcd-ent__kind, .lcd-ent--subject .lcd-caret { color: var(--pn-brand); }
+button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-color: var(--pn-line-2); }
+.lcd-a-subj { flex: 0 1 auto; max-width: 260px; }
+.lcd-a-subj .lcd-ent { max-width: 100%; }
+
+.lcd-attlist {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* A mask reads ALPHA only, so the colour is arbitrary — `black`, not a raw
+     hex, because §14's hex ban is a package law and a mask is no carve-out. */
+  mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent);
+}
+.lcd-attlist::-webkit-scrollbar { display: none; }
+.lcd-empty { color: var(--pn-ink-4); font-size: 12px; white-space: nowrap; }
+
+.lcd-more {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  cursor: pointer;
+  color: var(--pn-ink-2) !important;
+  font: 500 12px var(--pn-ui) !important;
+}
+.lcd-more:hover { background: var(--pn-hover); }
+
+/* The refusal floats over the bottom of the center — no permanent row. */
+.lcd-refusal {
+  position: absolute;
+  left: var(--g);
+  right: var(--g);
+  bottom: 56px;
+  z-index: 4;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--pn-block-soft);
+  border-radius: var(--pn-r-md);
+  background: color-mix(in srgb, var(--pn-block) 9%, var(--pn-card));
+  box-shadow: var(--pn-sh-md);
+  color: var(--pn-block);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------ advanced drawer */
+
+.lcd-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100%);
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  transform: translateX(102%);
+  visibility: hidden;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s 240ms;
+}
+.lcd-drawer[data-open] {
+  transform: none;
+  visibility: visible;
+  box-shadow: -18px 0 40px rgba(40, 34, 24, 0.08);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lcd-drawer__head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px 18px; }
+.lcd-drawer__head b { font-size: 13.5px; }
+.lcd-drawer__body { overflow: auto; padding: 4px 18px 18px; }
+.lcd-hint { color: var(--pn-ink-3); font-size: 12px; }
+
+.lcd-field { padding: 10px 0; border-bottom: 1px solid var(--pn-line); }
+.lcd-field:last-child { border-bottom: 0; }
+.lcd-field h4 {
+  margin: 0 0 6px;
+  color: var(--pn-ink-3);
+  font: 600 10.5px/1 var(--pn-ui);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.lcd-field select {
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: 13px var(--pn-ui);
+}
+.lcd-field select:disabled { opacity: 0.55; }
+.lcd-s { margin-top: 4px; color: var(--pn-ink-3); font-size: 12px; }
+.lcd-s--first { margin-top: 0; color: var(--pn-ink-2); }
+/* The budget override's own disclosure, quieted to the drawer's register. */
+.lcd-field--budget .lsel-budget { margin: 0; }
+.lcd-field--budget .lsel__head .ls__eyebrow { display: none; }
+
+.lcd-seg { display: inline-flex; overflow: hidden; border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm); }
+.lcd-seg button {
+  padding: 5px 10px;
+  border: 0;
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  cursor: pointer;
+  font-size: 12.5px !important;
+}
+.lcd-seg button:last-child { border-right: 0; }
+.lcd-seg button[aria-checked='true'] { background: var(--pn-ink); color: var(--pn-card) !important; }
+.lcd-seg button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
+.lcd-plugins { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
+.lcd-check { display: flex; align-items: center; gap: 6px; color: var(--pn-ink-2); font-size: 12.5px; cursor: pointer; }
+
+/* ------------------------------------------------------------ the footer */
+
+.lcd-summary {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: 12.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcd-summary b { color: var(--pn-ink-2); font-weight: 600; }
+
+.lcd-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px !important;
+}
+.lcd-btn:hover { background: var(--pn-hover); }
+.lcd-btn--go {
+  gap: 10px;
+  padding: 0 16px;
+  border-color: var(--pn-ink);
+  background: var(--pn-ink);
+  color: var(--pn-paper) !important;
+  font-weight: 600 !important;
+  transition: transform 120ms ease;
+}
+.lcd-btn--go:hover { background: var(--pn-ink); opacity: 0.92; }
+.lcd-btn--go:active:not([aria-disabled='true']) { transform: scale(0.97); }
+.lcd-btn--go[aria-disabled='true'] {
+  border-color: var(--pn-active);
+  background: var(--pn-active);
+  color: var(--pn-ink-4) !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+.lcd-kbd { font: 11px var(--pn-mono); opacity: 0.7; }
+
+/* ------------------------------------------------------------ the menus */
+
+.lcd-menu {
+  position: absolute;
+  left: 0;
+  z-index: 20;
+  min-width: 290px;
+  max-height: min(420px, 60cqh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  text-align: left;
+  white-space: normal;
+}
+.lcd-menu--down { top: calc(100% + 6px); }
+.lcd-menu--up { bottom: calc(100% + 6px); }
+.lcd-menu--wide { min-width: 360px; }
+.lcd-menu--narrow { min-width: 200px; }
+.lcd-menu hr { margin: 6px 2px; border: 0; border-top: 1px solid var(--pn-line); }
+
+.lcd-grp {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 8px 6px;
+  color: var(--pn-ink-3);
+  font: 600 10px/1 var(--pn-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lcd-grp span { font: 10.5px var(--pn-mono); letter-spacing: 0; text-transform: none; }
+
+.lcd-mi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--pn-ink) !important;
+  font-size: 13px !important;
+}
+.lcd-mi:hover { background: var(--pn-hover); }
+.lcd-mi[aria-disabled='true'] { color: var(--pn-ink-3) !important; cursor: not-allowed; }
+.lcd-mi[aria-disabled='true']:hover { background: none; }
+.lcd-mi--full { color: var(--pn-block) !important; }
+.lcd-mi__body { display: block; flex: 1; min-width: 0; font-weight: 500; }
+.lcd-mi__body--plain { font-weight: 400; }
+.lcd-mi__sub, .lcd-mi__why {
+  display: block;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcd-mi__sub { color: var(--pn-ink-3); }
+.lcd-mi__why { color: var(--pn-block); white-space: normal; }
+.lcd-mi__r { margin-left: auto; padding-left: 10px; color: var(--pn-ink-3); font: 11px var(--pn-mono); white-space: nowrap; }
+.lcd-ck { flex: none; width: 14px; color: var(--pn-brand); }
+.lcd-kind { flex: none; width: 14px; color: var(--pn-ink-3); }
+.lcd-mono { font-family: var(--pn-mono); }
+.lcd-auto {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  font: 600 10px/1 var(--pn-mono);
+}
+.lcd-note { padding: 6px 8px; color: var(--pn-ink-3); font-size: 12px; }
+.lcd-foot { display: flex; align-items: center; gap: 8px; padding: 6px 8px 4px; color: var(--pn-ink-3); font-size: 12px; }
+.lcd-foot--check { color: var(--pn-ink-2); cursor: pointer; }
+
+.lcd-search {
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: 13px var(--pn-ui);
+}
+.lcd-inset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 8px 6px 31px;
+  padding: 8px 10px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-size: 12px;
+}
+
+.lcd-subjmenu { width: min(620px, calc(100cqw - 48px)); }
+.lcd-subjdesc {
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  outline: none;
+  resize: vertical;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font: 13.5px/1.55 var(--pn-ui);
+}
+.lcd-subjdesc:focus { border-color: var(--pn-line-2); background: var(--pn-card); }
+
+/* -------------------------------------------- narrow: shed text in steps
+   Order of sacrifice: redundant text first (summary, server name, tool), then
+   labels an icon already carries (checkout, "uncommitted", Dispatch, vendor),
+   then secondary facts (branch, effort word). The avatar, ⋯, ✕ and Launch
+   always stay, and every dropped label is still its control's title. */
+
+@container card (max-width: 1120px) {
+  .lcd-summary, .lcd-nodename, .lcd-meta { display: none; }
+  .lcd-band--bot .lcd-spacer { flex: 1; }
+}
+
+@container card (max-width: 820px) {
+  .lcd-lead, .lcd-ctx .lsel-chip__bytes, .lcd-ent__bytes { display: none; }
+  .lcd-wt-name, .lcd-dirty__word, .lcd-btn__label, .lcd-vendor { display: none; }
+  .lcd-tool b { max-width: 180px; }
+  .lcd-btn--dispatch { padding: 0 11px; }
+  .lcd-ctx .jev-entry__badge { max-width: 150px; }
+}
+
+@container card (max-width: 680px) {
+  .lcd-meter, .lcd-budget, .lcd-attbtn__label { display: none; }
+  .lcd-sep, .lcd-branch, .lcd-effort-word, .lcd-kbd { display: none; }
+  .lcd-tool { padding: 0 8px; }
+  .lcd-band--bot > .lcd-a-first .lcd-tool { margin-left: -8px; }
+  .lcd-tool b { max-width: 130px; }
+  .lcd-node { padding: 0 4px; }
+  .lcd-a-subj { max-width: 180px; }
+  .lcd-ctx .jev-entry__badge { max-width: 90px; }
+}
+
+@container card (max-width: 560px) {
+  .lcd-ctx .lsel-chip__noun { display: none; }
+  .lcd-tool b { max-width: 150px; }
+  .lcd-effort-word { display: inline; }
+  /* The top band as two planned rows: who (verb, teammate, ⋯, ✕) · where. */
+  .lcd-band--top .lcd-spacer { flex: 1; order: 2; }
+  .lcd-verb { order: 0; }
+  .lcd-a-tm { order: 1; }
+  .lcd-i-adv { order: 3; }
+  .lcd-i-close { order: 4; }
+  .lcd-brk { display: block; flex-basis: 100%; height: 0; order: 5; }
+  .lcd-a-pj { order: 6; }
+  .lcd-a-wt { order: 7; }
+  /* Project and checkout share the "where" row: at 337px their full labels
+     overflowed it, so the checkout wrapped onto a third row. A wrapping flex
+     line breaks before it shrinks, so the checkout takes a zero basis: it
+     always fits beside the project and fills what is left, and its label
+     ellipsizes (the full text is its title). */
+  .lcd-a-wt { flex: 1 1 0; }
+  .lcd-a-wt .lcd-tool { max-width: 100%; }
+  .lcd-wt-name { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lcd-node { display: none; }
+  .lcd-band--bot .lcd-spacer { flex-basis: 100%; height: 0; }
+  .lcd-band--bot .lcd-btn--go { flex: 1; justify-content: center; }
+  .lcd-menu { min-width: 0; width: calc(100cqw - 28px); max-width: 360px; }
+  .lcd-a-subj { max-width: 140px; }
+  /* "Nothing else attached" is a hint, and at 390px the subject chip already
+     fills the row: it ran off the card's right edge under the scroller's
+     mask. The attach button beside it says the same thing. */
+  .lcd-empty { display: none; }
+}
+
+/* THE PHONE: the same card as a bottom sheet over the whole width. */
+@container lcpop (max-width: 600px) {
+  .lcd {
+    align-self: end;
+    width: 100%;
+    height: 92cqh;
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .lcd-band--top { padding-top: 20px; }
+  .lcd-band--top::before {
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--pn-line-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lcd[data-shake] { animation: none; }
+  .lcd-drawer, .lcd-drawer[data-open] { transition: none; }
+}
