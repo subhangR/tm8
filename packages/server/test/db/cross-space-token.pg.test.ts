@@ -770,6 +770,78 @@ describe('T11 agent G manages credentials in A — refused (regression pin)', ()
   });
 });
 
+describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by launcher, not by space', () => {
+  // G is H's agent in A, so its launcher is H. H2's PRIVATE credential in the
+  // same space must stay unusable to G; H's own private one must not. Seeded
+  // through the real writer; ownership is set as the graph owner, the state
+  // W10b's create will produce. The ciphertext is a fake of the right shape.
+  let privateOfH2: string;
+  let privateOfH: string;
+  const seedCredential = async (identityId: string, accountId: string): Promise<string> => {
+    const id = randomUUID();
+    await asIdentity(identityId, (q) => q.rpc('create_space_credential', [
+      id, fixture.spaceA, 'anthropic', 'api_key', `w10a ${id.slice(0, 8)}`, 'Fk0x',
+      Buffer.alloc(17, 7), Buffer.alloc(12, 3),
+    ]));
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.space_credentials set owner_account_id = $2, is_default = false where id = $1`, [id, accountId]);
+    });
+    await asIdentity(identityId, (q) => q.rpc('set_space_credential_visibility', [id, 'private']));
+    return id;
+  };
+  beforeAll(async () => {
+    privateOfH2 = await seedCredential(fixture.identityH2, fixture.accountH2);
+    privateOfH = await seedCredential(fixture.identityH, fixture.accountH);
+  });
+  // Revoke both through the real writer, so the rest of the file sees no live
+  // credential owned by H or H2 in A: 239's members backstop (G6) refuses to
+  // end a membership whose account still owns one, and the enter_space cells
+  // below flip H2's status by hand.
+  afterAll(async () => {
+    await asIdentity(fixture.identityH2, (q) => q.rpc('delete_space_credential', [privateOfH2]));
+    await asIdentity(fixture.identityH, (q) => q.rpc('delete_space_credential', [privateOfH]));
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: H2's private credential is not usable; H's own private one is (launcher = H)`, async () => {
+      const token = await mint();
+      expect(await asToken(token, (q) =>
+        q.rpc<string[]>('usable_space_credential_ids', [[privateOfH2, privateOfH]]))).toEqual([privateOfH]);
+    });
+    it(`${kind}: set_space_credential_visibility is refused (human-only), even on H's own`, async () => {
+      const token = await mint();
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_visibility', [privateOfH, 'public'])))).toBe('42501');
+    });
+  }
+  it('positive — H2 (browser) can use H2\'s own private credential', async () => {
+    const token = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await asToken(token, (q) =>
+      q.rpc<string[]>('usable_space_credential_ids', [[privateOfH2, privateOfH]]))).toEqual([privateOfH2]);
+  });
+  it('positive — H (browser) switches H\'s own credential; H2 (browser) cannot', async () => {
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => asToken(h2, (q) =>
+      q.rpc('set_space_credential_visibility', [privateOfH, 'public'])))).toBe('42501');
+    expect(await outcome(() => asToken(h, (q) =>
+      q.rpc('set_space_credential_visibility', [privateOfH, 'private'])))).toBe('ok');
+  });
+  it('T44: the generic delete refuses a credential entity even for H, owner of A and of the credential', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_entity', [privateOfH])))).toBe('42501');
+  });
+  it('positive — the same H token deletes a doc in A through the same door', async () => {
+    const doc = await asIdentity(fixture.identityH, async (q) =>
+      (await q.rpc<{ id?: string; entity?: { id: string } }>('create_document', [fixture.spaceA, 'W10a scratch doc'])))
+      .then((row) => (row.entity?.id ?? row.id)!);
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_entity', [doc])))).toBe('ok');
+  });
+});
+
 describe('T29 member_space_ids() policies stay once per statement under a pinned token (W0a)', () => {
   // 218's reason for existing, re-asked with the pin bound: the pin is inlined
   // into member_space_ids() (A10), so the policy must still resolve membership

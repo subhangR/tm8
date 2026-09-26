@@ -31,6 +31,7 @@ export type CapabilityProfile =
   | 'artifact-lifecycle'
   | 'container-lifecycle'
   | 'form-lifecycle'
+  | 'credential-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -58,6 +59,7 @@ export type MigrationStrategy =
   | 'container-detail'
   | 'drawing-detail'
   | 'form-detail'
+  | 'credential-detail'
   | 'custom-registry'
   | 'none';
 
@@ -295,6 +297,31 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'containers.attach',
         ],
       };
+    case 'credential-lifecycle':
+      // NOTHING generic (W10a), mirroring `container-lifecycle`: the entity
+      // is the same-id envelope of a space_credentials row, and every write
+      // to it — birth, label, visibility, revoke — is a human-only
+      // `credentials.space.*` door. SQL refuses the generic create, move,
+      // delete and restore as well (the insert and envelope guards, 017).
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'credentials.space.create',
+          'credentials.space.rename',
+          'credentials.space.rekey',
+          'credentials.space.setDefault',
+          'credentials.space.delete',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -483,6 +510,15 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'form-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'form-detail' },
+  }),
+  // Space credentials (W10a). The entity is an envelope for hierarchy,
+  // messages and attention; the secret stays in its side row and never
+  // reaches a projection. Human-only doors, so nothing is addressable from
+  // the generic menu.
+  credential: core('credential', 'credentials', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'credential-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'credential-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

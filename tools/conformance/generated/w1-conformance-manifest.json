@@ -7512,6 +7512,45 @@
         "migration": {
           "strategy": "form-detail"
         }
+      },
+      "credential": {
+        "kind": "credential",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "credentials"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "credential-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "credentials.space.create",
+            "credentials.space.rename",
+            "credentials.space.rekey",
+            "credentials.space.setDefault",
+            "credentials.space.delete"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "credential-detail"
+        }
       }
     },
     "custom": {

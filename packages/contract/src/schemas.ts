@@ -184,6 +184,8 @@ export const CoreEntityKindSchema = z.enum([
   'drawing',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
+  // Space credentials (W10a). Not creatable: credentials.space.* is its door.
+  'credential',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -375,6 +377,16 @@ export const EffectiveSkillsSchema = z.object({
   native: z.array(SkillIndexEntrySchema), indexed: z.array(SkillIndexEntrySchema),
   skipped: z.array(z.object({ entityId: z.string(), name: z.string(), hash: z.string().optional(), sourcePath: z.string().optional(), reason: z.string() }).strict()),
   scannedAt: z.string().nullable(),
+}).strict();
+
+/** W10a: a credential entity's state and content share one allow-list. */
+const CredentialEntityFactsSchema = z.object({
+  kind: z.literal('credential'),
+  provider: z.string().min(1),
+  shape: z.string().min(1),
+  visibility: z.enum(['private', 'public']),
+  status: z.string().min(1),
+  ownerAccountId: z.string().nullable(),
 }).strict();
 
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
@@ -622,6 +634,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     status: FormStatusSchema,
     questionCount: z.number().int().nonnegative(),
   }).strict(),
+  // W10a — a space credential's row facts; never its secret, hint or login.
+  CredentialEntityFactsSchema,
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -1025,6 +1039,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     openedAt: z.string().nullable(),
     closedAt: z.string().nullable(),
   }).strict(),
+  // W10a — the same allow-list as its state, strict so a leaked field fails.
+  CredentialEntityFactsSchema,
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -2406,8 +2422,9 @@ export const CreatableEntityKindSchema = z.union([
   // `containers.create` — which supply a runtime binding a generic create
   // could not. A generic create would make a record with nothing behind it.
   // `form` likewise: `forms.create` writes its questions and requesting
-  // session in the same call (FORMS-DESIGN §6).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form']),
+  // session in the same call (FORMS-DESIGN §6). `credential` is human-only
+  // and born under a SQL guard from credentials.space.* (W10a).
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential']),
   CustomEntityKindSchema,
 ]);
 

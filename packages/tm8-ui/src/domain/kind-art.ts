@@ -217,6 +217,16 @@ export const KIND_ART = {
     'M5.6 10.4h.8M8 10.4h2.6',
   ],
 
+  /**
+   * A key (`key-round`, 999/W10a): a round bow and a toothed shaft. A space
+   * credential is what a session is let in with.
+   */
+  credential: [
+    'M5.6 4a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 1 0 0-5.6z',
+    'M8.2 7.8l5 5',
+    'M11 10.6l1.4-1.4M12.4 12l1.2-1.2',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 

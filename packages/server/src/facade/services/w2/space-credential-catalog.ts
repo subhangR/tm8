@@ -33,6 +33,7 @@ import {
   type DbSpaceCredentialStore,
   type SpaceCredential,
   type SpaceCredentialHomeKey,
+  type SpaceCredentialVisibility,
 } from '../../../credentials/space-credential-store.js';
 import {
   containmentFailureOf,
@@ -55,6 +56,7 @@ type SpaceCredentialStorePort = Pick<
   | 'rename'
   | 'setDefault'
   | 'revoke'
+  | 'setVisibility'
   | 'liveSessions'
   | 'finishLogin'
   | 'readSpacePolicy'
@@ -201,6 +203,40 @@ export class SpaceCredentialCatalogService {
 
   async setDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredentialView> {
     return spaceCredentialViewOf(await this.store.setDefault(claims, credentialId));
+  }
+
+  /**
+   * W10a: the owner makes their credential public or private. Going private
+   * kills every live session another member launched on it — the same
+   * containment delete uses, which also scrubs each session's key home — and
+   * the spawn gate refuses the rest (a session still `spawning` is refused by
+   * its own pre- and post-PTY re-check). The credential's own login home is
+   * the owner's and stays. Kills are best effort after the committed switch,
+   * so a failed one is named in `failures`, never thrown.
+   */
+  async setVisibility(
+    claims: DbClaims,
+    credentialId: string,
+    visibility: SpaceCredentialVisibility,
+  ): Promise<{
+    credential: SpaceCredentialView;
+    terminatedAgentSessionIds: string[];
+    failures: Array<{ sessionId: string; reason: string }>;
+  }> {
+    const { killSessions, ...stored } = await this.store.setVisibility(claims, credentialId, visibility);
+    const terminatedAgentSessionIds: string[] = [];
+    const failures: Array<{ sessionId: string; reason: string }> = [];
+    for (const session of killSessions) {
+      const contained = await this.agentSessions.containCredentialSession(
+        session.workSessionId,
+        'space_credential_made_private',
+      );
+      const failure = containmentFailureOf(contained);
+      if (failure !== null) failures.push({ sessionId: session.workSessionId, reason: failure });
+      if (contained.outcome === 'error') continue;
+      terminatedAgentSessionIds.push(session.workSessionId);
+    }
+    return { credential: spaceCredentialViewOf(stored), terminatedAgentSessionIds, failures };
   }
 
   /**
