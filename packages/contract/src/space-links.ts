@@ -148,12 +148,12 @@ export type SpaceLinkRefusalReason =
  * a session, a shell or a process in B, or resumes or dispatches one, is
  * refused at home. `execution.terminal.start` starts an unbudgeted shell work
  * session that no spawn switch, budget or link gate covers, so through a link
- * it would be a shell in B. `execution.spawn` is refused too, whatever the
- * switch says (lead tightening on #884): allow_spawn defaults on and the spawn
- * budget arrives with W7b, so main must never carry an unbudgeted link spawn.
- * W7b restores it through a budgeted reservation; until then the spawn rule
- * below (switch, explicit credentials) is unreachable, kept for W7b. W7p layer
- * (iii) refuses a link identity's spawn on B as well. The indirect starts
+ * it would be a shell in B; it stays refused for good. `execution.spawn` is
+ * NOT in this list (W7b, 996): it runs only through the spawn rule below
+ * (switch, explicit credentials) and then a budgeted reservation on the
+ * caller's own token row (`reserve_space_link_spawn`); W7p layer (iii) admits
+ * the link identity's spawn on B only against that reservation, and the
+ * spawned agent is itself refused every launch (W9 R-2). The indirect starts
  * are listed too: a form response submit (and redeliver) queues a delivery
  * that resumes the requesting session or spawns a new one
  * (form-delivery-spawn.ts). `containers.pools.set` keeps warm containers
@@ -190,7 +190,6 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'containers.attach', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.expose', kinds: 'all', reason: 'grant', exact: true },
-  { prefix: 'execution.spawn', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.resume', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.dispatch', kinds: 'all', reason: 'process_start', exact: true },

@@ -105,7 +105,7 @@ for each row when (new.remote_status_category = 'done' and old.remote_status_cat
 execute function internal.on_resolution_change();
 
 -- -----------------------------------------------------------------------------
--- 2. Content hydration. SHARED OBJECT: body copied from 250 verbatim; the
+-- 2. Content hydration. SHARED OBJECT: body copied from 261 (W8) verbatim; the
 --    `remote_ref` arm is the only addition. An allow-list: the token row id is
 --    not shown.
 -- -----------------------------------------------------------------------------
@@ -158,6 +158,9 @@ begin
       -- 250 (W6): the shared link's metadata. `space_links` holds no secret; the
       -- sealed per-member token is `space_link_tokens` (251) and has no arm.
       when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;
+      -- W8: the server's metadata. `servers` holds no secret; the sealed
+      -- per-member gate session is `server_gate_tokens` and has no arm.
+      when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
       -- 996 (W7b): the other side's id as text and the watcher's cached status.
       when 'remote_ref' then select jsonb_build_object(
                                  'link_id', r.link_id, 'target_space_id', r.target_space_id,

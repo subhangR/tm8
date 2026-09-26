@@ -9,11 +9,25 @@
 import { OPERATIONS, SPACE_LINK_REFUSED, spaceLinkRefusal } from '@tm8/contract';
 import { describe, expect, it } from 'vitest';
 
-const WATCHED_NAMESPACE = /^(execution|containers|chat|launch|voice|auth|serverConnections|credentials|node\.credentials|spaceLinks|files|artifacts|projects\.folderUploads|forms|agent|agents|sessions)\./;
+const WATCHED_NAMESPACE = /^(execution|containers|chat|launch|voice|auth|serverConnections|credentials|node\.credentials|spaceLinks|files|artifacts|projects\.folderUploads|forms|agent|agents|sessions|messages|handoffs)\./;
 const WATCHED_WORD = /(spawn|start|resume|dispatch|terminal|attach|grant|token|upload|expose|endpoint|preview|redeliver|run|exec|prompt|fork|wake|relay|session|submit|journal|transcript)/i;
 
 /** Watched ops the executor admits, each with why it starts, grants and reads nothing of that class. */
 const PASSES: Record<string, string> = {
+  'execution.spawn': 'W7b (996): admitted only through a budgeted reservation on the caller\'s own token row (reserve_space_link_spawn at home, admit_space_link_spawn and the SQL mint in B); the switch and explicit credentials are refused by INPUT/row, and the spawned agent is refused every launch (W9 R-2)',
+  // #884 review LOW 2: `messages.` and `handoffs.` are watched. A post or a
+  // handoff delivers only into a LIVE work session of B (routes are live,
+  // same-space sessions) and, on a chat anchor, wakes that chat's next turn
+  // (onMessagesCommitted -> wakeForMessages). Both are what any B member's post
+  // does, accepted under D31; neither spawns nor resumes a session.
+  'messages.post': 'delivers into live B sessions; on a chat anchor wakes the chat turn a B member post would (member-equivalent, D31); spawns and resumes nothing',
+  'handoffs.send': 'delivers into a live B work session (member-equivalent, D31); spawns and resumes nothing',
+  'handoffs.withdraw': 'withdraws a pending handoff; starts nothing',
+  'handoffs.list': 'read',
+  'messages.list': 'read',
+  'messages.edit': 'edits a stored message; delivers nothing',
+  'messages.delete': 'deletes a stored message; delivers nothing',
+  'messages.delivery.get': 'read of delivery records',
   'execution.terminate': 'stops a session; starts nothing',
   'execution.sessions.share': 'changes sharing on B\'s own entity; mints no bearer',
   'execution.launch': 'reads the launch posture; no body, no token',
@@ -66,7 +80,7 @@ const PASSES: Record<string, string> = {
 };
 
 /** PASSES entries refused or admitted by their INPUT; the name alone decides nothing. */
-const BY_INPUT = new Set(['forms.create', 'forms.update']);
+const BY_INPUT = new Set(['forms.create', 'forms.update', 'execution.spawn']);
 
 const refusedByName = (op: string, kind: 'read' | 'command' | 'stream'): string | null =>
   spaceLinkRefusal(op, kind, {}, true);
@@ -76,7 +90,7 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
 
   it('the walk sees the ops it must (guards against an empty or renamed catalog)', () => {
     const names = watched.map((o) => o.name);
-    for (const op of ['execution.spawn', 'execution.terminal.start', 'execution.journal', 'containers.start', 'forms.responses.submit']) {
+    for (const op of ['execution.spawn', 'execution.terminal.start', 'execution.journal', 'containers.start', 'forms.responses.submit', 'messages.post', 'handoffs.send']) {
       expect(names).toContain(op);
     }
   });
