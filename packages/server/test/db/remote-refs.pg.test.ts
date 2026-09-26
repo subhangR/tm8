@@ -598,6 +598,117 @@ describe('W7b link-kind admission — the mint and the credential read, only aga
     ]))).toBe('42501');
   });
 
+  describe('W9 R-2 — a reserved-spawn session starts nothing; the budget holds across descendants', () => {
+    /** sqlstate:reason — the reason proves which guard refused. */
+    const verdict = async (run: () => Promise<unknown>): Promise<string> => {
+      try {
+        await run();
+        return 'ok';
+      } catch (err) {
+        const details = (err as { details?: { sqlstate?: string; reason?: string } }).details;
+        return `${details?.sqlstate ?? String((err as { code?: string }).code)}:${details?.reason ?? ''}`;
+      }
+    };
+    const participates = async (ws: string): Promise<void> => {
+      await asOwner(async (c) => {
+        await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $4)
+                          on conflict (src_id, dst_id, type) do nothing`,
+          [fixture.spaceB, fixture.personaB, ws, fixture.memberHB]);
+      });
+    };
+    const agentMint = (claims: DbClaims, ws: string) => db.rpc(claims, 'issue_agent_auth_session', [
+      ws, fixture.personaB, hashToken(generateSecret()), new Date(Date.now() + 3_600_000).toISOString(), 'w7b grandchild',
+    ]);
+    const shell = (claims: DbClaims) => db.rpc(claims, 'start_shell_session', [
+      fixture.spaceB, null, 'w7b r-2', null, null, false, 64, null, null,
+    ]);
+    const releaseAll = () => asOwner(async (c) => {
+      await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`);
+    });
+    const reserve = async () => db.rpc<{ reservationId: string }>(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+    const sessionsFor = async (ws: string): Promise<number> => Number((await database.query<{ n: string }>(
+      'select count(*)::text as n from public.auth_sessions where work_session_id = $1', [ws]))[0]?.n);
+
+    it('the child mints no grandchild on either agent mint; the reservation path\'s first spawn mints (paired)', async () => {
+      await releaseAll();
+      await reserve();
+      const ws = await newSessionInB();
+      // Paired positive: the link session binding its reservation mints.
+      const child = await mint(await linkClaims(), ws);
+      expect(child.via_link_id).toBe(link.id);
+      const childClaims = await claimsForToken(child.token);
+      expect(childClaims).toMatchObject({ authKind: 'agent', viaLinkId: link.id });
+      const grandchild = await newSessionInB();
+      await participates(grandchild);
+      expect(await verdict(() => mint(childClaims, grandchild))).toBe('42501:link_bound_launch');
+      expect(await verdict(() => agentMint(childClaims, grandchild))).toBe('42501:link_bound_launch');
+      expect(await sessionsFor(grandchild)).toBe(0);
+      // Paired: the same two mints for the same session by H's own (unlinked) browser pass.
+      expect(await verdict(() => asIdentity(fixture.identityH, (q) => q.rpc('issue_work_session_agent_session', [
+        grandchild, fixture.personaB, hashToken(generateSecret()), new Date(Date.now() + 3_600_000).toISOString(), 'h',
+      ])))).toBe('ok');
+      expect(await verdict(() => asIdentity(fixture.identityH, (q) => q.rpc('issue_agent_auth_session', [
+        grandchild, fixture.personaB, hashToken(generateSecret()), new Date(Date.now() + 3_600_000).toISOString(), 'h',
+      ])))).toBe('ok');
+      await endSession(grandchild);
+      await endSession(ws);
+      await releaseAll();
+    });
+
+    it('the child issues no human session (it is space-pinned); an unpinned browser does (paired)', async () => {
+      await reserve();
+      const ws = await newSessionInB();
+      const childClaims = await claimsForToken((await mint(await linkClaims(), ws)).token);
+      const issue = (claims: DbClaims) => db.rpc(claims, 'issue_auth_session', [
+        fixture.accountH, hashToken(generateSecret()), 'browser', new Date(Date.now() + 3_600_000).toISOString(), null, 'w7b',
+      ]);
+      expect(await verdict(() => issue(childClaims))).toMatch(/^42501:/);
+      expect(await verdict(() => issue({ identityId: fixture.identityH, authKind: 'browser', requestId: `remote-refs-${randomUUID()}` } as DbClaims))).toBe('ok');
+      await endSession(ws);
+      await releaseAll();
+    });
+
+    it('execution.terminal.start\'s SQL: neither the link session nor the child opens a shell; H in B does (paired)', async () => {
+      await reserve();
+      const ws = await newSessionInB();
+      const childClaims = await claimsForToken((await mint(await linkClaims(), ws)).token);
+      expect(await verdict(async () => shell(await linkClaims()))).toBe('42501:link_bound_launch');
+      expect(await verdict(() => shell(childClaims))).toBe('42501:link_bound_launch');
+      const shells = async () => Number((await database.query<{ n: string }>(
+        `select count(*)::text as n from public.work_sessions ws join public.entities e on e.id = ws.entity_id
+          where e.space_id = $1 and ws.title = 'w7b r-2'`, [fixture.spaceB]))[0]?.n);
+      expect(await shells()).toBe(0);
+      expect(await verdict(async () => shell(await hClaims()))).toBe('ok');
+      expect(await shells()).toBe(1);
+      await endSession(ws);
+      await releaseAll();
+    });
+
+    it('budget 3 holds across descendants: three children, every grandchild refused, the 4th reserve refused', async () => {
+      await releaseAll();
+      const children: Array<{ ws: string; claims: DbClaims }> = [];
+      for (let i = 0; i < 3; i += 1) {
+        await reserve();
+        const ws = await newSessionInB();
+        children.push({ ws, claims: await claimsForToken((await mint(await linkClaims(), ws)).token) });
+      }
+      for (const child of children) {
+        const grandchild = await newSessionInB();
+        expect(await verdict(() => mint(child.claims, grandchild))).toBe('42501:link_bound_launch');
+        expect(await sessionsFor(grandchild)).toBe(0);
+        await endSession(grandchild);
+      }
+      expect(await verdict(reserve)).toBe('42501:spawn_budget');
+      const [live] = await database.query<{ n: string }>(
+        `select count(*)::text as n from public.space_link_spawns where released_at is null and work_session_id is not null`);
+      expect(Number(live?.n)).toBe(3);
+      await endSession(children[0]!.ws);
+      expect(await verdict(reserve)).toBe('ok');
+      for (const child of children) await endSession(child.ws);
+      await releaseAll();
+    });
+  });
+
   it('credential read: refused without a reservation; the default public one with it', async () => {
     await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`); });
     expect(await outcome(async () => db.rpc(await linkClaims(), 'read_space_credential_for_spawn',

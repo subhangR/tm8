@@ -48,6 +48,7 @@ import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { createRemoteRefWatcherJob } from './scheduler/jobs/remote-ref-watcher.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1014,12 +1015,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         }),
       );
     }
+    // W7b (996): refresh every remote_ref's cached status from B's events —
+    // only the ids a ref names, only while its link is signed in.
+    scheduler.register(
+      createRemoteRefWatcherJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'remote-ref-watcher' };
+        },
+      }),
+    );
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
     console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
     if (ptyWs) console.log('  pty: private-credential stream sweep re-checking open terminals every 15s');
     console.log('  events: subject_ids backfill indexing older events every 60s until done');
+    console.log('  space links: remote_ref watcher refreshing cached remote statuses every 30s');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
       console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');

@@ -19,7 +19,13 @@
  *   4. the caller's OWN token row (260 resolve, no sealed bytes): an agent
  *      resolves its launching member's row and nobody else's (T18);
  *   5. the target half of the via rule, and the row's spawn switch;
- *   6. a rate bucket per token row.
+ *   6. a rate bucket per token row;
+ *   7. W7b (996), `execution.spawn` only: same-server targets only (a remote
+ *      one is W8's), `spaceId` must be the link's target, `projectId` and
+ *      `parentSessionId` must be ids, and a spawn RESERVATION on the caller's
+ *      own row, taken under home claims (`reserve_space_link_spawn`: the
+ *      budget per token row, atomic; the switch; T33 — B's folders and
+ *      sessions only). A failed launch releases it.
  *
  * Only then does `DbSpaceLinkStore.use` unseal the stored session in memory
  * and re-resolve it through `resolveBearerIdentity` (F6): a revoked session
@@ -29,8 +35,17 @@
  * identity is authKind `link`, which the registry (W7p layer (ii)) refuses
  * on every op; the executor marks its one inner context with
  * `admitLinkInvoke` (identity/link-bearer.ts), the only admission there is.
- * Layer (iii) (spawn, resume, dispatch, the spawn credential read and SQL's
- * link refusals) still applies to the inner call unchanged.
+ * Layer (iii) still applies to the inner call: resume and dispatch refuse a
+ * link identity; `execution.spawn` admits it only against the reservation of
+ * step 7 (`admit_space_link_spawn`), and the SQL mint binds that reservation
+ * to the new session, so the spawned agent (via_link, and itself refused
+ * every launch — W9 R-2) holds the budget slot until it ends.
+ *
+ * 8. After an ok create or spawn, W7b records a `remote_ref` in A for the id
+ * B returned (`record_remote_ref`, under home claims, against this call's ok
+ * audit row), so a `depends_on` in A can gate on it. Best-effort: the op has
+ * already happened in B, so a failed record is logged (op and audit id only)
+ * and the result carries `remoteRefId: null`.
  *
  * Every outcome writes one `cross_space_audit` row in A under the caller's
  * own claims. No token is put in a header, an error, a log line, the audit or
@@ -40,6 +55,7 @@ import {
   CollabError,
   ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
+  SPACE_LINK_SPAWN_OP,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
   getOperation,
@@ -170,6 +186,34 @@ function remoteIdOf(result: unknown): string | null {
     if (typeof candidate === 'string' && UUID_RE.test(candidate)) return candidate;
   }
   return null;
+}
+
+/**
+ * W7b: the ops whose result is a NEW thing in B worth a `remote_ref` in A —
+ * any `*.create` and the spawn. SQL admits the ref only against an ok audit
+ * row of the same shape (996 record_remote_ref), so this list cannot widen it.
+ */
+export function makesRemoteRef(op: string): boolean {
+  return op === SPACE_LINK_SPAWN_OP || /^[a-z0-9_.]+\.create$/i.test(op);
+}
+
+/** W7b: 996's reserve refusals, mapped to the invoke refusal they are. */
+function reservationRefusal(error: unknown): CollabError | null {
+  if (!isCollabError(error) || error.details?.['sqlstate'] !== '42501') return null;
+  switch (error.details?.['reason']) {
+    case 'spawn_budget':
+      return refused('spawn_budget', 'this space link already has its budget of live spawns');
+    case 'spawn_off':
+      return refused('spawn_switch_off');
+    case 'project_not_in_target':
+    case 'parent_not_in_target':
+      return refused('spawn_scope', error.message);
+    case 'link_not_signed_in':
+      return new CollabError('unauthenticated', 'space link is signed_out: ask your human to sign in to the link again',
+        { details: { reason: SPACE_LINK_SIGNED_OUT } });
+    default:
+      return null;
+  }
 }
 
 function validate(opName: OperationName, body: unknown): unknown {
@@ -403,6 +447,41 @@ export function createSpaceLinkInvokeHandlers(
       return refuse(new CollabError('invalid_input', 'a streaming operation cannot run through a space link'), 'stream_op');
     }
 
+    // 7. W7b: a spawn holds one slot of the row's budget BEFORE it runs in B.
+    // Same-server only (W8 is the cross-server follow-up); B's own space only,
+    // and only B's folders and parent sessions (T33, re-checked in B by
+    // execution.spawn's admit_space_link_spawn at the point of use).
+    let reservationId: string | null = null;
+    if (requested === SPACE_LINK_SPAWN_OP) {
+      if (!local) {
+        return refuse(new CollabError('not_implemented',
+          'a spawn through a space link to another server is not implemented yet'), 'spawn_remote');
+      }
+      const body = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
+      if (body['spaceId'] !== row.targetSpaceId) {
+        return refuse(refused('spawn_scope', 'a spawn through a space link runs only in the link\'s target space'), 'spawn_scope');
+      }
+      const uuidOrNull = (value: unknown): string | null => (typeof value === 'string' && UUID_RE.test(value) ? value : null);
+      if ((body['projectId'] != null && !uuidOrNull(body['projectId']))
+        || (body['parentSessionId'] != null && !uuidOrNull(body['parentSessionId']))) {
+        return refuse(refused('spawn_scope', 'projectId and parentSessionId must be ids in the target space'), 'spawn_scope');
+      }
+      try {
+        ({ reservationId } = await store.reserveSpawn(claims, {
+          homeSpaceId, linkId: row.linkId,
+          projectId: uuidOrNull(body['projectId']), parentSessionId: uuidOrNull(body['parentSessionId']),
+        }));
+      } catch (error) {
+        const mapped = reservationRefusal(error);
+        if (!mapped) throw error;
+        const reason = mapped.details?.['refusal'];
+        return refuse(mapped, typeof reason === 'string' ? reason : 'link_signed_out');
+      }
+    }
+    const release = async (): Promise<void> => {
+      if (reservationId) await store.releaseSpawn(claims, homeSpaceId, row!.linkId, reservationId).catch(() => undefined);
+    };
+
     // Everything above is the home server's decision; from here the op runs
     // on B. The one seam a remote target (W8) plugs into.
     let outcome: SpaceLinkExecution;
@@ -410,6 +489,10 @@ export function createSpaceLinkInvokeHandlers(
       outcome = await execute({ claims, row, op: requested, binding, params: params ?? {}, query: query ?? {},
         input, via, homeSpaceId, workSessionId });
     } catch (error) {
+      // A spawn that failed gives its slot back; one that got as far as the
+      // mint has bound it, and the release is a no-op (the session's own
+      // status frees it when it exits).
+      await release();
       if (error instanceof SpaceLinkExecuteFailure) {
         await audit('error', error.reason).catch(() => undefined);
         throw error.error;
@@ -418,8 +501,21 @@ export function createSpaceLinkInvokeHandlers(
       throw error;
     }
     const { data, requestId } = outcome;
-    const auditId = await audit('ok', null, remoteIdOf(data) ?? requestId);
-    return { op: requested, linkId: row.linkId, targetSpaceId: row.targetSpaceId, auditId, result: data };
+    const remoteId = remoteIdOf(data);
+    const auditId = await audit('ok', null, remoteId ?? requestId);
+
+    // 8. W7b: what a create or spawn made in B gets a remote_ref in A, which
+    // the watcher keeps current. Best-effort: the op has already run in B, so
+    // a failed ref is reported (null), never turned into a failed invoke.
+    let remoteRefId: string | null = null;
+    if (remoteId && makesRemoteRef(requested)) {
+      try {
+        remoteRefId = (await store.recordRemoteRef(claims, homeSpaceId, row.linkId, remoteId)).id;
+      } catch (error) {
+        console.warn(`[tm8:space-links] no remote_ref for ${requested} audit ${auditId}: ${isCollabError(error) ? error.code : 'internal'}`);
+      }
+    }
+    return { op: requested, linkId: row.linkId, targetSpaceId: row.targetSpaceId, auditId, result: data, remoteRefId };
   };
 
   const audit: OperationHandler = async (ctx): Promise<SpaceLinkAuditEntry[]> => {

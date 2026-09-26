@@ -124,14 +124,27 @@ async function workSession(space: string, persona: string, createdBy: string): P
 
 interface Minted { token: string; id: string; workSessionId: string }
 
+/**
+ * W7b (996): the one launch under a link. `mintClaimsOf` registers the link
+ * session's claims here with the human whose row it is; `mintChild` then
+ * reserves on that row (as `spaceLinks.invoke` does, under home claims) and
+ * mints through `issue_work_session_agent_session`, the link's only mint.
+ */
+const RESERVED_MINTS = new WeakMap<DbClaims, { human: DbClaims; linkId: string }>();
+
 /** Mint an agent session under `claims` with `issuer`, in a fresh (or given) work session in B. */
 async function mintChild(
   claims: DbClaims,
   opts: { issuer?: 'issue_agent_auth_session' | 'issue_work_session_agent_session'; workSessionId?: string; days?: number } = {},
 ): Promise<Minted> {
+  const reserved = RESERVED_MINTS.get(claims);
+  if (reserved && !opts.workSessionId) {
+    await db.rpc(reserved.human, 'reserve_space_link_spawn', [fixture.spaceA, reserved.linkId, null, null]);
+  }
   const ws = opts.workSessionId ?? await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
   const secret = generateSecret();
-  const row = await db.rpc<{ id: string }>(claims, opts.issuer ?? 'issue_agent_auth_session', [
+  const issuer = reserved ? 'issue_work_session_agent_session' : opts.issuer ?? 'issue_agent_auth_session';
+  const row = await db.rpc<{ id: string }>(claims, issuer, [
     ws, fixture.personaB, hashToken(secret),
     new Date(Date.now() + (opts.days ?? 1) * 86_400_000).toISOString(), 'w7p child',
   ]);
@@ -257,21 +270,27 @@ async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
   const link = await store.login(human, added.id);
   const use = await store.use(human, link.id);
   const linkClaims = inProcessClaims(use.session, use.token);
-  return { link, human, linkToken: use.token, linkClaims, mintClaims: mintClaimsOf(linkClaims), linkSessionId: use.session.sessionId };
+  // Room for every child this file mints on one row (251 caps it at 100).
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query('update public.space_link_tokens set spawn_budget = 100 where link_id = $1', [link.id]);
+  });
+  return { link, human, linkToken: use.token, linkClaims, mintClaims: mintClaimsOf(linkClaims, human, link.id), linkSessionId: use.session.sessionId };
 }
 
 /**
  * The claims a first via_link child is minted under. 256 (W7p, Q4) refuses a
- * `link` session in BOTH agent mints, and every other path to a via_link
- * stamp needs a child that already exists (a grandchild, a resume), so the
- * fixture mints through the link-bound NON-link branch of
- * `internal.link_provenance_for`: the same identity, pin and `tm8.via_link`
- * claim, authKind `agent`. The mint still derives via_link and the parent from
- * `internal.live_link_session`, so every stamp, cap and liveness assertion
- * exercises the mint's own logic; only the caller's auth kind changes.
+ * `link` session in BOTH agent mints unless, since W7b (996), it binds a live
+ * spawn reservation on its own row — and a link-bound AGENT mints nothing (W9
+ * R-2). So the fixture takes the real path: the link session's own claims, a
+ * reservation made first by `mintChild`, and the reservation mint. The mint
+ * derives via_link and the parent from `internal.live_link_session`, so every
+ * stamp, cap and liveness assertion exercises the mint's own logic.
  */
-function mintClaimsOf(linkClaims: DbClaims): DbClaims {
-  return { ...linkClaims, authKind: 'agent' };
+function mintClaimsOf(linkClaims: DbClaims, human: DbClaims, linkId: string): DbClaims {
+  const claims = { ...linkClaims };
+  RESERVED_MINTS.set(claims, { human, linkId });
+  return claims;
 }
 
 const readGit = (claims: DbClaims) => db.rpc(claims, 'read_account_git_credential', ['github']);
@@ -292,7 +311,7 @@ describe('W7p the link session and its children carry via_link', () => {
   });
 
   it('a child minted under the link (226 agent issuer, link-bound agent claims) has via_link_id and the link session as parent', async () => {
-    expect(L.mintClaims).toMatchObject({ authKind: 'agent', viaLinkId: L.link.id, sessionSpaceId: fixture.spaceB });
+    expect(L.mintClaims).toMatchObject({ authKind: 'link', viaLinkId: L.link.id, sessionSpaceId: fixture.spaceB });
     const child = await mintChild(L.mintClaims);
     expect(await sessionRow(child.id)).toMatchObject({
       kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId, revoked: false,
@@ -309,7 +328,7 @@ describe('W7p the link session and its children carry via_link', () => {
   });
 
   for (const issuer of ['issue_work_session_agent_session', 'issue_agent_auth_session'] as const) {
-    it(`${issuer} refuses a link session first (SQL backstop); a via_link child mints and stamps the same`, async () => {
+    it(`${issuer} refuses an unreserved link session first (SQL backstop); a via_link child mints nothing (W9 R-2)`, async () => {
       const count = async () => (await database.query<{ n: number }>(
         `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n;
       const before = await count();
@@ -318,15 +337,17 @@ describe('W7p the link session and its children carry via_link', () => {
       expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
       expect(await count()).toBe(before);
       const child = await childOf(L);
-      const grand = await mintChild(child, { issuer });
-      expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+      const grand = await mintChild(child, { issuer }).then(() => 'resolved', (err: unknown) => err);
+      expect(grand).toMatchObject({ details: { sqlstate: '42501', reason: 'link_bound_launch' } });
+      expect(await count()).toBe(before + 1);
     });
   }
 
-  it('a grandchild inherits via_link, parented flat on the link session', async () => {
+  it('W9 R-2: no grandchild — the link\'s next session is another child, parented flat on the link session (paired)', async () => {
     const child = await mintChild(L.mintClaims);
-    const grand = await mintChild(await claimsForToken(child.token));
-    expect(await sessionRow(grand.id)).toMatchObject({ via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+    expect(await outcome(async () => mintChild(await claimsForToken(child.token)))).toBe('42501');
+    const next = await mintChild(L.mintClaims);
+    expect(await sessionRow(next.id)).toMatchObject({ via_link_id: L.link.id, parent_session_id: L.linkSessionId });
   });
 
   it('a resume re-mint by the non-link human keeps the link (the work session ran under it)', async () => {
@@ -400,10 +421,10 @@ describe('W7p 093 — the linking human\'s git login is refused, never null', ()
     expect(await outcome(async () => readGit(await claimsForToken(child.token)))).toBe('42501');
   });
 
-  it('a grandchild: 42501', async () => {
+  it('a resumed child (the human re-mints it; via_link kept): 42501', async () => {
     const child = await mintChild(L.mintClaims);
-    const grand = await mintChild(await claimsForToken(child.token));
-    expect(await outcome(async () => readGit(await claimsForToken(grand.token)))).toBe('42501');
+    const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
+    expect(await outcome(async () => readGit(await claimsForToken(resumed.token)))).toBe('42501');
   });
 
   it('positives — H\'s cli session, and H\'s ordinary agent child, read the login', async () => {
@@ -656,14 +677,14 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
     }
   }
 
-  it("(1) a running via_link child's spawn is refused on the mint alone — no 206 read (node model, no git)", async () => {
+  it("(1) the link's next spawn is refused with the switch off, on the reservation and the mint — no 206 read (node model, no git)", async () => {
     const L = await linked();
-    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
-    // Paired positive: the same child mints a grandchild while spawning is on.
-    expect(await outcome(() => mintChild(child))).toBe('ok');
+    // Paired positive: the link session mints a child while spawning is on.
+    // (Its child mints nothing either way — W9 R-2, celled above.)
+    expect(await outcome(() => mintChild(L.mintClaims))).toBe('ok');
     await withSpawnOff(L, async () => {
       const before = await underLink(L.link.id);
-      expect(await outcome(() => mintChild(child))).toBe('42501');
+      expect(await outcome(() => mintChild(L.mintClaims))).toBe('42501');
       expect(await underLink(L.link.id)).toBe(before);
     });
   });
@@ -751,16 +772,19 @@ describe('W7p open_space_link_token and mark_space_link_stale — no chaining', 
 });
 
 // ---------------------------------------------------------------------------
-// End paths: each ends the link's descendants. Every cell mints a child and a
-// grandchild, checks them live first (the paired positive), ends the link one
-// way, and checks both are revoked and a fresh mint under the link refuses.
+// End paths: each ends the link's descendants. Every cell mints two children
+// (W9 R-2: a child mints no grandchild; its descendants are the link's own
+// children) — one of them re-minted by the human, as a resume — checks them
+// live first (the paired positive), ends the link one way, and checks both
+// are revoked and a fresh mint under the link refuses.
 // ---------------------------------------------------------------------------
 
 async function family(L: Linked): Promise<string[]> {
   const child = await mintChild(L.mintClaims);
-  const grand = await mintChild(await claimsForToken(child.token));
-  for (const id of [child.id, grand.id]) expect((await sessionRow(id)).revoked).toBe(false);
-  return [child.id, grand.id];
+  const second = await mintChild(L.mintClaims);
+  const resumed = await mintChild(L.human, { workSessionId: second.workSessionId });
+  for (const id of [child.id, resumed.id]) expect((await sessionRow(id)).revoked).toBe(false);
+  return [child.id, resumed.id];
 }
 
 async function expectEnded(ids: readonly string[]): Promise<void> {

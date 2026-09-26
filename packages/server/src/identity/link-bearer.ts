@@ -26,17 +26,23 @@
  *     GUC or a body field, so nothing from a wire, a ledger replay or a
  *     child spawn can carry it, and a nested dispatch from inside the inner
  *     handler (same context object or a copy) finds no marker.
- * (iii) Defence in depth. `execution.spawn`, `execution.resume`,
- *     `execution.dispatch` and the spawn reader
- *     (`SpaceCredentialStore.readForSpawn`) refuse it again with
- *     `refuseLinkBearer`; SQL `read_space_credential_for_spawn` and both
- *     agent-session mints (`issue_work_session_agent_session`, called by
- *     `DbGraphPort.issueWorkSessionAgentToken`, and `issue_agent_auth_session`)
- *     refuse `tm8.auth_kind = 'link'` as their first statement.
+ * (iii) Defence in depth. `execution.resume` and `execution.dispatch`
+ *     refuse it again with `refuseLinkBearer`, and `issue_agent_auth_session`
+ *     refuses `tm8.auth_kind = 'link'` as its first statement. W7b (996)
+ *     opens exactly one launch: `execution.spawn` calls SQL
+ *     `admit_space_link_spawn`, which admits a link identity only against a
+ *     live, unbound spawn reservation that `spaceLinks.invoke` made on the
+ *     same token row (and re-checks T33); SQL `read_space_credential_for_spawn`
+ *     and `issue_work_session_agent_session` admit it only against that
+ *     reservation too (the mint binds it to the new session). No reservation,
+ *     no launch, whatever reached the handler. W9 R-2: a link-bound AGENT
+ *     (below) launches nothing — `execution.spawn` and
+ *     `execution.terminal.start` refuse it (`refuseLinkBoundLaunch`), as do
+ *     both agent mints and `start_shell_session` in SQL; the terminal refuses
+ *     the link session too.
  *
  * An agent minted under a link (authKind `agent`, `viaLinkId` set) is NOT a
- * link bearer and is not refused by any of these; its link-bound rules apply
- * instead.
+ * link bearer; its link-bound rules apply instead, and it starts no session.
  */
 import { CollabError, type OperationName } from '@tm8/contract';
 import type { DbClaims } from '../db/types.js';
@@ -44,6 +50,7 @@ import type { DbClaims } from '../db/types.js';
 export const LINK_BEARER_SPAWN_REFUSED = 'a space link session cannot spawn, resume or read a spawn credential';
 export const LINK_BEARER_TRANSPORT_REFUSED = 'a space link session token is not accepted on any transport';
 export const LINK_BEARER_OP_REFUSED = 'a space link session cannot call this operation';
+export const LINK_BOUND_LAUNCH_REFUSED = 'a session started through a space link cannot start another session';
 
 /**
  * Layer (ii)'s one admission: context object -> the op it may run. Module
@@ -80,6 +87,18 @@ export function refuseLinkBearerOp(name: OperationName, ctx: { identity?: { auth
   const admitted = LINK_INVOKE_ADMITTED.get(ctx);
   LINK_INVOKE_ADMITTED.delete(ctx);
   if (admitted !== name) throw refused(LINK_BEARER_OP_REFUSED);
+}
+
+/**
+ * W9 R-2: a link-bound AGENT (authKind `agent` with `viaLinkId` — the reserved
+ * spawn and anything under it) launches nothing, so the link's budget counts
+ * every process it starts. SQL refuses the same in both agent mints and
+ * `start_shell_session`. `includeLink` also refuses the link session itself
+ * (a terminal is never a reserved launch).
+ */
+export function refuseLinkBoundLaunch(claims: Pick<DbClaims, 'authKind' | 'viaLinkId'>, includeLink = false): void {
+  const linkBoundAgent = claims.authKind !== 'link' && Boolean(claims.viaLinkId);
+  if (linkBoundAgent || (includeLink && claims.authKind === 'link')) throw refused(LINK_BOUND_LAUNCH_REFUSED);
 }
 
 /** Layer (iii): the per-operation refusal. */

@@ -551,6 +551,48 @@ end
 $$;
 revoke all on function internal.link_spawn_row(uuid) from public;
 
+-- execution.spawn's first statement under a `link` identity (TS layer (iii),
+-- replacing 256's flat refusal): the spawn runs only against a live, unbound
+-- reservation of this token row, and T33 is re-checked here, at the point of
+-- use, whatever invoke was told. Nothing is written; the mint binds.
+create or replace function public.admit_space_link_spawn(
+  p_space_id uuid,
+  p_project_id uuid default null,
+  p_parent_session_id uuid default null
+) returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare row public.space_link_tokens;
+begin
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') <> 'link' then
+    raise exception 'only a space link session is admitted here' using errcode = '42501';
+  end if;
+  row := internal.link_spawn_row(p_space_id);
+  if not exists (
+    select 1 from public.space_link_spawns s
+     where s.token_row_id = row.id and s.target_space_id = p_space_id
+       and s.bound_at is null and s.released_at is null
+       and s.reserved_at > now() - internal.space_link_spawn_reservation_ttl()
+  ) then
+    raise exception 'a space link spawn runs only against a reservation made by spaceLinks.invoke'
+      using errcode = '42501', detail = jsonb_build_object('reason', 'spawn_unreserved')::text;
+  end if;
+  if p_project_id is not null and (
+       not exists (select 1 from public.space_projects sp
+                    where sp.space_id = p_space_id and sp.project_id = p_project_id)
+       or exists (select 1 from public.space_projects sp
+                   where sp.space_id = row.home_space_id and sp.project_id = p_project_id)) then
+    raise exception 'a spawn through a space link may name only the target space''s projects'
+      using errcode = '42501', detail = jsonb_build_object('reason', 'project_not_in_target')::text;
+  end if;
+  if p_parent_session_id is not null and not exists (
+       select 1 from public.entities e
+        where e.id = p_parent_session_id and e.kind = 'work_session'
+          and e.space_id = p_space_id and e.deleted_at is null) then
+    raise exception 'a spawn through a space link may name only a parent session in the target space'
+      using errcode = '42501', detail = jsonb_build_object('reason', 'parent_not_in_target')::text;
+  end if;
+end
+$$;
+
 -- -----------------------------------------------------------------------------
 -- 8. read_space_credential_for_spawn — 256's body; the first-statement link
 --    refusal now admits a link session holding a live UNBOUND reservation of
@@ -670,8 +712,34 @@ revoke all on function public.release_space_link_spawn(uuid, uuid, uuid) from pu
 grant execute on function public.release_space_link_spawn(uuid, uuid, uuid) to tm8_app;
 revoke all on function public.read_space_credential_for_spawn(uuid, text, uuid) from public;
 grant execute on function public.read_space_credential_for_spawn(uuid, text, uuid) to tm8_app;
+revoke all on function public.admit_space_link_spawn(uuid, uuid, uuid) from public;
+grant execute on function public.admit_space_link_spawn(uuid, uuid, uuid) to tm8_app;
 
 reset role;
+
+-- -----------------------------------------------------------------------------
+-- 8b. W9 R-2: a link-bound AGENT (the reserved spawn, and every descendant —
+--     link_provenance_for stamps via_link_id on each one, so the claim carries
+--     it) starts nothing: no agent session, no terminal. The one launch under
+--     a link is the link session binding its own reservation, so the budget
+--     counts every process the link starts; a grandchild is refused rather
+--     than budgeted (lead ruling on R-2 (2)).
+-- -----------------------------------------------------------------------------
+create or replace function internal.refuse_link_bound_agent_launch()
+returns void language plpgsql stable set search_path = public, internal, pg_temp as $$
+begin
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') <> 'link'
+     and internal.claim_text('tm8.via_link') is not null then
+    raise exception 'a session started through a space link cannot start another session'
+      using errcode = '42501', detail = jsonb_build_object('reason', 'link_bound_launch')::text;
+  end if;
+end
+$$;
+
+-- Default (PUBLIC) execute, like internal.link_bound: it reads only claims and
+-- holds no privilege, and the definers that call it keep their original owners
+-- through `create or replace` (tm8_graph_owner for 256's mints).
+
 
 -- -----------------------------------------------------------------------------
 -- 9. issue_work_session_agent_session — 256's body; the first-statement link
@@ -702,6 +770,7 @@ begin
     select e.space_id into session_space from public.entities e where e.id = p_work_session_id;
     link_row := internal.link_spawn_row(session_space);
   end if;
+  perform internal.refuse_link_bound_agent_launch();
   perform internal.require_identity();
   if p_token_hash is null or p_token_hash !~ '^[a-f0-9]{64}$'
      or p_expires_at <= now() then
@@ -783,6 +852,190 @@ $$;
 
 revoke all on function public.issue_work_session_agent_session(uuid, uuid, text, timestamptz, text) from public;
 grant execute on function public.issue_work_session_agent_session(uuid, uuid, text, timestamptz, text) to tm8_app;
+
+-- -----------------------------------------------------------------------------
+-- 10. issue_agent_auth_session — 256's body plus the R-2 refusal of a
+--     link-bound agent caller.
+-- -----------------------------------------------------------------------------
+create or replace function public.issue_agent_auth_session(
+  p_work_session_id uuid,
+  p_team_member_id uuid,
+  p_token_hash text,
+  p_expires_at timestamptz,
+  p_label text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  identity text;
+  target_space uuid;
+  account public.accounts;
+  issued public.auth_sessions;
+  prov record;
+begin
+  -- W7p mint backstop (deny-by-default ruling, Q4): this mint refuses a `link`
+  -- session as its first statement, like issue_work_session_agent_session.
+  -- 226 resolved the identity in the declare block, which runs before any
+  -- statement; it moves below the refusal. #884 admits its invoke by its
+  -- marker, and nothing else.
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'a space link session cannot mint an agent session' using errcode = '42501';
+  end if;
+  perform internal.refuse_link_bound_agent_launch();
+  identity := internal.require_identity();
+  if p_expires_at <= now() then
+    raise exception 'agent auth session expiry must be in the future' using errcode = '22023';
+  end if;
+
+  select e.space_id into target_space
+    from public.entities e
+    join public.work_sessions ws on ws.entity_id = e.id
+   where e.id = p_work_session_id and e.deleted_at is null
+   for update of ws;
+  if target_space is null then
+    raise exception 'work session not found' using errcode = 'P0002';
+  end if;
+
+  if not internal.can_act_as(p_team_member_id, target_space)
+     or not exists (
+       select 1 from public.edges edge
+        where edge.src_id = p_team_member_id
+          and edge.dst_id = p_work_session_id
+          and edge.type = 'participates_in'
+     ) then
+    raise exception 'agent credential persona does not participate in this work session'
+      using errcode = '42501';
+  end if;
+
+  select * into account
+    from public.accounts a
+   where a.identity_id = identity and a.status = 'active';
+  if account.id is null then
+    raise exception 'account not found or disabled' using errcode = 'P0002';
+  end if;
+
+  -- W7p: the link this session descends from, before the revoke below.
+  select * into prov from internal.link_provenance_for(p_work_session_id);
+
+  -- Serialize on the work_session above, then retire every earlier run token
+  -- before inserting the replacement. Plaintext is never persisted here.
+  update public.auth_sessions
+     set revoked_at = now()
+   where work_session_id = p_work_session_id
+     and kind = 'agent'
+     and revoked_at is null;
+
+  insert into public.auth_sessions(
+    account_id, kind, acting_as_team_member_id, work_session_id,
+    token_hash, label, expires_at, space_id,
+    via_link_id, parent_session_id
+  ) values (
+    account.id, 'agent', p_team_member_id, p_work_session_id,
+    p_token_hash, p_label, least(p_expires_at, prov.parent_expires_at), target_space,
+    prov.via_link_id, prov.parent_session_id
+  ) returning * into issued;
+
+  return to_jsonb(issued) - 'token_hash';
+end
+$$;
+
+revoke all on function public.issue_agent_auth_session(uuid, uuid, text, timestamptz, text) from public;
+grant execute on function public.issue_agent_auth_session(uuid, uuid, text, timestamptz, text) to tm8_app;
+
+-- -----------------------------------------------------------------------------
+-- 11. start_shell_session — 101's body plus the R-2 link refusal.
+-- -----------------------------------------------------------------------------
+create or replace function public.start_shell_session(
+  p_space_id uuid, p_project_id uuid default null, p_title text default null,
+  p_node_id text default null, p_workdir_path text default null,
+  p_confirm_untrusted boolean default false,
+  p_session_cap integer default 4, p_actor_id uuid default null,
+  p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  actor uuid;
+  project public.projects;
+  session_id uuid;
+begin
+  -- W9 R-2: a link session and everything started under it open no shell. A
+  -- terminal is an unbudgeted process under B's membership; first statement,
+  -- ahead of the replay (no link-bound caller can own a replayable row).
+  if internal.link_bound() then
+    raise exception 'a space link session cannot start a terminal'
+      using errcode = '42501', detail = jsonb_build_object('reason', 'link_bound_launch')::text;
+  end if;
+  replay := internal.ledger_replay(p_client_mutation_id, 'execution.terminal.start');
+  if replay is not null then
+    return replay || jsonb_build_object('__tm8_replayed', true);
+  end if;
+  perform internal.require_space_member(p_space_id);
+  actor := internal.resolve_actor(p_actor_id, p_space_id);
+  perform internal.bind_actor(actor);
+
+  if internal.shell_session_count(null) >= greatest(coalesce(p_session_cap, 4), 1) then
+    raise exception 'terminal concurrency cap reached' using errcode = '53400',
+      detail = jsonb_build_object('cap', p_session_cap,
+                                  'live', internal.shell_session_count(null))::text;
+  end if;
+
+  -- The same three project gates spawn applies, in the same order. A terminal
+  -- is a shell prompt in that directory: if the project is not trusted, the
+  -- consent it needs is the same consent, not a lesser one.
+  if p_project_id is not null then
+    select * into project from public.projects where id = p_project_id;
+    if project.id is null then
+      raise exception 'project not found' using errcode = 'P0002';
+    end if;
+    if not exists (select 1 from public.space_projects
+                    where space_id = p_space_id and project_id = p_project_id) then
+      raise exception 'project is not linked to this space' using errcode = '42501';
+    end if;
+    if project.trust = 'untrusted' and not coalesce(p_confirm_untrusted, false) then
+      raise exception 'opening a terminal in an untrusted project requires explicit confirmation'
+        using errcode = '42501',
+              detail = jsonb_build_object('projectId', p_project_id, 'trust', project.trust)::text;
+    end if;
+  end if;
+
+  -- A ROOT, ALWAYS. `execution_spawn` takes `p_parent_session_id` so an agent
+  -- can record the session it spawned; a vanilla terminal is started by a human
+  -- from the UI and has no spawning session to descend from.
+  session_id := internal.create_envelope(p_space_id, 'work_session', actor, null, null);
+  -- `workdir_path` IS RECORDED, and NULL when it genuinely cannot be. A
+  -- projectless terminal's directory is named for the session id, which does
+  -- not exist until the line above runs — the same chicken-and-egg
+  -- `execution_spawn` has, and it resolves it by writing the scratch ROOT with
+  -- a literal `pending` on the end. A row saying `.../pending` is a path no
+  -- process ever had; NULL says "not recorded", which is true and which a
+  -- reader can act on. The project case has a real answer and gets it.
+  insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
+                                   workdir_path, status, session_kind)
+  values (session_id, coalesce(nullif(btrim(p_title), ''), 'Terminal'), p_node_id,
+          p_project_id,
+          -- DERIVED, never 'project' unconditionally. A projectless terminal
+          -- that claimed `workdir_mode = 'project'` with a NULL project_id and
+          -- a NULL workdir_path renders in the UI as a project working
+          -- directory with no directory, and is the exact combination
+          -- `bootstrap-manifest.ts` rejects.
+          case when p_project_id is null then 'scratch' else 'project' end,
+          p_workdir_path, 'spawning', 'shell');
+
+  return internal.ledger_record(p_client_mutation_id, 'execution.terminal.start',
+           internal.command_result(session_id, null,
+             internal.record_activity(p_space_id, session_id, actor, 'created', null,
+               jsonb_build_object(
+                 'kind', 'work_session',
+                 'sessionKind', 'shell'
+               )),
+             array[session_id])) || jsonb_build_object('__tm8_replayed', false);
+end
+$$;
+
+revoke all on function public.start_shell_session(
+  uuid, uuid, text, text, text, boolean, integer, uuid, text
+) from public;
+grant execute on function public.start_shell_session(
+  uuid, uuid, text, text, text, boolean, integer, uuid, text
+) to tm8_app;
 
 -- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
 analyze public.remote_refs;

@@ -117,6 +117,10 @@ export type SpaceLinkRefusalReason =
   | 'session_body'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
+  /** W7b: the token row already has `spawn_budget` live spawns. */
+  | 'spawn_budget'
+  /** W7b (T33): the spawn names a space, folder or parent session outside the target. */
+  | 'spawn_scope'
   | 'unknown_op'
   | 'via_loop'
   | 'via_hops';
@@ -317,6 +321,12 @@ export interface SpaceLinksInvokeResult {
   auditId: string;
   /** The op's own `data`. */
   result: unknown;
+  /**
+   * W7b: the `remote_ref` in the HOME space for what a create or spawn made in
+   * B (null for any other op, or when it could not be recorded). A task in A
+   * can `depends_on` it; the watcher keeps its status.
+   */
+  remoteRefId?: string | null;
 }
 
 export interface SpaceLinkAuditEntry {

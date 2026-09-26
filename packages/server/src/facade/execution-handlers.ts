@@ -105,7 +105,7 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
-import { refuseLinkBearer } from '../identity/link-bearer.js';
+import { refuseLinkBearer, refuseLinkBoundLaunch } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
@@ -3075,9 +3075,17 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 256 (W7p, ruling A'): a link session launches nothing, before anything
-    // is read or written. See identity/link-bearer.ts.
-    refuseLinkBearer(claims);
+    // 256 (W7p, ruling A') + 996 (W7b): a link session launches only what
+    // spaceLinks.invoke reserved for it, before anything is read or written —
+    // in the link's target, on B's folders and parent sessions only (T33).
+    // Every other link bearer is refused here, and a link-bound agent (W9
+    // R-2) launches nothing. See identity/link-bearer.ts.
+    refuseLinkBoundLaunch(claims);
+    if (claims.authKind === 'link') {
+      await db.rpc(claims, 'admit_space_link_spawn', [
+        input.spaceId, input.projectId ?? null, input.parentSessionId ?? null,
+      ]);
+    }
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3244,6 +3252,8 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // W9 R-2: nothing under a link opens a terminal (start_shell_session too).
+    refuseLinkBoundLaunch(claims, true);
 
     const result = await rethrowing(() =>
       spawnService.startShell(claims, {

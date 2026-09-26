@@ -17,7 +17,6 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Db, DbClaims } from '../db/types.js';
-import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { openSecret, sealSecret } from './secret-box.js';
 
@@ -501,8 +500,9 @@ export class DbSpaceCredentialStore {
    * The spawn reader (A1). The pinned credential, or the launch space's
    * default when `credentialId` is null; refused unless the caller is a member
    * of the LAUNCH space and the credential is active and in it. Works under
-   * agent claims: children inherit. Never under a link session's own claims
-   * (ruling A'; SQL refuses it too).
+   * agent claims: children inherit. Under a link session's own claims only
+   * for a spawn spaceLinks.invoke reserved (996: SQL's first statement), and
+   * then only the target's default credential, never a private one.
    */
   async readForSpawn(
     claims: DbClaims,
@@ -510,7 +510,6 @@ export class DbSpaceCredentialStore {
     provider: SpaceCredentialProvider,
     credentialId?: string | null,
   ): Promise<SpaceCredentialForSpawn> {
-    refuseLinkBearer(claims);
     const row = await this.db.rpc<SpawnRow>(claims, 'read_space_credential_for_spawn', [
       launchSpaceId,
       provider,

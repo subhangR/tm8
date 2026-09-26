@@ -75,6 +75,14 @@ export interface SpaceLinkUse {
   token: string;
 }
 
+/** W7b (996): a held spawn slot on one token row. */
+export interface SpaceLinkSpawnReservation {
+  reservationId: string;
+  live: number;
+  budget: number;
+  targetSpaceId: string;
+}
+
 /** The caller's own row as invoke resolves it (260): no sealed bytes. */
 export interface SpaceLinkInvokeRow {
   linkId: string;
@@ -283,6 +291,35 @@ export class DbSpaceLinkStore {
       entry.homeSpaceId, entry.linkId, entry.linkRef, entry.targetSpaceId, entry.workSessionId ?? null,
       entry.op, entry.via, entry.result, entry.reason ?? null, entry.remoteId ?? null,
     ]);
+  }
+
+  /**
+   * W7b (996): reserve one spawn slot on the caller's own token row, under HOME
+   * claims, before invoke runs `execution.spawn` in B. The budget is counted
+   * under a row lock, so racing reserves cannot overrun it. The mint in B binds
+   * the reservation to the new session; an unbound one lapses after
+   * `internal.space_link_spawn_reservation_ttl()`.
+   */
+  reserveSpawn(
+    claims: DbClaims,
+    input: { homeSpaceId: string; linkId: string; projectId?: string | null; parentSessionId?: string | null },
+  ): Promise<SpaceLinkSpawnReservation> {
+    return this.db.rpc<SpaceLinkSpawnReservation>(claims, 'reserve_space_link_spawn', [
+      input.homeSpaceId, input.linkId, input.projectId ?? null, input.parentSessionId ?? null,
+    ]);
+  }
+
+  /** W7b: give back an unbound reservation after a spawn that did not happen. */
+  releaseSpawn(claims: DbClaims, homeSpaceId: string, linkId: string, reservationId: string): Promise<boolean> {
+    return this.db.rpc<boolean>(claims, 'release_space_link_spawn', [homeSpaceId, linkId, reservationId]);
+  }
+
+  /**
+   * W7b: the `remote_ref` in A for an id a create or spawn through this link
+   * made in B. SQL admits it only against an ok audit row of that op.
+   */
+  recordRemoteRef(claims: DbClaims, homeSpaceId: string, linkId: string, remoteId: string): Promise<{ id: string; remoteId: string; created: boolean }> {
+    return this.db.rpc<{ id: string; remoteId: string; created: boolean }>(claims, 'record_remote_ref', [homeSpaceId, linkId, remoteId]);
   }
 
   /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (260). */
