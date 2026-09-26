@@ -72,6 +72,8 @@ export interface ResolvedAuthSession {
   runtimeChatId: string | null;
   /** 226: required for agent kinds, null for a human (gate) session. */
   spaceId: string | null;
+  /** 992 (W7p): the space link a `link` session, or an agent minted under one, descends from. */
+  viaLinkId?: string | null;
   expiresAt: string;
   label: string | null;
 }

@@ -36,5 +36,6 @@ export async function supportClaims(
     nodeAdmin: identity.sessionSpaceId ? false : identityId === owner.identityId ? owner.isNodeAdmin : false,
     requestId,
     ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+    ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
   };
 }

@@ -362,6 +362,16 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
+   * 992 (W7p): a `link` session, or an agent minted under one. Both are read
+   * off the verified auth-session row (`createSessionIdentityResolver`), never
+   * from the client.
+   */
+  isLinkBound(auth: GraphAuth): boolean {
+    const claims = this.claims(auth);
+    return claims.authKind === 'link' || Boolean(claims.viaLinkId);
+  }
+
+  /**
    * The pre-spawn reads, in ONE transaction.
    *
    * One transaction rather than three round trips because the three answers must

@@ -99,6 +99,9 @@ export function createSessionIdentityResolver(
         // 226/227. The space the session was minted for, off the same
         // verified row. Every membership helper intersects with it.
         ...(sessionSpaceId ? { sessionSpaceId } : {}),
+        // 992 (W7p). Off the same verified row; NOT gated by the spaces mode —
+        // it only narrows, and `off` must not un-bind a link.
+        ...(session.viaLinkId ? { viaLinkId: session.viaLinkId } : {}),
       };
     }
 

@@ -628,3 +628,96 @@ describe('A3 / C1 — an agent may choose a space credential; its claims are the
     expect(r.spaceCredentialIds).toEqual([ANT_PINNED]);
   });
 });
+
+// 992 (W7p): a link-bound launch — a `link` session, or an agent minted under
+// one — has no member rung (ruling (i)) and runs git only on this space's
+// default GitHub credential (ruling 4). The SQL half (093/206/083 refusing the
+// same caller) is `packages/server/test/db/space-link-provenance.pg.test.ts`.
+describe('W7p — a link-bound launch never reaches the linking human\'s own credentials', () => {
+  const linked = (l: ResolvedLaunchConfig, d: CredentialResolutionDeps, resume = false) =>
+    resolveSessionCredentials({ auth: AUTH_A, spaceId: SPACE, launch: l, resume, linkBound: true }, d);
+  const both = { anthropic: ANT_DEFAULT, github: GH_DEFAULT };
+
+  it('auto: runs on the space defaults even with the member connected, and never asks the member', async () => {
+    const port = fakePort({ defaults: both });
+    const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+    const r = await linked(launch(), d);
+    expect(d.memberAsks).toEqual([]);
+    expect(r.credentialHome?.space?.credentialId).toBe(ANT_DEFAULT);
+    expect(r.gitHubCredential?.token).toBe(`secret-${GH_DEFAULT}`);
+    expect(r.launch.effectiveCredentialSources).toEqual({ anthropic: 'space', github: 'space' });
+    // Only ever the DEFAULT: 206 refuses a pinned id for this caller.
+    expect(port.reads.map((x) => x.credentialId)).toEqual([null, null]);
+  });
+
+  it("explicit 'member' is refused by name", async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
+    const e = await refusal(linked(launch({ credentialSources: { anthropic: 'member' } }), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'member_refused', spaceLink: true });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('no space model default: falls to the node when the node is allowed', async () => {
+    const r = await linked(launch(), deps(fakePort({ defaults: { github: GH_DEFAULT } }), { home: MEMBER_HOME }));
+    expect(r.credentialHome).toBeNull();
+    expect(r.launch.effectiveCredentialSources).toEqual({ anthropic: 'node', github: 'space' });
+  });
+
+  it('no space model default and no node: a named "no model credential" refusal, never the member key', async () => {
+    const d = deps(
+      fakePort({ defaults: { github: GH_DEFAULT }, policies: { space: {}, node: { anthropic: false } } }),
+      { home: MEMBER_HOME },
+    );
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'no_model_credential' });
+    expect(e.message).toContain('this space has no default anthropic credential');
+    expect(e.message).toContain('node anthropic credentials are not allowed here');
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('a model only a member API key serves is refused by name', async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
+    const e = await refusal(linked(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d));
+    expect(e.detail).toMatchObject({ reason: 'member_key_model', model: 'kimi-k2-thinking' });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('no space GitHub default: a named "no git" refusal, never the member login and never without git', async () => {
+    const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), { github: MEMBER_GH });
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'github', reason: 'no_git_credential' });
+  });
+
+  it("GitHub 'node' is refused: git runs only on the space default", async () => {
+    const d = deps(fakePort({ defaults: both }));
+    const e = await refusal(linked(launch({ credentialSources: { github: 'node' } }), d));
+    expect(e.detail).toMatchObject({ provider: 'github', reason: 'node_git_refused' });
+  });
+
+  it('a recorded id that is no longer the default refuses rather than switch credentials', async () => {
+    const port = fakePort({ defaults: both });
+    const recorded = {
+      credentialSources: { anthropic: 'space' },
+      spaceCredentialIds: { anthropic: ANT_PINNED },
+    } as unknown as SessionLaunchPosture;
+    const e = await refusal(linked(launch({}, recorded), deps(port), true));
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'not_default', spaceCredentialId: ANT_PINNED });
+    expect(port.reads.map((x) => x.credentialId)).toEqual([null]);
+  });
+
+  it("206's 42501 (link signed out, or spawning switched off) surfaces as a named refusal", async () => {
+    const d = deps(fakePort({ readError: Object.assign(new Error('link not signed in'), { code: '42501' }) }));
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'space_read_refused' });
+  });
+
+  it('control: the same launch without linkBound still takes the member rung', async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME, github: MEMBER_GH });
+    const r = await resolve(launch(), d);
+    expect(r.credentialHome).toBe(MEMBER_HOME);
+  });
+});

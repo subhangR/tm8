@@ -185,6 +185,11 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     // No identity means no RLS-visible row anyway; asking would be a pointless
     // round trip whose only possible answer is "none".
     if (!claims?.identityId) return null;
+    // 992 (W7p): a link-bound caller never runs on the linking human's own
+    // model login. `resolveLinkBoundCredentials` never asks, and 992's
+    // restrictive policy hides the row; this is the third layer, with the same
+    // answer the policy gives.
+    if (claims.authKind === 'link' || claims.viaLinkId) return null;
 
     const rows = await this.db.query<CredentialIndexRow>(
       claims,

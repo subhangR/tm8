@@ -48,6 +48,11 @@ export interface ClaimBinding {
  * session or chat the token was minted for, and no verb updates it. It is not a
  * membership claim — it only ever NARROWS what the membership rows grant (every
  * helper intersects with it), so a stale value can refuse, never admit.
+ *
+ * `viaLinkId` is the seventh (992, W7p), on the same test: `auth_sessions.
+ * via_link_id` is written once by the issuing RPC and no verb updates it. It
+ * only NARROWS — a link-bound caller is refused credential reads — so a stale
+ * value can refuse, never admit.
  */
 export const CLAIM_NAMES = {
   identityId: 'tm8.identity_id',
@@ -56,6 +61,7 @@ export const CLAIM_NAMES = {
   requestId: 'tm8.request_id',
   authKind: 'tm8.auth_kind',
   sessionSpaceId: 'tm8.session_space_id',
+  viaLinkId: 'tm8.via_link',
 } as const;
 
 /**
@@ -95,6 +101,8 @@ export function toClaimBindings(
   authKind?: string,
   /** The space the auth session is pinned to; omitted means unpinned. */
   sessionSpaceId?: string,
+  /** The space link the auth session descends from; omitted means none. */
+  viaLinkId?: string,
 ): ClaimBinding[] {
   const bindings: ClaimBinding[] = [
     { name: CLAIM_NAMES.identityId, value: claims.identityId },
@@ -103,6 +111,7 @@ export function toClaimBindings(
     { name: CLAIM_NAMES.nodeAdmin, value: boolClaim(sessionSpaceId ? false : claims.isNodeAdmin) },
     { name: CLAIM_NAMES.authKind, value: authKind ?? '' },
     { name: CLAIM_NAMES.sessionSpaceId, value: sessionSpaceId ?? '' },
+    { name: CLAIM_NAMES.viaLinkId, value: viaLinkId ?? '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });
@@ -126,6 +135,7 @@ export function anonymousClaimBindings(requestId?: string): ClaimBinding[] {
     // and "no identity" must mean "not human" as well as "nobody".
     { name: CLAIM_NAMES.authKind, value: '' },
     { name: CLAIM_NAMES.sessionSpaceId, value: '' },
+    { name: CLAIM_NAMES.viaLinkId, value: '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });

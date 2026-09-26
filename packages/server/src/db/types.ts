@@ -68,6 +68,17 @@ export interface DbClaims {
    * `''` — unpinned, exactly the pre-227 behaviour.
    */
   readonly sessionSpaceId?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.via_link`. The seventh claim (992, W7p): the space link
+   * the auth session descends from, from `auth_sessions.via_link_id` — set on
+   * a `link` session and on every agent session minted under one. When set,
+   * the git and model credential reads refuse and a spawn takes only the
+   * target's default space credential. Omitted binds as `''`: not link-bound.
+   *
+   * EVERY claims builder that forwards `sessionSpaceId` must forward this too
+   * (`test/via-link-claim-forwarding.test.ts`): dropping it fails OPEN.
+   */
+  readonly viaLinkId?: string | undefined;
 }
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */

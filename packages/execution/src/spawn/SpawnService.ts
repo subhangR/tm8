@@ -673,7 +673,7 @@ export class SpawnService {
     resume = false,
   ): Promise<ResolvedSessionCredentials> {
     return resolveSessionCredentials(
-      { auth, spaceId, launch, resume },
+      { auth, spaceId, launch, resume, linkBound: this.graph.isLinkBound?.(auth) === true },
       {
         ...(this.spaceCredentials ? { spaceCredentials: this.spaceCredentials } : {}),
         resolveMemberHome: (source) =>

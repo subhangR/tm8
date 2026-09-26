@@ -943,6 +943,13 @@ export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /**
+   * Whether `auth` is link-bound (992, W7p): a `link` session, or an agent
+   * minted under one. `GraphAuth` is opaque here, so the graph answers. Such a
+   * launch has no member credential rung (`resolveLinkBoundCredentials`).
+   * Optional: a graph without it has no links, so nothing is link-bound.
+   */
+  isLinkBound?(auth: GraphAuth): boolean;
+  /**
    * Selection headers for `<context_index>` (design 01a0d348 §2.1), read
    * under the caller's RLS: an id the caller cannot read is simply absent.
    * Optional so a graph without it renders the index from loader rows.

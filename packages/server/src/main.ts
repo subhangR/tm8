@@ -504,6 +504,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // K6 (W3): the resolver already clears nodeAdmin for a pinned session.
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
@@ -570,7 +571,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -578,6 +579,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     return {
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
