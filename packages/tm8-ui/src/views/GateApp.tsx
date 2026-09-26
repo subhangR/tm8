@@ -105,6 +105,7 @@ import {
   shouldOfferSetup,
   writeSetupDismissed,
 } from '../settings-credentials';
+import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
@@ -1578,6 +1579,11 @@ export function GateApp(props: GateAppProps = {}) {
     () => (data.spaceId ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef()) : null),
     [data.seam, data.spaceId],
   );
+  // W6: links from this space to the viewer's other spaces, on the same pair.
+  const spaceLinksPort = useMemo(
+    () => (data.spaceId ? spaceLinksPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
 
   /* SHOULD THE FLOW OPEN ITSELF? Read ONCE PER `GateApp` MOUNT — which is
      keyed on `activeServer.id`, so a server switch re-asks and a SPACE switch
@@ -2528,8 +2534,11 @@ export function GateApp(props: GateAppProps = {}) {
                  event will do it. */
               onAxesChanged={data.refreshTaskAxes}
               sections={
-                credentialsPort || branchesPort || spaceCredentialsPort
+                credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
                   ? {
+                      ...(spaceLinksPort
+                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} /> }
+                        : {}),
                       ...(spaceCredentialsPort
                         ? {
                             'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />,

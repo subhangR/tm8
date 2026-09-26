@@ -271,6 +271,10 @@ const LIVE_VERBS = [
   // chat-defaults-section.test.tsx.
   /^Chat defaults$/,
   /^default (teammate|model) for /,
+  // Space links (W6): the NAV ROW only — `spaceLinks.*` are real catalog ops
+  // on the seam. The body is owned by `settings-space-links/` and is not
+  // injected here; its controls are held in space-links.test.tsx.
+  /^Space links$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

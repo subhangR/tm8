@@ -27,6 +27,7 @@ export type SettingsSectionId =
   | 'credentials'
   | 'space-credentials'
   | 'node-credentials'
+  | 'space-links'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -89,6 +90,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      Both built in `settings-credentials/` and injected through `sections`. */
   { id: 'space-credentials', label: 'Space credentials', heading: 'Space credentials', externallyOwned: true },
   { id: 'node-credentials', label: 'Node credentials', heading: 'Node credentials', externallyOwned: true },
+  /* W6 — links to the viewer's other spaces. After the credentials because a
+     link is another sign-in your agents act with; built in
+     `settings-space-links/` and injected through `sections`. */
+  { id: 'space-links', label: 'Space links', heading: 'Space links', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Menu', heading: 'Menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },

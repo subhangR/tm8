@@ -84,6 +84,7 @@ import {
   type NodeCredentialsStatusView,
   type SpaceCredentialProviderName,
   type SpaceCredentialView,
+  type SpaceLinkView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -595,6 +596,42 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<NodeCredentialPolicyEntry>('node.credentials.policy.set', {
         params: { provider },
         body: { allowNode, clientMutationId: newId('nodecredpol') },
+      });
+    },
+
+    // -- space links (`spaceLinks.*`, W6) ------------------------------------
+    // Every write is human-only server-side; no answer carries a stored session.
+
+    /** Bare array: every link of the home space, the viewer's own row as `mine`. */
+    spaceLinksList(spaceId: SpaceId): Promise<SpaceLinkView[]> {
+      return http.call<SpaceLinkView[]>('spaceLinks.list', { params: { spaceId } });
+    },
+
+    spaceLinksAdd(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>('spaceLinks.add', {
+        params: { spaceId },
+        body: { targetSpaceId, clientMutationId: newId('splink') },
+      });
+    },
+
+    spaceLinksMutate(
+      op: 'spaceLinks.login' | 'spaceLinks.relogin' | 'spaceLinks.logout' | 'spaceLinks.remove',
+      linkId: EntityId,
+    ): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>(op, {
+        params: { linkId },
+        body: { clientMutationId: newId('splinkop') },
+      });
+    },
+
+    spaceLinksSetSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>('spaceLinks.setSpawn', {
+        params: { linkId },
+        body: {
+          allowSpawn,
+          ...(spawnBudget === undefined ? {} : { spawnBudget }),
+          clientMutationId: newId('splinkspawn'),
+        },
       });
     },
 
