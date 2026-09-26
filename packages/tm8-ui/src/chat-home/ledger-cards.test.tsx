@@ -261,6 +261,25 @@ describe('the fixture thread — every create, spawn and transition highlighted 
     expect(view.container.textContent).not.toContain(PROGRAM.slice(0, 8));
   });
 
+  it('draws NO L4 edit line for a settled doc_update — lane 3’s DocEditLine is its one line (D17)', () => {
+    const DOC = id(10);
+    const view = render(
+      <Transcript
+        turns={[
+          turn(
+            callParts(
+              'mcp__tm8__doc_update',
+              { docId: DOC, expectedVersion: 2, body: '# v3' },
+              mcp('doc_update', { data: { entity: { id: DOC, kind: 'doc', title: 'Plan' } } }),
+            ),
+          ),
+        ]}
+      />,
+    );
+    expect(view.queryByTestId('chat-ledger-edit')).toBeNull();
+    expect(view.queryByTestId('chat-ledger-create')).toBeNull();
+  });
+
   it('draws the turn’s non-status edits as ONE quiet line, never a card', () => {
     const view = render(<Transcript turns={fixtureThread()} />);
     const edit = view.getByTestId('chat-ledger-edit');
