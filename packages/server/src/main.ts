@@ -45,6 +45,8 @@ import type { SpaceCredentialProbe } from './credentials/space-credential-probe.
 import { DbServiceKeyStore } from './credentials/service-key-store.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
+import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
@@ -961,6 +963,22 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       );
       scheduler.register(
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
+      );
+    }
+    // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
+    // once at boot — the post-boot re-check — and then every minute, killing
+    // any live session left on a revoked credential, or on a private one its
+    // owner did not launch. Only with an execution runtime: no PTY, nothing to kill.
+    if (credentials) {
+      scheduler.register(
+        createSpaceCredentialSweepJob({
+          store: new DbSpaceCredentialStore({ db, dataDir }),
+          agentSessions: credentials.agentSessions,
+          claims: async () => {
+            const o = await owner();
+            return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'space-credential-sweep' };
+          },
+        }),
       );
     }
     scheduler.start();
