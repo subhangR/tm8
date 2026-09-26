@@ -309,7 +309,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // behind the Changes surface — public, v1, deliberately commandless like the
     // rest of the session git rail. MEASURED from this file's own failing run.
     // 198 -> 199 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage. MEASURED.
-    expect(rows.length).toBe(256); /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */
+    expect(rows.length).toBe(263); /* +7 spaceLinks.* (W6, 243/244). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F). MEASURED. // +9 skills.* rows (2026-09-23, #647 + #649). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -430,6 +430,9 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // settings only, `cmd: null`), so allowNode reaches the wire only from the UI
   // seam — there is no CLI flag to collide with. Same shape as `all` above.
   allowNode: 'no CLI flag: node.credentials.policy.set is a commandless human-settings row; the node settings screen sets it (2026-09-23)',
+  // W6 (243/244): spaceLinks.setSpawn is COMMANDLESS and human-only; the
+  // space settings screen sets it. Same shape as allowNode above.
+  allowSpawn: 'no CLI flag: spaceLinks.setSpawn is a commandless human-settings row; the space settings screen sets it (2026-09-26)',
   // Forms W1 CLI: `open` is the bare --open (with its opposite --draft) and
   // is on BOOLEAN_OPTIONS. `required` is spelled per command (advisor W1-R4 3):
   // a question is required by default, so the flag a caller needs is the one
