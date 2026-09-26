@@ -53,6 +53,7 @@ import { W2CredentialCatalogService } from '../../src/facade/services/w2/credent
 import { W2CredentialSessionsService } from '../../src/facade/services/w2/credential-sessions.js';
 import { spaceCredentialViewOf } from '../../src/facade/services/w2/space-credential-catalog.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
 const SESSION_ID = '00000000-0000-7000-8000-0000000000a1';
@@ -1128,8 +1129,11 @@ describe('W10d — credentials.space.addMine takes no token and no token id, and
     const ctx = context('credentials.space.addMine', 'browser', { params, body: { provider: 'github', label: 'Mine' } });
     (ctx.identity as { authKind?: string }).authKind = 'link';
     const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
-    expect((error as CollabError).code).toBe('forbidden');
-    expect((error as CollabError).details?.['reason']).toBe(CREDENTIALS_HUMAN_ONLY);
+    // 256 (W7p #898) deny-by-default: the registry refuses kind link on every op
+    // outside LINK_BEARER_ALLOWED_OPS before requireHumanSession runs, so the
+    // typed code is the registry's. The agent-kind sweep above still pins
+    // CREDENTIALS_HUMAN_ONLY on this op.
+    expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
     expect(db.calls).toEqual([]);
   });
   it('positive — a browser session with the same body is admitted past the guard', async () => {
