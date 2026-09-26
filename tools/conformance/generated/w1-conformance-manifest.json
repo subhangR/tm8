@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:d076746a6064b8555ea0805111c8ccecd7d723c59ca3ad4672744ea01ed0df46",
+  "catalogDigest": "sha256:3450e1eacdc49ecc0b430036b2af76165d7c2fdc80c34d6275a890be14a9eb87",
   "catalog": {
-    "total": 262,
-    "v1": 260,
+    "total": 265,
+    "v1": 263,
     "reserved": 2,
-    "http": 260,
+    "http": 263,
     "ws": 1,
-    "registerableV1Http": 258,
+    "registerableV1Http": 261,
     "methods": {
       "GET": 86,
-      "POST": 125,
+      "POST": 128,
       "PATCH": 17,
       "DELETE": 17,
       "PUT": 15,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 90,
-      "command": 170,
+      "command": 173,
       "stream": 2
     },
-    "uniqueNames": 262,
-    "uniqueBindings": 261
+    "uniqueNames": 265,
+    "uniqueBindings": 264
   },
   "reservedOperations": [
     "search.query",
@@ -645,6 +645,27 @@
         "operation": "attentionRequests.resolveEntity",
         "method": "POST",
         "path": "/v2/entities/:entityId/attention-requests/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.markSeen",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-requests/seen",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.unresolve",
+        "method": "POST",
+        "path": "/v2/attention-requests/batches/:batchId/unresolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.withdraw",
+        "method": "POST",
+        "path": "/v2/attention-requests/:requestId/withdraw",
         "status": "registered",
         "source": "server-router"
       },
@@ -2238,7 +2259,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 230
+    "unimplementedV1Http": 233
   },
   "schemas": {
     "additive": {
@@ -3471,6 +3492,58 @@
         ],
         "inputSchemaRef": "ResolveEntityAttentionInputSchema",
         "resultSchemaRef": "AttentionRequestMutationResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.markSeen",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.markSeen",
+        "intentTags": [
+          "attention",
+          "requests",
+          "mark",
+          "seen"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.unresolve",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.unresolve",
+        "intentTags": [
+          "attention",
+          "requests",
+          "unresolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.withdraw",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.withdraw",
+        "intentTags": [
+          "attention",
+          "requests",
+          "withdraw"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
